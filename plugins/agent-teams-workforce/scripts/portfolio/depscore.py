@@ -16,9 +16,11 @@
     elaboration-finish   score an Epic and its Tasks; `--done` sets it done when beads holds
                          every Story, Task and edge the span's saved documents name
     elaboration-release  clear a run's owner token from an Epic
-    sad-approve          set `lifecycle_state: effective` on the SAD files an architecture
-                         step covers: every file the PRD relies on, changes or creates; no `bd` call
-    sad-state            read the `lifecycle_state` of the SAD files a PRD relies on; no `bd` call
+    arch-approve         set `lifecycle_state: effective` on the architecture files an approved
+                         architecture step covers: every file it relies on, changes or creates;
+                         no `bd` call
+    arch-state           read the `lifecycle_state` of the architecture files a step relies on;
+                         no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -69,8 +71,8 @@ from beadwrite import (
 )
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
-from sadstate import promote as approve_sad
-from sadstate import states as sad_states
+from archstate import promote as approve_arch
+from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from storyedges import story_edges
 
@@ -618,37 +620,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _dry_run_flag(erl)
 
-    sap = sub.add_parser(
-        "sad-approve",
-        help="set `lifecycle_state: effective` on the SAD files an architecture ruling "
-        "covers; runs no `bd` command",
+    aap = sub.add_parser(
+        "arch-approve",
+        help="set `lifecycle_state: effective` on the architecture files an approved "
+        "architecture step covers; runs no `bd` command",
         parents=[common],
     )
-    sap.add_argument(
-        "--sad-files",
+    aap.add_argument(
+        "--arch-files",
         required=True,
-        help="the SAD files the PRD relies on, and those the ruling changed or created, "
-        "comma-separated",
+        help="the architecture files the step relies on, and those it changed or "
+        "created, comma-separated",
     )
-    sap.add_argument(
-        "--sad-root",
+    aap.add_argument(
+        "--arch-root",
         default=None,
-        help="the SAD directory every `--sad-files` path must sit under",
+        help="the architecture directory every `--arch-files` path must sit under",
     )
-    _dry_run_flag(sap)
+    _dry_run_flag(aap)
 
-    sst = sub.add_parser(
-        "sad-state",
-        help="read the `lifecycle_state` of SAD files; writes nothing, runs no `bd` command",
+    ast = sub.add_parser(
+        "arch-state",
+        help="read the `lifecycle_state` of architecture files; writes nothing, runs no "
+        "`bd` command",
         parents=[common],
     )
-    sst.add_argument(
-        "--sad-files", required=True, help="the SAD files to read, comma-separated"
+    ast.add_argument(
+        "--arch-files",
+        required=True,
+        help="the architecture files to read, comma-separated",
     )
-    sst.add_argument(
-        "--sad-root",
+    ast.add_argument(
+        "--arch-root",
         default=None,
-        help="the SAD directory every `--sad-files` path must sit under",
+        help="the architecture directory every `--arch-files` path must sit under",
     )
     return parser
 
@@ -674,17 +679,17 @@ def run(args: argparse.Namespace) -> dict:
         )
     if command == "plan-task-edges":
         return head | plan_task_edges(args.dir, split_ids(args.repos))
-    if command == "sad-approve":
-        files = split_ids(args.sad_files)
+    if command == "arch-approve":
+        files = split_ids(args.arch_files)
         if args.dry_run:
             return head | {
                 "dryRun": True,
                 "wouldApprove": files,
                 "summary": {"dryRun": True, "files": len(files)},
             }
-        return head | approve_sad(files, sad_root=args.sad_root)
-    if command == "sad-state":
-        return head | sad_states(split_ids(args.sad_files), sad_root=args.sad_root)
+        return head | approve_arch(files, arch_root=args.arch_root)
+    if command == "arch-state":
+        return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(

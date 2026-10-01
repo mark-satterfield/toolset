@@ -1,13 +1,13 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture — triage names every SAD document the PRD relies on and what it needs that the SAD lacks, and the architecture panel is skipped only when depscore.py sad-state reads every relied-on document at lifecycle_state: effective and nothing is missing (lifecycle_state is per document; an in-review document the PRD relies on is always reviewed: approved as it stands, updated or replaced), or when the PRD states a technical rule SAD §2/§8 lacks the SAD gains it (the PRD is never edited) — then depscore.py sad-approve sets every SAD document the PRD relies on, changes or creates to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture — triage names every architecture file the PRD relies on and what it needs that the architecture lacks, and the architecture panel is skipped only when depscore.py arch-state reads every relied-on file at lifecycle_state: effective and nothing is missing (lifecycle_state is per file; an in-review file the PRD relies on is always reviewed: approved as it stands, updated or replaced); a technical rule the PRD states that the architecture does not describe convenes the panel too (the PRD is never edited) — then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
-    { title: 'PRD Validation', detail: 'classify each PRD requirement as business or technical, and whether SAD §2/§8 holds each technical rule' },
+    { title: 'PRD Validation', detail: 'classify each PRD requirement as business or technical, and whether the architecture describes each technical rule' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
-    { title: 'Architecture', detail: 'triage the PRD and name the SAD documents it relies on; skip the panel only when every one reads lifecycle_state: effective and nothing is missing; otherwise run the architecture mini, then depscore.py sad-approve sets every SAD document the PRD relies on, changes or creates to effective' },
+    { title: 'Architecture', detail: 'triage the PRD and name the architecture files it relies on; skip the panel only when every one reads lifecycle_state: effective and nothing is missing; otherwise run the architecture mini, then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective' },
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
     { title: 'Spec Authoring', detail: 'per repo: reconcile the requirements that govern what the repo owns or changes, then author the Spec and write its Story bead' },
@@ -579,7 +579,7 @@ const RULINGS_CAP = 8192
 const rulingsRead = ((runInputs && Array.isArray(runInputs.files) ? runInputs.files : []).find((f) => f && (f.name === 'rulings' || f.key === 'rulings'))) || null
 const standingRulings = rulingsRead && rulingsRead.found === true && hasText(rulingsRead.content) ? rulingsRead.content.trim().slice(0, RULINGS_CAP) : null
 const rulingsBlock = standingRulings
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it and cite it in your output.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it and cite it in your output.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
   : ''
 
 enterPhase('Epic')
@@ -601,8 +601,8 @@ function classesFrom(list) {
         class: technical ? 'technical' : 'business',
         governs: technical ? r.governs || '' : '',
         rule: technical ? r.rule || '' : '',
-        sadCoverage: technical ? (['covered', 'absent'].includes(r.sadCoverage) ? r.sadCoverage : 'unchecked') : 'n/a',
-        sadRefs: technical ? strs(r.sadRefs) : [],
+        archCoverage: technical ? (['covered', 'absent'].includes(r.archCoverage) ? r.archCoverage : 'unchecked') : 'n/a',
+        archRefs: technical ? strs(r.archRefs) : [],
       }
     })
 }
@@ -626,7 +626,7 @@ if (classHit && ART_ON && classHit.names.includes('prd-classification.json')) {
 if (!requirementClasses) {
   const v = await workflow('agent-teams-workforce:prd-validation', {
     prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
-    sadPath: a.sadPath,
+    archPath: a.archPath,
     classifyOnly: true,
     standingRulings,
     artifacts: artFor('prd-validation', PRD_INPUTS),
@@ -644,40 +644,40 @@ if (!requirementClasses) {
 const technicalReqs = requirementClasses.filter((r) => r.class === 'technical')
 const businessIds = new Set(requirementClasses.filter((r) => r.class === 'business').map((r) => r.id))
 const technicalOnlyIds = [...new Set(technicalReqs.map((r) => r.id))].filter((id) => !businessIds.has(id))
-const sadGaps = technicalReqs.filter((r) => r.sadCoverage === 'absent')
+const sadGaps = technicalReqs.filter((r) => r.archCoverage === 'absent')
 produced.requirementClasses = requirementClasses
 recRuled(
   `${requirementClasses.length} requirement(s) classified: ${businessIds.size} business, ${technicalReqs.length} technical` +
-    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; SAD lacks ${sadGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
+    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; the architecture lacks ${sadGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
   { status: 'done' }
 )
 
-/** Returns the SAD documents a triage names as relied on, each { file, state }. */
+/** Returns the architecture files a triage names as relied on, each { file, state }. */
 function reliedDocs(t) {
   return t && Array.isArray(t.reliedOn)
     ? t.reliedOn.filter((r) => r && hasText(r.file)).map((r) => ({ file: r.file.trim(), state: String(r.state || '').trim() }))
     : []
 }
 /**
- * Returns null when a needed:false triage may skip the architecture panel — it names the SAD documents the PRD
- * relies on, nothing is missing, and depscore.py sad-state reads every one at effective — else { reason }.
+ * Returns null when a needed:false triage may skip the architecture panel — it names the architecture files the
+ * PRD relies on, nothing is missing, and depscore.py arch-state reads every one at effective — else { reason }.
  * A caller's skipArchitecture:true is the caller's ruling and is not checked.
  */
 async function skipBlocker(t) {
   if (t && t.settledBy === 'caller') return null
   const relied = reliedDocs(t)
-  if (!relied.length) return { reason: 'the triage named no SAD document the PRD relies on' }
-  if (!t || !Array.isArray(t.missing)) return { reason: 'the triage did not state what the PRD needs that the SAD lacks' }
+  if (!relied.length) return { reason: 'the triage named no architecture file the PRD relies on' }
+  if (!t || !Array.isArray(t.missing)) return { reason: 'the triage did not state what the PRD needs that the architecture lacks' }
   const missing = t.missing.filter(hasText)
-  if (missing.length) return { reason: `the SAD lacks what the PRD needs: ${missing.join('; ')}` }
+  if (missing.length) return { reason: `the architecture lacks what the PRD needs: ${missing.join('; ')}` }
   const files = [...new Set(relied.map((r) => r.file))]
-  const args = [`sad-state --sad-files ${shellq(files.join(','))}`, hasText(a.sadPath) ? `--sad-root ${shellq(a.sadPath)}` : ''].filter(Boolean).join(' ')
-  const out = await runScript('sad:state', 'Architecture', args)
-  if (!out || out.error) return { reason: `the lifecycle_state of the relied-on SAD documents was not read — ${(out && out.error) || 'no result'}` }
+  const args = [`arch-state --arch-files ${shellq(files.join(','))}`, hasText(a.archPath) ? `--arch-root ${shellq(a.archPath)}` : ''].filter(Boolean).join(' ')
+  const out = await runScript('arch:state', 'Architecture', args)
+  if (!out || out.error) return { reason: `the lifecycle_state of the relied-on architecture files was not read — ${(out && out.error) || 'no result'}` }
   const unread = [...(out.refused || []), ...(out.failed || [])]
-  if (unread.length) return { reason: `relied-on SAD document(s) could not be read: ${unread.map((x) => `${x.path} (${x.reason})`).join(', ')}` }
+  if (unread.length) return { reason: `relied-on architecture file(s) could not be read: ${unread.map((x) => `${x.path} (${x.reason})`).join(', ')}` }
   const open = Array.isArray(out.notEffective) ? out.notEffective : []
-  if (open.length) return { reason: `the PRD relies on SAD document(s) not yet effective, which the architecture step must review: ${open.map((x) => `${x.path} (${x.state || 'no lifecycle_state'})`).join(', ')}` }
+  if (open.length) return { reason: `the PRD relies on architecture file(s) not yet effective, which the architecture step must review: ${open.map((x) => `${x.path} (${x.state || 'no lifecycle_state'})`).join(', ')}` }
   return null
 }
 
@@ -698,7 +698,7 @@ if (archHit) {
     await acceptPhase('architecture', 'reused')
     archTriage = savedTriage
     architecture = hasRuling
-      ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), sadUpdate: artData(archHit, 'sad-update.json') || null } }
+      ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), architectureUpdate: artData(archHit, 'sad-update.json') || null } }
       : { ok: true, skipped: true, resumed: true, artifact: { skipped: true, triage: savedTriage } }
     recRuled('Architecture reused from saved artifacts.', { status: 'done' })
   } else if (archHit.names.includes('architecture-triage.json') && !savedTriage) {
@@ -715,14 +715,14 @@ if (!architecture) {
       `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
         `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or access pattern, a new service or service boundary, a new integration or transport, a new trust boundary, or a change to a crosscutting concern. It does NOT exist merely because the work is hard, security-adjacent or user-facing.\n\n` +
         `These are never an architecture decision: a difference between this PRD and what is built or deployed (the PRD wins); any UI or UX difference (settled by the design-system artifacts); a question an existing recorded decision or established codebase pattern already answers. Do not survey what is deployed.\n\n` +
-        `\`lifecycle_state\` is PER DOCUMENT. A SAD file whose frontmatter reads \`lifecycle_state: effective\` has itself been reviewed and approved: its entries settle what they state, as given. That says nothing about any other file. A file in any other state (\`in-review\`, \`draft\`) is not yet trusted and settles nothing until the architecture phase reviews it, however well it already answers the PRD.\n` +
-        `Name in \`reliedOn\` EVERY SAD file the architecture of this PRD relies on — every file whose entries a design for it would rest on or cite, in any state — each with its absolute path and the \`lifecycle_state\` its frontmatter reads (open it and copy the field exactly). Name in \`missing\` everything the PRD needs that no SAD document covers yet (an empty list when nothing is missing).\n` +
-        `Answer needed:false ONLY when every file in reliedOn reads \`effective\`, \`missing\` is empty, and those files settle every choice (name the sections). Otherwise answer needed:true and name each open choice, and each relied-on document to review, in \`decisions\`.\n\n` +
+        `\`lifecycle_state\` is PER FILE. An architecture file whose frontmatter reads \`lifecycle_state: effective\` has itself been reviewed and approved: its views settle what they show, as given. That says nothing about any other file. A file in any other state (\`in-review\`, \`draft\`) is not yet trusted and settles nothing until the architecture phase reviews it, however well it already answers the PRD.\n` +
+        `Name in \`reliedOn\` EVERY architecture file the design of this PRD relies on — every file whose views a design for it would rest on or cite, in any state — each with its absolute path and the \`lifecycle_state\` its frontmatter reads (open it and copy the field exactly). Find them through the catalog: each view's frontmatter names its \`subject\` and every element it \`shows\`. Name in \`missing\` everything the PRD needs that no architecture view covers yet (an empty list when nothing is missing).\n` +
+        `Answer needed:false ONLY when every file in reliedOn reads \`effective\`, \`missing\` is empty, and those files settle every choice (name the views). Otherwise answer needed:true and name each open choice, and each relied-on document to review, in \`decisions\`.\n\n` +
         `Repositories the run was launched from: ${seedRepos.join(', ') || '(none named)'}. This is a starting point, not the span.\n` +
-        `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
+        `Architecture: ${a.archPath || '(not supplied)'} — its \`arc42/\` folder is the effective version, its \`target/\` folder holds the targets in progress.\n\n` +
         (prdByPath ? `PRD: the document at ${prd.path}. Read it in full before you answer.` : `PRD:\n${prd.body}`) +
         `\n\nWhen needed is true, also name in \`dimensions\` the analysis axes the decision could turn on, from ${JSON.stringify(ARCH_DIMENSIONS)}; leave it empty when you cannot tell.` +
-        `\n\nAlso state highStakes (true when the question implicates a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban) and reversalRisk (true when a plausible ruling could reverse a decision the SAD records).` +
+        `\n\nAlso state highStakes (true when the question implicates a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban) and reversalRisk (true when a plausible ruling could reverse a design the effective architecture describes).` +
         persistBrief(artFor('architecture', PRD_INPUTS), 'architecture-triage.json', 'your complete answer as ONE JSON object'),
       {
         label: 'triage:architecture-needed',
@@ -760,7 +760,7 @@ if (!architecture) {
     archTriage = {
       ...archTriage,
       needed: true,
-      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${sadGaps.length} technical rule(s) SAD §2/§8 does not hold (${sadGaps.map((r) => r.id).join(', ')})`,
+      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${sadGaps.length} technical rule(s) the architecture does not describe (${sadGaps.map((r) => r.id).join(', ')})`,
     }
   }
   const skip = archTriage && archTriage.needed === false ? await skipBlocker(archTriage) : null
@@ -782,13 +782,13 @@ if (!architecture) {
         title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
         context: prdByPath ? `The PRD is the document at ${prd.path}. Read it in full: every requirement in it is in scope.` : prd.body,
         drivers: [
-          'The PRD is CANONICAL. Where it changes or contradicts what is already built, the PRD wins; that is not an option to weigh. Your inputs are this PRD and the SAD. A UI/UX difference is settled by the design-system artifacts and is never an architecture decision.',
+          'The PRD is CANONICAL. Where it changes or contradicts what is already built, the PRD wins; that is not an option to weigh. Your inputs are this PRD and the architecture. A UI/UX difference is settled by the design-system artifacts and is never an architecture decision.',
           ...(archQuestions.length ? [`Triage found these choices open in the PRD: ${archQuestions.join(' | ')}`] : []),
           ...(reliedDocs(archTriage).length
-            ? [`Triage found the PRD relies on these SAD documents: ${reliedDocs(archTriage).map((r) => `${r.file} (${r.state || 'no lifecycle_state'})`).join(' | ')}. Every one not at lifecycle_state: effective must be reviewed by this ruling: approved as it stands, updated or replaced. Name each entry the ruling relies on in reliedOn.`]
+            ? [`Triage found the PRD relies on these architecture files: ${reliedDocs(archTriage).map((r) => `${r.file} (${r.state || 'no lifecycle_state'})`).join(' | ')}. Every one not at lifecycle_state: effective must be reviewed by this ruling: approved as it stands, updated or replaced. Name each part of the architecture the ruling relies on in reliedOn.`]
             : []),
           ...(archTriage && Array.isArray(archTriage.missing) && archTriage.missing.filter(hasText).length
-            ? [`Triage found the PRD needs what no SAD document covers yet: ${archTriage.missing.filter(hasText).join(' | ')}`]
+            ? [`Triage found the PRD needs what no architecture view covers yet: ${archTriage.missing.filter(hasText).join(' | ')}`]
             : []),
           ...(sadGaps.length
             ? [`The PRD states technical rules that SAD §2/§8 does not hold. Record each in the SAD, as a constraint in §2 or a crosscutting concept in §8, stated as a rule on the kind of thing it governs so that it binds only a design that has that thing: ${sadGaps.map((r) => `${r.id}: ${r.rule || r.requirement}${r.governs ? ` (governs: ${r.governs})` : ''}`).join(' | ')}`]
@@ -796,13 +796,13 @@ if (!architecture) {
         ],
         repoPath,
       },
-      sadPath: a.sadPath,
+      archPath: a.archPath,
       artifacts: artFor('architecture', PRD_INPUTS, { beadId: epicBeadId }),
       dimensions: callerDimensions || triageDimensions || undefined,
       reviewFiles: reliedDocs(archTriage).filter((r) => r.state !== 'effective').map((r) => r.file),
       forceFullPanel: a.forceFullPanel === true ? true : undefined,
     })
-    const changed = r && r.sadUpdate && Array.isArray(r.sadUpdate.changedFiles) ? r.sadUpdate.changedFiles.filter(hasText) : []
+    const changed = r && r.architectureUpdate && Array.isArray(r.architectureUpdate.changedFiles) ? r.architectureUpdate.changedFiles.filter(hasText) : []
     archSadExtract = r && r.sadExtract && !changed.length ? r.sadExtract : null
     architecture = r && r.ok === true
       ? { ok: true, artifact: r }
@@ -813,31 +813,31 @@ if (!architecture) {
           ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || dispatchDeaths('Architecture') } : {}),
         }
     if (architecture.ok) {
-      const sad = r.sadUpdate && Array.isArray(r.sadUpdate.updatedSections) ? r.sadUpdate.updatedSections : []
-      recRuled(`Architecture ruled${sad.length ? `; SAD sections updated: ${sad.join(', ')}` : ''}.`, { status: 'done' })
+      const sections = r.architectureUpdate && Array.isArray(r.architectureUpdate.updatedSections) ? r.architectureUpdate.updatedSections : []
+      recRuled(`Architecture ruled${sections.length ? `; architecture sections updated: ${sections.join(', ')}` : ''}.`, { status: 'done' })
     }
   }
   if (architecture.ok) await acceptPhase('architecture', 'passed')
 }
-let sadApproval = null
+let archApproval = null
 if (architecture.ok && !architecture.skipped) {
   const art = architecture.artifact || {}
   const listed = (x) => (Array.isArray(x) ? x.filter(hasText).map((f) => f.trim()) : [])
-  const su = art.sadUpdate || {}
-  const sadFiles = [...new Set([...listed(su.changedFiles), ...listed(su.approvedFiles), ...listed(art.approvedFiles)])]
-  if (sadFiles.length) {
-    const approveArgs = [`sad-approve --sad-files ${shellq(sadFiles.join(','))}`, hasText(a.sadPath) ? `--sad-root ${shellq(a.sadPath)}` : ''].filter(Boolean).join(' ')
-    const out = await runScript('sad:approve', 'Architecture', approveArgs)
+  const au = art.architectureUpdate || {}
+  const archFiles = [...new Set([...listed(au.changedFiles), ...listed(au.approvedFiles), ...listed(art.approvedFiles)])]
+  if (archFiles.length) {
+    const approveArgs = [`arch-approve --arch-files ${shellq(archFiles.join(','))}`, hasText(a.archPath) ? `--arch-root ${shellq(a.archPath)}` : ''].filter(Boolean).join(' ')
+    const out = await runScript('arch:approve', 'Architecture', approveArgs)
     if (!out || out.error) {
       return partial('architecture', {
         ok: false,
         artifact: art,
-        reason: `the ${sadFiles.length} SAD file(s) the architecture ruling covers were not set to lifecycle_state: effective — ${(out && out.error) || 'no result'}`,
+        reason: `the ${archFiles.length} architecture file(s) the architecture ruling covers were not set to lifecycle_state: effective — ${(out && out.error) || 'no result'}`,
       })
     }
-    sadApproval = out
+    archApproval = out
     const n = out.summary || {}
-    log(`SAD approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
+    log(`Architecture approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
     const approved = new Set([...(out.promoted || []), ...(out.unchanged || [])])
     if (archSadExtract && approved.size) {
       const fileOf = (e) => (String((e && e.source) || '').trim().match(/^\/[^\s:#]+/) || [''])[0]
@@ -852,17 +852,17 @@ if (architecture.ok && !architecture.skipped) {
   }
 }
 produced.architecture = withoutSadExtract(architecture.artifact)
-if (sadApproval) produced.sadApproval = sadApproval
-produced.sadReliedOn = architecture.artifact && Array.isArray(architecture.artifact.reliedOn) ? architecture.artifact.reliedOn : reliedDocs(archTriage)
+if (archApproval) produced.archApproval = archApproval
+produced.archReliedOn = architecture.artifact && Array.isArray(architecture.artifact.reliedOn) ? architecture.artifact.reliedOn : reliedDocs(archTriage)
 if (!architecture.ok) {
   const art = architecture.artifact || {}
   if (art.stage === 'input') {
-    const noSad = /sadPath|sad\.path|ATW_SAD_PATH/.test(architecture.reason)
+    const noArch = /archPath|ATW_ARCH_PATH/.test(architecture.reason)
     return await holdForHuman(
       'architecture',
       architecture,
-      [`architecture refused its input: ${architecture.reason}${noSad ? ' Set ATW_SAD_PATH to the arc42 SAD directory for the pipeline host.' : ''}`],
-      noSad ? 'the SAD path is configured' : 'what the refusal names has been supplied'
+      [`architecture refused its input: ${architecture.reason}${noArch ? ' Set ATW_ARCH_PATH to the architecture directory (the folder holding arc42/, target/ and built/) for the pipeline host.' : ''}`],
+      noArch ? 'the architecture path is configured' : 'what the refusal names has been supplied'
     )
   }
   if (art.admissible === false) {
@@ -880,7 +880,7 @@ function architectureRulingFor(art) {
   if (!art || typeof art !== 'object') return null
   const out = {}
   for (const k of ['decision', 'decisionPath', 'note', 'panelDimensions']) if (art[k] !== undefined) out[k] = art[k]
-  if (art.sadUpdate && typeof art.sadUpdate === 'object') out.sadUpdate = { updatedSections: art.sadUpdate.updatedSections, summary: art.sadUpdate.summary }
+  if (art.architectureUpdate && typeof art.architectureUpdate === 'object') out.architectureUpdate = { updatedSections: art.architectureUpdate.updatedSections, summary: art.architectureUpdate.summary }
   return out
 }
 /** Returns { pinned } for a caller-pinned span, else { scoping, scopeHit }. */
@@ -925,7 +925,7 @@ async function runRepoScoping() {
   return { scoping: ruled, scopeHit: null }
 }
 
-const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture-decision.md'), artPath('sad-update.json'), (a.sad && a.sad.path) || a.sadPath || null].filter(Boolean)
+const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture-decision.md'), artPath('sad-update.json'), a.archPath || null].filter(Boolean)
 /** Returns { mode: 'resumed' | 'ran', trdAuthoring: { ok, artifact } }. */
 async function runTrdAuthoring() {
   const trdHit = resumeFresh('trd')
@@ -948,7 +948,7 @@ async function runTrdAuthoring() {
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: architecture.skipped ? undefined : architectureRulingFor(architecture.artifact),
-    sad: a.sad || { path: a.sadPath },
+    archPath: a.archPath,
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
     repoPath,
@@ -1536,7 +1536,7 @@ const common = {
   beadsEmitted,
   lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
   ...(storyEdges ? { storyEdges } : {}),
-  ...(sadApproval ? { sadApproval } : {}),
+  ...(archApproval ? { archApproval } : {}),
   crossStoryDependencies: crossStory,
   hierarchy,
   repoSpan: repos,
@@ -1555,7 +1555,7 @@ return {
     'finish',
     `1 epic, ${specPairs.length} story/stories, ${tasks.length} task(s) for the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
       `Span: ${repos.join(', ')}${scoping ? '' : ' (pinned by the caller)'}. ` +
-      (architecture.skipped ? 'Architecture skipped. ' : 'Architecture ruled into the SAD. ') +
+      (architecture.skipped ? 'Architecture skipped. ' : 'Architecture ruled and integrated into the effective architecture. ') +
       (removalWork.length ? `${removalWork.length} removal item(s) handed to decomposition. ` : '') +
       writeLine +
       scoringLine +

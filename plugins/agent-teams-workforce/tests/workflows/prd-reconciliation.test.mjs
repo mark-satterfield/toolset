@@ -245,7 +245,7 @@ const RECON_OK = {
 // It used to run at the front of prd-to-spec, ahead of every gate, and feed PRD
 // validation, the architecture panel and the TRD. That made what is deployed in a dev
 // account into a form of requirement. A PRD is WHAT and never knows what is deployed; a
-// TRD is HOW and derives it from the PRD and the SAD on best-practice grounds, blind to
+// TRD is HOW and derives it from the PRD and the architecture on best-practice grounds, blind to
 // the status quo; the SPEC is the only layer that asks "X is what we want, Y is what we
 // have, how do we turn Y into X", and it asks it there because it is the only layer scoped
 // to ONE repository — the only scope at which the question has a concrete answer.
@@ -270,7 +270,7 @@ async function composite(reconResult, { onCalls, args } = {}) {
       if (name.endsWith('prd-validation')) {
         return { ok: true, validationVerdict: 'pass', validatedPrd: { body: call.payload.prd.body }, findings: [] }
       }
-      if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
+      if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
       if (name.endsWith('repo-scoping')) {
         return {
           ok: true,
@@ -311,7 +311,7 @@ test('the comparison runs at SPEC AUTHORING — after the TRD, never before it',
   const idx = (suffix) => seen.findIndex((c) => String(c.name || '').endsWith(suffix))
   const reconIdx = idx('prd-reconciliation')
   assert.ok(reconIdx >= 0, 'the composite still reconciles')
-  assert.ok(reconIdx > idx('architecture'), 'the architecture panel designs from the PRD and the SAD')
+  assert.ok(reconIdx > idx('architecture'), 'the architecture panel designs from the PRD and the architecture')
   assert.ok(reconIdx > idx('repo-scoping'), 'the span is ruled before anything looks at what is deployed')
   assert.ok(reconIdx > idx('trd-authoring'), 'the TRD is HOW, derived from best practice and blind to the status quo')
   assert.ok(reconIdx < idx('spec-authoring'), 'and it lands immediately before the spec that has to turn Y into X')
@@ -328,7 +328,7 @@ test('neither architecture nor the TRD is handed a deployed-state inventory', as
     assert.ok(call, `${suffix} ran`)
     assert.ok(
       !INVENTORY.test(JSON.stringify(call.payload)),
-      `${suffix} must derive from the PRD and the SAD, never from what happens to be deployed`,
+      `${suffix} must derive from the PRD and the architecture, never from what happens to be deployed`,
     )
   }
   // The architecture triage is dispatched by the composite directly rather than through a

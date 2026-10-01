@@ -1,6 +1,6 @@
 # Agentic Workflow Plugin
 
-This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce. The pipeline runs from PRD Creation through a TRD Authoring phase (Phase 2.5) into Specs, with a living arc42 SAD as the architecture source of truth that feeds both the TRD and the Specs.
+This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce. The pipeline runs from PRD Creation through a TRD Authoring phase (Phase 2.5) into Specs, with the architecture documentation as the source of truth that feeds both the TRD and the Specs: the effective architecture in its arc42 folder, the targets proposed for a feature, and the deltas between them.
 
 ## Structure
 

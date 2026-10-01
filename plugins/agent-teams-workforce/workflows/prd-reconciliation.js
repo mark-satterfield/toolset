@@ -54,7 +54,7 @@ const packagesDir = !uiCheck ? '' : hasText(a.packagesDir) ? a.packagesDir.trim(
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
 const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
 
 ${rulingsText}
 
@@ -86,7 +86,7 @@ const requirementScopeBlock = [
       : 'Repository scoping placed no work unit in this repository: no PRD requirement is carried here. Inventory only the TRD requirements below that govern something this repository owns.'
     : 'No work units were placed for this run. Decide from the repository itself which PRD requirements govern something it owns or changes, and leave the others out.',
   technicalIds.length
-    ? `PRD requirements ${technicalIds.join(', ')} are TECHNICAL rules — SAD rules, not product requirements. Leave them out as PRD requirements: they reach a repository only through the TRD requirements below.`
+    ? `PRD requirements ${technicalIds.join(', ')} are TECHNICAL rules — they belong in the architecture, not product requirements. Leave them out as PRD requirements: they reach a repository only through the TRD requirements below.`
     : '',
   trdPath || trdReqs.length
     ? `The TRD${trdPath ? ` at ${trdPath}` : ''} states technical requirements, each on the design element it governs (\`appliesTo\`). A TRD requirement is this repository's when that element is one this repository owns or one of its work units builds:${trdReqs.length ? `\n${trdReqs.map((r) => `- ${r.id}${hasText(r.appliesTo) ? ` [${r.appliesTo.trim()}]` : ''} ${r.requirement || ''}`).join('\n')}` : ' read the TRD for the list.'}`

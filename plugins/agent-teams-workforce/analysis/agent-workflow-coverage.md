@@ -28,17 +28,19 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | ambiguity-detector | prd-validation | fan-out analysts | Detects ambiguous PRD requirements |
 | ambiguity-detector | route-build, route-elaboration | classification | Read-only tie-breaker when routing table can't decide |
 | android-compose-implementer | tdd-green | Green *(implementer roster)* | Android/Compose production code to pass tests |
-| api-contract-designer | architecture | Update SAD *(design roster: restApi)* | OpenAPI contract draft for decided REST surface |
+| api-contract-designer | architecture | Integrate *(design roster: restApi)* | OpenAPI contract draft for decided REST surface |
 | api-documentation-writer | documentation | Documentation *(writer roster)* | API reference docs for shipped APIs |
 | api-gateway-cdk-implementer | tdd-green | Green *(implementer roster)* | API Gateway CDK implementation |
 | api-specification-author | spec-authoring | authoring | API spec from TRD interface requirements |
 | appsync-cdk-implementer | tdd-green | Green *(implementer roster)* | AppSync CDK implementation |
 | appsync-client-subscription-implementer | tdd-green | Green *(implementer roster)* | AppSync client subscription implementation |
 | architecture-boundary-guardian | architecture | Challenge | Guards bounded-context boundaries |
-| architecture-decider | architecture | Decide + Update-SAD deadlock | Rules the unified architecture decision |
+| architecture-conformance-reviewer | — (no workflow) | — | Independent check that one integration applied the approved target |
+| architecture-decider | architecture | Decide + Integrate deadlock | Rules the unified architecture decision |
 | architecture-decision-workflow-coordinator | architecture | Proposals | Frames/fans-out the proposal sub-team |
-| architecture-diagram-author | architecture | Update SAD | Mermaid architecture diagrams from ruling |
-| architecture-fitness-function-author | architecture | Update SAD | Testable fitness functions from ruling |
+| architecture-diagram-author | architecture | Integrate | Mermaid architecture diagrams from ruling |
+| architecture-fitness-function-author | architecture | Integrate | Testable fitness functions from ruling |
+| architecture-maintainer | architecture | Integrate | Integrates the ruling into the effective architecture (maker) |
 | architecture-pattern-challenger | architecture | Challenge | Stress-tests proposed patterns |
 | architecture-tradeoff-skeptic | architecture | Challenge | Stress-tests tradeoffs |
 | athena-redshift-analytics-implementer | tdd-green | Green *(implementer roster)* | Analytics SQL/warehouse implementation |
@@ -88,7 +90,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | documentation-currency-auditor | documentation | Documentation | Read-only staleness audit |
 | documentation-lead | documentation | Documentation | Read-only router: assigns stale docs to writers |
 | domain-boundary-validator | prd-validation | fan-out analysts | Confirms single bounded context |
-| domain-event-modeler | architecture | Update SAD *(design roster: events)* | Models domain events/flows/contracts |
+| domain-event-modeler | architecture | Integrate *(design roster: events)* | Models domain events/flows/contracts |
 | dos-resilience-tester | adversarial | Attack *(infra lane)* | Load/resource-exhaustion probing |
 | dynamodb-access-layer-implementer | tdd-green | Green *(implementer roster)* | DynamoDB access-pattern code |
 | dynamodb-cost-optimizer | tdd-refactor | Refactor *(optimizer roster)* | DynamoDB capacity/cost optimization |
@@ -101,7 +103,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | event-contract-author | spec-authoring | authoring | Authors event contracts |
 | event-driven-consumer-implementer | tdd-green | Green *(implementer roster)* | Event consumer code |
 | event-flow-tester | integration | Integration *(suite roster)* | EventBridge/SQS/Lambda flow tests |
-| event-schema-designer | architecture | Update SAD *(design roster: events)* | Drafts event schemas in envelope format |
+| event-schema-designer | architecture | Integrate *(design roster: events)* | Drafts event schemas in envelope format |
 | event-schema-reviewer | spec-authoring | authoring/review | Reviews event schemas in spec |
 | failure-mode-analyst | architecture | Proposals | Models failure modes per proposal |
 | finops-analyst | deploy | Deploy-readiness *(artifact roster: finops)* | Pre-deploy cost posture |
@@ -109,7 +111,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | frontend-performance-optimizer | tdd-refactor | Refactor *(optimizer roster)* | Frontend perf optimization |
 | github-actions-pipeline-implementer | deploy | Deploy-readiness *(artifact roster: pipeline)* | CI/CD deploy pipeline |
 | glue-etl-implementer | tdd-green | Green *(implementer roster)* | Glue ETL job code |
-| graphql-schema-designer | architecture | Update SAD *(design roster: graphql)* | GraphQL schema draft |
+| graphql-schema-designer | architecture | Integrate *(design roster: graphql)* | GraphQL schema draft |
 | implementation-lead | tdd-green | Green | Read-only router: selects implementers |
 | incident-response-runbook-designer | deploy | Deploy-readiness *(artifact roster: runbook)* | Incident-response/rollback runbook |
 | infrastructure-security-scanner | adversarial | Attack *(infra lane)* | IaC/cloud misconfig scan |
@@ -141,7 +143,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | power-tools-configuration-implementer | tdd-green | Green *(implementer roster)* | Lambda Power Tools config |
 | prd-alignment-verifier | prd-creation | verify | Traceability: requirement→spec→criteria |
 | prd-creation-lead | prd-creation | orchestration | Sequences intake/persona/OKR/draft |
-| prd-trd-traceability-verifier | trd-authoring | check | TRD source traceability: each requirement anchored to a PRD requirement or a SAD entry (not 1:1) |
+| prd-trd-traceability-verifier | trd-authoring | check | TRD source traceability: each requirement anchored to a PRD requirement or an architecture view (not 1:1) |
 | prd-validation-lead | prd-validation | orchestration | Fans PRD to analysts; aggregates |
 | prd-writer | prd-creation | draft | Drafts the PRD (maker) |
 | production-readiness-review-facilitator | deploy | Deploy-readiness | Aggregates evidence → go/no-go |
@@ -158,9 +160,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | run-ledger-writer | prd-to-spec | ledger (final) | Persists run decision ledger |
 | run-ledger-writer | task-to-deploy | ledger (final) | Persists run decision ledger |
 | s3-data-lake-implementer | tdd-green | Green *(implementer roster)* | S3 data-lake layout code |
-| sad-conformance-reviewer | architecture | Update SAD | Independent conformance check of SAD edit |
-| sad-maintainer | architecture | Update SAD | Consolidates ruling into arc42 SAD (maker) |
-| sad-source-extractor | trd-authoring | extract | Extracts SAD §2/4/8 source feed |
 | security-architecture-designer | architecture | Proposals | Threat model / IAM / encryption options |
 | security-test-case-designer | tdd-red | Red *(writer roster)* | Failing security test cases |
 | slo-error-budget-designer | deploy | Deploy-readiness *(artifact roster: slo)* | SLOs / error budgets |
@@ -179,8 +178,8 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | test-strategy-decider | tdd-red | Red | Rules test strategy (pyramid/coverage/env) |
 | trd-author | trd-authoring | author | Authors the TRD (maker) |
 | trd-decider | trd-authoring | deadlock | Rules TRD maker-checker deadlock |
-| trd-validator | trd-authoring | check | Testability/feasibility/SAD-conflict check |
-| ubiquitous-language-writer | architecture | Update SAD *(design roster: newDomain)* | Captures ubiquitous language |
+| trd-validator | trd-authoring | check | Testability/feasibility/architecture-conflict check |
+| ubiquitous-language-writer | architecture | Integrate *(design roster: newDomain)* | Captures ubiquitous language |
 | user-guide-writer | documentation | Documentation *(writer roster)* | User-facing feature guides |
 | vector-search-embeddings-implementer | tdd-green | Green *(implementer roster)* | Vector search / embeddings code |
 | webauthn-implementer | tdd-green | Green *(implementer roster)* | WebAuthn passkey code |

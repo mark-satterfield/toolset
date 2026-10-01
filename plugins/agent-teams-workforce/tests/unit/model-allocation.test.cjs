@@ -16,7 +16,7 @@
  *
  * Deciders and gates are the opposite. They run a handful of times, emit short
  * verdicts, and nothing downstream catches their mistakes — an architecture ruling
- * is consolidated into the SAD and every later spec builds on it.
+ * is integrated into the effective architecture and every later spec builds on it.
  */
 
 const test = require('node:test');
@@ -74,7 +74,7 @@ for (const name of IRREVERSIBLE) {
       modelOf(`${name}.md`),
       'opus',
       `nothing downstream re-examines this agent's ruling — an architecture decision is ` +
-        `consolidated into the SAD and every later spec builds on it. It runs rarely and emits ` +
+        `integrated into the effective architecture and every later spec builds on it. It runs rarely and emits ` +
         `little, so the strongest model costs almost nothing here.`,
     );
   });

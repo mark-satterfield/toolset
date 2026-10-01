@@ -23,8 +23,8 @@ Together they re-judge every Epic and Task. It writes.
 ## Dispatch
 
 ```bash
-if [ -z "${ATW_SAD_PATH}" ]; then
-  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture document (the arc42 SAD) and does not run without it. Set ATW_SAD_PATH in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
+if [ -z "${ATW_ARCH_PATH}" ]; then
+  echo "REFUSED: ATW_ARCH_PATH is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Set ATW_ARCH_PATH in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"
@@ -32,7 +32,7 @@ RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 echo "REPO=$REPO"
 echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 echo "RUN=$RUN"
-echo "SAD=${ATW_SAD_PATH}"
+echo "ARCH=${ATW_ARCH_PATH}"
 echo "PROJECT=${ATW_PROJECT_ROOT}"
 ```
 
@@ -45,7 +45,7 @@ Workflow({name: "agent-teams-workforce:wsjf-scoring", args: {
   repoPath:    "<REPO>",
   pluginRoot:  "<ROOT>",
   workDir:     "<REPO>/.claude/workflow-runs/wsjf-scoring/<RUN>",
-  sadPath:     "<SAD>",
+  archPath:    "<ARCH>",
   projectRoot: "<PROJECT>",
   all:         <true when $ARGUMENTS contains --all, otherwise false>,
   rejudge:     <true when $ARGUMENTS contains --rejudge, otherwise false>

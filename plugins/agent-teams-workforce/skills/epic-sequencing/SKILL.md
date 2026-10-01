@@ -4,11 +4,11 @@ description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it to ONE Epic: read its
   full PRD, answer the foundation-layer checklist (drives, rests on or not touched for each
   of nine layers) and name the other architecture decisions it drives and rests on, check
-  the SAD, find the related Epics by the checklist, read their PRDs in full, and apply the
+  the effective architecture, find the related Epics by the checklist, read their PRDs in full, and apply the
   test in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
   dependency, a judgment about the order in which architecture is established: it exists
   exactly where an architecture decision one Epic rests on should be designed from another
-  Epic's requirements first, and the SAD does not already settle it. Edges decide
+  Epic's requirements first, and the effective architecture does not already settle it. Edges decide
   ELIGIBILITY (what may be elaborated at all); WSJF decides PRIORITY among what is
   eligible, and computes RR-OE from these edges. Use when proposing, reviewing or
   correcting the architecture dependencies of an Epic.
@@ -22,8 +22,8 @@ produced it.
 ## What an Epic dependency is
 
 An Epic is a PRD: a business requirement, a WHAT and not a HOW. When an Epic is elaborated,
-its architecture is designed, and a decision designed then becomes part of the SAD that
-every later Epic is designed against. So the order Epics are elaborated in decides which
+its architecture is designed, and the design made then becomes part of the effective
+architecture that every later Epic is designed against. So the order Epics are elaborated in decides which
 requirements each architecture decision is designed from. An edge between two Epics is an
 architecture dependency, and it answers one question: **which requirements should this
 architecture decision be designed from first?**
@@ -39,27 +39,29 @@ record exists; that one reads data from or calls a capability of another — eac
 settled among Tasks, which are created after the architecture is settled and carry ordinary
 build dependencies of their own.
 
-A decision the SAD already settles is designed; no Epic edge is needed for it. As the SAD
-accumulates decisions, fewer Epic edges exist.
+A decision the effective architecture already settles is designed; no Epic edge is needed
+for it. As the effective architecture grows, fewer Epic edges exist.
 
-### Only an `effective` SAD entry settles anything
+### Only an `effective` view settles anything
 
-A SAD entry settles a decision when, and only when, its frontmatter carries
-`lifecycle_state: effective`. An entry at `in-review`, `draft`, or any other state settles
-NOTHING, however normatively it is worded and whatever date it carries.
+An architecture view settles a decision when, and only when, its file's frontmatter carries
+`lifecycle_state: effective`. A view at `in-review`, or in any other state, settles NOTHING,
+however normatively it is worded and whatever date it carries.
 
 Read the state; never infer it. A dated ruling, a MUST, a table of values and a confident
-tone are all properties of the wording, and the wording is what an unvetted entry has most
-of. `lifecycle_state` is per document, and the only documents marked `effective` are those
-the architecture step of a `prd-to-spec` elaboration covered: every SAD document that PRD
+tone are all properties of the wording, and the wording is what an unreviewed view has most
+of. `lifecycle_state` is per file, and the only files marked `effective` are those the
+architecture step of a `prd-to-spec` elaboration covered: every architecture file that PRD
 relies on (reviewed and approved as it stands, or updated), changes or creates — that step
 is the sole writer of the value.
 
-So when an entry that bears on a decision is not `effective`, the SAD does not settle that
-decision, and the edge test proceeds as though the entry were absent. Record the state you
-read in the entry's `sadCheck`, so a later reader can tell an entry that settled the
-question from one that only sounded like it did. An assessment that drops an edge by citing
-an entry that is not `effective` has ordered the portfolio on an unchecked claim.
+The views of an element are found through the catalog: each view's frontmatter names its
+`subject` and every element it `shows`. So when a view that bears on a decision is not
+`effective`, the effective architecture does not settle that decision, and the edge test
+proceeds as though the view were absent. Record the view you consulted and the state you
+read in the edge's `archCheck`, so a later reader can tell a view that settled the question
+from one that only sounded like it did. An assessment that drops an edge by citing a view
+that is not `effective` has ordered the portfolio on an unchecked claim.
 
 ## What an edge decides
 
@@ -80,7 +82,7 @@ that passes the test below, and none that does not.
 ## The test
 
 Set an edge from A to B where an architecture decision B rests on should be designed from
-A's requirements first, and the SAD does not already settle that decision — and nowhere
+A's requirements first, and the effective architecture does not already settle that decision — and nowhere
 else. Not "this feels earlier", not "this is more important", and never "this must exist or
 be built first".
 
@@ -103,7 +105,7 @@ while an extra one only delays an Epic until its blocker is elaborated.
 
 A foundation Epic is one whose requirements drive a foundation layer — networking, the
 chassis, identity, the event platform, or any other layer on the checklist below. It is
-upstream of every Epic that rests on that layer, unless an `effective` SAD entry already
+upstream of every Epic that rests on that layer, unless an `effective` view already
 settles the layer. Those Epics are found by the checklist, not by text search: an Epic that
 answers "rests on" for a layer has an edge from each Epic that answers "drives" for it.
 
@@ -138,10 +140,10 @@ another Epic set.
    "not touched", with the requirement that decides the answer. No layer is skipped, and
    every answer goes in the written reasoning. Then name every other architecture decision
    the Epic's requirements should drive or that it rests on.
-3. Check each layer and decision against the SAD, and drop every one the SAD already
-   settles. An entry settles a decision only when its frontmatter reads
-   `lifecycle_state: effective` — read that field on every entry you rely on, and treat an
-   entry in any other state as absent.
+3. Check each layer and decision against the effective architecture, and drop every one it
+   already settles. A view settles a decision only when its file's frontmatter reads
+   `lifecycle_state: effective` — read that field on every view you rely on, and treat a
+   view in any other state as absent.
 4. Find the related Epics by the checklist. For each layer the Epic rests on, the related
    Epics are those whose requirements drive that layer; for each layer it drives, every
    Epic that rests on it. Answer the checklist for those Epics from the index and their
@@ -167,7 +169,7 @@ step finds no identity architecture and designs one from a recovery flow's requi
 alone; sign-up / sign-in then either fits itself onto that minimal design, redesigns it and
 invalidates what password reset was elaborated against, or halts for attention. The edge
 exists to stop that, and an edge that stops nothing of that kind does not exist. Once the
-SAD settles the identity architecture, no identity Epic needs an edge for it.
+effective architecture settles the identity architecture, no identity Epic needs an edge for it.
 
 ## The edge file
 
@@ -175,7 +177,8 @@ SAD settles the identity architecture, no identity Epic needs an edge for it.
 {"edges": [
   {"from": "<blocker epic id>", "to": "<blocked epic id>",
    "reason": "the identity architecture should be designed from sign-up/sign-in requirements, not password reset's",
-   "confidence": "high"}
+   "confidence": "high",
+   "archCheck": "<the view consulted, the lifecycle_state read there, and why it leaves the decision open>"}
 ],
  "withdrawn": [
   {"from": "<blocker epic id>", "to": "<blocked epic id>",
@@ -194,7 +197,7 @@ in either list and is never withdrawn. Both ends of every edge are Epics; valida
 any other edge.
 
 Alongside the file, write the reasoning in prose: the foundation checklist with an answer
-for every layer, the other decisions named, the SAD check on each, the PRDs found related,
+for every layer, the other decisions named, the architecture check on each, the PRDs found related,
 and the test applied to each edge and each withdrawal. The
 edges are the residue of that reasoning, and the reasoning is what the next assessment
 revises.
@@ -209,11 +212,11 @@ revises.
   actually drive the decision.
 - No edge onto a closed Epic, and none out of one.
 - The foundation checklist is complete: every layer has an answer, and every layer the Epic
-  rests on has an edge from the Epic that drives it, or cites an `effective` SAD entry that
+  rests on has an edge from the Epic that drives it, or cites an `effective` view that
   settles it.
 - Every edge survives the test stated out loud. If the reason does not name an architecture
-  decision that should be designed from the upstream Epic's requirements and that the SAD
-  does not already settle, delete the edge. A reason about something existing, being built,
+  decision that should be designed from the upstream Epic's requirements and that the
+  effective architecture does not already settle, delete the edge. A reason about something existing, being built,
   being deployed, being testable, or being read or called at runtime is a Task dependency;
   delete the edge.
 
@@ -225,10 +228,10 @@ revises.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which
   belongs to Tasks.
-- Adding an edge for a decision the SAD already settles — one whose entry reads
-  `lifecycle_state: effective`.
-- Dropping an edge by citing a SAD entry that is not `effective`. The wording of an
-  unvetted entry is not evidence that the decision was made, and this is the error that
+- Adding an edge for a decision the effective architecture already settles — one whose view
+  reads `lifecycle_state: effective`.
+- Dropping an edge by citing a view that is not `effective`. The wording of an
+  unreviewed view is not evidence that the decision was made, and this is the error that
   most easily ships as a confident reason nobody re-reads.
 - Withdrawing a standing edge without a reason that answers the reason recorded for it.
 - Leaving out an edge because you are unsure of it. Draw it at `low` confidence.

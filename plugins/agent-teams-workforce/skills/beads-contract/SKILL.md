@@ -142,7 +142,7 @@ Build contract, written by the decomposition phase onto each Task and read back 
 | `acceptance_criteria` | JSON array of strings | one home among several; never required, see above |
 | `definition_of_done` | JSON array of strings | passed to the Red and Green phases |
 | `requirement_ids` | JSON array of strings | traceability |
-| `decision_ids` | JSON array of SAD entry tags | the architecture the Task was designed against; every phase that writes code receives it |
+| `decision_ids` | JSON array of architecture view paths | the architecture the Task was designed against; every phase that writes code receives it |
 | `surfaces` | JSON array, **or the literal `unknown`** | never required |
 | `test_strategy` | JSON object, **or the literal `unknown`** | never required |
 
@@ -167,11 +167,11 @@ recomputed. A Story is keyed by the repository it covers, a Task by its reposito
 of its title. Without it a second run of the same Epic has nothing to match against and writes a
 complete second set of Stories and Tasks beside the first. `elab_follows` names the Task a
 follow-up Task replaces — set when the original was already built and therefore was not
-rewritten. **`decision_ids` is the SAD entry tags the item was designed against**, as a compact
-JSON list, written by elaboration on Stories and Tasks. On a Task it is part of the build
-contract: it carries the architecture to the builder, and it is how a changed architecture
-decision finds the work resting on it. It holds the SAD's own per-entry tags because those
-survive a rewording while a statement-derived id does not.
+rewritten. **`decision_ids` is the architecture views the item was designed against**, as a compact
+JSON list, written by elaboration on Stories and Tasks: each is a view's path relative to the
+arc42 folder, with `#<heading>` when the item rests on one part of the view. On a Task it is
+part of the build contract: it carries the architecture to the builder, and it is how a change
+to a view finds the work resting on it.
 
 WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`

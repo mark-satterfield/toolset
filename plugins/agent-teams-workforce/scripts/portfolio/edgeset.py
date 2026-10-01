@@ -95,9 +95,10 @@ class Edge:
     blocked: str
     reason: str = ""
     confidence: str = ""
-    #: What the SAD was checked for, and its verdict: why the decision this edge orders
-    #: is not one the SAD already settles. Required on every kept edge.
-    sad_check: str = ""
+    #: What the architecture was checked for, and its verdict: why the decision this edge
+    #: orders is not one an effective architecture file already settles. Required on every
+    #: kept edge.
+    arch_check: str = ""
     #: The answer to the recorded reason an earlier assessment withdrew this edge for.
     #: Required only on an edge a withdrawal record covers.
     answers: str = ""
@@ -186,7 +187,7 @@ def _parse(entries: list[dict]) -> list[Edge]:
                 blocked=blocked,
                 reason=str(entry.get("reason") or ""),
                 confidence=str(entry.get("confidence") or ""),
-                sad_check=str(entry.get("sadCheck") or ""),
+                arch_check=str(entry.get("archCheck") or ""),
                 answers=str(entry.get("answers") or ""),
             )
         )
@@ -508,7 +509,7 @@ def validate(
     )
     outside: list[str] = []
     missing_reason: list[str] = []
-    missing_sad_check: list[str] = []
+    missing_arch_check: list[str] = []
     readds_withdrawn: list[str] = []
     unaccounted: list[str] = []
     withdrawn_not_owned: list[str] = []
@@ -532,9 +533,10 @@ def validate(
         }
         kept = {_pair(e) for e in edges}
         dropped = {_pair(e) for e in withdrawn}
-        # A SAD check is the Epic edge test; a Task edge is a build dependency and carries none.
-        missing_sad_check = (
-            sorted({_pair(e) for e in edges if not e.sad_check.strip()})
+        # An architecture check is the Epic edge test; a Task edge is a build dependency
+        # and carries none.
+        missing_arch_check = (
+            sorted({_pair(e) for e in edges if not e.arch_check.strip()})
             if level == "epic"
             else []
         )
@@ -581,7 +583,7 @@ def validate(
         "badScope": bad_scope or None,
         "outsideScope": outside,
         "missingReason": missing_reason,
-        "missingSadCheck": missing_sad_check,
+        "missingArchCheck": missing_arch_check,
         "readdsWithdrawn": readds_withdrawn,
         "unaccounted": unaccounted,
         "withdrawnNotOwned": withdrawn_not_owned,

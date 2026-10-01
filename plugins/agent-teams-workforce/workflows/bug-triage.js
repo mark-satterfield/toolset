@@ -78,7 +78,7 @@ function settleTranscript(err, label) {
 // input has NO reason to produce a different result; it is a hope with a token cost, and
 // this project removed exactly those blind retries after they burned tokens to exhaustion
 // on attempts that could not succeed. The only sanctioned re-dispatch is one with
-// materially CHANGED input — for the SAD batches, the split.
+// materially CHANGED input, such as the same work split into smaller batches.
 //
 // ANYTHING UNRECOGNISED IS DETERMINISTIC, and that direction is deliberate rather than
 // defensive. Guessing "transient" on an unknown error invents a retry that is forbidden
@@ -359,7 +359,7 @@ const repo = repoKnown ? bead.repoPath : '(NOT KNOWN — locating it is part of 
 const RULINGS_CAP = 8192
 const rulingsText = typeof __a.standingRulings === 'string' ? __a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
 const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
 
 ${rulingsText}
 
@@ -512,7 +512,7 @@ if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resol
 const sizing = await settleAgent(
   `${rulingsBlock}Size this bug. It has been diagnosed; decide whether its honest remedy is a FIX or a REDESIGN. You are READ-ONLY and you are NOT proposing the remedy — only sizing it.
 
-Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision the SAD does not cover, or amount to rebuilding a component rather than correcting it.
+Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision the effective architecture does not cover, or amount to rebuilding a component rather than correcting it.
 
 Answer "fix" when the defect is a mistake in existing behavior that can be corrected within the current design — the common case. Do not inflate a real bug into a project; most bugs are bugs.
 

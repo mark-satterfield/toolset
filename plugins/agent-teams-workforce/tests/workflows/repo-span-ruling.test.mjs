@@ -152,7 +152,7 @@ function compositeWorkflows({ scopingResult, outOfRepoFindings = [] }) {
     if (name.endsWith('gate-enforce')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
-    if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
+    if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
     if (name.endsWith('repo-scoping')) return scopingResult
     if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
     if (name.endsWith('spec-authoring')) {

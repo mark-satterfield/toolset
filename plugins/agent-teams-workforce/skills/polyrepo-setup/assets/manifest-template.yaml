@@ -93,7 +93,7 @@ conventions:
     shared: <true | false>
 
 # No top-level `rules`, `documentation`, or `search_recipes` sections.
-# Architectural/security/deployment rules live in the project's SAD,
+# Architectural/security/deployment rules live in the project's architecture documentation,
 # AGENTS.md, or crosscutting-concerns doc; doc locations and search
 # recipes are "where to find it" facts that belong in the knowledge
 # store (.polyrepo/knowledge.yaml, owned by polyrepo-info), not in the

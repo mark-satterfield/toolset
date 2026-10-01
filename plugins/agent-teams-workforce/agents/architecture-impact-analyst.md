@@ -5,8 +5,8 @@ description: >-
   created, changed or retired, it finds every Epic, Story, Task and document
   citing them and rules on each one: unaffected, not yet elaborated, elaborated
   but unbuilt, or already built. Read-only — it changes no bead and writes no
-  code. Use after an architecture ruling created, changed or retired SAD
-  entries.
+  code. Use after an architecture ruling created, changed or retired
+  architecture views.
 tools: Read, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Edit, Write, Agent
 model: opus

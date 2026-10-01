@@ -64,7 +64,7 @@ const story = a.story || {}
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
 const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
 
 ${rulingsText}
 
@@ -190,7 +190,7 @@ Every task also carries its CONTRACT, taken from the spec documents listed below
 - \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each. At least one.
 - \`specSections\`: the headings or anchors inside those documents that define this task.
 - \`requirementIds\`: the PRD/TRD requirement ids the task satisfies, as the documents write them.
-- \`decisionIds\`: the SAD entry ids (\`C-…\`, \`S-…\`, \`X-…\`, \`AD-…\`) the spec documents cite for the part of the design this task builds. Copy them; never invent one.
+- \`decisionIds\`: the architecture views the spec documents cite for the part of the design this task builds, each a path relative to the arc42 folder with its \`#<heading>\` where the spec gives one. Copy them; never invent one.
 - \`definitionOfDone\`: the Definition of Done items that apply to this task, from the spec's DoD.
 - \`surfaces\`: the boundaries the task touches, from the enum only (${SURFACES.join(', ')}). An empty list means it touches none of them; null means the spec does not settle it.
 And once for the whole set, \`testStrategy\`: the test strategy the spec states (pyramid, coverageThreshold, envMatrix, and the section it came from as \`source\`), or null when the spec states none.

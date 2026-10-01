@@ -1,7 +1,7 @@
 export const meta = {
   name: 'seed-portfolio',
   description:
-    "Seeds the Epic portfolio: runs dependency-assessment (with `score: false`) for every Epic in `epics`, one after another in the order given, then runs wsjf-scoring once. An Epic whose assessment fails is reported in `stoppedAt` and `remaining` and the seeding continues. With `apply: false` every assessment proposes only and nothing is scored. A path arg left out is read from the environment: `repoPath` from $ATW_CONTROL_REPO, `sadPath` from $ATW_SAD_PATH, `projectRoot` from $ATW_PROJECT_ROOT, `pluginRoot` from the install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records, and `workDir` from mkdtemp; when a required one has no value the run refuses before dispatching any agent, naming the arg and the variable that supplies it.",
+    "Seeds the Epic portfolio: runs dependency-assessment (with `score: false`) for every Epic in `epics`, one after another in the order given, then runs wsjf-scoring once. An Epic whose assessment fails is reported in `stoppedAt` and `remaining` and the seeding continues. With `apply: false` every assessment proposes only and nothing is scored. A path arg left out is read from the environment: `repoPath` from $ATW_CONTROL_REPO, `archPath` from $ATW_ARCH_PATH, `projectRoot` from $ATW_PROJECT_ROOT, `pluginRoot` from the install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records, and `workDir` from mkdtemp; when a required one has no value the run refuses before dispatching any agent, naming the arg and the variable that supplies it.",
   whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed before every Epic and Task is scored by wsjf-scoring.',
   phases: [
     { title: 'Assess', detail: 'dependency-assessment for each Epic, one after another, with score: false' },
@@ -94,7 +94,7 @@ async function settleAgent(prompt, opts) {
 //   workDir:      string,    // absolute path of a directory for this run's files
 //   since:        string,    // ISO 8601 instant the seeding began, reported back
 //   epics:        string[],  // the open Epics to assess, in order
-//   sadPath?:     string,
+//   archPath?:    string,
 //   projectRoot?: string,
 //   apply?:       boolean,   // false: every assessment proposes only; nothing is written. Default true.
 // }
@@ -109,8 +109,8 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // The environment variable that supplies each path arg the caller leaves out. pluginRoot has none of
 // its own: it is the agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json
 // records. workDir has none either: a run without one gets a new directory from mkdtemp.
-const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', sadPath: 'ATW_SAD_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
-const OPTIONAL_PATH_ARGS = ['sadPath', 'projectRoot']
+const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', archPath: 'ATW_ARCH_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
+const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_SCHEMA = {
   type: 'object',
@@ -121,7 +121,7 @@ const RESOLVE_SCHEMA = {
 const RESOLVE_PY = `import json, os, sys, tempfile, time
 from pathlib import Path
 name, wanted = sys.argv[1], json.loads(sys.argv[2])
-env_of = {"repoPath": "ATW_CONTROL_REPO", "sadPath": "ATW_SAD_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
+env_of = {"repoPath": "ATW_CONTROL_REPO", "archPath": "ATW_ARCH_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
 out, problems = {}, {}
 def from_env(key):
     var = env_of[key]
@@ -132,7 +132,7 @@ def from_env(key):
         return f"\${var} is {value!r}, which is not an existing absolute path"
     out[key] = os.path.normpath(value)
     return ""
-for key in ("repoPath", "sadPath", "projectRoot"):
+for key in ("repoPath", "archPath", "projectRoot"):
     if key in wanted:
         why = from_env(key)
         if why:
@@ -171,7 +171,7 @@ out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
 print(json.dumps(out))`
 // Fills each path arg the caller left out, and only from the environment: repoPath from
-// $ATW_CONTROL_REPO, sadPath from $ATW_SAD_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
+// $ATW_CONTROL_REPO, archPath from $ATW_ARCH_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the
 // install for $ATW_CONTROL_REPO first, else the user-scope one), and workDir from mkdtemp. One runner
 // session reads them, dispatched only when an arg is missing. Returns { args, missing, problems }:
@@ -237,7 +237,7 @@ const work = String(a.workDir || '').replace(/\/+$/, '')
 const file = (name) => `${work}/${name}`
 const contextDir = file('context')
 const applies = a.apply !== false
-const project = { repoPath: a.repoPath, pluginRoot: a.pluginRoot, sadPath: a.sadPath, projectRoot: a.projectRoot }
+const project = { repoPath: a.repoPath, pluginRoot: a.pluginRoot, archPath: a.archPath, projectRoot: a.projectRoot }
 const count = (v) => (Array.isArray(v) ? v.length : typeof v === 'number' ? v : 0)
 const queue = Array.isArray(a.epics) ? a.epics.filter((e) => typeof e === 'string' && e) : []
 const assessed = []

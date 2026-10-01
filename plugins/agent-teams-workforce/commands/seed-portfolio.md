@@ -28,8 +28,8 @@ continues with the other Epics and still scores. An edge between two Epics is an
 ## Dispatch
 
 ```bash
-if [ -z "${ATW_SAD_PATH}" ]; then
-  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:seed-portfolio judges against the architecture document (the arc42 SAD) and does not run without it. Export ATW_SAD_PATH in your shell environment and start a new session."
+if [ -z "${ATW_ARCH_PATH}" ]; then
+  echo "REFUSED: ATW_ARCH_PATH is not set. /agent-teams-workforce:seed-portfolio judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Export ATW_ARCH_PATH in your shell environment and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"
@@ -43,7 +43,7 @@ echo "REPO=$REPO"
 echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 echo "WORK=$WORK"
 echo "SINCE=$SINCE"
-echo "SAD=${ATW_SAD_PATH}"
+echo "ARCH=${ATW_ARCH_PATH}"
 echo "PROJECT=${ATW_PROJECT_ROOT}"
 ```
 
@@ -64,7 +64,7 @@ Workflow({name: "agent-teams-workforce:seed-portfolio", args: {
   workDir:     "<WORK>",
   since:       "<SINCE>",
   epics:       <EPICS>,
-  sadPath:     "<SAD>",
+  archPath:    "<ARCH>",
   projectRoot: "<PROJECT>"
 }})
 ```

@@ -58,13 +58,13 @@ const materialInventory = hasText(reconciliation.materialInventory) ? reconcilia
 const architecture = a.architecture || null
 const technicalReqs = (Array.isArray(a.requirementClasses) ? a.requirementClasses : []).filter((r) => r && r.class === 'technical' && hasText(r.id))
 const technicalBlock = technicalReqs.length
-  ? `\n\nTECHNICAL RULES IN THE PRD. These requirements are rules about how the system is built, recorded in the SAD, not product requirements:\n${technicalReqs.map((r) => `- ${r.id}: ${r.rule || r.requirement || ''}${hasText(r.governs) ? ` (governs: ${r.governs})` : ''}`).join('\n')}\nA technical rule makes no work unit of its own. A unit lists one in requirementIds only when the unit builds the kind of thing the rule governs; the rule then binds that thing and nothing else.`
+  ? `\n\nTECHNICAL RULES IN THE PRD. These requirements are rules about how the system is built, which belong in the architecture, not product requirements:\n${technicalReqs.map((r) => `- ${r.id}: ${r.rule || r.requirement || ''}${hasText(r.governs) ? ` (governs: ${r.governs})` : ''}`).join('\n')}\nA technical rule makes no work unit of its own. A unit lists one in requirementIds only when the unit builds the kind of thing the rule governs; the rule then binds that thing and nothing else.`
   : ''
 const architectureSkipped = !architecture || architecture.skipped === true
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
 const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output.
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output.
 
 ${rulingsText}
 

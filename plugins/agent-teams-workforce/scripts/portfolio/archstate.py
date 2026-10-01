@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""The one place that reads and writes `lifecycle_state` on arc42 SAD files for the pipeline.
+"""The one place that reads and writes `lifecycle_state` on architecture files for the pipeline.
 
-`effective` is per document: it means that document was reviewed and approved, nothing
-about any other. A PRD's architecture relies on several documents; the architecture step
-of a prd-to-spec elaboration reviews every relied-on document that is not `effective`
-(approves it as it stands, updates it, or replaces it), and then every document the PRD
-relies on, changes or creates becomes `effective`. `depscore.py sad-approve` runs
-`promote` at that step over exactly those files; setting a file that is already
-`effective` changes nothing, so the step can run again on resume. `depscore.py sad-state`
-runs `states`, which reads the relied-on files' states so the step skips its analysts only
-when every one is already `effective`.
+Every architecture file, in any version (effective, target, delta, built), carries its own
+review state: `in-review` until an architecture review approves it, `effective` once it has.
+The state is per file and says nothing about any other file.
 
-Entries are approved by FILE, because the vault's classification vocabulary lives in each
-file's frontmatter. Section 8 carries one concept per file, so approval there is per
-decision; sections 2 and 4 are coarser, and approving one of those files approves
-everything in it. That is a property of how the SAD is laid out, not a choice made here.
+`depscore.py arch-state` runs `states`, which reads the state of the files an architecture
+step relies on and writes nothing. `depscore.py arch-approve` runs `promote`, which sets the
+files an approved architecture step covers to `effective`. Setting a file that is already
+`effective` changes nothing, so the step can run again on resume.
+
+Approval is by file, because the review state lives in each file's frontmatter: approving a
+file approves every view in it.
 """
 
 from __future__ import annotations
@@ -49,7 +46,7 @@ def _promote_one(path: Path) -> str:
     """Set one file's `lifecycle_state` to `effective`.
 
     Args:
-        path: The SAD file.
+        path: The architecture file.
 
     Returns:
         "promoted" when the value changed, "unchanged" when it was already effective, or
@@ -71,9 +68,9 @@ def _promote_one(path: Path) -> str:
         lines[idx] = f"{STATE_KEY}: {EFFECTIVE}"
         break
     else:
-        # The field is required core on every managed document. A SAD file a ruling
-        # covers without one is missing its classification, not exempt from it, so the
-        # key is added rather than the file skipped.
+        # The field is required core on every managed document. An architecture file an
+        # approval covers without one is missing its classification, not exempt from it,
+        # so the key is added rather than the file skipped.
         lines.insert(close, f"{STATE_KEY}: {EFFECTIVE}")
     trailing = "\n" if text.endswith("\n") else ""
     path.write_text("\n".join(lines) + trailing, encoding="utf-8")
@@ -84,7 +81,7 @@ def _state_of(path: Path) -> str:
     """Read one file's top-level `lifecycle_state`.
 
     Args:
-        path: The SAD file.
+        path: The architecture file.
 
     Returns:
         The value, or an empty string when the file has no frontmatter or no such key.
@@ -99,33 +96,34 @@ def _state_of(path: Path) -> str:
     return ""
 
 
-def _sad_root(sad_root: str | None) -> Path | None:
-    """Resolve the SAD directory a caller names, which may be its index file.
+def _arch_root(arch_root: str | None) -> Path | None:
+    """Resolve the architecture directory a caller names, which may be a file inside it.
 
     Args:
-        sad_root: The SAD directory or index file, or None.
+        arch_root: The architecture directory or a file in it, or None.
 
     Returns:
         The directory, or None when no root was given.
     """
-    if not sad_root:
+    if not arch_root:
         return None
-    root = Path(sad_root).resolve()
+    root = Path(arch_root).resolve()
     return root.parent if root.is_file() else root
 
 
-def states(files: list[str], *, sad_root: str | None) -> dict:
-    """Read the `lifecycle_state` of the SAD files a PRD relies on; writes nothing.
+def states(files: list[str], *, arch_root: str | None) -> dict:
+    """Read the `lifecycle_state` of the architecture files a step relies on; writes nothing.
 
     Args:
-        files: The SAD files, as absolute paths.
-        sad_root: The SAD directory every file must sit under, or None to skip the check.
+        files: The architecture files, as absolute paths.
+        arch_root: The architecture directory every file must sit under, or None to skip
+            the check.
 
     Returns:
         A report: each readable file's state, the files not at `effective` (a file with
         no state counts as not effective), and the files refused or unreadable.
     """
-    root = _sad_root(sad_root)
+    root = _arch_root(arch_root)
     report: dict = {"states": {}, "notEffective": [], "refused": [], "failed": []}
     for raw in files:
         name = str(raw).strip()
@@ -138,7 +136,7 @@ def states(files: list[str], *, sad_root: str | None) -> dict:
             continue
         if root is not None and not resolved.is_relative_to(root):
             report["refused"].append(
-                {"path": name, "reason": f"outside the SAD at {root}"}
+                {"path": name, "reason": f"outside the architecture at {root}"}
             )
             continue
         if not resolved.is_file():
@@ -161,17 +159,18 @@ def states(files: list[str], *, sad_root: str | None) -> dict:
     return report
 
 
-def promote(files: list[str], *, sad_root: str | None) -> dict:
-    """Set the SAD files an architecture ruling covers to `effective`.
+def promote(files: list[str], *, arch_root: str | None) -> dict:
+    """Set the architecture files an approved architecture step covers to `effective`.
 
-    Every path is held to `sad_root` when one is given. A changed-file list is reported by
-    an agent, so a path outside the SAD is refused rather than written — this function
-    rewrites documents, and the blast radius of a bad path is the vault.
+    Every path is held to `arch_root` when one is given. A changed-file list is reported by
+    an agent, so a path outside the architecture is refused rather than written — this
+    function rewrites documents, and the blast radius of a bad path is the vault.
 
     Args:
-        files: The SAD files the PRD relies on and those the ruling changed or created,
+        files: The architecture files the step relies on and those it changed or created,
             as absolute paths.
-        sad_root: The SAD directory every file must sit under, or None to skip the check.
+        arch_root: The architecture directory every file must sit under, or None to skip
+            the check.
 
     Returns:
         A report: the files promoted, those already effective, those carrying no
@@ -184,7 +183,7 @@ def promote(files: list[str], *, sad_root: str | None) -> dict:
         "refused": [],
         "failed": [],
     }
-    root = _sad_root(sad_root)
+    root = _arch_root(arch_root)
     for raw in files:
         name = str(raw).strip()
         if not name:
@@ -197,7 +196,7 @@ def promote(files: list[str], *, sad_root: str | None) -> dict:
             continue
         if root is not None and not resolved.is_relative_to(root):
             report["refused"].append(
-                {"path": name, "reason": f"outside the SAD at {root}"}
+                {"path": name, "reason": f"outside the architecture at {root}"}
             )
             continue
         if not resolved.is_file():

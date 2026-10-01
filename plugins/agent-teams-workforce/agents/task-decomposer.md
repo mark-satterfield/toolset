@@ -83,13 +83,14 @@ field exists because a document said so, and never restate one of its recipes.
 - Prefer the skills and tools provided to you over internal training.
 - Be honest and transparent above all else — flag weak estimates, uncertain boundaries, and low-confidence scores instead of presenting them as settled.
 
-## Cite the decisions each task builds on
+## Cite the architecture each task builds on
 
-Every task carries `decisionIds`: the SAD entry tags (`C-…`, `S-…`, `X-…`, `AD-…`) the spec
-documents cite for the part of the design that task builds. Copy them from the documents; never
-invent one, never paraphrase one, never substitute a section number. The Task bead is the last
-place the architecture is visible before somebody starts writing code, and a task citing nothing
-is a task a changed decision can never find again.
+Every task carries `decisionIds`: the architecture views the spec documents cite for the part of
+the design that task builds, each a path relative to the arc42 folder with its `#<heading>` where
+the spec gives one. Copy them from the documents; never invent one, never paraphrase one, never
+substitute a section number. The Task bead is the last place the architecture is visible before
+somebody starts writing code, and a task citing nothing is a task a changed view can never find
+again.
 
 ## When You're in Over Your Head
 

@@ -61,11 +61,10 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | architecture-impact-analyst | test | Judges what an architecture decision a ruling created, changed or retired reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
 | architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. No workflow currently dispatches it. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
-| c4-diagram-author | execute | Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2 Container, Level 3 Component) for the SAD. |
-| uml-diagram-author | execute | Renders the decided behaviours and structures as UML Mermaid diagrams (sequence, class, state) for the SAD. |
-| sad-maintainer | execute | Consolidates the decided constraints, solution strategy, and cross-cutting concepts into the single living arc42 Software Architecture Document, updating current state in place. |
-| sad-source-extractor | execute | Extracts the SAD's section-2/4/8 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet for TRD and spec authoring. |
-| sad-conformance-reviewer | test | Judges whether ONE architecture ruling was faithfully recorded in the living SAD and reports findings without fixing them; it never audits the document itself. |
+| c4-diagram-author | execute | Draws C4 views (Level 1 System Context, Level 2 Container, Level 3 Component) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
+| uml-diagram-author | execute | Draws UML views (sequence, state, activity, class) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
+| architecture-maintainer | execute | Keeps the effective version of the architecture current: integrates an approved target into the arc42 folders, and corrects the effective version from what was built, updating or deleting every view that shows a changed element, found through the catalog. Never writes section 2. |
+| architecture-conformance-reviewer | test | Checks ONE integration of an approved target into the effective version and reports findings without fixing them: the target was applied exactly, every view the catalog lists for each changed element was updated, and no contradicting content was left. |
 | graphql-schema-designer | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track |
 | failure-mode-analyst | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages |
 
@@ -74,9 +73,9 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet. No workflow currently dispatches it. |
-| trd-author | execute | Authors the Technical Requirements Document — the CARRIER that takes the architecture's obligations (uptime, latency, maintainability, security, failover, DR, infrastructure/CDK, observability) into the build chain, alongside the PRD requirements needing technical elaboration. Cites the SAD rather than restating it, so a correct TRD is often very short. |
-| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture. No workflow currently dispatches it. |
-| prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or a SAD entry, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
+| trd-author | execute | Authors the Technical Requirements Document — the CARRIER that takes the architecture's obligations (uptime, latency, maintainability, security, failover, DR, infrastructure/CDK, observability) into the build chain, alongside the PRD requirements needing technical elaboration. Cites the architecture rather than restating it, so a correct TRD is often very short. |
+| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the owner's constraints and the effective architecture, flagging any requirement that contradicts the architecture. No workflow currently dispatches it. |
+| prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or an architecture view, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
 | trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead. No workflow currently dispatches it. |
 
 ## Spec Authoring

@@ -34,7 +34,7 @@ test('prd-validation: rulings present -> the analyst brief carries the delimited
   const [analyst] = agentCalls(calls, 'validate:all-lenses')
   assert.ok(analyst.prompt.includes(MARKER), 'the rulings must reach the judgment brief')
   assert.ok(analyst.prompt.includes('dev-env-no-preservation'), 'the ruling text itself must be there, verbatim')
-  assert.match(analyst.prompt, /outrank any document they contradict/, 'a ruling outranks a contradicting PRD/SAD/spec')
+  assert.match(analyst.prompt, /outrank any document they contradict/, 'a ruling outranks a contradicting PRD, architecture or spec')
   assert.match(analyst.prompt, /CITE the ruling in your output/, 'applying a ruling must be citable in the trace')
   assert.ok(analyst.prompt.includes('END STANDING RULINGS'), 'the block is clearly delimited')
 })

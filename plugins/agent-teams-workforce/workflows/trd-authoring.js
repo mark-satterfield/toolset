@@ -31,9 +31,9 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },
-//   sad: { path },
+//   archPath,
 //   trdPath?, repoPath?, feedback?, standingRulings?,
-//   architecture?: { decision?, decisionPath?, sadUpdate? } (the ruling this PRD's design rests on),
+//   architecture?: { decision?, decisionPath?, architectureUpdate? } (the ruling this PRD's design rests on),
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? }
 // }
 // returns { ok, trdPath, filingPath, trd, decisionIds } or { ok: false, stage, reason, ... }
@@ -61,13 +61,12 @@ function persistBrief(art, name, what, opts) {
 }
 const ART = artifactsFrom(a.artifacts)
 const prd = a.prd || {}
-const sad = a.sad || {}
 const repo = a.repoPath || '(repo path not provided)'
 let trdPath = a.trdPath || null
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
 const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
 
 ${rulingsText}
 
@@ -82,23 +81,22 @@ if (!prdContent && !prdPath) {
   const why = 'no PRD supplied — prd.content is empty and prd.path is not an absolute path. Pass the PRD content or its path.'
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
-const sadPathGiven = typeof sad.path === 'string' && sad.path.trim().startsWith('/')
-if (!sadPathGiven) {
-  const why = 'no architecture supplied — sad.path is not an absolute path. Set ATW_SAD_PATH for the run, or pass sad.path.'
+const archPath = typeof a.archPath === 'string' ? a.archPath.trim() : ''
+if (!archPath.startsWith('/')) {
+  const why = 'no architecture supplied — archPath is not an absolute path. Set ATW_ARCH_PATH for the run, or pass archPath.'
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
-const sadRef = sad.path.trim()
 
 const died = (...phases) => {
   const deaths = dispatchDeaths(...phases)
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
 }
 
-const archText = `THE ARCHITECTURE is at ${sadRef}. It is not inside the product repository ${repo}.
-- The \`02-architecture-constraints\` section holds the owner's constraints. Read its README.md in full.
-- The \`04-solution-strategy\` section holds the enterprise-level strategy. Read its README.md.
-- Every other section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. For each element this PRD's design has — each service, store, API, event, data flow and boundary — find the views that show it by searching that frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them in full. The views in the \`08-crosscutting-concepts\` section describe patterns used across services; read every one whose concept applies to an element the design has.
-- Open targets in the \`target/\` folder beside the arc42 folder that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
+const archText = `THE ARCHITECTURE is at ${archPath}. It is not inside the product repository ${repo}. Its \`arc42/\` folder is the effective version (the approved architecture), its \`target/\` folder holds the targets in progress, and the architecture documentation model in its \`reference/\` folder says what each version and section holds.
+- \`arc42/02-architecture-constraints\` holds the owner's constraints. Read its README.md in full.
+- \`arc42/04-solution-strategy\` holds the enterprise-level strategy. Read its README.md.
+- Every other arc42 section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. For each element this PRD's design has — each service, store, API, event, data flow and boundary — find the views that show it by searching that frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them in full. The views in \`arc42/08-crosscutting-concepts\` describe patterns used across services; read every one whose concept applies to an element the design has.
+- Open targets in \`target/\` that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
 const prdText = prdContent
   ? prd.content
   : `PRD ${prd.id || ''}${prd.title ? `: ${prd.title}` : ''}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you author anything; every requirement in it is in scope.`
@@ -106,7 +104,7 @@ const prdText = prdContent
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const ruling = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
 const rulingBlock = ruling
-  ? `\nArchitecture ruling this PRD's design rests on:\n${JSON.stringify({ decision: ruling.decision, sadUpdate: ruling.sadUpdate }, null, 2)}${hasText(ruling.decisionPath) ? `\nThe ruling itself is the document at ${ruling.decisionPath}. Read it.` : ''}\n`
+  ? `\nArchitecture ruling this PRD's design rests on:\n${JSON.stringify({ decision: ruling.decision, architectureUpdate: ruling.architectureUpdate }, null, 2)}${hasText(ruling.decisionPath) ? `\nThe ruling itself is the document at ${ruling.decisionPath}. Read it.` : ''}\n`
   : '\nNo architecture ruling was made for this PRD: the design is the one the PRD and the architecture already imply.\n'
 const feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
@@ -178,9 +176,9 @@ ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPR
 ${archText}
 ${feedback ? `\nFeedback on the previous version from the gate — address every point:\n${feedback}` : ''}
 
-Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design element it applies to, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR an architecture view (in \`sadRefs\`); an architecture-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the architecture.
+Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design element it applies to, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR an architecture view (in \`archRefs\`); an architecture-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the architecture.
 
-Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every view a requirement rests on in \`sadRefs\`.
+Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every view a requirement rests on in \`archRefs\`.
 
 CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at the top of the TRD with \`decisionIds:\` listing every view any requirement depends on, and on each requirement the views it depends on. Cite a view by its path relative to the arc42 folder, with \`#<heading>\` when the requirement rests on one part of it (for example \`08-crosscutting-concepts/<concept>.md#<heading>\`); cite only files you read, and never a section number in place of one.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
   {
@@ -200,13 +198,13 @@ CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at th
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'requirement', 'appliesTo', 'prdRefs', 'sadRefs', 'verification'],
+            required: ['id', 'requirement', 'appliesTo', 'prdRefs', 'archRefs', 'verification'],
             properties: {
               id: { type: 'string' },
               requirement: { type: 'string' },
               appliesTo: { type: 'string' },
               prdRefs: { type: 'array', items: { type: 'string' } },
-              sadRefs: { type: 'array', items: { type: 'string' } },
+              archRefs: { type: 'array', items: { type: 'string' } },
               verification: { type: 'string' },
             },
           },
@@ -228,6 +226,6 @@ return {
   trd,
   decisionIds: [...new Set([
     ...(Array.isArray(trd.decisionIds) ? trd.decisionIds : []),
-    ...(Array.isArray(trd.requirements) ? trd.requirements : []).flatMap((r) => (Array.isArray(r.sadRefs) ? r.sadRefs : [])),
+    ...(Array.isArray(trd.requirements) ? trd.requirements : []).flatMap((r) => (Array.isArray(r.archRefs) ? r.archRefs : [])),
   ].map((x) => String(x == null ? '' : x).trim()).filter(Boolean))],
 }

@@ -92,7 +92,7 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   repoPath: "/path/to/the/repo/you/are/standing/in",
   repos:    <OMIT — the run rules the span. Only when a human named it explicitly>,
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
-  sadPath:        "$ATW_SAD_PATH",
+  archPath:       "$ATW_ARCH_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
   artifactScript: "$ATW_ARTIFACT_SCRIPT"
 }})
@@ -101,11 +101,11 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
 `$ROOT` is the printed plugin root. The run resolves the root it runs its own scripts
 under itself; pass none.
 
-`sadPath`, `projectRoot` and `artifactScript` are the project's configuration, read from the `ATW_*` environment (see
+`archPath`, `projectRoot` and `artifactScript` are the project's configuration, read from the `ATW_*` environment (see
 "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`) and passed as expanded values; a
-workflow script cannot read the environment itself. `ATW_SAD_PATH` is required — the
-architecture phase refuses without a SAD — so if it is unset, report `ATW_SAD_PATH is
-unset` and stop. Omit either of the other two when its variable is unset, and name it in
+workflow script cannot read the environment itself. `ATW_ARCH_PATH` is required — the
+architecture phase refuses without the architecture — so if it is unset, report
+`ATW_ARCH_PATH is unset` and stop. Omit either of the other two when its variable is unset, and name it in
 your report.
 
 Use `scriptPath`, never a bare `name` — name dispatch resolves against the

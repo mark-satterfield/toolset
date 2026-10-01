@@ -89,7 +89,7 @@ function settleTranscript(err, label) {
 // input has NO reason to produce a different result; it is a hope with a token cost, and
 // this project removed exactly those blind retries after they burned tokens to exhaustion
 // on attempts that could not succeed. The only sanctioned re-dispatch is one with
-// materially CHANGED input — for the SAD batches, the split.
+// materially CHANGED input, such as the same work split into smaller batches.
 //
 // ANYTHING UNRECOGNISED IS DETERMINISTIC, and that direction is deliberate rather than
 // defensive. Guessing "transient" on an unknown error invents a retry that is forbidden

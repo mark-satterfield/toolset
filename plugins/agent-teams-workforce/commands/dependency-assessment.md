@@ -9,13 +9,13 @@ allowed-tools: [Bash, Workflow]
 Assess the architecture dependencies of one Epic in the beads tracker of the repository you
 are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
 Epics is an architecture dependency: an architecture decision one Epic rests on should be
-designed from another Epic's requirements first, and the SAD does not already settle it
+designed from another Epic's requirements first, and the effective architecture does not already settle it
 (`agent-teams-workforce:epic-sequencing`). The workflow writes edges and nothing else, then
 triggers `wsjf-scoring`, because edges decide RR-OE.
 
 `<epic-id>` is required: the one Epic, new or changed, to assess. Report the usage and stop
 without it. The epic-sequencer reads that Epic's full PRD, names the architecture decisions its
-requirements drive and the ones it rests on, drops those the SAD settles, searches the other
+requirements drive and the ones it rests on, drops those the effective architecture settles, searches the other
 Epics' PRDs for the requirements that drive or rest on each remaining decision, reads those
 PRDs in full, and applies the edge test in both directions. It proposes every edge to or from
 the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on
@@ -33,8 +33,8 @@ It writes, unless `--propose` is given.
 ## Dispatch
 
 ```bash
-if [ -z "${ATW_SAD_PATH}" ]; then
-  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:dependency-assessment judges against the architecture document (the arc42 SAD) and does not run without it. Export ATW_SAD_PATH in your shell environment and start a new session."
+if [ -z "${ATW_ARCH_PATH}" ]; then
+  echo "REFUSED: ATW_ARCH_PATH is not set. /agent-teams-workforce:dependency-assessment judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Export ATW_ARCH_PATH in your shell environment and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"
@@ -42,7 +42,7 @@ RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 echo "REPO=$REPO"
 echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 echo "RUN=$RUN"
-echo "SAD=${ATW_SAD_PATH}"
+echo "ARCH=${ATW_ARCH_PATH}"
 echo "PROJECT=${ATW_PROJECT_ROOT}"
 ```
 
@@ -55,7 +55,7 @@ Workflow({name: "agent-teams-workforce:dependency-assessment", args: {
   repoPath:    "<REPO>",
   pluginRoot:  "<ROOT>",
   workDir:     "<REPO>/.claude/workflow-runs/dependency-assessment/<RUN>",
-  sadPath:     "<SAD>",
+  archPath:    "<ARCH>",
   projectRoot: "<PROJECT>",
   epic:        "<epic-id>",
   apply:       false         (with --propose only)

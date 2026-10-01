@@ -67,7 +67,7 @@ const contractBlock = (() => {
   const lines = [
     docs.length ? `Spec documents this change was built to; the refactor stays inside them:\n${docs.map((d) => `  - ${d}`).join('\n')}` : '',
     s && strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
-    decisionIds.length ? `Architecture decisions this work is designed against (SAD entry ids): ${decisionIds.join(', ')}` : '',
+    decisionIds.length ? `Architecture views this work is designed against (paths relative to the arc42 folder): ${decisionIds.join(', ')}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()

@@ -86,7 +86,7 @@ const specBlock = (() => {
     docs.length ? `Spec documents — read the sections named below in these files:\n${docs.map((d) => `  - ${d}`).join('\n')}` : '',
     strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
     strList(s.requirementIds).length ? `Requirements satisfied: ${strList(s.requirementIds).join(', ')}` : '',
-    decisionIds.length ? `Architecture decisions this work is designed against (SAD entry ids): ${decisionIds.join(', ')}` : '',
+    decisionIds.length ? `Architecture views this work is designed against (paths relative to the arc42 folder): ${decisionIds.join(', ')}` : '',
     strList(s.definitionOfDone).length ? `Definition of Done:\n${strList(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''

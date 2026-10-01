@@ -46,7 +46,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Choosing the persistence technology or changing decided table topology (for example single-table vs multi-table); API and event specifications; acceptance criteria and DoD; validating its own specifications; access-layer implementation code.
 - **Allowed Decisions:** Attribute naming, key composition detail within the decided model, index projections, access-pattern enumeration, and the assumptions used in capacity estimates.
 - **Forbidden Decisions:** Replacing DynamoDB or the decided table topology; adding persistence stores; redefining domain ownership of data; approving its own output; resolving PRD ambiguity silently.
-- **Inputs Required:** The TRD data/persistence technical requirements plus the SAD section 2 constraints (source-extract) from the Architecture Analysis team, the validated PRD, draft API and event specifications that imply read/write patterns, and, on a correction, the spec-decider's ruling and directive with the reviewer findings behind it.
+- **Inputs Required:** The TRD data/persistence technical requirements plus the owner's constraints in arc42 section 2 and the architecture views the TRD cites, the validated PRD, draft API and event specifications that imply read/write patterns, and, on a correction, the spec-decider's ruling and directive with the reviewer findings behind it.
 - **Outputs Produced:** Data model specification sections (table definitions, key and index design, access-pattern table, capacity estimates with assumptions, traceability tags) plus a rework log when responding to checker findings.
 - **Required Reviewers:** dynamodb-schema-access-pattern-reviewer (implementability and performance of the specified access patterns) and prd-alignment-verifier (requirement coverage).
 - **Escalation Triggers:** A required access pattern cannot be served within the decided persistence architecture; capacity estimates reveal a scaling risk that contradicts an architecture decision; data-model needs conflict with API or event specifications; the task would require work in another category. Report all of these to the calling workflow.
@@ -64,14 +64,14 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
-## Cite the decisions you designed against
+## Cite the architecture you designed against
 
 Return `decisionIds` and carry the same list in the document's YAML frontmatter as
-`decisionIds:`. They are the SAD's own entry tags — `C-…`, `S-…`, `X-…`, `AD-…` — written
-exactly as the SAD and the extract write them. Never invent one, never paraphrase one, and
-never put a section number in their place: a section number moves and a tag does not, and the
-citation is how a changed architecture decision finds the work resting on it. An empty list
-means you checked and this artifact rests on no recorded decision.
+`decisionIds:`. Each is the path of an architecture view you read, relative to the arc42
+folder, with `#<heading>` when the artifact rests on one part of it, written as the TRD cites
+it. Cite only views you read, and never put a section number in place of a view: the citation
+is how a change to the architecture finds the work resting on it. An empty list means you
+checked and this artifact rests on no view.
 
 ## When You're in Over Your Head
 

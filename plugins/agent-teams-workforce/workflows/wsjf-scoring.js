@@ -147,7 +147,7 @@ function enter(title) {
 //   repoPath:     string,    // absolute path of the repository whose `bd` tracker is scored
 //   pluginRoot:   string,    // absolute path of this plugin's root
 //   workDir:      string,    // absolute path of a directory for this run's files
-//   sadPath?:     string,
+//   archPath?:    string,
 //   projectRoot?: string,
 //   all?:         boolean,   // include items that already have a value
 //   rejudge?:     boolean,   // judge again the existing values of the items included
@@ -161,8 +161,8 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // The environment variable that supplies each path arg the caller leaves out. pluginRoot has none of
 // its own: it is the agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json
 // records. workDir has none either: a run without one gets a new directory from mkdtemp.
-const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', sadPath: 'ATW_SAD_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
-const OPTIONAL_PATH_ARGS = ['sadPath', 'projectRoot']
+const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', archPath: 'ATW_ARCH_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
+const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_SCHEMA = {
   type: 'object',
@@ -173,7 +173,7 @@ const RESOLVE_SCHEMA = {
 const RESOLVE_PY = `import json, os, sys, tempfile, time
 from pathlib import Path
 name, wanted = sys.argv[1], json.loads(sys.argv[2])
-env_of = {"repoPath": "ATW_CONTROL_REPO", "sadPath": "ATW_SAD_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
+env_of = {"repoPath": "ATW_CONTROL_REPO", "archPath": "ATW_ARCH_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
 out, problems = {}, {}
 def from_env(key):
     var = env_of[key]
@@ -184,7 +184,7 @@ def from_env(key):
         return f"\${var} is {value!r}, which is not an existing absolute path"
     out[key] = os.path.normpath(value)
     return ""
-for key in ("repoPath", "sadPath", "projectRoot"):
+for key in ("repoPath", "archPath", "projectRoot"):
     if key in wanted:
         why = from_env(key)
         if why:
@@ -223,7 +223,7 @@ out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
 print(json.dumps(out))`
 // Fills each path arg the caller left out, and only from the environment: repoPath from
-// $ATW_CONTROL_REPO, sadPath from $ATW_SAD_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
+// $ATW_CONTROL_REPO, archPath from $ATW_ARCH_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the
 // install for $ATW_CONTROL_REPO first, else the user-scope one), and workDir from mkdtemp. One runner
 // session reads them, dispatched only when an arg is missing. Returns { args, missing, problems }:
@@ -341,18 +341,18 @@ const taskDir = file('judgments/task')
 const PRIOR = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS SCORING RUN FAILED on this same input: ${a.priorFailure.trim().slice(0, 2000)}. Do not repeat it.\n\n`
   : ''
-const JUDGE_RULES = `${PRIOR}JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists: the architecture document${a.sadPath ? ` (${a.sadPath})` : ''}, the existing code${a.projectRoot ? ` (under ${a.projectRoot})` : ''}, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
+const JUDGE_RULES = `${PRIOR}JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists: the architecture${a.archPath ? ` (${a.archPath})` : ''}, the existing code${a.projectRoot ? ` (under ${a.projectRoot})` : ''}, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
 
 THE RUBRIC OWNS ITS BANDS. The rungs in \`agent-teams-workforce:wsjf\` are the whole scale. RR-OE, reachability and WSJF are arithmetic computed after you return; they are not in your input and are not yours to state, estimate or reason about.`
 
 const judgeEpic = (id) => settleAgent(
   `You judge ONE Epic, ${id}, under \`agent-teams-workforce:wsjf\` at Epic level. Load that skill with the Skill tool and follow it.
 
-An Epic is a PRD: a business requirement. Read its full requirements document at ${prdDir}/${id}.md, to the end. Its entry in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}) says whether it \`hasTasks\`; the same file holds the \`referenceJobs\`. Judge it from its own document against the rubric's rungs and the reference jobs, using the SAD and the project root for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
+An Epic is a PRD: a business requirement. Read its full requirements document at ${prdDir}/${id}.md, to the end. Its entry in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}) says whether it \`hasTasks\`; the same file holds the \`referenceJobs\`. Judge it from its own document against the rubric's rungs and the reference jobs, using the architecture and the project root for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
 
 ${JUDGE_RULES}
 
-Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`hasTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. An Epic with Tasks takes its size from them. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the SAD and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
+Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`hasTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. An Epic with Tasks takes its size from them. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the architecture and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
 
 Write ${epicDir}/${id}.json as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}.
 

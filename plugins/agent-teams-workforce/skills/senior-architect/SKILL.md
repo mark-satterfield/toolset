@@ -213,12 +213,11 @@ Use when choosing a database for a new project or migrating existing data.
 - Strong consistency required → SQL or CockroachDB
 - Eventual consistency acceptable → DynamoDB, Cassandra, MongoDB
 
-**Step 4: Document decision**
-Record the decision as current state in the SAD's source sections (§2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts) with:
-- Context and requirements
-- Options considered
-- Decision and rationale
-- Trade-offs accepted
+**Step 4: Describe the result in the architecture**
+Make the chosen design part of the architecture description, as current state: update the views that show the elements it changes, at every scope they appear in (a pattern used across services is a crosscutting concept in section 8), with:
+- What the design is
+- The reason for it, where it departs from an established pattern
+- The limits and trade-offs it accepts
 
 **Quick reference:**
 ```

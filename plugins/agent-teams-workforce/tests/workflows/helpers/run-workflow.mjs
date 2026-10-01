@@ -30,7 +30,7 @@ export function readWorkflowSource(absPath) {
  */
 export const PROJECT_CONFIG = Object.freeze({
   prCommand: '/opt/project/bin/open-pr',
-  sadPath: '/opt/project/docs/architecture/sad',
+  archPath: '/opt/project/docs/architecture',
 })
 
 /**

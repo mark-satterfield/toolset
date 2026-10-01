@@ -100,7 +100,7 @@ python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
 
 Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
-the requirement ids and the SAD decision ids. Pass it as-is; do not rebuild it by hand and do
+the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is; do not rebuild it by hand and do
 not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
 the repository is ruled during elaboration, so report the id and that reason and stop — never
 work out a repository yourself.

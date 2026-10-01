@@ -1,6 +1,6 @@
 # Mapping C4 levels onto arc42 sections
 
-This project's SAD is an eleven-section arc42 document. C4 is a
+This project's effective architecture is an eleven-section arc42 folder, one folder per section. C4 is a
 notation for the *static structure* diagrams. They are complementary: arc42 tells you
 *what to document and where*, C4 gives you *how to draw the structure pictures*. This file
 fixes which C4 artifact goes into which arc42 section, so a documentation set built with
@@ -8,7 +8,7 @@ both stays coherent.
 
 ## The relevant arc42 sections
 
-The SAD has eleven sections. The three that consume C4 diagrams are:
+The arc42 folder has eleven sections. The three that consume C4 diagrams are:
 
 | arc42 § | Section name | What it documents |
 |---|---|---|

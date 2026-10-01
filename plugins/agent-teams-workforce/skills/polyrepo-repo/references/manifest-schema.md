@@ -34,10 +34,10 @@ stored. `remote_url` is kept in step with GitHub by `polyrepo reconcile --fix`.
 
 Any **derived fact** — anything decided, specified, or described somewhere else:
 
-- Architecture and technology decisions (which datastore, which transport, which library). Canonical home: the arc42 SAD.
+- Architecture and technology decisions (which datastore, which transport, which library). Canonical home: the architecture documentation.
 - Requirements and behavior. Canonical home: the PRD.
 - Interface and schema detail. Canonical home: the spec / OpenAPI document.
-- Operational thresholds, limits, retention windows. Canonical home: the SAD crosscutting concepts.
+- Operational thresholds, limits, retention windows. Canonical home: the crosscutting concepts in the architecture documentation.
 - Deployment waves — which repos deploy in which order. Canonical home: `deployment/waves.yaml` (the personal-agent app) and `deployment/waves.shared.yaml` (the shared platform, which deploys first), in the command-and-control repo.
 
 ### The test: identity versus claim
@@ -45,7 +45,7 @@ Any **derived fact** — anything decided, specified, or described somewhere els
 Naming a technology is not automatically a violation. Apply this test:
 
 - **Identity — keep.** A statement of what *this* repo is, owns, or provisions. `SkillSpoke-sessionCache-infra: ElastiCache (Valkey/Redis) for sessions` is what that repo *is*; deleting it would make the manifest useless for finding which repo owns what.
-- **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the SAD owns it.
+- **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
 
 A dependency **edge** between two repos is structural and belongs. A `notes:` field on that
 edge explaining *how* the dependency is implemented is a claim, not identity, and does not
@@ -58,11 +58,11 @@ detects that it has drifted. It then reads as authoritative because it sits in a
 canonical-looking file.
 
 The real case cuts both ways. The manifest recorded `Idempotency via RedisCachePersistenceLayer`
-on the `shared-chassis → SkillSpoke-sessionCache-infra` edge. The SAD stated the opposite
-normatively — that the idempotency store must be a chassis-owned DynamoDB store — so the
-manifest was corrected to match it. The SAD was wrong: idempotency runs on the shared
-ElastiCache for Redis cluster, and the manifest had been right. Because the incorrect SAD line
-was treated as settled canon, it was cited repeatedly to overturn the correct value. The lesson
+on the `shared-chassis → SkillSpoke-sessionCache-infra` edge. The architecture documentation
+stated the opposite normatively — that the idempotency store must be a chassis-owned DynamoDB
+store — so the manifest was corrected to match it. The architecture documentation was wrong:
+idempotency runs on the shared ElastiCache for Redis cluster, and the manifest had been right.
+Because the incorrect line in the architecture documentation was treated as settled canon, it was cited repeatedly to overturn the correct value. The lesson
 is not that the manifest is always the defect. It is that **a duplicated fact drifts in
 whichever copy is wrong**, and that a normatively-phrased sentence in a canonical-looking file
 is not evidence that it is true. Check the decision, not the formatting.
@@ -70,7 +70,7 @@ is not evidence that it is true. Check the decision, not the formatting.
 ### Precedence
 
 The canonical document is where a claim BELONGS; that is a rule about location, not about who
-is right. When the manifest disagrees with the SAD, a PRD, or a spec, resolve it against the
+is right. When the manifest disagrees with the architecture documentation, a PRD, or a spec, resolve it against the
 **decision** — not against whichever file looks more canonical.
 
 - If the canonical document reflects the decision, the manifest is the defect. Correct the manifest.
@@ -80,7 +80,7 @@ Either way the fact ends up in exactly one place: the canonical document.
 
 ### Compliance criteria
 
-- No manifest field asserts a technology, mechanism, threshold, or behavior that a SAD section, PRD, or spec also states.
+- No manifest field asserts a technology, mechanism, threshold, or behavior that the architecture documentation, a PRD, or a spec also states.
 - Where such context is useful, the manifest carries a pointer (document path or section reference), not the content.
 
 ## Top-level structure
@@ -446,7 +446,7 @@ knowledge:
 it was decomposed: behavioural preferences move to the steward *agent* (its system prompt);
 genuine constraints moved to `rules[]`; and "where to find it" knowledge moves to
 `knowledge.yaml`. **v4 removed `rules[]` itself** (see *Schema version history*) — a
-constraint's canonical home is the project's own architecture/SAD or convention doc, never
+constraint's canonical home is the project's own architecture documentation or convention doc, never
 the manifest, so a constraint that would have gone to `rules[]` under v3 now goes there
 instead, and the manifest carries a pointer only if one is genuinely useful. Any remaining
 project-specific behavioural preference the agent must read may still live in
@@ -495,7 +495,7 @@ read `schema_version` and know exactly what changed between versions.
   `repos[].local_path` (same reason, per repo — a stored path goes stale on every
   re-clone or new machine); `conventions.naming` (the project's own naming-standard
   document is canonical); top-level `rules[]` (architectural/security/deployment
-  constraints belong in the project's SAD, AGENTS.md, or crosscutting-concerns doc —
+  constraints belong in the project's architecture documentation, AGENTS.md, or crosscutting-concerns doc —
   a rule copied into the manifest drifts the moment the canonical doc changes and
   nothing updates the copy); `documentation` and `search_recipes` (both are "where
   to find it" pointers, which is exactly what `.polyrepo/knowledge.yaml` — the
