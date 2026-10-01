@@ -180,7 +180,7 @@ When the result carries `cdsAudit`, record it on the Task, whether the run commi
 python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" cds-audit <id> '<the result's cdsAudit, as JSON>'
 ```
 
-When the result carries `requiredHumanActions`, report each verbatim, run `bd label add <id> human`, and release the claim.
+When the result carries `requiredHumanActions`, report each verbatim and release the claim.
 
 If the run stops, report it and stop. Do not work around it, do not edit a
 workflow mid-run, and do not fall back to a subagent beside the pipeline. Leave
