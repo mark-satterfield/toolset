@@ -35,7 +35,11 @@ const story = a.story && typeof a.story === 'object' ? a.story : {}
 const beadId = String(a.beadId || story.id || '').trim()
 const repo = String(a.repoPath || '').trim().replace(/\/+$/, '')
 const archPath = hasText(a.archPath) ? a.archPath.trim().replace(/\/+$/, '') : ''
-const subject = hasText(a.subject) ? a.subject.trim() : ''
+// The <subject> folder name, derived as depscore.py arch-target derives it (archstate.subject_folder):
+// folded to ASCII, lower-cased, every run of characters other than a-z and 0-9 one hyphen, no hyphen
+// at either end. A folder name maps to itself, so the Epic's saved target subject passes unchanged.
+const subjectFolder = (v) => String(v).normalize('NFKD').replace(/[^\x00-\x7F]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+const subject = hasText(a.subject) ? subjectFolder(a.subject.trim()) : ''
 const DS = a.depscore && typeof a.depscore === 'object' && hasText(a.depscore.script) && hasText(a.depscore.repo) ? a.depscore : null
 const items = (Array.isArray(a.items) ? a.items : []).filter((i) => i && hasText(i.id) && hasText(i.element))
 const MAX_CORRECTIONS = 2
@@ -54,9 +58,8 @@ const failed = (phaseName, stage, headline, extra) => {
 if (!beadId) return handback(false, 'input', 'no Story id supplied')
 if (!repo) return handback(false, 'input', `no worktree supplied for Story ${beadId}`)
 if (!archPath) return handback(false, 'input', "no archPath supplied (the project's ATW_ARCH_PATH): there is no effective version to compare the build with")
-if (!subject) return handback(false, 'input', `no architecture subject supplied for Story ${beadId}: the built views go in built/<subject>/, named for the subject of the Epic's target`)
+if (!subject) return handback(false, 'input', `no architecture subject supplied for Story ${beadId}, or one with no letter or digit: the built views go in built/<subject>/, named for the subject of the Epic's target`)
 if (!DS) return handback(false, 'input', 'no depscore script and beads repository supplied: the state check, the section 2 check, the approval and the removal run through depscore.py')
-if (subject.includes('/') || subject === '..') return handback(false, 'input', `the subject ${subject} is not one folder name`)
 
 const ARC42 = `${archPath}/arc42`
 const CONSTRAINTS = `${ARC42}/02-architecture-constraints`

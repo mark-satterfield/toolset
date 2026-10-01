@@ -512,25 +512,27 @@ For EACH capability the PRD needs, report:
 - \`requirements\`: the PRD requirement headings it serves.
 An empty list is an answer: say in \`notes\` where you looked.
 
-Name the \`subject\` the target will describe: the feature, service, component or layer this PRD changes, named as the glossary and the repositories name it — never the PRD, the Epic, a bead id or a date — and say why in \`subjectReason\`.
+Name the \`subject\` the target will describe: the feature, service, component or layer this PRD changes, named as the glossary and the repositories name it — never the PRD, the Epic, a bead id or a date — and say why in \`subjectReason\`. Give the name as it is written (\`Company Intelligence\` and \`company-intelligence\` are both fine): the run derives the \`target/<subject>/\` folder name from it (lower-case, every run of other characters one hyphen).
 List in \`prdDefects\` only where the PRD contradicts itself or lacks a value only the owner can give.
 Write survey.md as the readable survey and survey.json as your structured result.${persistBrief([SURVEY_MD, SURVEY_JSON], 'the survey: survey.md as one Markdown document, and survey.json as your complete structured result, exactly as you return it')}`,
     { label: 'survey:reality', phase: 'Survey', agentType: 'prd-reality-reconciler', effort: 'medium', schema: SURVEY_SCHEMA }
   )
   if (!survey) return { ok: false, stage: 'survey', reason: 'the prd-reality-reconciler returned no survey', ...died('Survey') }
 }
-const subject = hasText(a.subject) ? a.subject.trim() : hasText(survey.subject) ? survey.subject.trim() : ''
-const subjectCheck = await depscore('target:check-subject', 'Survey', `arch-target --draft ${shq(DRAFT)} --arch-root ${shq(archPath)} --subject ${shq(subject || '-')} --forbid ${shq(FORBID.join(','))} --dry-run`)
+// The subject as named; depscore.py arch-target derives the folder name every later step uses.
+const subjectName = hasText(a.subject) ? a.subject.trim() : hasText(survey.subject) ? survey.subject.trim() : ''
+const subjectCheck = await depscore('target:check-subject', 'Survey', `arch-target --draft ${shq(DRAFT)} --arch-root ${shq(archPath)} --subject ${shq(subjectName || '-')} --forbid ${shq(FORBID.join(','))} --dry-run`)
 const subjectRefusals = subjectCheck && !subjectCheck.error ? listed(subjectCheck.subjectRefusals) : []
-if (!subject || subjectRefusals.length || !subjectCheck || subjectCheck.error) {
-  const why = !subject
+const subject = subjectCheck && !subjectCheck.error && hasText(subjectCheck.subject) ? subjectCheck.subject.trim() : ''
+if (!subjectName || subjectRefusals.length || !subjectCheck || subjectCheck.error || !subject) {
+  const why = !subjectName
     ? 'the survey named no subject for the target'
     : subjectRefusals.length
-      ? `the target subject is not a subject name: ${subjectRefusals.join('; ')}`
-      : `the target subject could not be checked: ${(subjectCheck && subjectCheck.error) || 'no result'}`
+      ? `the target subject cannot name a target: ${subjectRefusals.join('; ')}`
+      : `the target subject could not be checked: ${(subjectCheck && subjectCheck.error) || 'no folder name returned'}`
   return { ok: false, stage: 'survey', deterministicFailure: subjectRefusals.length > 0, reason: why, error: why, survey }
 }
-log(`Survey: subject ${subject}; ${(survey.capabilities || []).length} capabilit(ies)`)
+log(`Survey: subject ${subjectName} (folder target/${subject}/); ${(survey.capabilities || []).length} capabilit(ies)`)
 
 // ---------------------------------------------------------------- Rounds
 const claims = []
@@ -651,7 +653,7 @@ ${ARCH_WHERE}
 
 ${INPUTS_RULE}
 
-THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is \`${subject}\`.
+THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
 EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work.`
   if (WRITER_ROLES.includes(d.role)) {
     const work = d.role === 'proposer'
@@ -857,7 +859,7 @@ while (!decision) {
     `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${MAX_ROUNDS}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
 
 PRD: ${prdRef}
-THE SURVEY: ${SURVEY_MD} and ${SURVEY_JSON}. The target's subject is \`${subject}\`.
+THE SURVEY: ${SURVEY_MD} and ${SURVEY_JSON}. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
 THE DRAFT TARGET: ${DRAFT} (arc42 section layout; \`delta/\` holds the change alone).
 EARLIER RESULTS: ${ROUNDS_DIR}.
 THE ARCHITECTURE: ${archPath} (\`arc42/\` effective; \`target/\` open targets).
@@ -1109,6 +1111,7 @@ if (toCommit.length) {
 return {
   ok: true,
   subject,
+  subjectName,
   targetDir,
   deltaDir,
   targetPath: TARGET_JSON,

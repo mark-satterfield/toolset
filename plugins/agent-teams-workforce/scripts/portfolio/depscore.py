@@ -33,7 +33,9 @@
     arch-target          check an approved draft and write it to `target/<subject>/`, every view
                          `in-review`; refuses a draft with no delta, a file in section 2, a view
                          without catalog frontmatter, or a subject named for the Epic or PRD;
-                         no `bd` call
+                         the folder name is derived from the subject (lower-case, hyphens:
+                         `Company Intelligence` is `company-intelligence`) and returned as
+                         `subject`, the subject as given as `subjectName`; no `bd` call
     arch-delta           list the elements a target's delta shows, one item per element with
                          the delta views that show it, numbered D1, D2 ... in element-name
                          order; no `bd` call
@@ -765,7 +767,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--arch-root", required=True, help="the architecture directory holding target/"
     )
     atg.add_argument(
-        "--subject", required=True, help="the subject the target describes"
+        "--subject",
+        required=True,
+        help="the subject the target describes, as a display name or a folder name; "
+        "the folder name is derived from it",
     )
     atg.add_argument(
         "--forbid",

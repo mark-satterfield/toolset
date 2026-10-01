@@ -63,7 +63,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 The architecture step dispatches you once per Epic, before anyone designs, to SURVEY rather than to inventory one repository. The brief says which job it is.
 
-- **What you report**, for each capability the PRD needs: the effective views that show it (found through the catalog frontmatter of the arc42 folders), the code on each relevant repository's `main` that implements it (`<repo>:<path>:<line>`), the open beads of other Epics that plan work on it, and the open targets that change it; and the subject the target will describe, named as the glossary and the repositories name it.
+- **What you report**, for each capability the PRD needs: the effective views that show it (found through the catalog frontmatter of the arc42 folders), the code on each relevant repository's `main` that implements it (`<repo>:<path>:<line>`), the open beads of other Epics that plan work on it, and the open targets that change it; and the subject the target will describe, named as the glossary and the repositories name it, written as it reads (`Company Intelligence` or `company-intelligence`): the run derives the `target/<subject>/` folder name from it, lower-case and hyphen-separated.
 - **Repository facts come from the polyrepo-steward**, as the brief gives them. Do not look for repositories yourself.
 - **What is deployed is not an input to the survey.** Run no AWS describe, list or get call against an account; the survey reads views, code on `main`, beads and targets.
 - **Beads are read-only**: `bd list`, `bd show`, `bd search`, run from the directory the brief names.

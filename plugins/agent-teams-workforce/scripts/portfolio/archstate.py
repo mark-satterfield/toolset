@@ -38,6 +38,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 from pathlib import Path
 
 STATE_KEY = "lifecycle_state"
@@ -50,7 +51,7 @@ TARGET_FOLDER = "target"
 DELTA_FOLDER = "delta"
 BUILT_FOLDER = "built"
 CATALOG_KEYS = ("view_type", "scope", "subject", "shows")
-SUBJECT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SUBJECT_SEPARATOR = re.compile(r"[^a-z0-9]+")
 DATE_IN_NAME = re.compile(r"\d{4}-\d{2}(-\d{2})?")
 SKIPPED_SUFFIXES = (".meta.json",)
 
@@ -488,28 +489,45 @@ def snapshot_tree(arch_root: str) -> dict:
     }
 
 
-def _subject_refusals(subject: str, forbid: list[str]) -> list[str]:
-    """Name every reason a target subject name is not a subject.
+def subject_folder(subject: str) -> str:
+    """Derive the `<subject>` folder name from a subject as anyone names it.
+
+    The folder name is the subject folded to ASCII, lower-cased, with every run of characters
+    other than `a-z` and `0-9` replaced by one hyphen and no hyphen at either end:
+    `Company Intelligence` is `company-intelligence`. A folder name maps to itself.
 
     Args:
-        subject: The proposed `<subject>` folder name.
+        subject: The subject, as a display name or already as a folder name.
+
+    Returns:
+        The folder name; empty when the subject has no letter or digit.
+    """
+    ascii_only = (
+        unicodedata.normalize("NFKD", subject).encode("ascii", "ignore").decode("ascii")
+    )
+    return SUBJECT_SEPARATOR.sub("-", ascii_only.lower()).strip("-")
+
+
+def _subject_refusals(subject: str, folder: str, forbid: list[str]) -> list[str]:
+    """Name every reason a target subject is not a subject.
+
+    Args:
+        subject: The subject as given.
+        folder: Its `<subject>` folder name, from `subject_folder`.
         forbid: Names a subject never carries (the Epic, the PRD, the bead prefix).
 
     Returns:
-        The reasons; empty when the name is a subject.
+        The reasons; empty when the subject is a subject.
     """
+    if not folder:
+        return [f"subject {subject!r} has no letter or digit to name a folder with"]
     reasons = []
-    if not SUBJECT_NAME.match(subject) or subject in {".", ".."}:
-        reasons.append(
-            f"subject {subject!r} is not one folder name of letters, digits, '.', '_' or '-'"
-        )
-    if DATE_IN_NAME.search(subject):
+    if DATE_IN_NAME.search(folder):
         reasons.append(f"subject {subject!r} carries a date")
-    lowered = subject.lower()
     reasons.extend(
         f"subject {subject!r} carries {token!r}, which names the Epic, PRD or bead, not a subject"
-        for token in (t.strip().lower() for t in forbid)
-        if token and token in lowered
+        for token in (subject_folder(t) for t in forbid)
+        if token and token in folder
     )
     return reasons
 
@@ -596,20 +614,23 @@ def write_target(
     """Check an approved draft and write it to `target/<subject>/`, every view `in-review`.
 
     The draft has the arc42 section layout and a `delta/` folder. It is refused, and nothing
-    is written, when the subject is not a subject name, the draft has no delta, a file sits in
-    section 2, or a Markdown view lacks its catalog frontmatter. A target already at that path
+    is written, when the subject has no letter or digit or names the Epic, PRD, bead or a date,
+    the draft has no delta, a file sits in section 2, or a Markdown view lacks its catalog
+    frontmatter. The folder is named by `subject_folder`, so a display name such as
+    `Company Intelligence` writes `target/company-intelligence/`. A target already at that path
     is replaced, so a resumed step writes the same target again.
 
     Args:
         draft: The draft directory.
         arch_root: The architecture directory holding `target/`.
-        subject: The subject the target describes.
+        subject: The subject the target describes, as a display name or a folder name.
         forbid: Names a subject never carries (the Epic, the PRD, the bead prefix).
         dry_run: Check only; write nothing.
 
     Returns:
-        `ok`, the refusals, the target and delta directories, and the files written (or that
-        would be written).
+        `ok`, the refusals, `subject` (the folder name every later step uses), `subjectName`
+        (the subject as given), the target and delta directories, and the files written (or
+        that would be written).
     """
     root = _arch_root(arch_root)
     source = Path(draft).resolve()
@@ -619,9 +640,12 @@ def write_target(
             "ok": False,
             "refusals": none,
             "subjectRefusals": [],
+            "subject": subject_folder(subject),
+            "subjectName": subject.strip(),
             "summary": {"ok": False, "refusals": none},
         }
-    subject_refusals = _subject_refusals(subject, forbid)
+    folder = subject_folder(subject)
+    subject_refusals = _subject_refusals(subject, folder, forbid)
     files = _draft_files(source) if source.is_dir() else []
     draft_refusals = (
         _draft_refusals(source, files)
@@ -629,7 +653,7 @@ def write_target(
         else [f"the draft {source} is not a directory"]
     )
     refusals = subject_refusals + draft_refusals
-    dest = root / TARGET_FOLDER / subject
+    dest = root / TARGET_FOLDER / folder
     if not subject_refusals and not dest.resolve().is_relative_to(
         (root / TARGET_FOLDER).resolve()
     ):
@@ -640,7 +664,8 @@ def write_target(
         "ok": not refusals,
         "refusals": refusals,
         "subjectRefusals": subject_refusals,
-        "subject": subject,
+        "subject": folder,
+        "subjectName": subject.strip(),
         "targetDir": str(dest),
         "deltaDir": str(dest / DELTA_FOLDER),
         "files": [str(dest / p.relative_to(source)) for p in files],
@@ -655,6 +680,7 @@ def write_target(
             "refusals",
             "subjectRefusals",
             "subject",
+            "subjectName",
             "targetDir",
             "deltaDir",
             "dryRun",
