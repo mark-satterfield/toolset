@@ -18,6 +18,7 @@ export const meta = {
 // args: {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
 //           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy? },
+//   infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json),
 //   spec?: object (defaults to bead), implementer?: string, worktreeRoot?: string,
 //   maxRedRounds?: number (default 4), maxGreenRounds?: number (default 8)
 // }
@@ -32,12 +33,16 @@ const TAIL_CHARS = 4000
 
 // An infrastructure Task, by the same type and label test route-build applies.
 const norm = (v) => String(v || '').trim().toLowerCase()
-const INFRA_TYPES = ['infra', 'infrastructure']
-const INFRA_LABELS = ['infra', 'infrastructure', 'cdk', 'iac', 'provisioning']
+const vocabulary = a.infraVocabulary || {}
+const INFRA_TYPES = (Array.isArray(vocabulary.types) ? vocabulary.types : []).map(norm).filter(Boolean)
+const INFRA_LABELS = (Array.isArray(vocabulary.labels) ? vocabulary.labels : []).map(norm).filter(Boolean)
 const beadLabels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm)
 const isInfra = INFRA_TYPES.includes(norm(bead.type)) || beadLabels.some((l) => INFRA_LABELS.includes(l))
 
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied' }
+if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
+  return { ok: false, stage: 'input', error: 'no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json' }
+}
 
 const runLedger = []
 let runDetail = null

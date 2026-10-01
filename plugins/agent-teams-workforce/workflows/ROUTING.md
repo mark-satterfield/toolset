@@ -29,7 +29,7 @@ bead is never mis-typed.
 | # | Condition (type, or any label) | Composite |
 |---|---|---|
 | 1 | type `bug`; or label `bug` / `defect` / `regression` / `hotfix` | **SKIP** — awaiting triage |
-| 2 | type `infra` / `infrastructure`; or label `infra` / `infrastructure` / `cdk` / `iac` / `provisioning` | `task-to-deploy`, with its Infra Intent phase |
+| 2 | a type or label in `scripts/infra-vocabulary.json` (passed as `infraVocabulary`) | `task-to-deploy`, with its Infra Intent phase |
 | 3 | label `spec` / `spec-ready` / `implementation` / `implement` / `task-to-deploy` | `task-to-deploy` |
 | 4 | type `feature` / `epic` / `story`; or label `feature` / `prd` / `requirement` / `prd-to-spec` | `prd-to-spec` |
 | 5 | type `chore` / `docs` / `task` / `research` / `spike` | **SKIP** |

@@ -5,7 +5,8 @@ export const meta = {
   phases: [{ title: 'Classify', detail: 'maps the bead type and labels to a composite or a skip' }],
 }
 
-// args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? } }
+// args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? },
+//         infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json) }
 // returns: { bead, action: 'work' | 'skip', composite: 'task-to-deploy' | null, reason, ruledBy: 'deterministic' }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
@@ -15,13 +16,15 @@ const type = norm(bead.type)
 const labels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm).filter(Boolean)
 const labelSet = new Set(labels)
 const hasLabel = (...names) => names.some((n) => labelSet.has(n))
-const KNOWN_TYPES = new Set(['task', 'bug', 'infra', 'infrastructure', 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
+const vocabulary = a.infraVocabulary || {}
+const INFRA_TYPES = (Array.isArray(vocabulary.types) ? vocabulary.types : []).map(norm).filter(Boolean)
+const INFRA_LABELS = (Array.isArray(vocabulary.labels) ? vocabulary.labels : []).map(norm).filter(Boolean)
+const KNOWN_TYPES = new Set(['task', 'bug', ...INFRA_TYPES, 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
 const byLabel = (...names) => !KNOWN_TYPES.has(type) && hasLabel(...names)
 
 const parentType = norm(bead.parentType)
 const ancestorTypes = (Array.isArray(bead.ancestorTypes) ? bead.ancestorTypes : []).map(norm)
 const labelTail = labels.length ? `, labels=[${labels.join(', ')}]` : ''
-const INFRA_LABELS = ['infra', 'infrastructure', 'cdk', 'iac', 'provisioning']
 
 phase('Classify')
 
@@ -29,13 +32,16 @@ const route = (action, composite, reason) => ({ bead, action, composite, reason,
 const work = (composite, reason) => route('work', composite, reason)
 const skip = (reason) => route('skip', null, reason)
 
-const isInfra = () => type === 'infra' || type === 'infrastructure' || hasLabel(...INFRA_LABELS)
+const isInfra = () => INFRA_TYPES.includes(type) || hasLabel(...INFRA_LABELS)
 const workComposite = () => 'task-to-deploy'
 const infraTail = () => (isInfra() ? ' (an infrastructure change: its Infra Intent phase runs)' : '')
 const hasStoryParent = () => parentType === 'story' || ancestorTypes.includes('story')
 const hasEpicAncestor = () => ancestorTypes.includes('epic')
 
 function decide() {
+  if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
+    return skip('no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json as args.infraVocabulary → SKIP')
+  }
   if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(
       `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}); it is triaged by a person into an Epic, a Task, or a closure → SKIP`,
@@ -52,7 +58,7 @@ function decide() {
     const missing = [!hasStoryParent() && 'parent Story', !hasEpicAncestor() && 'ancestor Epic'].filter(Boolean).join(' and ')
     return work(composite, `task is missing its ${missing}, which is never a dispatch precondition → ${composite}${infraTail()}`)
   }
-  if (type === 'infra' || type === 'infrastructure' || byLabel(...INFRA_LABELS)) {
+  if (INFRA_TYPES.includes(type) || byLabel(...INFRA_LABELS)) {
     return work('task-to-deploy', `infrastructure change (type="${type || 'n/a'}"${labelTail}) → task-to-deploy, with its Infra Intent phase`)
   }
   if (type === 'epic' || type === 'story' || byLabel('epic', 'story')) {

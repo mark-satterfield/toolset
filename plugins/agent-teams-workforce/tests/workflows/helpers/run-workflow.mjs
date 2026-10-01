@@ -31,6 +31,7 @@ export function readWorkflowSource(absPath) {
 export const PROJECT_CONFIG = Object.freeze({
   prCommand: '/opt/project/bin/open-pr',
   archPath: '/opt/project/docs/architecture',
+  infraVocabulary: JSON.parse(readFileSync(fileURLToPath(new URL('../../../scripts/infra-vocabulary.json', import.meta.url)), 'utf8')),
 })
 
 /**
