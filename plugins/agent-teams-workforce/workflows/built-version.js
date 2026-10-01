@@ -264,7 +264,7 @@ async function measured(u, label) {
   const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
   if (unreported.length) log(`Correct: files written and not reported, added to the review: ${unreported.join(', ')}`)
   const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
-  return { update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
+  return { tree: now, update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
 }
 /** Returns the failure when the correction wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
 async function outOfBounds(u) {
@@ -286,19 +286,25 @@ if (!update) return failed('Correct', 'correct', 'the architecture-maintainer re
 const firstMeasure = await measured(update, 'tree:after-correct')
 if (firstMeasure.failure) return firstMeasure.failure
 update = firstMeasure.update
+let lastTree = firstMeasure.tree
 const bounds = await outOfBounds(update)
 if (bounds) return bounds
 
 let reviewPass = 0
+/** Every re-dispatch after a failed review, with what changed in its input. */
+const retries = []
 /** Marks a review not conforming when it leaves a changed file unreviewed. */
 function covered(c) {
   const missed = touched(update).filter((f) => !listed(c.reviewedFiles).includes(f))
   if (!missed.length) return c
   return { ...c, conforms: false, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...missed.map((f) => ({ file: f, finding: 'changed or created by the correction and not reviewed', evidence: 'absent from reviewedFiles' }))] }
 }
-/** Runs one conformance review of the correction. */
-async function review() {
+/** Runs one conformance review of the correction; `again` names the previous review's findings and the files the correction pass changed. */
+async function review(again) {
   reviewPass += 1
+  const againBlock = again
+    ? `\nTHIS IS REVIEW ${reviewPass}. The previous review found the findings below, and correction pass ${again.correction} changed these files to answer them: ${again.changed.join(', ')}. Confirm each finding is resolved, and check the changed files as fully as the rest.\nPREVIOUS FINDINGS:\n${JSON.stringify(again.findings, null, 1)}\n`
+    : ''
   const got = await run(
     `You are the architecture-conformance-reviewer. Check one correction of the effective version to match what a build delivered; report findings and fix nothing.
 
@@ -307,7 +313,7 @@ ${builtFiles.map((f) => `- ${f}`).join('\n')}
 THE CORRECTION changed or created these files, every one of which you review:
 ${touched(update).map((f) => `- ${f}`).join('\n') || '- (none)'}
 Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
-
+${againBlock}
 ${ARCH_WHERE}
 
 Check that the effective version now describes each element as the built views show it, no more and no less; that every effective view the catalog lists for each built element was updated, at every scope; that new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming; in \`matchedBuiltViews\` the absolute path of every built view above that the effective version now describes completely, compared by you view by view (a built view goes in this list only when every element it shows reads the same in the effective version); and one finding per problem with its file and evidence. \`conforms\` is true only when there is no finding.`,
@@ -337,7 +343,16 @@ ${CORRECT_TASK}`,
   update = fixMeasure.update
   const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
-  conformance = await review()
+  const changedNow = diffFiles(treeDiff(lastTree, fixMeasure.tree))
+  lastTree = fixMeasure.tree
+  if (!changedNow.length) {
+    const why = `correction pass ${corrections} changed no file, so a further review would judge the same correction; the findings stand: ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
+    return handback(false, 'correct', why, { differences, builtFiles, architectureUpdate: update, conformance, retries })
+  }
+  const whatChanged = `correction pass ${corrections} changed ${changedNow.join(', ')} to answer ${(conformance.findings || []).length} finding(s)`
+  retries.push({ step: 'built:review', attempt: reviewPass + 1, whatChanged })
+  log(`Correct: review again — ${whatChanged}`)
+  conformance = await review({ correction: corrections, changed: changedNow, findings: conformance.findings || [] })
   if (!conformance) return failed('Correct', 'correct', 'the architecture-conformance-reviewer returned no result', { differences, builtFiles, architectureUpdate: update })
 }
 if (conformance.conforms !== true) {
@@ -387,4 +402,5 @@ return handback(true, 'recorded', `Story ${beadId}: ${differences.length} differ
   conformance,
   approval,
   removal,
+  retries,
 })

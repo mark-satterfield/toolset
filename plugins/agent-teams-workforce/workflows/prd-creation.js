@@ -720,6 +720,8 @@ let alignmentVerdict = null
 let feedback = ''
 let deadlocked = false
 let passesRun = 0
+/** Every re-draft after a misaligned verdict, with what changed in the writer's input. */
+const retries = []
 for (let pass = 1; pass <= MAX_PASSES; pass++) {
   passesRun = pass
   prd = await draftPRD(feedback)
@@ -754,6 +756,7 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
     deadlocked = true
     break
   }
+  retries.push({ pass: pass + 1, whatChanged: `the prd-writer is given the alignment checker's feedback on pass ${pass}: ${feedback}` })
 }
 
 // Deadlock: the maker and checker could not converge — the spec-decider rules.
@@ -841,6 +844,7 @@ return {
   alignmentVerdict,
   scope,
   decision,
+  retries,
   ...(limitFindings.length ? { limitFindings } : {}),
   note: ok
     ? 'PRD is intake/persona/OKR-aligned and template-conformant.'

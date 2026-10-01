@@ -549,12 +549,11 @@ module.exports = {
 // npx jest --runInBand --testTimeout=10000 --repeat=5
 ```
 
-### Quarantine Strategy
+### Fixing a Flaky Test
 
 1. **Identify** - Track tests that fail randomly
-2. **Quarantine** - Move to separate suite, run separately
-3. **Fix** - Investigate and fix root cause
-4. **Restore** - Move back to main suite
+2. **Fix** - Investigate and fix the root cause
+3. **Verify** - Rerun the test repeatedly under the conditions that made it fail
 
 ```typescript
 // Temporarily skip flaky test

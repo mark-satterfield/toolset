@@ -296,6 +296,7 @@ try {
     let red = null
     let redRun = null
     let redFeedback = ''
+    let previousRedKey = null
     for (let round = 1; ; round++) {
       enterPhase('Red')
       red = await workflow('agent-teams-workforce:tdd-red', {
@@ -329,7 +330,17 @@ try {
           evidence: runText(redRun).slice(0, TAIL_CHARS),
         }
       }
+      // A round whose suite fails exactly as the round before gives Red the same input again.
+      const redKey = JSON.stringify([redRun.exitCode, ...[...failingIds(redRun)].sort(), ...verdict.reasons])
+      if (redKey === previousRedKey) {
+        return {
+          ...handback(false, 'no-progress', `no-progress: Red round ${round} left the suite exactly as the round before: ${verdict.reasons.join('; ')}`, { red, run: redRun, verdict }),
+          evidence: runText(redRun).slice(0, TAIL_CHARS),
+        }
+      }
+      previousRedKey = redKey
       redFeedback = `The suite does not show Red yet: ${verdict.reasons.join('; ')}.\n${runText(redRun)}`
+      runLedger.push({ phase: 'retry:red', round: round + 1, whatChanged: `Red round ${round + 1} is given round ${round}'s suite result: ${verdict.reasons.join('; ')}` })
     }
 
     // ── Green: loops until the whole suite exits 0 ──
@@ -435,6 +446,11 @@ try {
         return handback(false, 'green', `green: the suite is not green after ${round} Green round(s): ${run.summary || `exit ${run.exitCode}`}`, { green: g, run })
       }
       greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author has ruled on the tests you named; their decisions are in the tests now.' : ''}\n${runText(run)}${baselineNote}`
+      runLedger.push({
+        phase: 'retry:green',
+        round: round + 1,
+        whatChanged: `Green round ${round + 1} is given round ${round}'s suite result${list(g.changedFiles).length ? ` after round ${round} changed ${list(g.changedFiles).join(', ')}` : ''}${redUpdated ? ', and the tests the test author updated' : ''}`,
+      })
     }
 
     // ── Refactor: ends green, refactored or restored to its snapshot ──

@@ -34,7 +34,7 @@ function died(phaseName) {
 }
 
 // args: { prd: { id?, title?, path?, body? }, epic: { id }, archPath, subject?, repoPath?, seedRepos?,
-//   maxRounds?, standingRulings?, depscore: { script, repo },
+//   maxRounds?, depscore: { script, repo },
 //   artifacts: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
@@ -76,16 +76,6 @@ const prdBase = hasText(prd.path) ? String(prd.path).split('/').pop().replace(/\
 const beadPrefix = epicId.includes('-') ? `${epicId.split('-')[0]}-` : ''
 const FORBID = [epicId, beadPrefix, prd.id, prdBase].filter(hasText)
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 
 /** Returns the save-and-record instruction for files a session writes under the architecture working directory. */
 function persistBrief(files, what) {
@@ -501,7 +491,7 @@ if (survey) {
   )
   if (!repos) return { ok: false, stage: 'survey', reason: 'the polyrepo-steward named no repositories', ...died('Survey') }
   survey = await run(
-    `${rulingsBlock}You are the prd-reality-reconciler, SURVEYING for the architecture step. The architecture team designs from your survey; you design nothing.
+    `You are the prd-reality-reconciler, SURVEYING for the architecture step. The architecture team designs from your survey; you design nothing.
 
 PRD: ${prdRef}
 
@@ -548,6 +538,11 @@ const findings = []
 const writers = new Set()
 const roundFiles = []
 let lastRound = 0
+/** Every re-dispatch after a failed or empty result, with what changed in its input. */
+const retries = []
+/** Each finding id handed to a writer to answer: { agentType, round, clarified }. */
+const asked = new Map()
+let silentLast = []
 
 /** Folds one saved or returned round result into the claim and finding ledger. */
 function absorb(n, seq, role, agentType, result, file) {
@@ -662,7 +657,7 @@ EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your
     const work = d.role === 'proposer'
       ? `Design the target for your concern (${ROSTER.proposer[d.agentType]}) from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
       : `Draw the views your task names (${ROSTER.diagram[d.agentType]}) into the draft, from the design the proposers wrote there. Depict nothing that design does not contain.`
-    return `${rulingsBlock}You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
+    return `You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
 
 YOUR TASK THIS ROUND, from the coordinator: ${d.task}
 ${d.files.length ? `THE DRAFT FILES YOU OWN THIS ROUND, relative to ${DRAFT} (write only these; other sessions may be writing the rest):\n${d.files.map((f) => `- ${f}`).join('\n')}` : 'You were named no draft files this round: change no view another writer owns, and name every file you write in `files`.'}
@@ -674,7 +669,7 @@ ${DRAFT_RULES}
 Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. List in \`prdDefects\` only where the PRD contradicts itself or lacks a value only the owner can give.${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
   const toCheck = unreviewedClaims()
-  return `${rulingsBlock}You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
+  return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
 
 YOUR TASK THIS ROUND, from the coordinator: ${d.task}
 
@@ -704,8 +699,8 @@ function writerWaves(list) {
 }
 
 const cleanFile = (f) => String(f || '').trim().replace(/^\/+/, '')
-/** Validates the coordinator's dispatches and adds those the ledger requires; returns { dispatches, rejected }. */
-function settleDispatches(plan) {
+/** Validates the coordinator's dispatches and adds those the ledger requires; returns { dispatches, rejected, stuck }. */
+function settleDispatches(plan, n) {
   const out = []
   const bad = []
   for (const d of Array.isArray(plan.dispatches) ? plan.dispatches : []) {
@@ -743,6 +738,7 @@ function settleDispatches(plan) {
     const task = `The architecture-decider returned the target to you. Supply the missing due diligence: ${r.missing}`
     if (same) same.task = `${same.task}\n${task}`
     else out.push({ agentType: r.agentType, role, task, files: [], answers: [] })
+    retries.push({ step: `round${n}:${r.agentType}`, whatChanged: `the architecture-decider returned the target naming the missing due diligence: ${r.missing}` })
   }
   for (const f of openFindings()) {
     if (!f.owner || out.some((x) => x.agentType === f.owner && x.answers.includes(f.id))) continue
@@ -750,7 +746,24 @@ function settleDispatches(plan) {
     if (same) same.answers.push(f.id)
     else out.push({ agentType: f.owner, role: roleOf(f.owner), task: 'Answer the findings listed below.', files: [], answers: [f.id] })
   }
-  return { dispatches: out, rejected: bad }
+  // A finding handed back to the writer that left it unanswered is re-sent once, with that named in its
+  // task; still unanswered after that, it is not sent a third time.
+  const stuck = []
+  for (const d of out) {
+    const again = d.answers.filter((id) => asked.has(id) && asked.get(id).agentType === d.agentType)
+    if (!again.length) continue
+    const repeated = again.filter((id) => asked.get(id).clarified)
+    if (repeated.length) {
+      stuck.push(`${d.agentType}: ${repeated.join(', ')}`)
+      continue
+    }
+    const prev = Math.max(...again.map((id) => asked.get(id).round))
+    const result = silentLast.includes(d.agentType) ? 'never came back' : 'answered none of them'
+    d.task = `${d.task}\nROUND ${prev} HANDED YOU finding(s) ${again.join(', ')}, and your result ${result}. Answer each one in \`answers\` this round, as \`fixed\` or \`disputed\`.`
+    d.clarified = again
+    retries.push({ step: `round${n}:${d.agentType}`, findings: again, whatChanged: `round ${n} tells ${d.agentType} that its round ${prev} result ${result} for finding(s) ${again.join(', ')}` })
+  }
+  return { dispatches: out, rejected: bad, stuck }
 }
 
 /** Runs one round's dispatches: writers in waves of disjoint files, then reviewers together. */
@@ -841,7 +854,7 @@ while (!decision) {
   const n = lastRound + 1
   if (!pendingGaps.length && n > 1) pendingGaps = await decisionGaps(`rounds:gaps-${n - 1}`)
   const plan = await run(
-    `${rulingsBlock}You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${MAX_ROUNDS}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
+    `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${MAX_ROUNDS}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
 
 PRD: ${prdRef}
 THE SURVEY: ${SURVEY_MD} and ${SURVEY_JSON}. The target's subject is \`${subject}\`.
@@ -857,7 +870,7 @@ ${ledgerText()}
 
 WHAT STANDS BETWEEN THE DRAFT AND A DECISION:
 ${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : n === 1 ? '- nothing is written yet' : '- nothing'}
-${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => `${f.agentType} (missing: ${f.missing})`).join('; ')}. The script dispatches each of them this round.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}
+${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => `${f.agentType} (missing: ${f.missing})`).join('; ')}. The script dispatches each of them this round.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
 
 HOW TO ROUTE:
 - Size the team to the PRD: dispatch the proposers whose concern the PRD changes, and no others (no persistence proposer when nothing is persisted). A PRD the effective version already serves still gets one proposer, writing a delta that says the effective version serves it.
@@ -870,10 +883,16 @@ HOW TO ROUTE:
     { label: `round${n}:coordinate`, phase: 'Rounds', agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA }
   )
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, survey }
-  const settled = settleDispatches(plan)
+  const settled = settleDispatches(plan, n)
   rejected = settled.rejected
   forced = []
   if (rejected.length) log(`Round ${n}: refused ${rejected.join('; ')}`)
+  if (settled.stuck.length) {
+    const why = `finding(s) stayed unanswered after their owner was told once that its result left them unanswered: ${settled.stuck.join('; ')}`
+    log(`Round ${n}: ${why}`)
+    return { ok: false, stage: 'rounds', reason: why, error: why, subject, survey, retries }
+  }
+  for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
   if (!settled.dispatches.length) {
     if (plan.readyForDecision === true) {
       lastRound = n
@@ -884,7 +903,9 @@ HOW TO ROUTE:
     return { ok: false, stage: 'rounds', reason: why, error: why, rejected, subject, survey }
   }
   log(`Round ${n}: ${settled.dispatches.map((d) => `${d.role}:${d.agentType}`).join(', ')}`)
+  for (const d of settled.dispatches) for (const id of d.answers) asked.set(id, { agentType: d.agentType, round: n, clarified: (d.clarified || []).includes(id) })
   const silent = await runRound(n, settled.dispatches)
+  silentLast = silent
   if (silent.length) log(`Round ${n}: no result from ${silent.join(', ')}`)
   lastRound = n
   pendingGaps = []
@@ -964,7 +985,7 @@ async function measured(u, label) {
   const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
   if (unreported.length) log(`Integrate: files written and not reported, added to the review: ${unreported.join(', ')}`)
   const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
-  return { update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
+  return { tree: now, update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
 }
 /** Returns the failure when the integration wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
 async function outOfBounds(u) {
@@ -983,12 +1004,16 @@ async function outOfBounds(u) {
 const firstMeasure = await measured(update, 'tree:after-integrate')
 if (firstMeasure.failure) return firstMeasure.failure
 update = firstMeasure.update
+let lastTree = firstMeasure.tree
 const bounds = await outOfBounds(update)
 if (bounds) return bounds
 
-/** Runs one conformance review; a changed file the review does not cover is a finding. */
-async function review() {
+/** Runs one conformance review; a changed file the review does not cover is a finding. `again` names the previous review's findings and the files the correction changed. */
+async function review(again) {
   reviewPass += 1
+  const againBlock = again
+    ? `\nTHIS IS REVIEW ${reviewPass}. The previous review found the findings below, and correction ${again.correction} changed these files to answer them: ${again.changed.join(', ')}. Confirm each finding is resolved, and check the changed files as fully as the rest.\nPREVIOUS FINDINGS:\n${JSON.stringify(again.findings, null, 1)}\n`
+    : ''
   const reviewFile = `${WORK}/conformance-${reviewPass}.json`
   const got = await run(
     `You are the architecture-conformance-reviewer. Check one integration of an approved target into the effective version; report findings and fix nothing.
@@ -997,7 +1022,7 @@ THE APPROVED TARGET: ${targetDir} (the change alone in ${deltaDir}).
 THE INTEGRATION REPORT: ${UPDATE_JSON}. The files it changed or created, every one of which you review:
 ${touched(update).map((f) => `- ${f}`).join('\n') || '- (none)'}
 Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
-
+${againBlock}
 ${ARCH_WHERE}
 
 Check that the integration applied the approved target exactly, no more and no less; that every effective view the catalog lists for each changed element was updated or deleted, at every scope; that the new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming, and one finding per problem with its file and evidence; \`conforms\` is true only when there is no finding.${persistBrief([reviewFile], 'your complete structured result, exactly as you return it, as ONE JSON object')}`,
@@ -1034,7 +1059,17 @@ ${INTEGRATE_TASK}${updateBrief}`,
   update = fixMeasure.update
   const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
-  conformance = await review()
+  const changedNow = diffFiles(treeDiff(lastTree, fixMeasure.tree))
+  lastTree = fixMeasure.tree
+  if (!changedNow.length) {
+    const why = `correction ${corrections} changed no file, so a further review would judge the same integration; the findings stand: ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
+    log(`Integrate: ${why}`)
+    return { ok: false, stage: 'integrate', reason: why, error: why, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir, retries }
+  }
+  const whatChanged = `correction ${corrections} changed ${changedNow.join(', ')} to answer ${(conformance.findings || []).length} finding(s)`
+  retries.push({ step: 'integrate:review', attempt: reviewPass + 1, whatChanged })
+  log(`Integrate: review again — ${whatChanged}`)
+  conformance = await review({ correction: corrections, changed: changedNow, findings: conformance.findings || [] })
   if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
 }
 if (conformance.conforms !== true) {
@@ -1073,5 +1108,6 @@ return {
   conformance,
   approval,
   rounds: lastRound,
+  retries,
   openItems: [...listed(update.constraintIssues), ...listed(update.contradictions)],
 }

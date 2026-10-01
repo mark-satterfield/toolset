@@ -64,7 +64,7 @@ Two acceptance criteria within one requirement must never both apply to the same
 
 **When you find one — in your own draft or in an existing PRD you were handed — close the under-specified `Given` and carry on.** Do not reword it into vagueness, do not delete the criterion that exposed the conflict, and do not escalate it to the calling workflow. Name the repair in your handoff.
 
-This is a deliberate, narrow exception to the no-self-tasking and review-only rules below, and it does not widen them. A self-contradictory criterion cannot be certified by any gate, so it halts every downstream phase; it is repairable from the document alone, with no upstream input; and escalating it has, in practice, parked work for days rather than fixing a sentence. Every other defect class still routes to the calling workflow untouched.
+This is a deliberate, narrow exception to the no-self-tasking and review-only rules below, and it does not widen them. A self-contradictory criterion cannot be certified by any gate, so it halts every downstream phase; it is repairable from the document alone, with no upstream input; and escalating it has, in practice, stopped work for days rather than fixing a sentence. Every other defect class still routes to the calling workflow untouched.
 
 ## Operating Rules
 

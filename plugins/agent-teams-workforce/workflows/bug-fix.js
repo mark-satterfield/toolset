@@ -744,17 +744,16 @@ function deployEvidence(rows) {
 // ── THE STAGE A DEAD DISPATCH IS REPORTED UNDER ───────────────────────────────
 //
 // The supervisor classifies a failed handback by its `stage`: a stage in its
-// ENVIRONMENT set is never charged to the bead, never sent to the repair tier, and
-// never counted toward quarantine, because no workflow script failed a line for it.
-// A phase whose producing agents died — skipped, or killed by a terminal API error
-// after the runtime's own retries — is exactly that: the harness failed, not the work.
-// Reported under the phase name it reads as "the tests were bad" for what was an
-// account limit, and three of those quarantine the bead.
+// ENVIRONMENT set is never charged to the bead and never sent to the repair tier,
+// because no workflow script failed a line for it. A phase whose producing agents
+// died — skipped, or killed by a terminal API error after the runtime's own retries —
+// is exactly that: the harness failed, not the work. Reported under the phase name it
+// reads as "the tests were bad" for what was an account limit.
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
 // ── THE STAGE A STOP THAT NEEDS A PERSON IS REPORTED UNDER ────────────────────
 // A gate that escalates to a stale spec is neither a failure of the work nor of the harness.
-// The supervisor's `requires-human-action` stage charges nothing, parks the item and queues the
-// action named in `requiredHumanActions`.
+// The supervisor's `requires-human-action` stage charges nothing and queues the action named in
+// `requiredHumanActions`.
 const HUMAN_ACTION_STAGE = 'requires-human-action'
 const SPEC_STALE_ESCALATION = /spec is stale|prd-to-spec/i
 const needsPerson = (r) => !!(r && !r.dispatchFailed && typeof r.escalate === 'string' && SPEC_STALE_ESCALATION.test(r.escalate))
@@ -897,27 +896,15 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
-    const gateArgs = { gate, phaseName, criteria, checks, artifact, escalateTargets }
-    let verdict = await workflow('agent-teams-workforce:gate-enforce', gateArgs)
-    // ── A DEAD JUDGE GETS A SECOND LOOK BEFORE FINISHED WORK IS DISCARDED ────────
-    //
-    // The gate is READ-ONLY: it produces nothing, changes nothing, and judging the same
-    // artifact twice cannot corrupt anything. The phase below it, by contrast, has already
-    // run to completion and its output is durable. Throwing that away because the judge was
-    // skipped or hit an account limit is the same asymmetry as aborting an elaboration over
-    // a dead dependency mapper — the expensive error taken to avoid the cheap one. So a null
-    // verdict is re-asked once, against the identical artifact, before it is given up on.
-    // It does NOT spend a phase attempt: `attemptsSpent` counts re-running the PHASE, and
-    // nothing about the phase is re-run here.
-    if (!verdict) {
-      log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
-      verdict = await workflow('agent-teams-workforce:gate-enforce', gateArgs)
-    }
+    const verdict = await workflow('agent-teams-workforce:gate-enforce', { gate, phaseName, criteria, checks, artifact, escalateTargets })
+    // A gate that returned nothing is not asked again with the same artifact and criteria: nothing
+    // in its input would differ. The judge never ruled, so this is reported under the environment
+    // stage and is not a finding against the phase, whose output stands.
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
       return {
         ok: false,
-        reason: `gate ${gate} returned no verdict twice — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
+        reason: `gate ${gate} returned no verdict — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
         artifact,
         dispatchFailed: true,
       }
@@ -937,9 +924,8 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         verdict,
       }
     }
-    // A verdict that blocks while naming no reason (`malformedVerdict`) was already asked again
-    // inside the gate, with the defect named. Still reasonless, the work was never really
-    // judged, so it is reported under the environment stage rather than charged to the phase.
+    // A verdict that blocks while naming no reason (`malformedVerdict`) never really judged the
+    // work, so it is reported under the environment stage rather than charged to the phase.
     if (verdict.malformedVerdict === true) {
       recordGate(attempt, verdict, { terminal: 'malformed-verdict' })
       return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
@@ -970,6 +956,18 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`Gate ${gate} (${phaseName}): ESCALATE -> ${escalateTo}${escalateTo !== named ? ` (the judge named ${JSON.stringify(named || 'nothing')})` : ''}`)
       // The judge's feedback is why it escalated; the headline carries it.
       return { ok: false, escalate: escalateTo, reason: verdict.feedback ? `escalated to ${escalateTo}: ${verdict.feedback}` : undefined, artifact, verdict }
+    }
+    // The next attempt runs only on what this verdict changes in its input: the gate's feedback or
+    // the criteria it found unmet. A loop verdict naming neither would re-run the phase on the same
+    // input, so the loops end here and the exhausted gate is ruled on below.
+    const unmetNow = (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => cc.criterion)
+    if (!String(verdict.feedback || '').trim() && !unmetNow.length) {
+      log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} named no feedback and no unmet criterion — not re-running the phase on the same input`)
+      break
+    }
+    if (attempt < loopBudget) {
+      const whatChanged = `attempt ${attempt + 1} of ${phaseName} is given gate ${gate}'s feedback${unmetNow.length ? ` and ${unmetNow.length} unmet criterion(s): ${unmetNow.join('; ')}` : ''}`
+      runLedger.push({ phase: `retry:${gate}`, gate, gatePhase: phaseName, attempt: attempt + 1, whatChanged })
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
@@ -1057,7 +1055,7 @@ async function ruleExhaustedGate(ctx) {
     })
   let ruled = await ask(false)
   if (ruled && ruled.verdict === 'ruled' && ruled.ruling === 'revise') {
-    record(loops + 1, lastVerdict, { verdict: 'decider-revise', terminal: null, directive: ruled.directive, decidedBy: ruled.decidedBy })
+    record(loops + 1, lastVerdict, { verdict: 'decider-revise', terminal: null, directive: ruled.directive, decidedBy: ruled.decidedBy, whatChanged: `the phase is given the advantage-evaluator's directive: ${ruled.directive}` })
     log(`Gate ${gate} (${phaseName}): the advantage-evaluator directs one revision — ${ruled.directive}`)
     const revised = await runPhase(ruled.directive, {
       attempt: loops + 1,
@@ -1521,38 +1519,7 @@ const workBead = { ...bead, repoPath: workRepoPath }
 if (!contract) {
   enterPhase('Triage')
   log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-  // Standing rulings from the project owner: resolved once from the repository this
-  // run operates on (one cheap read agent — scripts have no filesystem) and threaded
-  // into the triage brief, the judgment front-end of this composite. Missing file ->
-  // nothing injected, zero behavior change. The triage-first path above runs without
-  // them, because no repository is known yet when it dispatches.
-  let standingRulings = null
-  try {
-    const rulingsRead = await settleAgent(
-      `Check whether a standing-rulings file exists and read it. Path: ${bead.repoPath}/.claude/standing-rulings.md
-
-If the file exists and contains text, return found=true and its FULL text verbatim in \`content\` — do not summarize, reformat, or comment on it. If it does not exist or is empty, return found=false with content "". Do not invent content and do not read any other file.`,
-      {
-        label: 'resolve:standing-rulings',
-        phase: 'Triage',
-        model: 'haiku',
-        effort: 'low',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['found', 'content'],
-          properties: { found: { type: 'boolean' }, content: { type: 'string' } },
-        },
-      }
-    )
-    if (rulingsRead && rulingsRead.found === true && typeof rulingsRead.content === 'string' && rulingsRead.content.trim()) {
-      standingRulings = rulingsRead.content.trim().slice(0, 8192)
-      log(`Standing rulings found (${standingRulings.length} chars) — injected into the triage brief`)
-    }
-  } catch (e) {
-    log(`standing-rulings resolution failed (non-fatal, nothing injected): ${(e && e.message) || e}`)
-  }
-  const fresh = await workflow('agent-teams-workforce:bug-triage', { bead: workBead, standingRulings })
+  const fresh = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
   const triageFault = triageFailure(fresh)
   if (triageFault) return triageFault
   const promotedFresh = needsPrdExit(fresh)
@@ -1880,6 +1847,13 @@ async function certifyIntegration(phaseName, seed) {
     } else {
       log(`Integration: the test environment was not ready — running the suites again, which re-provisions it`)
     }
+    runLedger.push({
+      phase: 'retry:integration',
+      repair,
+      whatChanged: envNotReady
+        ? 'the test environment was not ready; the integration mini provisions it again and is given the previous failure'
+        : `Green repair ${repair} changed the production code to answer the integration failures, and the suites are given the previous failure`,
+    })
     enterPhase('Integration')
     r = await runIntegration(
       `${phaseName} (after ${envNotReady ? 'the environment was not ready' : `Green repair ${repair}`})`,
@@ -1962,6 +1936,7 @@ async function certifyAdversarial(phaseName, seed, priorRulings) {
     await cpSave('securityRepair', { basis: cpBasis(green), count: n, feedback, priorRulings: rulings })
     green = await runGreen(`TDD Green (security repair ${n}/${MAX_SECURITY_REPAIRS})`, feedback)
     if (!green.ok) return { handback: await failAfterDoc('green', green) }
+    runLedger.push({ phase: 'retry:adversarial', repair: n, whatChanged: `security repair ${n} changed the production code to close ${r.artifact.constitutiveOpen} confirmed finding(s); Integration and Adversarial run again with the adjudicated rulings` })
     await cpSave('green', { redArtifact: redResult.artifact, green })
     await Promise.allSettled([repairDocTrack])
     repairDocTrack = startDocTrack(green.artifact)
@@ -2148,6 +2123,7 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
   // it in a deployed environment.
   green = await runGreen(`TDD Green (deploy iteration ${deployIteration + 1}/${MAX_DEPLOY_ITERATIONS})`, smokeFeedback)
   if (!green.ok) return { ...(await failAfterDoc('green', green)), ...deployEvidence(deployIterations) }
+  runLedger.push({ phase: 'retry:deploy-to-dev', iteration: deployIteration + 1, whatChanged: `Green changed the production code to answer the smoke failure of deploy iteration ${deployIteration}` })
   // Saved before re-certification, so a resume lands on the repaired Green and the saved
   // Integration and Adversarial — which certified the old one — are rejected by their basis.
   await cpSave('green', { redArtifact: redResult.artifact, green })
