@@ -58,7 +58,7 @@ test('the workspace phase reuses an existing worktree for the same bead', () => 
 });
 
 test('every code-writing composite dispatches the workspace phase', () => {
-  for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
+  for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js']) {
     const src = read(f);
     assert.match(src, /workflow\('agent-teams-workforce:workspace'/, `${f} must establish its own worktree`);
     // A run with no repository ends before any tree: a Task's contract must name one, and a

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
-const COMPOSITES = ['bug-fix.js', 'task-to-deploy.js', 'infra-change.js']
+const COMPOSITES = ['bug-fix.js', 'task-to-deploy.js']
 const WORKTREE = '/repos/.worktrees/ssbd-4q3x-chassis'
 
 /** Run a composite to a clean early success, with a scripted settle result. */
@@ -42,7 +42,7 @@ function run(file, settleImpl, args) {
   })
 }
 
-// task-to-deploy and infra-change commit to the Story branch and land nothing, so the
+// task-to-deploy commits to the Story branch and land nothing, so the
 // landing verdicts below are bug-fix's alone.
 for (const file of ['bug-fix.js']) {
   test(`${file}: a settle agent that THREW says so — it never claims a URL was withheld`, async () => {

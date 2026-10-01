@@ -168,7 +168,7 @@ shown the answer is not a checker.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| implementation-lead | orchestrate | Routes Beads tasks to the implementer sub-teams the feature requires, enforces hard constraints before any file is written, and reports to Gate 2b. |
+| implementation-lead | orchestrate | Selects the implementer(s) whose specialties cover a Task, in build order, from the Task's build contract; `tdd-green` dispatches them. |
 | chassis-extension-implementer | execute | Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers. |
 | api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK. |
 | event-api-client-implementer | execute | Implements clients publishing events through the publishing path and envelope the effective architecture describes |

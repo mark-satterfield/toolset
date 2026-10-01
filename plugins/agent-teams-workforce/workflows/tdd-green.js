@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-green',
   description:
-    'Shared-tail mini — TDD Green. The implementation-lead selects the implementer(s) for the change unless the caller names one; the implementers write the minimum production code in sequence to make the failing tests pass, run the suite, and report Green.',
+    'Shared-tail mini — TDD Green. The implementation-lead selects the implementer(s) for the change unless the caller names one; the implementers write the minimum production code in sequence to make the failing tests pass, run the suite, and report Green. An implementer does not change tests: it names a test that contradicts the contract in testIssues, and a missing thing outside the Task in upstreamMissing.',
   phases: [{ title: 'Green', detail: 'minimum code to pass; confirm Green' }],
 }
 // settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
@@ -156,6 +156,11 @@ ${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).jo
 Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}
 Red evidence${redEvidence.length > RED_EVIDENCE_CHARS ? ` (first ${RED_EVIDENCE_CHARS} characters)` : ''}: ${redEvidence.slice(0, RED_EVIDENCE_CHARS) || 'n/a'}`
 
+const suiteCommand = str(c.suiteCommand)
+const suiteBlock = suiteCommand
+  ? `\n\nThe run judges green by running exactly \`cd "${repo}" && ${suiteCommand}\` itself, and green means it exits 0: the whole suite, including any test that was already failing before this Task. Run that command before you report.`
+  : ''
+
 const treeBlock = `Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
 ${repo}`
 
@@ -207,23 +212,51 @@ const GREEN_SCHEMA = {
     greenConfirmed: { type: 'boolean' },
     noRegressions: { type: 'boolean' },
     evidence: { type: 'string' },
+    testIssues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['testId', 'kind', 'reason'],
+        properties: {
+          testId: { type: 'string' },
+          kind: { type: 'string', enum: ['obsolete-by-contract', 'defect', 'missing-config'] },
+          reason: { type: 'string' },
+          contractRef: { type: 'string' },
+        },
+      },
+    },
+    upstreamMissing: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['what', 'evidence'],
+        properties: {
+          what: { type: 'string' },
+          evidence: { type: 'string' },
+        },
+      },
+    },
     notes: { type: 'string' },
   },
 }
 
 let green = null
 const changedFiles = []
+const testIssues = []
+const upstreamMissing = []
 const deadImplementers = []
 for (const impl of implementers) {
   green = await settleAgent(
-    `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed.
+    `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed.${suiteBlock}
 
 ${treeBlock}
 
 ${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}
 ${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
-Build to the contract above; do not modify the tests. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,
+Build to the contract above; do not modify the tests. When a test stands between the code and the contract — it encodes behaviour the contract removes (obsolete-by-contract), it is wrong on its own terms (defect), or its fixtures lack configuration the contract now requires (missing-config) — leave it as it is and name it in \`testIssues\` with the contract reference; the test author rules on it. When the code cannot pass because something outside this Task does not exist yet (a package, stack, parameter, table or service another Task or repository provides), name each such thing in \`upstreamMissing\` with the evidence. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,
     {
       label: `green:${impl}`,
       phase: 'Green',
@@ -236,6 +269,8 @@ Build to the contract above; do not modify the tests. Deliver the changed files,
     break
   }
   if (Array.isArray(green.changedFiles)) changedFiles.push(...green.changedFiles)
+  if (Array.isArray(green.testIssues)) testIssues.push(...green.testIssues.filter((x) => x && str(x.testId)))
+  if (Array.isArray(green.upstreamMissing)) upstreamMissing.push(...green.upstreamMissing.filter((x) => x && str(x.what)))
 }
 
 const ledger = {
@@ -258,4 +293,4 @@ if (deadImplementers.length) {
 
 const stoppedAt =
   green.greenConfirmed !== true || green.noRegressions !== true ? [str(green.notes), str(green.evidence).slice(-1500)].filter(Boolean).join(' | ') : ''
-return { ...green, changedFiles, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }
+return { ...green, changedFiles, testIssues, upstreamMissing, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }

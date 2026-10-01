@@ -1,8 +1,8 @@
 export const meta = {
   name: 'tdd-red',
   description:
-    'Shared-tail mini — TDD Red. Test writers derived from the contract surfaces (unit always) extend the existing suite with failing tests that encode the acceptance criteria and confirm they fail. Writes tests only — no production code.',
-  phases: [{ title: 'Red', detail: 'author failing tests; confirm Red' }],
+    'Shared-tail mini — TDD Red. Test writers derived from the contract surfaces (unit always) extend the existing suite, one writer after another, with failing tests that encode the acceptance criteria and confirm they fail. In update mode (testIssues given) the unit test writer rules on each existing test the implementer named — update it, delete it, or keep it — citing the contract. Writes tests only — no production code.',
+  phases: [{ title: 'Red', detail: 'author failing tests, or rule on the tests the implementer named' }],
 }
 // settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
 const DETERMINISTIC_ERROR_TEXT =
@@ -50,7 +50,8 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, feedback?: string, red?: { testFiles } }
+// args: { contract, feedback?: string, red?: { testFiles },
+//         testIssues?: [{ testId, kind: 'obsolete-by-contract' | 'defect' | 'missing-config', reason, contractRef? }] }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const repo = String(c.repoPath || (c.bead && c.bead.repoPath) || '').trim() || '(repo path not provided)'
@@ -136,8 +137,12 @@ const SURFACE_WRITERS = {
 }
 const surfaces = (Array.isArray(c.surfaces) ? c.surfaces : []).map((s) => String(s || '').trim().toLowerCase())
 const surfaceWriters = surfaces.map((s) => SURFACE_WRITERS[s]).filter(Boolean)
-const writersFinal = ['tdd-unit-test-generator', ...new Set(surfaceWriters)]
-const selectionMode = surfaceWriters.length ? 'derived' : 'unit-only'
+
+const testIssues = (Array.isArray(a.testIssues) ? a.testIssues : []).filter((x) => x && typeof x === 'object' && str(x.testId))
+const updateMode = testIssues.length > 0
+// Update mode rules on existing tests; the unit test writer owns the suite those tests live in.
+const writersFinal = updateMode ? ['tdd-unit-test-generator'] : ['tdd-unit-test-generator', ...new Set(surfaceWriters)]
+const selectionMode = updateMode ? 'update' : surfaceWriters.length ? 'derived' : 'unit-only'
 log(`Red writers (${selectionMode}): ${writersFinal.join(', ')}`)
 
 const strategy = c.testStrategy || null
@@ -145,10 +150,15 @@ const strategyBlock = strategy
   ? `\nTest strategy: pyramid=${strategy.pyramid || 'n/a'}; coverageThreshold=${strategy.coverageThreshold || 'n/a'}; envMatrix=${(strategy.envMatrix || []).join(', ') || 'n/a'}`
   : ''
 
-const concurrentBlock = (w) => {
+const suiteCommand = str(c.suiteCommand)
+const suiteBlock = suiteCommand
+  ? `\n\nThe run judges the suite by running exactly \`cd "${repo}" && ${suiteCommand}\` itself. Run your tests with that command (narrowed to your files while you work), so what you see is what the run measures.`
+  : ''
+
+const turnBlock = (w) => {
   const others = writersFinal.filter((x) => x !== w)
   return others.length
-    ? `\n\nOther writers are editing this tree at the same time: ${others.join(', ')}. Create or edit only test files of your own kind of test (${w}); the unit test files belong to tdd-unit-test-generator.`
+    ? `\n\nOther test writers work on this tree one after another: ${others.join(', ')}. Create or edit only test files of your own kind of test (${w}); the unit test files belong to tdd-unit-test-generator.`
     : ''
 }
 
@@ -160,34 +170,71 @@ const RED_SCHEMA = {
     testFiles: { type: 'array', items: { type: 'string' } },
     redConfirmed: { type: 'boolean' },
     evidence: { type: 'string' },
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['testId', 'action', 'reason'],
+        properties: {
+          testId: { type: 'string' },
+          action: { type: 'string', enum: ['update', 'delete', 'keep'] },
+          reason: { type: 'string' },
+        },
+      },
+    },
     notes: { type: 'string' },
   },
 }
 
-const writerResultsRaw = await parallel(
-  writersFinal.map((w) => () =>
-    settleAgent(
-      `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty.
+const issueLine = (x, i) =>
+  `${i + 1}. ${str(x.testId)} (${str(x.kind) || 'unclassified'}): ${str(x.reason) || 'no reason given'}${str(x.contractRef) ? ` — contract: ${str(x.contractRef)}` : ''}`
+
+const authorPrompt = (w) => `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty.
 
 Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
 ${repo}
 
-Add to the existing test file that covers this module or behavior, matching its imports, fixtures, naming and helpers; create a new file only when none covers this area. Where an existing test already encodes a criterion, keep it and do not duplicate it. Tests synthesize, build or render the thing under test during the run; they never read a committed build output.${concurrentBlock(w)}
+Add to the existing test file that covers this module or behavior, matching its imports, fixtures, naming and helpers; create a new file only when none covers this area. Where an existing test already encodes a criterion, keep it and do not duplicate it. Tests synthesize, build or render the thing under test during the run; they never read a committed build output.${turnBlock(w)}
 
 ${taskBlock}
-${strategyBlock}${priorTestsBlock}
+${strategyBlock}${suiteBlock}${priorTestsBlock}
 ${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
-Deliver: the test file paths you created or modified, whether Red is confirmed, and the captured failing output as evidence.`,
-      {
-        label: `red:${w}`,
-        phase: 'Red',
-        agentType: `agent-teams-workforce:${w}`,
-        schema: RED_SCHEMA,
-      }
-    )
+Deliver: the test file paths you created or modified, whether Red is confirmed, and the captured failing output as evidence.`
+
+const updatePrompt = (w) => `The implementer building the Task below reports that these existing tests stand between the code and the contract. It may not change tests; you own them. Rule on each one:
+
+${testIssues.map(issueLine).join('\n')}
+
+For each named test choose one action and cite the contract (an acceptance criterion, a spec section, or an architecture view below) in the reason:
+- update — the test encodes behaviour or configuration the contract changes: rewrite it to encode what the contract states.
+- delete — the test encodes behaviour the contract removes, and no criterion needs it.
+- keep — the test is right under the contract; the production code must change to pass it. Say what it requires.
+
+Change test code and nothing else: the implementer owns the production code. You are '${w}'.
+
+Every file you modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
+${repo}
+
+${taskBlock}
+${suiteBlock}${priorTestsBlock}
+${a.feedback ? `\nThe last suite run:\n${a.feedback}` : ''}
+
+Deliver: one decision per named test, the test file paths you modified, the captured output of the tests you changed as evidence, and redConfirmed true when every test you updated runs and fails or passes as the contract says it should.`
+
+// Writers run one after another: concurrent writers in one tree edited the same files.
+const writerResultsRaw = []
+for (const w of writersFinal) {
+  writerResultsRaw.push(
+    await settleAgent(updateMode ? updatePrompt(w) : authorPrompt(w), {
+      label: `red:${updateMode ? 'update:' : ''}${w}`,
+      phase: 'Red',
+      agentType: `agent-teams-workforce:${w}`,
+      schema: RED_SCHEMA,
+    })
   )
-)
+}
 
 const writerResults = writerResultsRaw.filter(Boolean)
 const deadWriters = writersFinal.filter((_w, i) => !writerResultsRaw[i])
@@ -195,8 +242,9 @@ const testFiles = writerResults.flatMap((r) => (Array.isArray(r.testFiles) ? r.t
 const authoringWriters = writerResults.filter((r) => Array.isArray(r.testFiles) && r.testFiles.length)
 const redConfirmed = authoringWriters.length > 0 && authoringWriters.every((r) => r.redConfirmed === true)
 const evidence = writerResults.map((r) => r.evidence).filter(Boolean).join('\n---\n')
+const decisions = writerResults.flatMap((r) => (Array.isArray(r.decisions) ? r.decisions : []))
 
-const ledger = { phase: 'red', beadId, chosen: writersFinal, mode: selectionMode, ok: redConfirmed }
+const ledger = { phase: 'red', beadId, chosen: writersFinal, mode: selectionMode, ok: updateMode ? writerResults.length > 0 : redConfirmed }
 
 if (!writerResults.length) {
   return {
@@ -213,16 +261,19 @@ if (!writerResults.length) {
   }
 }
 
-const reason = !authoringWriters.length
-  ? 'no writer authored a test file'
-  : !redConfirmed
-    ? `not Red: ${authoringWriters.filter((r) => r.redConfirmed !== true).flatMap((r) => r.testFiles).join(', ')} did not fail as intended`
-    : ''
+const reason = updateMode
+  ? ''
+  : !authoringWriters.length
+    ? 'no writer authored a test file'
+    : !redConfirmed
+      ? `not Red: ${authoringWriters.filter((r) => r.redConfirmed !== true).flatMap((r) => r.testFiles).join(', ')} did not fail as intended`
+      : ''
 
 return {
   testFiles,
   redConfirmed,
   evidence,
+  ...(updateMode ? { updateMode: true, decisions } : {}),
   ...(reason ? { reason } : {}),
   writers: writersFinal,
   surfaces,

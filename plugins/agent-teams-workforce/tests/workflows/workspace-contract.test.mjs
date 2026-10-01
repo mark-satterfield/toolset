@@ -24,8 +24,13 @@ const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'
 const COMPOSITES = [
   { file: 'bug-fix.js', writer: 'agent-teams-workforce:tdd-red' },
   { file: 'task-to-deploy.js', writer: 'agent-teams-workforce:tdd-red' },
-  { file: 'infra-change.js', writer: 'agent-teams-workforce:infra-intent' },
 ]
+// The suite runner: a Red run shows the new test in Red's file failing; every other run is green.
+const suiteRun = (call) =>
+  String(call.payload.label || '').startsWith('red')
+    ? { ok: false, command: 'task test', exitCode: 1, failing: ['FAILED t::test_new'], tail: '', summary: '1 failed' }
+    : { ok: true, command: 'task test', exitCode: 0, failing: [], tail: '', summary: '3 passed' }
+
 
 const CALLER_REPO = '/repos/shared-chassis'
 const WORKTREE = '/repos/.worktrees/ssbd-mz1w-shared-chassis'
@@ -40,8 +45,8 @@ function run(file, { workspace, args } = {}) {
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { repoPath: '/SOMEWHERE/ELSE', scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
       }
-      if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
-      // task-to-deploy and infra-change have no gates: Green and Refactor pass so they reach
+      if (call.name === 'agent-teams-workforce:suite-run') return suiteRun(call)
+      // task-to-deploy has no gates: the suite runner reports Red, then green, so it reaches
       // the Commit phase. bug-fix's gates escalate after its first writing phase.
       if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, noRegressions: true, evidence: 'e', changedFiles: [] }
       if (call.name === 'agent-teams-workforce:tdd-refactor') return { testsGreen: true }
@@ -376,7 +381,7 @@ for (const { file } of COMPOSITES) {
       )
       return
     }
-    // task-to-deploy / infra-change commit the Task to the Story branch and stop there.
+    // task-to-deploy commits the Task to the Story branch and stops there.
     const commits = calls.filter((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:settle')
     assert.equal(commits.length, 1, 'work on a non-default branch must still be committed')
     assert.equal(commits[0].payload.commitOnly, true, 'the Task commits to the Story branch; it does not land')

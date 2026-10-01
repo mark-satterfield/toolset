@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). One provisioner session does the git work. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, the provisioner returns nothing or ok=false, or the tree is on a default branch or a detached HEAD. Returns { ok, applicable, repoPath, branch, reused, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.',
+    'Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). One provisioner session does the git work. With stashUncommitted, a reused tree\'s uncommitted changes are stashed (`git stash push --include-untracked`) under a message naming the run, so the run starts from the branch head and the earlier work stays recoverable. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, the provisioner returns nothing or ok=false, or the tree is on a default branch or a detached HEAD. Returns { ok, applicable, repoPath, branch, reused, stashed, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 
@@ -41,13 +41,20 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { repoPath: string, beadId: string, branchPrefix?: string, purpose?: string, worktreeRoot?: string }
+// args: { repoPath: string, beadId: string, branchPrefix?: string, purpose?: string, worktreeRoot?: string,
+//         stashUncommitted?: boolean, stashLabel?: string }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const repoPath = String(a.repoPath || '').trim().replace(/\/+$/, '')
 const beadId = String(a.beadId || '').trim()
 const worktreeRoot = String(a.worktreeRoot || '').trim().replace(/\/+$/, '')
 const prefix = String(a.branchPrefix || 'work').trim().replace(/[^a-zA-Z0-9._-]/g, '') || 'work'
 const purpose = String(a.purpose || '').replace(/\s+/g, ' ').trim().slice(0, 240)
+const stashUncommitted = a.stashUncommitted === true
+const stashLabel = String(a.stashLabel || beadId || '').replace(/[^a-zA-Z0-9._ -]/g, '').trim().slice(0, 120)
+const stashStep = stashUncommitted
+  ? `\n6. Only when you reused the tree: \`git -C "<tree>" status --porcelain\`. When it prints anything, run \`git -C "<tree>" stash push --include-untracked -m "abandoned run ${stashLabel} $(date -u +%Y-%m-%dT%H:%M:%SZ)"\`, then \`git -C "<tree>" stash list -n 1\`, and confirm \`git -C "<tree>" status --porcelain\` now prints nothing.`
+  : ''
+const stashReport = stashUncommitted ? '\n- stashed: the line `git stash list -n 1` printed after step 6 stashed changes; "" when nothing was stashed.' : ''
 
 const refuse = (reason, extra) => ({ ok: false, applicable: true, repoPath: null, branch: null, reused: false, blocked: [reason], ...(extra || {}) })
 
@@ -76,7 +83,7 @@ Run every git command as \`git -C "<path>"\`. Never redirect stderr to /dev/null
 2. \`git -C "${repoPath}" worktree list --porcelain\`. If a tree is already registered for branch ${BRANCH} or at ${plannedWorktreePath}, reuse it (reused=true) and go to step 5.
 3. \`git -C "${repoPath}" fetch origin <default>\`. Fast-forward the main tree only if it is clean, on the default branch, and behind origin; otherwise leave it alone.
 4. \`mkdir -p "$(dirname "${plannedWorktreePath}")"\` then \`git -C "${repoPath}" worktree add --no-track -b "${BRANCH}" "${plannedWorktreePath}" origin/<default>\`. If the branch already exists, \`git -C "${repoPath}" worktree add "${plannedWorktreePath}" "${BRANCH}"\`.
-5. On the tree: \`git -C "<tree>" rev-parse --abbrev-ref HEAD\` and \`git -C "<tree>" rev-parse --path-format=absolute --git-common-dir\`.
+5. On the tree: \`git -C "<tree>" rev-parse --abbrev-ref HEAD\` and \`git -C "<tree>" rev-parse --path-format=absolute --git-common-dir\`.${stashStep}
 
 Report:
 - ok: true when the tree exists on a branch that is not the default branch.
@@ -84,7 +91,7 @@ Report:
 - branch: the branch step 5 printed.
 - reused: true if you reused an existing tree.
 - gitCommonDir: the git-common-dir step 5 printed.
-- defaultBranch: the default branch from step 1.
+- defaultBranch: the default branch from step 1.${stashReport}
 - blocked: one short sentence for each thing that stopped you or that you worked around.`,
   {
     label: 'workspace:provision',
@@ -102,6 +109,7 @@ Report:
         reused: { type: 'boolean' },
         gitCommonDir: { type: 'string' },
         defaultBranch: { type: 'string' },
+        stashed: { type: 'string' },
         blocked: { type: 'array', items: { type: 'string' } },
       },
     },
@@ -129,7 +137,8 @@ if (['main', 'master', 'head'].includes(normalized) || (defaultBranch && normali
   return { ...refuse(`the worktree ${treePath} is on "${branch}", a default branch or a detached HEAD`), blocked: [`the worktree ${treePath} is on "${branch}", a default branch or a detached HEAD`, ...blocked] }
 }
 
-log(`Workspace: ${provisioned.reused ? 'reused' : 'created'} worktree ${treePath} on ${branch}`)
+const stashed = stashUncommitted ? String(provisioned.stashed || '').trim() || null : null
+log(`Workspace: ${provisioned.reused ? 'reused' : 'created'} worktree ${treePath} on ${branch}${stashed ? `; uncommitted changes stashed as ${stashed}` : ''}`)
 
 return {
   ok: true,
@@ -137,6 +146,7 @@ return {
   repoPath: treePath,
   branch,
   reused: provisioned.reused === true,
+  stashed,
   isLinkedWorktree: true,
   independentlyVerified: true,
   defaultBranch,

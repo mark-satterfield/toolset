@@ -84,7 +84,7 @@ test('a Task under a Story under an Epic is workable', async () => {
   assert.equal(r.composite, 'task-to-deploy')
 })
 
-test('a provisioning Task with a full hierarchy routes to infra-change', async () => {
+test('a provisioning Task with a full hierarchy routes to task-to-deploy, which runs its Infra Intent phase', async () => {
   const r = await route({
     type: 'task',
     labels: ['cdk'],
@@ -92,7 +92,8 @@ test('a provisioning Task with a full hierarchy routes to infra-change', async (
     ancestorTypes: ['story', 'epic'],
   })
   assert.equal(r.action, 'work')
-  assert.equal(r.composite, 'infra-change')
+  assert.equal(r.composite, 'task-to-deploy')
+  assert.match(r.reason, /Infra Intent/)
 })
 
 test('a parentless Task IS workable — a Story is a roll-up parent for reporting, never a gate', async () => {
@@ -113,10 +114,10 @@ test('a Task under a Story but with no ancestor Epic is workable too', async () 
   assert.match(r.reason, /Epic/i, 'the missing ancestor is named')
 })
 
-test('a parentless provisioning Task routes to infra-change, not to a skip', async () => {
+test('a parentless provisioning Task routes to task-to-deploy, not to a skip', async () => {
   const r = await route({ type: 'task', labels: ['cdk'] })
   assert.equal(r.action, 'work')
-  assert.equal(r.composite, 'infra-change')
+  assert.equal(r.composite, 'task-to-deploy')
 })
 
 // ── Routing: containers are never worked and never decomposed ────────────────

@@ -20,6 +20,11 @@ import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const T2D = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows', 'task-to-deploy.js')
 const WORKTREE = '/repos/.worktrees/ssbd-nhcx-web'
+// The suite runner: a Red run shows the new test in Red's file failing; every other run is green.
+const suiteRun = (call) =>
+  String(call.payload.label || '').startsWith('red')
+    ? { ok: false, command: 'task test', exitCode: 1, failing: ['FAILED t::test_new'], tail: '', summary: '1 failed' }
+    : { ok: true, command: 'task test', exitCode: 0, failing: [], tail: '', summary: '3 passed' }
 
 function run(args) {
   return runWorkflowScript(T2D, {
@@ -29,6 +34,7 @@ function run(args) {
       if (call.name === 'agent-teams-workforce:workspace') {
         return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
+      if (call.name === 'agent-teams-workforce:suite-run') return suiteRun(call)
       return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e' }
     },
   })

@@ -1,6 +1,6 @@
 // Where a composite's repository comes from.
 //
-//   task-to-deploy / infra-change — the repository is part of the Task's build contract,
+//   task-to-deploy — the repository is part of the Task's build contract,
 //     ruled during elaboration. A Task with none is refused at input and nothing is
 //     dispatched; a supplied repoPath goes straight to Workspace.
 //   bug-fix — triage runs FIRST, without a tree, and the repository is a FINDING of the
@@ -51,7 +51,7 @@ function runSpecSide(file, { bead } = {}) {
 
 const workflows = (calls) => calls.filter((c) => c.kind === 'workflow').map((c) => c.name)
 
-for (const file of ['task-to-deploy.js', 'infra-change.js']) {
+for (const file of ['task-to-deploy.js']) {
   test(`${file}: with no repoPath the build contract is incomplete — refused at input, nothing dispatched`, async () => {
     const { result, calls } = await runSpecSide(file, {})
     assert.equal(result.ok, false)

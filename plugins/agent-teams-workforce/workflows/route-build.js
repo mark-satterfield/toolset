@@ -1,12 +1,12 @@
 export const meta = {
   name: 'route-build',
   description:
-    'Routes a bead to the build composite that works it, deterministically from its type and labels. A Task goes to task-to-deploy (infra-change when it carries an infrastructure type or label) and an infrastructure bead goes to infra-change; a bug, a bead labelled `human`, an Epic, Story or feature, and every other kind are skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
+    'Routes a bead to the build composite that works it, deterministically from its type and labels. A Task and an infrastructure bead go to task-to-deploy, which adds its Infra Intent phase for a bead with an infrastructure type or label; a bug, a bead labelled `human`, an Epic, Story or feature, and every other kind are skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
   phases: [{ title: 'Classify', detail: 'maps the bead type and labels to a composite or a skip' }],
 }
 
 // args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? } }
-// returns: { bead, action: 'work' | 'skip', composite: 'task-to-deploy' | 'infra-change' | null, reason, ruledBy: 'deterministic' }
+// returns: { bead, action: 'work' | 'skip', composite: 'task-to-deploy' | null, reason, ruledBy: 'deterministic' }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
 
@@ -29,8 +29,9 @@ const route = (action, composite, reason) => ({ bead, action, composite, reason,
 const work = (composite, reason) => route('work', composite, reason)
 const skip = (reason) => route('skip', null, reason)
 
-const workComposite = () =>
-  type === 'infra' || type === 'infrastructure' || hasLabel(...INFRA_LABELS) ? 'infra-change' : 'task-to-deploy'
+const isInfra = () => type === 'infra' || type === 'infrastructure' || hasLabel(...INFRA_LABELS)
+const workComposite = () => 'task-to-deploy'
+const infraTail = () => (isInfra() ? ' (an infrastructure change: its Infra Intent phase runs)' : '')
 const hasStoryParent = () => parentType === 'story' || ancestorTypes.includes('story')
 const hasEpicAncestor = () => ancestorTypes.includes('epic')
 
@@ -47,12 +48,12 @@ function decide() {
   }
   if (type === 'task' || byLabel('task')) {
     const composite = workComposite()
-    if (hasStoryParent() && hasEpicAncestor()) return work(composite, `task under a Story and an Epic → ${composite}`)
+    if (hasStoryParent() && hasEpicAncestor()) return work(composite, `task under a Story and an Epic → ${composite}${infraTail()}`)
     const missing = [!hasStoryParent() && 'parent Story', !hasEpicAncestor() && 'ancestor Epic'].filter(Boolean).join(' and ')
-    return work(composite, `task is missing its ${missing}, which is never a dispatch precondition → ${composite}`)
+    return work(composite, `task is missing its ${missing}, which is never a dispatch precondition → ${composite}${infraTail()}`)
   }
   if (type === 'infra' || type === 'infrastructure' || byLabel(...INFRA_LABELS)) {
-    return work('infra-change', `infrastructure change (type="${type || 'n/a'}"${labelTail}) → infra-change`)
+    return work('task-to-deploy', `infrastructure change (type="${type || 'n/a'}"${labelTail}) → task-to-deploy, with its Infra Intent phase`)
   }
   if (type === 'epic' || type === 'story' || byLabel('epic', 'story')) {
     return skip(`${type || 'container'} carries elaboration work, not development work → SKIP here; route it through route-elaboration.js`)

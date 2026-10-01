@@ -41,7 +41,7 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
 ```
 
 Supply `parentType` and `ancestorTypes` from the parent chain. A Task is routed to
-`task-to-deploy` (or `infra-change` for an infrastructure Task) with or without them;
+`task-to-deploy` (which runs its Infra Intent phase for an infrastructure Task) with or without them;
 they only change the router's `reason`. A bead labelled `human` is skipped.
 
 **Epic, Story, or Feature — ELABORATION work:**
@@ -100,7 +100,8 @@ python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
 
 Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
-the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is; do not rebuild it by hand and do
+the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is, adding the Task's
+`type` and `labels` (they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
 not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
 the repository is ruled during elaboration, so report the id and that reason and stop — never
 work out a repository yourself.

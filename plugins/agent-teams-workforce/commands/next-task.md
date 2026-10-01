@@ -134,7 +134,8 @@ python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
 
 Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
-the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is; do not rebuild it by hand and do
+the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is, adding the Task's
+`type` and `labels` from `bd show <id> --json` (they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
 not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
 the repository is ruled during elaboration, so release the claim, report the id and that reason, and stop — never
 work out a repository yourself.
@@ -156,7 +157,7 @@ Every value is the expanded value of its variable, not the literal variable name
 composite's `workspace` phase turns the contract's repository into the worktree; do not
 pre-cut one.
 
-`<composite>` is whatever the router named — `task-to-deploy` or `infra-change`.
+`<composite>` is whatever the router named — `task-to-deploy`.
 Do not substitute your own. (`bug-fix` is reachable only on demand, after a
 person has triaged a bug and decided it is a fix; the router never names it.)
 

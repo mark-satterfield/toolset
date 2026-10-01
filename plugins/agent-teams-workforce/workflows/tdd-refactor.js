@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    'Shared-tail mini — TDD Refactor. The code-refactoring-specialist refactors the code Green changed for clarity without changing behavior, keeps the suite green, and puts the tree back at its pre-refactor state when it cannot. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing.',
+    'Shared-tail mini — TDD Refactor. The code-refactoring-specialist refactors the code Green changed for clarity without changing behavior, keeps the suite green, and puts the tree back at its pre-refactor state when it cannot. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With restoreTo (a snapshot tree id the refactor recorded) one session puts the tree back at that snapshot and returns { restored }.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
 // settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
@@ -50,7 +50,7 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green, feedback?: string }
+// args: { contract, green, feedback?: string, restoreTo?: string }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -72,8 +72,43 @@ const contractBlock = (() => {
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()
 
+const restoreCommands = (tree) => `\`git -C "${repo}" add -A\`, then for each path listed by \`git -C "${repo}" diff --cached --no-renames --name-status ${tree}\` other than documentation (.md, .mdx, .rst, .adoc, anything under docs/): status A → \`git -C "${repo}" rm -f -q -- <path>\`, otherwise \`git -C "${repo}" restore --source=${tree} --staged --worktree -- <path>\``
+
 phase('Refactor')
 
+const restoreTo = str(a.restoreTo)
+if (restoreTo) {
+  const restore = await settleAgent(
+    `Put this tree back at the snapshot tree ${restoreTo}, then report. Change nothing else.
+
+Run ${restoreCommands(restoreTo)}. Then run \`git -C "${repo}" add -A\` and \`git -C "${repo}" diff --cached --no-renames --name-only ${restoreTo}\`; restored is true when that prints only documentation paths or nothing.`,
+    {
+      label: 'refactor:restore',
+      phase: 'Refactor',
+      model: 'haiku',
+      effort: 'low',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['restored', 'evidence'],
+        properties: {
+          restored: { type: 'boolean' },
+          evidence: { type: 'string' },
+        },
+      },
+    }
+  )
+  if (!restore) {
+    return { ok: false, dispatchFailed: true, restored: false, reason: 'the restore session returned nothing', ledger: { phase: 'refactor', beadId, chosen: ['restore'], mode: 'restore', ok: false } }
+  }
+  return {
+    restored: restore.restored === true,
+    evidence: str(restore.evidence),
+    ledger: { phase: 'refactor', beadId, chosen: ['restore'], mode: 'restore', ok: restore.restored === true },
+  }
+}
+
+const suiteCommand = str(c.suiteCommand)
 const refactor = await settleAgent(
   `Refactor the code changed by the fix for clarity and to reduce complexity and duplication, WITHOUT changing behavior.
 
@@ -86,8 +121,8 @@ ${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
 Steps:
 1. Before editing, record the tree: \`git -C "${repo}" add -A\` then \`git -C "${repo}" write-tree\`; return that id as \`snapshotTree\`.
 2. If these files need no refactoring, change nothing and return an empty \`changedFiles\`.
-3. Otherwise refactor, then run the test suite.
-4. If the suite is not green and you cannot make it green without changing behavior, put the tree back: \`git -C "${repo}" add -A\`, then for each path listed by \`git -C "${repo}" diff --cached --no-renames --name-status <snapshotTree>\` other than documentation (.md, .mdx, .rst, .adoc, anything under docs/): status A → \`git -C "${repo}" rm -f -q -- <path>\`, otherwise \`git -C "${repo}" restore --source=<snapshotTree> --staged --worktree -- <path>\`. Return reverted=true.
+3. Otherwise refactor, then run the test suite${suiteCommand ? ` with exactly \`cd "${repo}" && ${suiteCommand}\`, the command the run judges the suite by` : ''}.
+4. If the suite is not green and you cannot make it green without changing behavior, put the tree back: ${restoreCommands('<snapshotTree>')}. Return reverted=true.
 
 Deliver the files you touched, whether tests are green, whether you reverted, and the captured test output.`,
   {

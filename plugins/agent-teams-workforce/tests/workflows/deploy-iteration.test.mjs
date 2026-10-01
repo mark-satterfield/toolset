@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, readWorkflowSource, workflowCalls, agentCalls, journalDetail } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
-const COMPOSITES = ['task-to-deploy', 'bug-fix', 'infra-change']
+const COMPOSITES = ['task-to-deploy', 'bug-fix']
 // The composites that deploy and answer the deployment scalars.
 const DEPLOYING = ['bug-fix']
 const WORKTREE = '/repos/.worktrees/ssbd-dep-chassis'
