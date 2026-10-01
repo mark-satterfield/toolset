@@ -204,6 +204,8 @@ class Task:
     reuses: str | None = None
     elab_key: str | None = None
     blocked_by_external: list[str] = field(default_factory=list)
+    cds_bundle_path: str | None = None
+    cds_build_specs: list[str] = field(default_factory=list)
 
 
 def _sizes(score: dict | None) -> dict[str, str] | None:
@@ -434,6 +436,53 @@ def _surfaces(value: object) -> list[str] | None:
     return known if known or not str_list(value) else None
 
 
+#: The surface whose Tasks carry the cds design system in their build contract.
+UI_SURFACE = "web-ui"
+
+#: A packaged cds build spec sits at <bundle>/<kind>/<slug>/spec/build-spec.md.
+_BUILD_SPEC_DEPTH = 4
+
+
+def ui_authority(directory: Path, slug: str) -> tuple[str | None, dict[str, list[str]]]:
+    """Return the cds bundle and the build specs per delta item the detailing resolved.
+
+    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The Story's repository slug.
+
+    Returns:
+        The bundle path (None when the detailing names none and no build spec gives
+        one), and per delta item id its build-spec citations: the absolute
+        `build-spec.md` path, followed by `#<Section ID>` for each Section it builds.
+    """
+    path = directory / f"recon-{slug}.json"
+    if not path.is_file():
+        return None, {}
+    ua = _read_json(path).get("uiAuthority")
+    if not isinstance(ua, dict):
+        return None, {}
+    bundle = str(ua.get("bundlePath") or "").strip() or None
+    cites: dict[str, list[str]] = {}
+    for entry in ua.get("buildSpecs") or []:
+        if not isinstance(entry, dict):
+            continue
+        item = str(entry.get("item") or "").strip()
+        spec = str(entry.get("buildSpec") or "").strip()
+        if not item or not spec:
+            continue
+        if not spec.startswith("/") and bundle:
+            spec = f"{bundle.rstrip('/')}/{spec}"
+        sections = str_list(entry.get("sections"))
+        cites.setdefault(item, []).extend(
+            [f"{spec}#{x}" for x in sections] if sections else [spec]
+        )
+        if bundle is None and len(Path(spec).parents) > _BUILD_SPEC_DEPTH:
+            bundle = str(Path(spec).parents[_BUILD_SPEC_DEPTH - 1])
+    return bundle, cites
+
+
 def _spec_refs(directory: Path, rel: str | None, slug: str) -> list[str]:
     """Return the Story's spec documents on disk a Task may cite, relative to the project root.
 
@@ -497,10 +546,24 @@ def read_tasks(
         else None
     )
     by_key = {t["key"]: t for t in unique}
+    bundle, ui_cites = ui_authority(directory, slug)
     tasks = []
     for key in order:
         t = by_key[key]
         cited = [p for p in str_list(t.get("specPaths")) if p in refs]
+        surfaces = _surfaces(t.get("surfaces"))
+        ui = bool(surfaces) and UI_SURFACE in surfaces
+        build_specs = (
+            list(
+                dict.fromkeys(
+                    c
+                    for r in str_list(t.get("requirementIds"))
+                    for c in ui_cites.get(r, [])
+                )
+            )
+            if ui
+            else []
+        )
         tasks.append(
             Task(
                 key=key,
@@ -515,7 +578,7 @@ def read_tasks(
                 spec_sections=str_list(t.get("specSections")),
                 requirement_ids=str_list(t.get("requirementIds")),
                 decision_ids=str_list(t.get("decisionIds")) or list(story_decision_ids),
-                surfaces=_surfaces(t.get("surfaces")),
+                surfaces=surfaces,
                 test_strategy=strategy,
                 depends_on=[frm for frm, to in edges if to == key],
                 sizes=_sizes(scores.get(key)),
@@ -526,6 +589,8 @@ def read_tasks(
                 blocked_by_external=list(
                     dict.fromkeys(str_list(t.get("blockedByExternal")))
                 ),
+                cds_bundle_path=bundle if ui else None,
+                cds_build_specs=build_specs,
             )
         )
     return tasks

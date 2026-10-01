@@ -66,6 +66,11 @@ field exists because a document said so, and never restate one of its recipes.
 - The build contract you carry per task (`specPaths`, `specSections`, `requirementIds`,
   `definitionOfDone`, `surfaces`, `testStrategy`) lands as bead metadata under the key names and
   shapes the skill documents. Check them there rather than inventing spellings.
+- **UI work builds from the cds design system.** A task that builds a `ui` delta item carries
+  `web-ui` in `surfaces` and that item's id in `requirementIds`. `write-task` adds the cds bundle
+  path and the item's `build-spec.md` Sections, as the detailing resolved them, to the contract
+  (`cds_bundle_path`, `cds_build_specs`); you do not write them, and a `ui` item left uncited
+  reaches the builder without them.
 - **`unknown` is not `[]`.** Where the spec does not settle `surfaces` or `testStrategy`, emit the
   literal `unknown`, never an empty list: a null means nobody ruled and the phase falls back to its
   own lead, while `[]` means the work crosses no boundary and SKIPS the phase outright.

@@ -129,7 +129,9 @@ def fingerprint_payload(rec: dict, scope: str = SCOPE_READINESS) -> dict:
         for key in CONTENT_HASH_FIELDS
     }
     payload["metadata"] = {
-        source: metadata.get(source) for source, _, _ in CONTRACT_SCHEMA
+        source: metadata.get(source)
+        for source, _, _ in CONTRACT_SCHEMA
+        if source not in CONTRACT_HASHED_WHEN_PRESENT or source in metadata
     }
     return payload
 
@@ -306,7 +308,13 @@ CONTRACT_SCHEMA = (
     ("decision_ids", "decisionIds", KIND_LIST),
     ("surfaces", "surfaces", KIND_LIST_OR_UNKNOWN),
     ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
+    ("cds_bundle_path", "cdsBundlePath", KIND_TEXT),
+    ("cds_build_specs", "cdsBuildSpecs", KIND_LIST),
 )
+
+#: Contract keys the readiness fingerprint covers only on a bead that carries them: a bead
+#: with neither (every Task without a `web-ui` surface) hashes as if they were not in the contract.
+CONTRACT_HASHED_WHEN_PRESENT = frozenset({"cds_bundle_path", "cds_build_specs"})
 
 SPEC_REFERENCE = ("specPath", "specPaths")
 

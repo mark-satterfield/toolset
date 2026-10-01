@@ -187,6 +187,13 @@ path you opened in \`uiAuthority.artifactsConsulted\`, the loose shells and page
 \`uiAuthority.shellsConsulted\` / \`uiAuthority.pagesConsulted\`, and the mocks directory in
 \`uiAuthority.mocksDir\`.
 
+For every \`ui\` item resolved against a packaged artifact, add one entry to
+\`uiAuthority.buildSpecs\`: \`item\` (the item id), \`buildSpec\` (the absolute path of that
+artifact's \`spec/build-spec.md\`), and \`sections\` (the IDs in that build spec's Sections table —
+S1, S2, … — that the item builds; an empty list when it builds the whole artifact or the table
+carries no IDs). The Spec cites these and every Task that builds the item carries them in its
+build contract, so record only paths you read.
+
 If neither the bundle nor the mocks directory exists, say so in \`evidenceSummary\`.` : `═══ THIS REPOSITORY HOLDS NO UI ═══
 
 Do not look for the cds hand-off bundle or the design mocks.`}
@@ -244,6 +251,19 @@ Determine whether any upstream contract, shared schema, event, library version, 
             artifactsConsulted: { type: 'array', items: { type: 'string' } },
             shellsConsulted: { type: 'array', items: { type: 'string' } },
             pagesConsulted: { type: 'array', items: { type: 'string' } },
+            buildSpecs: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['item', 'buildSpec', 'sections'],
+                properties: {
+                  item: { type: 'string' },
+                  buildSpec: { type: 'string' },
+                  sections: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
           },
         },
         dependencyChanges: {
@@ -326,6 +346,9 @@ const uiAuthority = {
   artifactsConsulted: list(ua.artifactsConsulted),
   shellsConsulted: list(ua.shellsConsulted),
   pagesConsulted: list(ua.pagesConsulted),
+  buildSpecs: (Array.isArray(ua.buildSpecs) ? ua.buildSpecs : [])
+    .filter((b) => b && hasText(b.item) && hasText(b.buildSpec))
+    .map((b) => ({ item: b.item.trim(), buildSpec: b.buildSpec.trim(), sections: list(b.sections) })),
 }
 
 log(`Detailing of ${repos[0]}: ${items.length} item(s) — ${STATUSES.map((s) => `${counts[s]} ${s}`).join(', ')}.`)

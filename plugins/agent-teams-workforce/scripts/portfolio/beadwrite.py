@@ -154,6 +154,11 @@ def contract_block(task: Task, root: Path | None) -> str:
         f"Test strategy: {_strategy_line(task.test_strategy)}",
         f"Definition of Done:\n{listed(task.definition_of_done)}",
     ]
+    if task.cds_bundle_path or task.cds_build_specs:
+        lines += [
+            f"cds bundle: {task.cds_bundle_path or '(none resolved)'}",
+            f"cds build specs:\n{listed(task.cds_build_specs)}",
+        ]
     return "\n".join(lines)
 
 
@@ -192,6 +197,10 @@ def task_metadata(task: Task) -> dict[str, str]:
     m["requirement_ids"] = _json(task.requirement_ids)
     m["surfaces"] = _json(task.surfaces) if task.surfaces is not None else "unknown"
     m["test_strategy"] = _json(task.test_strategy) if task.test_strategy else "unknown"
+    if task.cds_bundle_path:
+        m["cds_bundle_path"] = task.cds_bundle_path
+    if task.cds_build_specs:
+        m["cds_build_specs"] = _json(task.cds_build_specs)
     if task.spec_paths:
         m["spec_path"] = task.spec_paths[0]
         m["spec_paths"] = _json(task.spec_paths)

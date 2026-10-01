@@ -79,7 +79,7 @@ The architecture step dispatches you once per Epic, before anyone designs, to SU
   2. **the loose composed artifact** in the pages and shells directories the dispatch names.
   3. **the delta views.**
 
-  An artifact listed in the bundle's `unpackaged.md` is NOT YET PACKAGED: it falls back to level 2 and never becomes an architecture question. Record what you resolved on `uiAuthority` (`bundlePath`, `artifactsConsulted`). **A UI/UX difference is never an architecture question.**
+  An artifact listed in the bundle's `unpackaged.md` is NOT YET PACKAGED: it falls back to level 2 and never becomes an architecture question. Record what you resolved on `uiAuthority` (`bundlePath`, `artifactsConsulted`, and in `buildSpecs` each packaged item's `build-spec.md` path and the Section IDs it builds). **A UI/UX difference is never an architecture question.**
 - **A switched-off implementation is code too.** A capability can be implemented and switched off by a feature flag, a commented-out construct, or an infrastructure parameter; cite the switch by `file:line`, and the item is `modify` when the delta needs it on.
 - **Beads are read-only.** `bd list`, `bd show`, `bd search` only.
 - You verify and report; you never fix what you find. Remediation is routed by the workflow to a different agent.

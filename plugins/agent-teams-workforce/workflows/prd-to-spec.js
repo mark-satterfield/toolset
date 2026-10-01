@@ -945,7 +945,26 @@ const renderUiAuthority = (recon) => {
       : `No cds hand-off bundle was resolved. Specify against the composed artifact${hasText(ua.mocksDir) ? ` under ${ua.mocksDir}` : ''} and record in the spec which artifact you used.`,
     hasText(ua.mocksDir) ? `Composed mocks: ${ua.mocksDir}` : '',
     artifacts.length ? `Artifacts matched to these items:\n${artifacts.map((x) => `  - ${x}`).join('\n')}` : '',
+    uiItemsOf(recon).some((u) => u.buildSpec)
+      ? `Build specs per UI item:\n${uiItemsOf(recon).filter((u) => u.buildSpec).map((u) => `  - ${u.id}: ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`).join('\n')}`
+      : '',
   ].filter(hasText).join('\n\n')
+}
+/** Returns each `ui` work item of a detailing with the build spec the detailing resolved it to, or a null buildSpec. */
+function uiItemsOf(recon) {
+  const ua = (recon && recon.uiAuthority) || {}
+  const specs = (Array.isArray(ua.buildSpecs) ? ua.buildSpecs : []).filter((b) => b && hasText(b.item) && hasText(b.buildSpec))
+  return workItems(recon)
+    .filter((r) => r.surface === 'ui')
+    .map((r) => {
+      const hit = specs.find((b) => b.item.trim() === r.id)
+      return {
+        id: r.id,
+        element: r.element || null,
+        buildSpec: hit ? hit.buildSpec.trim() : null,
+        sections: hit && Array.isArray(hit.sections) ? hit.sections.filter(hasText) : [],
+      }
+    })
 }
 const specConstraints = (recon, repo) => {
   const c = [renderInventory(recon, repo), renderDependencies(recon), renderUiAuthority(recon)].filter(hasText)
@@ -992,6 +1011,7 @@ function specArgs(repo, storyKey, slug, recon) {
     artifacts: artFor(`spec:${slug}`, [artPath('trd.md'), artPath('repo-scoping.json'), artPath(`recon-${slug}.json`), ...PRD_INPUTS], { slug }),
     beads: beadsArgs,
     constraints: specConstraints(recon, repo),
+    ...(uiItemsOf(recon).length ? { uiItems: uiItemsOf(recon) } : {}),
   }
 }
 /** Details one repository's delta items, then authors its Spec and Story, or replays the saved Story; returns { repo, recon, specAuthoring }. */

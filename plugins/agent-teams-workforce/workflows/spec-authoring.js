@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item citing its cds spec/build-spec.md, and the script checks every item has one that cites the build spec the detailing resolved; a missing citation sends the contracts back to their maker once, and a second miss fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Author specs', detail: 'three maker sessions author the spec artifacts in parallel' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
@@ -34,12 +34,13 @@ async function settleAgent(prompt, opts) {
 //   spec: { id?, title?, summary?, service?, repoPath? }, trd?, constraints?: string[],
 //   architecture?: { targetDir, deltaDir } (the approved target and its delta),
 //   accessPatterns?: string[], repoPath, storyKey? ('S1'), epic: { key?, id?, title? },
+//   uiItems?: [{ id, element?, buildSpec?, sections? }] (the repository's `ui` work items and the cds build spec each was resolved to),
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
 //   replay?: true
 // }
 // returns { ok, resumed?, unresolvedArtifacts, story: { key, type, id, elabKey, title, description, repoPath, parentEpicKey },
-//           writtenPath, spec, apiSpec, dataModelSpec, eventContracts, errorSpec, decisionIds, outOfRepoFindings, note },
+//           writtenPath, spec, apiSpec, dataModelSpec, eventContracts, errorSpec, uiSpec, decisionIds, outOfRepoFindings, note },
 //           or { ok: false, stage, reason, dispatchFailed? }; story.id is null when the write-story summary was not relayed
 
 const CRITERIA_MAX = 120
@@ -67,6 +68,44 @@ const CONTRACTS_SCHEMA = {
     eventContracts: SPEC_SCHEMA,
     errorSpec: SPEC_SCHEMA,
   },
+}
+
+const UI_SPEC_SCHEMA = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['itemId', 'buildSpec', 'sections', 'content'],
+    properties: {
+      itemId: { type: 'string' },
+      buildSpec: { type: 'string' },
+      sections: { type: 'array', items: { type: 'string' } },
+      content: { type: 'string' },
+    },
+  },
+}
+
+const CONTRACTS_UI_SCHEMA = {
+  ...CONTRACTS_SCHEMA,
+  required: [...CONTRACTS_SCHEMA.required, 'uiSpec'],
+  properties: { ...CONTRACTS_SCHEMA.properties, uiSpec: UI_SPEC_SCHEMA },
+}
+
+const BUILD_SPEC_PATH = /(^|\/)spec\/build-spec\.md$/
+
+/** Returns the UI items whose uiSpec section cites no build-spec.md, or cites another one than the detailing resolved. */
+function uiCitationGaps(uiItems, uiSpec) {
+  const sections = Array.isArray(uiSpec) ? uiSpec.filter((x) => x && typeof x === 'object') : []
+  return uiItems
+    .map((item) => {
+      const own = sections.filter((x) => String(x.itemId || '').trim() === item.id)
+      if (!own.length) return { id: item.id, problem: 'no uiSpec section specifies it' }
+      const cited = own.map((x) => String(x.buildSpec || '').trim())
+      if (!cited.some((p) => BUILD_SPEC_PATH.test(p))) return { id: item.id, problem: 'its uiSpec section cites no spec/build-spec.md path' }
+      if (item.buildSpec && !cited.includes(item.buildSpec)) return { id: item.id, problem: `its uiSpec section cites ${cited.join(', ')}, not the build spec the detailing resolved, ${item.buildSpec}` }
+      return null
+    })
+    .filter(Boolean)
 }
 
 const CRITERIA_SCHEMA = {
@@ -193,6 +232,14 @@ async function main(a) {
   const accessPatterns = Array.isArray(a && a.accessPatterns) ? a.accessPatterns : []
   const repoPath = (a && a.repoPath) || (s && s.repoPath) || null
   const epic = (a && a.epic) || null
+  const uiItems = (Array.isArray(a && a.uiItems) ? a.uiItems : [])
+    .filter((u) => u && hasText(u.id))
+    .map((u) => ({
+      id: u.id.trim(),
+      element: hasText(u.element) ? u.element.trim() : null,
+      buildSpec: hasText(u.buildSpec) ? u.buildSpec.trim() : null,
+      sections: Array.isArray(u.sections) ? u.sections.filter(hasText).map((x) => x.trim()) : [],
+    }))
 
   const ART = artifactsFrom(a && a.artifacts)
   const artSlug = ART && hasText(ART.slug) ? ART.slug : 'repo'
@@ -252,31 +299,38 @@ async function main(a) {
   const ctx = ctxBlock(s, trd, constraints, a && a.architecture)
   const specMakerCtx = `${ctx}\n\n${makerRules({ cites: true })}`
   const criteriaMakerCtx = `${ctx}\n\n${makerRules({ cites: false })}`
-  const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
+  const contractsBrief = persistBrief(
+    ART,
+    `spec-${artSlug}.md`,
+    uiItems.length
+      ? 'the contract artifacts you return — apiSpec, eventContracts, errorSpec and uiSpec — as ONE markdown document with a section for each of the first three and one UI section per uiSpec entry, headed by its item id and citing its build-spec.md path and Section IDs, carrying each artifact\'s full content'
+      : 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content'
+  )
+  const uiBrief = uiItems.length
+    ? `\n4. \`uiSpec\` — one entry per UI item below, specifying it BY REFERENCE to its cds build spec: \`itemId\` (the item id), \`buildSpec\` (the absolute path of the \`spec/build-spec.md\` it is built from — the one given below where one is given), \`sections\` (the build spec's Section IDs it builds; an empty list when it builds the whole artifact) and \`content\` (what the repository builds for the item, citing those Sections). Styling comes from the cds bundle's shared stylesheets: specify no CSS, tokens or component stylesheet of your own. The workflow checks every item has a section citing its build-spec.md.\n\nUI items:\n${uiItems.map((u) => `- ${u.id}${u.element ? ` ${u.element}` : ''}: ${u.buildSpec ? `${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}` : 'no packaged build spec was resolved — find its spec/build-spec.md in the cds bundle named under UI AUTHORITY'}`).join('\n')}`
+    : ''
+  const contractsPrompt = (rework) => `Author the ${uiItems.length ? 'four' : 'three'} INTERFACE CONTRACT artifacts for this feature, each under its own key.
+
+1. \`apiSpec\` — the API/OpenAPI contract specification (spec-first). Use the API type the TRD names. Define resources, methods, request/response schemas, status codes, and auth.
+2. \`eventContracts\` — the event contracts/schemas. Event names and the envelope follow the event pattern the TRD names. Define each event's name, envelope, and payload schema.
+3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the API contract), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).${uiBrief}${rework}
+
+${specMakerCtx}${contractsBrief}${pointerNote}`
+  const contractsOpts = {
+    label: 'author:contracts',
+    phase: 'Author specs',
+    effort: 'medium',
+    agentType: 'api-specification-author',
+    schema: uiItems.length ? CONTRACTS_UI_SCHEMA : CONTRACTS_SCHEMA,
+  }
   const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document')
   const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each')
   const pointerNote = ART ? '\n\n`content` in your result need only be a one-line pointer to its section in the document you save.' : ''
 
   phase('Author specs')
 
-  const [contractsDraft, dataModelSpecDraft, criteriaDraft] = await parallel([
-    () =>
-      settleAgent(
-        `Author the three INTERFACE CONTRACT artifacts for this feature, each under its own key.
-
-1. \`apiSpec\` — the API/OpenAPI contract specification (spec-first). Use the API type the TRD names. Define resources, methods, request/response schemas, status codes, and auth.
-2. \`eventContracts\` — the event contracts/schemas. Event names and the envelope follow the event pattern the TRD names. Define each event's name, envelope, and payload schema.
-3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the API contract), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
-
-${specMakerCtx}${contractsBrief}${pointerNote}`,
-        {
-          label: 'author:contracts',
-          phase: 'Author specs',
-          effort: 'medium',
-          agentType: 'api-specification-author',
-          schema: CONTRACTS_SCHEMA,
-        }
-      ),
+  let [contractsDraft, dataModelSpecDraft, criteriaDraft] = await parallel([
+    () => settleAgent(contractsPrompt(''), contractsOpts),
     () =>
       settleAgent(
         `Author the data-model specification for this feature: the data stores the target and delta views show for this repository, designed as those views and the TRD describe them. Define the stores, keys, indexes and item shapes that satisfy every access pattern below.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${specMakerCtx}${dataModelBrief}${pointerNote}`,
@@ -321,7 +375,29 @@ ${criteriaMakerCtx}${criteriaBrief}`,
     }
   }
 
+  let uiGaps = uiItems.length ? uiCitationGaps(uiItems, contractsDraft.uiSpec) : []
+  if (uiGaps.length) {
+    log(`UI citation check: ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')} — the contracts go back to their maker once`)
+    const reworked = await settleAgent(
+      contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose uiSpec section does not cite their cds build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nReturn all four artifacts again, with every UI item specified by reference to its spec/build-spec.md.`),
+      { ...contractsOpts, label: 'author:contracts:rework' }
+    )
+    if (reworked) contractsDraft = reworked
+    uiGaps = uiCitationGaps(uiItems, contractsDraft.uiSpec)
+    if (uiGaps.length) {
+      const deaths = dispatchDeaths('Author specs')
+      return {
+        ok: false,
+        stage: 'ui-citation',
+        reason: `the UI spec still cites no cds build spec after one rework — ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')}`,
+        uiGaps,
+        ...(!reworked && deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+      }
+    }
+  }
+
   const apiSpec = contractsDraft.apiSpec
+  const uiSpec = uiItems.length && Array.isArray(contractsDraft.uiSpec) ? contractsDraft.uiSpec : []
   const eventContracts = contractsDraft.eventContracts
   const errorSpec = contractsDraft.errorSpec
   const dataModelSpec = dataModelSpecDraft
@@ -393,6 +469,7 @@ It prints one short JSON object. Return its exit code as \`write.exitCode\` and 
     dataModelSpec,
     eventContracts,
     errorSpec,
+    uiSpec,
     decisionIds,
     outOfRepoFindings: [],
     note: 'The Story is a CONTAINER (no tasks, no WSJF) covering exactly one repo; depscore.py write-story writes its bead.',
