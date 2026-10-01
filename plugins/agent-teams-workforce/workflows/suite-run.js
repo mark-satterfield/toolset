@@ -1,7 +1,7 @@
 export const meta = {
   name: 'suite-run',
   description:
-    "Leaf mini — runs a repository's whole test suite once and reports what the run printed. One session runs exactly one command in the tree and returns { exitCode, tail, failing, summary, command }. The command is the caller's, or, when the caller names none, the one the repository itself declares: a test command stated in its AGENTS.md or CLAUDE.md, or the `test` task in its Taskfile. When the repository declares none it returns resolveError and runs nothing. Green means exitCode 0; the caller judges that, not the session.",
+    "Leaf mini — runs a repository's whole test suite once and reports what the run printed. One session runs exactly one command in the tree, followed by an echo of its exit status on a SUITE-EXIT line, and returns { exitCode, tail, failing, summary, command }; the exit code is read from that line in the verbatim tail, and a run whose output lacks it returns exitCode -1. Each failing entry is { kind: test | load, file, test, line }, whatever the test runner. The command is the caller's, or, when the caller names none, the one the repository itself declares: a test command stated in its AGENTS.md or CLAUDE.md, or the `test` task in its Taskfile. When the repository declares none it returns resolveError and runs nothing. Green means exitCode 0; the caller judges that, not the session.",
   phases: [{ title: 'Run', detail: 'runs the suite command once and reports its exit code and failures' }],
 }
 
@@ -59,22 +59,36 @@ const RUN_SCHEMA = {
     command: { type: 'string' },
     exitCode: { type: 'integer' },
     tail: { type: 'string' },
-    failing: { type: 'array', items: { type: 'string' } },
+    failing: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'file', 'test', 'line'],
+        properties: {
+          kind: { type: 'string', enum: ['test', 'load'] },
+          file: { type: 'string' },
+          test: { type: 'string' },
+          line: { type: 'string' },
+        },
+      },
+    },
     summary: { type: 'string' },
     resolveError: { type: 'string' },
   },
 }
 
+const EXIT_MARK = 'SUITE-EXIT'
 const REPORT = `Report:
-- command: the command you ran, exactly.
-- exitCode: the command's exit status (\`echo $?\` straight after it).
-- tail: the last 200 lines of its output.
-- failing: one entry per failing test and per error the output names, each written as \`FAILED <test id>\` or \`ERROR <test id or file>\` (for pytest, the lines it prints starting \`FAILED \` or \`ERROR \`, copied up to the " - " that starts the message). An error that stops a file from being collected is \`ERROR <file>\`. Empty when nothing failed.
-- summary: the runner's final summary line (for pytest, the "N passed, M failed" line), or "" when it printed none.`
+- command: the test command you ran, exactly (without the \`; echo "${EXIT_MARK} $?"\` that follows it).
+- exitCode: the number the \`${EXIT_MARK}\` line printed.
+- tail: the last 200 lines of the output, copied verbatim, ending with the \`${EXIT_MARK}\` line.
+- failing: one entry per failure the output names, whatever the test runner. \`kind\` is \`test\` for a test that ran and failed or errored, and \`load\` for a test file the runner could not load, import, compile or collect, so none of its tests ran. \`file\` is the test file's path as the output prints it; \`test\` is the test's name without the file (empty for \`load\`); \`line\` is the output line that names the failure, verbatim. Empty when nothing failed.
+- summary: the runner's final summary line, or "" when it printed none.`
 
 const runBlock = (cmd) => `Run exactly this, once, and report what it printed:
 
-cd "${repoPath}" && ${cmd}
+cd "${repoPath}" && ${cmd}; echo "${EXIT_MARK} $?"
 
 Read and change nothing else: no other command, no file edits, no installs, no retries with other flags.`
 
@@ -88,7 +102,7 @@ Repository tree: ${repoPath}
 
 Then run the command, exactly as declared, once:
 
-cd "${repoPath}" && <the command>
+cd "${repoPath}" && <the command>; echo "${EXIT_MARK} $?"
 
 Read and change nothing else: no file edits, no installs, no retries with other flags.`
 
@@ -123,14 +137,25 @@ if (!command && (!ran || resolveError)) {
   }
 }
 
-const exitCode = Number.isInteger(out.exitCode) ? out.exitCode : -1
-const failing = (Array.isArray(out.failing) ? out.failing : []).map((x) => String(x || '').trim()).filter(Boolean)
+const tail = String(out.tail || '')
+const marks = [...tail.matchAll(new RegExp(`${EXIT_MARK} (\\d+)`, 'g'))]
+if (!marks.length) {
+  const why = `the run's output carries no \`${EXIT_MARK}\` line, so its exit status is unknown`
+  log(`suite-run: ${why}`)
+  return { ok: false, exitCode: -1, command: command || ran, tail, failing: [], summary: String(out.summary || '').trim(), reason: why }
+}
+const exitCode = Number(marks[marks.length - 1][1])
+if (out.exitCode !== exitCode) log(`suite-run: the runner reported exit ${out.exitCode}; the ${EXIT_MARK} line says ${exitCode}, which is used`)
+const failing = (Array.isArray(out.failing) ? out.failing : [])
+  .filter((f) => f && typeof f === 'object')
+  .map((f) => ({ kind: f.kind === 'load' ? 'load' : 'test', file: String(f.file || '').trim(), test: String(f.test || '').trim(), line: String(f.line || '').trim() }))
+  .filter((f) => f.file || f.test || f.line)
 log(`suite-run: \`${command || ran}\` exited ${exitCode}${out.summary ? ` — ${String(out.summary).trim()}` : ''}`)
 return {
   ok: exitCode === 0,
   command: command || ran,
   exitCode,
-  tail: String(out.tail || ''),
+  tail,
   failing,
   summary: String(out.summary || '').trim(),
 }

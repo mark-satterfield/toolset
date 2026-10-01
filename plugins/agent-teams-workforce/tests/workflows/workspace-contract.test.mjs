@@ -28,7 +28,7 @@ const COMPOSITES = [
 // The suite runner: a Red run shows the new test in Red's file failing; every other run is green.
 const suiteRun = (call) =>
   String(call.payload.label || '').startsWith('red')
-    ? { ok: false, command: 'task test', exitCode: 1, failing: ['FAILED t::test_new'], tail: '', summary: '1 failed' }
+    ? { ok: false, command: 'task test', exitCode: 1, failing: [{ kind: 'test', file: 't', test: 'test_new', line: 'FAILED t::test_new' }], tail: '', summary: '1 failed' }
     : { ok: true, command: 'task test', exitCode: 0, failing: [], tail: '', summary: '3 passed' }
 
 
@@ -39,7 +39,7 @@ const WORKTREE = '/repos/.worktrees/ssbd-mz1w-shared-chassis'
 function run(file, { workspace, args } = {}) {
   return runWorkflowScript(path.join(WF, file), {
     args: args || { bead: { id: 'ssbd-mz1w', title: 'w', description: 'd', repoPath: CALLER_REPO, story: { id: 'ssbd-st01', title: 'the story' } } },
-    agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
+    agentImpl: (call) => (/:tests-(before|after)$/.test(String(call.label)) ? { exitCode: 0, stdout: 't\tabc\n' } : { written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') return workspace
       if (call.name === 'agent-teams-workforce:bug-triage') {

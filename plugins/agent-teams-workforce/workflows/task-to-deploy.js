@@ -102,11 +102,19 @@ function implementersOf(artifact) {
 
 const list = (v) => (Array.isArray(v) ? v.filter(Boolean) : [])
 
-// A suite runner line reduced to its test id: `FAILED tests/x.py::t - boom` -> `FAILED tests/x.py::t`.
-const lineId = (line) => String(line || '').split(' - ')[0].trim()
-const failingIds = (run) => new Set(list(run && run.failing).map(lineId).filter(Boolean))
-const isError = (id) => /^ERROR\b/i.test(id)
-const pathOf = (id) => id.replace(/^(FAILED|ERROR)\s+/i, '').split('::')[0].trim().replace(/^\.\//, '')
+// A suite-run failure, { kind: test | load, file, test, line }, keyed the same way in every run.
+const entryOf = (f) =>
+  f && typeof f === 'object'
+    ? { kind: f.kind === 'load' ? 'load' : 'test', file: String(f.file || '').trim().replace(/^\.\//, ''), test: String(f.test || '').trim(), line: String(f.line || '').trim() }
+    : null
+const idOf = (e) => `${e.kind}|${e.file}|${e.test}`
+const describe = (e) => (e.kind === 'load' ? `${e.file || e.line} could not be loaded` : `${e.file}${e.test ? ` ${e.test}` : ''}`)
+const failures = (run) => {
+  const byId = new Map()
+  for (const e of list(run && run.failing).map(entryOf)) if (e && (e.file || e.test)) byId.set(idOf(e), e)
+  return byId
+}
+const failingIds = (run) => new Set(failures(run).keys())
 const sameFile = (p, f) => {
   const x = String(p || '').replace(/^\.\//, '')
   const y = String(f || '').replace(/^\.\//, '')
@@ -118,13 +126,47 @@ const runText = (run) =>
   [
     `The suite runner ran \`${(run && run.command) || '(no command)'}\` and it exited ${run ? run.exitCode : 'with no result'}.`,
     run && run.summary ? `Summary: ${run.summary}` : '',
-    list(run && run.failing).length ? `Failing:\n${list(run.failing).join('\n')}` : '',
+    failures(run).size ? `Failing:\n${[...failures(run).values()].map((e) => e.line || describe(e)).join('\n')}` : '',
     run && run.tail ? `Output (last part):\n${String(run.tail).slice(-TAIL_CHARS)}` : '',
   ]
     .filter(Boolean)
     .join('\n')
 
 const validRun = (r) => !!r && !r.dispatchFailed && Number.isInteger(r.exitCode) && r.exitCode >= 0
+
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+const FINGERPRINT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'stdout'],
+  properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
+}
+/** Returns { files: { <path>: <git blob hash or "missing"> } } for the given test files in the tree, or { error }. */
+async function fingerprint(tree, files, label) {
+  if (!files.length) return { files: {} }
+  const command = `cd ${shq(tree)} && for f in ${files.map(shq).join(' ')}; do if [ -f "$f" ]; then printf '%s\\t%s\\n' "$f" "$(git hash-object -- "$f")"; else printf '%s\\tmissing\\n' "$f"; fi; done`
+  let out = null
+  try {
+    out = await agent(
+      `Run exactly this one shell command, once, and change nothing else:
+
+${command}
+
+Return its exit code as \`exitCode\` and everything it printed on stdout, verbatim, as \`stdout\`. Do not retry, do not repair, do not run any other command.`,
+      { label, phase: currentPhase || 'Green', model: 'haiku', effort: 'low', schema: FINGERPRINT_SCHEMA }
+    )
+  } catch (err) {
+    return { error: String((err && err.message) || err).slice(0, 300) }
+  }
+  if (!out || out.exitCode !== 0) return { error: `the fingerprint of the test files did not run${out ? `: exit ${out.exitCode}` : ''}` }
+  const got = {}
+  for (const row of String(out.stdout || '').split('\n')) {
+    const [f, h] = row.split('\t')
+    if (f && h) got[f.trim()] = h.trim()
+  }
+  const missing = files.filter((f) => !(f in got))
+  return missing.length ? { error: `the fingerprint names no hash for ${missing.join(', ')}` } : { files: got }
+}
 
 let result
 try {
@@ -238,14 +280,14 @@ try {
       for (const f of list(r && r.testFiles).map(String)) if (!redFiles.includes(f)) redFiles.push(f)
     }
     const judgeRed = (run) => {
-      const inRedFile = (id) => redFiles.some((f) => sameFile(pathOf(id), f))
-      const fresh = [...failingIds(run)].filter((id) => !baselineIds.has(id))
-      const collection = fresh.filter((id) => isError(id) && !id.includes('::'))
-      const redFails = fresh.filter((id) => !collection.includes(id) && inRedFile(id))
-      const regressions = fresh.filter((id) => !collection.includes(id) && !inRedFile(id))
+      const inRedFile = (e) => redFiles.some((f) => sameFile(e.file, f))
+      const fresh = [...failures(run).entries()].filter(([id]) => !baselineIds.has(id)).map(([, e]) => e)
+      const collection = fresh.filter((e) => e.kind === 'load').map(describe)
+      const redFails = fresh.filter((e) => e.kind === 'test' && inRedFile(e)).map(describe)
+      const regressions = fresh.filter((e) => e.kind === 'test' && !inRedFile(e)).map(describe)
       const reasons = [
         redFails.length ? '' : 'no test in a file Red wrote or edited fails',
-        collection.length ? `new collection errors: ${collection.join('; ')}` : '',
+        collection.length ? `test files that no longer load: ${collection.join('; ')}` : '',
         regressions.length ? `tests outside Red's files that did not fail at baseline now fail: ${regressions.join('; ')}` : '',
       ].filter(Boolean)
       return { ok: run.exitCode !== 0 && !reasons.length, reasons, redFails, collection, regressions }
@@ -292,14 +334,17 @@ try {
 
     // ── Green: loops until the whole suite exits 0 ──
     const baselineNote = baselineIds.size
-      ? `\nThe suite already failed before this Task on: ${[...baselineIds].join('; ')}. Green means the whole suite exits 0, so these must pass too.`
+      ? `\nThe suite already failed before this Task on: ${[...failures(baseline).values()].map(describe).join('; ')}. Green means the whole suite exits 0, so these must pass too.`
       : ''
     let green = null
     let finalRun = null
     let greenFeedback = `${runText(redRun)}${baselineNote}`
     let previousKey = null
+    let testPrint = null
     for (let round = 1; ; round++) {
       enterPhase('Green')
+      testPrint = await fingerprint(workRepoPath, [...redFiles], `green-${round}:tests-before`)
+      if (testPrint.error) return handback(false, 'green', `green: Red's test files could not be fingerprinted before Green round ${round}: ${testPrint.error}`, {})
       const g = await workflow('agent-teams-workforce:tdd-green', {
         contract,
         red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
@@ -312,6 +357,17 @@ try {
         return handback(false, stageOf('green', g), `green: ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g })
       }
       green = g
+      const testsAfter = await fingerprint(workRepoPath, Object.keys(testPrint.files), `green-${round}:tests-after`)
+      if (testsAfter.error) return handback(false, 'green', `green: Red's test files could not be fingerprinted after Green round ${round}: ${testsAfter.error}`, { green: g })
+      const touchedTests = Object.keys(testPrint.files).filter((f) => testPrint.files[f] !== testsAfter.files[f])
+      if (touchedTests.length) {
+        return handback(
+          false,
+          'green-modified-tests',
+          `green-modified-tests: Green round ${round} changed test files Red wrote, which Green leaves to Red (a test Green believes is wrong goes in testIssues): ${touchedTests.join(', ')}`,
+          { green: g, touchedTests }
+        )
+      }
       let run = await runSuite(`green-${round}`)
       if (!validRun(run)) {
         return handback(false, stageOf('green', run), `green: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { green: g, run })

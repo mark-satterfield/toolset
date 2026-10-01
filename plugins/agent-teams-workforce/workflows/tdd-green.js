@@ -177,7 +177,7 @@ if (a.implementer) {
   selectionMode = 'reused'
 } else {
   const selection = await settleAgent(
-    `You are the implementation-lead. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from: ${IMPLEMENTER_ROSTER.join(', ')}. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones.
+    `You are the implementation-lead. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from: ${IMPLEMENTER_ROSTER.join(', ')}. Read each implementer's specialty in its agent description; when one covers the whole change, select it alone. Order them so earlier ones lay groundwork for later ones.
 
 ${treeBlock}
 

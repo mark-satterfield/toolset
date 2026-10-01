@@ -23,13 +23,13 @@ const WORKTREE = '/repos/.worktrees/ssbd-nhcx-web'
 // The suite runner: a Red run shows the new test in Red's file failing; every other run is green.
 const suiteRun = (call) =>
   String(call.payload.label || '').startsWith('red')
-    ? { ok: false, command: 'task test', exitCode: 1, failing: ['FAILED t::test_new'], tail: '', summary: '1 failed' }
+    ? { ok: false, command: 'task test', exitCode: 1, failing: [{ kind: 'test', file: 't', test: 'test_new', line: 'FAILED t::test_new' }], tail: '', summary: '1 failed' }
     : { ok: true, command: 'task test', exitCode: 0, failing: [], tail: '', summary: '3 passed' }
 
 function run(args) {
   return runWorkflowScript(T2D, {
     args,
-    agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
+    agentImpl: (call) => (/:tests-(before|after)$/.test(String(call.label)) ? { exitCode: 0, stdout: 't\tabc\n' } : { written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') {
         return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
