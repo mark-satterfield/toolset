@@ -1,117 +1,92 @@
-# Consistency rules — cross-section invariants
+# Consistency rules — invariants across views
 
-These invariants must hold **after every maintenance edit** to the arc42 SAD.
-They are what keeps the document internally coherent and keeps the C4 and UML
-views in sync with the structural decisions that drive them. Each rule states
-the invariant, why it exists, and how to detect a violation.
+These hold across the effective version after every integration and every correction. Each rule
+states the invariant, why it holds, how a violation shows, and the repair.
 
-The structural source sections are **2 Constraints**, **4 Solution Strategy**,
-**8 Crosscutting Concepts**, and **9 Architecture Decisions**. The *view*
-sections — **3 Context** (C4 System Context), **5 Building Block** (C4
-Container/Component), **6 Runtime** (UML sequence/activity), **7 Deployment**
-(C4 Deployment) — render those decisions and must follow them.
+## 1. Every element shown in a view exists in the views of its own subject
 
-## INV-2 — Every pattern-bearing decision is reflected in section 8
+**Invariant.** An element that appears in any view (a service in the system container view, a table
+in a sequence, a component in a deployment view) also has views of its own at its own scope: a
+service has its component and data views, a concept has its file in section 8.
 
-**Invariant.** If a section-4 decision establishes a project-wide pattern
-(authentication model, authorization model, retry/backoff policy, idempotency
-strategy, logging/tracing contract, error taxonomy, persistence approach,
-validation strategy), section 8 Crosscutting Concepts describes that pattern as
-the now-current standard.
+**Why.** A reader who meets an element in one view follows it to its own views for the detail. An
+element that exists only as a box in someone else's diagram has no description anywhere.
 
-**Why.** Crosscutting concerns are applied in many building blocks; section 8
-is the one place they are defined so each block does not redefine them. A
-pattern adopted by decision but missing from section 8 will be implemented
-inconsistently.
+**Violation signal.** A name in a view's `shows` list that no view names as its `subject`, at any
+scope.
 
-**Violation signal.** A decision that says "all services will use structured
-JSON logging with a correlation id" while section 8's logging concept still
-describes the old free-text approach (or has no logging concept).
+**Repair.** Add the element's own views from the target, or report the gap when the target has none.
 
-**Repair.** Update or add the section-8 concept so it matches the decision.
+## 2. No two views contradict each other
 
-## INV-3 — Every changed section-2 constraint is propagated forward
+**Invariant.** Every view that shows an element shows the same thing about it: the same name, the
+same responsibilities, the same relationships, the same data, the same deployment.
 
-**Invariant.** When a constraint in section 2 changes, every section whose
-content was valid only under the *old* constraint is re-examined and brought
-into line in the same edit. Constraints bound the solution space; sections 4,
-8, 9 (and the 5/6/7 views) live inside those bounds.
+**Why.** The same element appears at several scopes. A change applied at one scope and missed at
+another leaves two descriptions of one system, and a design that starts from the wrong one is wrong.
 
-**Why.** A constraint change can silently invalidate a strategy, a pattern, a
-decision, or a deployment topology. Leaving the dependent content unexamined
-produces a SAD that documents a solution its own constraints forbid.
+**Violation signal.** The system container view shows a service calling another synchronously while
+its sequence view shows an event; a data model's key differs from the key a sequence queries; one
+view names a component `auth-svc` and another `AuthService` with no glossary entry joining them.
 
-**Violation signal.** A new constraint (e.g. EU-only data residency, a banned
-library, a latency budget, a single-region mandate) that contradicts an
-existing section-4 statement, section-8 concept, or section-7 region map.
+**Repair.** Bring every view that shows the element in line with the approved target or the built
+version, at every scope the catalog lists.
 
-**Repair.** Tighten or relax the dependent content to satisfy the new
-constraint. If a decision must change as a result, rewrite the decision in §4
-as current state.
+## 3. No view contradicts the owner's constraints
 
-## INV-4 — No orphaned cross-references
+**Invariant.** No view describes a design that conflicts with a constraint in section 2.
 
-**Invariant.** Every in-document pointer resolves. References by section number
-or by named building block must point at content that still exists under that
-identifier.
+**Why.** Constraints are the boundary the owner sets for every design.
 
-**Why.** Downstream artifacts (TRD, Specs) and human readers navigate the SAD by
-these references. A dangling pointer is an inconsistency and a broken trail into
-and out of the document.
+**Violation signal.** A view shows a technology, an interface style or a cross-service dependency a
+constraint excludes.
 
-**Violation signal.** A reference to a section that was renumbered or removed; a
-mention of a building block that section 5 no longer contains; a "see section X"
-that no longer covers the cited topic.
+**Repair.** None by this skill: section 2 is the owner's. Report the conflict with both paths.
 
-**Repair.** Update the reference to the new id/target, or remove it if the
-target was intentionally deleted. Never silently leave it.
+## 4. The catalog matches the views
 
-## INV-6 — Views (3/5/6/7) match the live structural decisions
+**Invariant.** Every view's `view_type` is a type from the MENU, `scope` is one of system, domain,
+service, component or concept, `subject` is the one thing it describes, and `shows` lists every
+element in its diagram and no element that is not.
 
-**Invariant.** The C4 and UML view sections render only the *current* structure
-and behaviour. The System Context (3), Building Block View (5, C4
-Container/Component), Runtime View (6, UML sequence/activity), and Deployment
-View (7, C4 Deployment) must depict the structure implied by the live decisions
-in 4/8/9 and the constraints in 2.
+**Why.** Every phase finds views through the catalog. A view whose frontmatter is wrong is a view the
+next integration misses.
 
-**Why.** A view is a projection of the decisions. If the decision changed but
-the diagram did not, the diagram lies — and diagrams are what most readers trust
-first.
+**Violation signal.** An element in a diagram missing from `shows`; a `shows` entry the diagram does
+not contain; a `view_type` the MENU does not list.
 
-**Violation signal.** A container in the section-5 C4 diagram that a superseded
-decision introduced; a section-6 sequence that calls a removed service
-synchronously after a decision moved it to async; a section-7 node in a region
-the new residency constraint forbids.
+**Repair.** Correct the frontmatter to match the view.
 
-**Repair.** Redraw the affected view. Diagram *sources* (which may use mermaid)
-live in the view sections and in `../arc42/references/`; this skill's own
-reference files keep to plain sketches.
+## 5. No dangling links
 
-## INV-7 — The SAD states only current state
+**Invariant.** Every link between views resolves to a file that exists and still covers what the
+link says.
 
-**Invariant.** No section contains changelog, history, or "what changed"
-narrative. The document describes the system as it is now. No history is carried
-anywhere.
+**Why.** Views point to their adjacent views at other scopes; a broken link breaks that path.
 
-**Why.** A living architecture document is read for *what is true*, not for an
-archaeology of what used to be true. Mixed history bloats sections and creates
-contradictions (current prose vs. retained old prose).
+**Violation signal.** A link to a deleted view, a renamed subject folder, or a heading that no longer
+exists.
 
-**Violation signal.** Phrases like "previously", "we used to", "as of the last
-revision", "changed from X to Y" in any section body.
+**Repair.** Update the link to the view that now holds the content, or remove it when the content is
+gone.
 
-**Repair.** Delete the historical prose; keep only the current statement. If the
-*reason* for the current state matters, state it inline as the decision's driver
-in 2/4/8 — never as narrative about what changed.
+## 6. Each version describes itself as it is
 
-## Post-edit checklist
+**Invariant.** No view holds history, a changelog, a decision record, a rule or an open item
+(`../../arc42/references/living-document-rules.md`).
 
-Run all seven before declaring the maintenance pass done:
+**Why.** A reader of any view reads what the design is.
 
-- [ ] INV-1 every accepted decision summarized in section 4
-- [ ] INV-2 every pattern-bearing decision reflected in section 8
-- [ ] INV-3 every changed constraint propagated into 4/8/9 and 5/6/7
-- [ ] INV-4 no orphaned references anywhere
-- [ ] INV-5 decision statuses single-valued and current
-- [ ] INV-6 views (3/5/6/7) redrawn to match live decisions
-- [ ] INV-7 no changelog/history prose; current-state only
+**Violation signal.** "Previously", "we used to", "changed from", "MUST", "TBD", "open question",
+"referred to the owner".
+
+**Repair.** Delete it, and restate any current fact it carries as a description of the design.
+
+## Post-pass checklist
+
+- [ ] 1 every element shown has views of its own subject
+- [ ] 2 no two views contradict each other, at any scope
+- [ ] 3 no view conflicts with a section 2 constraint (conflicts reported, not repaired)
+- [ ] 4 catalog frontmatter matches every view touched
+- [ ] 5 no dangling links into or out of the views touched
+- [ ] 6 no history, rules or open items

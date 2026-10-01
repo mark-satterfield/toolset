@@ -1,50 +1,79 @@
 # arc42 section model
 
-arc42 is a free, open template for software architecture documentation. This project's SAD uses eleven numbered sections — 1 through 8 and 10 through 12. The template prescribes *what* each section holds, not *how* the system is built — it is a structure for communicating architecture, not a method for designing it. Every sub-skill in this toolkit reads this file for the authoritative section list; none of them redefines it.
+arc42 is a free, open template for software architecture documentation. Under the project's
+architecture documentation model (the MODEL, `reference/architecture-documentation-model.md` under
+the architecture root), the arc42 sections hold three kinds of content: the owner's constraints
+(section 2), the enterprise-level strategy (section 4), and the architecture itself (sections 3, 5,
+6, 7 and 8). This file states what each section holds; the MODEL is the authority, and where the two
+differ the MODEL is right and this file is corrected.
 
-A section may legitimately be empty if the system does not warrant it (small systems often collapse 5–7 into a few paragraphs and skip 11). An empty section is stated as "Not applicable" with a one-line reason, never deleted from the structure.
+## Layout
 
-## The eleven sections
+Every section is a folder under `arc42/` whose `README.md` is its entry point and its highest-scope
+view: `arc42/01-introduction-and-goals/README.md` through `arc42/12-glossary/README.md`. Inside a
+section, views are organised by the subject they describe (`05-building-block-view/<domain>/README.md`,
+`05-building-block-view/<domain>/<service>/...`), and files and folders are named for their subject,
+never for a PRD, an Epic, a bead id, a date or a pipeline gate. There is no section 9.
+
+The target and built versions use the same section layout inside `target/<subject>/` and
+`built/<subject>/`; a target's delta sits in `target/<subject>/delta/`.
+
+## The sections
 
 ### 1. Introduction and Goals
-The short version of the requirements. The essential business goals, the top three to five quality goals that drive architecture (the **most important** prioritized quality attributes, expressed as concrete scenarios, not adjectives), and the key stakeholders with their expectations. This section answers "why does this system exist and what must it be good at?"
+What the system is for, its top quality goals and its stakeholders. It orients a reader; the
+requirements themselves live in PRDs.
 
-### 2. Architecture Constraints — SOURCE
-Anything that constrains design freedom and is *not* itself a decision the architect gets to make: mandated technologies, regulatory and compliance rules, organizational conventions, target platforms, licensing, team or budget limits. Split into technical, organizational, and conventions constraints. **This is a SOURCE section**: the TRD author and spec authors read it as the boundary conditions every downstream design must respect.
+### 2. Architecture Constraints — the owner's
+The rules the owner imposes to guide design: few, global (enterprise or project level) and not
+specific to one implementation. Only the owner writes them. Every agent and process reads them as the
+boundary of a design and writes nothing here; an agent that thinks a constraint should change reports
+that to its caller.
 
-### 3. Context and Scope
-The system's boundaries and its environment. **Business context** names the external actors and neighboring systems and the domain-level inputs/outputs exchanged with each. **Technical context** maps those same relationships onto concrete channels, protocols, and interfaces. This is exactly the scope a C4 *System Context* diagram visualizes; `c4-diagramming` reads this section to draw level 1.
+### 3. Context and Scope — architecture, system scope
+The system context and the landscape: the system as one box, the people and external systems around
+it, and what crosses the boundary.
 
-### 4. Solution Strategy — SOURCE
-The fundamental decisions and solution approaches that shape the architecture: technology choices, top-level decomposition style, how the key quality goals are achieved, and the organizational approach. It is a *summary* — the dense, high-signal overview that sets direction. **This is a SOURCE section**: it is the primary feed for the TRD's technical-approach narrative.
+### 4. Solution Strategy — enterprise-level direction
+The architectural style and the few approaches everything else follows (for example, an event-based
+architecture with one API for authoring and publishing events). About one page. It changes only when a
+design alters the direction itself; an implementation choice belongs in the architecture description.
 
-### 5. Building Block View
-The static decomposition of the system into building blocks, refined hierarchically. Level 1 is the whitebox of the whole system; each contained block can be expanded into its own level. This is the structural backbone and maps directly to C4 *Container* and *Component* levels and to UML component/class structure.
+### 5. Building Block View — architecture, structure
+The static structure at system, domain, service and component scope: the system container view in
+the section `README.md`, then domain views, then service and component views in subject folders.
+Container, component, data model and class views live here.
 
-### 6. Runtime View
-How the building blocks collaborate at runtime for the important scenarios: key use cases, startup, error and recovery flows, cross-cutting interactions. Behavior over time — naturally expressed as UML sequence, activity, or state diagrams drawn by `uml-diagramming`.
+### 6. Runtime View — architecture, behaviour
+How the parts behave at runtime: system-wide event and data flows and end-to-end sequences at the
+top, and each service's sequences, state machines and activities in its subject folder.
 
-### 7. Deployment View
-The technical infrastructure the system runs on — environments, nodes, networks, and the mapping of building blocks onto that infrastructure. Maps to C4 *Deployment* diagrams and UML deployment diagrams.
+### 7. Deployment View — architecture, infrastructure
+What the system runs on: the system deployment in the section `README.md`, the network, and each
+service's stacks in its subject folder.
 
-### 8. Crosscutting Concepts — SOURCE
-Overarching regularities and solution ideas relevant in multiple parts of the system: domain model, persistence, session handling, security and identity, error handling and logging, internationalization, transaction handling, build and test approach, architectural and design patterns applied. **This is a SOURCE section**: spec authors read it so that individual specs inherit the system-wide concepts instead of re-inventing them.
+### 8. Crosscutting Concepts — architecture, concepts
+Patterns used across many services (for example idempotency, an event envelope, structured
+logging), one file per concept, each with its structure and its behaviour. A pattern described here is followed by the next
+design unless that design states a reason to change it; it is not a rule.
 
 ### 10. Quality Requirements
-The full quality tree and concrete quality scenarios, refining the top goals from section 1. Each scenario is testable: a stimulus, the system, and a measurable response. This is what `arc42-verify` checks the rest of the document against.
+The quality scenarios the architecture is designed to meet, each with a stimulus and a measurable
+response.
 
 ### 11. Risks and Technical Debt
-Known technical risks and accumulated debt, prioritized, each with a mitigation or pay-down note. An honest register, not a marketing page.
+Known technical risks and accepted debt in the current design. Work still to do is tracked in beads,
+not here.
 
 ### 12. Glossary
-The shared vocabulary — domain and technical terms with definitions — so that every other section, every diagram label, and every downstream document means the same thing by the same word.
+The terms the architecture uses, so every view and every diagram label means the same thing by the
+same word.
 
-## The three SOURCE sections
+## Views and scopes
 
-| # | Section | Why it is a SOURCE |
-|---|---|---|
-| 2 | Architecture Constraints | Boundary conditions every downstream design must respect |
-| 4 | Solution Strategy | The high-level technical approach the TRD elaborates |
-| 8 | Crosscutting Concepts | System-wide concepts that specs inherit rather than re-derive |
-
-`arc42-extract` reads exactly these three sections and nothing else when producing the feed described in `source-of-truth-map.md`.
+A view is one way of looking at one subject at one scope (system, domain, service, component,
+concept): a diagram written as Mermaid in Markdown and the prose around it. The MODEL's view table
+says which views a scope usually needs and which section each belongs in; the MENU
+(`reference/diagram-and-model-types.md`) is the list of view types. Every view carries the catalog
+frontmatter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`) described in
+`finding-views.md`.

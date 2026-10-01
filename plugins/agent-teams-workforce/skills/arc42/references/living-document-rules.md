@@ -1,23 +1,42 @@
 # Living-document rules
 
-The SAD is a **current-state** document. It describes how the system *is* architected right now, not how it got there. Every sub-skill that writes to the SAD obeys these rules; `arc42-verify` enforces them.
+Every version of the architecture — effective, target, delta, built — describes itself as it is.
+Every sub-skill that writes architecture follows these rules, and `arc42-verify` checks them.
 
-## Current-state only
+## Each version describes itself as it is
 
-- A reader who opens any section sees the present truth and nothing else. There is no "previously we used X, now we use Y" prose in the body.
-- When a fact changes, **supersede it in place**: replace the old text with the new text. Do not append, do not strike through, do not leave the prior version visible.
-- The document carries **no changelog, no revision table, and no "last updated" / "last modified" line**. Version and authorship live in version control (git history, blame, PR records), which is where they belong. Duplicating that into prose creates two sources of truth that immediately diverge.
+- A reader who opens any view sees the design that version holds, and nothing else. There is no
+  "previously we used X, now we use Y" prose.
+- When the design changes, the view changes in place: the old text and diagram are replaced, not
+  struck through, appended to or kept beside the new content.
+- No view carries a changelog, a revision table or a "last updated" line. Version history lives in
+  git, which is the one place it can stay accurate.
+- A delta describes the change between effective and target as the target states it ("the settings
+  service gains a preferences table"), not as a history of how the design was reached.
 
-## Where history actually lives
+## Where a design outcome goes
 
-This project keeps **no** per-decision history. A decision's result is written directly into section 2, 4 or 8 as current state, carrying its own driver and rationale inline. To answer "what is true now?", a reader reads the section. There is no "why did we reject X" trail to follow, by deliberate choice.
+A design's outcome becomes part of the architecture description, in the section and view the MODEL
+names for it: a service's structure in section 5, its flows in section 6, its stacks in section 7, a
+pattern used across services in section 8, a change of direction in section 4. It is written as a
+description of what the design is, with the reason a reader needs stated in the prose around the
+view. There are no decision records, no ADRs and no decision logs, and a design outcome is not
+written as a rule: the next design follows it as an established pattern unless it states a reason to
+change.
 
-## Consequences for the sub-skills
+Section 2 is the owner's. A design outcome is never written there, because only the owner writes
+constraints.
 
-- `arc42-author` writes only present-tense, current-state content.
-- `arc42-maintain` overwrites stale content rather than annotating it — it does not narrate the change inside the SAD.
-- `arc42-verify` flags any changelog prose, any "last updated"/"last modified" string, and any "we used to…" narrative.
+## What does not belong in any version
+
+- Requirements, and anything addressed to one PRD, Epic or bead. Requirements live in PRDs.
+- History: what the design used to be, why it changed, who decided.
+- Decision records, and decisions written as rules ("services MUST …").
+- Open items: questions, TODOs, pending work, referrals to the owner. They are tracked in beads and
+  reported to the caller.
 
 ## Quick test
 
-Before committing any SAD edit, ask: *"If a new engineer read only this paragraph, would they believe a false thing about the current system?"* If the paragraph only makes sense as history, it does not belong in the SAD — delete it.
+Before writing any view, ask: *"If a new engineer read only this paragraph, would they believe a
+false thing about the design this version holds?"* A paragraph that only makes sense as history, as a
+rule or as an open item does not belong; delete it.

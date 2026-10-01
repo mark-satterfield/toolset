@@ -1,86 +1,112 @@
 ---
 name: arc42
 description: >-
-  Thin router for the arc42 Software Architecture Document (SAD) toolkit. Detects
-  intent on entry — create a SAD, update/maintain one, read the source feed it
-  exports, verify it, or draw a C4 or UML diagram — and dispatches to the right
-  sub-skill. Holds no authoring logic itself. Bootstraps the SAD location.
-  Use when the user mentions arc42, a Software Architecture Document, an
-  architecture document or SAD, architecture sections, a C4 diagram (context,
-  container, component, code), a UML diagram, or asks to write, update, audit,
-  or extract the source of truth from the architecture documentation.
+  Thin router for the arc42 architecture documentation toolkit. Detects intent on
+  entry — author architecture views (a new architecture, or a target and its delta
+  for a change), maintain the effective version from an approved target or from
+  what was built, verify the documentation against the project's architecture
+  documentation model, or draw a C4 or UML diagram — and dispatches to the right
+  sub-skill. Holds no authoring logic itself. Resolves where the architecture
+  lives. Use when the user mentions arc42, the architecture documentation, an
+  architecture view, a target or delta architecture, architecture sections, a C4
+  diagram (context, container, component, code), a UML diagram, or asks to write,
+  update, integrate, audit or find views in the architecture.
 triggers:
   - arc42
-  - software architecture document
+  - architecture documentation
   - architecture document
-  - SAD
-  - write the architecture doc
-  - update the architecture doc
-  - audit the architecture doc
+  - architecture view
+  - target architecture
+  - delta architecture
+  - write the architecture
+  - update the architecture
+  - audit the architecture
+  - which views show this
   - C4 diagram
   - container diagram
   - UML diagram
   - sequence diagram
-  - extract architecture source of truth
 ---
 
 # arc42 — router
 
-You are the entry point for the arc42 Software Architecture Document (SAD) toolkit. Your only job is to recognize the user's intent and hand off to the correct specialized sub-skill. You hold no authoring or workflow logic yourself.
+You are the entry point for the arc42 architecture documentation toolkit. Your job is to recognise
+the user's intent and hand off to the sub-skill that does the work. You hold no authoring or
+workflow logic yourself.
 
-The SAD follows the arc42 template: eleven numbered sections that together describe a system's architecture. Three of those sections — Constraints, Solution Strategy and Crosscutting Concepts — are the canonical SOURCE that downstream TRD and spec authors consume. This router owns the shared section corpus under `references/` that every sub-skill reads; the sub-skills never redefine the section model, they read it from here.
+The project's architecture documentation model (the MODEL below) says what the architecture holds,
+where each kind of content goes, how its versions relate and how a change moves through them. The
+sub-skills follow it and carry no copy of it, so that the model has one home. The files under
+`references/` here are the toolkit's shared reading of it.
 
-## Bootstrap
+## Resolve the architecture root
 
-Before any dispatch, establish where the SAD lives.
+Before any dispatch, establish the **architecture root**: the folder that holds `reference/`,
+`arc42/`, `target/` and `built/`.
 
-1. If the host project already has an arc42 document, use it. Probe in this order: a single `docs/architecture/arc42.md`, then a `docs/architecture/arc42/` directory with one Markdown file per section, then any path the project's own conventions point to (an environment variable such as `ATW_SAD_PATH`, or a `CONTRIBUTING`/`README` reference).
-2. If none exists, the default location is `docs/architecture/arc42/` with one Markdown file per arc42 section (`01-introduction-and-goals.md` through `12-glossary.md`). A single-file `docs/architecture/arc42.md` is the acceptable alternative for a small system — let the sub-skill that authors content decide, do not scaffold files yourself.
+1. Take the path the caller gives. Otherwise take the path the project's environment sets for its
+   architecture (`ATW_SAD_PATH` in this plugin's workflows). Either may name the architecture root
+   or its `arc42/` folder; for the `arc42/` folder, the root is its parent.
+2. When neither gives a path, stop and report that both are missing, naming the argument and the
+   variable. Do not search for or assume a default location: a guessed root writes the architecture
+   somewhere no phase reads it.
+3. Read the MODEL at `reference/architecture-documentation-model.md` and the list of view types at
+   `reference/diagram-and-model-types.md` (the MENU below), both under the root. When either is
+   missing, stop and report it: the sub-skills have no other source for them.
 
-State the resolved location in one sentence when you hand off, so the sub-skill knows where to read and write.
+State the resolved root in one sentence when you hand off, so the sub-skill knows where to read and
+write.
 
 ## Routing table
 
 | Entry signal | Dispatch to |
 |---|---|
-| Create a SAD from scratch, "write the architecture document", "start an arc42 doc" | `arc42-author` |
-| Update, maintain, revise, or supersede content in an existing SAD | `arc42-maintain` |
-| Read or extract the source feed the SAD exports (Constraints, Solution Strategy, Crosscutting Concepts, Decisions) for a TRD or spec author | `arc42-extract` |
-| Verify, audit, lint, or check the SAD for completeness, staleness, or broken cross-references | `arc42-verify` |
+| Write architecture views: a new architecture, the views for a new subject, or a target and its delta for a proposed change | `arc42-author` |
+| Integrate an approved target into the effective version, or correct the effective version from what was built | `arc42-maintain` |
+| Verify, audit, lint or check the architecture against the MODEL | `arc42-verify` |
+| Find the views that show an element, in any version | Answer from the catalog (`references/finding-views.md`); no sub-skill |
 | A C4 diagram request — system context, container, component, or code level | `c4-diagramming` |
 | A UML diagram request — class, sequence, state, activity, component, deployment | `uml-diagramming` |
 | Explicit sub-skill name in the user's input | Bypass routing; load the named sub-skill directly |
 
-See `references/routing-table.md` for the detailed intent-signal mapping, including the phrasing that disambiguates "diagram" requests between C4 and UML.
+See `references/routing-table.md` for the detailed intent-signal mapping, including how to tell C4
+from UML requests.
 
 ## Disambiguation
 
-When intent is unclear, ask exactly one disambiguating question. Do not guess and do not branch to more than two options. Example wording:
+When intent is unclear, ask one disambiguating question with at most two options. Example wording:
 
-> "Do you want to create the architecture document from scratch, or update the one that already exists?"
+> "Do you want a target design for this change, or to bring the effective architecture up to date
+> with an approved one?"
 
-> "Is this diagram about how the system decomposes into deployable units (C4), or about the behavior and structure of code (UML)?"
+> "Is this diagram about how the system decomposes into deployable units (C4), or about the
+> behaviour and structure of code (UML)?"
 
-If the user names a specific arc42 section, route by what they want to do with it (author / maintain / extract / verify), not by the section number alone.
+When the user names a section, route by what they want to do with it (author, maintain, verify), not
+by the section number alone.
 
 ## Handoff protocol
 
-When you dispatch, do not paraphrase the user's request. Pass the original input plus the resolved SAD location and any section context. State in one sentence which sub-skill you are handing off to and why, then load that sub-skill's `SKILL.md` and execute it.
+When you dispatch, pass the original input unparaphrased, plus the resolved architecture root and the
+version and subject in play. State in one sentence which sub-skill you are handing off to and why,
+then load that sub-skill's `SKILL.md` and execute it.
 
 ## What you do NOT do
 
-- You do not author SAD content. That is `arc42-author` (new) or `arc42-maintain` (changes).
-- You do not decide the architecture itself — which database, which pattern, which boundary. That is the architecture-decider's job; the SAD only records decisions that have already been made, as current state in sections 2, 4 and 8.
+- You do not write architecture content. That is `arc42-author` (new views, targets, deltas) or
+  `arc42-maintain` (the effective version).
+- You do not decide the design. The architecture team designs; its outcome becomes part of the
+  architecture description in the section the MODEL names. There are no decision records.
+- You do not write constraints. Section 2 holds the owner's constraints; every sub-skill reads them
+  and none writes them.
 - You do not draw diagrams. C4 goes to `c4-diagramming`; UML goes to `uml-diagramming`.
-- You do not extract or verify the document yourself. Those are `arc42-extract` and `arc42-verify`.
-
-Every turn ends in a one-sentence handoff. If you find yourself producing architecture content, a diagram, or an audit verdict, you have broken the router contract — stop and dispatch.
+- You do not verify the documentation yourself. That is `arc42-verify`.
 
 ## References
 
-This router owns the shared corpus that all sub-skills read:
-
-- `references/arc42-section-model.md` — the eleven arc42 sections and what each holds; marks the three SOURCE sections.
-- `references/living-document-rules.md` — the SAD is current-state only; how supersession works and where per-decision history actually lives.
-- `references/source-of-truth-map.md` — the feed contract: which sections are exported and who consumes them.
+- `references/arc42-section-model.md` — what each arc42 section holds under the MODEL.
+- `references/living-document-rules.md` — every version describes itself as it is; no history, no
+  open items, no decisions written as rules.
+- `references/finding-views.md` — how a phase finds the views that show an element, through the
+  catalog, in every version.
 - `references/routing-table.md` — the detailed intent-signal to sub-skill mapping.

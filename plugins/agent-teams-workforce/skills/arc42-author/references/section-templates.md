@@ -1,267 +1,223 @@
-# arc42 Section Templates — prompt + acceptance bar per section
+# Section templates — what each section's views hold
 
-This is the per-section authoring playbook. For each of the eleven arc42 sections it
-gives: the **prompt** (the questions whose answers become the section content)
-and the **acceptance bar** (the testable definition of "done"). The bar is what
-you check a section against before moving on. If a section cannot clear its bar
-from the inputs you have, leave its heading plus an explicit `> TODO:` naming the
-missing input — never delete the section, never invent facts.
+For each arc42 section: where its views live, which views it usually needs at each scope, and what
+makes a view complete. The view types come from the MENU (`reference/diagram-and-model-types.md`
+under the architecture root); the table of scopes and views is the MODEL's, and this file follows
+it. The views a subject needs depend on what it is: the lists below are where to start, not a
+checklist.
 
-Diagram notation is pinned: **C4 for structure (sections 3, 5, 7), UML for
-behavior (section 6).** Ready-to-fill skeletons are at the bottom.
-
----
-
-## 1. Introduction and Goals
-
-**Prompt**
-- In one paragraph, what does the system do and for whom?
-- What are the top 3–5 **quality goals** (e.g. availability, time-to-market,
-  security, modifiability)? Order them — the order itself is a decision.
-- Who are the key stakeholders, and what is each one's concern / expectation?
-
-**Acceptance bar**
-- A short system summary that a new engineer can read in under a minute.
-- A ranked quality-goals table with 3–5 rows; each goal names the driving
-  motivation. Each goal here MUST have a matching measurable scenario in §10.
-- A stakeholder table: role, contact/representative, expectation. No empty cells.
+Every view is a diagram and the prose around it, carries the catalog frontmatter, and describes the
+design its version holds (`../../arc42/references/living-document-rules.md`). Skeletons are at the
+bottom.
 
 ---
 
-## 2. Constraints — *source feed*
+## 1. Introduction and Goals — `01-introduction-and-goals/README.md`
 
-**Prompt**
-- What technical constraints are fixed (language, runtime, target platform,
-  approved libraries, integration protocols)?
-- What organizational constraints apply (team structure, process, schedule,
-  budget, standards to comply with)?
-- What political / conventional constraints apply (mandated vendors, naming
-  conventions, legal/regulatory rules)?
-
-**Acceptance bar**
-- Three labelled groups: Technical / Organizational / Political-Conventional.
-- Each constraint is one atomic, IDed, testable statement (see
-  `constraints-guide.md`). "We use approved crypto libs" fails; "All data at rest
-  is encrypted with AES-256 via the platform KMS" passes.
-- Section is marked `<!-- source-feed -->` so extraction tooling finds it.
+What the system is for, its top quality goals in priority order, and its stakeholders. Requirements
+stay in PRDs; this section orients the reader.
 
 ---
 
-## 3. Context and Scope
+## 2. Architecture Constraints — `02-architecture-constraints/README.md`
 
-**Prompt**
-- **Business context:** which external actors (users, neighbour systems) does the
-  system exchange information with, and what do they exchange?
-- **Technical context:** which channels, protocols, and data formats cross the
-  system boundary?
-- What is explicitly **out of scope**?
-
-**Acceptance bar**
-- A C4 **System Context** diagram (skeleton below): the system as one box, every
-  external actor and neighbour system around it, every relationship labelled with
-  what flows and over what protocol.
-- A table backing the diagram: partner, direction (in/out/both), payload, format,
-  protocol.
-- An explicit out-of-scope list.
+The owner's constraints. Not authored here: see `constraints-guide.md`.
 
 ---
 
-## 4. Solution Strategy — *source feed*
+## 3. Context and Scope — `03-context-and-scope/`
 
-**Prompt**
-- What are the fundamental technology decisions (stack, frameworks, data stores,
-  integration style)?
-- What is the top-level decomposition approach (layers? hexagonal? services?)?
-- For **each** quality goal from §1, what architectural approach achieves it?
+| Scope | Views |
+|---|---|
+| System | system context diagram; landscape diagram |
 
-**Acceptance bar**
-- A table mapping every §1 quality goal → the strategic approach that meets it.
-  No quality goal left unaddressed.
-- Each fundamental decision is stated atomically, carrying its own driver and
-  rationale inline (see `solution-strategy-guide.md`).
-- Marked `<!-- source-feed -->`.
+Complete when: the system is one box, every person and external system around it is shown, and every
+relationship is labelled with what crosses the boundary and over what channel. The prose names what
+is outside the system's scope.
 
 ---
 
-## 5. Building Block View
+## 4. Solution Strategy — `04-solution-strategy/README.md`
 
-**Prompt**
-- **Level 1:** decompose the whole system (whitebox) into its top-level building
-  blocks. What is each one responsible for, and how do they relate?
-- **Level 2+:** for each block complex enough to warrant it, zoom in (whitebox of
-  that block) into its sub-blocks.
-
-**Acceptance bar**
-- A C4 **Container** diagram for Level 1 and a C4 **Component** diagram for each
-  zoomed block. Every box has a single, stated responsibility.
-- A blackbox table per level: name, responsibility, interface(s).
-- Every building block named here must later appear in §6 (runtime) or §7
-  (deployment) — no orphan blocks.
+The architectural style and the few approaches everything else follows, about one page. See
+`solution-strategy-guide.md`.
 
 ---
 
-## 6. Runtime View
+## 5. Building Block View — `05-building-block-view/`
 
-**Prompt**
-- Which 3–6 runtime scenarios matter most (a core use case, startup, error/retry
-  path, a cross-cutting flow like auth)?
-- For each, how do the §5 building blocks collaborate over time?
+| Scope | Views | Where |
+|---|---|---|
+| System | container diagram; integration diagram; N-tier (layers) diagram | `README.md` |
+| Domain | context map and domain model; container view of its services; integration | `<domain>/README.md` |
+| Service | component diagram; logical and physical data model or ERD | `<domain>/<service>/...` |
+| Component | class, module or package diagram; physical data model; state machine | `<domain>/<service>/<component>...` |
 
-**Acceptance bar**
-- One **UML sequence diagram** per chosen scenario (skeleton below). Lifelines are
-  building blocks from §5 — names must match exactly.
-- Each scenario states its trigger and its end condition.
-- Error and retry behavior is shown for at least one scenario, not only happy paths.
-
----
-
-## 7. Deployment View
-
-**Prompt**
-- What are the target environments (dev / staging / prod) and their nodes?
-- Which building block / container runs on which node, and over which channels do
-  nodes communicate?
-- What infrastructure constraints (regions, zones, scaling units) apply?
-
-**Acceptance bar**
-- A C4 **Deployment** (or UML deployment) diagram: nodes, the artifacts deployed
-  to each, and the communication channels with protocols.
-- A node table: node, environment, hosted containers, sizing/scaling note.
-- Mapping is complete: every container from §5 lands on a node.
+Complete when: every box has one stated responsibility, every element in a service's views also
+appears in the container view of its domain and the system, and every data store shows its keys and
+access patterns in its data model.
 
 ---
 
-## 8. Crosscutting Concepts — *source feed*
+## 6. Runtime View — `06-runtime-view/`
 
-**Prompt**
-- Domain model, persistence, security/authn-authz, error handling, logging &
-  observability, idempotency, and any other concern spanning building blocks.
+| Scope | Views | Where |
+|---|---|---|
+| System | event and data flow across services; key end-to-end sequences | `<flow>.md` |
+| Service | sequence, state machine and activity diagrams for its important flows | `<domain>/<service>/...` |
 
-**Acceptance bar**
-- One subsection per concept, each stating the canonical pattern and the rule the
-  rest of the code follows (see `crosscutting-concepts-guide.md`).
-- Each concept is extraction-shaped (IDed, atomic, present-tense rule).
-- Marked `<!-- source-feed -->`.
-
----
-
-## 10. Quality Requirements
-
-**Prompt**
-- Build a quality tree (refine the §1 goals into sub-qualities).
-- For each leaf, write a concrete scenario: **stimulus → environment → response →
-  response measure**.
-
-**Acceptance bar**
-- A quality-scenario table where every row is measurable (has a number/threshold).
-  "Fast" fails; "p95 read latency ≤ 200 ms at 1k rps" passes.
-- Every §1 quality goal is represented by at least one scenario.
+Complete when: every participant is an element shown in a section 5 view or an external system in
+section 3, each flow states its trigger and its end, and the failure and retry path is shown where
+the flow has one.
 
 ---
 
-## 11. Risks and Technical Debt
+## 7. Deployment View — `07-deployment-view/`
 
-**Prompt**
-- What are the known architectural risks? What technical debt has been accepted?
+| Scope | Views | Where |
+|---|---|---|
+| System | deployment, infrastructure and environment diagrams | `README.md` |
+| System | network diagram | `network.md` |
+| Service | deployment of its stacks | `<domain>/<service>/...` |
 
-**Acceptance bar**
-- A table: item, type (risk | debt), impact, likelihood (for risks),
-  owner, mitigation or pay-down plan. No row without an owner.
+Complete when: every container in section 5 lands on infrastructure in a deployment view, and every
+channel between nodes names its protocol.
+
+---
+
+## 8. Crosscutting Concepts — `08-crosscutting-concepts/<concept>.md`
+
+| Scope | Views |
+|---|---|
+| Concept | the concept's structure (class, component) and behaviour (sequence, activity) |
+
+See `crosscutting-concepts-guide.md`.
 
 ---
 
-## 12. Glossary
+## 10. Quality Requirements — `10-quality-requirements/README.md`
 
-**Prompt**
-- Which domain and technical terms need a single agreed definition to avoid
-  ambiguity?
-
-**Acceptance bar**
-- A two-column term/definition table. Each term defined once; no synonyms left
-  undisambiguated. Terms used in §1–§11 that a newcomer would not know appear here.
+The quality scenarios the architecture is designed to meet: stimulus, environment, response and a
+measurable response measure. Every top quality goal in section 1 has at least one scenario.
 
 ---
+
+## 11. Risks and Technical Debt — `11-risks-and-technical-debt/README.md`
+
+Known risks and accepted debt in the current design, each naming the element it affects. Work still
+to do is a bead, not an entry here.
+
+---
+
+## 12. Glossary — `12-glossary/README.md`
+
+The terms the architecture uses, each defined once, so every view and diagram label means the same
+thing by the same word.
+
+---
+
+## Catalog frontmatter skeleton
+
+```yaml
+---
+view_type: component diagram       # a type from the MENU
+scope: service                     # system | domain | service | component | concept
+subject: <service>                 # the one thing this view describes
+shows:                             # every element that appears in the view
+  - <component-a>
+  - <component-b>
+lifecycle_state: in-review         # in-review until an architecture review approves it
+---
+```
 
 ## Diagram skeletons
 
-### C4 System Context (§3)
+### System context (section 3)
 
 ```mermaid
 C4Context
-  title System Context — <system name>
-  Person(user, "End User", "Primary actor")
+  title System Context — <system>
+  Person(user, "<Person>", "Primary actor")
   System(sys, "<System>", "What it does")
-  System_Ext(extA, "Neighbour System A", "Role")
-  Rel(user, sys, "Uses", "HTTPS")
-  Rel(sys, extA, "Reads/writes", "REST/JSON")
+  System_Ext(extA, "<External system>", "Role")
+  Rel(user, sys, "Uses", "<channel>")
+  Rel(sys, extA, "Reads/writes", "<protocol>")
 ```
 
-### C4 Container (§5, Level 1)
+### Container (section 5, system scope)
 
 ```mermaid
 C4Container
-  title Containers — <system name>
-  Person(user, "End User")
+  title Containers — <system>
+  Person(user, "<Person>")
   System_Boundary(b, "<System>") {
-    Container(web, "Web App", "React", "UI")
-    Container(api, "API", "Node/Express", "Application logic")
-    ContainerDb(db, "Database", "PostgreSQL", "State of record")
+    Container(web, "<Web app>", "<technology>", "<responsibility>")
+    Container(api, "<API>", "<technology>", "<responsibility>")
+    ContainerDb(db, "<Data store>", "<technology>", "<what it holds>")
   }
-  Rel(user, web, "Uses", "HTTPS")
-  Rel(web, api, "Calls", "JSON/HTTPS")
-  Rel(api, db, "Reads/writes", "SQL/TLS")
+  Rel(user, web, "Uses", "<channel>")
+  Rel(web, api, "Calls", "<protocol>")
+  Rel(api, db, "Reads/writes", "<protocol>")
 ```
 
-### C4 Component (§5, Level 2 — zoom one container)
+### Component (section 5, service scope)
 
 ```mermaid
 C4Component
-  title Components — API container
-  Container_Boundary(api, "API") {
-    Component(ctrl, "Controllers", "HTTP edge")
-    Component(svc, "Domain Services", "Business rules")
-    Component(repo, "Repositories", "Persistence ports")
+  title Components — <service>
+  Container_Boundary(svc, "<Service>") {
+    Component(handler, "<Handler>", "<technology>", "<responsibility>")
+    Component(domain, "<Domain logic>", "<technology>", "<responsibility>")
+    Component(store, "<Repository>", "<technology>", "<responsibility>")
   }
-  Rel(ctrl, svc, "Invokes")
-  Rel(svc, repo, "Uses")
+  Rel(handler, domain, "Invokes")
+  Rel(domain, store, "Uses")
 ```
 
-### UML Sequence (§6, one per scenario)
+### Sequence (section 6, one per flow)
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor U as User
-  participant W as Web App
-  participant A as API
-  participant D as Database
-  U->>W: Submit request
-  W->>A: POST /resource
-  A->>D: INSERT (idempotency key)
+  actor U as <Person>
+  participant A as <API>
+  participant S as <Service>
+  participant D as <Data store>
+  U->>A: <request>
+  A->>S: <call>
+  S->>D: <write with idempotency key>
   alt key already seen
-    D-->>A: existing row
-    A-->>W: 200 (replayed result)
+    D-->>S: existing item
+    S-->>A: replayed result
   else new
-    D-->>A: created
-    A-->>W: 201
+    D-->>S: created
+    S-->>A: result
   end
-  W-->>U: Confirmation
+  A-->>U: <response>
 ```
 
-### C4 Deployment (§7)
+### State machine (section 5 or 6)
+
+```mermaid
+stateDiagram-v2
+  [*] --> <State1>
+  <State1> --> <State2>: <event>
+  <State2> --> <State1>: <event>
+  <State2> --> [*]
+```
+
+### Deployment (section 7)
 
 ```mermaid
 C4Deployment
-  title Deployment — production
-  Deployment_Node(cloud, "Cloud Region", "AWS us-east-1") {
-    Deployment_Node(cluster, "K8s Cluster") {
-      Container(api, "API", "Node", "3 replicas")
+  title Deployment — <environment>
+  Deployment_Node(cloud, "<Cloud account and region>") {
+    Deployment_Node(compute, "<Compute>") {
+      Container(api, "<API>", "<technology>")
     }
-    Deployment_Node(rds, "Managed DB", "RDS PostgreSQL") {
-      ContainerDb(db, "Primary", "PostgreSQL")
+    Deployment_Node(storage, "<Managed store>") {
+      ContainerDb(db, "<Data store>", "<technology>")
     }
   }
-  Rel(api, db, "SQL/TLS")
+  Rel(api, db, "<protocol>")
 ```
-
-> All mermaid fences live in these reference files only — never in SKILL.md.

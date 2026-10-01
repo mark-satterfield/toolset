@@ -1,80 +1,39 @@
-# Verification Checklist — Completeness and Consistency
+# Verification checklist — layout, naming and catalog
 
-This file holds the assertions for two of the four families: **completeness** (every arc42 section is
-present, ordered, and non-empty) and **consistency** (the cross-section invariants that must hold for
-the document to describe one coherent system). Run completeness first; a missing section short-circuits
-the consistency checks that depend on it.
+This file holds the assertions for two of the four families: **layout and naming** (the folders and
+file names follow the MODEL) and **catalog** (every view declares what it describes). Run layout
+first: a view in the wrong place is reported once there, and its catalog checks still run.
 
-## Part A — Eleven-Section Completeness
+## Part A — Layout and naming
 
-arc42 fixes the section set and their order. The SAD must contain all eleven — 1–8 and 10–12 — in
-sequence. A heading with no body, or a body consisting only of the template's placeholder prompt
-(e.g. "Describe the relevant constraints…"), counts as **absent** — flag it `FAIL`, not `WARN`.
+| Check | PASS when | FAIL when |
+|---|---|---|
+| Section folders | `arc42/` holds one folder per section, `01-introduction-and-goals/` through `12-glossary/`, each with a `README.md` | A section is a single file, a folder lacks `README.md`, or a section folder is missing |
+| No section 9 | No `09-*` folder or file, and no decision-record section | A section 9 or a decision log exists |
+| View placement | Each view sits in the section the MODEL's view table names for its scope and view type (structure in 5, behaviour in 6, deployment in 7, concepts in 8, context in 3) | A sequence diagram in section 5, a deployment view in section 6, a concept outside section 8 |
+| Subject folders | Inside a section, views below the system scope sit in folders named for their domain, service or component | Service views loose at the section root among system views |
+| Names | Files and folders are named for their subject | A name carries a PRD, an Epic, a bead id, a date or a pipeline gate (`-adjudicated`, `-v2`, `-proposal`) |
+| Versions | Target views are in `target/<subject>/` with the arc42 section layout, the delta in `target/<subject>/delta/`, built in `built/<subject>/` | A target view inside `arc42/`; a delta outside its target; a `<subject>` named for an Epic or a date |
+| Diagrams in views | Diagrams are Mermaid in the view files they belong to | A diagram in a folder outside the sections, or a binary diagram format with no Mermaid view |
+| Section 2 | `02-architecture-constraints/` holds only its `README.md` with the owner's constraints | Other files in section 2 |
+| Section 4 | `04-solution-strategy/README.md` is about one page of enterprise-level direction | Implementation detail (one service's technology, a table design) in section 4 — `WARN`; a section 4 several times that length — `FAIL` |
 
-| § | Section | Present-and-non-empty means | FAIL when |
-|---|---------|------------------------------|-----------|
-| 1 | Introduction and Goals | States the system's purpose, the top 3–5 quality goals, and the stakeholder list | No quality-goal table, or goals are generic ("be fast") with no priority |
-| 2 | Architecture Constraints | Lists technical, organizational, and convention constraints that are *given*, not chosen | Empty, or conflates constraints with decisions (a chosen tech is a §4 item, not a constraint) |
-| 3 | Context and Scope | Defines system boundary; names external systems/actors and the interfaces across the boundary | No business context or no technical context; boundary undefined |
-| 4 | Solution Strategy | Summarizes the fundamental decisions and approach: tech choices, decomposition, quality-goal tactics | Empty, or merely restates §1 goals without naming an approach |
-| 5 | Building Block View | Decomposes the system into building blocks with responsibilities; at least the level-1 whitebox | No level-1 decomposition, or blocks listed with no responsibilities |
-| 6 | Runtime View | Shows how building blocks collaborate in important scenarios (sequences/flows) | Empty, or no scenario tied to a §1 quality goal |
-| 7 | Deployment View | Maps building blocks to infrastructure/nodes; shows the technical deployment | No node-to-block mapping; only a prose mention of "the cloud" |
-| 8 | Crosscutting Concepts | Documents concerns that span blocks: domain model, persistence, security, error handling, etc. | Empty, or each concept is a one-liner with no actual concept content |
-| 10 | Quality Requirements | A quality tree plus concrete, measurable quality scenarios | Goals stated without measurable scenarios; no scenario references a stimulus + response + measure |
-| 11 | Risks and Technical Debt | Names known risks and accumulated debt with assessment | Empty, or "none" with no justification |
-| 12 | Glossary | Defines domain and technical terms used across the document | Empty, or missing terms the document actually uses |
+## Part B — Catalog
 
-**Ordering and numbering checks:**
+Every view file (every Markdown file under the version being verified other than a folder index that
+holds no view) carries the catalog frontmatter.
 
-- Headings appear in ascending order across the eleven sections (§1–§8, §10–§12). A section out of order is a `FAIL` even if all are present.
-- No duplicate section numbers.
-- No extra top-level "section 13+" masquerading as arc42 content — appendices are fine but must not be numbered into the arc42 sequence.
-
-## Part B — Cross-Section Consistency Invariants
-
-Completeness proves each section exists; consistency proves they describe **one** system. Assert each
-invariant below. Each names the sections it spans and what to compare.
-
-1. **Quality goals trace to scenarios.** Every top quality goal in §1 has at least one measurable
-   scenario in §10. A goal with no scenario is a `FAIL`; a §10 scenario with no parent goal is a `WARN`.
-2. **Quality goals trace to strategy.** Every §1 quality goal is addressed by at least one tactic or
-   decision in §4 (Solution Strategy). A goal that no part of the strategy serves is a `FAIL`.
-3. **Building blocks deploy.** Every level-1 building block in §5 appears in the §7 deployment mapping
-   (or is explicitly noted as non-deployed, e.g. a build-time-only component). An undeployed runtime
-   block is a `FAIL`.
-4. **Runtime scenarios use real blocks.** Every participant in a §6 runtime scenario is a building
-   block defined in §5 or an external system named in §3. A phantom participant is a `FAIL`.
-5. **Context actors are consistent.** Every external system/actor in §6, §7, or the building-block
-   interfaces of §5 is declared in the §3 context boundary. An undeclared external is a `FAIL`.
-6. **Decisions trace to drivers.** Every decision recorded in §4 (and any decision-bearing §8 concept)
-   cites a driver — a §2 constraint, a §1 quality goal, or a §11 risk. A decision with no driver is a
-   `WARN`; a decision that *contradicts* a §2 constraint is a `FAIL` (and also a source-integrity
-   failure — see `source-integrity-checks.md`).
-7. **Crosscutting concepts are referenced.** Every §8 concept (security model, persistence approach,
-   error handling) is applied somewhere in §5/§6/§7. A concept documented but never used is a `WARN`.
-8. **Glossary covers used terms.** Every term defined in §12 is used in the body, and every clearly
-   domain-specific term used repeatedly in the body is defined in §12. Unused definitions are `WARN`;
-   undefined repeated domain terms are `WARN`.
-9. **Risks reference reality.** Every §11 risk/debt item references a concrete block (§5), decision
-   (§4), or constraint (§2) it threatens. A free-floating risk is a `WARN`.
-
-```mermaid
-flowchart LR
-  G1[§1 Quality Goals] -->|invariant 1| S10[§10 Scenarios]
-  G1 -->|invariant 2| S4[§4 Solution Strategy]
-  S5[§5 Building Blocks] -->|invariant 3| S7[§7 Deployment]
-  S6[§6 Runtime] -->|invariant 4| S5
-  S3[§3 Context] -->|invariant 5| S6
-  S2[§2 Constraints] -->|invariant 6| S4
-  S8[§8 Crosscutting] -->|invariant 7| S5
-  S12[§12 Glossary] -->|invariant 8| BODY[(document body)]
-  S11[§11 Risks] -->|invariant 9| S5
-```
+| Field | PASS when | FAIL when |
+|---|---|---|
+| `view_type` | Present, and a type the MENU lists | Missing, or a type the MENU does not list |
+| `scope` | One of `system`, `domain`, `service`, `component`, `concept` | Missing or another value |
+| `subject` | Present, and the one thing the view describes, named as the glossary and repositories name it | Missing; names a PRD, Epic, bead or date |
+| `shows` | A list of every element in the view's diagram | Missing; an element in the diagram absent from the list (`FAIL`); a listed element the diagram does not contain (`WARN`) |
+| `lifecycle_state` | `in-review` or `effective` | Missing or another value; a target or delta file marked `effective` before approval |
+| Scope and place agree | A `scope: service` view sits in that service's subject folder; a `scope: concept` view sits in section 8 | Scope and folder disagree |
 
 ## How to report from this file
 
-For each table row and each invariant, emit one verdict line in the format
-`[STATUS] §<n> <title> — <observation>` with an indented `evidence:` line quoting the offending
-text or naming the absence. Do not propose the fix here — that belongs to the SAD author and the
-`arc42` skill. Report only what is and is not true.
+For each check, emit one verdict line, `[STATUS] <path> — <observation>`, with an indented
+`evidence:` line quoting the frontmatter or the file name, or naming the absence. Report only what is
+and is not true; do not propose the fix.

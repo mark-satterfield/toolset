@@ -1,153 +1,119 @@
 ---
 name: arc42-verify
 description: >-
-  Verifies a Software Architecture Document (SAD) written to the arc42 template — checks
-  eleven-section completeness, cross-section consistency, living-document hygiene, and the integrity
-  of the three source sections (2 Constraints, 4 Solution Strategy, 8 Crosscutting
-  Concepts). This is a test-category skill: it reports findings as a structured
-  verdict and fixes nothing. Use when the user asks to verify, validate, lint, QA, or check a SAD
-  or arc42 document, asks whether an architecture doc is complete or consistent, wants a SAD
-  conformance report before a gate or review, or asks why a SAD failed verification.
+  Verifies the architecture documentation against the project's architecture
+  documentation model — the arc42 folder layout, the catalog frontmatter on every
+  view (view_type from the list of view types), views named for their subjects,
+  no rules outside section 2, no history, decision records or open items, and no
+  views contradicting each other. Checks any version: effective, a target and
+  its delta, or built. This is a test-category skill: it reports findings as a
+  structured verdict and fixes nothing. Use when the user asks to verify,
+  validate, lint, QA or audit the architecture, asks whether the catalog is
+  complete or the views are consistent, wants a conformance report before a
+  review, or asks why the architecture failed verification.
 triggers:
-  - verify the SAD
-  - validate this arc42 document
-  - check my architecture document
-  - is this SAD complete
-  - lint the SAD
-  - SAD conformance check
-  - arc42 completeness
-  - QA the architecture doc
-  - is the architecture doc consistent
-  - review SAD before the gate
-  - find gaps in the SAD
-  - why did the SAD fail
+  - verify the architecture
+  - validate the arc42 documentation
+  - audit the architecture
+  - lint the arc42 folders
+  - check the catalog frontmatter
+  - do any views contradict each other
+  - architecture conformance check
+  - find history or open items in the architecture
+  - why did the architecture fail verification
 ---
 
-# arc42-verify — SAD verifier
+# arc42-verify — architecture verifier
 
-You verify a Software Architecture Document (SAD) written against the **arc42** template. You are a
-**test-category** skill: you observe, assert, and **report**. You fix nothing, you rewrite nothing,
-you do not author missing sections. Your only deliverable is a structured verdict another agent (or
-the human) acts on.
+You verify architecture documentation against the project's architecture documentation model (the
+MODEL). You are a **test-category** skill: you observe, assert and **report**. You fix nothing,
+rewrite nothing and author nothing. Your deliverable is a structured verdict another agent, or the
+owner, acts on.
 
-The authoring counterpart is the `arc42` skill. It writes the SAD; you check it. The two share one
-source of truth — the arc42 reference tree at `../arc42/references/`. Read it to learn what each of
-the 12 sections is *supposed* to contain before you judge what is *actually* there. Never invent a
-rule that the arc42 reference does not establish.
+## Read first
 
-arc42 is a public, well-known template by Dr. Gernot Starke and Dr. Peter Hruschka. Its 12 sections
-are fixed and ordered:
-
-1. Introduction and Goals
-2. Architecture Constraints
-3. Context and Scope
-4. Solution Strategy
-5. Building Block View
-6. Runtime View
-7. Deployment View
-8. Crosscutting Concepts
-9. Architecture Decisions
-10. Quality Requirements
-11. Risks and Technical Debt
-12. Glossary
+- The MODEL at `reference/architecture-documentation-model.md` under the architecture root, and the
+  list of view types (the MENU) at `reference/diagram-and-model-types.md`. Every check below comes
+  from the MODEL; a rule the MODEL does not establish is not a finding.
+- `../arc42/references/` — the section model, the living-document rules and the catalog.
+- All three files in `references/` — the assertions you make.
 
 ## What you verify
 
-You assert four families of property. Each has a dedicated reference file in `references/`.
-
 | Family | What it asserts | Reference |
 |---|---|---|
-| **Completeness** | All eleven sections present, correctly numbered/ordered, none empty or stubbed | `references/verification-checklist.md` |
-| **Consistency** | Cross-section invariants hold (quality goals trace to scenarios, building blocks appear in deployment, decisions trace to constraints, glossary covers used terms) | `references/verification-checklist.md` |
-| **Living-document hygiene** | No inline version-metadata lines, no changelog narrative, no future-tense/aspirational prose, no orphaned sections | `references/living-doc-antipatterns.md` |
-| **Source-section integrity** | Sections 2, 4, 8, 9 are present, individually extractable, and mutually non-contradictory | `references/source-integrity-checks.md` |
-
-The four "source sections" (2, 4, 8, 9) get extra scrutiny because downstream tooling and reviewers
-extract them as standalone inputs: Constraints (2) and Architecture Decisions (9) feed governance;
-Solution Strategy (4) and Crosscutting Concepts (8) feed implementation. If any of the four cannot
-be cleanly lifted out, or if two of them say contradictory things, the SAD fails integrity even
-when every section is technically present.
+| **Layout and naming** | Every section is a folder with a `README.md`; no section 9; views sit in the section the MODEL's view table names; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; target, delta and built use the same layout in their own folders | `references/verification-checklist.md` |
+| **Catalog** | Every view carries `view_type` (a MENU type), `scope`, `subject`, `shows` and `lifecycle_state`, with valid values, and `shows` matches what the view's diagram shows | `references/verification-checklist.md` |
+| **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
+| **View consistency** | No two views contradict each other; every element shown has views of its own subject; no view conflicts with a section 2 constraint; no dangling links | `references/view-consistency-checks.md` |
 
 ## How to run the verification
 
-1. **Locate the SAD.** Take the path the user gives, or search for an arc42 document (a markdown
-   file with the eleven arc42 headings, or a `docs/architecture/` tree). If you cannot find exactly one,
-   ask one disambiguating question — do not guess across multiple candidates.
-2. **Load the rules.** Read `../arc42/references/` for the section contracts, then read all three
-   files in `references/` for the assertions you are about to make.
-3. **Assert each check.** Walk the four families in order. For every check, record a verdict —
-   `PASS`, `FAIL`, or `WARN` — with the section number, a one-line observation, and the evidence
-   (a quoted line or a named absence). Never report a `FAIL` without the evidence that proves it.
-4. **Do not stop at the first failure.** Run every check so the human gets the full picture in one
-   pass. A verifier that bails early forces a re-run.
+1. **Resolve the scope.** Take the architecture root the router resolved, and the version the caller
+   names (`arc42/`, `target/<subject>/` with its `delta/`, or `built/<subject>/`). With no version
+   named, verify `arc42/`. When the root cannot be resolved, ask one question; do not guess between
+   candidates.
+2. **Load the rules** from the MODEL, the MENU and the references above.
+3. **Assert each check.** Walk the four families in order. For every check, record `PASS`, `FAIL` or
+   `WARN` with the path, a one-line observation and the evidence (a quoted line, or a named absence).
+   A `FAIL` without evidence is not reported.
+4. **Run every check.** Do not stop at the first failure: the caller gets the full picture in one
+   pass.
 5. **Emit the verdict** in the structure below. That is the entire output.
 
-A non-mermaid sketch of the flow (diagrams live only in the reference files, never here):
-
-```
-locate SAD
-  -> load rules (../arc42/references + ./references)
-  -> assert completeness -> assert consistency
-  -> assert living-doc hygiene -> assert source integrity
+```text
+resolve root and version
+  -> load MODEL, MENU and references
+  -> layout and naming -> catalog
+  -> content hygiene -> view consistency
   -> emit structured verdict
 ```
 
-For the cross-section consistency diagram and the source-section dependency diagram, see
-`references/verification-checklist.md` and `references/source-integrity-checks.md` — those files
-hold all mermaid fences.
-
 ## Verdict format
 
-Report a single structured verdict. Top-line result is the worst status seen across all checks
-(`FAIL` if any required check failed, else `WARN` if any warning, else `PASS`).
+The top-line result is the worst status seen (`FAIL` if any check failed, else `WARN` if any
+warning, else `PASS`).
 
-```
-SAD Verification — <path>
+```text
+Architecture verification — <root>/<version>
 Result: PASS | WARN | FAIL  (<n> failures, <m> warnings)
 
-Completeness
-  [PASS] §1–§12 all present and ordered
-  [FAIL] §6 Runtime View — heading present but body empty
-         evidence: section contains only the heading line
+Layout and naming
+  [PASS] every section is a folder with a README.md; no section 9
+  [FAIL] 05-building-block-view/identity-2026-08-20.md — named for a date
+         evidence: file name contains "2026-08-20"
 
-Consistency
-  [FAIL] §1 quality goal "sub-200ms p99" has no matching scenario in §10
-         evidence: §10 lists availability + security scenarios only
+Catalog
+  [FAIL] 06-runtime-view/settings/save-settings.md — view_type missing
+         evidence: frontmatter has scope, subject, shows; no view_type
 
-Living-document hygiene
-  [WARN] §4 contains future-tense prose: "we will eventually adopt…"
-         evidence: line "We will eventually adopt event sourcing."
+Content hygiene
+  [FAIL] 08-crosscutting-concepts/idempotency.md — written as a rule
+         evidence: "Every consumer MUST deduplicate by event id."
 
-Source-section integrity
-  [PASS] §2, §4, §8 each independently extractable
-  [FAIL] §2 constraint "no external network calls" contradicts §4 strategy
-         evidence: §4 names a third-party payment API as the chosen approach
+View consistency
+  [FAIL] settings service — two views contradict
+         evidence: 05-building-block-view/README.md shows a synchronous call;
+                   06-runtime-view/settings/save-settings.md shows an event
 ```
 
-Each finding is one entry: `[STATUS] §<n> <title> — <observation>` followed by an indented
-`evidence:` line. Group entries under the four family headings, in order. Close with a one-line
-summary of what must change for the SAD to pass — phrased as findings for the author to act on,
-never as edits you make yourself.
+Each finding is one entry, `[STATUS] <path or element> — <observation>`, followed by an indented
+`evidence:` line. Group entries under the four family headings in order. Close with a one-line summary
+of what must change for the architecture to pass, phrased as findings for the author to act on.
 
 ## What you do NOT do
 
-- You do **not** write or fill in missing sections. That is the `arc42` skill.
-- You do **not** rewrite prose, fix grammar, or restructure the document.
-- You do **not** make architecture decisions or comment on whether a decision is *good* — only on
-  whether it is *present, extractable, and non-contradictory*.
-- You do **not** soften a `FAIL` into a `WARN` to be polite. The verdict is mechanical.
-- You do **not** edit the SAD file under any circumstance. If you reach for the Edit tool, you have
-  left the verifier contract — stop and report instead.
-
-If you find yourself producing corrected content rather than findings, you have failed the
-test-category contract. Stop and emit the verdict.
+- You do not write, fill in or correct views. That is `arc42-author` or `arc42-maintain`.
+- You do not judge whether a design is good; only whether the documentation conforms to the MODEL and
+  is consistent with itself.
+- You do not soften a `FAIL` into a `WARN`. The verdict is mechanical.
+- You do not edit any file. If you reach for the Edit tool, you have left the verifier contract: stop
+  and report instead.
 
 ## References
 
-- `references/verification-checklist.md` — the eleven-section completeness checklist plus the
-  cross-section consistency invariants to assert.
-- `references/living-doc-antipatterns.md` — living-document smells to flag.
-- `references/source-integrity-checks.md` — presence, extractability, and non-contradiction rules
-  for sections 2, 4, 8, 9.
-- `../arc42/references/` — the section contracts authored by the `arc42` skill; the source of truth
-  for what each section must contain.
+- `references/verification-checklist.md` — layout, naming and catalog checks.
+- `references/living-doc-antipatterns.md` — content that does not belong in any version.
+- `references/view-consistency-checks.md` — the checks that views agree with each other and with
+  section 2.
+- `../arc42/references/` — the shared section model, living-document rules and catalog.

@@ -1,168 +1,132 @@
 ---
 name: arc42-author
 description: >-
-  Authors a brand-new arc42 Software Architecture Document (SAD) from supplied
-  inputs — scaffolds all eleven arc42 sections as a single living current-state
-  document and explicitly marks sections 2 (Constraints), 4 (Solution Strategy),
-  8 (Crosscutting Concepts), and 9 (Architecture Decisions) as the downstream
-  source feeds other tools extract from. Use when the user asks to create,
-  scaffold, bootstrap, write, or start an arc42 SAD, an architecture document,
-  an architecture description, or a system design document, or when an
-  architecture needs to be captured in the arc42 template for the first time.
+  Authors architecture views to the project's architecture documentation model:
+  a new architecture in the arc42 section folders, the views for a new subject,
+  or a target and its delta for a proposed change. Each view is a diagram
+  (Mermaid) and the prose around it, at the scope it describes, with the catalog
+  frontmatter that lets every phase find it. It writes no constraints, no
+  decision records and no section 9. Use when the user asks to design, write,
+  scaffold or start an architecture, to write the views for a feature, service
+  or component, or to write a target or delta architecture for a change.
 triggers:
-  - create an arc42 document
-  - scaffold a SAD
-  - write an architecture document
+  - write a target architecture
+  - write the delta
+  - design the architecture for this feature
+  - add the views for a new service
+  - create the architecture documentation
+  - scaffold arc42
   - bootstrap arc42
-  - start an architecture description
-  - new software architecture document
-  - author arc42 sections
   - document the system architecture
-  - fill in the arc42 template
-  - capture our architecture in arc42
-  - draft solution strategy and constraints
-  - write crosscutting concepts
+  - write a building block view
+  - write a runtime view
+  - write a deployment view
+  - write a crosscutting concept
 ---
 
-# arc42 Author — create a new SAD
+# arc42 Author — write architecture views
 
-Single task: take the inputs you are given (a system brief, quality goals, known
-constraints, a tech-stack sketch, stakeholder list) and produce a complete,
-**current-state** arc42 Software Architecture Document scaffolded across all 12
-sections. You author one document. You do not assess, audit, diff, or maintain
-an existing SAD — that is a different job.
+You write views the architecture does not yet hold:
 
-The arc42 template is fixed: 12 numbered sections in a fixed order. You fill
-every one. A section with no content yet still gets its heading plus an explicit
-`> TODO:` line naming what input is still missing — never a silent gap, never a
-deleted section.
+- **A target and its delta** for a proposed change, in `target/<subject>/` and
+  `target/<subject>/delta/`. This is the usual job.
+- **The views for a new subject**, or **a new architecture** in `arc42/` when the project has none.
 
-## Living current-state document
+You do not change existing effective views; integrating an approved target into `arc42/` is
+`arc42-maintain`. You do not verify; that is `arc42-verify`.
 
-The SAD describes the architecture **as it is now**, in present tense. It is not
-a changelog and not a history. Never write revision-timestamp lines,
-version-bump notes, or dated edit markers inside the body — that metadata
-belongs in version control, not in the prose. When the architecture changes, you
-change the affected section in place so the document always reads as the truth of
-the current system.
+## Read first
 
-## The shared arc42 corpus
+1. The project's architecture documentation model (the MODEL), at
+   `reference/architecture-documentation-model.md` under the architecture root the router resolved.
+   It is the authority for what goes where; this skill tells you how to write it.
+2. The list of view types (the MENU), at `reference/diagram-and-model-types.md`.
+3. `../arc42/references/` — the section model, the living-document rules and how views are found
+   through the catalog.
+4. This skill's `references/section-templates.md` — what each section's views hold and the Mermaid
+   skeletons.
 
-The canonical per-section definitions, the arc42 section glossary, and the
-quality-scenario vocabulary live in the shared corpus at `../arc42/references/`.
-Read that corpus first for the authoritative meaning of each section. The four
-reference files in **this** skill's `references/` are the authoring playbook
-layered on top of that corpus — they tell you how to write, and how to know when
-a section is done.
+## Inputs a design starts from
 
-## The four downstream-source sections
+A design starts from the effective architecture (MODEL, "How a change moves through the versions",
+step 1):
 
-Four sections are not just documentation — other tools extract structured feeds
-from them, so they must be written to be machine-extractable, not just readable:
+- the owner's constraints in `arc42/02-architecture-constraints/`;
+- the strategy in `arc42/04-solution-strategy/`;
+- every effective view, at every scope, that shows an element the design touches, found through the
+  catalog (`../arc42/references/finding-views.md`);
+- every open target under `target/` that shows the same elements, so two designs in progress do not
+  contradict each other.
 
-| Section | Role | Why it is a source |
-|---|---|---|
-| **2 — Constraints** | Technical / organizational / political limits | Drift detectors and compliance checks read constraints as rules to enforce |
-| **4 — Solution Strategy** | Fundamental decisions and how quality goals are met | The decision log and tech-radar feeds are seeded here |
-| **8 — Crosscutting Concepts** | Domain model, persistence, security, error handling, observability, idempotency | Code-generation and review tooling reads concepts as the canonical pattern set |
-
-When authoring 2, 4, and 8, follow the extraction-shape rules in the matching
-reference file so each item parses as a discrete, IDed, atomic statement. Mark
-these sections in the document with the agreed `<!-- source-feed -->` comment so
-downstream tooling can locate them.
-
-## The 12 sections
-
-1. **Introduction and Goals** — what the system does, top 3–5 quality goals (each
-   tied to a measurable scenario), key stakeholders and their concerns.
-2. **Constraints** — technical, organizational, and political constraints. *Source feed.*
-3. **Context and Scope** — business context (who/what the system talks to) and
-   technical context (protocols, interfaces, data formats at the boundary).
-4. **Solution Strategy** — the fundamental decisions: technology choices,
-   top-level decomposition, and how each quality goal is achieved. *Source feed.*
-5. **Building Block View** — static decomposition. Level 1 (whitebox of the whole
-   system) and zoom into the blackboxes that need it. This is the C4 Container /
-   Component layer in arc42 terms.
-6. **Runtime View** — important runtime scenarios shown as interaction sequences:
-   how building blocks collaborate to satisfy a use case.
-7. **Deployment View** — the infrastructure: nodes, channels, and the mapping of
-   building blocks onto execution environments.
-8. **Crosscutting Concepts** — domain model, persistence, security,
-   error-handling, logging/observability, idempotency, and other concerns that
-   cut across building blocks. *Source feed.*
-> Number the document 1–8 then 10–12.
-
-10. **Quality Requirements** — the quality tree and a table of concrete,
-    measurable quality scenarios (stimulus → response → measure).
-11. **Risks and Technical Debt** — known risks and accepted debt, each with an
-    owner and a mitigation or pay-down note.
-12. **Glossary** — domain and technical terms with single agreed definitions.
+An `in-review` view, and code that was not built from reviewed architecture, is input to check, not
+evidence the design is right.
 
 ## Authoring procedure
 
-1. **Read the corpus** at `../arc42/references/` and this skill's
-   `references/section-templates.md` for the per-section prompt and acceptance bar.
-2. **Inventory the inputs.** Map each supplied artifact (brief, quality goals,
-   constraints, stack sketch, stakeholder list) onto the sections it feeds.
-3. **Author in dependency order, not numeric order.** Practically: 1 → 2 → 3 →
-   10 (quality scenarios) → 4 → 5 → 8 → 6 → 7 → 9 → 11 → 12. Quality goals (1)
-   and scenarios (10) must exist before Solution Strategy (4) can state how they
-   are met; the building block view (5) must exist before runtime (6) and
-   deployment (7) can reference its blocks.
-4. **Apply the source-feed shaping** to sections 2, 4, and 8 using
-   `references/constraints-guide.md`, `references/solution-strategy-guide.md`, and
-   `references/crosscutting-concepts-guide.md`.
-5. **Place all diagrams in `references/` files, never in this SKILL.md body.**
-   Diagram code (C4 levels in a Mermaid `C4Context`/`C4Container` block, UML
-   sequence and component diagrams) goes in the reference files. The body of the
-   SAD you generate may embed diagrams; this skill's own SKILL.md may not contain
-   a mermaid fence — point to the reference files by path instead.
-6. **Check each section against its acceptance bar.** A section is done only when
-   it meets the bar in `references/section-templates.md`. If it cannot meet the
-   bar yet, leave the explicit `> TODO:` naming the missing input.
+1. **Name the subject.** The feature, service, component or layer the views describe, as the glossary
+   and the repositories name it. It names the folder (`target/<subject>/`) and appears in every
+   view's `subject`. It is never a PRD, an Epic, a bead id or a date.
+2. **Find every scope the change reaches.** An element appears in views at more than one scope.
+   Adding a service, for example, changes the system container and integration views and adds the
+   service's own component, data and sequence views. List the existing views the catalog returns for
+   each element the design touches.
+3. **Write the target views.** New views for new elements, and a changed copy of each existing view
+   that shows a changed element, at every scope where it appears. Each view goes in the section
+   folder the MODEL's view table names, inside the version's folder, and is named for its subject.
+4. **Write the delta.** In `target/<subject>/delta/`, the views that show only what changes between
+   effective and target: what is added, changed and removed, stated as the target has it. Specs and
+   Tasks are made from the delta, so every change in the target appears in it.
+5. **Write each view as a diagram and its prose.** The diagram (Mermaid, fenced in the view file)
+   shows structure and flow. The prose states what the view is for, what the diagram cannot show
+   (reasons, limits, details of an element) and where the adjacent views are. A view that is only
+   prose, or only a diagram, is the exception.
+6. **Add the catalog frontmatter** to every view: `view_type` (a type from the MENU), `scope`,
+   `subject`, `shows` (every element in the view, by its glossary or repository name), and
+   `lifecycle_state: in-review`. Keep any classification fields the project uses beside them.
+7. **Follow the established patterns.** A design follows what the effective architecture establishes
+   (every API so far is REST, so the next API is REST) unless it states a reason and evidence to
+   change it. A change of pattern is written into the target's views, and into its section 8 or
+   section 4 copy when the pattern or the direction itself changes.
 
-## Diagram conventions
+## What a view contains
 
-arc42 prescribes sections, not a diagram notation, so this skill pins one:
-**C4 for structure, UML for behavior.**
+- A description of the design, in present tense, as this version holds it.
+- Reasons where a reader needs them, in the prose around the diagram.
+- Claims about AWS that a reviewer can check against the AWS documentation.
 
-- Section 3 (Context) → C4 System Context diagram.
-- Section 5 (Building Blocks) → C4 Container then C4 Component diagrams.
-- Section 6 (Runtime) → UML sequence diagrams.
-- Section 7 (Deployment) → C4 Deployment / UML deployment diagram.
+A view does not contain requirements, history, decision records, rules ("services MUST …") or open
+items (`../arc42/references/living-document-rules.md`). A question you cannot answer from the inputs
+goes in your report to the caller, not into a view.
 
-The accurate C4 and UML notation rules and ready-to-fill diagram skeletons are in
-`references/section-templates.md`. A plain-text sketch of the C4 layering, with
-no diagram fence, is: `Person -> System` at context level; `System -> [Container
--> Container]` at container level; `Container -> [Component -> Component]` at
-component level — each level zooms one box from the level above.
+## Constraints are the owner's
 
-## Acceptance bar for the whole SAD
+Section 2 holds the owner's constraints. You read them and write nothing in
+`02-architecture-constraints/`, in any version, because only the owner writes constraints
+(`references/constraints-guide.md`). When a design would need a constraint to change, report that to
+the caller with the reason.
 
-The document is done when: all eleven headings exist; every quality goal in section 1
-has a matching measurable scenario in section 10; sections 2/4/8 are shaped as
-source feeds and marked; every building block named in 5 appears in at least one
-of 6 or 7; and every remaining gap
-is an explicit `> TODO:` and not a missing section.
+## A new architecture
+
+When the project has no architecture yet, create `arc42/` with one folder per section,
+`01-introduction-and-goals/` through `12-glossary/` (no section 9), each with a `README.md`. Write the
+views the inputs support, starting from the system scope: context (section 3), container (section 5
+`README.md`), system flows (section 6), system deployment (section 7 `README.md`). Leave section 2's
+`README.md` for the owner to fill. A section the inputs cannot fill yet stays as its folder and a
+`README.md` holding only the section title; the gap goes in your report, not into the file.
 
 ## What you do NOT do
 
-- You do **not** assess or audit an existing SAD for drift or quality.
-- You do **not** diff the document against the running system.
-- You do **not** produce the downstream feeds yourself — you only shape sections
-  2/4/8 so the feed-extraction tools can read them.
-- Decisions go into 2/4/8 as current state, each carrying its own driver and
-  rationale inline.
-- You do **not** add revision history, edit-timestamp lines, or changelogs to the
-  body. The SAD is a living current-state document.
+- You do not edit an effective view. That is `arc42-maintain`, after a target is approved.
+- You do not write constraints, decision records, ADRs or a section 9.
+- You do not name a file or folder for a PRD, an Epic, a bead id, a date or a pipeline gate.
+- You do not approve your own target. Every file you write is `in-review`.
 
 ## References
 
-- `references/section-templates.md` — per-section authoring prompt and a concrete
-  acceptance bar for each of the 12 sections, plus C4/UML diagram skeletons.
-- `references/constraints-guide.md` — how to author section 2 as an extractable
-  source feed.
-- `references/solution-strategy-guide.md` — how to author section 4.
-- `references/crosscutting-concepts-guide.md` — how to author section 8.
-- `../arc42/references/` — the shared arc42 corpus (authoritative section
-  definitions and quality-scenario vocabulary).
+- `references/section-templates.md` — what each section's views hold, per scope, with Mermaid
+  skeletons.
+- `references/constraints-guide.md` — what a constraint is, and that the pipeline reads section 2 and
+  never writes it.
+- `references/solution-strategy-guide.md` — what section 4 holds.
+- `references/crosscutting-concepts-guide.md` — how a section 8 concept is written.
+- `../arc42/references/` — the shared section model, living-document rules and catalog.

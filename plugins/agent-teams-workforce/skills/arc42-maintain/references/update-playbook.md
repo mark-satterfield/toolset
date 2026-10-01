@@ -1,154 +1,89 @@
-# Update playbook — locate → edit → reconcile
+# Update playbook — integration and correction
 
-The procedure for applying a current-state change to an existing arc42 Software
-Architecture Document (SAD) without breaking its internal consistency or its
-downstream feed into the TRD and Specs.
-
-## The arc42 section model (reference)
-
-The SAD has eleven sections. The three this skill treats as *structural source*
-sections — the ones whose edits ripple — are highlighted:
-
-| # | Section | Holds |
-|---|---------|-------|
-| 1 | Introduction and Goals | Top quality goals, stakeholders, requirements overview |
-| **2** | **Constraints** | **Technical, organizational, and convention constraints that bound the solution** |
-| 3 | Context and Scope | Business context and technical context (the C4 System Context) |
-| **4** | **Solution Strategy** | **The fundamental decisions and the executive summary of how goals are met** |
-| 5 | Building Block View | Static decomposition (C4 Container/Component levels) |
-| 6 | Runtime View | Key scenarios (UML sequence / activity behaviour) |
-| 7 | Deployment View | Infrastructure mapping (C4 Deployment) |
-| **8** | **Crosscutting Concepts** | **Project-wide patterns: domain model, security, persistence, logging, error handling** |
-| 10 | Quality Requirements | Quality tree and scenarios |
-| 11 | Risks and Technical Debt | Known risks and accepted debt |
-| 12 | Glossary | Domain and technical terms |
-
-A maintenance edit usually starts in one of 2/4/8 and then reconciles the
-others (and often 3/5/6/7, which *render* the structural decisions as C4 and UML
-views).
-
-## Phase 1 — Locate the primary section
-
-Classify the change before touching the document. The section it primarily
-belongs in determines the reconciliation that follows.
-
-| The change is… | Primary section |
-|----------------|-----------------|
-| A new or altered external mandate (regulation, mandated tech, org rule, team-topology rule, budget/runtime limit) | **2 Constraints** |
-| A fundamental "how we will build it" choice that summarizes direction | **4 Solution Strategy** |
-| A new or revised project-wide pattern (auth model, retry policy, logging contract, persistence approach, error taxonomy) | **8 Crosscutting Concepts** |
-| A specific, rationale-bearing choice with consequences | **4 Solution Strategy** (stated as current state, with its driver) |
-
-Tie-breakers:
-
-- **Section 4 is the decision record.** A decision's driver, chosen option,
-  rejected alternatives and consequences are stated inline in §4 as current
-  state.
-- A pattern introduced *by* a decision lives in **8**, but the decision to adopt
-  it is recorded in **9**. Both get touched; 9 is primary.
-- A constraint is never "decided" in the arc42 sense — it is imposed. If you
-  find yourself writing rationale and alternatives, it belongs in 9, not 2.
-
-## Phase 2 — Edit the primary section
-
-Apply the change so the section reads as the **current state**.
-
-- **Replace, do not annotate.** Delete the stale sentence; write the true one.
-  Do not leave "previously we used X" prose. A superseded decision is simply
-  overwritten by the new one; nothing records that it ever existed.
-- **Stay within the section's arc42 intent.** Section 2 enumerates constraints;
-  it does not argue them. Section 4 summarizes; it does not enumerate every
-  component — though a §4 decision does state its driver, rejected alternatives
-  and consequences inline. Section 8
-  describes a concept as a standing rule, not as a one-off.
-- **Preserve identifiers.** Keep `D-` decision ids stable, because downstream
-  artifacts cite them. If a decision is replaced, overwrite its row with the new
-  choice; do not reuse a retired id for an unrelated decision.
-
-## Phase 3 — Reconcile dependent sections
-
-Walk `consistency-rules.md` and repair every section the primary edit affects.
-The common ripples:
-
-- Edited **4 (new decision)** → if it introduces a pattern, update **8**; if it changes the static structure,
-  update the **5** Building Block View (C4 Container/Component) and any **6**
-  Runtime sequence that exercised the old structure; if it moves a deployment
-  node, update **7**.
-- Edited **4 (direction change)** → update **5/6/7** views that drew the old
-  direction.
-- Edited **8 (pattern change)** → update every view in **5/6/7** that rendered
-  the old pattern, and confirm a decision in **9** authorizes the pattern.
-- Edited **2 (constraint change)** → re-examine **4/8/9** for content that was
-  valid only under the old constraint; tighten or relax as the new constraint
-  requires.
-
-Then produce the **downstream reconciliation flags** from
-`source-section-impact.md`. The SAD edit is not complete until those flags are
-emitted.
-
-## Non-mermaid flow sketch
-
-(Diagram source files in `../arc42/references/` may use mermaid fences; this
-playbook keeps to a plain sketch so it states the loop without a renderer.)
+The effective version (`arc42/`) changes in two ways: by integrating an approved target, and by
+correcting it from what was built. Both follow the same loop: list the changed elements, find every
+view that shows them, update or delete each view, check the invariants, report.
 
 ```text
-            classify change
-                  |
-                  v
-        +---------------------+
-        |  LOCATE primary     |   2 Constraints / 4 Strategy /
-        |  section (2/4/8)  |   8 Concepts / 9 Decision
-        +----------+----------+
-                   |
-                   v
-        +---------------------+
-        |  EDIT primary as    |   replace stale prose;
-        |  CURRENT STATE      |   not changelog narrative
-        +----------+----------+
-                   |
-                   v
-        +---------------------+   9 -> 4 -> 8 -> 5/6/7 views;
-        |  RECONCILE dependent|   2 -> re-examine 4/8/9;
-        |  sections (invariants)|  fix orphaned refs
-        +----------+----------+
-                   |
-                   v
-        +---------------------+   per source-section-impact.md:
-        |  FLAG downstream    |   name TRD/Spec items now stale,
-        |  TRD / Spec items   |   the claim each must re-check
-        +----------+----------+
-                   |
-                   v
-        report: primary edit + reconciled sections + flags
+   changed elements (from the delta, or from built/)
+                 |
+                 v
+   find every effective view that shows each one     catalog: subject / shows,
+   (every scope: system, domain, service, component)  in arc42/
+                 |
+                 v
+   replace, update or delete each view;               named for its subject,
+   add the target's new views                         in the section the MODEL names
+                 |
+                 v
+   check the invariants (consistency-rules.md)
+                 |
+                 v
+   report: changed elements, views changed, invariant check, not integrated
 ```
 
-## Worked example A — a new architecture decision
+## Integration of an approved target
 
-> "We're switching the order service from synchronous REST calls to an
-> event-driven outbox so we stop losing writes during downstream outages."
+Inputs: `target/<subject>/` (the target views), `target/<subject>/delta/` (what changes), and the
+effective views the catalog returns for every element the delta names.
 
-1. **Locate:** rationale-bearing, expensive → **section 4**. Primary.
-2. **Edit:** write a `D-` row adopting a transactional outbox for order events
-   (driver: lost writes during downstream outages; over: 2PC, sync retry;
-   consequences: eventual consistency, new relay process). Overwrite the old
-   sync-call decision rather than annotating it.
-3. **Reconcile:** section 4 now states the system is event-driven via an outbox;
-   section 8 gains/updates the "asynchronous integration & idempotency" concept;
-   section 5 Building Block View adds the relay component; a section-6 runtime
-   sequence for "place order" is redrawn.
-4. **Flag:** TRD reliability requirement on write durability must be re-checked;
-   any Spec with synchronous-confirmation acceptance criteria is flagged.
+1. **List the changed elements from the delta.** Every element added, changed or removed.
+2. **Find the effective views.** For each element, every view in `arc42/` whose `subject` or `shows`
+   names it. Compare that list with the target: every effective view showing a changed element needs
+   a target view, an in-place update, or a deletion. An effective view the target did not account for
+   is reported under "Not integrated" rather than left contradicting the target.
+3. **Apply each target view.**
+   - A target view that corresponds to an effective view replaces it in place: same path, the
+     target's content.
+   - A target view for a new subject is added in the section folder the MODEL's view table names,
+     named for its subject.
+   - An effective view whose subject the change removes is deleted, and every link to it is updated.
+   - An effective view that shows a changed element among others is updated in place: the element's
+     box, relationships and prose change; the rest stays.
+4. **Section 4 and section 8.** When the target carries its own copy of the strategy or of a concept,
+   the effective file is replaced with it. Otherwise they are left as they are.
+5. **Section 2 is not written.** A target that would change a constraint is reported, not applied.
 
-## Worked example B — a changed constraint
+The target folder stays in place after integration: later phases read the delta from it, and the
+caller removes it once the Specs and Tasks made from it are written.
 
-> "Legal now requires all PII at rest in the EU only."
+## Correction from built
 
-1. **Locate:** imposed external mandate, no alternatives to weigh → **section 2**.
-   Primary.
-2. **Edit:** add/replace the data-residency constraint to state EU-only PII at
-   rest as current.
-3. **Reconcile:** section 7 Deployment View region mapping is re-examined;
-   section 8 persistence concept updated; any section-4 region decision is
-   overwritten to reflect the forced change.
-4. **Flag:** TRD compliance and data-residency NFRs re-checked; any Spec naming
-   a non-EU store flagged.
+Inputs: `built/<subject>/` (each view records a difference between what was built and the effective
+version, citing the code) and the effective views that show the elements it names.
+
+1. **List the elements the built views differ on.**
+2. **Find every effective view that shows each one**, at every scope.
+3. **Correct each view** to describe what was built, the same way as an integration: replace, update
+   in place, add or delete.
+4. **Report each built view the effective version now matches**, so the caller removes it. A built
+   view is kept only for a difference the effective version has not been brought up to date with.
+
+## Worked example A — integrating a new service
+
+The approved target `target/notification-preferences/` adds a preferences service with one table,
+publishing one event that an existing settings service consumes.
+
+1. Changed elements: the preferences service (added), its table (added), the event (added), the
+   settings service (changed: it consumes the event).
+2. Effective views found: the system container view (`05-building-block-view/README.md`), the
+   domain view of the settings service's domain, the settings service's component view and its
+   sequence for saving settings, the system event flow in `06-runtime-view/`, the system deployment
+   in `07-deployment-view/README.md`.
+3. Applied: the system container, domain, event flow and deployment views are replaced with the
+   target's versions, which show the new service; the settings service's component and sequence views
+   are updated in place to show the consumer; the new service's component, data model, sequence and
+   stack views are added under its subject folder in sections 5, 6 and 7.
+4. Invariants: the new service appears at system, domain and service scope; every `shows` list names
+   it where the diagram shows it; no view still shows the settings service without the consumer.
+
+## Worked example B — correcting from built
+
+`built/settings-service/` records that the built table uses a different sort key than the effective
+data model shows.
+
+1. Changed element: the settings table.
+2. Effective views found: the settings service's physical data model and the sequence diagrams that
+   query the table.
+3. Corrected: the data model shows the built key; the sequences show the query the code runs.
+4. Reported: `built/settings-service/` now matches the effective version and can be removed.

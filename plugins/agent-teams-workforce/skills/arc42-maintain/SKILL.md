@@ -1,164 +1,106 @@
 ---
 name: arc42-maintain
 description: >-
-  Maintains and updates an existing arc42 Software Architecture Document (SAD)
-  in place — applies current-state changes to a SAD that already exists, keeps
-  the structural sections (2 Constraints, 4 Solution Strategy, 8 Crosscutting
-  Concepts, 9 Architecture Decisions) mutually consistent, and flags the
-  downstream TRD/Spec consumers that must be reconciled when a source section
-  changes. It edits a living document so the feed into requirements and specs
-  stays valid; it never appends changelog narrative or rewrites history. Use
-  when the user asks to update the SAD, edit the architecture document, change
-  a constraint or decision in an existing arc42 doc, reconcile sections after a
-  design change, keep the SAD current, or propagate an architectural change
-  into the TRD/Spec.
+  Maintains the effective version of the architecture (the arc42 folders) to the
+  project's architecture documentation model. It integrates an approved target
+  into the effective version, and corrects the effective version from what was
+  built: it finds every view that shows a changed element through the catalog,
+  at every scope, and updates or deletes it, adds the target's new views, and
+  leaves no superseded content beside the new. It writes nothing in section 2,
+  which is the owner's. Use when the user asks to integrate or apply an approved
+  target, bring the architecture up to date with what was built, or update every
+  view that shows an element that changed.
 triggers:
-  - update the SAD
-  - edit the architecture document
-  - change a constraint in the SAD
-  - revise an architecture decision
-  - keep the SAD current
-  - reconcile arc42 sections
-  - propagate this change into the TRD
-  - the architecture changed
-  - fix the solution strategy section
-  - maintain the arc42 document
-  - the SAD is out of date
+  - integrate the approved target
+  - apply the approved design to arc42
+  - update the effective architecture
+  - correct the architecture from the build
+  - the build differs from the architecture
+  - update every view that shows this
+  - keep the architecture current
+  - maintain the arc42 documentation
 ---
 
-# arc42 SAD — maintain in place
+# arc42 Maintain — keep the effective version current
 
-You edit an **existing** arc42 Software Architecture Document. The document is
-the single upstream source for the project's Technical Requirements Document
-(TRD) and feature Specs; your job is to keep it accurate to the *current* state
-of the system and to keep its internal cross-references consistent, so that the
-downstream feed never goes stale or contradictory.
+You change the effective version of the architecture, in `arc42/`. It changes in two ways only
+(MODEL, "How a change moves through the versions", steps 5 and 6):
 
-This is a single task: editing a SAD that already exists. You do not author a
-new SAD from scratch, you do not assess or grade architecture, and you do not
-write requirements or specs yourself — you keep the SAD that feeds them honest.
+- **Integration.** A target in `target/<subject>/` was approved. Its views replace the effective ones
+  in place, its new views are added, and content it supersedes is updated or deleted.
+- **Correction from built.** `built/<subject>/` records where the build delivered something that
+  differs from the effective version. The effective version is corrected to match what was built.
 
-The arc42 section model and the canonical SAD layout live in
-`../arc42/references/`. Read those for the meaning and intended content of each
-of the eleven sections before editing; this skill governs only how you *change*
-an existing one.
+You do not design. A change that has not been approved is written as a target by `arc42-author`; a
+request to edit an effective view for an unapproved design is refused and routed there.
+
+## Read first
+
+- The MODEL at `reference/architecture-documentation-model.md` under the architecture root, and the
+  MENU at `reference/diagram-and-model-types.md`.
+- `../arc42/references/` — the section model, the living-document rules and how views are found
+  through the catalog (`finding-views.md`).
+- `references/update-playbook.md` — the procedure for an integration and for a correction.
+- `references/consistency-rules.md` — what holds across views after every pass.
+
+## The procedure, in short
+
+1. **List the changed elements.** From the target's delta (integration) or from the built views
+   (correction): every element added, changed or removed.
+2. **Find every effective view that shows each one**, through the catalog, at every scope. A changed
+   service shows in the system container view, its domain view, and its own component, data,
+   sequence and deployment views; each of them is in scope.
+3. **Update or delete each view.** Replace it with the target's view where the target has one; update
+   it in place where the target changed only part of what it shows; delete it where the change
+   removes its subject. Add the target's new views in the section folder the MODEL names, named for
+   their subject.
+4. **Keep the catalog true.** Every view you touch has `view_type`, `scope`, `subject` and `shows`
+   matching what it now shows.
+5. **Check the invariants** in `references/consistency-rules.md` across every view you touched and
+   every view that links to them.
+6. **Report** (below). The files you changed stay `in-review`; the caller moves them to `effective`
+   once a conformance review has approved the integration.
+
+## Section 2 is the owner's
+
+You write nothing under `arc42/02-architecture-constraints/`, because only the owner writes
+constraints. A target or a build that conflicts with a constraint is not integrated over it: report
+the constraint, the conflicting content and the reason to the caller, and leave both as they are.
 
 ## What "in place" means
 
-A SAD is a **living document that states only the current state**. When the
-architecture changes, you rewrite the affected sections to describe the new
-reality. You do not:
+- A view reads as if its current content were always true. No "previously", no changelog, no
+  superseded content kept for reference.
+- No open item is written into any view: questions, referrals, "pending", "TBD", anything addressed
+  to the owner. What is still open goes in the report.
+- Nothing is written as a rule or a decision record. A design outcome is a description of the design.
 
-- append a "Changelog", "History", or "What changed" narrative to any section;
-- keep superseded prose alongside the new prose "for reference";
-- leave a superseded option described anywhere once the decision has changed;
-- write an open item into any section: an open question, an unresolved or contradiction
-  marker, a "named required action", a rule challenge, a referral ("referred to", "routed
-  to", "escalated"), "pending", "TBD", or anything addressed to the owner. What is still
-  open goes in the report to the caller; the SAD says nothing about a point until it is
-  decided.
+## Output of a pass
 
-A superseded decision is simply overwritten in §4 by the one that replaces it.
-Nothing records that the old decision ever existed. The document reads as if the
-new decision were always true.
+Report exactly four things:
 
-## The locate → edit → reconcile loop
+1. **Changed elements** — the elements the target or the build changed.
+2. **Views changed** — every effective view you updated, added or deleted, by path, with one line
+   each on what it now shows.
+3. **Invariant check** — each rule in `references/consistency-rules.md` and whether it holds, with
+   the path of any view that breaks it.
+4. **Not integrated** — anything you could not apply (a conflict with a constraint, a view the
+   catalog could not find, a target that contradicts itself), with the reason.
 
-Every maintenance edit runs the same three-phase loop. The full procedure with
-worked examples is in `references/update-playbook.md`; the short form:
-
-1. **Locate.** Identify the *primary* section the change belongs in. A changed
-   external requirement or technology mandate is a section-2 (Constraints) edit;
-   a new "how we will build it" choice is section-4 (Solution Strategy); a
-   project-wide pattern (logging, error handling, security, persistence) is
-   section-8 (Crosscutting Concepts). Edit the primary section first,
-   completely.
-
-2. **Edit.** Apply the current-state change to the primary section. Replace
-   stale prose; do not annotate it. Keep the section's arc42 intent intact —
-   section 2 lists constraints, it does not justify them; section 4 records a
-   decision with its driver, rejected alternatives and consequences, it is not a
-   design essay.
-
-3. **Reconcile.** Walk the cross-section invariants in
-   `references/consistency-rules.md` and repair every dependent section the
-   primary edit touched. A pattern-bearing section-4 decision must be reflected
-   in section-8. A changed
-   section-2 constraint must be propagated to every section whose content
-   assumed the old constraint.
-
-## Cross-section invariants (must hold after every edit)
-
-These are the load-bearing relationships between the structural sections. The
-exhaustive list is in `references/consistency-rules.md`; the ones you check on
-every edit:
-
-- **Every decision lives in section 4.** Solution Strategy *is* the decision
-  record. If the system adopts event sourcing, section 4 says so, with the driver
-  that forced it. No decision may be invisible in the strategy.
-- **Every pattern-bearing decision is reflected in section 8.** If a decision
-  establishes a crosscutting concern (a standard for auth, retries, idempotency,
-  observability), section 8 must describe that concern as now-current.
-- **Every changed section-2 constraint is propagated forward.** Constraints
-  bound the solution space. If a constraint changes, any section-4 / 8 content
-  that was valid only under the old constraint is now suspect and must be
-  re-examined in the same edit.
-- **No orphaned references.** If you remove or renumber a decision, every
-  in-document pointer to it (in 4 or 8) is updated or removed. A SAD with a
-  dangling reference is inconsistent.
-
-## Flagging downstream impact
-
-The SAD feeds the TRD and Specs. When you change a *source* section, the change
-may invalidate something a downstream consumer already derived. You do not edit
-the TRD or Specs — that is another role — but you **must surface** which
-consumers are now stale so they can be reconciled. Use the mapping in
-`references/source-section-impact.md`:
-
-- A **section-2** change can invalidate TRD non-functional requirements and any
-  Spec acceptance criteria that quantified the old constraint.
-- A **section-4** change can invalidate the TRD's system-decomposition and any
-  Spec whose scope assumed the old structure.
-- A **section-8** change can invalidate crosscutting TRD requirements (security,
-  logging, error-handling contracts) referenced across many Specs.
-
-Emit the impact as an explicit, itemized **reconciliation flag list** — each
-item naming the source section that changed, the downstream artifact at risk,
-and the specific claim to re-check. Do not silently assume downstream is fine.
-
-## Output of a maintenance pass
-
-When you finish, report exactly three things:
-
-1. **Primary edit** — which section you changed and the current-state result.
-2. **Reconciled sections** — every dependent section you updated to satisfy the
-   invariants, with a one-line note per section.
-3. **Reconciliation flags** — the itemized list of downstream TRD/Spec consumers
-   that must be re-checked, derived from
-   `references/source-section-impact.md`.
-
-If you cannot satisfy an invariant without information you do not have, stop and
-ask one precise question rather than guessing — an inconsistent SAD is worse
-than a paused edit.
+When applying a change would need information you do not have, stop and report the precise question
+rather than guessing: a contradicting effective version misleads every design that starts from it.
 
 ## What you do NOT do
 
-- You do **not** author a new SAD from an empty template. That is a separate
-  arc42 authoring role.
-- You do **not** score, grade, or review architecture quality.
-- You do **not** edit the TRD or the Specs. You flag them for reconciliation;
-  someone else reconciles them.
-- You do **not** append changelog or history narrative to the document.
-- You do **not** invent constraints or decisions; you only record changes the
-  user or the system has actually made.
+- You do not write targets or design changes. That is `arc42-author`.
+- You do not write section 2.
+- You do not approve your own integration or set files to `effective`.
+- You do not edit PRDs, the TRD or Specs. The phases that own them read the delta.
+- You do not keep a built file once the effective version matches it; report it so the caller removes
+  it.
 
 ## References
 
-- `references/update-playbook.md` — the locate → edit → reconcile procedure for
-  an in-place SAD update, with worked examples and a non-mermaid flow sketch.
-- `references/consistency-rules.md` — the full set of cross-section invariants
-  that must hold after any edit.
-- `references/source-section-impact.md` — when sections 2/4/8 change, which
-  TRD/Spec consumers must be re-flagged for reconciliation.
-- `../arc42/references/` — the canonical arc42 section model and SAD layout
-  this skill maintains.
+- `references/update-playbook.md` — integration and correction, step by step, with worked examples.
+- `references/consistency-rules.md` — the invariants that hold across views after every pass.
+- `../arc42/references/` — the shared section model, living-document rules and catalog.

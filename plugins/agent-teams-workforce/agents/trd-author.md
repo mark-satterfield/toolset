@@ -17,7 +17,7 @@ mcpServers:
 model: fable
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42-extract, agent-teams-workforce:senior-architect]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
 effort: medium
 isolation: worktree
 color: teal
