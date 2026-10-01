@@ -14,7 +14,11 @@ Approval is by file, because the review state lives in each file's frontmatter: 
 file approves every view in it.
 
 `depscore.py arch-constraints` runs `snapshot_constraints`, which fingerprints section 2 (the
-owner's constraints) so the architecture step can prove no session wrote there.
+owner's constraints) so the architecture step can prove no session wrote there, and with
+`--keep` copies it aside; `depscore.py arch-constraints-restore` runs `restore_constraints`,
+which puts it back from that copy.
+`depscore.py arch-snapshot` runs `snapshot_tree`, which fingerprints every file of `arc42/`,
+`target/` and `built/`, so a step measures what its sessions wrote.
 `depscore.py arch-target` runs `write_target`, which checks an approved draft and writes it to
 `target/<subject>/` as `in-review`.
 `depscore.py arch-delta` runs `delta_items`, which lists the elements a target's delta shows,
@@ -31,6 +35,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 STATE_KEY = "lifecycle_state"
@@ -222,13 +227,31 @@ def _resolved_set(files: list[str]) -> set[str]:
     return out
 
 
+def _in_constraints(path: Path) -> bool:
+    """Tell whether a path lies in section 2 of the effective version.
+
+    Args:
+        path: A resolved path.
+
+    Returns:
+        True when the path has `arc42/02-architecture-constraints` among its parts.
+    """
+    parts = path.parts
+    return any(
+        parts[i] == EFFECTIVE_FOLDER and parts[i + 1] == CONSTRAINTS_FOLDER
+        for i in range(len(parts) - 1)
+    )
+
+
 def promote(files: list[str], *, arch_root: str | None, reviewed: list[str]) -> dict:
     """Set the integrated architecture files a conformance review covered to `effective`.
 
     Every path is held to `arch_root` when one is given. A changed-file list is reported by
     an agent, so a path outside the architecture is refused rather than written — this
-    function rewrites documents, and the blast radius of a bad path is the vault. A file is
-    promoted only when the review names it: a change nobody reviewed stays `in-review`.
+    function rewrites documents, and the blast radius of a bad path is the vault. A file in
+    section 2 is refused: section 2 holds the owner's constraints, which carry no review state
+    the pipeline sets. A file is promoted only when the review names it: a change nobody
+    reviewed stays `in-review`.
 
     Args:
         files: The architecture files the step changed or created, as absolute paths.
@@ -263,6 +286,14 @@ def promote(files: list[str], *, arch_root: str | None, reviewed: list[str]) -> 
         if root is not None and not resolved.is_relative_to(root):
             report["refused"].append(
                 {"path": name, "reason": f"outside the architecture at {root}"}
+            )
+            continue
+        if _in_constraints(resolved):
+            report["refused"].append(
+                {
+                    "path": name,
+                    "reason": "in section 2, which holds the owner's constraints",
+                }
             )
             continue
         if not resolved.is_file():
@@ -304,18 +335,22 @@ def _digest(paths: list[Path], base: Path) -> tuple[dict[str, str], str]:
     return each, whole.hexdigest()
 
 
-def snapshot_constraints(arch_root: str) -> dict:
+def snapshot_constraints(arch_root: str, *, keep: bool = False) -> dict:
     """Fingerprint section 2 of the effective architecture: its files and its git status.
 
     The owner writes section 2 and the pipeline never does. The architecture step takes one
     snapshot before its sessions run and one after; any difference is a write the step made.
+    With `keep`, the folder's files are copied to a new temporary directory, named in `kept`,
+    so `restore_constraints` can put the folder back as it was.
 
     Args:
         arch_root: The architecture directory holding `arc42/`.
+        keep: Copy the folder's files aside for a later restore.
 
     Returns:
-        The folder, whether it exists, each file's sha256, one digest over all of them, and
-        `git status --porcelain` for the folder (with git's error when it could not run).
+        The folder, whether it exists, each file's sha256, one digest over all of them,
+        `git status --porcelain` for the folder (with git's error when it could not run), and
+        with `keep` the directory holding the copy.
     """
     root = _arch_root(arch_root)
     if root is None:
@@ -340,13 +375,113 @@ def snapshot_constraints(arch_root: str) -> dict:
         text=True,
         check=False,
     )
-    return {
+    out = {
         "folder": str(folder),
         "exists": folder.is_dir(),
         "files": each,
         "digest": digest,
         "gitStatus": git.stdout.splitlines() if git.returncode == 0 else [],
         "gitError": git.stderr.strip() if git.returncode != 0 else "",
+        "summary": {"files": len(each), "digest": digest},
+    }
+    if keep:
+        kept = Path(tempfile.mkdtemp(prefix="arch-constraints-"))
+        for path in files:
+            dest = kept / path.relative_to(folder)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        out["kept"] = str(kept)
+    return out
+
+
+def restore_constraints(arch_root: str, kept: str) -> dict:
+    """Put section 2 back as `snapshot_constraints(keep=True)` copied it.
+
+    A session that wrote under section 2 has already failed the step; this undoes the write
+    so the owner's constraints stand as the owner left them. Files the copy does not hold are
+    deleted, and every file it holds is written back where its content differs.
+
+    Args:
+        arch_root: The architecture directory holding `arc42/`.
+        kept: The directory `snapshot_constraints` named in `kept`.
+
+    Returns:
+        The files written back and the files deleted, or `error` when the copy is missing.
+    """
+    root = _arch_root(arch_root)
+    if root is None:
+        return {"error": "no architecture directory was given"}
+    source = Path(kept)
+    if not source.is_dir():
+        return {"error": f"the copy of section 2 at {source} does not exist"}
+    folder = root / EFFECTIVE_FOLDER / CONSTRAINTS_FOLDER
+    saved = {
+        p.relative_to(source).as_posix(): p for p in source.rglob("*") if p.is_file()
+    }
+    current = (
+        {p.relative_to(folder).as_posix(): p for p in folder.rglob("*") if p.is_file()}
+        if folder.is_dir()
+        else {}
+    )
+    deleted = []
+    for rel, path in sorted(current.items()):
+        if rel not in saved:
+            path.unlink()
+            deleted.append(str(path))
+    written = []
+    for rel, path in sorted(saved.items()):
+        dest = folder / rel
+        if dest.is_file() and dest.read_bytes() == path.read_bytes():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest)
+        written.append(str(dest))
+    for directory in sorted(
+        (p for p in folder.rglob("*") if p.is_dir()) if folder.is_dir() else [],
+        key=lambda p: len(p.parts),
+        reverse=True,
+    ):
+        if not any(directory.iterdir()):
+            directory.rmdir()
+    return {
+        "folder": str(folder),
+        "written": written,
+        "deleted": deleted,
+        "summary": {"written": len(written), "deleted": len(deleted)},
+    }
+
+
+def snapshot_tree(arch_root: str) -> dict:
+    """Fingerprint every file of every version: `arc42/`, `target/` and `built/`.
+
+    A step that must not write in the architecture, or must write only where it says it did,
+    takes one snapshot before its sessions run and one after; the difference is what they
+    wrote, measured rather than reported.
+
+    Args:
+        arch_root: The architecture directory holding the version folders.
+
+    Returns:
+        The root, each file's sha256 by path relative to the root, and one digest over all of
+        them.
+    """
+    root = _arch_root(arch_root)
+    if root is None:
+        return {"error": "no architecture directory was given"}
+    if not root.is_dir():
+        return {"error": f"the architecture directory {root} does not exist"}
+    files = sorted(
+        p
+        for name in (EFFECTIVE_FOLDER, TARGET_FOLDER, BUILT_FOLDER)
+        if (root / name).is_dir()
+        for p in (root / name).rglob("*")
+        if p.is_file()
+    )
+    each, digest = _digest(files, root) if files else ({}, "")
+    return {
+        "root": str(root),
+        "files": each,
+        "digest": digest,
         "summary": {"files": len(each), "digest": digest},
     }
 

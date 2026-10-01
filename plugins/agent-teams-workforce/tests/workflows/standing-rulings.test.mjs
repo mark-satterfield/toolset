@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
+import { isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS, TEST_ARCHITECTURE } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -77,7 +77,7 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
 
 test('architecture: the survey, the coordinator, the writers and the reviewers get the rulings — the decider and the architecture maintainer do not', async () => {
   const runner = (output) => ({ exitCode: 0, output })
-  const snapshot = { exists: true, digest: 'd', gitStatus: [], files: {} }
+  const snapshot = { exists: true, digest: 'd', gitStatus: [], files: {}, kept: '/tmp/kept' }
   const { result, calls } = await runWorkflowScript(path.join(WF, 'architecture.js'), {
     args: {
       prd: { id: 'P1', path: '/vault/prds/p1.md' },
@@ -88,7 +88,7 @@ test('architecture: the survey, the coordinator, the writers and the reviewers g
     },
     agentImpl: (call) => {
       const l = String(call.label)
-      if (l.startsWith('constraints:')) return runner(snapshot)
+      if (l.startsWith('constraints:') || l.startsWith('tree:')) return runner(snapshot)
       if (l === 'resume:read-saved') return runner({ saved: {}, surveyMd: false })
       if (l === 'target:check-subject') return runner({ ok: false, refusals: ['no delta'], subjectRefusals: [] })
       if (l.startsWith('rounds:gaps')) return runner({ ok: true, refusals: [], subjectRefusals: [] })
@@ -182,23 +182,14 @@ function compositeWorkflows() {
     const name = String(call.name || '')
     if (name.endsWith('gate-enforce')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) {
-      return {
-        ok: true,
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: ['/repos/alpha'] }],
-        conformsCount: 0, contradictsCount: 0, absentCount: 1,
-        removalWork: [], reuseWork: [],
-        repos: ['/repos/alpha'], existingRepos: [], spansMultipleRepos: false,
-        // What dispatches the architecture mini at all is the `triage:architecture-needed`
-        // stub below, which answers needed:true. This file asserts that every judgment mini
-        // receives the rulings, and a skipped phase receives nothing.
-        uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-      }
+      const items = (call.payload.items || []).map((i) => ({ id: i.id, element: i.element, status: 'add', from: 'absent', to: 'x', evidence: ['f.py:1'], plannedBy: null, surface: 'service' }))
+      return { ok: true, items, counts: { add: items.length }, uiAuthority: {} }
     }
-    if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
+    if (name.endsWith('architecture')) return { ...TEST_ARCHITECTURE }
     if (name.endsWith('repo-scoping')) {
-      return { ok: true, repos: ['/repos/alpha'], placements: [], newRepos: [], requiredHumanActions: [], reclassified: [], blocked: [], spanVerified: true }
+      return { ok: true, repos: ['/repos/alpha'], placements: [{ repoPath: '/repos/alpha', repoName: 'alpha', itemIds: ['D1'], frontend: false, rationale: 'ruled' }], noCode: [], createdRepos: [], creationFailures: [] }
     }
-    if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
+    if (name.endsWith('trd-authoring')) return { ok: true, trdPath: '/proj/trd.md', trd: { id: 'TRD-1', summary: 'sum' } }
     if (name.endsWith('spec-authoring')) {
       return { ok: true, story: { key: 'S1', type: 'story', id: 'bd-S1', elabKey: 'story:alpha', title: 'S', description: 'd', repoPath: '/repos/alpha', parentEpicKey: 'E1' }, outOfRepoFindings: [] }
     }
@@ -212,7 +203,7 @@ function compositeWorkflows() {
 async function runComposite({ found, content = RULINGS }) {
   const lifecycle = lifecycleRunner()
   return runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
-    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha', epic: TEST_EPIC, ...ARTIFACT_ARGS },
+    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing', path: '/docs/p1.md' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, archPath: '/arch', ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows(),
     agentImpl: (call) => {
       const ran = lifecycle(call)
@@ -229,13 +220,12 @@ async function runComposite({ found, content = RULINGS }) {
         }
       }
       if (call.label === 'resolve:standing-rulings') return { found, content: found ? content : '' }
-      if (call.label === 'triage:architecture-needed') return { needed: true, reason: 'open', decisions: [], dimensions: ['integration'] }
       return null
     },
   })
 }
 
-test('file present: resolved once, threaded to every judgment mini, and injected into the composite\'s own judgment dispatch', async () => {
+test('file present: resolved once and threaded to every judgment mini', async () => {
   const { result, calls } = await runComposite({ found: true })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.equal(agentCalls(calls, 'resolve:run-inputs').length, 1, 'the file is read once per run, not once per agent')
@@ -245,8 +235,6 @@ test('file present: resolved once, threaded to every judgment mini, and injected
     assert.ok(wf, `${mini} must have been dispatched`)
     assert.equal(wf.payload.standingRulings, RULINGS, `${mini} must receive the rulings text via args`)
   }
-  const [archTriage] = agentCalls(calls, 'triage:architecture-needed')
-  assert.ok(archTriage.prompt.includes(MARKER), 'the composite\'s own judgment dispatch (architecture triage) carries the block')
 })
 
 test('mechanical agents never receive the rulings — the tokens are wasted on agents that judge nothing', async () => {

@@ -22,7 +22,14 @@
     arch-state           read the `lifecycle_state` of the architecture files a step relies on;
                          no `bd` call
     arch-constraints     fingerprint section 2 (the owner's constraints): each file's hash and
-                         the folder's git status; no `bd` call
+                         the folder's git status; `--keep` also copies it aside and names the
+                         copy in `kept`; no `bd` call
+    arch-constraints-restore
+                         put section 2 back from the copy `arch-constraints --keep` made;
+                         no `bd` call
+    arch-snapshot        fingerprint every file of `arc42/`, `target/` and `built/`, so a step
+                         measures what its sessions wrote; `--save FILE` also writes the
+                         result to FILE; no `bd` call
     arch-target          check an approved draft and write it to `target/<subject>/`, every view
                          `in-review`; refuses a draft with no delta, a file in section 2, a view
                          without catalog frontmatter, or a subject named for the Epic or PRD;
@@ -92,7 +99,9 @@ from archstate import (
     delta_items,
     remove_built,
     remove_target,
+    restore_constraints,
     snapshot_constraints,
+    snapshot_tree,
     write_target,
 )
 from archstate import states as arch_states
@@ -683,6 +692,42 @@ def build_parser() -> argparse.ArgumentParser:
     acs.add_argument(
         "--arch-root", required=True, help="the architecture directory holding arc42/"
     )
+    acs.add_argument(
+        "--keep",
+        action="store_true",
+        help="copy section 2 to a new temporary directory, named in `kept`",
+    )
+
+    acr = sub.add_parser(
+        "arch-constraints-restore",
+        help="put section 2 back from the copy `arch-constraints --keep` made; runs no "
+        "`bd` command",
+        parents=[common],
+    )
+    acr.add_argument(
+        "--arch-root", required=True, help="the architecture directory holding arc42/"
+    )
+    acr.add_argument(
+        "--kept", required=True, help="the directory `arch-constraints --keep` named"
+    )
+
+    asn = sub.add_parser(
+        "arch-snapshot",
+        help="fingerprint every file of arc42/, target/ and built/; writes nothing but "
+        "`--save`, runs no `bd` command",
+        parents=[common],
+    )
+    asn.add_argument(
+        "--arch-root",
+        required=True,
+        help="the architecture directory holding arc42/, target/ and built/",
+    )
+    asn.add_argument(
+        "--save",
+        type=Path,
+        default=None,
+        help="also write the full result to this file, for a resumed step",
+    )
 
     atg = sub.add_parser(
         "arch-target",
@@ -801,7 +846,16 @@ def run(args: argparse.Namespace) -> dict:
             files, arch_root=args.arch_root, reviewed=split_ids(args.reviewed_files)
         )
     if command == "arch-constraints":
-        return head | snapshot_constraints(args.arch_root)
+        return head | snapshot_constraints(args.arch_root, keep=args.keep)
+    if command == "arch-constraints-restore":
+        return head | restore_constraints(args.arch_root, args.kept)
+    if command == "arch-snapshot":
+        result = head | snapshot_tree(args.arch_root)
+        if args.save is not None and "error" not in result:
+            args.save.parent.mkdir(parents=True, exist_ok=True)
+            args.save.write_text(json.dumps(result), encoding="utf-8")
+            result["saved"] = str(args.save)
+        return result
     if command == "arch-target":
         return head | write_target(
             args.draft,

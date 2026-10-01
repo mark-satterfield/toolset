@@ -1,7 +1,7 @@
 export const meta = {
   name: 'architecture',
   description:
-    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). The script holds the decision until every claim has a verdict, every finding is answered and depscore.py arch-target accepts the draft. The architecture-decider, given artifact paths only, approves, returns to a named proposer, or raises an owner concern (a serious security, privacy, cost or best-practice concern, or a PRD defect). On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective. A write under arc42 section 2 fails the run: depscore.py arch-constraints fingerprints that folder before and after. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval } or, for an owner concern, ok:false at stage owner-concern with requiredHumanActions.",
+    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). The script holds the decision until every claim has a verdict, every finding is answered and depscore.py arch-target accepts the draft. The architecture-decider, given artifact paths only, approves, returns to a named proposer, or raises an owner concern (a serious security, privacy, cost or best-practice concern, or a PRD defect). On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval } or, for an owner concern, ok:false at stage owner-concern with requiredHumanActions.",
   phases: [
     { title: 'Survey', detail: 'the polyrepo-steward names the repositories; a prd-reality-reconciler session surveys the effective views, code on main, open beads and open targets for each capability the PRD needs' },
     { title: 'Rounds', detail: 'the coordinator names each round of proposers, reviewers, diagram authors and cost reviewers; the script runs them and tracks every claim and finding' },
@@ -443,24 +443,46 @@ const CONFORMANCE_SCHEMA = {
   },
 }
 
-/** Returns the section 2 fingerprint, or { error }. */
-const constraintsSnapshot = (label, phaseName) => depscore(label, phaseName, `arch-constraints --arch-root ${shq(archPath)}`)
+/** Returns the section 2 fingerprint, or { error }; with `keep`, section 2 is also copied aside for a restore. */
+const constraintsSnapshot = (label, phaseName, keep) => depscore(label, phaseName, `arch-constraints --arch-root ${shq(archPath)}${keep ? ' --keep' : ''}`)
 const sameSnapshot = (x, y) =>
   !!x && !!y && !x.error && !y.error && x.exists === y.exists && x.digest === y.digest && JSON.stringify(x.gitStatus || []) === JSON.stringify(y.gitStatus || [])
-/** Returns null when section 2 is unchanged since `before`, else the failure to return. */
+/** Returns null when section 2 is unchanged since `before`, else puts section 2 back from the copy and returns the failure. */
 async function constraintsGuard(before, label, phaseName) {
   const after = await constraintsSnapshot(label, phaseName)
   if (sameSnapshot(before, after)) return null
+  const restored = after && after.error ? null : await depscore(`${label}:restore`, phaseName, `arch-constraints-restore --arch-root ${shq(archPath)} --kept ${shq(before.kept)}`)
+  const restoreNote = !restored ? '' : restored.error ? `; section 2 could not be put back: ${restored.error}` : `; section 2 was put back as it was (${listed(restored.written).length} file(s) written back, ${listed(restored.deleted).length} deleted)`
   const why = after && after.error
     ? `section 2 could not be fingerprinted after ${phaseName}: ${after.error}`
-    : `a session wrote under ${CONSTRAINTS} during ${phaseName}; section 2 holds the owner's constraints and the pipeline never writes there (git status now: ${JSON.stringify((after && after.gitStatus) || [])})`
+    : `a session wrote under ${CONSTRAINTS} during ${phaseName}; section 2 holds the owner's constraints and the pipeline never writes there (git status now: ${JSON.stringify((after && after.gitStatus) || [])})${restoreNote}`
   log(`Section 2: ${why}`)
-  return { ok: false, stage: 'constraints-written', deterministicFailure: true, reason: why, error: why, before, after }
+  return { ok: false, stage: 'constraints-written', deterministicFailure: true, reason: why, error: why, before, after, restored }
 }
 
-const before = await constraintsSnapshot('constraints:before', 'Survey')
-if (!before || before.error) {
-  const why = `section 2 of the architecture could not be fingerprinted before the step: ${(before && before.error) || 'no result'}`
+/** Returns the fingerprint of every file of arc42/, target/ and built/, or { error }; `save` also writes it to that file. */
+const treeSnapshot = (label, phaseName, save) => depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)}${save ? ` --save ${shq(save)}` : ''}`)
+/** Returns the files created, changed and deleted between two tree fingerprints, as absolute paths. */
+function treeDiff(x, y) {
+  const was = (x && x.files) || {}
+  const now = (y && y.files) || {}
+  const abs = (rel) => `${archPath}/${rel}`
+  return {
+    created: Object.keys(now).filter((k) => !(k in was)).map(abs),
+    changed: Object.keys(now).filter((k) => k in was && was[k] !== now[k]).map(abs),
+    deleted: Object.keys(was).filter((k) => !(k in now)).map(abs),
+  }
+}
+const diffFiles = (d) => [...d.created, ...d.changed, ...d.deleted]
+
+const before = await constraintsSnapshot('constraints:before', 'Survey', true)
+if (!before || before.error || !hasText(before.kept)) {
+  const why = `section 2 of the architecture could not be fingerprinted and copied before the step: ${(before && before.error) || 'no copy was named'}`
+  return { ok: false, stage: 'survey', reason: why, error: why, ...died('Survey') }
+}
+const treeBefore = await treeSnapshot('tree:before', 'Survey')
+if (!treeBefore || treeBefore.error) {
+  const why = `the architecture could not be fingerprinted before the step: ${(treeBefore && treeBefore.error) || 'no result'}`
   return { ok: false, stage: 'survey', reason: why, error: why, ...died('Survey') }
 }
 
@@ -870,6 +892,17 @@ HOW TO ROUTE:
 }
 const guardRounds = await constraintsGuard(before, 'constraints:after-rounds', 'Rounds')
 if (guardRounds) return { ...guardRounds, subject }
+const treeRounds = await treeSnapshot('tree:after-rounds', 'Rounds')
+if (!treeRounds || treeRounds.error) {
+  const why = `the architecture could not be fingerprinted after the rounds: ${(treeRounds && treeRounds.error) || 'no result'}`
+  return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...died('Rounds') }
+}
+const roundWrites = diffFiles(treeDiff(treeBefore, treeRounds))
+if (roundWrites.length) {
+  const why = `sessions wrote in the architecture at ${archPath} before the target was approved; the survey and the rounds write only under ${WORK}: ${roundWrites.join(', ')}`
+  log(`Rounds: ${why}`)
+  return { ok: false, stage: 'architecture-written', deterministicFailure: true, reason: why, error: why, files: roundWrites, subject }
+}
 
 // ---------------------------------------------------------------- Target
 phase('Target')
@@ -891,12 +924,21 @@ ${SECTION_2_RULE}
 Report every file you changed, created or deleted as an absolute path under ${ARC42}, every view the catalog listed for a changed element and what you did to it, and every contradiction with another effective view or open target.`
 const updateBrief = persistBrief([UPDATE_JSON], 'your complete structured result, exactly as you return it, as ONE JSON object')
 const savedUpdate = saved['architecture-update.json'] && typeof saved['architecture-update.json'] === 'object' ? saved['architecture-update.json'] : null
+const INTEGRATE_BEFORE = `${WORK}/integrate-before.json`
+const savedTree = saved['integrate-before.json'] && saved['integrate-before.json'].files ? saved['integrate-before.json'] : null
+const integrateBefore = savedTree || (await treeSnapshot('tree:before-integrate', 'Integrate', INTEGRATE_BEFORE))
+if (!integrateBefore || integrateBefore.error) {
+  const why = `the architecture could not be fingerprinted before the integration: ${(integrateBefore && integrateBefore.error) || 'no result'}`
+  return { ok: false, stage: 'integrate', reason: why, error: why, decision, subject, targetDir, deltaDir, ...died('Integrate') }
+}
+if (savedUpdate && !savedTree) log('Integrate: no fingerprint was saved before the earlier integration pass; its files are taken from its report and this pass is measured')
 const savedReviews = Object.keys(saved).filter((k) => /^conformance-\d+\.json$/.test(k)).sort((p, q) => Number(p.match(/\d+/)[0]) - Number(q.match(/\d+/)[0]))
 const lastSavedReview = savedReviews.length ? saved[savedReviews[savedReviews.length - 1]] : null
 
 let update = null
 let reviewPass = savedReviews.length
-if (savedUpdate && lastSavedReview && lastSavedReview.conforms === true) {
+const reusedSaved = !!(savedUpdate && lastSavedReview && lastSavedReview.conforms === true)
+if (reusedSaved) {
   update = savedUpdate
   log('Integrate: reused the saved integration and its conforming review')
 } else {
@@ -911,17 +953,37 @@ if (savedUpdate && lastSavedReview && lastSavedReview.conforms === true) {
 
 const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
 const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
-/** Returns the failure when the maintainer reports a file in section 2 or outside arc42, else null. */
-function outOfBounds(u) {
+/** Adds to a report every file the integration wrote since `integrateBefore`, measured from the tree, so an unreported write is reviewed too; returns { update } or { failure }. */
+async function measured(u, label) {
+  const now = await treeSnapshot(label, 'Integrate')
+  if (!now || now.error) {
+    const why = `the architecture could not be fingerprinted after the integration: ${(now && now.error) || 'no result'}`
+    return { failure: { ok: false, stage: 'integrate', reason: why, error: why, architectureUpdate: u, decision, subject, targetDir, deltaDir, ...died('Integrate') } }
+  }
+  const d = treeDiff(integrateBefore, now)
+  const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
+  if (unreported.length) log(`Integrate: files written and not reported, added to the review: ${unreported.join(', ')}`)
+  const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
+  return { update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
+}
+/** Returns the failure when the integration wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
+async function outOfBounds(u) {
   const inSection2 = allTouched(u).filter((f) => f === CONSTRAINTS || f.startsWith(`${CONSTRAINTS}/`))
   const outside = allTouched(u).filter((f) => !f.startsWith(`${ARC42}/`))
   if (!inSection2.length && !outside.length) return null
+  if (inSection2.length) {
+    const guard = await constraintsGuard(before, 'constraints:integrate-bounds', 'Integrate')
+    if (guard) return { ...guard, architectureUpdate: u, decision, subject, targetDir, deltaDir }
+  }
   const why = inSection2.length
-    ? `the architecture-maintainer reports writes in section 2, which holds the owner's constraints: ${inSection2.join(', ')}`
-    : `the architecture-maintainer reports files outside the effective version ${ARC42}: ${outside.join(', ')}`
+    ? `the integration wrote in section 2, which holds the owner's constraints: ${inSection2.join(', ')}`
+    : `the integration wrote files outside the effective version ${ARC42}: ${outside.join(', ')}`
   return { ok: false, stage: 'integrate', deterministicFailure: true, reason: why, error: why, architectureUpdate: u, decision, subject, targetDir, deltaDir }
 }
-const bounds = outOfBounds(update)
+const firstMeasure = await measured(update, 'tree:after-integrate')
+if (firstMeasure.failure) return firstMeasure.failure
+update = firstMeasure.update
+const bounds = await outOfBounds(update)
 if (bounds) return bounds
 
 /** Runs one conformance review; a changed file the review does not cover is a finding. */
@@ -950,7 +1012,7 @@ function covered(c) {
   return { ...c, conforms: false, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...missed.map((f) => ({ file: f, finding: 'changed or created by the integration and not reviewed', evidence: 'absent from reviewedFiles' }))] }
 }
 
-let conformance = lastSavedReview && lastSavedReview.conforms === true && savedUpdate === update ? covered(lastSavedReview) : null
+let conformance = lastSavedReview && lastSavedReview.conforms === true && reusedSaved ? covered(lastSavedReview) : null
 if (!conformance || conformance.conforms !== true) conformance = await review()
 if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
 let corrections = 0
@@ -967,8 +1029,10 @@ ${INTEGRATE_TASK}${updateBrief}`,
   )
   if (!fixed) return { ok: false, stage: 'integrate', reason: `the architecture-maintainer returned no result for correction ${corrections}`, ...died('Integrate'), decision, subject, targetDir, deltaDir }
   const merged = (key) => [...new Set([...listed(update[key]), ...listed(fixed[key])])]
-  update = { ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles') }
-  const fixedBounds = outOfBounds(update)
+  const fixMeasure = await measured({ ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles') }, `tree:after-correct-${corrections}`)
+  if (fixMeasure.failure) return fixMeasure.failure
+  update = fixMeasure.update
+  const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
   conformance = await review()
   if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }

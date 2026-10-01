@@ -1,7 +1,7 @@
 export const meta = {
   name: 'built-version',
   description:
-    "Records what a Story built, after its deploy to AWS dev is verified and before its pull request. One prd-reality-reconciler session compares the code on the Story's branch with the effective views for the Story's repository and the Epic's delta items placed in it, and writes each difference as a view in built/<subject>/ (in-review), citing file:line. A Story with no difference writes nothing. When a difference exists, depscore.py arch-state confirms every built view is in-review, the architecture-maintainer corrects the effective version from the built views, the architecture-conformance-reviewer checks the correction (at most 2 correction passes), depscore.py arch-approve sets the corrected files to effective, and depscore.py arch-built-remove deletes the built views the effective version now matches and commits the removal. A write under arc42 section 2 fails the run: depscore.py arch-constraints fingerprints that folder before and after. Returns { ok, stage, beadId, headline, differences, builtFiles, architectureUpdate, conformance, approval, removal }.",
+    "Records what a Story built, after its deploy to AWS dev is verified and before its pull request. One prd-reality-reconciler session compares the code on the Story's branch with the effective views for the Story's repository and the Epic's delta items placed in it, and writes each difference as a view in built/<subject>/ (in-review), citing file:line. A Story with no difference writes nothing. When a difference exists, depscore.py arch-state confirms every built view is in-review, the architecture-maintainer corrects the effective version from the built views, the architecture-conformance-reviewer checks the correction (at most 2 correction passes), depscore.py arch-approve sets the corrected files to effective, and depscore.py arch-built-remove deletes the built views the effective version now matches — those the architecture-maintainer reports matched and the architecture-conformance-reviewer confirms in matchedBuiltViews — and commits the removal. depscore.py arch-snapshot measures what each session wrote: the comparison may write only under built/<subject>/, and the files the correction wrote are reviewed whether reported or not. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. Returns { ok, stage, beadId, headline, differences, builtFiles, architectureUpdate, conformance, approval, removal }.",
   phases: [
     { title: 'Compare', detail: "a prd-reality-reconciler session compares the Story branch's code with the effective views and the delta items, and writes each difference to built/<subject>/" },
     { title: 'Correct', detail: 'the architecture-maintainer corrects the effective version from the built views; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the corrected files to effective' },
@@ -131,10 +131,11 @@ const MAINTAIN_SCHEMA = {
 const CONFORMANCE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['conforms', 'reviewedFiles', 'findings', 'summary'],
+  required: ['conforms', 'reviewedFiles', 'matchedBuiltViews', 'findings', 'summary'],
   properties: {
     conforms: { type: 'boolean' },
     reviewedFiles: { type: 'array', items: { type: 'string' } },
+    matchedBuiltViews: { type: 'array', items: { type: 'string' } },
     findings: {
       type: 'array',
       items: {
@@ -154,13 +155,38 @@ const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any pro
 - \`built/<subject>/\` records what a build delivered where it differs from the effective version.
 - The architecture documentation model is ${MODEL}; the view types to choose from are ${MENU}.`
 
-/** Returns the section 2 fingerprint, or { error }. */
-const constraintsSnapshot = (label, phaseName) => depscore(label, phaseName, `arch-constraints --arch-root ${shq(archPath)}`)
+/** Returns the section 2 fingerprint, or { error }; with `keep`, section 2 is also copied aside for a restore. */
+const constraintsSnapshot = (label, phaseName, keep) => depscore(label, phaseName, `arch-constraints --arch-root ${shq(archPath)}${keep ? ' --keep' : ''}`)
 const sameSnapshot = (x, y) =>
   !!x && !!y && !x.error && !y.error && x.exists === y.exists && x.digest === y.digest && JSON.stringify(x.gitStatus || []) === JSON.stringify(y.gitStatus || [])
+/** Returns null when section 2 is unchanged since `before`, else puts section 2 back from the copy and returns the failure. */
+async function constraintsGuard(label, phaseName, during, extra) {
+  const after = await constraintsSnapshot(label, phaseName)
+  if (sameSnapshot(before, after)) return null
+  const restored = after && after.error ? null : await depscore(`${label}:restore`, phaseName, `arch-constraints-restore --arch-root ${shq(archPath)} --kept ${shq(before.kept)}`)
+  const restoreNote = !restored ? '' : restored.error ? `; section 2 could not be put back: ${restored.error}` : '; section 2 was put back as it was'
+  const why = after && after.error ? after.error : `git status ${JSON.stringify((after && after.gitStatus) || [])}${restoreNote}`
+  return handback(false, 'constraints-written', `section 2 changed while ${during}: ${why}`, { ...(extra || {}), restored })
+}
+/** Returns the fingerprint of every file of arc42/, target/ and built/, or { error }. */
+const treeSnapshot = (label, phaseName) => depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)}`)
+/** Returns the files created, changed and deleted between two tree fingerprints, as absolute paths. */
+function treeDiff(x, y) {
+  const was = (x && x.files) || {}
+  const now = (y && y.files) || {}
+  const abs = (rel) => `${archPath}/${rel}`
+  return {
+    created: Object.keys(now).filter((k) => !(k in was)).map(abs),
+    changed: Object.keys(now).filter((k) => k in was && was[k] !== now[k]).map(abs),
+    deleted: Object.keys(was).filter((k) => !(k in now)).map(abs),
+  }
+}
+const diffFiles = (d) => [...d.created, ...d.changed, ...d.deleted]
 
-const before = await constraintsSnapshot('constraints:before', 'Compare')
-if (!before || before.error) return failed('Compare', 'compare', `section 2 of the architecture could not be fingerprinted before the step: ${(before && before.error) || 'no result'}`)
+const before = await constraintsSnapshot('constraints:before', 'Compare', true)
+if (!before || before.error || !hasText(before.kept)) return failed('Compare', 'compare', `section 2 of the architecture could not be fingerprinted and copied before the step: ${(before && before.error) || 'no copy was named'}`)
+const treeBefore = await treeSnapshot('tree:before', 'Compare')
+if (!treeBefore || treeBefore.error) return failed('Compare', 'compare', `the architecture could not be fingerprinted before the step: ${(treeBefore && treeBefore.error) || 'no result'}`)
 
 // ---------------------------------------------------------------- Compare
 phase('Compare')
@@ -191,14 +217,15 @@ Return one entry in \`differences\` per difference: the element, the delta item 
 )
 if (!compared) return failed('Compare', 'compare', `the prd-reality-reconciler returned no comparison for Story ${beadId}`)
 const differences = (Array.isArray(compared.differences) ? compared.differences : []).filter((d) => d && hasText(d.element))
-const builtFiles = [...new Set([...listed(compared.files), ...differences.map((d) => d.file).filter(hasText).map((f) => f.trim())])]
-const outsideBuilt = builtFiles.filter((f) => !f.startsWith(`${BUILT_DIR}/`) || f.split('/').includes('..'))
+const guardCompare = await constraintsGuard('constraints:after-compare', 'Compare', 'the build was compared', { differences })
+if (guardCompare) return guardCompare
+const treeCompared = await treeSnapshot('tree:after-compare', 'Compare')
+if (!treeCompared || treeCompared.error) return failed('Compare', 'compare', `the architecture could not be fingerprinted after the comparison: ${(treeCompared && treeCompared.error) || 'no result'}`, { differences })
+const compareWrites = treeDiff(treeBefore, treeCompared)
+const builtFiles = [...new Set([...listed(compared.files), ...differences.map((d) => d.file).filter(hasText).map((f) => f.trim()), ...compareWrites.created, ...compareWrites.changed])]
+const outsideBuilt = [...builtFiles, ...compareWrites.deleted].filter((f) => !f.startsWith(`${BUILT_DIR}/`) || f.split('/').includes('..'))
 if (outsideBuilt.length) {
-  return handback(false, 'compare', `the prd-reality-reconciler reports built views outside ${BUILT_DIR}: ${outsideBuilt.join(', ')}`, { differences, builtFiles })
-}
-const guardCompare = await constraintsSnapshot('constraints:after-compare', 'Compare')
-if (!sameSnapshot(before, guardCompare)) {
-  return handback(false, 'constraints-written', `section 2 changed while the build was compared: ${guardCompare && guardCompare.error ? guardCompare.error : `git status ${JSON.stringify((guardCompare && guardCompare.gitStatus) || [])}`}`, { differences, builtFiles })
+  return handback(false, 'compare', `the comparison wrote or reports files outside ${BUILT_DIR}: ${outsideBuilt.join(', ')}`, { differences, builtFiles })
 }
 if (!differences.length && !builtFiles.length) {
   log(`Built: Story ${beadId} built what the effective version shows; nothing written`)
@@ -229,20 +256,37 @@ Report every file you changed, created or deleted as an absolute path under ${AR
 
 const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
 const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
-/** Returns the failure when the maintainer reports a file in section 2 or outside arc42, else null. */
-function outOfBounds(u) {
+/** Adds to a report every file the correction wrote since the comparison, measured from the tree, so an unreported write is reviewed too; returns { update } or { failure }. */
+async function measured(u, label) {
+  const now = await treeSnapshot(label, 'Correct')
+  if (!now || now.error) return { failure: failed('Correct', 'correct', `the architecture could not be fingerprinted after the correction: ${(now && now.error) || 'no result'}`, { differences, builtFiles, architectureUpdate: u }) }
+  const d = treeDiff(treeCompared, now)
+  const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
+  if (unreported.length) log(`Correct: files written and not reported, added to the review: ${unreported.join(', ')}`)
+  const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
+  return { update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
+}
+/** Returns the failure when the correction wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
+async function outOfBounds(u) {
   const inSection2 = allTouched(u).filter((f) => f === CONSTRAINTS || f.startsWith(`${CONSTRAINTS}/`))
   const outside = allTouched(u).filter((f) => !f.startsWith(`${ARC42}/`))
   if (!inSection2.length && !outside.length) return null
+  if (inSection2.length) {
+    const guard = await constraintsGuard('constraints:correct-bounds', 'Correct', 'the effective version was corrected', { differences, builtFiles, architectureUpdate: u })
+    if (guard) return guard
+  }
   const why = inSection2.length
-    ? `the architecture-maintainer reports writes in section 2, which holds the owner's constraints: ${inSection2.join(', ')}`
-    : `the architecture-maintainer reports files outside the effective version ${ARC42}: ${outside.join(', ')}`
+    ? `the correction wrote in section 2, which holds the owner's constraints: ${inSection2.join(', ')}`
+    : `the correction wrote files outside the effective version ${ARC42}: ${outside.join(', ')}`
   return handback(false, 'correct', why, { differences, builtFiles, architectureUpdate: u })
 }
 
 let update = await run(`You are the architecture-maintainer.\n\n${CORRECT_TASK}`, { label: 'built:correct', phase: 'Correct', agentType: 'architecture-maintainer', effort: 'medium', schema: MAINTAIN_SCHEMA })
 if (!update) return failed('Correct', 'correct', 'the architecture-maintainer returned no result', { differences, builtFiles })
-const bounds = outOfBounds(update)
+const firstMeasure = await measured(update, 'tree:after-correct')
+if (firstMeasure.failure) return firstMeasure.failure
+update = firstMeasure.update
+const bounds = await outOfBounds(update)
 if (bounds) return bounds
 
 let reviewPass = 0
@@ -266,7 +310,7 @@ Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
 
 ${ARCH_WHERE}
 
-Check that the effective version now describes each element as the built views show it, no more and no less; that every effective view the catalog lists for each built element was updated, at every scope; that new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming, and one finding per problem with its file and evidence; \`conforms\` is true only when there is no finding.`,
+Check that the effective version now describes each element as the built views show it, no more and no less; that every effective view the catalog lists for each built element was updated, at every scope; that new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming; in \`matchedBuiltViews\` the absolute path of every built view above that the effective version now describes completely, compared by you view by view (a built view goes in this list only when every element it shows reads the same in the effective version); and one finding per problem with its file and evidence. \`conforms\` is true only when there is no finding.`,
     { label: `built:review-${reviewPass}`, phase: 'Correct', agentType: 'agent-teams-workforce:architecture-conformance-reviewer', effort: 'medium', schema: CONFORMANCE_SCHEMA }
   )
   return got ? covered(got) : null
@@ -288,8 +332,10 @@ ${CORRECT_TASK}`,
   )
   if (!fixed) return failed('Correct', 'correct', `the architecture-maintainer returned no result for correction ${corrections}`, { differences, builtFiles, architectureUpdate: update })
   const merged = (key) => [...new Set([...listed(update[key]), ...listed(fixed[key])])]
-  update = { ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles'), matched: merged('matched') }
-  const fixedBounds = outOfBounds(update)
+  const fixMeasure = await measured({ ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles'), matched: merged('matched') }, `tree:after-correct-${corrections}`)
+  if (fixMeasure.failure) return fixMeasure.failure
+  update = fixMeasure.update
+  const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
   conformance = await review()
   if (!conformance) return failed('Correct', 'correct', 'the architecture-conformance-reviewer returned no result', { differences, builtFiles, architectureUpdate: update })
@@ -298,10 +344,8 @@ if (conformance.conforms !== true) {
   const why = `the correction does not conform after ${corrections} correction pass(es): ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
   return handback(false, 'correct', why, { differences, builtFiles, architectureUpdate: update, conformance })
 }
-const guardCorrect = await constraintsSnapshot('constraints:after-correct', 'Correct')
-if (!sameSnapshot(before, guardCorrect)) {
-  return handback(false, 'constraints-written', `section 2 changed while the effective version was corrected: ${guardCorrect && guardCorrect.error ? guardCorrect.error : `git status ${JSON.stringify((guardCorrect && guardCorrect.gitStatus) || [])}`}`, { differences, builtFiles, architectureUpdate: update, conformance })
-}
+const guardCorrect = await constraintsGuard('constraints:after-correct', 'Correct', 'the effective version was corrected', { differences, builtFiles, architectureUpdate: update, conformance })
+if (guardCorrect) return guardCorrect
 
 let approval = null
 const toApprove = touched(update)
@@ -320,7 +364,8 @@ if (toApprove.length) {
 
 // ---------------------------------------------------------------- Remove
 phase('Remove')
-const matched = new Set(listed(update.matched))
+const reviewerMatched = new Set(listed(conformance.matchedBuiltViews))
+const matched = new Set(listed(update.matched).filter((f) => reviewerMatched.has(f)))
 const unmatched = builtFiles.filter((f) => !matched.has(f))
 const removable = builtFiles.filter((f) => matched.has(f))
 let removal = null
