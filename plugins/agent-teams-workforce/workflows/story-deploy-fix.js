@@ -1,7 +1,7 @@
 export const meta = {
   name: 'story-deploy-fix',
   description:
-    "Story deploy fix loop, one pass — the only agent step of a Story's deploy. The Story's `cdk deploy` to AWS dev, or the verification that every stack reached CREATE_COMPLETE or UPDATE_COMPLETE, failed. One cdk-stack-author session diagnoses the failure from its output, fixes the CDK (or whatever the deploy needs) in the Story's worktree, runs the repository's synth assertion tests and updates any test the fix proves wrong; then the fix is committed to the Story branch. It never deploys, never re-enters Green and opens no pull request: the caller redeploys and verifies. Returns { ok, stage, beadId, headline, detailPath, testsPassed, changedFiles, commit }.",
+    "Story deploy fix loop, one pass — the only agent step of a Story's deploy. The Story's package publish, `cdk synth`, `cdk deploy` to AWS dev, or the verification that every stack reached CREATE_COMPLETE or UPDATE_COMPLETE, failed. One cdk-stack-author session diagnoses the failure from its output, fixes the CDK (or whatever the deploy needs) in the Story's worktree, runs the repository's synth assertion tests and updates any test the fix proves wrong; then the fix is committed to the Story branch. A fix that changes no file returns stage no-change and commits nothing. It never deploys, never re-enters Green and opens no pull request: the caller redeploys and verifies. Returns { ok, stage, beadId, headline, detailPath, testsPassed, changedFiles, commit }.",
   phases: [
     { title: 'Fix', detail: 'diagnose the deploy failure and fix it on the Story branch; the synth assertion tests pass' },
     { title: 'Commit', detail: 'commits the fix to the Story branch' },
@@ -47,7 +47,7 @@ async function settleAgent(prompt, opts) {
 // args: {
 //   beadId: string (the Story), story: { id, title? }, repoPath: string (the Story's worktree),
 //   branch: string, defaultBranch?: string, attempt: number,
-//   failure: { step: 'deploy' | 'verify', output: string, stacks?: [{ name, status, reason? }] }
+//   failure: { step: 'publish' | 'synth' | 'deploy' | 'verify', output: string, stacks?: [{ name, status, reason? }] }
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const story = a.story && typeof a.story === 'object' ? a.story : {}
@@ -75,14 +75,21 @@ PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this wor
 ${repo}
 Branch: ${a.branch || '(the branch checked out in that tree)'}
 
-What failed: ${failure.step === 'verify' ? 'deployment verification — a stack did not reach CREATE_COMPLETE or UPDATE_COMPLETE' : '`cdk deploy`'}
+What failed: ${
+  {
+    verify: 'deployment verification — a stack did not reach CREATE_COMPLETE or UPDATE_COMPLETE',
+    publish: "publishing the repository's package to CodeArtifact",
+    synth: '`cdk synth`',
+  }[failure.step] || '`cdk deploy`'
+}
 ${stacks ? `Stacks:\n${stacks}\n` : ''}Output:
 ${String(failure.output || '(no output was captured)').slice(-12000)}
 
 1. Find the cause in this output and in the CloudFormation stack events it points to (\`aws cloudformation describe-stack-events\`, read-only).
 2. Fix the CDK, or whatever else the deploy needs, in this tree. A value one stack passes to another goes by the cross-stack mechanism the repository's stacks already use.
 3. Run the repository's synth assertion tests. Where the fix proves a test wrong, correct the test so it asserts what the fixed template must contain; never weaken a test to make it pass.
-4. Do not commit, push, deploy or open a pull request, and never run \`cdk deploy\` or \`cdk destroy\`.
+4. Do not commit, push, deploy, publish a package or open a pull request, and never run \`cdk deploy\` or \`cdk destroy\`: the caller commits your change, then publishes and deploys.
+5. When nothing in this tree can fix the failure (it lies outside the repository), change no file and say why in the cause; an empty changedFiles stops the deploy instead of repeating it.
 
 Report the cause, the files you changed, whether the synth assertion tests pass, and their captured output.`,
   {
@@ -104,7 +111,14 @@ Report the cause, the files you changed, whether the synth assertion tests pass,
   }
 )
 if (!fix) return handback(false, DISPATCH_FAILED_STAGE, `the fixer for Story ${beadId} returned nothing`)
-const changedFiles = Array.isArray(fix.changedFiles) ? fix.changedFiles : []
+const changedFiles = Array.isArray(fix.changedFiles) ? fix.changedFiles.filter((f) => typeof f === 'string' && f.trim()) : []
+if (!changedFiles.length) {
+  return handback(false, 'no-change', `Story ${beadId}: the fixer changed no file, so a redeploy would fail the same way — ${String(fix.cause || 'no cause given').slice(0, 300)}`, {
+    cause: fix.cause,
+    changedFiles,
+    testsPassed: fix.testsPassed === true,
+  })
+}
 
 phase('Commit')
 const committed = await workflow('agent-teams-workforce:settle', {
