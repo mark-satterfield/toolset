@@ -176,7 +176,7 @@ shown the answer is not a checker.
 | event-driven-consumer-implementer | execute | Implements event consumers on the delivery path the effective architecture describes |
 | power-tools-configuration-implementer | execute | Configures Lambda Power Tools: structured logging, tracing, metrics, idempotency, validation |
 | cognito-lambda-trigger-implementer | execute | Implements Cognito Lambda triggers for authentication flows. |
-| nextjs-component-implementer | execute | Implements React/Next.js components for web UI features. |
+| nextjs-component-implementer | execute | Implements the non-visual React/Next.js work (state, data fetching, routing); visual UI goes to cds:cds-ui-author. |
 | appsync-client-subscription-implementer | execute | Implements AppSync client subscriptions for real-time web features. |
 | matching-algorithm-implementer | execute | Implements matching and recommendation algorithm components for ML features. |
 | vector-search-embeddings-implementer | execute | Implements vector search and embeddings components for ML features. |

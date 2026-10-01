@@ -17,7 +17,8 @@ export const meta = {
 
 // args: {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
-//           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy? },
+//           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy?,
+//           cdsBundlePath?, cdsBuildSpecs? },
 //   infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json),
 //   spec?: object (defaults to bead), implementer?: string, worktreeRoot?: string,
 //   maxRedRounds?: number (default 4), maxGreenRounds?: number (default 8)
@@ -233,6 +234,8 @@ try {
       ],
       surfaces: contractSurfaces,
       testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
+      cdsBundlePath: String(bead.cdsBundlePath || '').trim() || null,
+      cdsBuildSpecs: list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean),
     }
 
     let intent = null
