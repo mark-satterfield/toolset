@@ -24,6 +24,10 @@ The same test governs gate criteria: a criterion asserts a property, and somethi
 
 Full statement and the failure that motivated it: Rule 12 in `plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md`.
 
+### Pipeline runs belong to the owner
+
+Only the owner runs `keeper.py` and `supervisor.py`; their real runs are the test of the pipeline. No session or agent runs them, pre-tests them, or rehearses them: no dry runs, no runs on scratch copies, no apply:false or replay runs, no stub-dispatcher runs, and no dispatching workflows or plugin commands as a test. A pipeline run is long and expensive, so a successful run must make real project progress. Allowed: fast unit tests with real testing value, and existing suites as regression checks. The pipelines are local single-user tooling to build the product, not the product: they need to work, not be perfect.
+
 ## Plugins
 
 These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that a few **marketplace names differ from their directory names** (left column ≠ path).
