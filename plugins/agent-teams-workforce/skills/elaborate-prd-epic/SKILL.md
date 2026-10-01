@@ -11,10 +11,9 @@ allowed-tools: [Read, Write, Bash, Glob, Workflow]
 
 # Elaborate a PRD/Epic
 
-A PRD and its Epic are **one work item in two representations** — the PRD is the
-human-readable face, the Epic is the tracker face. They are created together.
-Everything below is identical whichever face you walked in holding; the only thing
-that differs is how you resolved the pair, and that happened before you got here.
+The pipeline elaborates an Epic and reads the PRD linked to it; the two are created
+together. Everything below is identical whichever command you came from: both resolved
+the Epic and its linked PRD before you got here.
 
 Nothing here decomposes the Epic. The **file** side decomposes — PRD to TRD to
 Spec — and the beads are what that chain deposits: one Story per Spec, Tasks per
@@ -28,11 +27,10 @@ an Epic with no Stories.
 
 You must arrive with:
 
-- `prd` — `{id, title, body}`. If only the Epic existed, its PRD was minted first.
-- `epic` — the Epic bead, with its `id`. It is adopted, never re-minted.
+- `prd` — `{id, title, body}`, the PRD linked to the Epic.
+- `epic` — the Epic bead, with its `id`.
 
-If either is missing, stop. Mint the missing half and return here — minting
-completes the representation, it does not authorize the build.
+If either is missing, stop and report which one.
 
 ## The Epic lifecycle belongs to `prd-to-spec`
 
@@ -155,7 +153,7 @@ writes whose results were relayed; beads itself is what `lifecycle.done` was dec
 ## 4. Report
 
 - Epic: its id, and whether `lifecycle.done` set its `elaboration_state` to `done`
-- PRD: located, or minted from the Epic
+- PRD: its path
 - Repo span: the repositories `repoSpan` names, and whether the run ruled them or a
   human pinned them
 - Repositories created: every `createdRepos` entry, with why no existing repo fits

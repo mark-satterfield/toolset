@@ -35,7 +35,7 @@ function decide() {
     )
   }
   if (type === 'feature' || byLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
-    return elaborate('feature → prd-to-spec, once the invoking command has resolved or minted its PRD and Epic')
+    return elaborate('feature → prd-to-spec, once the invoking command has resolved its Epic and the PRD linked to it')
   }
   if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(

@@ -8,13 +8,9 @@ allowed-tools: [Bash, Read, Glob, Skill, Workflow]
 
 Take `$ARGUMENTS` from a PRD document to an emitted Epic → Story → Task hierarchy.
 
-A PRD and its Epic are **one work item in two representations**, so this command
-and `/agent-teams-workforce:work-bead <epic-id>` are two doors into the same
-procedure. They differ only in which face you walked in holding. Yours is the
-document; the Epic is the other face, and you resolve it below.
-
-This is also the entry the bead router cannot provide: a PRD is a **file**, so
-`bd ready` never returns one and neither router ever sees it.
+The pipeline elaborates an Epic and reads the PRD linked to it. This command starts
+from the PRD document, resolves the Epic linked to it, and hands that Epic to the same
+procedure `/agent-teams-workforce:work-bead <epic-id>` uses.
 
 ## 1. Locate the PRD
 
@@ -28,35 +24,19 @@ grep -ril -- "<title>" "$ATW_PRD_DIR"
 Read the PRD. Extract `title` and `body`. Stop and report if you cannot find it —
 do not invent a PRD from the title.
 
-## 2. Resolve the other face — the Epic
+## 2. Resolve the Epic linked to the PRD
+
+The PRD names its Epic on a `**Epic:** <id>` line, or an Epic carries the label
+`prd:<prd file stem>`:
 
 ```bash
-bd list --type epic | grep -i "<prd title>"
+grep -m1 '^\*\*Epic:\*\*' "<prd path>"
+bd list --type epic --label "prd:<prd file stem>"
 ```
 
-- Found → adopt it. Pass it through with its `id`; it is not re-minted.
-- Not found → **mint it** from the PRD. The Epic is a container: title and
-  description from the PRD, no acceptance criteria, no repo scope (one Epic may span
-  repos).
-
-```bash
-bd create --type epic --title "<prd title>" --description "<prd summary>"
-```
-
-Minting completes the pair. It is not what authorizes the build — your invoking
-this command is.
-
-A minted Epic is elaborated only once it is placed in the portfolio: its dependencies
-on other Epics assessed, and its value, urgency and size scored. So for a minted Epic,
-before the hand-off:
-
-1. Run `/agent-teams-workforce:dependency-assessment <epic-id>`. It assesses this one
-   Epic's dependencies and then runs WSJF scoring, which scores it.
-2. Mark the PRD finished — your invoking this command says it is:
-
-```bash
-bd update <epic-id> --set-metadata elaboration_state=ready
-```
+- Found → adopt it, with its `id`.
+- Not found → stop and report that the PRD has no linked Epic. A PRD and its Epic are
+  written together when the PRD is created; this command creates neither.
 
 Every other condition — the Epic is scored, the Epics it depends on are elaborated, it
 is not owned by another run — is checked by `prd-to-spec` at its start, which refuses

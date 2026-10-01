@@ -129,7 +129,7 @@ Then go to step 6.
 
 ## 5. Elaborate — `elaborate` only
 
-The bead is an Epic or a Story: the tracker face of a document. Nothing decomposes
+The bead is an Epic or a Story. Nothing decomposes
 it. Its **document** is what decomposes, and the beads beneath it are what that
 chain deposits.
 
@@ -147,9 +147,8 @@ ls -R "$ATW_PRD_DIR"
 ```
 
 - Found → read it and extract `title` and `body`.
-- Not found → **mint it** from the bead's title and description, authored to the
-  PRD template. Minting completes the pair; it is not what authorizes the build —
-  your invoking this command is.
+- Not found → stop and report that the Epic has no linked PRD. This command does not
+  write a PRD.
 
 Then invoke the `elaborate-prd-epic` skill with the resolved pair, passing the Epic with
 its `id`. It owns the `prd-to-spec` dispatch and the report. Check nothing about the
