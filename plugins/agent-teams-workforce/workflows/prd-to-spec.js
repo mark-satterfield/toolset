@@ -1,13 +1,13 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, rules architecture — triage names every architecture file the PRD relies on and what it needs that the architecture lacks, and the architecture panel is skipped only when depscore.py arch-state reads every relied-on file at lifecycle_state: effective and nothing is missing (lifecycle_state is per file; an in-review file the PRD relies on is always reviewed: approved as it stands, updated or replaced) — then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
     { title: 'PRD Validation', detail: 'depscore.py prd-parse: the PRD file is readable, not superseded, has an H1, requirement headings with acceptance criteria under Requirements, and a Definition of Done; a failed check holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
-    { title: 'Architecture', detail: 'triage the PRD and name the architecture files it relies on; skip the panel only when every one reads lifecycle_state: effective and nothing is missing; otherwise run the architecture mini, then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective' },
+    { title: 'Architecture', detail: 'the architecture mini writes the target and delta for the Epic and integrates the approved target into the effective version; an owner concern or PRD defect holds the Epic for the owner' },
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
     { title: 'Spec Authoring', detail: 'per repo: reconcile the requirements that govern what the repo owns or changes, then author the Spec and write its Story bead' },
@@ -341,8 +341,9 @@ if (!hasText(prd.body) && !prdByPath) {
 recRuled(prdByPath ? `PRD read from its file by each session: ${prd.path}` : 'PRD text supplied inline.', { status: 'done' })
 produced.prd = prd
 
+const ARCHITECTURE_DELIVERABLES = ['architecture/survey.md', 'architecture/survey.json', 'architecture/decision.md', 'architecture/decision.json', 'architecture/target.json', 'architecture/architecture-update.json']
 function derivedNames(id) {
-  if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'architecture-update.json']
+  if (id === 'architecture') return ARCHITECTURE_DELIVERABLES.slice()
   if (id === 'trd') return ['trd.md']
   if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json']
   if (id === 'task-deps') return ['task-deps.json']
@@ -464,7 +465,10 @@ async function prefetchResumeJson() {
     if (hit && hit.names.includes(name) && !wanted.includes(name)) wanted.push(name)
   }
   const arch = RESUME.phases.architecture
-  if (arch) want(arch, arch.names.includes('architecture-decision.md') ? 'architecture-update.json' : 'architecture-triage.json')
+  if (arch) {
+    want(arch, 'architecture/target.json')
+    want(arch, 'architecture/architecture-update.json')
+  }
   if (!wanted.length) return
   const texts = await parallel(wanted.map((name) => () => readSavedText(artPath(name), `replay:read-${name}`, 'Architecture')))
   wanted.forEach((name, i) => {
@@ -608,184 +612,60 @@ const requirementHeadings = Array.isArray(prdParse.requirementHeadings) ? prdPar
 produced.prdParse = { prd: prd.path, requirementHeadings }
 recRuled(`PRD parsed by depscore.py prd-parse: ${requirementHeadings.length} requirement heading(s).`, { status: 'done' })
 
-/** Returns the architecture files a triage names as relied on, each { file, state }. */
-function reliedDocs(t) {
-  return t && Array.isArray(t.reliedOn)
-    ? t.reliedOn.filter((r) => r && hasText(r.file)).map((r) => ({ file: r.file.trim(), state: String(r.state || '').trim() }))
-    : []
-}
-/**
- * Returns null when a needed:false triage may skip the architecture panel — it names the architecture files the
- * PRD relies on, nothing is missing, and depscore.py arch-state reads every one at effective — else { reason }.
- * A caller's skipArchitecture:true is the caller's ruling and is not checked.
- */
-async function skipBlocker(t) {
-  if (t && t.settledBy === 'caller') return null
-  const relied = reliedDocs(t)
-  if (!relied.length) return { reason: 'the triage named no architecture file the PRD relies on' }
-  if (!t || !Array.isArray(t.missing)) return { reason: 'the triage did not state what the PRD needs that the architecture lacks' }
-  const missing = t.missing.filter(hasText)
-  if (missing.length) return { reason: `the architecture lacks what the PRD needs: ${missing.join('; ')}` }
-  const files = [...new Set(relied.map((r) => r.file))]
-  const args = [`arch-state --arch-files ${shellq(files.join(','))}`, hasText(a.archPath) ? `--arch-root ${shellq(a.archPath)}` : ''].filter(Boolean).join(' ')
-  const out = await runScript('arch:state', 'Architecture', args)
-  if (!out || out.error) return { reason: `the lifecycle_state of the relied-on architecture files was not read — ${(out && out.error) || 'no result'}` }
-  const unread = [...(out.refused || []), ...(out.failed || [])]
-  if (unread.length) return { reason: `relied-on architecture file(s) could not be read: ${unread.map((x) => `${x.path} (${x.reason})`).join(', ')}` }
-  const open = Array.isArray(out.notEffective) ? out.notEffective : []
-  if (open.length) return { reason: `the PRD relies on architecture file(s) not yet effective, which the architecture step must review: ${open.map((x) => `${x.path} (${x.state || 'no lifecycle_state'})`).join(', ')}` }
-  return null
-}
-
 enterPhase('Architecture')
-const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk', 'bounded-context', 'failure-mode']
-let archTriage = null
 let architecture = null
 await prefetchResumeJson()
 const archHit = resumeFresh('architecture')
-if (archHit) {
-  const hasRuling = archHit.names.includes('architecture-decision.md')
-  const savedTriage = artData(archHit, 'architecture-triage.json') || null
-  const savedSkip = !hasRuling && savedTriage && savedTriage.needed === false ? await skipBlocker(savedTriage) : null
-  if (savedSkip) log(`Architecture: the saved triage skipped the panel, but ${savedSkip.reason}; the PRD is triaged again`)
-  if (hasRuling || (savedTriage && savedTriage.needed === false && !savedSkip)) {
-    reuseFrom('architecture', archHit)
-    await acceptPhase('architecture', 'reused')
-    archTriage = savedTriage
-    architecture = hasRuling
-      ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), architectureUpdate: artData(archHit, 'architecture-update.json') || null } }
-      : { ok: true, skipped: true, resumed: true, artifact: { skipped: true, triage: savedTriage } }
-    recRuled('Architecture reused from saved artifacts.', { status: 'done' })
-  } else if (archHit.names.includes('architecture-triage.json') && !savedTriage) {
-    log(`Architecture: the saved triage in ${ART_DIR} was not read back; the PRD is triaged again`)
+const savedTarget = artData(archHit, 'architecture/target.json')
+const savedTargetSummary = savedTarget && typeof savedTarget === 'object' ? savedTarget.summary || savedTarget : null
+if (archHit && savedTargetSummary && savedTargetSummary.ok === true && hasText(savedTargetSummary.targetDir)) {
+  reuseFrom('architecture', archHit)
+  await acceptPhase('architecture', 'reused')
+  architecture = {
+    ok: true,
+    resumed: true,
+    artifact: {
+      subject: savedTargetSummary.subject,
+      targetDir: savedTargetSummary.targetDir,
+      deltaDir: savedTargetSummary.deltaDir,
+      deltaFiles: Array.isArray(savedTarget.deltaFiles) ? savedTarget.deltaFiles : [],
+      targetPath: artPath('architecture/target.json'),
+      decisionPath: artPath('architecture/decision.md'),
+      architectureUpdate: artData(archHit, 'architecture/architecture-update.json') || null,
+    },
   }
+  recRuled(`Architecture reused from saved artifacts: target ${savedTargetSummary.targetDir}.`, { status: 'done' })
+} else if (archHit) {
+  log(`Architecture: the saved target in ${ART_DIR} was not read back; the architecture mini resumes from its saved work`)
 }
 if (!architecture) {
-  if (a.skipArchitecture === true) {
-    archTriage = { needed: false, reason: 'caller passed skipArchitecture:true', settledBy: 'caller' }
-  } else if (a.skipArchitecture === false) {
-    archTriage = { needed: true, reason: 'caller passed skipArchitecture:false', settledBy: 'caller' }
-  } else {
-    archTriage = await settleAgent(
-      `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
-        `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or access pattern, a new service or service boundary, a new integration or transport, a new trust boundary, or a change to a crosscutting concern. It does NOT exist merely because the work is hard, security-adjacent or user-facing.\n\n` +
-        `These are never an architecture decision: a difference between this PRD and what is built or deployed (the PRD wins); any UI or UX difference (settled by the design-system artifacts); a question an existing recorded decision or established codebase pattern already answers. Do not survey what is deployed.\n\n` +
-        `\`lifecycle_state\` is PER FILE. An architecture file whose frontmatter reads \`lifecycle_state: effective\` has itself been reviewed and approved: its views settle what they show, as given. That says nothing about any other file. A file in any other state (\`in-review\`, \`draft\`) is not yet trusted and settles nothing until the architecture phase reviews it, however well it already answers the PRD.\n` +
-        `Name in \`reliedOn\` EVERY architecture file the design of this PRD relies on — every file whose views a design for it would rest on or cite, in any state — each with its absolute path and the \`lifecycle_state\` its frontmatter reads (open it and copy the field exactly). Find them through the catalog: each view's frontmatter names its \`subject\` and every element it \`shows\`. Name in \`missing\` everything the PRD needs that no architecture view covers yet (an empty list when nothing is missing).\n` +
-        `Answer needed:false ONLY when every file in reliedOn reads \`effective\`, \`missing\` is empty, and those files settle every choice (name the views). Otherwise answer needed:true and name each open choice, and each relied-on document to review, in \`decisions\`.\n\n` +
-        `Repositories the run was launched from: ${seedRepos.join(', ') || '(none named)'}. This is a starting point, not the span.\n` +
-        `Architecture: ${a.archPath || '(not supplied)'} — its \`arc42/\` folder is the effective version, its \`target/\` folder holds the targets in progress.\n\n` +
-        (prdByPath ? `PRD: the document at ${prd.path}. Read it in full before you answer.` : `PRD:\n${prd.body}`) +
-        `\n\nWhen needed is true, also name in \`dimensions\` the analysis axes the decision could turn on, from ${JSON.stringify(ARCH_DIMENSIONS)}; leave it empty when you cannot tell.` +
-        `\n\nAlso state highStakes (true when the question implicates a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban) and reversalRisk (true when a plausible ruling could reverse a design the effective architecture describes).` +
-        persistBrief(artFor('architecture', PRD_INPUTS), 'architecture-triage.json', 'your complete answer as ONE JSON object'),
-      {
-        label: 'triage:architecture-needed',
-        effort: 'low',
-        phase: 'Architecture',
-        agentType: 'architecture-decider',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['needed', 'reason', 'highStakes', 'reversalRisk', 'reliedOn', 'missing'],
-          properties: {
-            needed: { type: 'boolean' },
-            reason: { type: 'string' },
-            reliedOn: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['file', 'state'],
-                properties: { file: { type: 'string' }, state: { type: 'string' } },
-              },
-            },
-            missing: { type: 'array', items: { type: 'string' } },
-            decisions: { type: 'array', items: { type: 'string' } },
-            settledBy: { type: 'string' },
-            dimensions: { type: 'array', items: { type: 'string', enum: ARCH_DIMENSIONS } },
-            highStakes: { type: 'boolean' },
-            reversalRisk: { type: 'boolean' },
-          },
-        },
-      }
-    )
-  }
-  const skip = archTriage && archTriage.needed === false ? await skipBlocker(archTriage) : null
-  if (skip) {
-    archTriage = { ...archTriage, needed: true, reason: `${archTriage.reason || 'no architecture decision'}; but ${skip.reason}` }
-    log(`Architecture: triage answered needed:false, overruled — ${skip.reason}`)
-  }
-  if (archTriage && archTriage.needed === false) {
-    architecture = { ok: true, skipped: true, artifact: { skipped: true, triage: archTriage } }
-    recRuled(`Architecture convened no panel: ${archTriage.reason || 'no architecture decision in this PRD'}.`, { status: 'skipped', skipReason: archTriage.reason || 'no architecture decision' })
-  } else {
-    const callerDimensions = Array.isArray(a.dimensions) && a.dimensions.length ? a.dimensions : null
-    const triageDimensions = archTriage && Array.isArray(archTriage.dimensions) && archTriage.dimensions.length ? archTriage.dimensions : null
-    const archQuestions = (archTriage && Array.isArray(archTriage.decisions) ? archTriage.decisions : []).filter(hasText)
-    const r = await workflow('agent-teams-workforce:architecture', {
-      standingRulings,
-      decision: a.decision || {
-        id: prd.id,
-        title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
-        context: prdByPath ? `The PRD is the document at ${prd.path}. Read it in full: every requirement in it is in scope.` : prd.body,
-        drivers: [
-          'The PRD is CANONICAL. Where it changes or contradicts what is already built, the PRD wins; that is not an option to weigh. Your inputs are this PRD and the architecture. A UI/UX difference is settled by the design-system artifacts and is never an architecture decision.',
-          ...(archQuestions.length ? [`Triage found these choices open in the PRD: ${archQuestions.join(' | ')}`] : []),
-          ...(reliedDocs(archTriage).length
-            ? [`Triage found the PRD relies on these architecture files: ${reliedDocs(archTriage).map((r) => `${r.file} (${r.state || 'no lifecycle_state'})`).join(' | ')}. Every one not at lifecycle_state: effective must be reviewed by this ruling: approved as it stands, updated or replaced. Name each part of the architecture the ruling relies on in reliedOn.`]
-            : []),
-          ...(archTriage && Array.isArray(archTriage.missing) && archTriage.missing.filter(hasText).length
-            ? [`Triage found the PRD needs what no architecture view covers yet: ${archTriage.missing.filter(hasText).join(' | ')}`]
-            : []),
-        ],
-        repoPath,
-      },
-      archPath: a.archPath,
-      artifacts: artFor('architecture', PRD_INPUTS, { beadId: epicBeadId }),
-      dimensions: callerDimensions || triageDimensions || undefined,
-      reviewFiles: reliedDocs(archTriage).filter((r) => r.state !== 'effective').map((r) => r.file),
-      forceFullPanel: a.forceFullPanel === true ? true : undefined,
-    })
-    architecture = r && r.ok === true
-      ? { ok: true, artifact: r }
-      : {
-          ok: false,
-          artifact: r || null,
-          reason: (r && (r.reason || r.error)) || 'the architecture mini returned nothing',
-          ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || dispatchDeaths('Architecture') } : {}),
-        }
-    if (architecture.ok) {
-      const sections = r.architectureUpdate && Array.isArray(r.architectureUpdate.updatedSections) ? r.architectureUpdate.updatedSections : []
-      recRuled(`Architecture ruled${sections.length ? `; architecture sections updated: ${sections.join(', ')}` : ''}.`, { status: 'done' })
-    }
-  }
-  if (architecture.ok) await acceptPhase('architecture', 'passed')
-}
-let archApproval = null
-if (architecture.ok && !architecture.skipped) {
-  const art = architecture.artifact || {}
-  const listed = (x) => (Array.isArray(x) ? x.filter(hasText).map((f) => f.trim()) : [])
-  const au = art.architectureUpdate || {}
-  const archFiles = [...new Set([...listed(au.changedFiles), ...listed(au.approvedFiles), ...listed(art.approvedFiles)])]
-  if (archFiles.length) {
-    const approveArgs = [`arch-approve --arch-files ${shellq(archFiles.join(','))}`, hasText(a.archPath) ? `--arch-root ${shellq(a.archPath)}` : ''].filter(Boolean).join(' ')
-    const out = await runScript('arch:approve', 'Architecture', approveArgs)
-    if (!out || out.error) {
-      return partial('architecture', {
+  const r = await workflow('agent-teams-workforce:architecture', {
+    standingRulings,
+    prd: { id: prd.id, title: prd.title, path: prd.path, body: prdByPath ? undefined : prd.body },
+    epic: { id: epicBeadId },
+    archPath: a.archPath,
+    subject: hasText(a.architectureSubject) ? a.architectureSubject : undefined,
+    repoPath,
+    seedRepos,
+    maxRounds: Number.isInteger(a.maxArchitectureRounds) ? a.maxArchitectureRounds : undefined,
+    depscore: { script: `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`, repo: emitTarget },
+    artifacts: artFor('architecture', PRD_INPUTS, { beadId: epicBeadId }),
+  })
+  architecture = r && r.ok === true
+    ? { ok: true, artifact: r }
+    : {
         ok: false,
-        artifact: art,
-        reason: `the ${archFiles.length} architecture file(s) the architecture ruling covers were not set to lifecycle_state: effective — ${(out && out.error) || 'no result'}`,
-      })
-    }
-    archApproval = out
-    const n = out.summary || {}
-    log(`Architecture approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
+        artifact: r || null,
+        reason: (r && (r.reason || r.error)) || 'the architecture mini returned nothing',
+        ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || dispatchDeaths('Architecture') } : {}),
+      }
+  if (architecture.ok) {
+    const changed = r.architectureUpdate ? [...(r.architectureUpdate.changedFiles || []), ...(r.architectureUpdate.createdFiles || [])].length : 0
+    recRuled(`Architecture approved for ${r.subject}: target ${r.targetDir}; ${changed} effective file(s) integrated.`, { status: 'done' })
+    await acceptPhase('architecture', 'passed')
   }
 }
 produced.architecture = (architecture.artifact || null)
-if (archApproval) produced.archApproval = archApproval
-produced.archReliedOn = architecture.artifact && Array.isArray(architecture.artifact.reliedOn) ? architecture.artifact.reliedOn : reliedDocs(archTriage)
 if (!architecture.ok) {
   const art = architecture.artifact || {}
   if (art.stage === 'input') {
@@ -797,22 +677,23 @@ if (!architecture.ok) {
       noArch ? 'the architecture path is configured' : 'what the refusal names has been supplied'
     )
   }
-  if (art.admissible === false) {
+  if (art.stage === 'owner-concern') {
     const actions = Array.isArray(art.requiredHumanActions) && art.requiredHumanActions.length
       ? art.requiredHumanActions.slice()
-      : [`The architecture of ${epicBeadId} has no admissible option: ${architecture.reason}`]
-    return await holdForHuman('architecture', architecture, actions, 'the PRD or the blocking rule has been changed')
+      : [`The architecture of ${epicBeadId} raised an owner concern: ${architecture.reason}`]
+    return await holdForHuman('architecture', architecture, actions, 'the owner has ruled on each concern or fixed the PRD')
   }
   return partial('architecture', architecture)
 }
 
 let scoping = null
-/** Returns the ruling fields of an architecture result that repo scoping reads. */
+/** Returns the fields of an architecture result that repo scoping and TRD authoring read: the target, its delta and the decision. */
 function architectureRulingFor(art) {
   if (!art || typeof art !== 'object') return null
   const out = {}
-  for (const k of ['decision', 'decisionPath', 'note', 'panelDimensions']) if (art[k] !== undefined) out[k] = art[k]
-  if (art.architectureUpdate && typeof art.architectureUpdate === 'object') out.architectureUpdate = { updatedSections: art.architectureUpdate.updatedSections, summary: art.architectureUpdate.summary }
+  for (const k of ['subject', 'targetDir', 'deltaDir', 'deltaFiles', 'decisionPath']) if (art[k] !== undefined) out[k] = art[k]
+  if (art.decision && typeof art.decision === 'object') out.decision = { verdict: art.decision.verdict, summary: art.decision.summary }
+  if (art.architectureUpdate && typeof art.architectureUpdate === 'object') out.architectureUpdate = { summary: art.architectureUpdate.summary, changedFiles: art.architectureUpdate.changedFiles, createdFiles: art.architectureUpdate.createdFiles }
   return out
 }
 /** Returns { pinned } for a caller-pinned span, else { scoping, scopeHit }. */
@@ -847,16 +728,16 @@ async function runRepoScoping() {
   }
   const ruled = await workflow('agent-teams-workforce:repo-scoping', {
     standingRulings,
-    artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture-triage.json'), artPath('architecture-decision.md')]),
+    artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json')]),
     prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
-    architecture: architecture.skipped ? { skipped: true } : architectureRulingFor(architecture.artifact),
+    architecture: architectureRulingFor(architecture.artifact),
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
   return { scoping: ruled, scopeHit: null }
 }
 
-const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture-decision.md'), artPath('architecture-update.json'), a.archPath || null].filter(Boolean)
+const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json'), artPath('architecture/architecture-update.json'), a.archPath || null].filter(Boolean)
 /** Returns { mode: 'resumed' | 'ran', trdAuthoring: { ok, artifact } }. */
 async function runTrdAuthoring() {
   const trdHit = resumeFresh('trd')
@@ -877,7 +758,7 @@ async function runTrdAuthoring() {
   const r = await workflow('agent-teams-workforce:trd-authoring', {
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
-    architecture: architecture.skipped ? undefined : architectureRulingFor(architecture.artifact),
+    architecture: architectureRulingFor(architecture.artifact),
     archPath: a.archPath,
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
@@ -921,7 +802,6 @@ if (scopeSettled.pinned) {
   recRuled(`Repo span ruled: ${repos.join(', ') || 'no repository'}.`, { status: 'done' })
 }
 if (!repos.length) return partial('repo-scoping', { reason: 'the span names no repository' })
-const repoActions = (architecture.artifact && Array.isArray(architecture.artifact.requiredHumanActions) && architecture.artifact.requiredHumanActions) || []
 const createdRepos = (scoping && Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
 const obsoleteRemovalWork = (scoping && Array.isArray(scoping.obsoleteCode) ? scoping.obsoleteCode : [])
   .filter((o) => o && hasText(o.what))
@@ -1452,7 +1332,6 @@ const runJournal = {
   results: {
     reconciliationByRepo: produced.reconciliationByRepo,
     architecture: (architecture.artifact || null),
-    architectureTriage: archTriage,
     repoScoping: scoping,
     trdAuthoring: (trdAuthoring.artifact || null),
     specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
@@ -1465,12 +1344,10 @@ const common = {
   beadsEmitted,
   lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
   ...(storyEdges ? { storyEdges } : {}),
-  ...(archApproval ? { archApproval } : {}),
   crossStoryDependencies: crossStory,
   hierarchy,
   repoSpan: repos,
   ...(createdRepos.length ? { createdRepos } : {}),
-  ...(repoActions.length ? { requiredHumanActions: repoActions } : {}),
 }
 if (unheld.length) {
   return {
@@ -1484,7 +1361,7 @@ return {
     'finish',
     `1 epic, ${specPairs.length} story/stories, ${tasks.length} task(s) for the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
       `Span: ${repos.join(', ')}${scoping ? '' : ' (pinned by the caller)'}. ` +
-      (architecture.skipped ? 'Architecture skipped. ' : 'Architecture ruled and integrated into the effective architecture. ') +
+      `Architecture approved for ${(architecture.artifact && architecture.artifact.subject) || 'the Epic'}; its target is integrated into the effective version. ` +
       (removalWork.length ? `${removalWork.length} removal item(s) handed to decomposition. ` : '') +
       writeLine +
       scoringLine +

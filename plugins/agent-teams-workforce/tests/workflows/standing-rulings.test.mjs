@@ -73,32 +73,66 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
   assert.equal(calls.filter((c) => c.kind === 'agent').length, 1, 'the mini authors nothing, so it dispatches once')
 })
 
-test('architecture: triage, analysts, advisors, and the decider get the rulings — the challenge wave and the architecture maintainer do not', async () => {
-  const { calls } = await runWorkflowScript(path.join(WF, 'architecture.js'), {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, standingRulings: RULINGS },
+test('architecture: the survey, the coordinator, the writers and the reviewers get the rulings — the decider and the architecture maintainer do not', async () => {
+  const runner = (output) => ({ exitCode: 0, output })
+  const snapshot = { exists: true, digest: 'd', gitStatus: [], files: {} }
+  const { result, calls } = await runWorkflowScript(path.join(WF, 'architecture.js'), {
+    args: {
+      prd: { id: 'P1', path: '/vault/prds/p1.md' },
+      epic: { id: 'bd-E1' },
+      standingRulings: RULINGS,
+      depscore: { script: '/opt/plugin/scripts/portfolio/depscore.py', repo: '/r' },
+      artifacts: { dir: '/w/bd-E1', epicId: 'bd-E1', script: '/ops/artifactio.py', phase: 'architecture', inputs: [] },
+    },
     agentImpl: (call) => {
       const l = String(call.label)
-      if (l === 'triage:classify') {
-        // contested + high stakes so the challenge wave RUNS and can be asserted on
-        return { settled: false, rationale: 'open', relevantDecisions: [], dimensions: ['integration', 'bounded-context'], highStakes: true, reversalRisk: false }
+      if (l.startsWith('constraints:')) return runner(snapshot)
+      if (l === 'resume:read-saved') return runner({ saved: {}, surveyMd: false })
+      if (l === 'target:check-subject') return runner({ ok: false, refusals: ['no delta'], subjectRefusals: [] })
+      if (l.startsWith('rounds:gaps')) return runner({ ok: true, refusals: [], subjectRefusals: [] })
+      if (l === 'target:write') return runner({ command: 'arch-target', summary: { ok: true, refusals: [], subject: 'job-search', targetDir: '/opt/project/docs/architecture/target/job-search', deltaDir: '/opt/project/docs/architecture/target/job-search/delta', files: 2, deltaFiles: 1 } })
+      if (l === 'integrate:approve') return runner({ unreviewed: [], refused: [], failed: [], summary: { promoted: 1, unchanged: 0 } })
+      if (l === 'decide:record') return runner({ failed: [] })
+      if (l === 'survey:repositories') return { repositories: [{ name: 'svc', path: '/svc', role: 'service', lifecycle: 'active' }] }
+      if (l === 'survey:reality') return { subject: 'job-search', subjectReason: 'r', capabilities: [], openTargets: [], prdDefects: [], summary: 's' }
+      if (l === 'round1:coordinate') {
+        return {
+          readyForDecision: false,
+          reason: 'start',
+          dispatches: [
+            { agentType: 'integration-pattern-architect', role: 'proposer', task: 'design', files: ['05-building-block-view/README.md', 'delta/job-search.md'], answers: [] },
+            { agentType: 'architecture-pattern-challenger', role: 'reviewer', task: 'review', files: [], answers: [] },
+          ],
+        }
       }
-      if (l === 'proposals:frame') return { subDecisions: [], constraints: [], dispatch: 'd' }
-      if (l.startsWith('proposals:analysis-advisors')) return { contextMap: { contexts: [], relationships: [] } }
-      if (l.startsWith('proposals:')) return { lens: 'x', options: [{ name: 'o', approach: 'a', pros: [], cons: [] }], recommendation: 'o', contested: false }
-      if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
-      if (l.startsWith('decide:ruling')) return { admissible: true, ruling: 'r', chosenApproach: 'o', designOutcomes: [], resolvedChallenges: [], surfaces: [], blockingRules: [], ruleChallenges: [] }
-      if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
-      if (l === 'architecture:maintain') return { updatedSections: [], changedFiles: [], approvedFiles: [], summary: 's' }
+      if (l === 'round2:coordinate') return { readyForDecision: true, reason: 'done', dispatches: [] }
+      if (l === 'round1:proposer:integration-pattern-architect') {
+        return { files: ['05-building-block-view/README.md', 'delta/job-search.md'], claims: [{ claim: 'c', file: 'delta/job-search.md', citation: 'x' }], answers: [], prdDefects: [], summary: 's' }
+      }
+      if (l === 'round1:reviewer:architecture-pattern-challenger') {
+        return { findings: [{ claimId: 'C1.1.1', claim: 'c', file: 'delta/job-search.md', verdict: 'verified', evidence: 'e', owner: '' }], summary: 's' }
+      }
+      if (l.startsWith('decide:round')) return { round: 1, verdict: 'approve', diligence: [], returnTo: [], ownerConcerns: [], summary: 's' }
+      if (l === 'integrate:maintain') {
+        return { changedFiles: ['/opt/project/docs/architecture/arc42/05-building-block-view/README.md'], createdFiles: [], deletedFiles: [], viewsChecked: [], constraintIssues: [], contradictions: [], summary: 's' }
+      }
+      if (l.startsWith('integrate:review-')) {
+        return { conforms: true, reviewedFiles: ['/opt/project/docs/architecture/arc42/05-building-block-view/README.md'], findings: [], summary: 's' }
+      }
       return null
     },
     workflowImpl: () => null,
   })
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(result.subject, 'job-search')
   const has = (label) => agentCalls(calls, label)[0].prompt.includes(MARKER)
-  assert.ok(has('triage:classify'), 'triage classifies against the rulings')
-  assert.ok(has('proposals:integration/decomposition'), 'the lens analysts design under the rulings')
-  assert.ok(has('proposals:analysis-advisors'), 'the advisors analyze under the rulings')
-  assert.ok(has('decide:ruling'), 'the decider rules under the rulings')
-  assert.ok(!has('architecture:maintain'), 'the architecture maintainer integrates a ruling already made — not in the injection set')
+  assert.ok(has('survey:reality'), 'the survey is written under the rulings')
+  assert.ok(has('round1:coordinate'), 'the coordinator routes under the rulings')
+  assert.ok(has('round1:proposer:integration-pattern-architect'), 'a proposer designs under the rulings')
+  assert.ok(has('round1:reviewer:architecture-pattern-challenger'), 'a reviewer checks under the rulings')
+  const decider = calls.find((c) => c.kind === 'agent' && String(c.label).startsWith('decide:round'))
+  assert.ok(decider && !decider.prompt.includes(MARKER), 'the decider receives artifact paths only')
+  assert.ok(!has('integrate:maintain'), 'the architecture maintainer integrates an approved target — not in the injection set')
 })
 
 test('task-decomposition: the maker gets the rulings', async () => {

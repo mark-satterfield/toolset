@@ -16,10 +16,16 @@
     elaboration-finish   score an Epic and its Tasks; `--done` sets it done when beads holds
                          every Story, Task and edge the span's saved documents name
     elaboration-release  clear a run's owner token from an Epic
-    arch-approve         set `lifecycle_state: effective` on the architecture files an approved
-                         architecture step covers: every file it relies on, changes or creates;
-                         no `bd` call
+    arch-approve         set `lifecycle_state: effective` on the architecture files an
+                         integration changed or created that its conformance review covered;
+                         a file the review does not name stays as it is; no `bd` call
     arch-state           read the `lifecycle_state` of the architecture files a step relies on;
+                         no `bd` call
+    arch-constraints     fingerprint section 2 (the owner's constraints): each file's hash and
+                         the folder's git status; no `bd` call
+    arch-target          check an approved draft and write it to `target/<subject>/`, every view
+                         `in-review`; refuses a draft with no delta, a file in section 2, a view
+                         without catalog frontmatter, or a subject named for the Epic or PRD;
                          no `bd` call
     prd-parse            check that a PRD file has the structure elaboration reads: readable,
                          not superseded, an H1, requirement headings with acceptance criteria
@@ -75,6 +81,7 @@ from beadwrite import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from archstate import promote as approve_arch
+from archstate import snapshot_constraints, write_target
 from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
@@ -633,8 +640,13 @@ def build_parser() -> argparse.ArgumentParser:
     aap.add_argument(
         "--arch-files",
         required=True,
-        help="the architecture files the step relies on, and those it changed or "
-        "created, comma-separated",
+        help="the architecture files the integration changed or created, comma-separated",
+    )
+    aap.add_argument(
+        "--reviewed-files",
+        required=True,
+        help="the files the conformance review checked and found conforming, "
+        "comma-separated; only these are promoted",
     )
     aap.add_argument(
         "--arch-root",
@@ -642,6 +654,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="the architecture directory every `--arch-files` path must sit under",
     )
     _dry_run_flag(aap)
+
+    acs = sub.add_parser(
+        "arch-constraints",
+        help="fingerprint section 2 of the effective architecture; writes nothing, runs no "
+        "`bd` command",
+        parents=[common],
+    )
+    acs.add_argument(
+        "--arch-root", required=True, help="the architecture directory holding arc42/"
+    )
+
+    atg = sub.add_parser(
+        "arch-target",
+        help="check an approved draft and write it to target/<subject>/ as in-review; "
+        "runs no `bd` command",
+        parents=[common],
+    )
+    atg.add_argument("--draft", required=True, help="the draft target directory")
+    atg.add_argument(
+        "--arch-root", required=True, help="the architecture directory holding target/"
+    )
+    atg.add_argument(
+        "--subject", required=True, help="the subject the target describes"
+    )
+    atg.add_argument(
+        "--forbid",
+        default="",
+        help="names a subject never carries (the Epic, the PRD), comma-separated",
+    )
+    _dry_run_flag(atg)
 
     ast = sub.add_parser(
         "arch-state",
@@ -699,7 +741,19 @@ def run(args: argparse.Namespace) -> dict:
                 "wouldApprove": files,
                 "summary": {"dryRun": True, "files": len(files)},
             }
-        return head | approve_arch(files, arch_root=args.arch_root)
+        return head | approve_arch(
+            files, arch_root=args.arch_root, reviewed=split_ids(args.reviewed_files)
+        )
+    if command == "arch-constraints":
+        return head | snapshot_constraints(args.arch_root)
+    if command == "arch-target":
+        return head | write_target(
+            args.draft,
+            arch_root=args.arch_root,
+            subject=args.subject,
+            forbid=split_ids(args.forbid),
+            dry_run=args.dry_run,
+        )
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)
     if command == "prd-parse":
