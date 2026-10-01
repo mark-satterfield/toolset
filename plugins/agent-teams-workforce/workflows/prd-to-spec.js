@@ -1,14 +1,14 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository, and a placement in the control repository, a repository the steward refuses or one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
     { title: 'PRD Validation', detail: 'depscore.py prd-parse: the PRD file is readable, not superseded, has an H1, requirement headings with acceptance criteria under Requirements, and a Definition of Done; a failed check holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'the architecture mini writes the target and delta for the Epic and integrates the approved target into the effective version; an owner concern or PRD defect holds the Epic for the owner' },
-    { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes' },
+    { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes; the polyrepo-steward rules each span repository buildable and active, and a placement in the control repository or a refused repository holds the Epic' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD from the target and delta views' },
     { title: 'Spec Authoring', detail: 'per repo: detail each placed delta item against the code on main, then author the Spec for its add, modify and remove items and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose its add, modify and remove items into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
@@ -49,6 +49,9 @@ const epicRef = a.epic && typeof a.epic === 'object' ? a.epic : {}
 const epicBeadId = String(epicRef.id || epicRef.beadId || '').trim()
 const subjectId = a.prd.id || a.prd.path || epicRef.key || epicBeadId || null
 const emitTarget = a.beadsRepoPath || repoPath
+const normRepo = (p) => String(p || '').trim().replace(/\/+$/, '')
+/** The control repository: the one beads runs in. It is never a placement target. */
+const CONTROL_REPO = normRepo(emitTarget)
 
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
 const HUMAN_ACTION_STAGE = 'requires-human-action'
@@ -536,7 +539,86 @@ It prints one JSON object. Return the process exit code as \`exitCode\` and that
     log(`Repo Scoping: the saved placement does not place ${unplaced.join(', ')} of the delta; the span is ruled again`)
     return null
   }
+  if (CONTROL_REPO && r.placements.some((p) => p && normRepo(p.repoPath) === CONTROL_REPO)) {
+    log(`Repo Scoping: the saved placement places delta items in the control repository ${CONTROL_REPO}; the span is ruled again`)
+    return null
+  }
   return r
+}
+
+const PLACEMENT_CHECK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdicts'],
+  properties: {
+    verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['repoPath', 'buildable', 'active', 'controlRepository', 'reason'],
+        properties: {
+          repoPath: { type: 'string' },
+          buildable: { type: 'boolean' },
+          active: { type: 'boolean' },
+          controlRepository: { type: 'boolean' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+/**
+ * Asks the polyrepo-steward whether each span repository may hold placed work, and returns
+ * { refusals, verdicts } or { error }. A placement in the control repository is refused without
+ * asking; a repository the steward rules not buildable, not active or the control repository, or
+ * gives no verdict for, is refused.
+ */
+async function checkPlacements(placements) {
+  const byRepo = new Map()
+  for (const p of placements) {
+    const repo = normRepo(p && p.repoPath)
+    if (!repo) continue
+    const ids = Array.isArray(p.itemIds) ? p.itemIds.filter(hasText) : []
+    byRepo.set(repo, [...(byRepo.get(repo) || []), ...ids])
+  }
+  const itemText = (ids) => {
+    const known = new Map(deltaItems.map((i) => [i.id, i.element]))
+    return ids.map((id) => (known.has(id) ? `${id} ${known.get(id)}` : id)).join('; ') || 'no item named'
+  }
+  const refusals = []
+  for (const [repo, ids] of byRepo) {
+    if (CONTROL_REPO && repo === CONTROL_REPO) {
+      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: 'it is the control repository, which holds the pipeline and its tracker and is never a placement target' })
+    }
+  }
+  const asked = [...byRepo.keys()].filter((repo) => !refusals.some((r) => r.repoPath === repo))
+  if (!asked.length) return { refusals, verdicts: [] }
+  const got = await settleAgent(
+    `Rule, from your records of this project's repositories and the live repositories, whether each repository below may hold work the pipeline builds and deploys. Change nothing.
+
+${asked.map((repo) => `- ${repo}`).join('\n')}
+
+For each one return: repoPath (exactly as listed above); buildable (true when your records say it holds code the pipeline builds and deploys, false for a repository that holds only documentation, templates, the pipeline itself or nothing the pipeline builds); active (true when its lifecycle in your records is active, false when it is deprecated, archived, or not in your records); controlRepository (true when it is the project's control repository, the one that holds the pipeline and its tracker); and reason (the record that decides it, in a sentence).`,
+    { label: 'scope:check-placements', phase: 'Repo Scoping', agentType: 'agent-teams-workforce:polyrepo-steward', effort: 'low', schema: PLACEMENT_CHECK_SCHEMA }
+  )
+  if (!got) return { error: 'the polyrepo-steward returned no verdict on the span repositories' }
+  const verdicts = (Array.isArray(got.verdicts) ? got.verdicts : []).filter((v) => v && hasText(v.repoPath))
+  for (const repo of asked) {
+    const ids = byRepo.get(repo)
+    const v = verdicts.find((x) => normRepo(x.repoPath) === repo)
+    if (!v) {
+      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: 'the polyrepo-steward gave no verdict for it' })
+      continue
+    }
+    const faults = [
+      v.controlRepository === true ? 'it is the control repository' : '',
+      v.buildable !== true ? 'it is not a buildable repository' : '',
+      v.active !== true ? 'it is not an active repository' : '',
+    ].filter(Boolean)
+    if (faults.length) refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: `${faults.join(', ')} (the polyrepo-steward: ${String(v.reason || 'no reason given').trim()})` })
+  }
+  return { refusals, verdicts }
 }
 
 let runInputs = null
@@ -796,6 +878,22 @@ if (!scoping || scoping.ok === false) {
     ...(!scoping || scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (scoping && scoping.dispatchFailures) || [] } : {}),
   })
 }
+const placementCheck = await checkPlacements(Array.isArray(scoping.placements) ? scoping.placements : [])
+produced.placementCheck = placementCheck
+if (placementCheck.error) {
+  const died = dispatchDeaths('Repo Scoping')
+  return partial('repo-scoping', { reason: placementCheck.error, ...(died.length ? { dispatchFailed: true, dispatchFailures: died } : {}) })
+}
+if (placementCheck.refusals.length) {
+  const named = placementCheck.refusals.map((r) => `${r.repoPath}: ${r.reason}; delta items placed there: ${r.items}`)
+  return await holdForHuman(
+    'repo-scoping',
+    { reason: `the span names repositories that may not hold placed work — ${named.join(' | ')}`, refusals: placementCheck.refusals },
+    named.map((n) => `Delta items of ${epicBeadId} are placed in a repository that may not hold them. ${n}. Correct the polyrepo-steward's records of that repository, or place these items in a buildable, active repository.`),
+    "each refused placement has been resolved"
+  )
+}
+recRuled(`Placement check: the polyrepo-steward ruled ${placementCheck.verdicts.length} span repositor(ies) buildable and active.`)
 if (scoping.resumed === true) reuseFrom('repo-scoping', scopeSettled.scopeHit)
 await acceptPhase('repo-scoping', scoping.resumed === true ? 'reused' : 'passed')
 repos = Array.isArray(scoping.repos) ? scoping.repos : []

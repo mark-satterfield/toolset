@@ -168,7 +168,7 @@ async function composite(detailResult) {
   const seen = []
   let storyN = 0
   const { result, calls, logs } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, archPath: '/arch', ...ARTIFACT_ARGS },
+    args: { prd: { ...PRD }, repoPath: '/repo/control', epic: TEST_EPIC, archPath: '/arch', ...ARTIFACT_ARGS },
     workflowImpl: (call) => {
       seen.push(call)
       const name = String(call.name || '')

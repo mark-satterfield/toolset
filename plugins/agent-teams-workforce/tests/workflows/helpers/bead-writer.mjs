@@ -104,6 +104,10 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
     if (call.label === 'arch:delta') {
       return { exitCode: 0, output: { ok: true, refusals: [], items: deltaItems, summary: { ok: true, items: deltaItems.length } } }
     }
+    if (call.label === 'scope:check-placements') {
+      const repos = String(call.prompt || '').split('\n').filter((l) => /^- \//.test(l)).map((l) => l.slice(2).trim())
+      return { verdicts: repos.map((repoPath) => ({ repoPath, buildable: true, active: true, controlRepository: false, reason: 'an active service repository' })) }
+    }
     if (call.label === 'arch:target-remove') return { exitCode: 0, output: { ok: true, refusals: [], removed: true, commit: 'abc1234' } }
     if (call.label === 'epic:start') {
       return {
