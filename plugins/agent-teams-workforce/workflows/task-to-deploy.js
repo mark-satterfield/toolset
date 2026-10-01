@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
+    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed against its cds bundle with the cds plugin's tools/audit-app.py, has cds:audit-against-system rule the findings the script cannot rule on, sends violations back to Green once and stops with cds-audit when they remain (blocked-upstream when cds itself lacks what the UI needs), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
   phases: [
     { title: 'Workspace', detail: "establishes or reuses the Story's worktree every writing phase operates in" },
     { title: 'Infra Intent', detail: 'authors the provisioning intent for an infrastructure Task' },
@@ -9,6 +9,7 @@ export const meta = {
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Refactor' },
+    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its cds bundle and sends violations back to Green once" },
     { title: 'Documentation' },
     { title: 'Commit', detail: 'runs the suite a final time and commits the Task to the Story branch' },
     { title: 'Run Ledger', detail: 'writes the run journal on every exit path' },
@@ -21,6 +22,7 @@ export const meta = {
 //           cdsBundlePath?, cdsBuildSpecs? },
 //   infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json),
 //   spec?: object (defaults to bead), implementer?: string, worktreeRoot?: string,
+//   cdsRoot?: string (the cds plugin install; else the cds install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
 //   maxRedRounds?: number (default 4), maxGreenRounds?: number (default 8)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -40,6 +42,10 @@ const INFRA_LABELS = (Array.isArray(vocabulary.labels) ? vocabulary.labels : [])
 const beadLabels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm)
 const isInfra = INFRA_TYPES.includes(norm(bead.type)) || beadLabels.some((l) => INFRA_LABELS.includes(l))
 
+// A Task whose surfaces include web-ui is built with cds and audited against its cds bundle.
+const UI_SURFACE = 'web-ui'
+const isUiTask = (Array.isArray(bead.surfaces) ? bead.surfaces : []).map(norm).includes(UI_SURFACE)
+
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied' }
 if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
   return { ok: false, stage: 'input', error: 'no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json' }
@@ -48,6 +54,8 @@ if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
 const runLedger = []
 let runDetail = null
 let workspaceOut = null
+// The cds audit verdict, { verdict: pass | fail | blocked | error, findings, scriptVersion }, once the audit ran.
+let cdsVerdict = null
 
 // Logs the journal payload as `RUN-JOURNAL {json}`, or as `RUN-JOURNAL-PART i/n <chunk>` lines when
 // it exceeds JOURNAL_CHUNK characters; the host concatenates the parts and writes the journal file.
@@ -95,6 +103,7 @@ function handback(ok, stage, headline, detail) {
     headline: String(headline || ''),
     branch: (workspaceOut && workspaceOut.branch) || null,
     worktree: (workspaceOut && workspaceOut.repoPath) || null,
+    ...(cdsVerdict ? { cdsAudit: cdsVerdict } : {}),
   }
 }
 
@@ -174,6 +183,144 @@ Return its exit code as \`exitCode\` and everything it printed on stdout, verbat
   return missing.length ? { error: `the fingerprint names no hash for ${missing.join(', ')}` } : { files: got }
 }
 
+// ── cds audit: the cds plugin's tools/audit-app.py over the files the Task changed (uncommitted
+// against HEAD, untracked included: the Task commits only at the end), then a judgment session on
+// the findings the script cannot rule on ──
+const CDS_AUDIT_MAX_FINDINGS = 60
+const CDS_AUDIT_RUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
+}
+const CDS_JUDGMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['rulings'],
+  properties: {
+    rulings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['file', 'line', 'value', 'ruling', 'reason'],
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          value: { type: 'string' },
+          ruling: { type: 'string', enum: ['violation', 'allowed', 'cds-gap'] },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+// Resolves tools/audit-app.py (cdsRoot, else the cds install the plugin registry records for
+// $ATW_CONTROL_REPO, else the user-scope one) and runs it; its exit status is the script's.
+const RUN_CDS_AUDIT_PY = `import json, os, subprocess, sys
+from pathlib import Path
+repo, bundle, override, cap = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+script = Path(override, "tools", "audit-app.py") if override else None
+problem = f"{script} does not exist" if script and not script.is_file() else ""
+if script is None:
+    control = os.environ.get("ATW_CONTROL_REPO", "").strip()
+    config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
+    reg = Path(config) / "plugins" / "installed_plugins.json"
+    try:
+        plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
+    except (OSError, ValueError) as exc:
+        plugins, problem = {}, f"{reg} is unreadable: {exc}"
+    ranked = []
+    for key, entries in plugins.items():
+        if not key.startswith("cds@") or not isinstance(entries, list):
+            continue
+        for e in entries:
+            path = Path(str(e.get("installPath") or ""), "tools", "audit-app.py") if isinstance(e, dict) else None
+            if not path or not path.is_file():
+                continue
+            if e.get("scope") in ("local", "project") and control and os.path.normpath(str(e.get("projectPath") or "")) == os.path.normpath(control):
+                ranked.append((0, str(path)))
+            elif e.get("scope") == "user":
+                ranked.append((1, str(path)))
+    if ranked:
+        script = Path(sorted(ranked)[0][1])
+    elif not problem:
+        problem = f"{reg} lists no cds install shipping tools/audit-app.py at user scope or for $ATW_CONTROL_REPO"
+if problem:
+    print(json.dumps({"error": problem}))
+    sys.exit(2)
+done = subprocess.run([sys.executable, str(script), "--repo", repo, "--bundle", bundle], capture_output=True, text=True)
+try:
+    report = json.loads(done.stdout)
+except ValueError:
+    print(json.dumps({"error": (done.stdout + done.stderr).strip()[-2000:] or f"audit-app.py exited {done.returncode} and printed nothing"}))
+    sys.exit(2)
+findings = report.get("findings") or []
+if len(findings) > int(cap):
+    report["findings"], report["truncated"] = findings[: int(cap)], len(findings)
+print(json.dumps(report))
+sys.exit(done.returncode)`
+
+const findingText = (f) => `${f.file}:${f.line} ${f.rule} ${f.value}${f.reason ? ` (${f.reason})` : ''}`
+
+/** Runs the audit script over the Task's changes and rules its judgment findings; returns { error } or { report, violations, gaps, allowed, scriptVersion }. */
+async function auditCds(tree, bundle, label) {
+  let out = null
+  try {
+    out = await agent(
+      `Run exactly this one shell command, once, in the FOREGROUND, and change nothing else:
+
+python3 -c ${shq(RUN_CDS_AUDIT_PY)} ${shq(tree)} ${shq(bundle)} ${shq(String(a.cdsRoot || '').trim())} ${CDS_AUDIT_MAX_FINDINGS}
+
+It prints one JSON object on stdout and exits 0 (clean), 1 (findings) or 2 (it could not audit). Return the exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+      { label, phase: currentPhase || 'CDS Audit', model: 'haiku', effort: 'low', schema: CDS_AUDIT_RUN_SCHEMA }
+    )
+  } catch (err) {
+    return { error: String((err && err.message) || err).slice(0, 300) }
+  }
+  const report = (out && out.output) || {}
+  if (!out || ![0, 1].includes(out.exitCode) || report.error || !Array.isArray(report.findings)) {
+    return { error: String(report.error || `the cds audit did not run${out ? `: exit ${out.exitCode}` : ''}`).slice(0, 500), scriptVersion: report.scriptVersion || null }
+  }
+  const scriptVersion = String(report.scriptVersion || 'unknown')
+  const findings = report.findings.filter((f) => f && typeof f === 'object')
+  const violations = findings.filter((f) => f.ruling !== 'judgment')
+  const gaps = []
+  const allowed = []
+  const toJudge = findings.filter((f) => f.ruling === 'judgment')
+  if (toJudge.length) {
+    let judged = null
+    try {
+      judged = await agent(
+        `Use the Skill tool to load cds:audit-against-system, then rule on findings a deterministic cds audit could not rule on. They come from the files this Task changed in the work tree at ${tree}, audited against the cds bundle at ${bundle} (its stylesheet set is the only design system the app may use).
+
+Each finding is a class name the bundle's stylesheets do not name. Read the line in the file, the bundle's stylesheets and the audit-against-system skill, and rule each one:
+- violation: the class styles the UI outside cds (a utility class, a component class of the app's own, a value cds tokens cover) and the code must use the cds classes and tokens instead;
+- allowed: the class carries no styling (a behaviour or test hook, a third-party library's own class the cds bundle does not style);
+- cds-gap: the UI needs a component or style the cds bundle does not ship, so cds changes first and the app consumes the change.
+
+Findings, one per line (file:line rule value):
+${toJudge.map(findingText).join('\n')}
+
+Return one ruling per finding with its file, line and value as given, the ruling, and a one-sentence reason. Change no file.`,
+        { label: `${label}:judgment`, phase: currentPhase || 'CDS Audit', schema: CDS_JUDGMENT_SCHEMA }
+      )
+    } catch (err) {
+      return { error: `the judgment on ${toJudge.length} cds finding(s) threw: ${String((err && err.message) || err).slice(0, 300)}`, scriptVersion }
+    }
+    const rulings = list(judged && judged.rulings)
+    for (const f of toJudge) {
+      const r = rulings.find((x) => x && x.file === f.file && x.line === f.line && x.value === f.value)
+      const ruled = { ...f, ruling: r ? r.ruling : 'violation', reason: r ? r.reason : 'no ruling was returned for this finding' }
+      if (ruled.ruling === 'allowed') allowed.push(ruled)
+      else if (ruled.ruling === 'cds-gap') gaps.push(ruled)
+      else violations.push(ruled)
+    }
+  }
+  if (report.truncated) log(`cds audit: ${report.truncated} finding(s); the first ${CDS_AUDIT_MAX_FINDINGS} are ruled on`)
+  return { report, violations, gaps, allowed, scriptVersion }
+}
+
 let result
 try {
   result = await (async () => {
@@ -189,6 +336,13 @@ try {
         ...handback(false, 'input', `${bead.id} names no Story. A Task is built on its Story's branch and deploys with its Story, so it needs one: parent it to the Story of its repository.`),
         incompleteContract: ['story'],
         requiredHumanActions: [`parent ${bead.id} to the Story of its repository`],
+      }
+    }
+    if (isUiTask && !String(bead.cdsBundlePath || '').trim()) {
+      return {
+        ...handback(false, 'input', `${bead.id} builds web UI but its build contract names no cds bundle (cds_bundle_path), so it cannot be built with cds or audited against it. The bundle is resolved during elaboration from the cds design system paths.`),
+        incompleteContract: ['cdsBundlePath'],
+        requiredHumanActions: [`re-elaborate the Story of ${bead.id} with the cds design system paths set, or record the cds bundle on it as cds_bundle_path`],
       }
     }
 
@@ -487,6 +641,84 @@ try {
         return handback(false, stageOf('refactor', refactorRun), `refactor: the suite is red after restoring the pre-refactor snapshot ${snapshot}: ${(refactorRun && refactorRun.summary) || 'no result'}`, { refactor, restored, run: refactorRun })
       }
       log(`Refactor: the suite went red, so the tree was restored to ${snapshot}`)
+    }
+
+    // ── CDS Audit: a web-ui Task's changes against its cds bundle; violations go back to Green once ──
+    if (isUiTask) {
+      enterPhase('CDS Audit')
+      const bundle = contract.cdsBundlePath
+      const verdictOf = (audit) => ({
+        verdict: audit.violations.length ? 'fail' : audit.gaps.length ? 'blocked' : 'pass',
+        findings: audit.violations.length + audit.gaps.length,
+        scriptVersion: audit.scriptVersion,
+      })
+      const auditFailed = (audit, when) => {
+        cdsVerdict = { verdict: 'error', findings: 0, scriptVersion: audit.scriptVersion || null }
+        return handback(false, 'cds-audit', `cds-audit: the cds audit ${when} could not rule: ${audit.error}`, { cdsAudit: audit })
+      }
+      let audit = await auditCds(workRepoPath, bundle, 'cds-audit-1')
+      if (audit.error) return auditFailed(audit, 'after Refactor')
+      log(`CDS Audit: ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
+      if (audit.violations.length) {
+        const brief = `The cds audit found UI code that styles outside the cds design system. The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships, and add no stylesheet, inline style, color or length of your own. A finding the bundle cannot cover goes in upstreamMissing, naming the cds change it needs.
+Findings (file:line rule value):
+${audit.violations.map(findingText).join('\n')}`
+        runLedger.push({ phase: 'retry:green', round: 'cds-audit', whatChanged: `Green is given the ${audit.violations.length} cds audit violation(s) as its brief` })
+        enterPhase('Green')
+        const before = await fingerprint(workRepoPath, [...redFiles], 'cds-green:tests-before')
+        if (before.error) return handback(false, 'green', `green (cds audit): Red's test files could not be fingerprinted: ${before.error}`, {})
+        const g = await workflow('agent-teams-workforce:tdd-green', {
+          contract,
+          red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
+          implementer,
+          implementers: implementersOf(green),
+          feedback: brief,
+        })
+        if (g && g.ledger) runLedger.push(g.ledger)
+        if (!g || g.dispatchFailed) {
+          return handback(false, stageOf('green', g), `green (cds audit): ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g })
+        }
+        green = g
+        const after = await fingerprint(workRepoPath, Object.keys(before.files), 'cds-green:tests-after')
+        if (after.error) return handback(false, 'green', `green (cds audit): Red's test files could not be fingerprinted: ${after.error}`, { green: g })
+        const touched = Object.keys(before.files).filter((f) => before.files[f] !== after.files[f])
+        if (touched.length) {
+          return handback(false, 'green-modified-tests', `green-modified-tests: the cds audit Green round changed test files Red wrote: ${touched.join(', ')}`, { green: g, touchedTests: touched })
+        }
+        const upstream = list(g.upstreamMissing)
+        if (upstream.length) {
+          cdsVerdict = { verdict: 'blocked', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
+          return {
+            ...handback(false, 'blocked-upstream', `blocked-upstream: the cds audit violations cannot be fixed until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { green: g, cdsAudit: audit, upstreamMissing: upstream }),
+            upstreamMissing: upstream,
+            evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
+          }
+        }
+        const cdsRun = await runSuite('cds-green')
+        if (!validRun(cdsRun) || cdsRun.exitCode !== 0) {
+          cdsVerdict = { verdict: 'fail', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
+          return handback(false, stageOf('cds-audit', cdsRun), `cds-audit: the suite is not green after the Green round that fixed the cds audit violations: ${(cdsRun && (cdsRun.summary || `exit ${cdsRun.exitCode}`)) || 'no result'}`, { green: g, cdsAudit: audit, run: cdsRun })
+        }
+        enterPhase('CDS Audit')
+        audit = await auditCds(workRepoPath, bundle, 'cds-audit-2')
+        if (audit.error) return auditFailed(audit, 'after the Green round')
+        log(`CDS Audit (after Green): ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
+      }
+      cdsVerdict = verdictOf(audit)
+      if (audit.violations.length) {
+        return {
+          ...handback(false, 'cds-audit', `cds-audit: ${audit.violations.length} cds violation(s) remain after one Green round: ${audit.violations.slice(0, 5).map(findingText).join('; ')}`, { cdsAudit: audit }),
+          evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
+        }
+      }
+      if (audit.gaps.length) {
+        const upstream = audit.gaps.map((f) => ({ what: `cds: ${f.reason || f.value} (${f.file}:${f.line})` }))
+        return {
+          ...handback(false, 'blocked-upstream', `blocked-upstream: the UI needs what the cds bundle does not ship, so cds changes first: ${audit.gaps.map(findingText).join('; ')}`, { cdsAudit: audit, upstreamMissing: upstream }),
+          upstreamMissing: upstream,
+          evidence: audit.gaps.map(findingText).join('\n').slice(0, TAIL_CHARS),
+        }
+      }
     }
 
     enterPhase('Documentation')

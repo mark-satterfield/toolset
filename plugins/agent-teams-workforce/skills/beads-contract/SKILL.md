@@ -156,7 +156,9 @@ question skips a phase on a statement no one made. The exact literal, and only i
 Readiness verdict, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
 `ready_content_hash`. Scoring, written by `prd-to-spec` when it writes a Task and scores its
 Epic, and by the `wsjf-scoring` workflow, never by `task-ready`: `wsjf`,
-`wsjf_calculated_at` and the dimensions below. Build lane: `build_state`. Elaboration:
+`wsjf_calculated_at` and the dimensions below. Build lane: `build_state`; the cds audit verdict of a `web-ui` Task, from `task-to-deploy`'s
+`cdsAudit` result: `cds_audit_verdict` (`pass`, `fail`, `blocked` or `error`),
+`cds_audit_findings`, `cds_audit_script_version`. Elaboration:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
 `elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
 `elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its

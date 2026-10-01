@@ -176,6 +176,8 @@ Say it in plain language. The agent determines whether that is a change to *this
 
 `/cds:audit-against-system` checks a target (file, set of files, rendered URL, or pasted markup/CSS) against `compliance.md`, scoped by the rendering context you declare (app-embedded vs. standalone). Output is inline annotations or a structured report; each violation cites the relevant reference file. This skill IS the compliance gate — the composers run the same rule set before delivery.
 
+`tools/audit-app.py --repo <app repo> --bundle <hand-off bundle>` is the deterministic check on application code: it reads the bundle's `styles/` set as the inventory of classes and custom properties cds ships and reports, as JSON with file:line, rule and value, raw colors, raw px/rem/em values, inline `style=`, stylesheets and CSS-in-JS the bundle does not ship, custom properties it does not declare (or that the app overrides), review-harness classes, and class names its selectors do not name. Without `--files` it audits the files the work tree changed against HEAD. Exit 0 when clean, 1 with findings, 2 when it cannot audit. Unknown class names carry the ruling `judgment`: whether one is a styling-free hook, a third-party class or a component cds lacks is for `audit-against-system` to rule.
+
 ### Build UI directly in your app repo
 
 > "Create a modal that does x, y, and z." (said to an agent in your application repository)
