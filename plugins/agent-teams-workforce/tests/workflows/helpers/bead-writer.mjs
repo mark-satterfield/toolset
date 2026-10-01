@@ -28,6 +28,9 @@ export const ARTIFACT_ARGS = Object.freeze({ artifactScript: '/opt/sdlc/artifact
  */
 export const TEST_EPIC = Object.freeze({ id: 'bd-E1', key: 'E1', title: 'Test Epic' })
 
+/** The cds design system paths every prd-to-spec fixture passes. prd-to-spec refuses at its start without them. */
+export const TEST_DESIGN_SYSTEM = Object.freeze({ packagesDir: '/cds/packages', mocksDir: '/cds/mocks', shellsDir: '/cds/shells' })
+
 /** The delta items `depscore.py arch-delta` lists for the fixtures' approved target. */
 export const TEST_DELTA_ITEMS = Object.freeze([
   Object.freeze({ id: 'D1', element: 'auth-service', views: ['/arch/target/mfa/delta/05-building-block-view/mfa.md'] }),

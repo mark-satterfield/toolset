@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS, TEST_ARCHITECTURE } from './helpers/bead-writer.mjs'
+import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS, TEST_ARCHITECTURE, TEST_DESIGN_SYSTEM } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -122,7 +122,7 @@ const RULED = (repos) => ({
   creationFailures: [],
 })
 
-const ARGS = { prd: { ...PRD }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, archPath: '/arch', ...ARTIFACT_ARGS }
+const ARGS = { prd: { ...PRD }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, archPath: '/arch', designSystem: TEST_DESIGN_SYSTEM, ...ARTIFACT_ARGS }
 
 test('the composite rules the span from the delta and fans out over what it ruled', async () => {
   const ruled = ['/repos/alpha', '/repos/beta', '/repos/gamma']

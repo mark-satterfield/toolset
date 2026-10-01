@@ -212,6 +212,7 @@ The plugin knows nothing about the project it is installed in. Everything projec
 | `ATW_WORKTREE_ROOT` | The directory every agent-cut worktree is placed under | No — without it, a `.worktrees/` directory beside the repository | `worktreeRoot` on the build composites; read by the main-worktree hook |
 | `ATW_PRD_EPIC_SYNC` | Command that brings a PRD's Epic into line with the document: `<cmd> --only <slug> --apply` | No — without it, the PRD writer reports the slug needing sync | read by the `prd-writer` agent and skill |
 | `ATW_PRD_EPIC_VERIFY` | Command that checks one PRD against its Epic: `<cmd> <slug> [--apply]` | No | read by the `prd-writer` skill |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR`, `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`, `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` | The `cds` design system's hand-off bundle root, composed page mocks and composed Shells, as `cds:setup` defines them | Yes, for elaboration — `prd-to-spec` refuses without them | `designSystem.packagesDir`, `designSystem.mocksDir`, `designSystem.shellsDir` on `prd-to-spec`, which passes them to `prd-reconciliation` |
 | `ATW_BEADS_PORT` | The shared Dolt server port | No — `3308` | read by `skills/polyrepo-beads/scripts/*.sh` |
 
 ### Status

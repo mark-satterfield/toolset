@@ -263,6 +263,12 @@ if (!epicBeadId) {
 if (!hasText(emitTarget)) {
   return handback(false, 'epic-lifecycle', 'refused: no-tracker — no repository path was supplied, and beads cannot be written without one')
 }
+const DESIGN_SYSTEM_ENV = { packagesDir: 'CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR', mocksDir: 'CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR', shellsDir: 'CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR' }
+const designSystemArg = a.designSystem && typeof a.designSystem === 'object' ? a.designSystem : {}
+const missingDesignSystem = Object.keys(DESIGN_SYSTEM_ENV).filter((k) => !hasText(designSystemArg[k]))
+if (missingDesignSystem.length) {
+  return handback(false, 'epic-lifecycle', `refused: no-design-system — designSystem.${missingDesignSystem.join(', designSystem.')} has no value: the caller passes it from ${missingDesignSystem.map((k) => DESIGN_SYSTEM_ENV[k]).join(', ')}, which cds:setup defines`)
+}
 const startArgs = `elaboration-start --epic ${shellq(epicBeadId)}${hasText(a.owner) ? ` --owner ${shellq(a.owner)}` : ''}${a.reclaim === true ? ' --reclaim' : ''}`
 // pluginRoot comes from the Workflow args, else from the agent-teams-workforce install that
 // $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the beads repository or
@@ -952,7 +958,7 @@ function itemsPlacedIn(repo) {
   return deltaItems.filter((i) => ids.has(i.id))
 }
 /** Returns the prd-reconciliation arguments for one repository. */
-const DESIGN_SYSTEM = a.designSystem && typeof a.designSystem === 'object' ? a.designSystem : {}
+const DESIGN_SYSTEM = designSystemArg
 function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),

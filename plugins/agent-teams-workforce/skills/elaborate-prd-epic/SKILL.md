@@ -92,7 +92,10 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
   archPath:       "$ATW_ARCH_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
-  artifactScript: "$ATW_ARTIFACT_SCRIPT"
+  artifactScript: "$ATW_ARTIFACT_SCRIPT",
+  designSystem:   {packagesDir: "$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR",
+                   mocksDir:    "$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR",
+                   shellsDir:   "$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR"}
 }})
 ```
 
@@ -105,6 +108,11 @@ workflow script cannot read the environment itself. `ATW_ARCH_PATH` is required 
 architecture phase refuses without the architecture — so if it is unset, report
 `ATW_ARCH_PATH is unset` and stop. Omit either of the other two when its variable is unset, and name it in
 your report.
+
+`designSystem` is the cds design system the UI items are specified from: the three
+`CUSTOMIZABLE_DESIGN_SYSTEM_*` variables `cds:setup` defines, passed as expanded values. All
+three are required, with no default: `prd-to-spec` refuses without them. If one is unset, report
+`<variable> is unset` naming each unset one, and stop.
 
 Use `scriptPath`, never a bare `name` — name dispatch resolves against the
 session-start snapshot and the workflow dispatch guard refuses it.
