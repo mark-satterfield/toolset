@@ -19,8 +19,6 @@ import { isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS } from './helpe
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
-// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
-const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const WF = path.resolve(HERE, '..', '..', 'workflows')
 
 const MARKER = 'STANDING RULINGS FROM THE PROJECT OWNER'
@@ -75,9 +73,9 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
   assert.equal(calls.filter((c) => c.kind === 'agent').length, 1, 'the mini authors nothing, so it dispatches once')
 })
 
-test('architecture: triage, analysts, advisors, and the decider get the rulings — the challenge wave and SAD plumbing do not', async () => {
+test('architecture: triage, analysts, advisors, and the decider get the rulings — the challenge wave and the architecture maintainer do not', async () => {
   const { calls } = await runWorkflowScript(path.join(WF, 'architecture.js'), {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT, standingRulings: RULINGS },
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, standingRulings: RULINGS },
     agentImpl: (call) => {
       const l = String(call.label)
       if (l === 'triage:classify') {
@@ -90,8 +88,7 @@ test('architecture: triage, analysts, advisors, and the decider get the rulings 
       if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
       if (l.startsWith('decide:ruling')) return { admissible: true, ruling: 'r', chosenApproach: 'o', imposedConstraints: [], resolvedChallenges: [], surfaces: [], blockingRules: [], ruleChallenges: [] }
       if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
-      if (l === 'sad:maintain') return { updatedSections: [], changedFiles: [], summary: 's' }
-      if (l === 'sad:conformance') return { verdict: 'pass', findings: [] }
+      if (l === 'architecture:maintain') return { updatedSections: [], changedFiles: [], approvedFiles: [], summary: 's' }
       return null
     },
     workflowImpl: () => null,
@@ -101,7 +98,7 @@ test('architecture: triage, analysts, advisors, and the decider get the rulings 
   assert.ok(has('proposals:integration/decomposition'), 'the lens analysts design under the rulings')
   assert.ok(has('proposals:analysis-advisors'), 'the advisors analyze under the rulings')
   assert.ok(has('decide:ruling'), 'the decider rules under the rulings')
-  assert.ok(!has('sad:maintain'), 'the SAD maintainer consolidates a ruling already made — not in the injection set')
+  assert.ok(!has('architecture:maintain'), 'the architecture maintainer integrates a ruling already made — not in the injection set')
 })
 
 test('task-decomposition: the maker gets the rulings', async () => {

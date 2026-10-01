@@ -1,10 +1,9 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the arc42 SAD. Read-only extractor sessions pull SAD sections 2, 4 and 8 into a typed packet in concurrent shards (or a packet the caller supplies is reused), a filing-clerk session names the TRD file when the caller gives no path, then one trd-author session writes the TRD in one pass: PRD business requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD or SAD source and naming the design element it applies to. A SAD rule is stated only where the design has the thing it governs; a technical rule reaches the TRD from the SAD, never from the PRD.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the architecture. A filing-clerk session names the TRD file when the caller gives no path, then one trd-author session reads the owner\'s constraints in section 2 and the views of every element the PRD\'s design has, found through the catalog frontmatter, and writes the TRD in one pass: PRD business requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD requirement or the architecture file it comes from and naming the design element it applies to. An obligation is stated only where the design has the thing it governs; a technical rule reaches the TRD from the architecture, never from the PRD.',
   phases: [
-    { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
-    { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract, one pass' },
+    { title: 'Author TRD', detail: 'author the TRD from the PRD and the architecture views it touches, one pass' },
   ],
 }
 const dispatchFailures = []
@@ -32,12 +31,12 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },
-//   sad: { path?, sectionLayout? }, sadExtract?: { constraints, solutionStrategy, crosscuttingConcepts },
+//   sad: { path },
 //   trdPath?, repoPath?, feedback?, standingRulings?,
 //   architecture?: { decision?, decisionPath?, sadUpdate? } (the ruling this PRD's design rests on),
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? }
 // }
-// returns { ok, trdPath, filingPath, sadExtract, trd, decisionIds } or { ok: false, stage, reason, ... }
+// returns { ok, trdPath, filingPath, trd, decisionIds } or { ok: false, stage, reason, ... }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
 function artifactsFrom(x) {
@@ -77,8 +76,6 @@ END STANDING RULINGS
 `
   : ''
 
-const isExtract = (x) =>
-  !!x && typeof x === 'object' && ['constraints', 'solutionStrategy', 'crosscuttingConcepts'].every((k) => Array.isArray(x[k]))
 const prdContent = typeof prd.content === 'string' && prd.content.trim().length > 0
 const prdPath = typeof prd.path === 'string' && prd.path.startsWith('/') ? prd.path : ''
 if (!prdContent && !prdPath) {
@@ -86,264 +83,22 @@ if (!prdContent && !prdPath) {
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 const sadPathGiven = typeof sad.path === 'string' && sad.path.trim().startsWith('/')
-if (!sadPathGiven && !isExtract(a.sadExtract)) {
-  const why = 'no SAD supplied — sad.path is not an absolute path and no sadExtract was passed. Set ATW_SAD_PATH for the run, or pass sad.path.'
+if (!sadPathGiven) {
+  const why = 'no architecture supplied — sad.path is not an absolute path. Set ATW_SAD_PATH for the run, or pass sad.path.'
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
-const sadRef = sad.path || '(SAD path not provided)'
-const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-per-section)'
+const sadRef = sad.path.trim()
 
 const died = (...phases) => {
   const deaths = dispatchDeaths(...phases)
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
 }
 
-phase('Extract SAD')
-
-const suppliedExtract = isExtract(a.sadExtract) ? a.sadExtract : null
-if (suppliedExtract) log('SAD extract supplied by the caller — reused; the extractor is not dispatched')
-else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
-
-const SHARD_TARGET_BYTES = 175000
-const SHARD_MAX_FILES = 16
-const ASSUMED_BYTES = 20000
-
-const readingRule = `READING RULE: read EVERY file assigned to you below, IN FULL — an index, README or table of contents is never read in place of the files it lists. Do NOT read any file outside the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.`
-
-const feedSchema = () => ({
-  type: 'array',
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['id', 'statement', 'source', 'lifecycleState'],
-    properties: {
-      id: { type: 'string' },
-      statement: { type: 'string' },
-      source: { type: 'string' },
-      lifecycleState: { type: 'string' },
-    },
-  },
-})
-const extractSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
-  properties: {
-    constraints: feedSchema(),
-    solutionStrategy: feedSchema(),
-    crosscuttingConcepts: feedSchema(),
-    sadLocation: { type: 'string' },
-    notes: { type: 'string' },
-  },
-}
-
-function extractShardAgent(label, feeds, entries) {
-  const files = entries.map((e) => e.path)
-  return settleAgent(
-    `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
-
-SAD location: ${sadRef}
-SAD layout: ${sadLayout}
-
-YOUR ASSIGNMENT — these arc42 sections and no others:
-${feeds.map((f) => `- ${f.title}`).join('\n')}
-
-FILES ASSIGNED TO YOU (${files.length}) — read every one of them in full:
-${files.map((f) => `- ${f}`).join('\n')}
-
-${readingRule}
-
-Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays.
-
-For every entry: set its ID, capture the verbatim-grounded statement, note its source location (file:section/anchor) starting with the file's absolute path, and set \`lifecycleState\` to the \`lifecycle_state\` value in the YAML frontmatter of the file that holds it, copied exactly (an empty string when the file has none). If an assigned section is absent from your files, return it as an empty array.
-
-THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked tag such as \`C-apigw-construct\`, \`S-…\`, \`X-uniform-zero-egress\` or \`AD-…\`; that tag, character for character, is the entry's ID. Only an entry with no tag gets a made-up ID: \`<file name without .md>--<kebab-case of the nearest heading>\`, with \`-2\`, \`-3\` appended in document order when one heading holds several untagged entries.
-Return every entry your files state; never consolidate, trim or omit an entry.`,
-    {
-      label,
-      phase: 'Extract SAD',
-      effort: 'low',
-      agentType: 'agent-teams-workforce:sad-source-extractor',
-      schema: extractSchema,
-    }
-  )
-}
-
-/** Packs inventory entries, in order, into shards of at most SHARD_MAX_FILES files and about SHARD_TARGET_BYTES bytes. */
-function shardFiles(entries) {
-  const shards = []
-  let current = []
-  let bytes = 0
-  for (const e of entries) {
-    const size = Number.isFinite(e.bytes) && e.bytes > 0 ? e.bytes : ASSUMED_BYTES
-    if (current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)) {
-      shards.push(current)
-      current = []
-      bytes = 0
-    }
-    current.push(e)
-    bytes += size
-  }
-  if (current.length) shards.push(current)
-  return shards
-}
-
-const fileList = (x) =>
-  (Array.isArray(x) ? x : [])
-    .map((e) => (typeof e === 'string' ? { path: e } : e))
-    .filter((e) => e && typeof e.path === 'string' && e.path.trim())
-    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
-
-let sadExtract = suppliedExtract
-let unreadSadFiles = suppliedExtract && Array.isArray(suppliedExtract.unreadSadFiles) ? suppliedExtract.unreadSadFiles : []
-
-if (!sadExtract) {
-  const inventory = await settleAgent(
-    `You are READ-ONLY and you are taking an INVENTORY, not an extract. Do not extract any content, do not summarize anything, and change no file.
-
-SAD location (read here, and only here — it is not inside the product repository ${repo}): ${sadRef}
-SAD layout: ${sadLayout}
-
-Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes read with \`stat\` (\`stat -f '%z' <file>\` on macOS, \`stat -c '%s' <file>\` on Linux):
-- Section 2 — Constraints
-- Section 4 — Solution Strategy
-- Section 8 — Crosscutting Concepts
-
-A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD. If a section has no files, return it as an empty array.`,
-    {
-      label: 'inventory:sad',
-      phase: 'Extract SAD',
-      effort: 'low',
-      agentType: 'agent-teams-workforce:sad-source-extractor',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['constraintsFiles', 'solutionStrategyFiles', 'crosscuttingFiles'],
-        properties: {
-          constraintsFiles: { $ref: '#/$defs/files' },
-          solutionStrategyFiles: { $ref: '#/$defs/files' },
-          crosscuttingFiles: { $ref: '#/$defs/files' },
-          sadLocation: { type: 'string' },
-          layout: { type: 'string' },
-          notes: { type: 'string' },
-        },
-        $defs: {
-          files: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['path'],
-              properties: { path: { type: 'string' }, bytes: { type: 'number' } },
-            },
-          },
-        },
-      },
-    }
-  )
-  if (!inventory) {
-    return {
-      ok: false,
-      stage: 'extract',
-      reason: 'the SAD inventory session returned nothing, so the SAD was not extracted and no TRD was authored.',
-      ...died('Extract SAD'),
-    }
-  }
-
-  const coreEntries = []
-  for (const e of [...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)]) {
-    if (!coreEntries.some((c) => c.path === e.path)) coreEntries.push(e)
-  }
-  const crossShards = shardFiles(fileList(inventory.crosscuttingFiles))
-  const jobs = []
-  if (coreEntries.length) {
-    jobs.push({
-      label: 'extract:sad-core',
-      feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
-      entries: coreEntries,
-    })
-  }
-  crossShards.forEach((entries, i) => {
-    jobs.push({
-      label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
-      feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
-      entries,
-    })
-  })
-  log(`SAD inventory: §2+§4 = ${coreEntries.length} file(s); §8 in ${crossShards.length} shard(s)`)
-
-  const outs = await parallel(jobs.map((j) => () => extractShardAgent(j.label, j.feeds, j.entries)))
-  const merged = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
-  const seen = { constraints: new Set(), solutionStrategy: new Set(), crosscuttingConcepts: new Set() }
-  const notes = []
-  jobs.forEach((job, jobIndex) => {
-    const out = outs[jobIndex]
-    if (!out) {
-      unreadSadFiles.push(...job.entries.map((e) => e.path))
-      return
-    }
-    if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${job.label}] ${out.notes.trim()}`)
-    for (const feed of job.feeds) {
-      const entries = Array.isArray(out[feed.key]) ? out[feed.key] : []
-      entries.forEach((entry, entryIndex) => {
-        if (!entry || typeof entry !== 'object') return
-        let id = typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : `${job.label}-${entryIndex}`
-        let n = 2
-        while (seen[feed.key].has(id)) id = `${id.replace(/#\d+$/, '')}#${n++}`
-        seen[feed.key].add(id)
-        merged[feed.key].push({ id, statement: String(entry.statement || ''), source: String(entry.source || ''), lifecycleState: String(entry.lifecycleState || '').trim() })
-      })
-    }
-  })
-  if (unreadSadFiles.length) log(`SAD extraction: ${unreadSadFiles.length} file(s) not extracted — the author reads them directly`)
-  sadExtract = {
-    ...merged,
-    sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadRef,
-    notes: notes.join('\n'),
-    unreadSadFiles,
-  }
-  log(
-    `SAD extracted: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ` +
-      `${merged.crosscuttingConcepts.length} crosscutting concept(s) from ${jobs.length} shard(s)`
-  )
-}
-
-const stateOf = (e) => (e && typeof e.lifecycleState === 'string' && e.lifecycleState.trim()) || 'state not extracted'
-const renderFeed = (title, entries) =>
-  `${title} (${entries.length}):\n` +
-  (entries.length ? entries.map((e) => `- [${e.id}] (${stateOf(e)}) ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
-const INDEX_SNIPPET_CHARS = 40
-/** Renders §8 entries as an id index grouped by source file. */
-function crosscuttingIndex(entries, sadHome) {
-  const byFile = new Map()
-  for (const e of Array.isArray(entries) ? entries : []) {
-    if (!e || typeof e !== 'object') continue
-    const m = String(e.source || '').trim().match(/^\/[^\s:#]+/)
-    const f = m ? m[0] : ''
-    if (!byFile.has(f)) byFile.set(f, [])
-    byFile.get(f).push(e)
-  }
-  const snip = (t) => {
-    const x = String(t || '').replace(/\s+/g, ' ').trim()
-    return x.length > INDEX_SNIPPET_CHARS ? `${x.slice(0, INDEX_SNIPPET_CHARS)}…` : x
-  }
-  const groups = [...byFile.entries()].map(
-    ([f, es]) =>
-      `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`} (${stateOf(es[0])})\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
-  )
-  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it, with that file's \`lifecycle_state\`.
-READ IN FULL, in the SAD file it is listed under, every entry this TRD touches before you rely on it.
-${groups.join('\n') || '- (the SAD states none)'}`
-}
-
-const extractText = [
-  `SAD location: ${sadExtract.sadLocation || sadRef}`,
-  ...(sadExtract.notes ? [`Extractor notes: ${sadExtract.notes}`] : []),
-  renderFeed('§2 Constraints', sadExtract.constraints),
-  renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
-  crosscuttingIndex(sadExtract.crosscuttingConcepts, sadExtract.sadLocation || sadRef),
-  ...(unreadSadFiles.length ? [`SAD files not extracted above — read them in full yourself:\n${unreadSadFiles.map((f) => `- ${f}`).join('\n')}`] : []),
-].join('\n\n')
+const archText = `THE ARCHITECTURE is at ${sadRef}. It is not inside the product repository ${repo}.
+- The \`02-architecture-constraints\` section holds the owner's constraints. Read its README.md in full.
+- The \`04-solution-strategy\` section holds the enterprise-level strategy. Read its README.md.
+- Every other section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. For each element this PRD's design has — each service, store, API, event, data flow and boundary — find the views that show it by searching that frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them in full. The views in the \`08-crosscutting-concepts\` section describe patterns used across services; read every one whose concept applies to an element the design has.
+- Open targets in the \`target/\` folder beside the arc42 folder that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
 const prdText = prdContent
   ? prd.content
   : `PRD ${prd.id || ''}${prd.title ? `: ${prd.title}` : ''}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you author anything; every requirement in it is in scope.`
@@ -352,7 +107,7 @@ const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const ruling = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
 const rulingBlock = ruling
   ? `\nArchitecture ruling this PRD's design rests on:\n${JSON.stringify({ decision: ruling.decision, sadUpdate: ruling.sadUpdate }, null, 2)}${hasText(ruling.decisionPath) ? `\nThe ruling itself is the document at ${ruling.decisionPath}. Read it.` : ''}\n`
-  : '\nNo architecture ruling was made for this PRD: the design is the one the PRD and the SAD already imply.\n'
+  : '\nNo architecture ruling was made for this PRD: the design is the one the PRD and the architecture already imply.\n'
 const feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
 phase('Author TRD')
@@ -402,17 +157,17 @@ WHAT THIS DOCUMENT IS FOR. The TRD is the single point at which the obligations 
 
 THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 
-1. PRD BUSINESS REQUIREMENTS THAT NEED TECHNICAL ELABORATION. One PRD requirement may need several technical requirements, and several may be answered by one. A PRD line that states a rule about how the system is built is not a business requirement and is not a source: a technical rule reaches the TRD only from the SAD, under the condition below.
+1. PRD BUSINESS REQUIREMENTS THAT NEED TECHNICAL ELABORATION. One PRD requirement may need several technical requirements, and several may be answered by one. A PRD line that states a rule about how the system is built is not a business requirement and is not a source: a technical rule reaches the TRD only from the architecture, under the condition below.
 
-2. THE OBLIGATIONS THE ARCHITECTURE IMPOSES, WHICH NO PRD WOULD EVER STATE. These have NO PRD parent. System uptime, latency, maintainability, security, failover, disaster recovery, specific infrastructure and CDK instructions, and observability: this system uses EVENTS as its observability mechanism, so if this PRD results in a service being built, the TRD says WHICH EVENTS that service must emit. The same class covers throughput and latency budgets, data modelling, API contracts, encryption, retention and auth protocols, and monitoring and alerting. The SAD is the authority on what belongs.
+2. THE OBLIGATIONS THE ARCHITECTURE IMPOSES, WHICH NO PRD WOULD EVER STATE. These have NO PRD parent. System uptime, latency, maintainability, security, failover, disaster recovery, specific infrastructure and CDK instructions, and observability: this system uses EVENTS as its observability mechanism, so if this PRD results in a service being built, the TRD says WHICH EVENTS that service must emit. The same class covers throughput and latency budgets, data modelling, API contracts, encryption, retention and auth protocols, and monitoring and alerting. The architecture is the authority on what belongs.
 
-The SAD extract below gives §2 and §4 in full and §8 as an INDEX. Open in full every §8 entry whose obligation could apply to anything this PRD builds — each service, store, API, event, data flow and boundary — and ask what it demands.
+Read the architecture as the block below says, and for every view you read ask what it demands of anything this PRD builds.
 
-A SAD RULE BINDS ONLY WHAT THE DESIGN HAS. A SAD rule about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where this PRD's design — the PRD and the architecture ruling below — has that thing, and the requirement names it: "the design has bucket <name>, so <name> is versioned and SSE-S3 encrypted [C-…]". A design with no bucket carries no bucket rule, and a rule is never a reason to add the thing it governs: things are added by the design, where things of one kind are shared whenever the design allows. Set \`appliesTo\` on every requirement to the design element it governs, named as the design names it (for a PRD elaboration, the service, store or interface that satisfies it).
+AN OBLIGATION BINDS ONLY WHAT THE DESIGN HAS. An obligation about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where this PRD's design — the PRD and the architecture ruling below — has that thing, and the requirement names it: "the design has bucket <name>, so <name> is versioned and SSE-S3 encrypted [<view path>]". A design with no bucket carries no bucket obligation, and an obligation is never a reason to add the thing it governs: things are added by the design, where things of one kind are shared whenever the design allows. Set \`appliesTo\` on every requirement to the design element it governs, named as the design names it (for a PRD elaboration, the service, store or interface that satisfies it).
 
-APPROVED SAD ENTRIES ARE SETTLED. \`lifecycle_state: effective\` is the approved state: an entry whose file reads it has been vetted and approved. Use it as given and cite it; never re-decide, reinterpret or narrow it. Only an entry in any other state is open to review: before a requirement rests on one, check it against the PRD and the architecture ruling below, and name each such entry you rely on in your \`summary\`. The state shown beside each entry in the extract is its file's \`lifecycle_state\`; for an entry you open, read that field in the file.
+APPROVED FILES ARE SETTLED. \`lifecycle_state: effective\` is the approved state: a file that reads it has been reviewed and approved. Use it as given and cite it; do not re-decide, reinterpret or narrow it. A file in any other state is open to review: before a requirement rests on one, check it against the PRD and the architecture ruling below, and name each such file you rely on in your \`summary\`. Read the field in every file you open.
 
-CITE THE SAD; DO NOT RESTATE IT. A requirement that names the obligation and cites the SAD entry that defines it is complete and is the preferred shape. Where the SAD already settles a point a PRD requirement raises, cite that decision. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
+CITE THE ARCHITECTURE; DO NOT RESTATE IT. A requirement that names the obligation and cites the view that describes it is complete and is the preferred shape. Where the architecture already settles a point a PRD requirement raises, cite that view. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
 
 ${writeBrief}
 PRD (source of product requirements):
@@ -420,15 +175,14 @@ ${prdText}
 ${rulingBlock}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
-SAD extract (cite each entry by the id in brackets):
-${extractText}
+${archText}
 ${feedback ? `\nFeedback on the previous version from the gate — address every point:\n${feedback}` : ''}
 
-Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design element it applies to, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR a SAD entry (in \`sadRefs\`); a SAD-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the SAD.
+Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design element it applies to, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR an architecture view (in \`sadRefs\`); an architecture-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the architecture.
 
-Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every SAD entry a requirement rests on in \`sadRefs\`.
+Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every view a requirement rests on in \`sadRefs\`.
 
-CITE THE DECISIONS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at the top of the TRD with \`decisionIds:\` listing every SAD entry id any requirement depends on, and on each requirement the ids it depends on. Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S-…\`, \`X-…\`, \`AD-…\`); never invent or paraphrase one, and never cite a section number in place of one.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
+CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at the top of the TRD with \`decisionIds:\` listing every view any requirement depends on, and on each requirement the views it depends on. Cite a view by its path relative to the arc42 folder, with \`#<heading>\` when the requirement rests on one part of it (for example \`08-crosscutting-concepts/<concept>.md#<heading>\`); cite only files you read, and never a section number in place of one.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
   {
     label: 'author:trd',
     phase: 'Author TRD',
@@ -463,7 +217,7 @@ CITE THE DECISIONS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter a
     },
   }
 )
-if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract, ...died('Author TRD') }
+if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', ...died('Author TRD') }
 const resultPath = ART ? authorPath : trd.trdPath || trdPath
 if (typeof resultPath === 'string' && resultPath.startsWith('/')) trd.trdPath = resultPath
 
@@ -471,7 +225,6 @@ return {
   ok: true,
   trdPath: resultPath,
   filingPath,
-  sadExtract,
   trd,
   decisionIds: [...new Set([
     ...(Array.isArray(trd.decisionIds) ? trd.decisionIds : []),

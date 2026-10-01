@@ -1,13 +1,12 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). lifecycle_state is per document: an entry in an effective document is used as given and never re-decided; an entry in any other state is best-effort evidence the decider reviews and approves as it stands, updates or replaces. Triage rules the question settled only when every SAD document it relies on is effective. The decider names every entry the ruling relies on (reliedOn); a reviewFiles document the caller names and the ruling omits gets one more decider pass naming it, and a second omission fails the run with omittedFiles; returns approvedFiles, the SAD files holding them, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
+    'Leaf mini — turns an architecture question into a ruled decision integrated into the effective architecture. The sessions read the architecture themselves: the constraints in section 2, and the views of the elements the question touches, found through the catalog frontmatter. It takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the architecture-maintainer integrate the ruling into every view that shows a changed element, writing nothing in section 2 (resuming once when the first pass returns nothing). lifecycle_state is per document: an entry in an effective document is used as given and never re-decided; an entry in any other state is best-effort evidence the decider reviews and approves as it stands, updates or replaces. Triage rules the question settled only when every SAD document it relies on is effective. The decider names every entry the ruling relies on (reliedOn); a reviewFiles document the caller names and the ruling omits gets one more decider pass naming it, and a second omission fails the run with omittedFiles; returns approvedFiles, the SAD files holding them, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
   phases: [
-    { title: 'Extract SAD', detail: 'inventory the SAD files holding §2/§4/§8 and extract them in concurrent shards' },
     { title: 'Triage', detail: 'classify the decision and select the analysis dimensions, unless the caller supplied them' },
     { title: 'Proposals', detail: 'the selected analysts propose options concurrently; skipped when triage rules the question settled' },
     { title: 'Decide', detail: 'the architecture-decider rules on the proposals, or by citing the SAD when the question is settled, and names every SAD entry the ruling relies on: effective ones used as given, the others reviewed and approved as they stand or changed' },
-    { title: 'Update SAD', detail: 'the sad-maintainer writes the ruling into §2/§4/§8' },
+    { title: 'Update SAD', detail: 'the architecture-maintainer integrates the ruling into every view that shows a changed element' },
   ],
 }
 
@@ -33,7 +32,7 @@ function died(phaseName) {
     : {}
 }
 
-// args: { decision: { id?, title, context, drivers?, repoPath? }, sadPath, sadExtract?, feedback?,
+// args: { decision: { id?, title, context, drivers?, repoPath? }, sadPath, feedback?,
 //   dimensions?, forceFullPanel?, standingRulings?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -156,256 +155,22 @@ const TRIAGE_SCHEMA = {
   },
 }
 
-phase('Extract SAD')
-
-const isExtract = (x) =>
-  !!x && typeof x === 'object' && ['constraints', 'solutionStrategy', 'crosscuttingConcepts'].every((k) => Array.isArray(x[k]))
-
-const SHARD_TARGET_BYTES = 175000
-const SHARD_MAX_FILES = 16
-const ASSUMED_BYTES = 20000
-
-const readingRule = `READING RULE (binding): read EVERY file assigned to you below, IN FULL. Do NOT read any file outside the SAD, and do not survey the product repository or any other repository for architecture content. A section the SAD does not state comes back empty; it is never reconstructed from code.`
-
-const sadWhere = `SAD location (read here, and only here): ${sadPath}
-This path is NOT inside the product repository this decision is about. Do not look for the SAD under ${repo}.`
-
-const feedSchema = () => ({
-  type: 'array',
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['id', 'statement', 'source', 'lifecycleState'],
-    properties: { id: { type: 'string' }, statement: { type: 'string' }, source: { type: 'string' }, lifecycleState: { type: 'string' } },
-  },
-})
-const extractSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
-  properties: {
-    constraints: feedSchema(),
-    solutionStrategy: feedSchema(),
-    crosscuttingConcepts: feedSchema(),
-    sadLocation: { type: 'string' },
-    notes: { type: 'string' },
-  },
-}
-
-function extractShard(label, feeds, files) {
-  return run(
-    `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for an architecture decision. Do NOT author anything, do NOT change any file, and invent NOTHING the SAD does not state.
-
-${sadWhere}
-
-YOUR ASSIGNMENT — these arc42 sections and no others:
-${feeds.map((f) => `- ${f.title}`).join('\n')}
-
-FILES ASSIGNED TO YOU (${files.length}) — read every one of them in full:
-${files.map((f) => `- ${f}`).join('\n')}
-
-${readingRule}
-
-Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays.
-
-For every entry: set its ID, capture the verbatim-grounded statement, note its source location (file:section/anchor) starting with the file's absolute path, and set \`lifecycleState\` to the \`lifecycle_state\` value in the YAML frontmatter of the file that holds it, copied exactly (an empty string when the file has none). If an assigned section is absent from your files, return it as an empty array.
-
-THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked tag such as \`C-apigw-construct\`, \`S-…\`, \`X-uniform-zero-egress\` or \`AD-…\`; that tag, character for character, is the entry's ID. Only an entry with no tag gets a made-up ID, and then it is \`<file name without .md>--<kebab-case of the nearest heading>\`, with \`-2\`, \`-3\` appended in document order when one heading holds several untagged entries.
-Return every entry your files state; never consolidate, trim or omit an entry.`,
-    { label, phase: 'Extract SAD', effort: 'low', agentType: 'agent-teams-workforce:sad-source-extractor', schema: extractSchema }
-  )
-}
-
-function shardFiles(entries) {
-  const shards = []
-  let current = []
-  let bytes = 0
-  for (const e of entries) {
-    const size = e.bytes > 0 ? e.bytes : ASSUMED_BYTES
-    if (current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)) {
-      shards.push(current)
-      current = []
-      bytes = 0
-    }
-    current.push(e)
-    bytes += size
-  }
-  if (current.length) shards.push(current)
-  return shards
-}
-
-const fileList = (x) =>
-  (Array.isArray(x) ? x : [])
-    .map((e) => (typeof e === 'string' ? { path: e } : e))
-    .filter((e) => e && typeof e.path === 'string' && e.path.trim())
-    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
-
-let sadExtract = isExtract(a.sadExtract) ? a.sadExtract : null
-let crossFiles = []
-
-if (!sadExtract) {
-  const inventory = await run(
-    `You are READ-ONLY and you are taking an INVENTORY, not an extract. Do not extract any content and change no file.
-
-${sadWhere}
-
-Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes read with \`stat\` (\`stat -f '%z' <file>\` on macOS, \`stat -c '%s' <file>\` on Linux):
-- Section 2 — Constraints
-- Section 4 — Solution Strategy
-- Section 8 — Crosscutting Concepts
-
-A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD. If a section has no files, return it as an empty array.`,
-    {
-      label: 'inventory:sad',
-      phase: 'Extract SAD',
-      effort: 'low',
-      agentType: 'agent-teams-workforce:sad-source-extractor',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['constraintsFiles', 'solutionStrategyFiles', 'crosscuttingFiles'],
-        properties: {
-          constraintsFiles: { $ref: '#/$defs/files' },
-          solutionStrategyFiles: { $ref: '#/$defs/files' },
-          crosscuttingFiles: { $ref: '#/$defs/files' },
-          sadLocation: { type: 'string' },
-          layout: { type: 'string' },
-          notes: { type: 'string' },
-        },
-        $defs: {
-          files: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['path'],
-              properties: { path: { type: 'string' }, bytes: { type: 'number' } },
-            },
-          },
-        },
-      },
-    }
-  )
-  if (!inventory) {
-    const why = `the SAD inventory at ${sadPath} returned nothing, so no extraction was attempted and nothing was ruled.`
-    return { ok: false, stage: 'extract', error: why, reason: why, ...died('Extract SAD') }
-  }
-
-  const coreEntries = []
-  for (const e of [...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)]) {
-    if (!coreEntries.some((c) => c.path === e.path)) coreEntries.push(e)
-  }
-  const crossEntries = fileList(inventory.crosscuttingFiles)
-  crossFiles = crossEntries.map((e) => e.path)
-  const crossShards = shardFiles(crossEntries)
-  log(`SAD inventory: §2+§4 = ${coreEntries.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
-
-  const jobs = []
-  if (coreEntries.length) {
-    jobs.push({
-      label: 'extract:sad-core',
-      feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
-      entries: coreEntries,
-    })
-  }
-  crossShards.forEach((entries, i) => {
-    jobs.push({
-      label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
-      feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
-      entries,
-    })
-  })
-
-  const outs = await parallel(jobs.map((j) => () => extractShard(j.label, j.feeds, j.entries.map((e) => e.path))))
-  const merged = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
-  const notes = []
-  jobs.forEach((job, i) => {
-    const out = outs[i]
-    if (!out) {
-      log(`${job.label}: returned nothing — ${job.entries.length} SAD file(s) not extracted: ${job.entries.map((e) => e.path).join(', ')}`)
-      return
-    }
-    if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${job.label}] ${out.notes.trim()}`)
-    for (const feed of job.feeds) {
-      for (const entry of Array.isArray(out[feed.key]) ? out[feed.key] : []) {
-        if (!entry || typeof entry !== 'object') continue
-        merged[feed.key].push({
-          id: String(entry.id || ''),
-          statement: String(entry.statement || ''),
-          source: String(entry.source || ''),
-          lifecycleState: String(entry.lifecycleState || '').trim(),
-        })
-      }
-    }
-  })
-  sadExtract = {
-    ...merged,
-    sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadPath,
-    notes: notes.join('\n'),
-  }
-  log(
-    `SAD extracted: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ` +
-      `${merged.crosscuttingConcepts.length} crosscutting concept(s) from ${jobs.length} batch(es)`
-  )
-}
-
-const sadHome = sadExtract.sadLocation || sadPath
+const sadHome = sadPath
 const APPROVED_STATE = 'effective'
-const stateOf = (e) => (e && typeof e.lifecycleState === 'string' && e.lifecycleState.trim()) || 'state not extracted'
-const APPROVAL_RULE = `\`lifecycle_state\` IS PER DOCUMENT. A file whose frontmatter reads \`${APPROVED_STATE}\` has itself been reviewed and approved: its entries are used as given and never re-decided. That says nothing about any other file. A file in any other state (\`in-review\`, \`draft\`) is not yet trusted: its entries are best-effort evidence, may well be correct, and are reviewed before anything rests on them. The state shown beside each entry is its file's \`lifecycle_state\`; for an entry you open, read that field in the file.`
-const renderFeed = (title, entries) =>
-  `${title} (${entries.length}):\n` +
-  (entries.length ? entries.map((e) => `- [${e.id}] (${stateOf(e)}) ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
+const APPROVAL_RULE = `\`lifecycle_state\` IS PER FILE. A file whose frontmatter reads \`${APPROVED_STATE}\` has itself been reviewed and approved: its content is used as given and never re-decided. That says nothing about any other file. A file in any other state (\`in-review\`) is not yet trusted: its content is input to check, may well be correct, and is reviewed before anything rests on it. Read the field in every file you open.`
 
-const sourceFile = (e) => {
-  const m = String((e && e.source) || '').trim().match(/^\/[^\s:#]+/)
-  return m ? m[0] : ''
-}
+const ARCH_WHERE = `THE ARCHITECTURE AS IT STANDS is at ${sadHome}. It is not inside the product repository ${repo}; do not look for it there.
+- The \`02-architecture-constraints\` section holds the owner's constraints. Read its README.md in full.
+- The \`04-solution-strategy\` section holds the enterprise-level strategy. Read its README.md.
+- Every other section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. Find the views of every element this decision touches by searching it (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope the element appears in, and read those views in full.
+- Open targets in the \`target/\` folder beside the arc42 folder that show the same elements are designs in progress; read them, so this decision does not contradict them.
+- Cite what you rely on by the file's absolute path and the heading inside it.`
 
-function crosscuttingIndex(entries) {
-  const byFile = new Map()
-  for (const e of Array.isArray(entries) ? entries : []) {
-    if (!e || typeof e !== 'object') continue
-    const f = sourceFile(e)
-    if (!byFile.has(f)) byFile.set(f, [])
-    byFile.get(f).push(e)
-  }
-  const snip = (t) => {
-    const x = String(t || '').replace(/\s+/g, ' ').trim()
-    return x.length > 40 ? `${x.slice(0, 40)}…` : x
-  }
-  const groups = [...byFile.entries()].map(
-    ([f, es]) => `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`} (${stateOf(es[0])})\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
-  )
-  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it, with that file's \`lifecycle_state\`.
-READ IN FULL every entry this question touches before you rely on it or rule past it: grep the file it is listed under for its id.
-${groups.join('\n') || '- (the SAD states none)'}`
-}
+const sadBlock = `${ARCH_WHERE}
+${APPROVAL_RULE}`
 
-const sadBlock = `THE ARCHITECTURE AS IT STANDS — the arc42 SAD source feed, extracted for this run from ${sadHome}: §2 and §4 in full, §8 as an index.
-This is the document your work is ruled against and written back into. Cite entries by the id in brackets.
-${APPROVAL_RULE}
-${sadExtract.notes ? `Extractor notes: ${sadExtract.notes}\n` : ''}
-${renderFeed('§2 Constraints', sadExtract.constraints)}
-
-${renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy)}
-
-${crosscuttingIndex(sadExtract.crosscuttingConcepts)}`
-
-if (!crossFiles.length) {
-  for (const e of sadExtract.crosscuttingConcepts || []) {
-    const f = sourceFile(e)
-    if (f && !crossFiles.includes(f)) crossFiles.push(f)
-  }
-}
-const analystSadBlock = `THE ARCHITECTURE AS IT STANDS — §2 Constraints and §4 Solution Strategy of the arc42 SAD, extracted for this run from ${sadHome}. Cite entries by the id in brackets.
-${APPROVAL_RULE} Your options take every approved entry as given; an entry in any other state is open, and an option may keep, refine or replace it.
-${renderFeed('§2 Constraints', sadExtract.constraints)}
-
-${renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy)}
-
-§8 Crosscutting Concepts holds ${sadExtract.crosscuttingConcepts.length} entries and is NOT printed here. Grep these files for the subjects of this decision, read only the entries your searches hit, and cite each entry you rely on by the backticked tag that opens it:
-${crossFiles.length ? crossFiles.map((f) => `- ${f}`).join('\n') : `- the §8 Crosscutting Concepts section under ${sadPath}`}`
+const analystSadBlock = `${ARCH_WHERE}
+${APPROVAL_RULE} Your options take every effective file as given; content in any other state is open, and an option may keep, refine or replace it.`
 
 phase('Triage')
 
@@ -427,13 +192,8 @@ ${decisionHeader}`,
   const picked = triage && Array.isArray(triage.dimensions) ? triage.dimensions.filter((x) => ALL_DIMENSIONS.includes(x)) : []
   if (picked.length) activeDimensions = picked
 }
-const extractState = new Map()
-for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrategy || []), ...(sadExtract.crosscuttingConcepts || [])]) {
-  const f = sourceFile(e)
-  if (f && typeof e.lifecycleState === 'string') extractState.set(f, e.lifecycleState.trim())
-}
 const triageRelied = triage && Array.isArray(triage.reliedOn) ? triage.reliedOn.filter((r) => r && typeof r.file === 'string' && r.file.trim()) : []
-const unsettledBy = triageRelied.filter((r) => String(r.state || '').trim() !== APPROVED_STATE || (extractState.has(r.file.trim()) && extractState.get(r.file.trim()) !== APPROVED_STATE))
+const unsettledBy = triageRelied.filter((r) => String(r.state || '').trim() !== APPROVED_STATE)
 if (triage && triage.settled === true && (!triageRelied.length || unsettledBy.length)) {
   triage.settled = false
   triage.rationale = `${triage.rationale || ''} — not settled: ${triageRelied.length ? `it relies on SAD file(s) not at ${APPROVED_STATE}: ${unsettledBy.map((r) => r.file).join(', ')}` : 'triage named no SAD file it relies on'}`
@@ -448,8 +208,8 @@ if (settled) {
 }
 
 const SURVEY_BOUND = `READING BUDGET — this is a bounded proposal, not a codebase audit.
-Your inputs are the framing above and the SAD printed with it — §2 Constraints and §4 Solution Strategy whole, and the §8 Crosscutting Concepts files to search for your lens. Reason from it first, and cite the entries you rely on by their id. The SAD lives in a different repository from the product repo named above.
-Beyond your §8 searches, open files ONLY to resolve a specific question the framing leaves unanswered. Do not survey the repository and do not enumerate services or repositories. Roughly ten tool calls is the expected shape.
+Your inputs are the framing above and the architecture it points to: section 2's constraints, and the views of the elements this decision touches, found through the catalog. Reason from them first, and cite the files you rely on by path. The architecture lives in a different repository from the product repo named above.
+Beyond those views, open files ONLY to resolve a specific question the framing leaves unanswered. Do not survey the repository and do not enumerate services or repositories. Roughly ten tool calls is the expected shape.
 
 Return at most 3 options with honest tradeoffs. Keep every tradeoff, failure mode and assumption under 30 words.`
 
@@ -617,15 +377,15 @@ const DECISION_SCHEMA = {
   },
 }
 
-const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architecture given the evidence below. You do not analyze and you do not write the SAD.
+const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architecture given the evidence below. You do not analyze and you do not write the architecture.
 
-YOU HAVE THE SAD. Its source feed is below — §2 and §4 in full, and §8 as an index of every entry with where to read it. Your ruling is written back into those sections and becomes effective architecture, so rule AGAINST what they already state: an option that contradicts a standing entry in review is either wrong or is a deliberate supersession you must say you are making, naming the entry id. Open the §8 entries this ruling touches; do not survey the rest of the SAD.
+YOU HAVE THE ARCHITECTURE. Where it is, and how to find the views this ruling touches, is below. Your ruling is integrated into those views and becomes effective architecture, so rule AGAINST what they already show: an option that differs from an effective view states its reason and evidence, and you name the view it changes. Read the views of the elements this ruling touches; do not survey the rest.
 
 EFFECTIVE DOCUMENTS ARE USED AS GIVEN; EVERY OTHER DOCUMENT THIS RULING RELIES ON, YOU REVIEW.
 - \`lifecycle_state\` is per document. An entry whose file reads \`${APPROVED_STATE}\` is approved: rule with it as given (disposition \`used-as-given\`); this ruling never re-decides it. Where the PRD cannot be served without changing one, record a ruleChallenge naming it.
 - An entry whose file is in any other state (\`in-review\`, \`draft\`) is not yet trusted, but it is evidence, not something to discard, and it may already be right. Every such entry this ruling relies on, you review, reading it in full, against AWS best practice, the AWS Well-Architected Framework and price (use the AWS MCP Server documentation tools where the entry names an AWS service): approve it as it stands (disposition \`approved\`), or update or replace it in the ruling (disposition \`changed\`). "It already answers the PRD" is a reason to approve it, never a reason to leave it unreviewed.
-- List in \`reliedOn\` EVERY SAD entry this ruling relies on, in any state, with its id, the absolute path of the SAD file that holds it, and its disposition. This list is the record of the architecture the PRD rests on.
-- Once the SAD is written, every SAD file in \`reliedOn\` and every file the ruling changes or creates is set to \`lifecycle_state: ${APPROVED_STATE}\`.
+- List in \`reliedOn\` EVERY part of the architecture this ruling relies on, in any state, with its id (the heading of the part relied on), the absolute path of the file that holds it, and its disposition. This list is the record of the architecture the PRD rests on.
+- Once the ruling is integrated, every file in \`reliedOn\` and every file the ruling changes or creates is set to \`lifecycle_state: ${APPROVED_STATE}\`.
 
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
@@ -640,7 +400,7 @@ YOUR AUTHORITY, AND ITS LIMITS:
 
 ACCOUNT FOR EVERY SECURITY AND DATA-ISOLATION FINDING raised in the evidence, item by item: MITIGATED, with the mitigation stated as an entry in imposedConstraints; ACCEPTED RESIDUAL, with the remaining mitigations and the rationale stated as an entry in imposedConstraints; or OUT OF SCOPE, naming the requirement that owns it.
 
-EVERY POINT ENDS RULED, OUT OF SCOPE (naming the requirement that owns it), or BLOCKING (admissible=false). Never write "referred", "to be determined", "pending" or "open question": your ruling is written into the SAD, which holds decided current state only. A rule challenge goes in ruleChallenges, never into the ruling, the chosen approach or the imposed constraints.`
+EVERY POINT ENDS RULED, OUT OF SCOPE (naming the requirement that owns it), or BLOCKING (admissible=false). Never write "referred", "to be determined", "pending" or "open question": your ruling is integrated into the architecture, which holds the current design only. A rule challenge goes in ruleChallenges, never into the ruling, the chosen approach or the imposed constraints.`
 
 const decisionPrompt = (brief) => `${rulingsBlock}${DECIDER_CHARTER}
 
@@ -648,7 +408,7 @@ ${decisionHeader}
 
 ${sadBlock}
 
-${evidenceBlock}${brief}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every SAD entry it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`
+${evidenceBlock}${brief}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every part of the architecture it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`
 let decision = await run(decisionPrompt(''), { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA })
 
 const sadParts = String(sadHome || '').split('/').filter(Boolean)
@@ -660,16 +420,11 @@ const sadKey = (f) => {
   return cut.length > 1 ? cut.pop() : p
 }
 const reviewFiles = Array.isArray(a.reviewFiles) ? [...new Set(a.reviewFiles.filter((f) => typeof f === 'string' && f.trim()).map((f) => f.trim()))] : []
-const idFile = new Map()
-for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrategy || []), ...(sadExtract.crosscuttingConcepts || [])]) {
-  const f = sourceFile(e)
-  if (e && e.id && f && !idFile.has(e.id)) idFile.set(e.id, f)
-}
 const omittedBy = (dec) => {
   const got = new Set(
     (dec && Array.isArray(dec.reliedOn) ? dec.reliedOn : [])
       .filter((x) => x && typeof x === 'object')
-      .map((x) => sadKey(idFile.get(String(x.id || '').trim()) || (typeof x.file === 'string' && x.file) || ''))
+      .map((x) => sadKey((typeof x.file === 'string' && x.file) || ''))
   )
   return reviewFiles.filter((f) => !got.has(sadKey(f)))
 }
@@ -688,7 +443,7 @@ Review each one in full: approve its entries as they stand, or update or replace
 }
 
 if (!decision) {
-  return { ok: false, stage: 'decide', error: 'the architecture-decider returned nothing', ...died('Decide'), proposals, sadExtract }
+  return { ok: false, stage: 'decide', error: 'the architecture-decider returned nothing', ...died('Decide'), proposals }
 }
 
 const admissible = decision.admissible === true
@@ -696,7 +451,7 @@ const stillOmitted = admissible ? omittedBy(decision) : []
 if (stillOmitted.length) {
   const why = `the ruling did not review ${stillOmitted.length} relied-on SAD document(s) that are not effective: ${stillOmitted.join(', ')}`
   log(`Decide: ${why}`)
-  return { ok: false, stage: 'decide', reason: why, error: why, omittedFiles: stillOmitted, panelDimensions: activeDimensions, sadExtract, proposals, decision }
+  return { ok: false, stage: 'decide', reason: why, error: why, omittedFiles: stillOmitted, panelDimensions: activeDimensions, proposals, decision }
 }
 const ruleChallenges = decision.ruleChallenges || []
 const decisionName = d.id || d.title
@@ -722,7 +477,6 @@ if (!admissible) {
     blockingRules: decision.blockingRules || [],
     ruleChallenges,
     panelDimensions: activeDimensions,
-    sadExtract,
     proposals,
     decision,
   }
@@ -730,16 +484,11 @@ if (!admissible) {
 
 phase('Update SAD')
 
-const entryFiles = new Map()
-for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrategy || []), ...(sadExtract.crosscuttingConcepts || [])]) {
-  const f = sourceFile(e)
-  if (e && e.id && f && !entryFiles.has(e.id)) entryFiles.set(e.id, f)
-}
 const reliedOn = (Array.isArray(decision.reliedOn) ? decision.reliedOn : [])
   .filter((x) => x && typeof x === 'object')
-  .map((x) => ({ ...x, file: entryFiles.get(String(x.id || '').trim()) || (typeof x.file === 'string' && x.file.trim().startsWith('/') ? x.file.trim() : '') }))
+  .map((x) => ({ ...x, file: typeof x.file === 'string' && x.file.trim().startsWith('/') ? x.file.trim() : '' }))
 const approvedFiles = [...new Set(reliedOn.map((x) => x.file).filter(Boolean))]
-log(`Decide: the ruling relies on ${reliedOn.length} SAD entr(ies) in ${approvedFiles.length} file(s)`)
+log(`Decide: the ruling relies on ${reliedOn.length} part(s) of the architecture in ${approvedFiles.length} file(s)`)
 
 const SAD_UPDATE_SCHEMA = {
   type: 'object',
@@ -760,102 +509,74 @@ const SAD_UPDATE_SCHEMA = {
         properties: { rule: { type: 'string' }, where: { type: 'string' }, collision: { type: 'string' } },
       },
     },
-    entryTags: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['tag', 'section', 'disposition'],
-        properties: {
-          tag: { type: 'string' },
-          section: { type: 'integer' },
-          disposition: { type: 'string', enum: ['minted', 'preserved', 'superseded'] },
-          statement: { type: 'string' },
-          supersededBy: { type: 'string' },
-        },
-      },
-    },
   },
 }
 
-const SAD_TAG_BRIEF = `
-TAG EVERY §2/§4/§8 ENTRY YOU WRITE, AND NEVER RECYCLE A TAG.
-- Every entry in §2 Constraints, §4 Solution Strategy and §8 Crosscutting Concepts carries an explicit tag at the head of the entry in the form this SAD already uses (\`C-…\` for a constraint, \`S-…\` for a solution-strategy entry, \`X-…\` for a crosscutting concept, \`AD-…\` for a decision recorded in §9). Short, kebab-case, descriptive of the FACT.
-- An entry that already has a tag KEEPS it, whatever you do to its wording.
-- A tag is NEVER reused for a different fact. When this ruling overturns an entry, leave that entry's tag attached to the superseded statement, mark it superseded by the new tag, and mint a NEW tag for the replacement.
-- Report every tag you minted, preserved or superseded under \`entryTags\`.`
-
 const priorPassRefs = [
-  ART ? `the file ${ART.dir}/sad-update.json, when it exists — the report an earlier pass wrote, whose \`entryTags\` and \`changedFiles\` name its entries` : '',
-  ART ? `\`derived_from\` provenance and entries naming ${ART.epicId}` : '',
-  d.id ? `entries naming decision ${d.id}` : '',
+  ART ? `the file ${ART.dir}/sad-update.json, when it exists — the report an earlier pass wrote, whose \`changedFiles\` name the views it changed` : '',
+  `\`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath}`,
 ].filter(Boolean)
 const PRIOR_PASS_BRIEF = `
-AN EARLIER PASS OF THIS SAME RULING MAY ALREADY BE IN THE SAD. Before you write, look for its entries: ${priorPassRefs.length ? priorPassRefs.join('; ') : 'entries whose provenance names this decision'}. Grep for those tags; do not read the SAD end to end.
-- An entry an earlier pass of this Epic wrote is THIS ruling's own draft. UPDATE IT IN PLACE under its existing tag and report it as \`preserved\`. Never append a second entry for the same fact under a new tag.
-- If the ruling now decides a DIFFERENT fact than such an entry states, rewrite that entry to the new fact under a NEW tag and delete the old tag from the document. Report the old tag as \`superseded\`, with \`supersededBy\` naming the new one.
-- Entries from OTHER Epics' rulings follow the ordinary tag rules above.`
+AN EARLIER PASS OF THIS SAME RULING MAY ALREADY BE IN THE ARCHITECTURE. Before you write, look for its changes: ${priorPassRefs.join('; ')}.
+- A view an earlier pass of this ruling changed or added is this ruling's own draft. Update it in place; do not add a second view or passage for the same element, because two descriptions of one element contradict each other as soon as either changes.
+- Content from other rulings is integrated architecture like any other.`
 
-const SAD_SAVE_WHAT = 'your complete structured result (updatedSections, changedFiles, approvedFiles, entryTags, openItems, summary — exactly as you return them) as ONE JSON object'
+const SAD_SAVE_WHAT = 'your complete structured result (updatedSections, changedFiles, approvedFiles, openItems, summary — exactly as you return them) as ONE JSON object'
 const APPROVED_FILES_BRIEF = `
-THE RULING RELIES ON THESE SAD FILES; EACH IS APPROVED ONCE THE SAD IS WRITTEN. Return this list, exactly as written, as \`approvedFiles\`:
+THE RULING RELIES ON THESE ARCHITECTURE FILES; EACH IS APPROVED ONCE THE RULING IS INTEGRATED. Return this list, exactly as written, as \`approvedFiles\`:
 ${approvedFiles.length ? approvedFiles.map((f) => `- ${f}`).join('\n') : '- (none: return an empty list)'}
-Leave the \`lifecycle_state\` frontmatter field of every SAD file as you find it: the run sets it on the files this ruling covers after you return.`
-const SAD_SAVE_OPTS = { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes' }
+Leave the \`lifecycle_state\` frontmatter field of every file as you find it: the run sets it on the files this ruling covers after you return.`
+const SAD_SAVE_OPTS = { extraInputs: 'the absolute path of EVERY architecture file changed, created or deleted, each in single quotes' }
 const rulingLines = `Ruling: ${decision.ruling}
 Chosen approach: ${decision.chosenApproach || '(not stated separately — see the ruling)'}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 Resolved challenges: ${(decision.resolvedChallenges || []).join('; ') || 'none'}`
+const SECTION_2_RULE = `Write nothing under \`02-architecture-constraints/\`: section 2 holds the owner's constraints, and only the owner changes them. A constraint you believe should change goes in \`openItems\`, with the constraint, the conflicting content and the reason.`
 
 let sadUpdate = await run(
-  `You are the sad-maintainer. Consolidate the ruling below into the living arc42 SAD, editing ONLY the source-feed sections it touches: §2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts. Keep those sections mutually consistent. Edit the living document in place — no changelog narrative. SAD location: ${sadPath}.
+  `You are the architecture-maintainer. Integrate the ruling below into the effective architecture at ${sadPath}. For each element the ruling adds, changes or removes, find every view that shows it through the catalog (the \`subject\` and \`shows\` frontmatter of each view), at every scope it appears in, and update or delete each one; where the ruling adds an element no view shows, add a view in the section folder the architecture documentation model names, named for its subject, with its catalog frontmatter. Keep every touched view's \`view_type\`, \`scope\`, \`subject\` and \`shows\` true to what it now shows. Edit in place — no changelog narrative, and no content the ruling supersedes left beside the new.
+${SECTION_2_RULE}
 
-SWEEP EVERY CLAIM YOU CHANGE. The sweep set is the entries this ruling MINTS, REWORDS or SUPERSEDES, plus the other SAD statements (including index/summary rows) that restate or cite one of them. Find those with one targeted grep per changed claim, on the old value and on the subject, and correct every hit that restates it. Do not touch entries outside that set.
+READING BUDGET. Open and edit ONLY the views the catalog lists for the elements this ruling changes, and the views that link to them. Do not read the architecture end to end and do not print whole files.
 
-READING BUDGET. Open and edit ONLY the sections this ruling touches and the hits your greps return. Do not read the SAD end to end and do not print whole files.
+A COLLISION WITH OLDER CONTENT this ruling does not own is reported under \`collisions\`, naming the older content and where it lives — never written into the architecture.
 
-A COLLISION WITH OLDER CONTENT this ruling does not own is reported under \`collisions\`, naming the older rule and where it lives — never written into the SAD.
-
-THE SAD HOLDS NO OPEN ITEMS. Never write into it an open question, an unresolved marker, a required action, a rule challenge, a referral, a "pending" or "TBD", or anything addressed to the owner. Everything still open goes in \`openItems\` in your result.
+THE ARCHITECTURE HOLDS NO OPEN ITEMS. Never write into it an open question, an unresolved marker, a required action, a rule challenge, a referral, a "pending" or "TBD", or anything addressed to the owner. Everything still open goes in \`openItems\` in your result.
 
 Never label the adopted option with a bare proposal letter; write its descriptive name.
-${SAD_TAG_BRIEF}
 ${PRIOR_PASS_BRIEF}
 ${APPROVED_FILES_BRIEF}
 
-If a \`derived_from\` entry asserts a state this ruling overturns, append a supersession marker naming this decision to that entry.
-
 ${rulingLines}
 
-Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
-  { label: 'sad:maintain', effort: 'medium', phase: 'Update SAD', agentType: 'sad-maintainer', schema: SAD_UPDATE_SCHEMA }
+Deliver: which sections you changed, the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
+  { label: 'architecture:maintain', effort: 'medium', phase: 'Update SAD', agentType: 'architecture-maintainer', schema: SAD_UPDATE_SCHEMA }
 )
 if (!sadUpdate) {
   sadUpdate = await run(
-    `You are the sad-maintainer, RESUMING an interrupted pass. A previous sad-maintainer session consolidated the ruling below into the living arc42 SAD at ${sadPath} but ended before it returned its result. Its edits are already in the working tree.
+    `You are the architecture-maintainer, RESUMING an interrupted pass. A previous architecture-maintainer session integrated the ruling below into the effective architecture at ${sadPath} but ended before it returned its result. Its edits are already in the working tree.
 
-Do NOT start over and do NOT re-read the whole SAD. Run \`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath} to see what was changed, open only the changed files you need, finish any changed claim the previous pass left inconsistent (targeted grep only), and return. Keep §2/§4/§8 mutually consistent; no changelog narrative.
-${SAD_TAG_BRIEF}
+Do NOT start over and do NOT re-read the whole architecture. Run \`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath} to see what was changed, open only the changed files you need, finish any view the previous pass left inconsistent with the ruling or with the other views of the same element, and return. No changelog narrative.
+${SECTION_2_RULE}
 ${PRIOR_PASS_BRIEF}
 ${APPROVED_FILES_BRIEF}
 
 ${rulingLines}
 
-Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
-    { label: 'sad:maintain-resume', effort: 'medium', phase: 'Update SAD', agentType: 'sad-maintainer', schema: SAD_UPDATE_SCHEMA }
+Deliver: which sections were changed (by either pass), the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
+    { label: 'architecture:maintain-resume', effort: 'medium', phase: 'Update SAD', agentType: 'architecture-maintainer', schema: SAD_UPDATE_SCHEMA }
   )
 }
 
 return {
   ok: !!sadUpdate,
-  ...(sadUpdate ? {} : { stage: 'update-sad', error: 'the sad-maintainer returned no result', ...died('Update SAD') }),
+  ...(sadUpdate ? {} : { stage: 'update-sad', error: 'the architecture-maintainer returned no result', ...died('Update SAD') }),
   admissible,
   ruleChallenges,
   ...(humanActions.length ? { requiredHumanActions: humanActions } : {}),
   openItems: sadUpdate && Array.isArray(sadUpdate.openItems) ? sadUpdate.openItems : [],
   decisionRef: d.id || null,
   panelDimensions: activeDimensions,
-  sadExtract,
   proposals,
   tradeoffs: proposals.map((p) => ({ lens: p.lens, recommendation: p.recommendation, options: p.options })),
   contextMap,
@@ -863,7 +584,6 @@ return {
   decision,
   decisionPath: ART ? `${ART.dir}/architecture-decision.md` : null,
   sadUpdate,
-  entryTags: sadUpdate && Array.isArray(sadUpdate.entryTags) ? sadUpdate.entryTags : [],
   reliedOn,
   approvedFiles,
 }
