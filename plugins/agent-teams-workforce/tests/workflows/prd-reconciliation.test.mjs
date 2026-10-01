@@ -47,9 +47,11 @@ function detailAgents({ items, uiAuthority }) {
   }
 }
 
+const DESIGN_SYSTEM = { packagesDir: '/design/packages', mocksDir: '/design/pages', shellsDir: '/design/shells' }
+
 async function detail(scripted, args = {}) {
   return runWorkflowScript(reconciliation, {
-    args: { prd: PRD, repos: ['/repo/auth'], items: ITEMS, delta: DELTA, ...args },
+    args: { prd: PRD, repos: ['/repo/auth'], items: ITEMS, delta: DELTA, ...DESIGN_SYSTEM, ...args },
     agentImpl: detailAgents(scripted),
   })
 }
@@ -88,12 +90,15 @@ test('an unrecognised status fails the run naming the item, rather than being co
   assert.match(result.reason, /D1: status "conforms" is not one of add, modify, remove, done, planned-elsewhere/)
 })
 
-test('a status with no file:line fails the run; planned-elsewhere names its bead instead', async () => {
+test('a status with no file:line fails the run; planned-elsewhere also names its bead', async () => {
   const { result } = await detail({ items: [item('D1', 'add', { evidence: ['looked around'] }), item('D2', 'planned-elsewhere', { evidence: [] })] })
   assert.equal(result.ok, false)
   assert.match(result.reason, /D1: add cites no file:line/)
+  assert.match(result.reason, /D2: planned-elsewhere cites no file:line/)
   assert.match(result.reason, /D2: planned-elsewhere names no bead in plannedBy/)
-  const ok = await detail({ items: [item('D1', 'done'), item('D2', 'planned-elsewhere', { evidence: [], plannedBy: 'ssbd-abc' })] })
+  const noCite = await detail({ items: [item('D1', 'done'), item('D2', 'planned-elsewhere', { evidence: [], plannedBy: 'ssbd-abc' })] })
+  assert.equal(noCite.result.ok, false, 'a bead alone is not a citation')
+  const ok = await detail({ items: [item('D1', 'done'), item('D2', 'planned-elsewhere', { plannedBy: 'ssbd-abc' })] })
   assert.equal(ok.result.ok, true)
 })
 
@@ -119,7 +124,7 @@ test('the resolved cds bundle travels with the detailing so spec authoring can r
   })
   assert.equal(result.uiAuthority.bundlePath, '/repo/auth/design-mocks/packages/batch-20260819T191805Z')
   assert.deepEqual(result.uiAuthority.artifactsConsulted, ['views/settings-profile/spec/build-spec.md'])
-  assert.equal(result.uiAuthority.mocksDir, '/repo/auth/design-mocks', 'the mocks directory is derived from the repo when not stated')
+  assert.equal(result.uiAuthority.mocksDir, '/design/pages', 'the mocks directory is the one the caller supplied')
 })
 
 test('the detailing is pointed at the hand-off bundle FIRST and the loose mocks second', async () => {
@@ -127,7 +132,8 @@ test('the detailing is pointed at the hand-off bundle FIRST and the loose mocks 
   const [checker] = agentCalls(calls, LABEL)
   assert.match(checker.prompt, /HAND-OFF BUNDLE/)
   assert.match(checker.prompt, /MANIFEST\.tsv/)
-  assert.ok(checker.prompt.includes('/repo/auth/design-mocks/packages'), 'the bundle root is derived from the repo the run operates on')
+  assert.ok(checker.prompt.includes('/design/packages'), 'the bundle root is the one the caller supplied')
+  assert.ok(!checker.prompt.includes('design-mocks'), 'no directory is derived from the repository')
 })
 
 // ── one session, a leaf, scoped to one repository ───────────────────────────────

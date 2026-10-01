@@ -23,6 +23,8 @@ which puts it back from that copy.
 `target/<subject>/` as `in-review`.
 `depscore.py arch-delta` runs `delta_items`, which lists the elements a target's delta shows,
 one item per element, for the phases that make Specs and Tasks from the delta.
+`depscore.py arch-target-names` runs `target_names`, which tells which names a target's files
+mention, so a step checks that a repository it created is one the target names.
 `depscore.py arch-target-remove` runs `remove_target`, which deletes `target/<subject>/` once
 the Specs and Tasks made from its delta are written, and commits the removal.
 `depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<subject>/` files
@@ -725,6 +727,48 @@ def _catalog(path: Path) -> dict:
             idx += 1
     out["shows"] = [s for s in dict.fromkeys(out["shows"]) if s]
     return out
+
+
+def target_names(target_dir: str, names: list[str]) -> dict:
+    """Find which names an approved target's files mention, as whole words.
+
+    A step that may create only the repositories the target names checks each name it
+    created against the target's text.
+
+    Args:
+        target_dir: The `target/<subject>/` folder.
+        names: The names to look for.
+
+    Returns:
+        Each name the target mentions with the files that mention it, and the names it does
+        not mention, or `error` when the folder does not exist.
+    """
+    folder = Path(target_dir)
+    if not folder.is_dir():
+        return {"error": f"the target folder {folder} does not exist"}
+    texts = {
+        str(p): p.read_text(encoding="utf-8", errors="replace")
+        for p in sorted(folder.rglob("*"))
+        if p.is_file() and not p.name.endswith(SKIPPED_SUFFIXES)
+    }
+    named: dict[str, list[str]] = {}
+    unnamed: list[str] = []
+    for raw in names:
+        name = str(raw).strip()
+        if not name:
+            continue
+        word = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?![A-Za-z0-9_-])")
+        hits = [path for path, text in texts.items() if word.search(text)]
+        if hits:
+            named[name] = hits
+        else:
+            unnamed.append(name)
+    return {
+        "targetDir": str(folder),
+        "named": named,
+        "unnamed": unnamed,
+        "summary": {"named": len(named), "unnamed": len(unnamed)},
+    }
 
 
 def delta_items(delta_dir: str) -> dict:

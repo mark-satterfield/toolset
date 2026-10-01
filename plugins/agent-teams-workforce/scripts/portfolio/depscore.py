@@ -37,6 +37,8 @@
     arch-delta           list the elements a target's delta shows, one item per element with
                          the delta views that show it, numbered D1, D2 ... in element-name
                          order; no `bd` call
+    arch-target-names    tell which names an approved target's files mention as whole words;
+                         no `bd` call
     arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
                          holding it; no `bd` call
     arch-built-remove    delete the `built/<subject>/` files the effective version now matches
@@ -100,6 +102,7 @@ from archstate import (
     remove_built,
     remove_target,
     restore_constraints,
+    target_names,
     snapshot_constraints,
     snapshot_tree,
     write_target,
@@ -711,6 +714,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--kept", required=True, help="the directory `arch-constraints --keep` named"
     )
 
+    atn = sub.add_parser(
+        "arch-target-names",
+        help="tell which names an approved target's files mention; writes nothing, runs "
+        "no `bd` command",
+        parents=[common],
+    )
+    atn.add_argument("--target-dir", required=True, help="the target/<subject>/ folder")
+    atn.add_argument("--names", required=True, help="the names, comma-separated")
+
     asn = sub.add_parser(
         "arch-snapshot",
         help="fingerprint every file of arc42/, target/ and built/; writes nothing but "
@@ -849,6 +861,8 @@ def run(args: argparse.Namespace) -> dict:
         return head | snapshot_constraints(args.arch_root, keep=args.keep)
     if command == "arch-constraints-restore":
         return head | restore_constraints(args.arch_root, args.kept)
+    if command == "arch-target-names":
+        return head | target_names(args.target_dir, split_ids(args.names))
     if command == "arch-snapshot":
         result = head | snapshot_tree(args.arch_root)
         if args.save is not None and "error" not in result:

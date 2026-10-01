@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository, and a placement in the control repository, a repository the steward refuses or one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository, and a placement in the control repository, in the repository holding the architecture, in a repository the steward refuses or in one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason; a repository the steward created that the approved target does not name, checked with depscore.py arch-target-names, holds the Epic too), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -587,9 +587,12 @@ async function checkPlacements(placements) {
     return ids.map((id) => (known.has(id) ? `${id} ${known.get(id)}` : id)).join('; ') || 'no item named'
   }
   const refusals = []
+  const archRoot = normRepo(a.archPath)
   for (const [repo, ids] of byRepo) {
     if (CONTROL_REPO && repo === CONTROL_REPO) {
       refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: 'it is the control repository, which holds the pipeline and its tracker and is never a placement target' })
+    } else if (archRoot && (archRoot === repo || archRoot.startsWith(`${repo}/`))) {
+      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: `it holds the architecture documentation (${archRoot}), which the pipeline never builds or deploys` })
     }
   }
   const asked = [...byRepo.keys()].filter((repo) => !refusals.some((r) => r.repoPath === repo))
@@ -878,6 +881,21 @@ if (!scoping || scoping.ok === false) {
     ...(!scoping || scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (scoping && scoping.dispatchFailures) || [] } : {}),
   })
 }
+const createdNames = (Array.isArray(scoping.createdRepos) ? scoping.createdRepos : []).map((c) => c && c.name).filter(hasText).map((n) => n.trim())
+if (createdNames.length) {
+  const namedCheck = await runScript('scope:created-named', 'Repo Scoping', `arch-target-names --target-dir ${shellq(delta.targetDir)} --names ${shellq(createdNames.join(','))}`)
+  produced.createdNamed = namedCheck
+  if (!namedCheck || namedCheck.error) return partial('repo-scoping', { reason: `depscore.py arch-target-names did not check the repositories the polyrepo-steward created: ${(namedCheck && namedCheck.error) || 'no result'}` })
+  const unnamed = Array.isArray(namedCheck.unnamed) ? namedCheck.unnamed.filter(hasText) : []
+  if (unnamed.length) {
+    return await holdForHuman(
+      'repo-scoping',
+      { reason: `the polyrepo-steward created repositories the approved target at ${delta.targetDir} does not name: ${unnamed.join(', ')}`, unnamedRepos: unnamed },
+      unnamed.map((n) => `The polyrepo-steward created ${n} for ${epicBeadId}, and the approved target at ${delta.targetDir} does not name it. Decide whether ${n} stays; the polyrepo-steward removes it on your approval.`),
+      'each repository the target does not name has been ruled on'
+    )
+  }
+}
 const placementCheck = await checkPlacements(Array.isArray(scoping.placements) ? scoping.placements : [])
 produced.placementCheck = placementCheck
 if (placementCheck.error) {
@@ -956,11 +974,11 @@ const renderUiAuthority = (recon) => {
   const uiIds = workItems(recon).filter((r) => r.surface === 'ui').map((r) => r.id)
   if (!uiIds.length && !hasText(ua.bundlePath) && !hasText(ua.mocksDir)) return ''
   return [
-    'UI AUTHORITY — for a `ui` item the cds design artifacts are the target state, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the composed artifact under design-mocks/, the delta views.',
+    'UI AUTHORITY — for a `ui` item the cds design artifacts are the target state, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the loose composed artifact, the delta views.',
     uiIds.length ? `UI items: ${uiIds.join(', ')}.` : '',
     hasText(ua.bundlePath)
       ? `cds HAND-OFF BUNDLE: ${ua.bundlePath}\nSpecify each UI item from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${ua.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
-      : 'No cds hand-off bundle was resolved. Specify against the composed artifact under design-mocks/ and record in the spec which artifact you used.',
+      : `No cds hand-off bundle was resolved. Specify against the composed artifact${hasText(ua.mocksDir) ? ` under ${ua.mocksDir}` : ''} and record in the spec which artifact you used.`,
     hasText(ua.mocksDir) ? `Composed mocks: ${ua.mocksDir}` : '',
     artifacts.length ? `Artifacts matched to these items:\n${artifacts.map((x) => `  - ${x}`).join('\n')}` : '',
   ].filter(hasText).join('\n\n')
@@ -976,6 +994,7 @@ function itemsPlacedIn(repo) {
   return deltaItems.filter((i) => ids.has(i.id))
 }
 /** Returns the prd-reconciliation arguments for one repository. */
+const DESIGN_SYSTEM = a.designSystem && typeof a.designSystem === 'object' ? a.designSystem : {}
 function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),
@@ -987,6 +1006,9 @@ function reconArgs(repo, slug, reconReplay) {
     repos: [repo],
     dependencies: a.dependencies,
     uiRepo: placementOf(repo).some((p) => p.frontend === true),
+    ...(DESIGN_SYSTEM.mocksDir ? { mocksDir: DESIGN_SYSTEM.mocksDir } : {}),
+    ...(DESIGN_SYSTEM.packagesDir ? { packagesDir: DESIGN_SYSTEM.packagesDir } : {}),
+    ...(DESIGN_SYSTEM.shellsDir ? { shellsDir: DESIGN_SYSTEM.shellsDir } : {}),
   }
 }
 /** Returns the spec-authoring arguments for one repository. */

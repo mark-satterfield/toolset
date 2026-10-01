@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere names the open bead that plans it), resolves UI items against the cds design artifacts, and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. A saved result can be replayed instead of dispatching the session; when it is not read back, the session details the repository again.',
+    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), resolves UI items against the cds design artifacts, and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. A saved result can be replayed instead of dispatching the session; when it is not read back, the session details the repository again.',
   phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
 const dispatchFailures = []
@@ -31,7 +31,7 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
 //   items: [{ id, element, views? }] (the delta items placed in this repository),
 //   delta: { targetDir, deltaDir },
-//   mocksDir?, packagesDir?, dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
+//   mocksDir?, packagesDir?, shellsDir? (the design system's directories; the caller resolves them from its environment), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, slug },
 //   replay?: { files: { recon: <absolute path of a saved result> } }
 // }
@@ -47,8 +47,9 @@ const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).
 const dependencies = Array.isArray(a.dependencies) ? a.dependencies : []
 const repoRoot = hasText(repoPath) ? repoPath.replace(/\/+$/, '') : ''
 const uiCheck = a.uiRepo !== false
-const mocksDir = !uiCheck ? '' : hasText(a.mocksDir) ? a.mocksDir.trim() : repoRoot ? `${repoRoot}/design-mocks` : ''
-const packagesDir = !uiCheck ? '' : hasText(a.packagesDir) ? a.packagesDir.trim() : mocksDir ? `${mocksDir}/packages` : ''
+const mocksDir = uiCheck && hasText(a.mocksDir) ? a.mocksDir.trim() : ''
+const packagesDir = uiCheck && hasText(a.packagesDir) ? a.packagesDir.trim() : ''
+const shellsDir = uiCheck && hasText(a.shellsDir) ? a.shellsDir.trim() : ''
 const delta = a.delta && typeof a.delta === 'object' ? a.delta : {}
 const placed = (Array.isArray(a.items) ? a.items : []).filter((i) => i && hasText(i.id) && hasText(i.element))
 
@@ -70,6 +71,7 @@ const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true
 if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
 if (!hasText(delta.deltaDir)) return refuse('no delta supplied: delta.deltaDir names the views the items come from')
 if (!placed.length) return refuse(`no delta item is placed in ${repos[0]}`)
+if (uiCheck && !mocksDir && !packagesDir) return refuse(`${repos[0]} serves a user interface and no design system directory was supplied: pass packagesDir or mocksDir, which the caller resolves from CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR and CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`)
 
 phase('Detailing')
 
@@ -156,7 +158,7 @@ Give every item above exactly one entry, with one status:
 - done     — the code on \`main\` already holds the element as the delta shows it. \`from\` and \`to\` are both that state.
 - planned-elsewhere — an open bead of another Epic (a Story or Task planned and not built) already plans this change. Name it in \`plannedBy\` (the bead id; read beads with \`bd list\`, \`bd show\`, \`bd search\` only).
 
-Cite evidence for every status in \`evidence\`: a \`file:line\` on \`main\` you read. For \`add\`, cite the file and line where the element attaches (the route table, the stack, the module that will hold it). A \`planned-elsewhere\` item carries its bead id in \`plannedBy\` and the \`file:line\` it rests on where there is one. An item with no citation fails the run.
+Cite evidence for every status in \`evidence\`: a \`file:line\` on \`main\` you read. For \`add\`, cite the file and line where the element attaches (the route table, the stack, the module that will hold it). A \`planned-elsewhere\` item carries its bead id in \`plannedBy\` and, like every status, a \`file:line\`: where the planned change attaches in the code on \`main\`. An item with no citation fails the run.
 
 Also classify the SURFACE each item lives on, in \`surface\`: ui | service | infra | data | unknown.
 
@@ -166,13 +168,12 @@ For every item whose \`surface\` is \`ui\`, the design system's output is the ta
 
   1. THE cds HAND-OFF BUNDLE — the packaged artifact: its \`spec/build-spec.md\` together
      with the composed HTML under \`design/\`.
-  2. THE LOOSE COMPOSED ARTIFACT under \`design-mocks/{shells,pages,views}/\` — used when
-     the artifact is not in the bundle.
+  2. THE LOOSE COMPOSED ARTIFACT in the directories below — used when the artifact is not
+     in the bundle.
   3. The delta views.
 
 Bundle root:
-${packagesDir ? `  ${packagesDir}` : '  the design-mocks/packages/ directory under the repository'}
-Resolve \`CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR\` from the environment first when it is set.
+${packagesDir ? `  ${packagesDir}` : '  (none was supplied: use the loose composed artifacts below)'}
 The root holds dated \`batch-*\` directories — TAKE THE MOST RECENT ONE and record it in
 \`uiAuthority.bundlePath\`. Inside a batch:
 
@@ -187,9 +188,9 @@ The root holds dated \`batch-*\` directories — TAKE THE MOST RECENT ONE and re
 START AT \`MANIFEST.tsv\` to match a UI item to its artifact, then read that artifact's
 \`spec/build-spec.md\`.
 
-An artifact listed in \`unpackaged.md\` is not yet packaged; use the loose composed artifact under
-${mocksDir ? `  ${mocksDir}/{shells,pages,views}/` : '  design-mocks/{shells,pages,views}/'}
-(resolve \`CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR\` / \`_SHELLS_DIR\` first when set).
+An artifact listed in \`unpackaged.md\` is not yet packaged; use the loose composed artifact:
+${mocksDir ? `  composed pages and views: ${mocksDir}` : '  composed pages and views: (no directory was supplied)'}
+${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no directory was supplied)'}
 
 Cite the artifact path you used beside the \`file:line\` for every \`ui\` item. List every artifact
 path you opened in \`uiAuthority.artifactsConsulted\`, the loose shells and pages in
@@ -315,7 +316,7 @@ const failedItems = [
   ...items.filter((r) => !placedIds.has(r.id)).map((r) => ({ id: r.id || '(no id)', problem: 'not an item placed in this repository' })),
   ...items.filter((r) => placedIds.has(r.id) && !STATUSES.includes(r.status)).map((r) => ({ id: r.id, problem: `status ${JSON.stringify(r.status)} is not one of ${STATUSES.join(', ')}` })),
   ...items
-    .filter((r) => placedIds.has(r.id) && STATUSES.includes(r.status) && r.status !== 'planned-elsewhere' && !r.evidence.some((e) => FILE_LINE.test(e)))
+    .filter((r) => placedIds.has(r.id) && STATUSES.includes(r.status) && !r.evidence.some((e) => FILE_LINE.test(e)))
     .map((r) => ({ id: r.id, problem: `${r.status} cites no file:line` })),
   ...items
     .filter((r) => placedIds.has(r.id) && r.status === 'planned-elsewhere' && !r.plannedBy)

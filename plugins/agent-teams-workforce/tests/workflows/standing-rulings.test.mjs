@@ -57,6 +57,7 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
       prd: { id: 'P1', title: 't', path: '/prd/p.md', repoPath: '/repo' },
       items: [{ id: 'D1', element: 'data-store' }],
       delta: { targetDir: '/arch/target/x', deltaDir: '/arch/target/x/delta' },
+      uiRepo: false,
       standingRulings: RULINGS,
     },
     agentImpl: (call) => {
