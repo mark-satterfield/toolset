@@ -24,6 +24,9 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 ## PRD Validation
 
+`prd-to-spec` checks the PRD file with `depscore.py prd-parse` and dispatches none of these agents; the
+`prd-validation` workflow runs on its own.
+
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | prd-validation-lead | orchestrate | Routes the PRD to all analysts concurrently, aggregates findings, and reports to Gate 1 |
@@ -39,15 +42,21 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 ## Architecture Analysis
 
+The `architecture` workflow designs each Epic's change as a target and a delta version of the
+architecture: the coordinator names each round's proposers, diagram authors, reviewers and cost
+reviewers, the decider approves the target, the maintainer integrates it into the effective version
+and the conformance reviewer checks the integration. `built-version` dispatches the maintainer and the
+conformance reviewer again to correct the effective version from what a Story built.
+
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| architecture-decision-workflow-coordinator | orchestrate | Routes analysis tasks to the proposals sub-team, routes proposals to the challenge sub-team, collects all outputs, and routes them to the Architecture Decider |
+| architecture-decision-workflow-coordinator | orchestrate | Names, round by round, which proposers, reviewers, diagram authors and cost reviewers the architecture step dispatches next, sized to the PRD; the workflow script runs the dispatches. Process only: no design, review or approval authority. |
 | integration-pattern-architect | plan | Analyzes integration options: event API patterns, API Gateway routes, sync vs |
 | persistence-architecture-specialist | plan | Analyzes DynamoDB schema options, GSI/LSI strategies, single vs |
 | security-architecture-designer | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model |
 | cdk-infrastructure-designer | plan | Analyzes CDK construct options, Lambda boundaries within the chassis, and layer packaging |
 | event-schema-designer | execute | Designs event schemas within the event envelope the effective architecture describes |
-| api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. No workflow currently dispatches it. |
+| api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. |
 | cost-architecture-reviewer | plan | Estimates cost per architecture option and identifies cost cliffs |
 | bounded-context-mapper | plan | Maps domain boundaries and identifies context relationships |
 | domain-event-modeler | execute | Models domain events, event flows, and event contracts |
@@ -57,10 +66,10 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | architecture-boundary-guardian | test | Validates that no proposal introduces cross-context coupling. |
 | cost-impact-reviewer | test | Stress-tests cost estimates at 10x/100x/1000x scale |
 | operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
-| architecture-decider | approve | Receives all analyses, challenges, and cost data |
-| architecture-impact-analyst | test | Judges what an architecture decision a ruling created, changed or retired reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
+| architecture-decider | approve | Decides whether an Epic's draft target architecture is approved, from the artifacts alone: approves it, returns it to a named proposer with the missing due diligence, or raises an owner concern. Generates no evidence of its own. |
+| architecture-impact-analyst | test | Judges what an architecture change reaches: given the views an integration changed, created or deleted, finds every Epic, Story, Task and document citing those views or showing their elements, and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built. Read-only. No workflow currently dispatches it. |
 | architecture-fitness-function-author | execute | Defines testable assertions from the owner's constraints and the patterns the effective architecture establishes, such as 'no service reads another service's table'. No workflow currently dispatches it. |
-| architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
+| architecture-diagram-author | execute | Draws architecture views of any type in the project's list of diagram and model types, at any scope, for the target or the effective version, from the design it is given. |
 | c4-diagram-author | execute | Draws C4 views (Level 1 System Context, Level 2 Container, Level 3 Component) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
 | uml-diagram-author | execute | Draws UML views (sequence, state, activity, class) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
 | architecture-maintainer | execute | Keeps the effective version of the architecture current: integrates an approved target into the arc42 folders, and corrects the effective version from what was built, updating or deleting every view that shows a changed element, found through the catalog. Never writes section 2. |
@@ -102,7 +111,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate. No workflow currently dispatches it. |
 | task-decomposer | execute | Breaks the spec into tasks, each a coherent piece of the Story's work one agent can test and build in one session. |
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
-| wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. Dispatched by prd-to-spec to size the knock-on Tasks an architecture change adds to an Epic; task-decomposer sizes the Tasks it decomposes. |
+| wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. No workflow currently dispatches it; task-decomposer sizes the Tasks it decomposes. |
 | wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. No workflow currently dispatches it. |
 | user-story-writer | execute | Writes user stories per task with acceptance criteria drawn from the spec. |
 | user-story-reviewer | test | Validates stories are complete, testable, and properly scoped. |
@@ -112,7 +121,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | Builds the MATERIAL INVENTORY behind a PRD for one repository: for every requirement that governs something that repository owns or changes, what already exists and whether it conforms — `conforms`, `contradicts`, `absent`, or `not-applicable` — with cited file:line or live-endpoint evidence. The same session also detects upstream dependency changes that invalidate what the PRD assumes. |
+| prd-reality-reconciler | test | Details an approved architecture delta for ONE repository: for each delta item placed there (one element the delta shows), compares what the delta makes it with the code on the repository's main and gives it one status — `add`, `modify`, `remove`, `done` or `planned-elsewhere` — each citing file:line (planned-elsewhere names the open bead that plans it), and reports upstream dependency changes. Also writes the architecture step's survey, and in built-version records each difference between a Story's code and the effective views in `built/<subject>/`. |
 
 ## Spec Freshness
 
