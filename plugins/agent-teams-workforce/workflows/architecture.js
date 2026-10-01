@@ -1,13 +1,13 @@
 export const meta = {
   name: 'architecture',
   description:
-    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). The script holds the decision until every claim has a verdict, every finding is answered and depscore.py arch-target accepts the draft. The architecture-decider, given artifact paths only, approves, returns to a named proposer, or raises an owner concern (a serious security, privacy, cost or best-practice concern, or a PRD defect). On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval } or, for an owner concern, ok:false at stage owner-concern with requiredHumanActions.",
+    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). The script holds the decision until every claim has a verdict, every finding is answered and depscore.py arch-target accepts the draft. The architecture-decider, given artifact paths only, approves, returns to a named proposer, or raises an owner concern (a serious security, privacy, cost or best-practice concern, or a PRD defect). On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective; depscore.py arch-commit then commits the files the integration changed, staging only those paths, and pushes the branch. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval, vaultCommit } or, for an owner concern, ok:false at stage owner-concern with requiredHumanActions.",
   phases: [
     { title: 'Survey', detail: 'the polyrepo-steward names the repositories; a prd-reality-reconciler session surveys the effective views, code on main, open beads and open targets for each capability the PRD needs' },
     { title: 'Rounds', detail: 'the coordinator names each round of proposers, reviewers, diagram authors and cost reviewers; the script runs them and tracks every claim and finding' },
     { title: 'Decide', detail: 'the architecture-decider approves, returns to a named proposer, or raises an owner concern' },
     { title: 'Target', detail: 'depscore.py arch-target writes the approved draft to target/<subject>/ and its delta/ as in-review' },
-    { title: 'Integrate', detail: 'the architecture-maintainer integrates the target into arc42; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the reviewed files to effective' },
+    { title: 'Integrate', detail: 'the architecture-maintainer integrates the target into arc42; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the reviewed files to effective; depscore.py arch-commit commits and pushes the integrated files' },
   ],
 }
 
@@ -1095,6 +1095,17 @@ if (toApprove.length) {
   log(`Approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective`)
 }
 
+let vaultCommit = null
+const toCommit = allTouched(update)
+if (toCommit.length) {
+  vaultCommit = await depscore('integrate:commit', 'Integrate', `arch-commit --arch-root ${shq(ARC42)} --files ${shq(toCommit.join(','))} --message ${shq(`docs(architecture): integrate the approved target for ${subject}`)}`)
+  if (!vaultCommit || vaultCommit.error || vaultCommit.ok === false) {
+    const why = `depscore.py arch-commit did not commit and push the integrated files: ${(vaultCommit && (vaultCommit.error || listed(vaultCommit.refusals).join('; '))) || 'no result'}`
+    return { ok: false, stage: 'commit', reason: why, error: why, vaultCommit, approval, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir }
+  }
+  log(`Commit: ${vaultCommit.commit ? `${vaultCommit.commit} on ${vaultCommit.branch}` : 'nothing new to commit'}${vaultCommit.pushed ? ', pushed' : ''}`)
+}
+
 return {
   ok: true,
   subject,
@@ -1107,6 +1118,7 @@ return {
   architectureUpdate: update,
   conformance,
   approval,
+  vaultCommit,
   rounds: lastRound,
   retries,
   openItems: [...listed(update.constraintIssues), ...listed(update.contradictions)],

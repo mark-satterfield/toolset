@@ -998,3 +998,87 @@ def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
         "commit": report["commit"],
     }
     return report
+
+
+def commit_integration(arch_root: str, files: list[str], *, message: str) -> dict:
+    """Commit the architecture files an integration changed, and push the branch.
+
+    Every file must sit under `arch_root`. Only these paths are staged (`git add -A --
+    <paths>`, so a deleted file is staged as a deletion) and committed (`git commit --
+    <paths>`), so other changes in the repository stay out of the commit. The commit is
+    pushed to `origin` on the branch it was made on. Paths with nothing to commit give no
+    commit; the branch is still pushed when it is ahead of `origin`, so a commit an earlier
+    run made and did not push reaches the remote.
+
+    Args:
+        arch_root: The architecture directory the files sit under.
+        files: The files the integration changed, created or deleted, as absolute paths.
+        message: The commit message.
+
+    Returns:
+        `ok`, the refusals, the paths committed, the branch, the commit, and whether it was
+        pushed.
+    """
+    root = _arch_root(arch_root)
+    if root is None:
+        return _refused(["no architecture directory was given"])
+    wanted = sorted(
+        {str(Path(str(f).strip()).resolve()) for f in files if str(f).strip()}
+    )
+    if not wanted:
+        return _refused(["no integrated file was named"])
+    outside = [f for f in wanted if not Path(f).is_relative_to(root)]
+    if outside:
+        return _refused([f"not under {root}: {', '.join(outside)}"])
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), *argv],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    branch = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
+    if not branch:
+        return _refused([f"the repository holding {root} is not on a branch"])
+    report: dict = {
+        "ok": True,
+        "refusals": [],
+        "files": wanted,
+        "branch": branch,
+        "commit": None,
+        "pushed": False,
+    }
+    added = git("add", "-A", "--", *wanted)
+    if added.returncode != 0:
+        return report | _refused([f"git add failed: {added.stderr.strip()}"])
+    staged = git("diff", "--cached", "--name-only", "--", *wanted)
+    if staged.stdout.strip():
+        done = git("commit", "-q", "-m", message, "--", *wanted)
+        if done.returncode != 0:
+            return report | _refused(
+                [f"git commit failed: {(done.stderr or done.stdout).strip()}"]
+            )
+        report["commit"] = git("rev-parse", "--short", "HEAD").stdout.strip() or None
+    ahead = git("rev-list", "--count", f"origin/{branch}..HEAD")
+    if ahead.returncode == 0 and ahead.stdout.strip() == "0":
+        report["summary"] = {
+            "ok": True,
+            "commit": report["commit"],
+            "pushed": False,
+            "branch": branch,
+        }
+        return report
+    pushed = git("push", "-q", "origin", branch)
+    if pushed.returncode != 0:
+        why = [f"git push failed: {(pushed.stderr or pushed.stdout).strip()}"]
+        return report | _refused(why) | {"commit": report["commit"]}
+    report["pushed"] = True
+    report["summary"] = {
+        "ok": True,
+        "commit": report["commit"],
+        "pushed": True,
+        "branch": branch,
+    }
+    return report

@@ -43,6 +43,8 @@
                          holding it; no `bd` call
     arch-built-remove    delete the `built/<subject>/` files the effective version now matches
                          and commit the removal in the repository holding them; no `bd` call
+    arch-commit          commit the architecture files an integration changed, staging only
+                         those paths, and push the branch; no `bd` call
     prd-parse            check that a PRD file has the structure elaboration reads: readable,
                          not superseded, an H1, requirement headings with acceptance criteria
                          under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
@@ -99,6 +101,7 @@ from hierarchy import HierarchyError
 from archstate import promote as approve_arch
 from archstate import (
     delta_items,
+    commit_integration,
     remove_built,
     remove_target,
     restore_constraints,
@@ -815,6 +818,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     abr.add_argument("--message", required=True, help="the commit message")
 
+    acm = sub.add_parser(
+        "arch-commit",
+        help="commit the architecture files an integration changed and push; runs no "
+        "`bd` command",
+        parents=[common],
+    )
+    acm.add_argument(
+        "--arch-root",
+        required=True,
+        help="the architecture directory the files sit under",
+    )
+    acm.add_argument(
+        "--files", required=True, help="the integrated files to commit, comma-separated"
+    )
+    acm.add_argument("--message", required=True, help="the commit message")
+
     ppa = sub.add_parser(
         "prd-parse",
         help="check that a PRD file has the structure elaboration reads; writes nothing, "
@@ -888,6 +907,10 @@ def run(args: argparse.Namespace) -> dict:
         )
     if command == "arch-built-remove":
         return head | remove_built(
+            args.arch_root, split_ids(args.files), message=args.message
+        )
+    if command == "arch-commit":
+        return head | commit_integration(
             args.arch_root, split_ids(args.files), message=args.message
         )
     if command == "prd-parse":
