@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), gives each ui item its design source — bundle (a single-artifact cds bundle the owner supplied in the packages directory packages it; the newest bundle of a kind and slug is the supplied one), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design) — and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s design source with the bundle and build spec of a bundle item, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
+    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), gives each ui item its design source — bundle (a single-artifact cds bundle the owner supplied in the packages directory packages it; the newest bundle of a kind and slug is the supplied one), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design) ; a bundle or cds item also names its artifact (kind and slug, as a bundle.json names it), so a mockup supplied later is found when the Task is built — and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s design source with the bundle and build spec of a bundle item, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
   phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
 const dispatchFailures = []
@@ -234,7 +234,13 @@ ${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no direct
 
 Record one entry per \`ui\` item in \`uiAuthority.uiItems\`: \`item\` (the item id),
 \`designSource\` (bundle | cds | none), \`reason\` (one sentence: which bundle packages it, or
-what design it changes, or why it changes none), and for a bundle item only: \`bundle\` (the
+what design it changes, or why it changes none); for a bundle or cds item, \`artifact\`:
+\`{ kind, slug }\`, the Page, Shell or View the item builds, named as a cds bundle's
+\`bundle.json\` names it (kind page | shell | view; for a bundle item, the listed bundle's kind
+and slug; for a cds item, the slug a bundle of that artifact would carry: the artifact's name
+in lower-case words joined by hyphens, matching an existing composed artifact's slug where one
+exists). A mockup can arrive any time before the Task is built: the build looks for a bundle
+of this artifact then. For a bundle item only: \`bundle\` (the
 bundle directory exactly as listed), \`buildSpec\` (its build spec exactly as listed) and
 \`sections\` (the IDs in that build spec's Sections table — S1, S2, … — that the item builds;
 an empty list when it builds the whole artifact or the table carries no IDs). The Spec cites
@@ -265,7 +271,7 @@ Determine whether any upstream contract, shared schema, event, library version, 
 1. Write your whole detailing, as ONE JSON object, to ${reconPath} with the Write tool, replacing the file if it exists (Read it first if the Write tool asks you to). Write no other file. Its keys:
    - \`items\`: one object per item above: \`id\`, \`element\`, \`status\` (${STATUSES.join(' | ')}), \`from\`, \`to\`, \`evidence\` (a list of strings, each \`file:line\` you read with what it shows), \`plannedBy\` (the bead id, for planned-elsewhere only), \`surface\` (ui | service | infra | data | unknown).
    - \`evidenceSummary\`: a string.
-   - \`uiAuthority\`: \`uiItems\` (each \`{ item, designSource, reason, bundle?, buildSpec?, sections? }\`), \`mocksDir\`, \`artifactsConsulted\`, as described above; empty values when the repository holds no UI.
+   - \`uiAuthority\`: \`uiItems\` (each \`{ item, designSource, reason, artifact?, bundle?, buildSpec?, sections? }\`), \`mocksDir\`, \`artifactsConsulted\`, as described above; empty values when the repository holds no UI.
    - \`dependencyChanges\`: \`current\` (true or false), \`changeFindings\` (each \`{ dependency, change, invalidates }\`), \`evidence\`.
 2. Then run exactly this command:
    ${recordCommand}
@@ -317,6 +323,7 @@ const uiWork = (Array.isArray(facts.uiWork) ? facts.uiWork : [])
   .map((u) => ({
     id: u.id.trim(),
     designSource: hasText(u.designSource) ? u.designSource.trim() : null,
+    artifact: u.artifact && hasText(u.artifact.kind) && hasText(u.artifact.slug) ? { kind: u.artifact.kind.trim(), slug: u.artifact.slug.trim() } : null,
     bundle: hasText(u.bundle) ? u.bundle.trim() : null,
     buildSpec: hasText(u.buildSpec) ? u.buildSpec.trim() : null,
     sections: ids(u.sections),

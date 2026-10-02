@@ -47,7 +47,7 @@ is a `metadata set` or a `cds-audit`. `-C <repoPath>` runs `bd` from another rep
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
 | `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, then reads the values back into `verified`. |
-| `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's `cds_audit_verdict`, `cds_audit_findings` and `cds_audit_script_version` from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside `pass`, `fail`, `blocked`, `error`; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
+| `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's `cds_audit_verdict`, `cds_audit_findings`, `cds_audit_script_version`, `cds_audit_design_source` and `cds_audit_bundle` from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside `pass`, `fail`, `blocked`, `error`; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
 tracker — how the parent and prose paths are exercised when no live bead has them. `--records -`
@@ -147,6 +147,7 @@ Build contract, written by the decomposition phase onto each Task and read back 
 | `surfaces` | JSON array, **or the literal `unknown`** | never required |
 | `test_strategy` | JSON object, **or the literal `unknown`** | never required |
 | `cds_design_source` | `bundle`, `cds` or `none` | written on every Task whose `surfaces` include `web-ui`: `bundle` builds from the cds bundle the owner supplied and is audited against it; `cds` is designed with the CDS design system and audited against the live design system; `none` changes no design and gets no cds design step or audit |
+| `cds_artifact` | JSON object `{kind, slug}`: the Page, Shell or View the Task's UI is, as a cds bundle's `bundle.json` names it | written on a `bundle` or `cds` web-ui Task; at build time `task-to-deploy` builds from the newest supplied bundle of this artifact, so a mockup can arrive any time before the Task is built |
 | `cds_bundle_path` | one absolute path: the supplied single-artifact cds bundle directory | written on a `bundle` web-ui Task only |
 | `cds_build_specs` | JSON array of absolute `spec/build-spec.md` paths, each with `#<Section ID>` when the Task builds only some Sections | written on a `bundle` web-ui Task, for the `ui` delta items its `requirement_ids` cite, from the detailing's `uiAuthority.uiItems` |
 
@@ -160,7 +161,7 @@ Readiness verdict, written by `task-ready`: `review_status`, `review_missing`, `
 Epic, and by the `wsjf-scoring` workflow, never by `task-ready`: `wsjf`,
 `wsjf_calculated_at` and the dimensions below. Build lane: `build_state`; the cds audit verdict of a `web-ui` Task, from `task-to-deploy`'s
 `cdsAudit` result: `cds_audit_verdict` (`pass`, `fail`, `blocked` or `error`),
-`cds_audit_findings`, `cds_audit_script_version`, written by the build lane and, for a run dispatched by hand, with `cds-audit`. Elaboration:
+`cds_audit_findings`, `cds_audit_script_version`, `cds_audit_design_source` and `cds_audit_bundle` (the design source and bundle the build actually used), written by the build lane and, for a run dispatched by hand, with `cds-audit`. Elaboration:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
 `elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
 `elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its
@@ -246,7 +247,7 @@ What matters to a caller:
 - BOTH cover `title`, `description`, `issue_type` and `priority`.
 - READINESS ALSO covers the `acceptance_criteria` and `design` record fields and the BUILD
   CONTRACT keys — the repository, the spec paths and sections, the criteria, the Definition of
-  Done, the requirement and decision ids, the surfaces and the test strategy, and the three cds
+  Done, the requirement and decision ids, the surfaces and the test strategy, and the four cds
   keys on a bead that carries them. Rehoming a Task or
   changing the spec it builds against makes it stale, because it changes what a reviewer would
   rule on.

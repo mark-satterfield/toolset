@@ -122,10 +122,12 @@ Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
          prCommand: "$ATW_PR_COMMAND",
          worktreeRoot: "$ATW_WORKTREE_ROOT",
          projectRoot: "$ATW_PROJECT_ROOT",
-         artifactScript: "$ATW_ARTIFACT_SCRIPT"}})
+         artifactScript: "$ATW_ARTIFACT_SCRIPT",
+         pluginRoot: "$ROOT",
+         designSystem: {packagesDir: "<host-configured packages directory>"}}})
 ```
 
-Every value is the expanded value of its variable, not the literal variable name. The
+Every value is the expanded value of its variable, not the literal variable name. `designSystem.packagesDir` is the host's folder of supplied cds bundles; a `web-ui` Task picks up a mockup placed there any time before it is built. Omit it when the host configures none. The
 composite's `workspace` phase turns the contract's repository into the worktree; do not
 pre-cut one.
 

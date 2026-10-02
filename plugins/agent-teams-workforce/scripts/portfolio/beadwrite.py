@@ -170,6 +170,9 @@ def contract_block(task: Task, root: Path | None) -> str:
             f"Design source: {task.cds_design_source} — "
             + DESIGN_SOURCE_TEXT.get(task.cds_design_source, "")
         )
+    if len(task.cds_artifacts) == 1:
+        art = task.cds_artifacts[0]
+        lines.append(f"cds artifact: {art['kind']} {art['slug']}")
     if task.cds_bundle_path or task.cds_build_specs:
         lines += [
             f"cds bundle: {task.cds_bundle_path or '(none resolved)'}",
@@ -216,6 +219,8 @@ def task_metadata(task: Task) -> dict[str, str]:
     m["test_strategy"] = _json(task.test_strategy) if task.test_strategy else "unknown"
     if task.cds_design_source:
         m["cds_design_source"] = task.cds_design_source
+    if len(task.cds_artifacts) == 1:
+        m["cds_artifact"] = _json(task.cds_artifacts[0])
     if task.cds_bundle_path:
         m["cds_bundle_path"] = task.cds_bundle_path
     if task.cds_build_specs:

@@ -372,6 +372,7 @@ CONTRACT_SCHEMA = (
     ("surfaces", "surfaces", KIND_LIST_OR_UNKNOWN),
     ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
     ("cds_design_source", "cdsDesignSource", KIND_TEXT),
+    ("cds_artifact", "cdsArtifact", KIND_OBJECT_OR_UNKNOWN),
     ("cds_bundle_path", "cdsBundlePath", KIND_TEXT),
     ("cds_build_specs", "cdsBuildSpecs", KIND_LIST),
 )
@@ -379,7 +380,7 @@ CONTRACT_SCHEMA = (
 #: Contract keys the readiness fingerprint covers only on a bead that carries them: a bead
 #: with none (every Task without a `web-ui` surface) hashes as if they were not in the contract.
 CONTRACT_HASHED_WHEN_PRESENT = frozenset(
-    {"cds_design_source", "cds_bundle_path", "cds_build_specs"}
+    {"cds_design_source", "cds_artifact", "cds_bundle_path", "cds_build_specs"}
 )
 
 SPEC_REFERENCE = ("specPath", "specPaths")
@@ -461,6 +462,8 @@ CDS_AUDIT_KEYS = (
     "cds_audit_verdict",
     "cds_audit_findings",
     "cds_audit_script_version",
+    "cds_audit_design_source",
+    "cds_audit_bundle",
 )
 
 #: The verdicts task-to-deploy's `cdsAudit` result carries.
@@ -1088,7 +1091,8 @@ def cmd_cds_audit(args: argparse.Namespace, reader: Reader) -> dict:
         reader: The record source.
 
     Returns:
-        The `metadata set` result for the three cds audit keys.
+        The `metadata set` result for the cds audit keys: the verdict, the finding count,
+        the script version, the design source the build used and the bundle it used.
 
     Raises:
         ContractError: The result is not a cdsAudit object with a known verdict.
@@ -1111,6 +1115,8 @@ def cmd_cds_audit(args: argparse.Namespace, reader: Reader) -> dict:
         f"cds_audit_verdict={audit['verdict']}",
         f"cds_audit_findings={count}",
         f"cds_audit_script_version={version}",
+        f"cds_audit_design_source={str(audit.get('designSource') or '').strip()[:20]}",
+        f"cds_audit_bundle={str(audit.get('bundle') or '').strip()[:1000]}",
     ]
     return cmd_metadata(args, reader)
 

@@ -71,8 +71,10 @@ field exists because a document said so, and never restate one of its recipes.
   the design source the detailing gave those items in the contract (`cds_design_source`): `bundle`,
   with the supplied cds bundle and the item's `build-spec.md` Sections (`cds_bundle_path`,
   `cds_build_specs`); `cds`, designed with the CDS design system; or `none`, a change with no design
-  impact. You do not write these keys. A task builds against one supplied bundle, so keep items of
-  different bundles in different tasks: `plan-tasks` refuses a task that cites items of two bundles.
+  impact; a `bundle` or `cds` task also records its artifact (`cds_artifact`, kind and slug), so the
+  build finds a mockup supplied any time before the task is built. You do not write these keys. A
+  task builds one artifact, so keep `ui` items of different artifacts in different tasks:
+  `plan-tasks` refuses a task that cites `ui` items of two artifacts.
 - **`unknown` is not `[]`.** Where the spec does not settle `surfaces` or `testStrategy`, emit the
   literal `unknown`, never an empty list: a null means nobody ruled and the phase falls back to its
   own lead, while `[]` means the work crosses no boundary and SKIPS the phase outright.

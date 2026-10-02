@@ -62,7 +62,9 @@
                          the section of an item with a supplied cds bundle cites its
                          `spec/build-spec.md` and resolved Section IDs; no `bd` call
     cds-bundles          list the single-artifact cds bundles in a packages directory, the newest
-                         per kind and slug (an absent or empty directory lists none); no `bd` call
+                         per kind and slug (an absent or empty directory lists none); with
+                         --design-source, also select the design source a web-ui Task builds
+                         with now; no `bd` call
     recon-facts          check a repository's saved detailing (`recon-<slug>.json`) against the
                          delta items placed in it and print only the facts the workflows branch
                          on (usable or not and why, the ids that make work, each `ui` work
@@ -136,7 +138,7 @@ from archresume import ResumeError, resume_facts
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
 from specui import SpecUiError, spec_ui_check
-from cdsbundles import list_bundles
+from cdsbundles import list_bundles, select_build
 from reconfacts import ReconError, recon_facts
 from storyedges import story_edges
 
@@ -929,6 +931,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="the packages directory; empty or absent supplies no bundle",
     )
+    cdb.add_argument(
+        "--design-source",
+        default="",
+        help="with --kind and --slug or --recorded-bundle: also select the design source a "
+        "web-ui Task builds with now (bundle, cds or none, as its contract records it)",
+    )
+    cdb.add_argument("--kind", default="", help="the Task's artifact kind")
+    cdb.add_argument("--slug", default="", help="the Task's artifact slug")
+    cdb.add_argument(
+        "--recorded-bundle", default="", help="the bundle the Task's contract records"
+    )
 
     rcf = sub.add_parser(
         "recon-facts",
@@ -1045,6 +1058,13 @@ def run(args: argparse.Namespace) -> dict:
         return head | recon_facts(args.file, split_ids(args.items))
     if command == "cds-bundles":
         listing = list_bundles(args.packages_dir)
+        if args.design_source:
+            listing["selection"] = select_build(
+                args.packages_dir,
+                args.design_source,
+                {"kind": args.kind, "slug": args.slug},
+                args.recorded_bundle,
+            )
         return head | listing | {"summary": {"bundles": len(listing["bundles"])}}
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":

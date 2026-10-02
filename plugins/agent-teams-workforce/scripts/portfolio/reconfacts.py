@@ -23,7 +23,7 @@ import json
 import re
 from pathlib import Path
 
-from cdsbundles import DESIGN_SOURCES, bundle_problem
+from cdsbundles import DESIGN_SOURCES, KINDS, bundle_problem, read_bundle
 
 STATUSES = ("add", "modify", "remove", "done", "planned-elsewhere")
 WORK_STATUSES = ("add", "modify", "remove")
@@ -146,9 +146,11 @@ def _ui_authority(raw: object, work_ui: list[str]) -> dict:
         work_ui: The ids of the `ui` items that make work.
 
     Returns:
-        `mocksDir` and `uiWork`: one `{id, designSource, bundle, buildSpec, sections}` per
-        `ui` work item. `designSource` is `bundle`, `cds` or `none` (None when the detailing
-        gives the item none); `bundle` and `buildSpec` are set for a `bundle` item only.
+        `mocksDir` and `uiWork`: one `{id, designSource, artifact, bundle, buildSpec,
+        sections}` per `ui` work item. `designSource` is `bundle`, `cds` or `none` (None when
+        the detailing gives the item none); `artifact` (`{kind, slug}`, as a cds bundle's
+        `bundle.json` names it) is set for a `bundle` or `cds` item; `bundle` and
+        `buildSpec` for a `bundle` item only.
     """
     ua = raw if isinstance(raw, dict) else {}
     entries: dict[str, dict] = {}
@@ -159,13 +161,25 @@ def _ui_authority(raw: object, work_ui: list[str]) -> dict:
         if item and item not in entries:
             source = _text(b.get("designSource"))
             bundled = source == "bundle"
+            raw_art = b.get("artifact") if isinstance(b.get("artifact"), dict) else {}
+            art = {
+                "kind": _text(raw_art.get("kind")),
+                "slug": _text(raw_art.get("slug")),
+            }
             entries[item] = {
                 "designSource": source or None,
+                "artifact": art if source in ("bundle", "cds") else None,
                 "bundle": _text(b.get("bundle")) or None if bundled else None,
                 "buildSpec": _text(b.get("buildSpec")) or None if bundled else None,
                 "sections": _texts(b.get("sections")) if bundled else [],
             }
-    blank = {"designSource": None, "bundle": None, "buildSpec": None, "sections": []}
+    blank = {
+        "designSource": None,
+        "artifact": None,
+        "bundle": None,
+        "buildSpec": None,
+        "sections": [],
+    }
     return {
         "mocksDir": _text(ua.get("mocksDir")) or None,
         "uiWork": [{"id": i} | entries.get(i, blank) for i in work_ui],
@@ -197,11 +211,37 @@ def _ui_problems(ui_work: list[dict]) -> list[dict]:
                 }
             )
             continue
+        if source == "none":
+            continue
+        art = item["artifact"] or {}
+        if source == "bundle" and not (art.get("kind") and art.get("slug")):
+            held = read_bundle(Path(item["bundle"])) if item["bundle"] else None
+            if held:
+                art = item["artifact"] = {"kind": held["kind"], "slug": held["slug"]}
+        if art.get("kind") not in KINDS or not art.get("slug"):
+            problems.append(
+                {
+                    "id": item["id"],
+                    "problem": "names no artifact: a bundle or cds item records "
+                    "`artifact` {kind: page | shell | view, slug}",
+                }
+            )
+            continue
         if source != "bundle":
             continue
         problem = bundle_problem(item["bundle"] or "", item["buildSpec"] or "")
         if problem:
             problems.append({"id": item["id"], "problem": f"bundle: {problem}"})
+            continue
+        held = read_bundle(Path(item["bundle"]))
+        if held and (held["kind"], held["slug"]) != (art["kind"], art["slug"]):
+            problems.append(
+                {
+                    "id": item["id"],
+                    "problem": f"artifact {art['kind']} {art['slug']} is not the one "
+                    f"{item['bundle']} packages ({held['kind']} {held['slug']})",
+                }
+            )
     return problems
 
 

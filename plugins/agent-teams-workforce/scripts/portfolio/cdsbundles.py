@@ -179,3 +179,86 @@ def bundle_problem(bundle_dir: str, build_spec: str | None) -> str | None:
     if not bundle["buildSpecExists"]:
         return f"the build spec {bundle['buildSpec']} does not exist"
     return None
+
+
+def select_build(
+    packages_dir: str | Path | None,
+    design_source: str,
+    artifact: dict | None,
+    recorded_bundle: str | None = None,
+) -> dict:
+    """Return the design source a web-ui Task builds with now, from the bundles supplied today.
+
+    A mockup can arrive any time before its Task is built. A `cds` Task whose artifact now has
+    a supplied bundle builds from that bundle; a `bundle` Task builds from the newest bundle of
+    its artifact; a `none` Task is unchanged. A `bundle` Task whose artifact has no supplied
+    bundle is blocked, naming the bundle it recorded.
+
+    Args:
+        packages_dir: The packages directory, or None.
+        design_source: The design source the Task's contract records.
+        artifact: The Task's artifact, `{kind, slug}`, or None.
+        recorded_bundle: The bundle the contract records, or None.
+
+    Returns:
+        `designSource` (`bundle`, `cds` or `none`), `recordedSource`, `artifact`, `bundle`,
+        `buildSpec`, `switched` (true when the source or the bundle differs from the
+        recorded one), and `blocked` (why the build cannot proceed) or None.
+    """
+    recorded = str(recorded_bundle or "").strip() or None
+    art = artifact if isinstance(artifact, dict) else {}
+    kind = str(art.get("kind") or "").strip()
+    slug = str(art.get("slug") or "").strip()
+    if (not kind or not slug) and recorded:
+        held = read_bundle(Path(recorded))
+        if held:
+            kind, slug = held["kind"], held["slug"]
+    out = {
+        "designSource": design_source,
+        "recordedSource": design_source,
+        "artifact": {"kind": kind, "slug": slug} if kind and slug else None,
+        "bundle": None,
+        "buildSpec": None,
+        "switched": False,
+        "blocked": None,
+    }
+    if design_source not in ("bundle", "cds"):
+        return out
+    roots = [packages_dir] if str(packages_dir or "").strip() else []
+    if recorded:
+        roots.append(Path(recorded).parent)
+    found = None
+    if kind and slug:
+        for root in roots:
+            found = next(
+                (
+                    b
+                    for b in list_bundles(root)["bundles"]
+                    if (b["kind"], b["slug"]) == (kind, slug)
+                ),
+                None,
+            )
+            if found:
+                break
+    if found is None:
+        if design_source == "bundle":
+            out["blocked"] = (
+                f"the supplied cds bundle {recorded or '(none recorded)'} for "
+                f"{kind or '?'} {slug or '?'} is missing, and no bundle of that artifact "
+                f"is in {packages_dir or '(no packages directory)'}"
+            )
+        return out
+    if not found["buildSpecExists"]:
+        out["blocked"] = (
+            f"the cds bundle {found['path']} has no build spec at {found['buildSpec']}"
+        )
+        return out
+    out |= {
+        "designSource": "bundle",
+        "bundle": found["path"],
+        "buildSpec": found["buildSpec"],
+        "switched": design_source != "bundle"
+        or not recorded
+        or Path(recorded).resolve() != Path(found["path"]),
+    }
+    return out

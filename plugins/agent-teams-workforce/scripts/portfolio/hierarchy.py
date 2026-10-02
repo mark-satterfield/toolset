@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cdsbundles import DESIGN_SOURCES, bundle_problem
+from cdsbundles import DESIGN_SOURCES, KINDS, bundle_problem, read_bundle
 
 #: The surfaces a Task may declare; anything else is dropped.
 SURFACES = (
@@ -210,6 +210,7 @@ class Task:
     cds_build_specs: list[str] = field(default_factory=list)
     cds_design_source: str | None = None
     cds_bundles: list[str] = field(default_factory=list)
+    cds_artifacts: list[dict[str, str]] = field(default_factory=list)
 
 
 def _sizes(score: dict | None) -> dict[str, str] | None:
@@ -451,6 +452,7 @@ class UiDesign:
     source: str
     bundle: str | None = None
     cites: list[str] = field(default_factory=list)
+    artifact: dict[str, str] | None = None
 
 
 def ui_authority(
@@ -499,8 +501,23 @@ def ui_authority(
                 f"recon-{slug}.json: ui item {item} has design source "
                 f"{json.dumps(source)}, not one of {', '.join(DESIGN_SOURCES)}"
             )
-        if source != "bundle":
+        raw_art = (
+            entry.get("artifact") if isinstance(entry.get("artifact"), dict) else {}
+        )
+        artifact = {
+            "kind": str(raw_art.get("kind") or "").strip(),
+            "slug": str(raw_art.get("slug") or "").strip(),
+        }
+        if source == "none":
             designs[item] = UiDesign(source)
+            continue
+        if source == "cds":
+            if artifact["kind"] not in KINDS or not artifact["slug"]:
+                raise HierarchyError(
+                    f"recon-{slug}.json: cds ui item {item} names no artifact "
+                    "{kind: page | shell | view, slug}"
+                )
+            designs[item] = UiDesign(source, artifact=artifact)
             continue
         bundle = str(entry.get("bundle") or "").strip()
         spec = str(entry.get("buildSpec") or "").strip()
@@ -515,17 +532,19 @@ def ui_authority(
             )
         spec = str(Path(spec).resolve())
         sections = str_list(entry.get("sections"))
+        held = read_bundle(root) or {}
         designs[item] = UiDesign(
             "bundle",
             str(root),
             [f"{spec}#{x}" for x in sections] if sections else [spec],
+            {"kind": held.get("kind", ""), "slug": held.get("slug", "")},
         )
     return designs
 
 
 def task_design(
     requirement_ids: list[str], designs: dict[str, UiDesign]
-) -> tuple[str, list[str], list[str]]:
+) -> tuple[str, list[str], list[str], list[dict[str, str]]]:
     """Return the design source a web-ui Task takes from the `ui` items it cites.
 
     `bundle` when any cited item takes a supplied bundle, else `cds` when any takes the CDS
@@ -536,18 +555,21 @@ def task_design(
         designs: Per delta item id its design.
 
     Returns:
-        The source, the distinct bundles of the cited `bundle` items, and their build-spec
-        citations.
+        The source, the distinct bundles of the cited `bundle` items, their build-spec
+        citations, and the distinct artifacts (`{kind, slug}`) of the cited `bundle` or `cds`
+        items.
     """
     cited = [designs[r] for r in requirement_ids if r in designs]
     sources = {d.source for d in cited}
     bundles = list(dict.fromkeys(d.bundle for d in cited if d.bundle))
     cites = list(dict.fromkeys(c for d in cited for c in d.cites))
+    keyed = {(d.artifact["kind"], d.artifact["slug"]) for d in cited if d.artifact}
+    artifacts = [{"kind": k, "slug": s} for k, s in sorted(keyed)]
     if "bundle" in sources:
-        return "bundle", bundles, cites
+        return "bundle", bundles, cites, artifacts
     if "cds" in sources or not cited:
-        return "cds", [], []
-    return "none", [], []
+        return "cds", [], [], artifacts
+    return "none", [], [], []
 
 
 def check_cds_contract(slug: str, tasks: list[Task]) -> None:
@@ -573,6 +595,13 @@ def check_cds_contract(slug: str, tasks: list[Task]) -> None:
             continue
         if t.cds_design_source not in DESIGN_SOURCES:
             problems.append(f"{t.key} has no design source")
+            continue
+        if len(t.cds_artifacts) > 1:
+            problems.append(
+                f"{t.key} builds ui items of more than one artifact ("
+                + ", ".join(f"{a['kind']} {a['slug']}" for a in t.cds_artifacts)
+                + "); a web-ui Task builds one artifact, so split it by artifact"
+            )
             continue
         if t.cds_design_source != "bundle":
             continue
@@ -681,10 +710,10 @@ def read_tasks(
         cited = [p for p in str_list(t.get("specPaths")) if p in refs]
         surfaces = _surfaces(t.get("surfaces"))
         ui = bool(surfaces) and UI_SURFACE in surfaces
-        source, bundles, build_specs = (
+        source, bundles, build_specs, artifacts = (
             task_design(str_list(t.get("requirementIds")), designs)
             if ui
-            else (None, [], [])
+            else (None, [], [], [])
         )
         tasks.append(
             Task(
@@ -715,6 +744,7 @@ def read_tasks(
                 cds_build_specs=build_specs,
                 cds_design_source=source,
                 cds_bundles=bundles,
+                cds_artifacts=artifacts,
             )
         )
     return tasks

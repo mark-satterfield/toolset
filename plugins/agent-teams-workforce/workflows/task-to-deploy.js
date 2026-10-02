@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed by its design source — against the cds bundle the owner supplied (bundle) with the cds plugin's tools/audit-app.py, cds:audit-against-system ruling the findings the script cannot rule on; against the live CDS design system with cds:audit-against-system (cds); not at all for a change with no design impact (none) — sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when required cds configuration, design artifacts or capabilities remain unresolved), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
+    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task first selects the design source it builds with from the bundles supplied now (depscore.py cds-bundles on designSystem.packagesDir): a cds Task whose artifact has a supplied bundle builds from that bundle, a bundle Task builds from the newest bundle of its artifact and stops blocked-upstream when none remains, a none Task is unchanged; then audits the files it changed by that design source — against the cds bundle the owner supplied (bundle) with the cds plugin's tools/audit-app.py, cds:audit-against-system ruling the findings the script cannot rule on; against the live CDS design system with cds:audit-against-system (cds); not at all for a change with no design impact (none) — sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when required cds configuration, design artifacts or capabilities remain unresolved), returning the verdict, with the design source and bundle used, as cdsAudit and the design source as designSource; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
   phases: [
     { title: 'Workspace', detail: "establishes or reuses the Story's worktree every writing phase operates in" },
     { title: 'Infra Intent', detail: 'authors the provisioning intent for an infrastructure Task' },
@@ -19,7 +19,9 @@ export const meta = {
 // args: {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
 //           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy?,
-//           cdsDesignSource?: 'bundle' | 'cds' | 'none', cdsBundlePath?, cdsBuildSpecs? },
+//           cdsDesignSource?: 'bundle' | 'cds' | 'none', cdsArtifact?: { kind, slug }, cdsBundlePath?, cdsBuildSpecs? },
+//   designSystem?: { packagesDir? } (the folder of single-artifact cds bundles the owner supplied; read at build time),
+//   pluginRoot?: string (the agent-teams-workforce install; else the install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
 //   infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json),
 //   spec?: object (defaults to bead), implementer?: string, worktreeRoot?: string,
 //   cdsRoot?: string (the cds plugin install; else the cds install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
@@ -45,11 +47,12 @@ const isInfra = INFRA_TYPES.includes(norm(bead.type)) || beadLabels.some((l) => 
 // A Task whose surfaces include web-ui takes one design source: bundle (built from the cds bundle the owner
 // supplied and audited against it), cds (designed with the CDS design system and audited against the live
 // design system) or none (no design impact: no cds design step and no cds audit). A contract that records
-// no design source takes bundle when it names a bundle, else cds.
+// no design source takes bundle when it names a bundle, else cds. Before the build, the bundles supplied now
+// decide the source actually used: a mockup can arrive any time before its Task is built.
 const UI_SURFACE = 'web-ui'
 const isUiTask = (Array.isArray(bead.surfaces) ? bead.surfaces : []).map(norm).includes(UI_SURFACE)
 const DESIGN_SOURCES = ['bundle', 'cds', 'none']
-const designSource = !isUiTask
+let designSource = !isUiTask
   ? null
   : DESIGN_SOURCES.includes(norm(bead.cdsDesignSource))
     ? norm(bead.cdsDesignSource)
@@ -67,6 +70,8 @@ let runDetail = null
 let workspaceOut = null
 // The cds audit verdict, { verdict: pass | fail | blocked | error, findings, scriptVersion }, once the audit ran.
 let cdsVerdict = null
+// The bundle the build uses, once the design source is selected.
+let usedBundle = null
 
 // Logs the journal payload as `RUN-JOURNAL {json}`, or as `RUN-JOURNAL-PART i/n <chunk>` lines when
 // it exceeds JOURNAL_CHUNK characters; the host concatenates the parts and writes the journal file.
@@ -114,7 +119,8 @@ function handback(ok, stage, headline, detail) {
     headline: String(headline || ''),
     branch: (workspaceOut && workspaceOut.branch) || null,
     worktree: (workspaceOut && workspaceOut.repoPath) || null,
-    ...(cdsVerdict ? { cdsAudit: cdsVerdict } : {}),
+    ...(designSource ? { designSource } : {}),
+    ...(cdsVerdict ? { cdsAudit: { ...cdsVerdict, designSource, bundle: usedBundle } } : {}),
   }
 }
 
@@ -375,6 +381,82 @@ Return one ruling per finding, with its file, line and value exactly as given, t
   return { report, violations, gaps, allowed, scriptVersion }
 }
 
+// Resolves depscore.py (pluginRoot, else the agent-teams-workforce install the plugin registry records for
+// $ATW_CONTROL_REPO, else the user-scope one) and runs `depscore.py cds-bundles` with the arguments after it.
+const RUN_CDS_SELECT_PY = `import json, os, subprocess, sys
+from pathlib import Path
+override, rest = sys.argv[1], sys.argv[2:]
+script = Path(override, "scripts", "portfolio", "depscore.py") if override else None
+problem = f"{script} does not exist" if script and not script.is_file() else ""
+if script is None:
+    control = os.environ.get("ATW_CONTROL_REPO", "").strip()
+    config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
+    reg = Path(config) / "plugins" / "installed_plugins.json"
+    try:
+        plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
+    except (OSError, ValueError) as exc:
+        plugins, problem = {}, f"{reg} is unreadable: {exc}"
+    ranked = []
+    for key, entries in plugins.items():
+        if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
+            continue
+        for e in entries:
+            path = Path(str(e.get("installPath") or ""), "scripts", "portfolio", "depscore.py") if isinstance(e, dict) else None
+            if not path or not path.is_file():
+                continue
+            if e.get("scope") in ("local", "project") and control and os.path.normpath(str(e.get("projectPath") or "")) == os.path.normpath(control):
+                ranked.append((0, str(path)))
+            elif e.get("scope") == "user":
+                ranked.append((1, str(path)))
+    if ranked:
+        script = Path(sorted(ranked)[0][1])
+    elif not problem:
+        problem = f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/depscore.py"
+if problem:
+    print(json.dumps({"error": problem}))
+    sys.exit(2)
+done = subprocess.run([sys.executable, str(script), "cds-bundles", *rest], capture_output=True, text=True)
+print(done.stdout.strip() or json.dumps({"error": done.stderr.strip()[-2000:] or f"depscore.py exited {done.returncode}"}))
+sys.exit(done.returncode)`
+const SELECT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
+}
+const packagesDir = String((a.designSystem && a.designSystem.packagesDir) || a.packagesDir || '').trim()
+/** Selects the design source a bundle or cds Task builds with now; returns { selection } or { error }. */
+async function selectDesign() {
+  const art = bead.cdsArtifact && typeof bead.cdsArtifact === 'object' ? bead.cdsArtifact : {}
+  const recorded = String(bead.cdsBundlePath || '').trim()
+  if (!packagesDir && !recorded) return { selection: null }
+  const argv = [
+    '--packages-dir', packagesDir,
+    '--design-source', designSource,
+    '--kind', String(art.kind || '').trim(),
+    '--slug', String(art.slug || '').trim(),
+    '--recorded-bundle', recorded,
+  ]
+  let out = null
+  try {
+    out = await agent(
+      `Run exactly this one shell command, once, in the FOREGROUND, and change nothing else:
+
+python3 -c ${shq(RUN_CDS_SELECT_PY)} ${shq(String(a.pluginRoot || '').trim())} ${argv.map(shq).join(' ')}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not open any file yourself, do not retry, do not run any other command.`,
+      { label: 'cds-select', phase: currentPhase || 'Workspace', model: 'haiku', effort: 'low', schema: SELECT_SCHEMA }
+    )
+  } catch (err) {
+    return { error: String((err && err.message) || err).slice(0, 300) }
+  }
+  const o = (out && out.output) || {}
+  if (!out || out.exitCode !== 0 || o.error || !o.selection || typeof o.selection !== 'object') {
+    return { error: String(o.error || `depscore.py cds-bundles${out ? ` exited ${out.exitCode}` : ' returned nothing'}`).slice(0, 500) }
+  }
+  return { selection: o.selection }
+}
+
 const LIVE_AUDIT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -451,11 +533,36 @@ try {
         requiredHumanActions: [`parent ${bead.id} to the Story of its repository`],
       }
     }
-    if (designSource === 'bundle' && !String(bead.cdsBundlePath || '').trim()) {
-      return {
-        ...handback(false, 'input', `${bead.id} takes design source bundle but its build contract names no cds bundle (cds_bundle_path), so it cannot be built from the supplied bundle or audited against it.`),
-        incompleteContract: ['cdsBundlePath'],
-        requiredHumanActions: [`record the supplied cds bundle on ${bead.id} as cds_bundle_path, or set its cds_design_source to cds when no mockup is supplied`],
+    // ── Design source: the bundles supplied now decide what a bundle or cds Task builds from ──
+    let buildSpecs = list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean)
+    usedBundle = designSource === 'bundle' ? String(bead.cdsBundlePath || '').trim() || null : null
+    if (designSource === 'bundle' || designSource === 'cds') {
+      const picked = await selectDesign()
+      if (picked.error) {
+        return handback(false, 'cds-select', `cds-select: the design source of ${bead.id} could not be selected: ${picked.error}`)
+      }
+      if (picked.selection) {
+        const sel = picked.selection
+        if (sel.blocked) {
+          cdsVerdict = { verdict: 'blocked', findings: 0, scriptVersion: null }
+          const upstream = [{ what: `cds bundle: ${sel.blocked}` }]
+          return {
+            ...handback(false, 'blocked-upstream', `blocked-upstream: ${bead.id} builds from a supplied cds bundle and ${sel.blocked}`, { selection: sel, upstreamMissing: upstream }),
+            upstreamMissing: upstream,
+          }
+        }
+        if (sel.designSource === 'bundle' && sel.bundle) {
+          const sameBundle = usedBundle && sel.bundle.replace(/\/+$/, '') === usedBundle.replace(/\/+$/, '')
+          if (!sameBundle) buildSpecs = [sel.buildSpec]
+          if (designSource !== 'bundle' || !sameBundle) log(`Design source: ${designSource} -> bundle ${sel.bundle}`)
+          designSource = 'bundle'
+          usedBundle = sel.bundle
+        }
+      }
+      if (designSource === 'bundle' && !usedBundle) {
+        cdsVerdict = { verdict: 'blocked', findings: 0, scriptVersion: null }
+        const upstream = [{ what: `cds bundle: ${bead.id} records design source bundle but names neither a bundle nor a packages directory holding one` }]
+        return { ...handback(false, 'blocked-upstream', `blocked-upstream: ${upstream[0].what}`, { upstreamMissing: upstream }), upstreamMissing: upstream }
       }
     }
 
@@ -502,8 +609,8 @@ try {
       surfaces: contractSurfaces,
       testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
       cdsDesignSource: designSource,
-      cdsBundlePath: String(bead.cdsBundlePath || '').trim() || null,
-      cdsBuildSpecs: list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean),
+      cdsBundlePath: designSource === 'bundle' ? usedBundle : null,
+      cdsBuildSpecs: designSource === 'bundle' ? buildSpecs : [],
     }
 
     let intent = null
