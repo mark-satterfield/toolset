@@ -171,24 +171,33 @@ async function constraintsGuard(label, phaseName, during, extra) {
   const why = after && after.error ? after.error : `git status ${JSON.stringify((after && after.gitStatus) || [])}${restoreNote}`
   return handback(false, 'constraints-written', `section 2 changed while ${during}: ${why}`, { ...(extra || {}), restored })
 }
-/** Returns the fingerprint of every file of arc42/, target/ and built/, or { error }. */
-const treeSnapshot = (label, phaseName) => depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)}`)
-/** Returns the files created, changed and deleted between two tree fingerprints, as absolute paths. */
-function treeDiff(x, y) {
-  const was = (x && x.files) || {}
-  const now = (y && y.files) || {}
+/** Where this step keeps its tree fingerprints: the per-file hashes stay on disk and never pass through a session. */
+const SNAP_DIR = `${DS.repo}/.claude/workflow-runs/artifacts/${beadId.replace(/[^A-Za-z0-9._-]+/g, '_')}/built-version`
+const TREE_START = `${SNAP_DIR}/tree-start.json`
+const TREE_COMPARED = `${SNAP_DIR}/tree-compared.json`
+const TREE_LAST = `${SNAP_DIR}/tree-last.json`
+/**
+ * Fingerprints every file of arc42/, target/ and built/ with depscore.py arch-snapshot: `save` writes
+ * the hashes to that file, and each file in `against` (a fingerprint saved earlier) yields the files
+ * created, changed and deleted since it, in `diffs`, in that order. Returns the result or { error }.
+ */
+async function treeSnapshot(label, phaseName, { save, against = [] } = {}) {
+  const out = await depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)}${save ? ` --save ${shq(save)}` : ''}${against.map((f) => ` --against ${shq(f)}`).join('')}`)
+  if (!out || out.error) return out || { error: 'no result' }
+  if (against.length && (!Array.isArray(out.diffs) || out.diffs.length !== against.length)) return { error: 'depscore.py arch-snapshot printed no difference for a saved fingerprint' }
+  return out
+}
+/** Returns diff `i` of a snapshot as absolute paths: { created, changed, deleted }. */
+function treeDiff(snap, i) {
+  const d = (snap && Array.isArray(snap.diffs) && snap.diffs[i]) || {}
   const abs = (rel) => `${archPath}/${rel}`
-  return {
-    created: Object.keys(now).filter((k) => !(k in was)).map(abs),
-    changed: Object.keys(now).filter((k) => k in was && was[k] !== now[k]).map(abs),
-    deleted: Object.keys(was).filter((k) => !(k in now)).map(abs),
-  }
+  return { created: listed(d.created).map(abs), changed: listed(d.changed).map(abs), deleted: listed(d.deleted).map(abs) }
 }
 const diffFiles = (d) => [...d.created, ...d.changed, ...d.deleted]
 
 const before = await constraintsSnapshot('constraints:before', 'Compare', true)
 if (!before || before.error || !hasText(before.kept)) return failed('Compare', 'compare', `section 2 of the architecture could not be fingerprinted and copied before the step: ${(before && before.error) || 'no copy was named'}`)
-const treeBefore = await treeSnapshot('tree:before', 'Compare')
+const treeBefore = await treeSnapshot('tree:before', 'Compare', { save: TREE_START })
 if (!treeBefore || treeBefore.error) return failed('Compare', 'compare', `the architecture could not be fingerprinted before the step: ${(treeBefore && treeBefore.error) || 'no result'}`)
 
 // ---------------------------------------------------------------- Compare
@@ -222,9 +231,9 @@ if (!compared) return failed('Compare', 'compare', `the prd-reality-reconciler r
 const differences = (Array.isArray(compared.differences) ? compared.differences : []).filter((d) => d && hasText(d.element))
 const guardCompare = await constraintsGuard('constraints:after-compare', 'Compare', 'the build was compared', { differences })
 if (guardCompare) return guardCompare
-const treeCompared = await treeSnapshot('tree:after-compare', 'Compare')
+const treeCompared = await treeSnapshot('tree:after-compare', 'Compare', { save: TREE_COMPARED, against: [TREE_START] })
 if (!treeCompared || treeCompared.error) return failed('Compare', 'compare', `the architecture could not be fingerprinted after the comparison: ${(treeCompared && treeCompared.error) || 'no result'}`, { differences })
-const compareWrites = treeDiff(treeBefore, treeCompared)
+const compareWrites = treeDiff(treeCompared, 0)
 const builtFiles = [...new Set([...listed(compared.files), ...differences.map((d) => d.file).filter(hasText).map((f) => f.trim()), ...compareWrites.created, ...compareWrites.changed])]
 const outsideBuilt = [...builtFiles, ...compareWrites.deleted].filter((f) => !f.startsWith(`${BUILT_DIR}/`) || f.split('/').includes('..'))
 if (outsideBuilt.length) {
@@ -259,15 +268,22 @@ Report every file you changed, created or deleted as an absolute path under ${AR
 
 const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
 const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
-/** Adds to a report every file the correction wrote since the comparison, measured from the tree, so an unreported write is reviewed too; returns { update } or { failure }. */
-async function measured(u, label) {
-  const now = await treeSnapshot(label, 'Correct')
+/**
+ * Adds to a report every file the correction wrote since the comparison, measured from the tree, so
+ * an unreported write is reviewed too, and saves the tree to TREE_LAST; with `sinceLast` it also names
+ * the files changed since the previous measurement. Returns { update, changedSinceLast } or { failure }.
+ */
+async function measured(u, label, sinceLast) {
+  const now = await treeSnapshot(label, 'Correct', { save: TREE_LAST, against: sinceLast ? [TREE_COMPARED, TREE_LAST] : [TREE_COMPARED] })
   if (!now || now.error) return { failure: failed('Correct', 'correct', `the architecture could not be fingerprinted after the correction: ${(now && now.error) || 'no result'}`, { differences, builtFiles, architectureUpdate: u }) }
-  const d = treeDiff(treeCompared, now)
+  const d = treeDiff(now, 0)
   const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
   if (unreported.length) log(`Correct: files written and not reported, added to the review: ${unreported.join(', ')}`)
   const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
-  return { tree: now, update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) } }
+  return {
+    changedSinceLast: sinceLast ? diffFiles(treeDiff(now, 1)) : [],
+    update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) },
+  }
 }
 /** Returns the failure when the correction wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
 async function outOfBounds(u) {
@@ -289,7 +305,6 @@ if (!update) return failed('Correct', 'correct', 'the architecture-maintainer re
 const firstMeasure = await measured(update, 'tree:after-correct')
 if (firstMeasure.failure) return firstMeasure.failure
 update = firstMeasure.update
-let lastTree = firstMeasure.tree
 const bounds = await outOfBounds(update)
 if (bounds) return bounds
 
@@ -341,13 +356,12 @@ ${CORRECT_TASK}`,
   )
   if (!fixed) return failed('Correct', 'correct', `the architecture-maintainer returned no result for correction ${corrections}`, { differences, builtFiles, architectureUpdate: update })
   const merged = (key) => [...new Set([...listed(update[key]), ...listed(fixed[key])])]
-  const fixMeasure = await measured({ ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles'), matched: merged('matched') }, `tree:after-correct-${corrections}`)
+  const fixMeasure = await measured({ ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles'), matched: merged('matched') }, `tree:after-correct-${corrections}`, true)
   if (fixMeasure.failure) return fixMeasure.failure
   update = fixMeasure.update
   const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
-  const changedNow = diffFiles(treeDiff(lastTree, fixMeasure.tree))
-  lastTree = fixMeasure.tree
+  const changedNow = fixMeasure.changedSinceLast
   if (!changedNow.length) {
     const why = `correction pass ${corrections} changed no file, so a further review would judge the same correction; the findings stand: ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
     return handback(false, 'correct', why, { differences, builtFiles, architectureUpdate: update, conformance, retries })

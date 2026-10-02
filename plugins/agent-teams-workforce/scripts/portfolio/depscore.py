@@ -29,7 +29,15 @@
                          no `bd` call
     arch-snapshot        fingerprint every file of `arc42/`, `target/` and `built/`, so a step
                          measures what its sessions wrote; `--save FILE` also writes the
-                         result to FILE; no `bd` call
+                         result to FILE and `--against FILE` (repeatable) reports the files
+                         created, changed and deleted since that saved fingerprint; with either,
+                         the per-file hashes stay on disk and are not printed; no `bd` call
+    arch-resume          read the architecture step's saved work in its working directory and
+                         print only the facts its control flow needs (finished steps, last
+                         round, open findings by id, unreviewed claims per writer, the decision's
+                         verdict, the integration's files); writes the full claim and finding
+                         ledger to `ledger.json` there; a saved file that cannot be parsed is
+                         an error; no `bd` call
     arch-target          check an approved draft and write it to `target/<subject>/`, every view
                          `in-review`; refuses a draft with no delta, a file in section 2, a view
                          without catalog frontmatter, or a subject named for the Epic or PRD;
@@ -116,6 +124,8 @@ from archstate import (
     write_target,
 )
 from archstate import states as arch_states
+from archstate import tree_diff
+from archresume import ResumeError, resume_facts
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
 from specui import SpecUiError, spec_ui_check
@@ -755,6 +765,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="also write the full result to this file, for a resumed step",
     )
+    asn.add_argument(
+        "--against",
+        type=Path,
+        action="append",
+        default=[],
+        help="a fingerprint saved with --save; report the files created, changed and "
+        "deleted since it (repeatable)",
+    )
+
+    arz = sub.add_parser(
+        "arch-resume",
+        help="the facts the architecture step's control flow needs from its saved work; "
+        "writes ledger.json there, runs no `bd` command",
+        parents=[common],
+    )
+    arz.add_argument(
+        "--work-dir",
+        required=True,
+        help="the architecture working directory of one Epic",
+    )
+    arz.add_argument(
+        "--roster",
+        required=True,
+        help="each role's agents, as role=a,b;role=c",
+    )
+    arz.add_argument(
+        "--assign",
+        default="",
+        help="owners the coordinator assigned to findings, as F1.2.3=agent,...",
+    )
 
     atg = sub.add_parser(
         "arch-target",
@@ -916,11 +956,25 @@ def run(args: argparse.Namespace) -> dict:
         return head | target_names(args.target_dir, split_ids(args.names))
     if command == "arch-snapshot":
         result = head | snapshot_tree(args.arch_root)
-        if args.save is not None and "error" not in result:
+        if "error" in result:
+            return result
+        diffs = [
+            {"against": str(p)}
+            | tree_diff(json.loads(p.read_text(encoding="utf-8")), result)
+            for p in args.against
+        ]
+        if args.save is not None:
             args.save.parent.mkdir(parents=True, exist_ok=True)
             args.save.write_text(json.dumps(result), encoding="utf-8")
             result["saved"] = str(args.save)
+        if args.save is not None or args.against:
+            result.pop("files", None)
+            result["diffs"] = diffs
         return result
+    if command == "arch-resume":
+        return head | resume_facts(
+            args.work_dir, roster=args.roster, assign=args.assign
+        )
     if command == "arch-target":
         return head | write_target(
             args.draft,
@@ -1173,6 +1227,7 @@ def main(argv: list[str] | None = None) -> int:
         GraphError,
         HierarchyError,
         SpecUiError,
+        ResumeError,
         rubric.WsjfError,
         json.JSONDecodeError,
         OSError,

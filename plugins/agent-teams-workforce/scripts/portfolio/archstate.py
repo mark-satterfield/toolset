@@ -489,6 +489,25 @@ def snapshot_tree(arch_root: str) -> dict:
     }
 
 
+def tree_diff(was: dict, now: dict) -> dict:
+    """Name the files created, changed and deleted between two `snapshot_tree` results.
+
+    Args:
+        was: The earlier fingerprint, as `snapshot_tree` returned or `--save` wrote it.
+        now: The later fingerprint.
+
+    Returns:
+        The created, changed and deleted files, each relative to the architecture root.
+    """
+    before = was.get("files") if isinstance(was.get("files"), dict) else {}
+    after = now.get("files") if isinstance(now.get("files"), dict) else {}
+    return {
+        "created": sorted(k for k in after if k not in before),
+        "changed": sorted(k for k in after if k in before and before[k] != after[k]),
+        "deleted": sorted(k for k in before if k not in after),
+    }
+
+
 def subject_folder(subject: str) -> str:
     """Derive the `<subject>` folder name from a subject as anyone names it.
 
