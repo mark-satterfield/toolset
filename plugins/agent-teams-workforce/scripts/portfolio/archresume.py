@@ -184,7 +184,7 @@ class Ledger:
                     "file": x.get("file") or "",
                     "verdict": _text(x.get("verdict")),
                     "evidence": x.get("evidence") or "",
-                    "owner": owner or self.assign.get(fid, ""),
+                    "owner": self.assign.get(fid) or owner,
                     "answer": None,
                 }
             )
@@ -370,7 +370,41 @@ def _integration(work: Path) -> dict:
     }
 
 
-def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
+def proposal_team(saved: dict, requested: dict, roles: dict) -> dict:
+    """Validate the durable two-person proposal budget consumed by architecture.js."""
+    team = requested or saved
+    if not team:
+        return {}
+    if not isinstance(team, dict):
+        raise ResumeError("proposalTeam must be an object")
+    lead, second = _text(team.get("lead")), _text(team.get("second"))
+    if roles.get(lead) != "proposer" or (second and roles.get(second) != "proposer"):
+        raise ResumeError(
+            "proposalTeam must name a lead and at most one proposer specialist"
+        )
+    if second == lead:
+        raise ResumeError("proposalTeam lead and second must differ")
+    if saved and (
+        lead != saved.get("lead") or (saved.get("second") and second != saved["second"])
+    ):
+        raise ResumeError(
+            "proposalTeam cannot replace retained proposers with new specialists"
+        )
+    if second and not all(
+        _text(team.get(k)) for k in ("unresolvedIssue", "evidence", "whySecond")
+    ):
+        raise ResumeError(
+            "second proposer needs a specific unresolved issue, evidence and why the lead cannot resolve it alone"
+        )
+    return {
+        k: _text(team.get(k))
+        for k in ("lead", "second", "unresolvedIssue", "evidence", "whySecond")
+    }
+
+
+def resume_facts(
+    work_dir: str, *, roster: str, assign: str = "", team: str = ""
+) -> dict:
     """Read the architecture step's saved work and return the facts its control flow needs.
 
     Writes the whole claim and finding ledger to `ledger.json` in the working directory, for the
@@ -403,13 +437,47 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
             "capabilities": len(caps) if isinstance(caps, list) else 0,
             "coverageSaved": bool(s.get("coverage")),
         }
-    ledger = _rounds(work, roles, parse_assign(assign))
+    ledger_path = work / LEDGER_NAME
+    previous = _load(ledger_path) if ledger_path.is_file() else {}
+    selected = proposal_team(
+        previous.get("proposalTeam", {}), json.loads(team) if team else {}, roles
+    )
+    assignments = dict(previous.get("assignments", {}))
+    assignments.update(parse_assign(assign))
+    ledger = _rounds(work, roles, assignments)
+    if selected:
+        # Preserve answered history; transfer only outstanding legacy proposer findings.
+        active = {selected["lead"], selected["second"]}
+        for finding in ledger.findings:
+            if (
+                not finding["answer"]
+                and finding["verdict"] != "verified"
+                and roles.get(finding["owner"]) == "proposer"
+                and finding["owner"] not in active
+            ):
+                assignments[finding["id"]] = selected["lead"]
+        ledger = _rounds(work, roles, assignments)
+    legacy_without_claims = [
+        w
+        for w, count in ledger.proposer_claims.items()
+        if not count and selected and w not in {selected["lead"], selected["second"]}
+    ]
+    if selected:
+        selected["adoptedAfterRound"] = previous.get("proposalTeam", {}).get(
+            "adoptedAfterRound", ledger.last
+        )
+    consolidation_due = bool(legacy_without_claims) and not any(
+        c["by"] == selected["lead"] and c["round"] > selected["adoptedAfterRound"]
+        for c in ledger.claims
+    )
     coverage, coverage_summary = coverage_facts(work, s, ledger.files)
     ledger_path = work / LEDGER_NAME
     if work.is_dir():
         ledger_path.write_text(
             json.dumps(
                 {
+                    "proposalTeam": selected,
+                    "assignments": assignments,
                     "claims": ledger.claims,
                     "findings": ledger.findings,
                     "savedResults": ledger.files,
@@ -440,15 +508,29 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
         "ledger": str(ledger_path) if work.is_dir() else None,
         "survey": survey,
         "coverage": coverage_summary,
+        "proposalTeam": selected,
         "rounds": {
             "last": ledger.last,
             "results": len(ledger.files),
             "saved": ledger.saved,
             "writers": ledger.writers,
             "reviewers": ledger.reviewers,
-            "proposersWithoutClaims": [
-                w for w, k in ledger.proposer_claims.items() if not k
-            ],
+            "legacyProposersWithoutClaims": legacy_without_claims
+            if consolidation_due
+            else [],
+            "proposersWithoutClaims": sorted(
+                set(
+                    [
+                        w
+                        for w, k in ledger.proposer_claims.items()
+                        if not k
+                        and (
+                            not selected or w in {selected["lead"], selected["second"]}
+                        )
+                    ]
+                    + ([selected["lead"]] if consolidation_due else [])
+                )
+            ),
             "claims": len(ledger.claims),
             "findings": len(ledger.findings),
             "openFindings": open_findings,

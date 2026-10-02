@@ -807,6 +807,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="owners the coordinator assigned to findings, as F1.2.3=agent,...",
     )
 
+    arz.add_argument(
+        "--proposal-team",
+        default="",
+        help="architecture.js durable lead and optional justified specialist as JSON",
+    )
+
     atg = sub.add_parser(
         "arch-target",
         help="check an approved draft and write it to target/<subject>/ as in-review; "
@@ -1024,7 +1030,10 @@ def run(args: argparse.Namespace) -> dict:
         return result
     if command == "arch-resume":
         return head | resume_facts(
-            args.work_dir, roster=args.roster, assign=args.assign
+            args.work_dir,
+            roster=args.roster,
+            assign=args.assign,
+            team=args.proposal_team,
         )
     if command == "arch-target":
         return head | write_target(

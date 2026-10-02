@@ -1,7 +1,7 @@
 export const meta = {
   name: 'architecture',
   description:
-    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). Every session treats anything in the PRD about how the system works as no requirement: the team decides every technical aspect itself. The script holds the decision until every proposer has stated claims, every claim has a verdict, the required reviewers and a cost reviewer have reviewed the design (the pattern challenger, which proposes competing designs, only when the coordinator finds it needed), every finding is answered, and depscore.py arch-target accepts the draft; a resumed run reads its saved work through depscore.py arch-resume, which folds the saved round results into the claim and finding ledger on disk (ledger.json, which the sessions read) and returns only the facts the run branches on, and it stops, keeping the saved work, when that work cannot be read. The architecture-decider, given artifact paths only, approves the team's result, choosing where the team left competing solutions, or returns it to a named proposer; anything else it escalates goes back to the team, and only two business requirements that no design can satisfy together, or an architecture that contradicts itself where common sense cannot settle it, reach the owner. On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective; depscore.py arch-commit then commits the files the integration changed, staging only those paths, and pushes the branch. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval, vaultCommit } or, for conflicting business requirements or a contradiction in the architecture, ok:false at stage owner-concern with requiredHumanActions.",
+    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). Every session treats anything in the PRD about how the system works as no requirement: the team decides every technical aspect itself. The script holds the decision until every proposer has stated claims, every claim has a verdict, the required reviewers and a cost reviewer have reviewed the design (the pattern challenger, for targeted critique only when needed), every finding is answered, and depscore.py arch-target accepts the draft; a resumed run reads its saved work through depscore.py arch-resume, which folds the saved round results into the claim and finding ledger on disk (ledger.json, which the sessions read) and returns only the facts the run branches on, and it stops, keeping the saved work, when that work cannot be read. The architecture-decider, given artifact paths only, approves the team's result, choosing where the team left competing solutions, or returns it to a named proposer; anything else it escalates goes back to the team, and only two business requirements that no design can satisfy together, or an architecture that contradicts itself where common sense cannot settle it, reach the owner. On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective; depscore.py arch-commit then commits the files the integration changed, staging only those paths, and pushes the branch. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval, vaultCommit } or, for conflicting business requirements or a contradiction in the architecture, ok:false at stage owner-concern with requiredHumanActions.",
   phases: [
     { title: 'Survey', detail: 'the polyrepo-steward names the repositories; a prd-reality-reconciler session surveys the effective views, code on main, open beads and open targets for each capability the PRD needs' },
     { title: 'Rounds', detail: 'the coordinator names each round of proposers, reviewers, diagram authors and cost reviewers; the script runs them and tracks every claim and finding' },
@@ -191,7 +191,7 @@ const ROSTER = {
     'uml-diagram-author': 'UML views: sequence, state, activity, class',
   },
   reviewer: {
-    'architecture-pattern-challenger': 'counters a design with a structurally different alternative and the weaknesses it exposes',
+    'architecture-pattern-challenger': 'critiques concrete structural weaknesses in the retained design without authoring another proposal',
     'architecture-tradeoff-skeptic': 'hidden assumptions and optimistic estimates behind a tradeoff',
     'architecture-boundary-guardian': 'coupling across contexts; conflicts with the constraints; departures from established patterns without reason and evidence',
     'operational-readiness-reviewer': 'operational burden: monitoring, alerting, runbooks',
@@ -218,9 +218,9 @@ const assigned = new Map()
  * it, and prints only the facts the control flow branches on. No saved content comes back here:
  * sessions get file paths. Returns the facts or { error }.
  */
-async function readFacts(label, phaseName) {
+async function readFacts(label, phaseName, proposalTeam = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
-  const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}`)
+  const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}`)
   if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
     return { error: (out && out.error) || 'depscore.py arch-resume printed no facts' }
   }
@@ -313,11 +313,24 @@ const SURVEY_SCHEMA = {
     summary: { type: 'string' },
   },
 }
+// Consumed by maker, checker and decider prompts: one shared completion standard.
+const DESIGN_REVIEW_STANDARD = `Use the same acceptance basis throughout: applicable PRD outcomes, settled owner decisions and section-2 constraints, the relevant MODEL obligations, existing source evidence, and the retained target/delta. The lead reconciles the combined design before handing it to reviewers: contracts, event publishers, ownership, security and failure behavior must agree across its views. Inspect cited implementation and tests; distinguish evidence read from behavior actually verified. Do this within the existing authoring pass, not a new agent or audit pass.
+Review is an independent safety net against that same basis, not a source of new requirements or preferred redesigns. Each finding identifies the violated requirement/constraint/contract or concrete correctness defect, its evidence and the bounded repair. Do not reopen a settled mechanism just to offer another design. On later rounds review the changed claims/views and their affected dependencies, retaining still-valid evidence; do not demand fresh unrelated proposals. New evidence of a real defect must still be reported. Neither this shared standard nor the proposer cap guarantees approval.`
+
 const COORDINATOR_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['readyForDecision', 'reason', 'dispatches'],
+  required: ['readyForDecision', 'reason', 'proposalTeam', 'dispatches'],
   properties: {
+    // Consumed by arch-resume and runRound: persist and enforce the effort-wide proposal budget.
+    proposalTeam: {
+      type: 'object', additionalProperties: false,
+      required: ['lead', 'second', 'unresolvedIssue', 'evidence', 'whySecond'],
+      properties: {
+        lead: { type: 'string' }, second: { type: 'string' },
+        unresolvedIssue: { type: 'string' }, evidence: { type: 'string' }, whySecond: { type: 'string' },
+      },
+    },
     readyForDecision: { type: 'boolean' },
     reason: { type: 'string' },
     dispatches: {
@@ -618,7 +631,7 @@ const retries = []
 /** Each finding id handed to a writer to answer: { agentType, round, clarified }. */
 const asked = new Map()
 let silentLast = []
-/** The reviewers that check every design before a decision, with one cost reviewer; the pattern challenger, which proposes competing designs, runs only when the coordinator finds it needed. */
+/** The reviewers that check every design before a decision, with one cost reviewer; the pattern challenger provides targeted critique only when needed. */
 const ON_DEMAND_REVIEWERS = ['architecture-pattern-challenger']
 const REQUIRED_CHALLENGERS = Object.keys(ROSTER.reviewer).filter((r) => !ON_DEMAND_REVIEWERS.includes(r))
 const ledgerFacts = () => facts.rounds
@@ -718,11 +731,13 @@ ${INPUTS_RULE}
 
 ${COVERAGE_RULE}
 
+${DESIGN_REVIEW_STANDARD}
+
 THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
 EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work.`
   if (WRITER_ROLES.includes(d.role)) {
     const work = d.role === 'proposer'
-      ? `Design the target for your concern (${ROSTER.proposer[d.agentType]}) from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
+      ? `Consolidate the retained target across all affected concerns, using your expertise (${ROSTER.proposer[d.agentType]}), existing source evidence and the settled mechanism. Revise the existing design; do not reopen settled choices or create a proposal per concern. Work from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
       : `Draw the views your task names (${ROSTER.diagram[d.agentType]}) into the draft, from the design the proposers wrote there. Depict nothing that design does not contain.`
     return `You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
 
@@ -800,14 +815,23 @@ function settleDispatches(plan, n) {
       out.push({ agentType: name, role, task: String(d.task || ''), files, answers })
     }
   }
+  const legacyMissing = listed(ledgerFacts().legacyProposersWithoutClaims)
+  if (legacyMissing.length) {
+    const lead = facts.proposalTeam.lead
+    const task = `Consolidate the retained drafts and results from ${legacyMissing.join(', ')}: they stated no reviewable claims. Inspect their existing work and its evidence, repair gaps, and state the consolidated claims for independent review; do not merely repeat earlier claims.`
+    const same = out.find((d) => d.agentType === lead)
+    if (same) same.task += `\n${task}`
+    else out.push({ agentType: lead, role: 'proposer', task, files: [], answers: [] })
+  }
   for (const d of out) d.answers = d.answers.filter((id) => openFindings().some((f) => f.id === id && f.owner === d.agentType))
   for (const r of forced) {
     const role = roleOf(r.agentType)
     if (!role || !WRITER_ROLES.includes(role)) continue
-    const same = out.find((x) => x.agentType === r.agentType)
+    const recipient = role === 'proposer' ? facts.proposalTeam.lead : r.agentType
+    const same = out.find((x) => x.agentType === recipient)
     const task = `The architecture-decider returned the target to you. Read \`returnTo\` in ${DECISION_JSON} (the decision in full is ${DECISION_MD}) for the due diligence it names as missing from your design, and supply it.`
     if (same) same.task = `${same.task}\n${task}`
-    else out.push({ agentType: r.agentType, role, task, files: [], answers: [] })
+    else out.push({ agentType: recipient, role, task, files: [], answers: [] })
     retries.push({ step: `round${n}:${r.agentType}`, whatChanged: `the architecture-decider returned the target naming missing due diligence (in ${DECISION_JSON})` })
   }
   for (const f of openFindings()) {
@@ -833,6 +857,11 @@ function settleDispatches(plan, n) {
     d.clarified = again
     retries.push({ step: `round${n}:${d.agentType}`, findings: again, whatChanged: `round ${n} tells ${d.agentType} that its round ${prev} result ${result} for finding(s) ${again.join(', ')}` })
   }
+  const proposers = out.filter((d) => d.role === 'proposer')
+  const allowed = [facts.proposalTeam.lead, facts.proposalTeam.second].filter(Boolean)
+  if (proposers.length > 2 || proposers.some((d) => !allowed.includes(d.agentType))) {
+    return { dispatches: [], rejected: [...bad, 'proposal budget: only the retained lead and justified second may write proposals'], stuck, budgetError: true }
+  }
   return { dispatches: out, rejected: bad, stuck }
 }
 
@@ -843,6 +872,12 @@ function settleDispatches(plan, n) {
  * whose result was not saved) or { error } when the saved results could not be read.
  */
 async function runRound(n, dispatches) {
+  // Last boundary before any agent call; automatic returns and legacy owners cannot bypass it.
+  const proposers = dispatches.filter((d) => d.role === 'proposer')
+  const team = facts.proposalTeam || {}
+  if (proposers.length > 2 || new Set(proposers.map((d) => d.agentType)).size !== proposers.length || proposers.some((d) => ![team.lead, team.second].filter(Boolean).includes(d.agentType))) {
+    return { error: 'proposal budget exceeded; saved work retained, no round agents dispatched' }
+  }
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
   const ordered = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: i + 1, file: `${ROUNDS_DIR}/r${n}-${i + 1}-${d.role}-${d.agentType}.json` }))
@@ -894,6 +929,8 @@ ARTIFACTS:
 ${PRD_RULE}
 
 ${COVERAGE_RULE}
+
+${DESIGN_REVIEW_STANDARD}
 Read all coverage rows and independent checks in ${LEDGER_JSON}; check completeness against the MODEL, not only existing catalog hits. Set coverageRevision to the ledger's coverageRevision. Approval requires resolved relevant obligations with independent current-content evidence; never approve from an aggregate boolean.
 
 The team has designed, challenged and settled this target in its rounds, led by the coordinator. You are not its lead: you approve its result, and you choose only where the team left competing solutions it could not settle.
@@ -973,30 +1010,37 @@ THE LEDGER is ${LEDGER_JSON}: every claim with its reviewer verdicts, and every 
 
 WHAT STANDS BETWEEN THE DRAFT AND A DECISION:
 ${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : n === 1 ? '- nothing is written yet' : '- nothing'}
-${teamNotes ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN were raised at the decision: they are the \`ownerConcerns\` in ${DECISION_JSON} (readable in ${DECISION_MD}). Read them and route each to the writers it concerns, and to reviewers.\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => f.agentType).join(', ')}; what each is missing is in \`returnTo\` of ${DECISION_JSON}. The script dispatches each of them this round.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
+${teamNotes ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN were raised at the decision: they are the \`ownerConcerns\` in ${DECISION_JSON} (readable in ${DECISION_MD}). Read them and route each to the writers it concerns, and to reviewers.\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => f.agentType).join(', ')}; what each is missing is in \`returnTo\` of ${DECISION_JSON}. The retained lead consolidates this missing diligence; do not reinstate legacy specialist fanout.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
 
 ${PRD_RULE}
 
 ${COVERAGE_RULE}
+
+${DESIGN_REVIEW_STANDARD}
 Assign coverage ids explicitly in each writer/reviewer task. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
 
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
 HOW TO ROUTE:
-- Dispatch every proposer whose concern the solution touches; when it is unclear whether a concern is touched, include its proposer. A PRD the effective version already serves still gets one proposer, writing a delta that says the effective version serves it.
+- Return proposalTeam: lead, second, unresolvedIssue, evidence, whySecond (empty strings for the optional second fields). Default one lead for the entire architecture effort, consolidating all concerns. Never more than two proposer identities across rounds. Retain this saved team: ${JSON.stringify(facts.proposalTeam || {})}. A second is exceptional: name the specific unresolved issue, its source/claim/finding evidence, and why the lead cannot resolve it alone; merely touching another concern is not justification. Once selected, identities cannot be replaced; later rounds revise their retained work. A PRD already served needs only a no-change delta.
+- Do not split proposals among diagram authors, reviewers or renamed specialists. Diagram authors depict settled design only; reviewers critique without writing competing proposals. Reuse all legacy results as input to the lead, not instructions to redispatch their authors.
 - Every design is reviewed before a decision by ${REQUIRED_CHALLENGERS.join(', ')} and by a cost reviewer; the list below names any that have not yet run.
-- Competing designs are not the default. Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} for a competing alternative only when it is needed: the design departs from an established pattern, reviewers find it weak or unsupported, or the choice is costly to reverse.
+- Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} only for targeted critique of a concrete unresolved weakness; it does not create a competing design or add a proposer.
 - When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
-- Every open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. The script adds the owner's dispatch when you leave one out.
+- Every open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
 - Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`,
     { label: `round${n}:coordinate`, phase: 'Rounds', agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA }
   )
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
+  const teamFacts = await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
+  if (teamFacts.error || !teamFacts.proposalTeam || !teamFacts.proposalTeam.lead) return { ok: false, stage: 'rounds', reason: teamFacts.error || 'coordinator did not select a proposal lead; saved work retained', subject }
+  facts = teamFacts
   const settled = settleDispatches(plan, n)
+  if (settled.budgetError) return { ok: false, stage: 'rounds', reason: settled.rejected.join('; '), subject }
   rejected = settled.rejected
   forced = []
   teamNotes = false

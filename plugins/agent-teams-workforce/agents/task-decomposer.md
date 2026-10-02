@@ -82,6 +82,10 @@ field exists because a document said so, and never restate one of its recipes.
   it. You are not required to restate them per task, and their absence from a task's own metadata is
   not a gap.
 
+## Existing implementation and incremental scope
+
+Build incremental tasks against inspected code in the named repository. Use detailing citations and targeted entrypoint/contract/test reads during decomposition, not a new survey. Each task description carries the current behavior and file:line evidence, concrete gap, affected files/integration points, behavioral delta and supported behavior/contracts to preserve. Its acceptance criteria and Definition of Done verify that delta and relevant regressions. Distinguish working evidence from incomplete wiring, stubs and unknowns; test source is not proof of execution. Neither assume existing code is correct nor rewrite it wholesale. An evidenced replacement may be justified by requirements and approved architecture; a PRD or missing code alone does not authorize a new service, repository or feature. Report contradictions with the detailing/spec in the existing rationale/notes rather than silently reclassifying scope.
+
 ## Operating Rules
 
 - No self-tasking: if you discover work beyond your assignment (missing spec content, dependency questions, scoring concerns), report it to the calling workflow; never perform or assign it yourself.

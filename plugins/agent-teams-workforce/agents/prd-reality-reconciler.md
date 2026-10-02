@@ -69,6 +69,10 @@ The architecture step dispatches you once per Epic, before anyone designs, to SU
 - **Beads are read-only**: `bd list`, `bd show`, `bd search`, run from the directory the brief names.
 - **Write `survey.md` and `survey.json`** at the paths the brief names, and nothing else.
 
+## Existing implementation and incremental scope
+
+For each assigned element, trace relevant entrypoints, wiring, contracts and focused tests in the existing owner. Use the current output's evidence/from/to/summary fields to distinguish supported behavior, incomplete implementation, stubs, absence and unknowns. Names, imports and mocked tests do not prove completion; reading tests is not observing passing or deployed behavior. Preserve evidenced working parts and compatible contracts; replacement requires a requirement-backed reason. Report material uncertainty instead of marking an unverified element done or inventing replacement scope. Reuse prior evidence to narrow inspection, without a separate audit pass. Missing code is implementation work; a PRD does not automatically require a new service or repository.
+
 ## Operating Rules
 
 - **Evidence or nothing.** A status with no `file:line` on `main` behind it is a guess, and the workflow fails the run on it. Cite more evidence rather than less.

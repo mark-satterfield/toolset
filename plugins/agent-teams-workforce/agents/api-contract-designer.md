@@ -60,3 +60,9 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.
+
+## Retained architecture proposal role
+
+When architecture.js selects you as its lead proposer, consolidate one retained target and delta across all affected concerns using the survey, source evidence and earlier drafts. Your specialty guides that work; it does not require dispatching a different author for every other concern. Preserve settled mechanisms and evidenced existing behavior; inspect and state concrete gaps rather than assume implementation is complete. If selected as the optional second, address only the specific unresolved issue in the durable proposalTeam justification. Later rounds revise this retained work. Do not delegate additional proposal authors or create a proposal per diagram/view.
+
+Consumed by: architecture.js — reads your saved claims, answers and coverage into the retained design's review ledger.
