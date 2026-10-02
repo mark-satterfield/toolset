@@ -20,8 +20,9 @@ Usage
   audit-app.py --repo <repo> --bundle <bundle> [--files <path> ...]
 
   --repo     the application repository (a git work tree)
-  --bundle   the cds hand-off bundle: a `batch-*` or `<change>-<timestamp>`
-             directory holding `styles/`, or a stylesheet directory itself
+  --bundle   one cds hand-off bundle, as `tools/package-change.py` writes it:
+             a `<slug>-<timestamp>` directory holding `bundle.json` (kind
+             page, shell or view), `styles/` and `spec/build-spec.md`
   --files    the files to audit, relative to --repo. Without it, the files the
              work tree changed against HEAD (modified, added and untracked;
              deleted files excluded) are audited.
@@ -51,8 +52,8 @@ audit-against-system skill.
 
 Output
 ------
-One JSON object on stdout: the script version, the bundle, the files audited and
-skipped, and each finding as {file, line, rule, value, ruling}. Exit status 0
+One JSON object on stdout: the script version, the bundle with its kind and
+slug from `bundle.json`, the files audited and skipped, and each finding as {file, line, rule, value, ruling}. Exit status 0
 when there is no finding, 1 when there is at least one, 2 on a usage or IO error
 (the JSON then carries `error`).
 """
@@ -166,19 +167,35 @@ def plugin_version() -> str:
     return str(meta.get("version") or "unknown")
 
 
-def styles_dir(bundle: Path) -> Path:
-    """Return the bundle's stylesheet directory.
+BUNDLE_KINDS = frozenset({"page", "shell", "view"})
+
+
+def read_bundle(bundle: Path) -> tuple[Path, dict]:
+    """Return the bundle's stylesheet directory and its bundle.json contract.
 
     Returns:
-        `<bundle>/styles` when it holds the sheets, else the bundle itself.
+        `<bundle>/styles` and the parsed `<bundle>/bundle.json`.
 
     Raises:
-        AuditError: neither holds tokens.css.
+        AuditError: bundle.json is missing, unreadable or names no known kind, or
+            the bundle holds no styles/ or spec/build-spec.md.
     """
-    for candidate in (bundle / "styles", bundle):
-        if (candidate / "tokens.css").is_file():
-            return candidate
-    raise AuditError(f"{bundle} holds no styles/tokens.css: it is not a cds bundle")
+    contract_path = bundle / "bundle.json"
+    try:
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise AuditError(
+            f"cannot read {contract_path}: {bundle} is not a cds bundle ({exc})"
+        ) from exc
+    if not isinstance(contract, dict) or contract.get("kind") not in BUNDLE_KINDS:
+        raise AuditError(f"{contract_path} names no kind among page, shell, view")
+    styles = bundle / "styles"
+    if not (styles / "tokens.css").is_file():
+        raise AuditError(f"{bundle} holds no styles/tokens.css")
+    spec = bundle / str(contract.get("build_spec") or "spec/build-spec.md")
+    if not spec.is_file():
+        raise AuditError(f"{bundle} holds no {spec.relative_to(bundle)}")
+    return styles, contract
 
 
 def inventory(styles: Path) -> dict:
@@ -436,7 +453,7 @@ def audit(repo: Path, bundle: Path, files: list[str] | None) -> dict:
     """
     if not repo.is_dir():
         raise AuditError(f"{repo} is not a directory")
-    styles = styles_dir(bundle)
+    styles, contract = read_bundle(bundle)
     inv = inventory(styles)
     targets = files if files is not None else changed_files(repo)
     audited: list[str] = []
@@ -466,6 +483,8 @@ def audit(repo: Path, bundle: Path, files: list[str] | None) -> dict:
         "scriptVersion": plugin_version(),
         "repo": str(repo),
         "bundle": str(bundle),
+        "bundleKind": contract["kind"],
+        "bundleSlug": contract.get("slug"),
         "bundleFingerprint": inv["fingerprint"],
         "bundleVerified": inv["verified"],
         "audited": audited,

@@ -25,18 +25,45 @@ Assembles everything an approved change needs to reach the application repositor
 
 ## Discovery checklist
 
+`../../tools/package-change.py` performs these checks; the skill only resolves the bundle root first when `$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` is unset, and passes it as `--package-root`.
+
 1. **Resolve the target.** From the caller's pointer, find the state record whose `output_path` matches strictly, searching all three state directories. If none is found → STOP `STATE_RECORD_NOT_FOUND`.
 2. **Determine the artifact kind** from which state directory matched — a Page HTML (`compose-page`), a Shell (`compose-shell`), or a View (`compose-view`). The bundle carries that one HTML artifact.
 3. **Resolve the bundle output root** from `$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR`, else ask once. If still unresolved → STOP `OUTPUT_PATH_UNRESOLVABLE`.
 
 ## Pipeline
 
-1. **Load the state record** for the resolved target — it is the build spec's spine.
-2. **Confirm stylesheet freshness (silent).** Compute the live fingerprints with `python3 ../../lib/cds_hash.py inputs <$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS> ../../reference <$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR|NONE>` and compare to `manifest.json`. If stale or missing, invoke the internal `../generate-css/SKILL.md` machinery and proceed, so the bundle ships current CSS — never mention this stage to the human or present it as something for them to run. If that regeneration itself halts, STOP `STYLESHEETS_REGEN_FAILED:{inner-code}`.
-3. **Synthesize the build spec** from the state record — the composed artifact (the Page with its page family, the ShellDefinition a Shell realizes, or both for a View), its ordered Sections (each with Shape, Components, grounds, token/class contract), and the accessibility contracts the chosen Components carry. For a View, the spec also names the stored Shell (from `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR`) the Page nests inside. This is reference-anchored, not invented: it cites the library entries by path — `../../reference/libraries/{components,shapes,sections,pages}/<name>.md` and the `../../reference/rules/{shape-selection,page-constraints}/<name>.md` entries the composition applied — plus `../../reference/compliance.md`, rather than restating them.
-4. **Copy the artifacts** into the bundle (layout below): the stylesheet set + manifest, the composer's HTML artifact, the wireframe and decision-log sidecars, the resolved ancillary assets (including `artwork-manifest.yaml` when the assets directory holds one), and the state record. Never include a `.review.html` file — that is the review skill's harness artifact, a working file, not a deliverable. If an asset path recorded in the state record cannot be resolved → STOP `ASSETS_UNRESOLVABLE` and name it.
-5. **For an update (brownfield) change** (`mode == update` in the state record), add an `update` folder: a snapshot of the original files the change started from (`update_source`) plus the region-scoped change diff, so the app-repo agent applies a scoped change rather than a from-scratch rebuild.
-6. **Write the bundle README** — the index plus a short "how the app-repo agent builds this" note. Emit nothing back into the source artifacts (no metadata injected into the HTML artifact or the stylesheets).
+One bundle holds exactly one artifact — one Page, one Shell, or one View. To hand off several, run this skill once per artifact.
+
+1. **Run the bundler.** `python3 ../../tools/package-change.py <target-output-path> [--package-root <dir>]` does the discovery checklist and writes the whole bundle; the model synthesizes and copies nothing by hand. It:
+   - finds the one state record whose `output_path` equals the target, across the three state directories, and reads the artifact kind from the directory it sits in;
+   - for a View, reads the Shell from the record's `shell: {name, modified}` field (records written before that format are read from a plain-string `shell` or from `shell_name` / `shell_modified`) and halts `VIEW_SHELL_UNRESOLVED` when no Shell name resolves;
+   - confirms the stylesheet set is current with `../../lib/cds_hash.py` (the elements YAML, `../../reference`, and the extensions tree against `manifest.json`, and each sheet against its recorded SHA-256);
+   - writes `spec/build-spec.md` from the state record — the artifact, its page family, for a View the stored Shell and whether this View modified it, and the **Sections table** with one row per recorded Section under its stable Section ID (Shape, Components, ground, resolution rung) — citing by path the `reference/libraries/{components,shapes,sections,pages}/` and `reference/rules/{shape-selection,page-constraints}/` entries the composition applied, plus `reference/compliance.md`, rather than restating them;
+   - copies the stylesheet set + manifest, the composer's HTML artifact, the wireframe and decision-log sidecars, the record's assets (plus `artwork-manifest.yaml` when the assets directory holds one), and the state record — never a `.review.html` harness file;
+   - for `mode == update`, adds `update/` with a snapshot of `update_source` and the diff from it to the artifact;
+   - writes `README.md` (index plus a "how the app-repo agent builds this" note) and `bundle.json`, and prints the bundle path.
+2. **Act on its exit status.**
+   - `0` — done; report the printed bundle path.
+   - `1` — a halt; surface the `STOP:` block it printed on stderr verbatim.
+   - `3` — the stylesheet set is stale or missing. Invoke the internal `../generate-css/SKILL.md` machinery, then rerun step 1 — never mention this stage to the human or present it as something for them to run. If that regeneration itself halts, STOP `STYLESHEETS_REGEN_FAILED:{inner-code}`.
+   - `2` — a usage or IO error; surface stderr.
+
+Nothing is written back into the source artifacts (no metadata injected into the HTML artifact or the stylesheets).
+
+## bundle.json
+
+The machine-readable contract at the bundle root, which the delivery pipeline matches on:
+
+```json
+{"kind": "page" | "shell" | "view",
+ "slug": "<artifact slug: the artifact file's basename without .html>",
+ "shell": {"name": "<stored shell name>", "modified": false} | null,
+ "created_at": "<UTC ISO-8601>",
+ "build_spec": "spec/build-spec.md"}
+```
+
+`shell` is non-null only for a View. The Section IDs in `spec/build-spec.md`'s Sections table are the IDs downstream work cites.
 
 ## Output bundle layout
 
@@ -45,6 +72,7 @@ A timestamped bundle directory under the package root. The `design/` payload is 
 ```
 PACKAGE_ROOT/
   <change-slug>-<timestamp>/
+    bundle.json            the machine-readable contract (above)
     README.md              index + how-to-build note
     spec/
       build-spec.md        the developer-agent spec, derived from the state record
@@ -68,6 +96,13 @@ PACKAGE_ROOT/
 ## Halt conditions
 
 - `STATE_RECORD_NOT_FOUND` — no state record matches the target; nothing to package.
+- `STATE_RECORD_AMBIGUOUS` — more than one state record names the target as its `output_path`.
+- `STATE_RECORD_UNREADABLE` — the matching state record is not valid YAML.
+- `VIEW_SHELL_UNRESOLVED` — the target is a View and its state record names no Shell.
+- `SECTIONS_UNRECORDED` — the state record records no Sections, so the build spec has no Sections table.
+- `TARGET_UNREADABLE` — the artifact the state record names is not on disk.
+- `SIDECAR_UNRESOLVABLE` — the wireframe or decisions sidecar cannot be found.
+- `UPDATE_SOURCE_UNRESOLVABLE` — `mode == update` but `update_source` is not a readable file.
 - `OUTPUT_PATH_UNRESOLVABLE` — no bundle output directory provided and none discoverable.
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the stylesheet set was stale and the auto-invoked `generate-css` halted; the inner code is surfaced verbatim.
 - `ASSETS_UNRESOLVABLE` — an ancillary asset recorded in the state record cannot be found.

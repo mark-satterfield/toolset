@@ -188,7 +188,7 @@ No composer, no mockup, no CDS command required — the design system is simply 
 
 > "This is approved — package it for the app repo."
 
-`/cds:package-change` bundles everything the change needs to cross the boundary into one directory: the current stylesheet set, the approved artifact (a Page HTML, a Shell, or a View), a derived `build-spec.md` that cites the library entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in CDS" to "built in the app repo," and the only bridge outward — the plugin never pivots into app work.
+`/cds:package-change` bundles everything one approved artifact needs to cross the boundary into one directory, written by `tools/package-change.py` from the artifact's state record: the current stylesheet set, the artifact (one Page HTML, one Shell, or one View), a `bundle.json` contract (kind, slug, the View's Shell, created_at), a derived `build-spec.md` with stable Section IDs that cites the library entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in CDS" to "built in the app repo," and the only bridge outward — the plugin never pivots into app work.
 
 ### Update an existing page (brownfield)
 

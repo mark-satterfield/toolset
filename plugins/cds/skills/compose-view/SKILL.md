@@ -39,7 +39,7 @@ Execute the shared build pipeline (`../../reference/pipeline.md`) — library re
 - **Assembly.** Nest the Page HTML's content into the stored Shell's vacant space and emit one self-contained HTML file: stylesheet set and theming + color-mode scripts inlined once in the `<head>`, no duplicated machinery from the two sources.
 - **SPA variant.** Nest N Pages; emit a client-side switcher (same mechanism as the color-mode toggle — a `data-` attribute on the root, a small inline script, CSS visibility rules) showing one Page at a time in the vacant space. No routing code, no URL handling.
 - **Freshness of ingredients.** A stored Shell older than the current stylesheet set is re-inlined from the current set during nesting (the stored Shell's structure is reused; the CSS inlined into the View is always current — the invisible-machinery guarantee).
-- **State record** (pipeline schema): the Shell name, the Page path(s), and the output path, for iteration; sidecars as the pipeline defines.
+- **State record** (pipeline schema): the output path, the Page path(s), and the Shell, recorded as `shell: {name: <stored shell name>, modified: <bool>}` — `name` is the stored Shell's name in the shells area, `modified` is `true` only when this View changed the Shell's structure; sidecars as the pipeline defines. `package-change` reads the Shell from that field.
 
 The compliance pass runs `[scope: standalone]` + `[scope: both]`.
 
