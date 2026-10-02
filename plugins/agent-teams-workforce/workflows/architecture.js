@@ -1,11 +1,11 @@
 export const meta = {
   name: 'architecture',
   description:
-    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). The script holds the decision until every claim has a verdict, every finding is answered and depscore.py arch-target accepts the draft. The architecture-decider, given artifact paths only, approves, returns to a named proposer, or raises an owner concern (a serious security, privacy, cost or best-practice concern, or a PRD defect). On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective; depscore.py arch-commit then commits the files the integration changed, staging only those paths, and pushes the branch. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval, vaultCommit } or, for an owner concern, ok:false at stage owner-concern with requiredHumanActions.",
+    "Leaf mini — designs the architecture for one Epic's PRD as a target and a delta version, and integrates the approved target into the effective version. Its inputs are the PRD, the effective version in arc42 (every section and view, found through the catalog frontmatter), the open targets that show the same elements, the code on each relevant repository's main, the open beads, and the AWS documentation through the AWS MCP tools; never what is deployed. A prd-reality-reconciler session writes survey.md and survey.json, with repository facts from the polyrepo-steward. Then rounds: the architecture-decision-workflow-coordinator names the proposers, reviewers, diagram authors and cost reviewers each round and the script runs them; proposers write the target and delta views into a draft, reviewers mark every claim verified, unsupported or wrong with evidence, and every finding is answered by its owner, up to maxRounds (default 6). Every session treats anything in the PRD about how the system works as no requirement: the team decides every technical aspect itself. The script holds the decision until every proposer has stated claims, every claim has a verdict, the required reviewers and a cost reviewer have reviewed the design (the pattern challenger, which proposes competing designs, only when the coordinator finds it needed), every finding is answered, and depscore.py arch-target accepts the draft; a resumed run refuses a read-back of its saved work that is not whole. The architecture-decider, given artifact paths only, approves the team's result, choosing where the team left competing solutions, or returns it to a named proposer; anything else it escalates goes back to the team, and only two business requirements that no design can satisfy together reach the owner. On approval depscore.py arch-target writes target/<subject>/ and its delta/ as in-review, the architecture-maintainer integrates the target into arc42, the architecture-conformance-reviewer checks it (at most 2 correction passes), and depscore.py arch-approve sets the integrated files the review covered to effective; depscore.py arch-commit then commits the files the integration changed, staging only those paths, and pushes the branch. A write under arc42 section 2 fails the run and is undone: depscore.py arch-constraints fingerprints that folder before and after and copies it aside, and depscore.py arch-constraints-restore puts it back. depscore.py arch-snapshot fingerprints arc42/, target/ and built/: a write there before the target is approved fails the run, and the integration's files are measured from it, not taken from the maintainer's report, so every file the integration wrote is reviewed before arch-approve sets it to effective. Returns { ok, stage, subject, targetDir, deltaDir, deltaFiles, decision, architectureUpdate, conformance, approval, vaultCommit } or, for conflicting business requirements, ok:false at stage owner-concern with requiredHumanActions.",
   phases: [
     { title: 'Survey', detail: 'the polyrepo-steward names the repositories; a prd-reality-reconciler session surveys the effective views, code on main, open beads and open targets for each capability the PRD needs' },
     { title: 'Rounds', detail: 'the coordinator names each round of proposers, reviewers, diagram authors and cost reviewers; the script runs them and tracks every claim and finding' },
-    { title: 'Decide', detail: 'the architecture-decider approves, returns to a named proposer, or raises an owner concern' },
+    { title: 'Decide', detail: 'after the team has designed, challenged and settled the target, the architecture-decider approves it, choosing where the team left competing solutions, or returns it to a named proposer; only two business requirements no design can satisfy together reach the owner' },
     { title: 'Target', detail: 'depscore.py arch-target writes the approved draft to target/<subject>/ and its delta/ as in-review' },
     { title: 'Integrate', detail: 'the architecture-maintainer integrates the target into arc42; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the reviewed files to effective; depscore.py arch-commit commits and pushes the integrated files' },
   ],
@@ -133,20 +133,42 @@ const SAVED_PY = [
   'out = {}',
   "files = sorted(p for p in d.rglob('*.json') if p.is_file() and not p.name.endswith('.meta.json') and 'draft' not in p.relative_to(d).parts) if d.is_dir() else []",
   "[out.__setitem__(p.relative_to(d).as_posix(), json.loads(p.read_text(encoding='utf-8'))) for p in files]",
-  "print(json.dumps({'dir': str(d), 'exists': d.is_dir(), 'saved': out, 'surveyMd': (d / 'survey.md').is_file()}))",
+  "shape = {k: sorted(f'{kk}={len(vv)}' for kk, vv in v.items() if isinstance(vv, list)) for k, v in out.items() if isinstance(v, dict)}",
+  "print(json.dumps({'dir': str(d), 'exists': d.is_dir(), 'saved': out, 'shape': shape, 'surveyMd': (d / 'survey.md').is_file()}))",
 ].join('; ')
-/** Reads what an earlier run of this step saved, so a stopped run resumes from it. */
+/** Returns the saved files whose lists the read-back did not carry whole, as `file: list` strings. */
+function shapeMismatches(o) {
+  const shape = o && o.shape && typeof o.shape === 'object' ? o.shape : null
+  if (!shape) return ['the read-back carried no shape manifest']
+  const bad = []
+  for (const [file, lists] of Object.entries(shape)) {
+    const got = o.saved && o.saved[file]
+    for (const entry of Array.isArray(lists) ? lists : []) {
+      const [key, n] = String(entry).split('=')
+      if (!got || !Array.isArray(got[key]) || got[key].length !== Number(n)) bad.push(`${file}: ${key}`)
+    }
+  }
+  return bad
+}
+/** Reads what an earlier run of this step saved, so a stopped run resumes from it; refuses a read-back that did not carry every saved list whole. */
 async function readSaved() {
-  const out = await run(
-    `Run exactly this one shell command, once, and change nothing else:
+  let mismatch = []
+  for (const attempt of [1, 2]) {
+    const out = await run(
+      `Run exactly this one shell command, once, and change nothing else:
 
 python3 -c ${shq(SAVED_PY)} ${shq(WORK)}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label: 'resume:read-saved', phase: 'Survey', model: 'haiku', effort: 'low', schema: RUN_SCHEMA }
-  )
-  const o = out && out.exitCode === 0 && out.output && !out.output.error ? out.output : null
-  return o && o.saved && typeof o.saved === 'object' ? o : { saved: {}, surveyMd: false }
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, parsed and COMPLETE: every array with every element, every string whole. Never replace an array with its length, never shorten, summarize or omit anything; the caller checks every array's length against the \`shape\` the command printed. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+      { label: `resume:read-saved${attempt > 1 ? `-${attempt}` : ''}`, phase: 'Survey', model: attempt > 1 ? 'sonnet' : 'haiku', effort: 'low', schema: RUN_SCHEMA }
+    )
+    const o = out && out.exitCode === 0 && out.output && !out.output.error ? out.output : null
+    if (!o || !o.saved || typeof o.saved !== 'object') return { saved: {}, surveyMd: false }
+    mismatch = shapeMismatches(o)
+    if (!mismatch.length) return o
+    log(`Resume: the read-back of the saved work was not whole (${mismatch.join('; ')}); reading it again`)
+  }
+  return { saved: {}, surveyMd: false, incomplete: mismatch }
 }
 
 const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any product repository.
@@ -158,6 +180,10 @@ const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any pro
 - \`lifecycle_state\` is per file: \`effective\` was reviewed and approved; \`in-review\` is input to check, never assumed vetted.`
 
 const INPUTS_RULE = `YOUR INPUTS are the PRD, the effective version and the open targets above, the code on each relevant repository's \`main\` (read it as committed there: \`git -C <repo> grep -n <term> main\`, \`git -C <repo> show main:<path>\`), the open beads (other Epics' Stories and Tasks planned but not built), and the AWS documentation through the AWS MCP tools and skills. What is deployed in AWS is not an input: run no AWS describe, list or get call against an account. Repository code is input to check, never evidence that a design is right. Cite what you rely on: a view by its absolute path and heading, code by repository, path and line on \`main\`, AWS behaviour by the documentation URL you read.`
+
+const PRD_RULE = `THE PRD STATES WHAT, NEVER HOW. It holds the business and end-user requirements: what the seeker and the business get, and the results someone outside the system could observe. Anything in it about how the system works — mechanisms, services, technologies, response shapes and codes, contracts, telemetry, release mechanics, engineering numbers such as latencies, limits and thresholds — is not a requirement: ignore it, and never treat it as a defect. The architecture team decides every technical aspect itself, from the effective architecture, the code and the AWS documentation through the AWS MCP tools and skills. Where the PRD leaves a technical value open, the team chooses it and states the reason and evidence. Where two requirements seem to pull against each other, the team designs the solution that best satisfies both, putting the seeker's privacy and data protection first, and records that as a design decision with its reason. None of this is a question for the owner.`
+
+const BUSINESS_CONFLICT_RULE = `List in \`businessConflicts\` only two BUSINESS requirements of the PRD that no design whatsoever could satisfy together (each with the requirement and why no design can satisfy both). A technical gap, an open value, a "how" in the PRD, or a tension a design can resolve is never one: the team resolves those. This list is almost always empty.`
 
 const DRAFT_RULES = `THE DRAFT TARGET is the folder ${DRAFT}. It has the arc42 section layout (\`05-building-block-view/…\`, \`06-runtime-view/…\`, \`07-deployment-view/…\`, \`08-crosscutting-concepts/…\`, and \`03-context-and-scope/\` or \`04-solution-strategy/\` only when the change reaches them) and a \`delta/\` folder beside them.
 - A target view is the view as it will read once approved: a changed copy of each effective view that shows a changed element, at every scope where the element appears, and a new view for each new element. Copy an effective view into the draft before you change it, at the same relative path.
@@ -222,13 +248,13 @@ const rosterText = Object.keys(ROSTER)
   .map((role) => `${role}:\n${Object.entries(ROSTER[role]).map(([n, w]) => `  - ${n} — ${w}`).join('\n')}`)
   .join('\n')
 
-const DEFECT_ITEMS = {
+const CONFLICT_ITEMS = {
   type: 'array',
   items: {
     type: 'object',
     additionalProperties: false,
-    required: ['requirement', 'defect'],
-    properties: { requirement: { type: 'string' }, defect: { type: 'string' } },
+    required: ['requirements', 'why'],
+    properties: { requirements: { type: 'array', items: { type: 'string' } }, why: { type: 'string' } },
   },
 }
 const REPOS_SCHEMA = {
@@ -250,7 +276,7 @@ const REPOS_SCHEMA = {
 const SURVEY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['subject', 'subjectReason', 'capabilities', 'openTargets', 'prdDefects', 'summary'],
+  required: ['subject', 'subjectReason', 'capabilities', 'openTargets', 'businessConflicts', 'summary'],
   properties: {
     subject: { type: 'string' },
     subjectReason: { type: 'string' },
@@ -272,7 +298,7 @@ const SURVEY_SCHEMA = {
       },
     },
     openTargets: { type: 'array', items: { type: 'string' } },
-    prdDefects: DEFECT_ITEMS,
+    businessConflicts: CONFLICT_ITEMS,
     summary: { type: 'string' },
   },
 }
@@ -303,7 +329,7 @@ const COORDINATOR_SCHEMA = {
 const WRITER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['files', 'claims', 'answers', 'prdDefects', 'summary'],
+  required: ['files', 'claims', 'answers', 'businessConflicts', 'summary'],
   properties: {
     files: { type: 'array', items: { type: 'string' } },
     claims: {
@@ -324,7 +350,7 @@ const WRITER_SCHEMA = {
         properties: { findingId: { type: 'string' }, response: { type: 'string', enum: ['fixed', 'disputed'] }, evidence: { type: 'string' } },
       },
     },
-    prdDefects: DEFECT_ITEMS,
+    businessConflicts: CONFLICT_ITEMS,
     summary: { type: 'string' },
   },
 }
@@ -353,11 +379,11 @@ const REVIEW_SCHEMA = {
     summary: { type: 'string' },
   },
 }
-const OWNER_CONCERN_KINDS = ['security', 'privacy', 'cost', 'best-practice', 'prd-defect']
+const OWNER_CONCERN_KINDS = ['business-conflict']
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['round', 'verdict', 'diligence', 'returnTo', 'ownerConcerns', 'summary'],
+  required: ['round', 'verdict', 'diligence', 'choices', 'returnTo', 'ownerConcerns', 'summary'],
   properties: {
     round: { type: 'integer' },
     verdict: { type: 'string', enum: ['approve', 'return', 'owner-concern'] },
@@ -377,6 +403,15 @@ const DECISION_SCHEMA = {
         additionalProperties: false,
         required: ['agentType', 'missing'],
         properties: { agentType: { type: 'string' }, missing: { type: 'string' } },
+      },
+    },
+    choices: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['dispute', 'chosen', 'why'],
+        properties: { dispute: { type: 'string' }, chosen: { type: 'string' }, why: { type: 'string' } },
       },
     },
     ownerConcerns: {
@@ -477,6 +512,10 @@ if (!treeBefore || treeBefore.error) {
 }
 
 const resumed = await readSaved()
+if (resumed.incomplete) {
+  const why = `the saved work of this step could not be read back whole, twice: ${resumed.incomplete.join('; ')}. Resuming from a partial read would drop claims and findings, so the step stops instead.`
+  return { ok: false, stage: 'resume', reason: why, error: why, ...died('Survey') }
+}
 const saved = resumed.saved || {}
 
 // ---------------------------------------------------------------- Survey
@@ -513,7 +552,8 @@ For EACH capability the PRD needs, report:
 An empty list is an answer: say in \`notes\` where you looked.
 
 Name the \`subject\` the target will describe: the feature, service, component or layer this PRD changes, named as the glossary and the repositories name it — never the PRD, the Epic, a bead id or a date — and say why in \`subjectReason\`. Give the name as it is written (\`Company Intelligence\` and \`company-intelligence\` are both fine): the run derives the \`target/<subject>/\` folder name from it (lower-case, every run of other characters one hyphen).
-List in \`prdDefects\` only where the PRD contradicts itself or lacks a value only the owner can give.
+${PRD_RULE}
+${BUSINESS_CONFLICT_RULE}
 Write survey.md as the readable survey and survey.json as your structured result.${persistBrief([SURVEY_MD, SURVEY_JSON], 'the survey: survey.md as one Markdown document, and survey.json as your complete structured result, exactly as you return it')}`,
     { label: 'survey:reality', phase: 'Survey', agentType: 'prd-reality-reconciler', effort: 'medium', schema: SURVEY_SCHEMA }
   )
@@ -545,6 +585,13 @@ const retries = []
 /** Each finding id handed to a writer to answer: { agentType, round, clarified }. */
 const asked = new Map()
 let silentLast = []
+/** Every reviewer and cost reviewer that has returned a result in this step. */
+const reviewersRun = new Set()
+/** The number of claims each proposer has stated across its results. */
+const proposerClaims = new Map()
+/** The reviewers that check every design before a decision, with one cost reviewer; the pattern challenger, which proposes competing designs, runs only when the coordinator finds it needed. */
+const ON_DEMAND_REVIEWERS = ['architecture-pattern-challenger']
+const REQUIRED_CHALLENGERS = Object.keys(ROSTER.reviewer).filter((r) => !ON_DEMAND_REVIEWERS.includes(r))
 
 /** Folds one saved or returned round result into the claim and finding ledger. */
 function absorb(n, seq, role, agentType, result, file) {
@@ -556,6 +603,7 @@ function absorb(n, seq, role, agentType, result, file) {
     ;(Array.isArray(result.claims) ? result.claims : []).forEach((c, k) => {
       if (c && hasText(c.claim)) claims.push({ id: `C${n}.${seq}.${k + 1}`, round: n, by: agentType, claim: c.claim, file: c.file || '', citation: c.citation || '', verdicts: [] })
     })
+    if (role === 'proposer') proposerClaims.set(agentType, (proposerClaims.get(agentType) || 0) + claims.filter((c) => c.round === n && c.by === agentType && c.id.startsWith(`C${n}.${seq}.`)).length)
     for (const ans of Array.isArray(result.answers) ? result.answers : []) {
       const f = ans && findings.find((x) => x.id === ans.findingId)
       if (!f || f.answer || (f.owner && f.owner !== agentType)) continue
@@ -564,6 +612,7 @@ function absorb(n, seq, role, agentType, result, file) {
     }
     return
   }
+  reviewersRun.add(agentType)
   ;(Array.isArray(result.findings) ? result.findings : []).forEach((x, k) => {
     if (!x || !hasText(x.verdict)) return
     const claim = hasText(x.claimId) ? claims.find((c) => c.id === x.claimId.trim()) : null
@@ -590,6 +639,11 @@ async function decisionGaps(label) {
   if (![...writers].some((w) => roleOf(w) === 'proposer')) gaps.push('no proposer has written the target yet')
   for (const f of openFindings()) gaps.push(`finding ${f.id} (${f.verdict}) on ${f.file || 'the draft'} is unanswered; owner ${f.owner || 'not known — assign it to a writer'}`)
   for (const c of unreviewedClaims()) gaps.push(`claim ${c.id} by ${c.by} has no reviewer verdict`)
+  for (const [w, k] of proposerClaims) if (!k) gaps.push(`proposer ${w} stated no claims: a design with no claims cannot be reviewed; it states the claims a reviewer checks`)
+  if ([...writers].some((w) => roleOf(w) === 'proposer')) {
+    for (const r of REQUIRED_CHALLENGERS) if (!reviewersRun.has(r)) gaps.push(`reviewer ${r} has not reviewed the design`)
+    if (!Object.keys(ROSTER.cost).some((r) => reviewersRun.has(r))) gaps.push('no cost reviewer has reviewed the design')
+  }
   const check = await depscore(label, 'Rounds', `arch-target --draft ${shq(DRAFT)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(FORBID.join(','))} --dry-run`)
   if (!check || check.error) gaps.push(`the draft could not be checked: ${(check && check.error) || 'no result'}`)
   else for (const r of listed(check.refusals)) gaps.push(`draft: ${r}`)
@@ -627,8 +681,8 @@ function ownerConcern(dec) {
     reason: `the architecture-decider raised ${concerns.length} owner concern(s) on ${subject}`,
     ownerConcerns: concerns,
     requiredHumanActions: [
-      ...concerns.map((c) => `ARCHITECTURE ${c.kind === 'prd-defect' ? 'PRD DEFECT' : `${String(c.kind).toUpperCase()} CONCERN`} on ${subject}: ${c.concern} — evidence: ${c.evidence}`),
-      `Once each concern is ruled on (or the PRD fixed), delete ${DECISION_JSON}: while it holds these concerns, every run of the architecture step holds the Epic again.`,
+      ...concerns.map((c) => `CONFLICTING BUSINESS REQUIREMENTS on ${subject}: ${c.concern} — evidence: ${c.evidence}`),
+      `Once the PRD says which requirement wins, delete ${DECISION_JSON}: while it holds these concerns, every run of the architecture step holds the Epic again.`,
     ],
     decision: dec,
     decisionPath: DECISION_MD,
@@ -636,9 +690,20 @@ function ownerConcern(dec) {
     survey,
   }
 }
+/** Issues the decider raised that the team resolves itself, handed to the coordinator for the next round. */
+let teamNotes = []
+/** True when every owner concern of a decision is a conflict between business requirements, the one case that reaches the owner. */
+const businessOnly = (dec) => {
+  const concerns = (Array.isArray(dec.ownerConcerns) ? dec.ownerConcerns : []).filter((c) => c && hasText(c.concern))
+  return concerns.length > 0 && concerns.every((c) => c.kind === 'business-conflict')
+}
 if (savedDecision && savedDecision.verdict === 'owner-concern') {
-  log('Decide: the saved decision holds owner concerns; the Epic is held again')
-  return ownerConcern(savedDecision)
+  if (businessOnly(savedDecision)) {
+    log('Decide: the saved decision holds conflicting business requirements; the Epic is held again')
+    return ownerConcern(savedDecision)
+  }
+  log('Decide: the saved decision escalated what the team decides itself; it is set aside and the team resolves it')
+  teamNotes = (savedDecision.ownerConcerns || []).filter((c) => c && hasText(c.concern)).map((c) => c.concern)
 }
 
 /** Returns the prompt for one writer or reviewer dispatch. */
@@ -648,6 +713,8 @@ function dispatchPrompt(n, d, file) {
     ? `\nFINDINGS YOU ANSWER THIS ROUND — answer every one in \`answers\`: \`fixed\` (name the change you made) or \`disputed\` (with your evidence):\n${JSON.stringify(answerList.map((f) => ({ findingId: f.id, verdict: f.verdict, claim: f.claim, file: f.file, evidence: f.evidence, by: f.by })), null, 1)}\n`
     : ''
   const shared = `PRD: ${prdRef}
+
+${PRD_RULE}
 
 ${ARCH_WHERE}
 
@@ -668,7 +735,7 @@ ${shared}
 
 ${DRAFT_RULES}
 
-Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. List in \`prdDefects\` only where the PRD contradicts itself or lacks a value only the owner can give.${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
+Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
   const toCheck = unreviewedClaims()
   return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
@@ -808,12 +875,18 @@ ARTIFACTS:
 - the draft target and its delta: ${DRAFT}
 - the effective version, with the owner's constraints in section 2: ${ARC42}; open targets: ${archPath}/target/
 
+${PRD_RULE}
+
+The team has designed, challenged and settled this target in its rounds, led by the coordinator. You are not its lead: you approve its result, and you choose only where the team left competing solutions it could not settle.
+
 CHECK THAT THE DUE DILIGENCE IS PRESENT, item by item in \`diligence\`: every claim reviewed with evidence and every finding answered; the target shows every changed element at every scope where the effective version shows it; the delta shows the change; the owner's constraints in section 2 are honoured; the open targets that show the same elements were read and are not contradicted; a departure from an established pattern states its reason and evidence.
 
+COMPETING SOLUTIONS: where findings stand disputed, or a reviewer's alternative was argued with evidence and not adopted, choose between them in \`choices\`: what was in dispute, the option you chose, and why, from the evidence in the artifacts and the product's priorities (the seeker's privacy and data protection first). A choice is part of an approval, not a reason to escalate.
+
 VERDICT:
-- \`approve\` when the diligence is present.
-- \`return\` when a proposer's diligence is missing: name each one in \`returnTo\` (one of ${Object.keys(ROSTER.proposer).join(', ')}) with what is missing.
-- \`owner-concern\` only for a serious security, privacy, cost or best-practice concern that is the primary factor, or a PRD defect (the PRD contradicts itself, or lacks a value only the owner can give), each in \`ownerConcerns\` with its evidence. A difference from the effective version is not an owner concern: a design that changes the effective version with its reason and evidence is the normal case.
+- \`approve\` when the diligence is present, with every choice you made in \`choices\`.
+- \`return\` only when a proposer's due diligence is missing: name each one in \`returnTo\` (one of ${Object.keys(ROSTER.proposer).join(', ')}) with exactly what is missing. A technical value the PRD leaves open is not missing diligence when the team chose it with a reason.
+- \`owner-concern\` is the last resort, for one case only: two BUSINESS requirements of the PRD that no design whatsoever could satisfy together, shown by the team's own analysis. Put each in \`ownerConcerns\` with kind \`business-conflict\` and its evidence. Never escalate a "how" in the PRD, an open technical value, a security, privacy, cost or best-practice question (the team designs those), or a difference from the effective version.
 Set \`round\` to ${n}.
 
 Write ${DECISION_MD} (your decision as one readable Markdown document) and ${DECISION_JSON} (your complete structured result, exactly as you return it, as ONE JSON object) with the Write tool, replacing each if it exists (Read it first if the Write tool asks). Write no other file.`,
@@ -834,7 +907,12 @@ while (!decision) {
       const concerns = (Array.isArray(dec.ownerConcerns) ? dec.ownerConcerns : []).filter((c) => c && hasText(c.concern))
       if (dec.verdict === 'owner-concern' || concerns.length) {
         if (!concerns.length) return { ok: false, stage: 'decide', reason: 'the architecture-decider raised an owner concern and named none', decision: dec, subject }
-        return ownerConcern(dec)
+        if (businessOnly(dec)) return ownerConcern(dec)
+        teamNotes = concerns.map((c) => c.concern)
+        log(`Decide: ${concerns.length} issue(s) escalated that the team decides itself; they go back to the team`)
+        phase('Rounds')
+        ready = false
+        continue
       }
       if (dec.verdict === 'approve') {
         decision = dec
@@ -872,10 +950,17 @@ ${ledgerText()}
 
 WHAT STANDS BETWEEN THE DRAFT AND A DECISION:
 ${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : n === 1 ? '- nothing is written yet' : '- nothing'}
-${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => `${f.agentType} (missing: ${f.missing})`).join('; ')}. The script dispatches each of them this round.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
+${teamNotes.length ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN (raised at the decision; route each to the writers it concerns, and to reviewers):\n${teamNotes.map((t) => `- ${t}`).join('\n')}\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => `${f.agentType} (missing: ${f.missing})`).join('; ')}. The script dispatches each of them this round.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
+
+${PRD_RULE}
+
+YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
 HOW TO ROUTE:
-- Size the team to the PRD: dispatch the proposers whose concern the PRD changes, and no others (no persistence proposer when nothing is persisted). A PRD the effective version already serves still gets one proposer, writing a delta that says the effective version serves it.
+- Dispatch every proposer whose concern the solution touches; when it is unclear whether a concern is touched, include its proposer. A PRD the effective version already serves still gets one proposer, writing a delta that says the effective version serves it.
+- Every design is reviewed before a decision by ${REQUIRED_CHALLENGERS.join(', ')} and by a cost reviewer; the list below names any that have not yet run.
+- Competing designs are not the default. Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} for a competing alternative only when it is needed: the design departs from an established pattern, reviewers find it weak or unsupported, or the choice is costly to reverse.
+- When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
 - Every open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. The script adds the owner's dispatch when you leave one out.
@@ -888,6 +973,7 @@ HOW TO ROUTE:
   const settled = settleDispatches(plan, n)
   rejected = settled.rejected
   forced = []
+  teamNotes = []
   if (rejected.length) log(`Round ${n}: refused ${rejected.join('; ')}`)
   if (settled.stuck.length) {
     const why = `finding(s) stayed unanswered after their owner was told once that its result left them unanswered: ${settled.stuck.join('; ')}`
