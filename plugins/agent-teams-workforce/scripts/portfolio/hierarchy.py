@@ -454,18 +454,20 @@ def _is_bundle(path: Path) -> bool:
 
 
 def newest_bundle(packages_dir: str | None) -> str | None:
-    """Return the newest cds hand-off bundle under the packages directory.
+    """Return an explicitly selected cds bundle, else the newest bundle under a search root.
 
     Args:
-        packages_dir: The cds packages directory, or None.
+        packages_dir: An explicit cds bundle or packages search directory, or None.
 
     Returns:
-        The absolute path of the bundle whose name ends with the latest timestamp, or
-        None when the directory is unset, missing or holds no bundle.
+        The absolute selected bundle path, else the child bundle whose name ends with
+        the latest timestamp; None when the directory is unset, missing or holds no bundle.
     """
     root = Path(packages_dir).expanduser() if packages_dir else None
     if root is None or not root.is_dir():
         return None
+    if _is_bundle(root):
+        return str(root.resolve())
     stamped = [
         (m.group(1), d)
         for d in root.iterdir()
@@ -488,14 +490,15 @@ def ui_authority(
     """Return the cds bundle and the build specs per delta item the detailing resolved.
 
     Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`. The
-    bundle is the detailing's `bundlePath` when it is a bundle, else the bundle a
-    resolved build spec sits in, else the newest bundle under the packages directory
-    (`packages_dir`, else `$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR`).
+    An explicit `bundlePath` or selected package directory must exist and agree with
+    the build-spec locations; conflicts raise HierarchyError rather than substitute
+    another design. Without a selection, infer one bundle from the specs, else use
+    the existing newest-child fallback under the package search directory.
 
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
-        packages_dir: The cds packages directory, or None for the environment's.
+        packages_dir: A selected bundle or search directory, or None for the environment's.
 
     Returns:
         The bundle path (None when none resolves), and per delta item id its build-spec
@@ -514,20 +517,36 @@ def ui_authority(
         spec = str(entry.get("buildSpec") or "").strip()
         if item and spec:
             entries.append((item, spec, str_list(entry.get("sections"))))
-    bundle = named if named and _is_bundle(Path(named)) else None
-    if bundle is None:
-        bundle = next(
-            (
-                b
-                for _, spec, _ in entries
-                if spec.startswith("/") and (b := _bundle_of(spec))
-            ),
-            None,
+    if packages_dir and not Path(packages_dir).expanduser().is_dir():
+        raise HierarchyError(f"cds package directory is missing: {packages_dir}")
+    supplied = packages_dir or os.environ.get(PACKAGES_DIR_ENV, "").strip() or None
+    selected = (
+        str(Path(supplied).expanduser().resolve())
+        if supplied and _is_bundle(Path(supplied).expanduser())
+        else None
+    )
+    if named and not _is_bundle(Path(named)):
+        raise HierarchyError(
+            f"recon-{slug}.json: selected cds bundle is missing or invalid: {named}"
+        )
+    bundle = str(Path(named).resolve()) if named else selected
+    if selected and bundle != selected:
+        raise HierarchyError(
+            f"recon-{slug}.json: selected cds bundle {selected} conflicts with {bundle}"
+        )
+    inferred = {
+        b for _, spec, _ in entries if spec.startswith("/") and (b := _bundle_of(spec))
+    }
+    if bundle and any(str(Path(b).resolve()) != bundle for b in inferred):
+        raise HierarchyError(
+            f"recon-{slug}.json: cds build specs conflict with selected bundle {bundle}"
         )
     if bundle is None:
-        bundle = newest_bundle(
-            packages_dir or os.environ.get(PACKAGES_DIR_ENV, "").strip() or None
-        )
+        if len(inferred) > 1:
+            raise HierarchyError(
+                f"recon-{slug}.json: cds build specs name multiple bundles"
+            )
+        bundle = next(iter(inferred), None) or newest_bundle(supplied)
     cites: dict[str, list[str]] = {}
     for item, spec, sections in entries:
         if not spec.startswith("/"):
@@ -628,7 +647,7 @@ def read_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         story_decision_ids: The Story's decision ids, which a Task citing none inherits.
-        packages_dir: The cds packages directory, or None for the environment's.
+        packages_dir: A selected bundle or search directory, or None for the environment's.
 
     Returns:
         The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.

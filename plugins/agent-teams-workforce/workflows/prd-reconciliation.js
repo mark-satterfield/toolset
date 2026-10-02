@@ -31,7 +31,7 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
 //   items: [{ id, element, views? }] (the delta items placed in this repository),
 //   delta: { targetDir, deltaDir },
-//   mocksDir?, packagesDir?, shellsDir? (the design system's directories; the caller resolves them from its environment), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
+//   mocksDir?, packagesDir?, shellsDir? (packagesDir is a selected bundle or search root; caller supplies design system paths), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
 //   artifacts: { dir, relDir?, epicId, script, phase, inputs?, slug } (required: the detailing lives only in recon-<slug>.json),
 //   depscore: <absolute path of depscore.py> (required: recon-facts reads the saved detailing),
 //   replay?: { files: { recon: <absolute path of a saved result> } }
@@ -181,25 +181,60 @@ For every item whose \`surface\` is \`ui\`, the design system's output is the ta
      in the bundle.
   3. The delta views.
 
-Bundle root:
-${packagesDir ? `  ${packagesDir}` : '  (none was supplied: use the loose composed artifacts below)'}
-The root holds dated \`batch-*\` directories — TAKE THE MOST RECENT ONE and record it in
-\`uiAuthority.bundlePath\`. Inside a batch:
+Design package input:
+${packagesDir ? `  ${packagesDir}` : '  (none supplied: use the loose composed artifacts below)'}
+If this directory itself holds \`styles/tokens.css\`, it is the caller's explicitly selected
+package for this run: inspect it directly, not its children or a newer sibling. Otherwise it
+is a search root, not a selection or approval of every package beneath it.
 
-  MANIFEST.tsv                      every artifact in the bundle: folder, slug, family, theme
-  unpackaged.md                     composed files that are NOT in this bundle
-  {shells,pages,views}/<slug>/
-      design/<kind>.html            the composed artifact
-      spec/build-spec.md            what the app repo builds — READ THIS
-  styles/                           ONE shared stylesheet set for every artifact in the bundle
-  assets/                           shared assets
+Read the relevant approved target/delta views and follow their scoped design hand-off
+references (including linked source views) FIRST. Preserve the selected mock/package and
+its scope; do not replace that design with a newer unrelated package. This is the existing
+architecture-to-TRD-to-detailing hand-off, not a requirement for technical fields in the PRD.
+Optional PRD visual references: ${hasText(prdInput.path) ? prdInput.path : '(no PRD path supplied)'}
+The PRD defines business requirements; it need not carry package paths or implementation
+details. A visual reference may help identify the artifact. If an explicit caller-selected
+package conflicts with the scoped architecture hand-off or an explicit design reference,
+report the conflict rather than silently substitute either. Resolve absolute references directly. For relative references, use the
+base named by the reference (for example its named repository or the package search root);
+ordinary relative file links resolve beside the source document. Do not silently rebase a
+vault link onto the implementation repository. If a selected path is missing, its base is
+ambiguous, or its intended artifact cannot be identified, report that in \`evidenceSummary\`
+and the item's evidence, leave its build-spec unresolved, and do not fabricate a citation
+or fall back to another design. Packaging details belong in this technical hand-off, not in
+new mandatory PRD fields.
 
-START AT \`MANIFEST.tsv\` to match a UI item to its artifact, then read that artifact's
-\`spec/build-spec.md\`.
+Inspect candidate README/specs to match the item before selecting by recency; the newest
+unrelated package is not its design. Accept BOTH existing layouts:
 
-An artifact listed in \`unpackaged.md\` is not yet packaged; use the loose composed artifact:
-${mocksDir ? `  composed pages and views: ${mocksDir}` : '  composed pages and views: (no directory was supplied)'}
-${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no directory was supplied)'}
+  Single-design package from \`cds:package-change\`:
+    <change-slug>-<timestamp>/
+      README.md                     package index
+      spec/build-spec.md            selected artifact's build contract — READ THIS
+      design/page.html | shell.html | view.html
+      styles/                       generated stylesheet set and manifest
+      assets/                       referenced assets, when present
+      state/                        composer record
+      update/                       brownfield source/diff, when present
+    No MANIFEST.tsv or pages/views/shells subdirectories are required.
+
+  Legacy batch package:
+    batch-<timestamp>/
+      MANIFEST.tsv                  match the item to its artifact
+      {shells,pages,views}/<slug>/spec/build-spec.md
+      {shells,pages,views}/<slug>/design/<kind>.html
+      styles/                       shared stylesheet set
+      assets/                       shared assets
+      unpackaged.md                 loose artifacts excluded from this batch, when present
+
+Record the selected package's actual absolute root in \`uiAuthority.bundlePath\` (the directory
+holding \`styles/tokens.css\`), and actual absolute build-spec paths in \`uiAuthority.buildSpecs\`.
+Read the matching build spec and design payload, following their asset/style references.
+If multiple applicable packages remain ambiguous, report the ambiguity rather than choose
+by timestamp. Packaging alone does not approve unrelated designs. If the item's artifact
+is not packaged and no explicit package reference failed, consult its loose composed artifact:
+${mocksDir ? `  composed pages and views: ${mocksDir}` : '  composed pages and views: (no directory supplied)'}
+${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no directory supplied)'}
 
 Cite the artifact path you used beside the \`file:line\` for every \`ui\` item. List every artifact
 path you opened in \`uiAuthority.artifactsConsulted\`, the loose shells and pages in
