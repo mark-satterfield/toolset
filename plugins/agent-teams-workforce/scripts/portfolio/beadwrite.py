@@ -164,7 +164,7 @@ def contract_block(task: Task, root: Path | None) -> str:
 
 
 def task_text(task: Task, root: Path | None) -> str:
-    """Return a Task's full description: its prose, then its build contract.
+    """Return a Task's full description: its repository, its prose, then its build contract.
 
     Args:
         task: The Task.
@@ -173,7 +173,10 @@ def task_text(task: Task, root: Path | None) -> str:
     Returns:
         The description.
     """
-    return "\n\n".join(x for x in (task.description, contract_block(task, root)) if x)
+    repository = f"Repository: {task.repo_path} — work only in this repository."
+    return "\n\n".join(
+        x for x in (repository, task.description, contract_block(task, root)) if x
+    )
 
 
 def task_metadata(task: Task) -> dict[str, str]:
@@ -185,9 +188,7 @@ def task_metadata(task: Task) -> dict[str, str]:
     Returns:
         The metadata.
     """
-    m = {"elab_key": task.elab_key or ""}
-    if task.repo_path:
-        m["repoPath"] = task.repo_path
+    m = {"elab_key": task.elab_key or "", "repoPath": task.repo_path}
     if task.sizes:
         m.update({k: task.sizes[k] for k in SIZE_KEYS})
     if task.decision_ids:
@@ -605,9 +606,13 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         outside the Story.
 
     Raises:
-        HierarchyError: The key names no Task, the Epic has no Story for the slug, a Task
+        HierarchyError: The repository is empty, the key names no Task, the Epic has no
+            Story for the slug, a Task
             it depends on is not written, or an external blocker is a Task of its own Story.
     """
+    if not repo.strip():
+        msg = f"Task {key} of story:{slug} has no repository: a Task is never written without one"
+        raise HierarchyError(msg)
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
     by_key = {t.key: t for t in tasks}
     task = by_key.get(key)
@@ -663,7 +668,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
             text=text,
             parent=story_id,
             acceptance=task.acceptance,
-            notes=f"repoPath: {task.repo_path}" if task.repo_path else None,
+            notes=f"repoPath: {task.repo_path}",
             metadata=meta,
         )
         if blockers or outer:
