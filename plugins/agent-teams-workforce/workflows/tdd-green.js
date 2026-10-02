@@ -130,16 +130,28 @@ const specBlock = (() => {
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()
 
+// The design source of a web-ui Task: bundle (a cds bundle the owner supplied), cds (designed with the
+// CDS design system) or none (no design change); a contract naming none takes bundle when it names a
+// bundle and is otherwise left to the surfaces.
+const cdsBundle = str(c.cdsBundlePath)
+const cdsSpecs = strList(c.cdsBuildSpecs)
+const designSource = ['bundle', 'cds', 'none'].includes(str(c.cdsDesignSource)) ? str(c.cdsDesignSource) : cdsBundle ? 'bundle' : ''
 const cdsBlock = (() => {
-  const bundle = str(c.cdsBundlePath)
-  const specs = strList(c.cdsBuildSpecs)
-  if (!bundle && !specs.length) return ''
-  const lines = [
-    'This Task builds web UI with the Configurable Design System (cds), the only source of its visual design: its tokens, components and stylesheets as packaged in the cds bundle. The code defines no colors, spacing, typography, radii, motion or component styles of its own.',
-    bundle ? `cds bundle: ${bundle}` : '',
-    specs.length ? `cds build-spec items this Task implements:\n${specs.map((x) => `  - ${x}`).join('\n')}` : '',
-  ].filter(Boolean)
-  return `\n\n${lines.join('\n')}`
+  if (designSource === 'bundle') {
+    const lines = [
+      'Design source: bundle. This Task builds web UI from the cds bundle the owner supplied, the only source of its visual design: its tokens, components and stylesheets as the bundle packages them. The code defines no colors, spacing, typography, radii, motion or component styles of its own.',
+      cdsBundle ? `cds bundle: ${cdsBundle}` : '',
+      cdsSpecs.length ? `cds build-spec items this Task implements:\n${cdsSpecs.map((x) => `  - ${x}`).join('\n')}` : '',
+    ].filter(Boolean)
+    return `\n\n${lines.join('\n')}`
+  }
+  if (designSource === 'cds') {
+    return '\n\nDesign source: cds. No mockup was supplied for this Task\'s UI, and it changes design: design it with the Configurable Design System (cds) — the project\'s design system config and the cds plugin skills — using the system\'s tokens, components and stylesheets. The code defines no colors, spacing, typography, radii, motion or component styles of its own.'
+  }
+  if (designSource === 'none') {
+    return '\n\nDesign source: none. This Task\'s UI change has no design impact (copy, or data wired into an existing element): keep the existing markup, classes and styles as they are and change no stylesheet.'
+  }
+  return ''
 })()
 
 const RED_EVIDENCE_CHARS = 4000
@@ -193,7 +205,7 @@ if (a.implementer) {
   selectionMode = 'reused'
 } else {
   const selection = await settleAgent(
-    `You are the implementation-lead. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from: ${IMPLEMENTER_ROSTER.join(', ')}. Read each implementer's specialty in its agent description; when one covers the whole change, select it alone. Web UI component and page work (anything rendered, styled or laid out) goes to cds:cds-ui-author, which builds with the cds design system; nextjs-component-implementer takes the non-visual React work (state, data fetching, routing). Order them so earlier ones lay groundwork for later ones.
+    `You are the implementation-lead. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from: ${IMPLEMENTER_ROSTER.join(', ')}. Read each implementer's specialty in its agent description; when one covers the whole change, select it alone. Web UI component and page work that changes design (anything newly rendered, styled or laid out) goes to cds:cds-ui-author, which builds with the cds design system; nextjs-component-implementer takes the non-visual React work (state, data fetching, routing) and a change with design source none (copy, or data wired into an existing element). Order them so earlier ones lay groundwork for later ones.
 
 ${treeBlock}
 
@@ -269,7 +281,7 @@ for (const impl of implementers) {
 
 ${treeBlock}
 
-${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}${impl === 'cds:cds-ui-author' ? `\n\nYou work in the app repo (direct-build) context: consult the design system, build with the system classes and tokens the cds bundle ships, and run audit-against-system on the files you changed before you report.` : ''}
+${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}${impl === 'cds:cds-ui-author' ? `\n\nYou work in the app repo (direct-build) context: consult the design system, build with the system classes and tokens ${designSource === 'bundle' && cdsBundle ? `the cds bundle at ${cdsBundle} ships` : 'the live cds design system (the project\'s design system config) defines'}, and run audit-against-system on the files you changed before you report.` : ''}
 ${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
 Build to the contract above; do not modify the tests. When a test stands between the code and the contract — it encodes behaviour the contract removes (obsolete-by-contract), it is wrong on its own terms (defect), or its fixtures lack configuration the contract now requires (missing-config) — leave it as it is and name it in \`testIssues\` with the contract reference; the test author rules on it. When the code cannot pass because something outside this Task does not exist yet (a package, stack, parameter, table or service another Task or repository provides), name each such thing in \`upstreamMissing\` with the evidence. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,

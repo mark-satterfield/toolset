@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""The UI sections of a saved spec document, checked against the cds build specs.
+"""The UI sections of a saved spec document, checked against each item's design source.
 
 A repository's spec document, `spec-<slug>.md`, carries one section per `ui` delta item,
-headed by the item id. Each section specifies the item by reference to the cds
-`spec/build-spec.md` it is built from. This module reads the saved document, not what a
-model session reported about it, and names every `ui` item whose section is missing,
-cites no build spec that exists, cites another one than the detailing resolved, or leaves
-out a build-spec Section ID the detailing resolved.
+headed by the item id. A `bundle` item's section specifies it by reference to the
+`spec/build-spec.md` of the cds bundle the owner supplied; a `cds` item's section states
+that it is designed with the CDS design system; a `none` item's section states that it
+changes no design. This module reads the saved document, not what a model session reported
+about it, and names every `ui` item whose section is missing and every `bundle` item whose
+section cites no build spec that exists, cites another one than the detailing resolved, or
+leaves out a build-spec Section ID the detailing resolved.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
+from cdsbundles import read_bundle
 
 #: A markdown heading: its hashes and its text.
 _HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
@@ -54,15 +58,19 @@ def _sections(text: str, item_id: str) -> list[str]:
 
 
 def _in_bundle(path: Path) -> bool:
-    """Return whether a build spec sits in a cds bundle (an ancestor holds styles/tokens.css)."""
-    return any((p / "styles" / "tokens.css").is_file() for p in path.parents)
+    """Return whether a build spec is the one a cds bundle's `bundle.json` names."""
+    return any(
+        (b := read_bundle(p)) is not None and Path(b["buildSpec"]) == path.resolve()
+        for p in path.parents
+    )
 
 
 def _items(raw: str) -> list[dict]:
     """Parse the UI items argument.
 
     Returns:
-        Each item as {id, buildSpec, sections}.
+        Each item as {id, designSource, buildSpec, sections}; an item that names no
+        design source is a `bundle` item when it names a build spec, else a `cds` one.
 
     Raises:
         SpecUiError: The argument is not a JSON list of objects with an id.
@@ -81,10 +89,15 @@ def _items(raw: str) -> list[dict]:
             msg = f"--items holds an entry with no id: {x!r}"
             raise SpecUiError(msg)
         sections = x.get("sections") if isinstance(x.get("sections"), list) else []
+        spec = str(x.get("buildSpec") or "").strip() or None
+        source = str(x.get("designSource") or "").strip() or (
+            "bundle" if spec else "cds"
+        )
         items.append(
             {
                 "id": str(x["id"]).strip(),
-                "buildSpec": str(x.get("buildSpec") or "").strip() or None,
+                "designSource": source,
+                "buildSpec": spec,
                 "sections": [str(s).strip() for s in sections if str(s).strip()],
             }
         )
@@ -96,7 +109,8 @@ def spec_ui_check(doc: Path, raw_items: str) -> dict:
 
     Args:
         doc: The saved spec document, `spec-<slug>.md`.
-        raw_items: The repository's `ui` items as JSON: [{id, buildSpec?, sections?}].
+        raw_items: The repository's `ui` items as JSON:
+            [{id, designSource?, buildSpec?, sections?}].
 
     Returns:
         {ok, gaps: [{id, problem}], summary}; ok is true when no item has a gap.
@@ -126,6 +140,8 @@ def spec_ui_check(doc: Path, raw_items: str) -> dict:
                     "problem": f"{doc.name} has no section headed by {item['id']}",
                 }
             )
+            continue
+        if item["designSource"] != "bundle":
             continue
         body = "\n".join(own)
         cited = list(dict.fromkeys(_BUILD_SPEC.findall(body)))

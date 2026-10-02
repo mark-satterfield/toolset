@@ -58,13 +58,15 @@
     prd-parse            read from a PRD file what elaboration takes (its requirement headings),
                          assuming the PRD was validated before its Epic was made ready; fails
                          only on a file that cannot be read; no `bd` call
-    spec-ui-check        check that a saved spec document has a section per `ui` item, citing a
-                         cds `spec/build-spec.md` that exists, the one the detailing resolved, and
-                         its resolved Section IDs; no `bd` call
+    spec-ui-check        check that a saved spec document has a section per `ui` item and that
+                         the section of an item with a supplied cds bundle cites its
+                         `spec/build-spec.md` and resolved Section IDs; no `bd` call
+    cds-bundles          list the single-artifact cds bundles in a packages directory, the newest
+                         per kind and slug (an absent or empty directory lists none); no `bd` call
     recon-facts          check a repository's saved detailing (`recon-<slug>.json`) against the
                          delta items placed in it and print only the facts the workflows branch
                          on (usable or not and why, the ids that make work, each `ui` work
-                         item's build spec, the cds bundle, whether dependencies are current);
+                         item's design source, whether dependencies are current);
                          a file that cannot be read or parsed is an error; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
@@ -134,6 +136,7 @@ from archresume import ResumeError, resume_facts
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
 from specui import SpecUiError, spec_ui_check
+from cdsbundles import list_bundles
 from reconfacts import ReconError, recon_facts
 from storyedges import story_edges
 
@@ -628,8 +631,8 @@ def build_parser() -> argparse.ArgumentParser:
         task_parser.add_argument(
             "--packages-dir",
             default=None,
-            help="the exact cds package root, holding styles/tokens.css directly "
-            "(default: the saved reconciliation selection; no newest-directory search)",
+            help="the packages directory every cds bundle a Task cites must sit in "
+            "(default: the bundles the saved detailing cites, wherever they are)",
         )
         task_parser.add_argument(
             "--project-root",
@@ -913,7 +916,18 @@ def build_parser() -> argparse.ArgumentParser:
     sua.add_argument(
         "--items",
         required=True,
-        help="the repository's ui items as JSON: [{id, buildSpec?, sections?}]",
+        help="the repository's ui items as JSON: [{id, designSource?, buildSpec?, sections?}]",
+    )
+
+    cdb = sub.add_parser(
+        "cds-bundles",
+        help="the cds bundles a packages directory supplies; writes nothing, runs no `bd` command",
+        parents=[common],
+    )
+    cdb.add_argument(
+        "--packages-dir",
+        default="",
+        help="the packages directory; empty or absent supplies no bundle",
     )
 
     rcf = sub.add_parser(
@@ -1029,6 +1043,9 @@ def run(args: argparse.Namespace) -> dict:
         return head | spec_ui_check(args.doc, args.items)
     if command == "recon-facts":
         return head | recon_facts(args.file, split_ids(args.items))
+    if command == "cds-bundles":
+        listing = list_bundles(args.packages_dir)
+        return head | listing | {"summary": {"bundles": len(listing["bundles"])}}
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(

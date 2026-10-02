@@ -93,13 +93,13 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   archPath:       "$ATW_ARCH_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
   artifactScript: "$ATW_ARTIFACT_SCRIPT",
-  designSystem:   {packagesDir: "<host-configured exact package root>",
+  designSystem:   {packagesDir: "<host-configured packages directory>",
                    mocksDir:    "$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR",
                    shellsDir:   "$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR"}
 }})
 ```
 
-`designSystem.packagesDir` is the selected package itself, not the CDS producer output parent. Its `styles/tokens.css` is directly under that path; no newest-package search is performed. Consumed by: reconciliation and task decomposition — resolves item-specific build contracts.
+`designSystem.packagesDir` is the folder holding the mockups the owner supplied: zero or more single-artifact cds bundles, each a directory `<change-slug>-<timestamp>/` with its own `styles/`, `spec/build-spec.md`, `design/<kind>.html` and `bundle.json` (kind, slug, shell, created_at, build_spec). Of several bundles for the same kind and slug, the newest `created_at` is the supplied one. The detailing matches each `ui` item to a bundle or gives it no bundle. Each `ui` delta item, and each `web-ui` Task, takes one design source: `bundle` (a cds bundle the owner supplied packages the artifact it builds: the Spec cites the bundle's `spec/build-spec.md` and the build is audited against that bundle), `cds` (it changes design — layout, components, styles, visual states or a new screen — and no bundle is supplied: the implementing agent designs it with the CDS design system and the build is audited with `cds:audit-against-system` against the live design system) or `none` (it changes no design — copy, or data wired into an existing element: no cds design step and no cds audit).
 
 `$ROOT` is the printed plugin root. The run resolves the root it runs its own scripts
 under itself; pass none.
@@ -111,10 +111,10 @@ architecture phase refuses without the architecture — so if it is unset, repor
 `ATW_ARCH_PATH is unset` and stop. Omit either of the other two when its variable is unset, and name it in
 your report.
 
-`designSystem` is the cds design system the UI items are specified from: the three
-`CUSTOMIZABLE_DESIGN_SYSTEM_*` variables `cds:setup` defines, passed as expanded values. All
-three are required, with no default: `prd-to-spec` refuses without them. If one is unset, report
-`<variable> is unset` naming each unset one, and stop.
+`designSystem` is optional. `packagesDir` is the host's packages directory; `mocksDir` and
+`shellsDir` are the `CUSTOMIZABLE_DESIGN_SYSTEM_*` variables `cds:setup` defines, passed as
+expanded values. Pass each one that has a value and omit the rest: an absent or empty packages
+directory supplies no bundle, and every `ui` item then takes `cds` or `none`.
 
 Use `scriptPath`, never a bare `name` — name dispatch resolves against the
 session-start snapshot and the workflow dispatch guard refuses it.

@@ -3,11 +3,12 @@
 `depscore.py recon-facts` runs `recon_facts`. The detailing of a repository, saved as
 `recon-<slug>.json` in the Epic's working directory, gives each delta item placed in that
 repository a status (`add`, `modify`, `remove`, `done`, `planned-elsewhere`), the file:line
-evidence for it, its surface, the cds build specs a `ui` item resolves to, and the upstream
+evidence for it, its surface, the design source each `ui` item takes (`bundle`, `cds` or
+`none`, with the supplied bundle and build spec of a `bundle` item), and the upstream
 dependency changes. This command checks it against the items placed in the repository and
 prints the small facts: whether it is usable and, when not, what is wrong with which item;
-the ids of the items that make work and of those that do not; each `ui` work item's build
-spec; the cds bundle and mocks directory; whether the dependencies are current.
+the ids of the items that make work and of those that do not; each `ui` work item's design
+source; the mocks directory; whether the dependencies are current.
 
 No item text travels back: the sessions that specify and decompose the repository read the
 file by its path.
@@ -21,6 +22,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
+from cdsbundles import DESIGN_SOURCES, bundle_problem
 
 STATUSES = ("add", "modify", "remove", "done", "planned-elsewhere")
 WORK_STATUSES = ("add", "modify", "remove")
@@ -136,36 +139,70 @@ def _item_problems(items: list[dict], placed: list[str]) -> list[dict]:
 
 
 def _ui_authority(raw: object, work_ui: list[str]) -> dict:
-    """Return the cds bundle, the mocks directory and each `ui` work item's build spec.
+    """Return the mocks directory and each `ui` work item's design source.
 
     Args:
         raw: The detailing's `uiAuthority` value.
         work_ui: The ids of the `ui` items that make work.
 
     Returns:
-        `bundlePath`, `mocksDir` and `uiWork` (one `{id, buildSpec, sections}` per `ui`
-        work item; `buildSpec` is None when the detailing resolved none).
+        `mocksDir` and `uiWork`: one `{id, designSource, bundle, buildSpec, sections}` per
+        `ui` work item. `designSource` is `bundle`, `cds` or `none` (None when the detailing
+        gives the item none); `bundle` and `buildSpec` are set for a `bundle` item only.
     """
     ua = raw if isinstance(raw, dict) else {}
-    specs: dict[str, dict] = {}
-    for b in ua.get("buildSpecs") if isinstance(ua.get("buildSpecs"), list) else []:
+    entries: dict[str, dict] = {}
+    for b in ua.get("uiItems") if isinstance(ua.get("uiItems"), list) else []:
         if not isinstance(b, dict):
             continue
-        item, spec = _text(b.get("item")), _text(b.get("buildSpec"))
-        if item and spec and item not in specs:
-            specs[item] = {"buildSpec": spec, "sections": _texts(b.get("sections"))}
-    return {
-        "bundlePath": _text(ua.get("bundlePath")) or None,
-        "mocksDir": _text(ua.get("mocksDir")) or None,
-        "uiWork": [
-            {
-                "id": i,
-                "buildSpec": specs[i]["buildSpec"] if i in specs else None,
-                "sections": specs[i]["sections"] if i in specs else [],
+        item = _text(b.get("item"))
+        if item and item not in entries:
+            source = _text(b.get("designSource"))
+            bundled = source == "bundle"
+            entries[item] = {
+                "designSource": source or None,
+                "bundle": _text(b.get("bundle")) or None if bundled else None,
+                "buildSpec": _text(b.get("buildSpec")) or None if bundled else None,
+                "sections": _texts(b.get("sections")) if bundled else [],
             }
-            for i in work_ui
-        ],
+    blank = {"designSource": None, "bundle": None, "buildSpec": None, "sections": []}
+    return {
+        "mocksDir": _text(ua.get("mocksDir")) or None,
+        "uiWork": [{"id": i} | entries.get(i, blank) for i in work_ui],
     }
+
+
+def _ui_problems(ui_work: list[dict]) -> list[dict]:
+    """Name every `ui` work item whose design source cannot be built from.
+
+    A `bundle` item cites a supplied bundle (the newest of its kind and slug) and the build
+    spec its `bundle.json` names; a `cds` or `none` item cites nothing.
+
+    Args:
+        ui_work: The `uiWork` entries.
+
+    Returns:
+        One `{id, problem}` per defect.
+    """
+    problems = []
+    for item in ui_work:
+        source = item["designSource"]
+        if source not in DESIGN_SOURCES:
+            problems.append(
+                {
+                    "id": item["id"],
+                    "problem": f"design source {json.dumps(source)} is not one of "
+                    + ", ".join(DESIGN_SOURCES)
+                    + " (uiAuthority.uiItems gives every ui item one)",
+                }
+            )
+            continue
+        if source != "bundle":
+            continue
+        problem = bundle_problem(item["bundle"] or "", item["buildSpec"] or "")
+        if problem:
+            problems.append({"id": item["id"], "problem": f"bundle: {problem}"})
+    return problems
 
 
 def recon_facts(path: Path, placed: list[str]) -> dict:
@@ -179,7 +216,8 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
         `file`, `bytes`, `ok`; when not ok, `problem` (the file as a whole) or
         `failedItems` with `problemCount`. When ok: `itemCount`, `counts` per status,
         `work` (ids that make work), `idle` (`{id, status, plannedBy}` of the others),
-        `bundlePath`, `mocksDir`, `uiWork`, `dependenciesCurrent` and
+        `mocksDir`, `uiWork` (each `ui` work item's design source, and for a `bundle`
+        item its bundle and build spec), `dependenciesCurrent` and
         `dependencyFindings` (the number of invalidating upstream changes).
 
     Raises:
@@ -230,32 +268,14 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
             if r["status"] in WORK_STATUSES and r["surface"] == "ui"
         ],
     )
-    if ui["uiWork"]:
-        root = Path(ui["bundlePath"]).resolve() if ui["bundlePath"] else None
-        ui_problems = []
-        for item in ui["uiWork"]:
-            spec = Path(item["buildSpec"]) if item["buildSpec"] else None
-            if (
-                root is None
-                or not (root / "styles/tokens.css").is_file()
-                or spec is None
-                or not spec.is_absolute()
-                or not spec.is_file()
-                or not spec.resolve().is_relative_to(root)
-            ):
-                ui_problems.append(
-                    {
-                        "id": item["id"],
-                        "problem": "no existing item-matched build spec inside the selected cds package; supply the package and resolve this item before Spec authoring",
-                    }
-                )
-        if ui_problems:
-            return head | {
-                "ok": False,
-                "itemCount": len(items),
-                "problemCount": len(ui_problems),
-                "failedItems": ui_problems[:MAX_PROBLEMS],
-            }
+    ui_problems = _ui_problems(ui["uiWork"])
+    if ui_problems:
+        return head | {
+            "ok": False,
+            "itemCount": len(items),
+            "problemCount": len(ui_problems),
+            "failedItems": ui_problems[:MAX_PROBLEMS],
+        }
     findings = dc.get("changeFindings")
     return (
         head

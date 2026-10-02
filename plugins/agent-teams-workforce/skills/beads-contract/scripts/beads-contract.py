@@ -371,13 +371,16 @@ CONTRACT_SCHEMA = (
     ("decision_ids", "decisionIds", KIND_LIST),
     ("surfaces", "surfaces", KIND_LIST_OR_UNKNOWN),
     ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
+    ("cds_design_source", "cdsDesignSource", KIND_TEXT),
     ("cds_bundle_path", "cdsBundlePath", KIND_TEXT),
     ("cds_build_specs", "cdsBuildSpecs", KIND_LIST),
 )
 
 #: Contract keys the readiness fingerprint covers only on a bead that carries them: a bead
-#: with neither (every Task without a `web-ui` surface) hashes as if they were not in the contract.
-CONTRACT_HASHED_WHEN_PRESENT = frozenset({"cds_bundle_path", "cds_build_specs"})
+#: with none (every Task without a `web-ui` surface) hashes as if they were not in the contract.
+CONTRACT_HASHED_WHEN_PRESENT = frozenset(
+    {"cds_design_source", "cds_bundle_path", "cds_build_specs"}
+)
 
 SPEC_REFERENCE = ("specPath", "specPaths")
 

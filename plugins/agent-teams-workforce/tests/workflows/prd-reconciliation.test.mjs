@@ -3,7 +3,7 @@
 //
 // These tests hold the properties that make the detailing usable downstream: every placed item
 // comes back exactly once, a status outside the five or an uncited status fails the run, the UI
-// is resolved bundle-first, and the composite details per repository after the TRD and blocks a
+// takes one design source per item (bundle, cds or none), and the composite details per repository after the TRD and blocks a
 // repository's Spec when its detailing fails.
 
 import test from 'node:test'
@@ -112,27 +112,30 @@ test('the schema holds the five statuses and requires evidence of every item', a
 
 // ── the UI authority chain ──────────────────────────────────────────────────────
 
-test('the resolved cds bundle travels with the detailing so spec authoring can read its build-specs', async () => {
+const BUNDLE = '/design/packages/view-settings-profile-20261002T000000Z'
+
+test('each ui work item travels with its design source, and a bundle item with its bundle and build spec', async () => {
   const { result } = await detail({
     items: [item('D1', 'add', { surface: 'ui' }), item('D2', 'done')],
     uiAuthority: {
-      bundlePath: '/architecture/arc42/design-packages',
-      artifactsConsulted: ['views/settings-profile/spec/build-spec.md'],
-      shellsConsulted: ['personal-agent-shell.html'],
-      pagesConsulted: [],
+      uiItems: [
+        { item: 'D1', designSource: 'bundle', reason: 'the settings-profile view bundle packages it', bundle: BUNDLE, buildSpec: `${BUNDLE}/spec/build-spec.md`, sections: [] },
+      ],
+      mocksDir: '/design/pages',
+      artifactsConsulted: [`${BUNDLE}/spec/build-spec.md`],
     },
   })
-  assert.equal(result.uiAuthority.bundlePath, '/architecture/arc42/design-packages')
-  assert.deepEqual(result.uiAuthority.artifactsConsulted, ['views/settings-profile/spec/build-spec.md'])
-  assert.equal(result.uiAuthority.mocksDir, '/design/pages', 'the mocks directory is the one the caller supplied')
+  assert.deepEqual(result.uiWork, [{ id: 'D1', designSource: 'bundle', bundle: BUNDLE, buildSpec: `${BUNDLE}/spec/build-spec.md`, sections: [] }])
+  assert.deepEqual(result.bundles, [BUNDLE])
+  assert.equal(result.mocksDir, '/design/pages', 'the mocks directory is the one the caller supplied')
 })
 
-test('the detailing is pointed at the hand-off bundle FIRST and the loose mocks second', async () => {
+test('the detailing gives every ui item one design source: bundle, cds or none', async () => {
   const { calls } = await detail({ items: [item('D1', 'done'), item('D2', 'done')] })
   const [checker] = agentCalls(calls, LABEL)
-  assert.match(checker.prompt, /HAND-OFF BUNDLE/)
-  assert.match(checker.prompt, /MANIFEST\.tsv/)
-  assert.ok(checker.prompt.includes('/design/packages'), 'the bundle root is the one the caller supplied')
+  assert.match(checker.prompt, /EVERY UI ITEM TAKES ONE DESIGN SOURCE/)
+  assert.match(checker.prompt, /uiAuthority\.uiItems/)
+  assert.ok(checker.prompt.includes('/design/pages'), 'the mocks directory is the one the caller supplied')
   assert.ok(!checker.prompt.includes('design-mocks'), 'no directory is derived from the repository')
 })
 
@@ -165,7 +168,9 @@ const DETAIL_OK = {
   ok: true,
   items: [{ id: 'D1', element: 'auth-service', status: 'modify', from: 'password only', to: 'password and TOTP', evidence: ['auth.py:3'], plannedBy: null, surface: 'service' }],
   counts: { add: 0, modify: 1, remove: 0, done: 0, 'planned-elsewhere': 0 },
-  uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+  uiWork: [],
+  bundles: [],
+  uiAuthority: { uiItems: [], mocksDir: null, artifactsConsulted: [] },
   ledger: { phase: 'prd-reconciliation' },
 }
 

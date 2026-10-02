@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item citing its cds spec/build-spec.md, and the script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has one citing a build spec that exists in the cds bundle, the one the detailing resolved, and its resolved Section IDs; a missing citation sends the contracts back to their maker once, and a second miss fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item stating its design source: a bundle item (the owner supplied a cds bundle) cites that bundle\'s spec/build-spec.md and its resolved Section IDs; a cds item states that it is designed with the CDS design system; a none item states that it changes no design. The script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has its section and that every bundle item cites the build spec the detailing resolved and its Section IDs; a gap sends the contracts back to their maker once, and a second gap fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Author specs', detail: 'three maker sessions author the spec artifacts in parallel' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
@@ -34,7 +34,7 @@ async function settleAgent(prompt, opts) {
 //   spec: { id?, title?, summary?, service?, repoPath? }, trd?, constraints?: string[],
 //   architecture?: { targetDir, deltaDir } (the approved target and its delta),
 //   accessPatterns?: string[], repoPath, storyKey? ('S1'), epic: { key?, id?, title? },
-//   uiItems?: [{ id, element?, buildSpec?, sections? }] (the repository's `ui` work items and the cds build spec each was resolved to),
+//   uiItems?: [{ id, element?, designSource?, buildSpec?, sections? }] (the repository's `ui` work items, each with its design source bundle | cds | none and, for bundle, the build spec it was resolved to),
 //   detailingPath?: <absolute path of the repository's saved delta detailing, recon-<slug>.json; the makers read it>,
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
@@ -76,9 +76,10 @@ const UI_SPEC_SCHEMA = {
   items: {
     type: 'object',
     additionalProperties: false,
-    required: ['itemId', 'buildSpec', 'sections', 'content'],
+    required: ['itemId', 'designSource', 'buildSpec', 'sections', 'content'],
     properties: {
       itemId: { type: 'string' },
+      designSource: { type: 'string', enum: ['bundle', 'cds', 'none'] },
       buildSpec: { type: 'string' },
       sections: { type: 'array', items: { type: 'string' } },
       content: { type: 'string' },
@@ -94,13 +95,14 @@ const CONTRACTS_UI_SCHEMA = {
 
 const BUILD_SPEC_PATH = /(^|\/)spec\/build-spec\.md$/
 
-/** Returns the UI items whose uiSpec section cites no build-spec.md, or cites another one than the detailing resolved. */
+/** Returns the UI items with no uiSpec section, and the bundle items whose section cites no build-spec.md or another one than the detailing resolved. */
 function uiCitationGaps(uiItems, uiSpec) {
   const sections = Array.isArray(uiSpec) ? uiSpec.filter((x) => x && typeof x === 'object') : []
   return uiItems
     .map((item) => {
       const own = sections.filter((x) => String(x.itemId || '').trim() === item.id)
       if (!own.length) return { id: item.id, problem: 'no uiSpec section specifies it' }
+      if (item.designSource !== 'bundle') return null
       const cited = own.map((x) => String(x.buildSpec || '').trim())
       if (!cited.some((p) => BUILD_SPEC_PATH.test(p))) return { id: item.id, problem: 'its uiSpec section cites no spec/build-spec.md path' }
       if (item.buildSpec && !cited.includes(item.buildSpec)) return { id: item.id, problem: `its uiSpec section cites ${cited.join(', ')}, not the build spec the detailing resolved, ${item.buildSpec}` }
@@ -244,6 +246,7 @@ async function main(a) {
     .map((u) => ({
       id: u.id.trim(),
       element: hasText(u.element) ? u.element.trim() : null,
+      designSource: hasText(u.designSource) ? u.designSource.trim() : hasText(u.buildSpec) ? 'bundle' : 'cds',
       buildSpec: hasText(u.buildSpec) ? u.buildSpec.trim() : null,
       sections: Array.isArray(u.sections) ? u.sections.filter(hasText).map((x) => x.trim()) : [],
     }))
@@ -310,11 +313,21 @@ async function main(a) {
     ART,
     `spec-${artSlug}.md`,
     uiItems.length
-      ? 'the contract artifacts you return — apiSpec, eventContracts, errorSpec and uiSpec — as ONE markdown document with a section for each of the first three and one UI section per uiSpec entry, headed by its item id and citing its build-spec.md path and Section IDs, carrying each artifact\'s full content'
+      ? 'the contract artifacts you return — apiSpec, eventContracts, errorSpec and uiSpec — as ONE markdown document with a section for each of the first three and one UI section per uiSpec entry, headed by its item id (a bundle item\'s section citing its build-spec.md path and Section IDs), carrying each artifact\'s full content'
       : 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content'
   )
+  const designLine = (u) =>
+    u.designSource === 'bundle'
+      ? `bundle — ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`
+      : u.designSource === 'none'
+        ? 'none — it changes no design'
+        : 'cds — designed with the CDS design system'
   const uiBrief = uiItems.length
-    ? `\n4. \`uiSpec\` — one entry per UI item below, specifying it BY REFERENCE to its cds build spec: \`itemId\` (the item id), \`buildSpec\` (the absolute path of the \`spec/build-spec.md\` it is built from — the one given below where one is given), \`sections\` (the build spec's Section IDs it builds; an empty list when it builds the whole artifact) and \`content\` (what the repository builds for the item, citing those Sections). Styling comes from the cds bundle's shared stylesheets: specify no CSS, tokens or component stylesheet of your own. The workflow reads the document you save and checks that every UI item has a section headed by its item id that cites the absolute path of its spec/build-spec.md (a file that exists in the cds bundle) and every Section ID given for it below.\n\nUI items${hasText(a && a.detailingPath) ? ` (each item's element and its from and to state are in the detailing file ${a.detailingPath})` : ''}:\n${uiItems.map((u) => `- ${u.id}${u.element ? ` ${u.element}` : ''}: ${u.buildSpec ? `${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}` : 'no packaged build spec was resolved — find its spec/build-spec.md in the cds bundle named under UI AUTHORITY'}`).join('\n')}`
+    ? `\n4. \`uiSpec\` — one entry per UI item below: \`itemId\` (the item id), \`designSource\` (as given below), \`buildSpec\`, \`sections\` and \`content\` (what the repository builds for the item). By design source:
+   - bundle: the owner supplied a cds bundle for the item. Specify it BY REFERENCE to that bundle: \`buildSpec\` is the absolute path of its \`spec/build-spec.md\` given below, \`sections\` the build spec's Section IDs it builds (an empty list when it builds the whole artifact), and \`content\` cites those Sections. Styling comes from that bundle's own stylesheets, so the spec adds no CSS, tokens or component stylesheet.
+   - cds: the item changes design and is designed with the CDS design system by the implementing agent. \`buildSpec\` is "" and \`sections\` empty; \`content\` specifies the behaviour and content and states that the design comes from the CDS design system.
+   - none: the item changes no design (copy, or data wired into an existing element). \`buildSpec\` is "" and \`sections\` empty; \`content\` specifies the change and states that it changes no design.
+The workflow reads the document you save and checks that every UI item has a section headed by its item id, and that a bundle item's section cites the absolute path of its spec/build-spec.md and every Section ID given for it below.\n\nUI items${hasText(a && a.detailingPath) ? ` (each item's element and its from and to state are in the detailing file ${a.detailingPath})` : ''}:\n${uiItems.map((u) => `- ${u.id}${u.element ? ` ${u.element}` : ''}: ${designLine(u)}`).join('\n')}`
     : ''
   const contractsPrompt = (rework) => `Author the ${uiItems.length ? 'four' : 'three'} INTERFACE CONTRACT artifacts for this feature, each under its own key.
 
@@ -384,7 +397,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
 
   // The saved spec document is what later phases read, so its UI sections are checked by
   // depscore.py spec-ui-check reading the file, beside the check on the structured uiSpec.
-  const uiCheckCommand = `python3 ${shq(beads.script)} spec-ui-check --doc ${shq(`${ART.dir}/spec-${artSlug}.md`)} --items ${shq(JSON.stringify(uiItems.map((u) => ({ id: u.id, buildSpec: u.buildSpec, sections: u.sections }))))}`
+  const uiCheckCommand = `python3 ${shq(beads.script)} spec-ui-check --doc ${shq(`${ART.dir}/spec-${artSlug}.md`)} --items ${shq(JSON.stringify(uiItems.map((u) => ({ id: u.id, designSource: u.designSource, buildSpec: u.buildSpec, sections: u.sections }))))}`
   const uiGapsOf = async (draft, round) => {
     const own = uiCitationGaps(uiItems, draft.uiSpec)
     const doc = await runWrite(`ui-citation-check${round}`, 'Author specs', uiCheckCommand)
@@ -403,7 +416,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
   if (uiGaps.length) {
     log(`UI citation check: ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')} — the contracts go back to their maker once`)
     const reworked = await settleAgent(
-      contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose section, in the uiSpec you returned or in the spec document you saved, does not cite their cds build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nReturn all four artifacts again and save the document again, with every UI item specified by reference to its spec/build-spec.md and its Section IDs.`),
+      contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose section, in the uiSpec you returned or in the spec document you saved, is missing or, for a bundle item, does not cite its build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nReturn all four artifacts again and save the document again, with a section for every UI item and every bundle item specified by reference to its spec/build-spec.md and its Section IDs.`),
       { ...contractsOpts, label: 'author:contracts:rework' }
     )
     if (reworked) contractsDraft = reworked
@@ -415,7 +428,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
       return {
         ok: false,
         stage: 'ui-citation',
-        reason: `the UI spec still cites no cds build spec after one rework — ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')}`,
+        reason: `the UI spec still has gaps after one rework — ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')}`,
         uiGaps,
         ...(!reworked && deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
       }

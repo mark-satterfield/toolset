@@ -56,7 +56,7 @@ This lead is the face of the following team; each member and what it does:
 - **dynamodb-access-layer-implementer** — Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests.
 - **event-api-client-implementer** — Implements clients publishing events through the publishing path and envelope the effective architecture describes.
 - **event-driven-consumer-implementer** — Implements event consumers on the delivery path the effective architecture describes.
-- **cds:cds-ui-author** — Builds web UI components and pages with the Configurable Design System (cds): its tokens, components and stylesheets from the cds bundle, audited against the system before it reports. A `web-ui` Task's contract names the bundle and the `build-spec.md` items it implements. It ships with the cds plugin.
+- **cds:cds-ui-author** — Builds web UI components and pages with the Configurable Design System (cds), audited against the system before it reports. A `web-ui` Task's contract names its design source: `bundle` (the supplied cds bundle and the `build-spec.md` items it implements), `cds` (designed with the live CDS design system) or `none` (no design change, which needs no cds-ui-author). It ships with the cds plugin.
 - **nextjs-component-implementer** — Implements the non-visual React/Next.js work — component state, data fetching, routing — writing minimum code to pass failing unit tests.
 - **appsync-client-subscription-implementer** — Implements AppSync client subscriptions for real-time web features.
 - **webauthn-implementer** — Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack: registration and authentication ceremonies with client-side handling.

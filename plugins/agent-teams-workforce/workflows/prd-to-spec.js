@@ -262,12 +262,9 @@ if (!epicBeadId) {
 if (!hasText(emitTarget)) {
   return handback(false, 'epic-lifecycle', 'refused: no-tracker — no repository path was supplied, and beads cannot be written without one')
 }
-const DESIGN_SYSTEM_ENV = { packagesDir: 'the host-configured exact CDS package root', mocksDir: 'CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR', shellsDir: 'CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR' }
+// designSystem is optional: packagesDir holds the single-artifact cds bundles the owner supplied (absent or
+// empty supplies none), mocksDir and shellsDir the loose composed artifacts.
 const designSystemArg = a.designSystem && typeof a.designSystem === 'object' ? a.designSystem : {}
-const missingDesignSystem = Object.keys(DESIGN_SYSTEM_ENV).filter((k) => !hasText(designSystemArg[k]))
-if (missingDesignSystem.length) {
-  return handback(false, 'epic-lifecycle', `refused: no-design-system — designSystem.${missingDesignSystem.join(', designSystem.')} has no value: the caller passes it from ${missingDesignSystem.map((k) => DESIGN_SYSTEM_ENV[k]).join(', ')}; package selection is host configuration, while cds:setup defines the mock/shell authoring paths`)
-}
 const startArgs = `elaboration-start --epic ${shellq(epicBeadId)}${hasText(a.owner) ? ` --owner ${shellq(a.owner)}` : ''}${a.reclaim === true ? ' --reclaim' : ''}`
 // pluginRoot comes from the Workflow args, else from the agent-teams-workforce install that
 // $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the beads repository or
@@ -953,25 +950,31 @@ const renderDependencies = (recon) => {
 }
 const renderUiAuthority = (recon) => {
   const ui = uiItemsOf(recon)
-  if (!ui.length && !hasText(recon && recon.bundlePath) && !hasText(recon && recon.mocksDir)) return ''
+  if (!ui.length) return ''
+  const of = (source) => ui.filter((u) => u.designSource === source)
+  const bundled = of('bundle')
+  const cds = of('cds')
+  const none = of('none')
   return [
-    'UI AUTHORITY — for a `ui` item the cds design artifacts are the target state, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the loose composed artifact, the delta views.',
-    ui.length ? `UI items: ${ui.map((u) => u.id).join(', ')}.` : '',
-    hasText(recon.bundlePath)
-      ? `cds HAND-OFF BUNDLE: ${recon.bundlePath}\nSpecify each UI item from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${recon.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
-      : `No cds hand-off bundle was resolved. Specify against the composed artifact${hasText(recon.mocksDir) ? ` under ${recon.mocksDir}` : ''} and record in the spec which artifact you used.`,
-    hasText(recon.mocksDir) ? `Composed mocks: ${recon.mocksDir}` : '',
-    `The artifacts matched to these items are \`uiAuthority.artifactsConsulted\` in ${recon.reconPath}.`,
-    ui.some((u) => u.buildSpec)
-      ? `Build specs per UI item:\n${ui.filter((u) => u.buildSpec).map((u) => `  - ${u.id}: ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`).join('\n')}`
+    `UI ITEMS — each \`ui\` item takes one design source, recorded in \`uiAuthority.uiItems\` of ${recon.reconPath}.`,
+    bundled.length
+      ? `bundle — a cds bundle the owner supplied packages the item. Specify it by reference to that bundle's \`spec/build-spec.md\`; styling is that bundle's own stylesheet set (its styles/), and the spec adds no new CSS, tokens or component stylesheet:\n${bundled.map((u) => `  - ${u.id}: ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`).join('\n')}`
+      : '',
+    cds.length
+      ? `cds — the item changes design and no bundle packages it. The implementing agent designs it with the CDS design system; specify its behaviour and content, and state that its design comes from the CDS design system: ${cds.map((u) => u.id).join(', ')}`
+      : '',
+    none.length
+      ? `none — the item changes no design (copy, or data wired into an existing element). Specify the change; it needs no design work: ${none.map((u) => u.id).join(', ')}`
       : '',
   ].filter(hasText).join('\n\n')
 }
-/** Returns each `ui` work item of a detailing with the build spec the detailing resolved it to, or a null buildSpec. */
+/** Returns each `ui` work item of a detailing with its design source, and the bundle and build spec of a bundle item. */
 function uiItemsOf(recon) {
   return (Array.isArray(recon && recon.uiWork) ? recon.uiWork : []).map((u) => ({
     id: u.id,
     element: null,
+    designSource: hasText(u.designSource) ? u.designSource : u.buildSpec ? 'bundle' : 'cds',
+    bundle: u.bundle || null,
     buildSpec: u.buildSpec || null,
     sections: Array.isArray(u.sections) ? u.sections.filter(hasText) : [],
   }))

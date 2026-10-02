@@ -118,6 +118,16 @@ def _strategy_line(strategy: dict | None) -> str:
     )
 
 
+#: What each design source of a web-ui Task means for the build, as the contract states it.
+DESIGN_SOURCE_TEXT = {
+    "bundle": "built from the cds bundle the owner supplied, and audited against it",
+    "cds": "designed with the CDS design system (cds:cds-ui-author and the project's "
+    "design system config), and audited against the live design system",
+    "none": "changes no design (copy, or data wired into an existing element); built "
+    "like any other code change, with no cds design step or audit",
+}
+
+
 def contract_block(task: Task, root: Path | None) -> str:
     """Return the build contract appended to a Task's description.
 
@@ -155,6 +165,11 @@ def contract_block(task: Task, root: Path | None) -> str:
         f"Test strategy: {_strategy_line(task.test_strategy)}",
         f"Definition of Done:\n{listed(task.definition_of_done)}",
     ]
+    if task.cds_design_source:
+        lines.append(
+            f"Design source: {task.cds_design_source} — "
+            + DESIGN_SOURCE_TEXT.get(task.cds_design_source, "")
+        )
     if task.cds_bundle_path or task.cds_build_specs:
         lines += [
             f"cds bundle: {task.cds_bundle_path or '(none resolved)'}",
@@ -199,6 +214,8 @@ def task_metadata(task: Task) -> dict[str, str]:
     m["requirement_ids"] = _json(task.requirement_ids)
     m["surfaces"] = _json(task.surfaces) if task.surfaces is not None else "unknown"
     m["test_strategy"] = _json(task.test_strategy) if task.test_strategy else "unknown"
+    if task.cds_design_source:
+        m["cds_design_source"] = task.cds_design_source
     if task.cds_bundle_path:
         m["cds_bundle_path"] = task.cds_bundle_path
     if task.cds_build_specs:
@@ -359,7 +376,7 @@ def plan_tasks(
         rel: The directory relative to the project root, or None.
         slug: The Story's repository slug.
         repo: The Story's repository.
-        packages_dir: The cds packages directory, or None for the environment's.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
         The Tasks.
@@ -367,7 +384,7 @@ def plan_tasks(
     Raises:
         HierarchyError: The file holds no `tasks` list, its edges form a cycle, a Task
             cites no delta item the repository's detailing marks as work, or a web-ui
-            Task's contract does not name its cds bundle and build specs.
+            Task's contract does not match its design source.
     """
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids, packages_dir)
@@ -525,7 +542,7 @@ def plan_story_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         root: The project root spec paths are recorded relative to.
-        packages_dir: The cds packages directory, or None for the environment's.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
         Each Task's local key, `elab_key`, title and the local keys it depends on.
@@ -541,6 +558,9 @@ def plan_story_tasks(
                 "title": t.title,
                 "dependsOn": t.depends_on,
                 "blockedByExternal": t.blocked_by_external,
+                **(
+                    {"designSource": t.cds_design_source} if t.cds_design_source else {}
+                ),
             }
             for t in tasks
         ],
@@ -599,7 +619,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         root: The project root spec paths are recorded relative to.
         external: Tasks of other Epics this Task is blocked by, beside the ones its saved
             `blockedByExternal` names.
-        packages_dir: The cds packages directory, or None for the environment's.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
         The Task, what was done to it, its edge writes, and the blockers it carries

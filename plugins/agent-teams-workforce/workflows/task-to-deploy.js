@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed against its cds bundle with the cds plugin's tools/audit-app.py, has cds:audit-against-system rule the findings the script cannot rule on, sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when required cds configuration, design artifacts or capabilities remain unresolved), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
+    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed by its design source — against the cds bundle the owner supplied (bundle) with the cds plugin's tools/audit-app.py, cds:audit-against-system ruling the findings the script cannot rule on; against the live CDS design system with cds:audit-against-system (cds); not at all for a change with no design impact (none) — sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when required cds configuration, design artifacts or capabilities remain unresolved), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
   phases: [
     { title: 'Workspace', detail: "establishes or reuses the Story's worktree every writing phase operates in" },
     { title: 'Infra Intent', detail: 'authors the provisioning intent for an infrastructure Task' },
@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Refactor' },
-    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its cds bundle and sends violations back through the Green loop once" },
+    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its supplied cds bundle or the live CDS design system, by its design source, and sends violations back through the Green loop once" },
     { title: 'Documentation' },
     { title: 'Commit', detail: 'runs the suite a final time and commits the Task to the Story branch' },
     { title: 'Run Ledger', detail: 'writes the run journal on every exit path' },
@@ -19,7 +19,7 @@ export const meta = {
 // args: {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
 //           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy?,
-//           cdsBundlePath?, cdsBuildSpecs? },
+//           cdsDesignSource?: 'bundle' | 'cds' | 'none', cdsBundlePath?, cdsBuildSpecs? },
 //   infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json),
 //   spec?: object (defaults to bead), implementer?: string, worktreeRoot?: string,
 //   cdsRoot?: string (the cds plugin install; else the cds install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
@@ -42,9 +42,20 @@ const INFRA_LABELS = (Array.isArray(vocabulary.labels) ? vocabulary.labels : [])
 const beadLabels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm)
 const isInfra = INFRA_TYPES.includes(norm(bead.type)) || beadLabels.some((l) => INFRA_LABELS.includes(l))
 
-// A Task whose surfaces include web-ui is built with cds and audited against its cds bundle.
+// A Task whose surfaces include web-ui takes one design source: bundle (built from the cds bundle the owner
+// supplied and audited against it), cds (designed with the CDS design system and audited against the live
+// design system) or none (no design impact: no cds design step and no cds audit). A contract that records
+// no design source takes bundle when it names a bundle, else cds.
 const UI_SURFACE = 'web-ui'
 const isUiTask = (Array.isArray(bead.surfaces) ? bead.surfaces : []).map(norm).includes(UI_SURFACE)
+const DESIGN_SOURCES = ['bundle', 'cds', 'none']
+const designSource = !isUiTask
+  ? null
+  : DESIGN_SOURCES.includes(norm(bead.cdsDesignSource))
+    ? norm(bead.cdsDesignSource)
+    : String(bead.cdsBundlePath || '').trim()
+      ? 'bundle'
+      : 'cds'
 
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied' }
 if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
@@ -364,6 +375,65 @@ Return one ruling per finding, with its file, line and value exactly as given, t
   return { report, violations, gaps, allowed, scriptVersion }
 }
 
+const LIVE_AUDIT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['audited', 'findings'],
+  properties: {
+    audited: { type: 'boolean' },
+    error: { type: 'string' },
+    files: { type: 'array', items: { type: 'string' } },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['file', 'line', 'rule', 'value', 'ruling', 'reason'],
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          rule: { type: 'string' },
+          value: { type: 'string' },
+          ruling: { type: 'string', enum: ['violation', 'allowed', 'cds-gap'] },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+/** Audits the Task's changes against the live CDS design system with cds:audit-against-system; returns { error } or { report, violations, gaps, allowed, scriptVersion }. */
+async function auditCdsLive(tree, label) {
+  let out = null
+  try {
+    out = await agent(
+      `Use the Skill tool to load cds:audit-against-system, then audit the UI files this Task changed against the live Configurable Design System (cds) — the project's design system config and the stylesheets, tokens and components it defines. No mockup was supplied for this Task: its UI was designed with cds, so the live design system is the only standard it is held to.
+
+The files: those the work tree at ${tree} changed against HEAD, untracked included (\`git -C ${shq(tree)} status --porcelain\`), restricted to markup, component, script and stylesheet files. Change no file.
+
+Report every finding as { file (relative to the tree), line, rule (the compliance rule the skill names), value (the offending class, property or literal), ruling, reason (one sentence) }, ruling each:
+- violation: the code styles the UI outside cds (a raw color or length, an inline style, a stylesheet or token of its own, a class cds does not define that carries styling) and must use the cds classes and tokens instead;
+- allowed: it carries no styling (a behaviour or test hook, a third-party library's own class);
+- cds-gap: the UI needs something the configured design system does not supply; name the missing configuration or capability and the evidence.
+
+Return \`audited\` true with the files you audited and the findings (an empty list when there are none), or \`audited\` false with \`error\` naming what stopped the audit.`,
+      { label, phase: currentPhase || 'CDS Audit', schema: LIVE_AUDIT_SCHEMA }
+    )
+  } catch (err) {
+    return { error: String((err && err.message) || err).slice(0, 300), scriptVersion: 'audit-against-system' }
+  }
+  if (!out || out.audited !== true || !Array.isArray(out.findings)) {
+    return { error: String((out && out.error) || 'cds:audit-against-system returned no audit').slice(0, 500), scriptVersion: 'audit-against-system' }
+  }
+  const findings = out.findings.filter((f) => f && typeof f === 'object')
+  return {
+    report: { findings, files: list(out.files) },
+    violations: findings.filter((f) => f.ruling === 'violation'),
+    gaps: findings.filter((f) => f.ruling === 'cds-gap'),
+    allowed: findings.filter((f) => f.ruling === 'allowed'),
+    scriptVersion: 'audit-against-system',
+  }
+}
+
 let result
 try {
   result = await (async () => {
@@ -381,11 +451,11 @@ try {
         requiredHumanActions: [`parent ${bead.id} to the Story of its repository`],
       }
     }
-    if (isUiTask && !String(bead.cdsBundlePath || '').trim()) {
+    if (designSource === 'bundle' && !String(bead.cdsBundlePath || '').trim()) {
       return {
-        ...handback(false, 'input', `${bead.id} builds web UI but its build contract names no cds bundle (cds_bundle_path), so it cannot be built with cds or audited against it. The bundle is resolved during elaboration from the cds design system paths.`),
+        ...handback(false, 'input', `${bead.id} takes design source bundle but its build contract names no cds bundle (cds_bundle_path), so it cannot be built from the supplied bundle or audited against it.`),
         incompleteContract: ['cdsBundlePath'],
-        requiredHumanActions: [`re-elaborate the Story of ${bead.id} with the cds design system paths set, or record the cds bundle on it as cds_bundle_path`],
+        requiredHumanActions: [`record the supplied cds bundle on ${bead.id} as cds_bundle_path, or set its cds_design_source to cds when no mockup is supplied`],
       }
     }
 
@@ -431,6 +501,7 @@ try {
       ],
       surfaces: contractSurfaces,
       testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
+      cdsDesignSource: designSource,
       cdsBundlePath: String(bead.cdsBundlePath || '').trim() || null,
       cdsBuildSpecs: list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean),
     }
@@ -687,10 +758,15 @@ try {
       log(`Refactor: the suite went red, so the tree was restored to ${snapshot}`)
     }
 
-    // ── CDS Audit: a web-ui Task's changes against its cds bundle; violations go back through the Green loop once ──
-    if (isUiTask) {
+    // ── CDS Audit: a web-ui Task's changes against its supplied cds bundle (bundle) or the live CDS design
+    // system (cds); a change with no design impact (none) is not audited. Violations go back through the Green loop once ──
+    if (isUiTask && designSource !== 'none') {
       enterPhase('CDS Audit')
-      const bundle = contract.cdsBundlePath
+      const bundle = designSource === 'bundle' ? contract.cdsBundlePath : null
+      const runAudit = (label) => (bundle ? auditCds(workRepoPath, bundle, label) : auditCdsLive(workRepoPath, label))
+      const standard = bundle
+        ? `The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships`
+        : 'No mockup was supplied: the live CDS design system (the project\'s design system config and the stylesheets, tokens and components it defines) is the only source of visual design: replace each finding with the cds classes and custom properties'
       const verdictOf = (audit) => ({
         verdict: audit.violations.length ? 'fail' : audit.gaps.length ? 'blocked' : 'pass',
         findings: audit.violations.length + audit.gaps.length,
@@ -700,11 +776,11 @@ try {
         cdsVerdict = { verdict: 'error', findings: 0, scriptVersion: audit.scriptVersion || null }
         return handback(false, 'cds-audit', `cds-audit: the cds audit ${when} could not rule: ${audit.error}`, { cdsAudit: audit })
       }
-      let audit = await auditCds(workRepoPath, bundle, 'cds-audit-1')
+      let audit = await runAudit('cds-audit-1')
       if (audit.error) return auditFailed(audit, 'after Refactor')
       log(`CDS Audit: ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
       if (audit.violations.length) {
-        const brief = `The cds audit found UI code that styles outside the cds design system. The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships, and add no stylesheet, inline style, color or length of your own. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs that need not specify every detail. Preserve their established intent and any explicit precision requirements; use judgment with the Task requirements and configured cds for unspecified interactions, states and responsive behavior; when this Task instead owns UI design without a mock, use configured cds and the approved application standards. Resolve findings through supported configuration/composition or generated-artifact correction where applicable. If an input or capability outside this Task remains necessary, name it with evidence in upstreamMissing; do not assume a cds plugin extension is required merely because the current bundle lacks the output. The whole suite has to stay green.
+        const brief = `The cds audit found UI code that styles outside the cds design system. ${standard}, and add no stylesheet, inline style, color or length of your own. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs that need not specify every detail. Preserve their established intent and any explicit precision requirements; use judgment with the Task requirements and configured cds for unspecified interactions, states and responsive behavior; when this Task instead owns UI design without a mock, use configured cds and the approved application standards. Resolve findings through supported configuration/composition or generated-artifact correction where applicable. If an input or capability outside this Task remains necessary, name it with evidence in upstreamMissing; do not assume a cds plugin extension is required merely because the current bundle lacks the output. The whole suite has to stay green.
 Findings (file:line rule value):
 ${audit.violations.map(findingText).join('\n')}${baselineNote}`
         runLedger.push({ phase: 'retry:green', round: 'cds-audit', whatChanged: `Green is given the ${audit.violations.length} cds audit violation(s) as its brief` })
@@ -723,7 +799,7 @@ ${audit.violations.map(findingText).join('\n')}${baselineNote}`
           }
         }
         enterPhase('CDS Audit')
-        audit = await auditCds(workRepoPath, bundle, 'cds-audit-2')
+        audit = await runAudit('cds-audit-2')
         if (audit.error) return auditFailed(audit, 'after the Green round')
         log(`CDS Audit (after Green): ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
       }

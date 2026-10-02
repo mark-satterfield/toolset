@@ -66,12 +66,13 @@ field exists because a document said so, and never restate one of its recipes.
 - The build contract you carry per task (`specPaths`, `specSections`, `requirementIds`,
   `definitionOfDone`, `surfaces`, `testStrategy`) lands as bead metadata under the key names and
   shapes the skill documents. Check them there rather than inventing spellings.
-- **UI work builds from the cds design system.** A task that builds a `ui` delta item carries
-  `web-ui` in `surfaces` and that item's id in `requirementIds`. `write-task` adds the cds bundle
-  path and the item's `build-spec.md` Sections, as the detailing resolved them, to the contract
-  (`cds_bundle_path`, `cds_build_specs`); you do not write them. `plan-tasks` refuses a `web-ui`
-  task that cites no `ui` item with a resolved build spec, or for which no cds bundle resolves, so
-  cite the `ui` items each such task builds.
+- **UI work takes the design source of the items it builds.** A task that builds a `ui` delta
+  item carries `web-ui` in `surfaces` and that item's id in `requirementIds`. `write-task` records
+  the design source the detailing gave those items in the contract (`cds_design_source`): `bundle`,
+  with the supplied cds bundle and the item's `build-spec.md` Sections (`cds_bundle_path`,
+  `cds_build_specs`); `cds`, designed with the CDS design system; or `none`, a change with no design
+  impact. You do not write these keys. A task builds against one supplied bundle, so keep items of
+  different bundles in different tasks: `plan-tasks` refuses a task that cites items of two bundles.
 - **`unknown` is not `[]`.** Where the spec does not settle `surfaces` or `testStrategy`, emit the
   literal `unknown`, never an empty list: a null means nobody ruled and the phase falls back to its
   own lead, while `[]` means the work crosses no boundary and SKIPS the phase outright.

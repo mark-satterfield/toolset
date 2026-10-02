@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), resolves UI items against the cds design artifacts, and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s build spec, the cds bundle, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
+    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), gives each ui item its design source — bundle (a single-artifact cds bundle the owner supplied in the packages directory packages it; the newest bundle of a kind and slug is the supplied one), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design) — and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s design source with the bundle and build spec of a bundle item, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
   phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
 const dispatchFailures = []
@@ -31,12 +31,12 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
 //   items: [{ id, element, views? }] (the delta items placed in this repository),
 //   delta: { targetDir, deltaDir },
-//   mocksDir?, packagesDir?, shellsDir? (packagesDir is the exact selected bundle root; caller supplies design system paths), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
+//   mocksDir?, packagesDir?, shellsDir? (packagesDir holds zero or more single-artifact cds bundles; absent or empty supplies none), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
 //   artifacts: { dir, relDir?, epicId, script, phase, inputs?, slug } (required: the detailing lives only in recon-<slug>.json),
 //   depscore: <absolute path of depscore.py> (required: recon-facts reads the saved detailing),
 //   replay?: { files: { recon: <absolute path of a saved result> } }
 // }
-// returns { ok, resumed?, reconPath, itemCount, counts, work, idle, uiWork, bundlePath, mocksDir,
+// returns { ok, resumed?, reconPath, itemCount, counts, work, idle, uiWork, bundles, mocksDir,
 //           dependenciesCurrent, dependencyFindings, ledger } — facts only; the items are in reconPath
 //   or { ok: false, stage, headline, reason, reconPath?, failedItems?, dispatchFailed? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -73,7 +73,6 @@ const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true
 if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
 if (!hasText(delta.deltaDir)) return refuse('no delta supplied: delta.deltaDir names the views the items come from')
 if (!placed.length) return refuse(`no delta item is placed in ${repos[0]}`)
-if (uiCheck && !packagesDir) return refuse(`${repos[0]} serves a user interface: packagesDir must name the host-configured exact CDS package root, not the producer export parent`)
 if (!reconPath) return refuse(`no artifact directory and slug were supplied for ${repos[0]}: the detailing exists only as recon-<slug>.json in the Epic's artifact directory, which the sessions downstream read by path`)
 if (!depscorePath) return refuse('no absolute depscore.py path was supplied in `depscore`: depscore.py recon-facts reads the saved detailing')
 
@@ -99,10 +98,6 @@ It prints one small JSON object on stdout. Return the process exit code as \`exi
   if (!out) return { error: `the ${label} runner returned no result`, dispatchFailed: true }
   const o = out.output || {}
   if (out.exitCode !== 0 || hasText(o.error)) return { error: hasText(o.error) ? o.error.trim().slice(0, 600) : `depscore.py recon-facts exited ${out.exitCode}` }
-  if (o.ok === true && Array.isArray(o.uiWork) && o.uiWork.length &&
-      String(o.bundlePath || '').replace(/\/+$/, '') !== packagesDir.replace(/\/+$/, '')) {
-    return { error: `the detailing selected ${o.bundlePath || '(none)'}, not configured package root ${packagesDir || '(none)'}` }
-  }
   if (typeof o.ok !== 'boolean') return { error: `depscore.py recon-facts printed no verdict for ${file}` }
   return { facts: o }
 }
@@ -141,6 +136,37 @@ if (replayPath) {
   log(`Detailing replayed from ${replayPath} (${facts.itemCount} item(s), ${facts.bytes} bytes on disk)`)
 }
 
+/** Lists the cds bundles packagesDir supplies with depscore.py cds-bundles; returns { bundles } or { error }. */
+async function listBundles() {
+  if (!uiCheck || !packagesDir) return { bundles: [] }
+  const out = await settleAgent(
+    `Run exactly this one shell command, once, in the FOREGROUND, and change nothing else:
+
+python3 ${shq(depscorePath)} cds-bundles --packages-dir ${shq(packagesDir)}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not open any file yourself, do not retry, do not run any other command.`,
+    { label: 'detail:cds-bundles', phase: 'Detailing', model: 'haiku', effort: 'low', schema: FACTS_SCHEMA }
+  )
+  if (!out) return { error: 'the cds-bundles runner returned no result', dispatchFailed: true }
+  const o = out.output || {}
+  if (out.exitCode !== 0 || hasText(o.error) || !Array.isArray(o.bundles)) return { error: hasText(o.error) ? o.error.trim().slice(0, 600) : `depscore.py cds-bundles exited ${out.exitCode}` }
+  return { bundles: o.bundles.filter((b) => b && hasText(b.path) && hasText(b.buildSpec)) }
+}
+let bundles = []
+if (!facts && uiCheck) {
+  const listed = await listBundles()
+  if (listed.error) {
+    return stopped('detailing-bundles', `The cds bundles in ${packagesDir} could not be listed for ${repos[0]}: ${listed.error}.`, {
+      ...(listed.dispatchFailed ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Detailing') } : {}),
+    })
+  }
+  bundles = listed.bundles
+  log(`Detailing of ${repos[0]}: ${bundles.length} supplied cds bundle(s)${packagesDir ? ` in ${packagesDir}` : ' (no packages directory)'}`)
+}
+const bundleLines = bundles
+  .map((b) => `  - ${b.kind} \`${b.slug}\`${b.shell && b.shell.name ? ` (in shell ${b.shell.name})` : ''}, created ${b.createdAt}\n      bundle: ${b.path}\n      build spec: ${b.buildSpec}${b.buildSpecExists === false ? ' (MISSING on disk)' : ''}\n      design: ${b.design}\n      styles: ${b.styles}`)
+  .join('\n')
+
 const itemLines = placed
   .map((i) => `- ${i.id}: ${i.element}${Array.isArray(i.views) && i.views.length ? `\n    delta views: ${i.views.join('; ')}` : ''}`)
   .join('\n')
@@ -175,70 +201,48 @@ Cite evidence for every status in \`evidence\`: a \`file:line\` on \`main\` you 
 
 Also classify the SURFACE each item lives on, in \`surface\`: ui | service | infra | data | unknown.
 
-${uiCheck ? `═══ UI ITEMS ARE RESOLVED AGAINST THE cds DESIGN SYSTEM ═══
+${uiCheck ? `═══ EVERY UI ITEM TAKES ONE DESIGN SOURCE ═══
 
-For every item whose \`surface\` is \`ui\`, the design system's output is the target state, highest first:
+For every item whose \`surface\` is \`ui\`, decide its design source from the delta and the code:
 
-  1. THE cds HAND-OFF BUNDLE — the packaged artifact: its \`spec/build-spec.md\` together
-     with the composed HTML under \`design/\`.
-  2. THE LOOSE COMPOSED ARTIFACT in the directories below — used when the artifact is not
-     in the bundle.
-  3. The delta views.
+- bundle — a cds bundle listed below packages the artifact (the Page, Shell or View) the item
+  builds. The owner supplied that mockup, so the bundle is the target state: its
+  \`spec/build-spec.md\` together with its composed \`design/<kind>.html\` and its own \`styles/\`.
+- cds — the item changes design (layout, components, styles, visual states, or a new screen)
+  and no listed bundle packages it. The implementing agent designs it with the CDS design
+  system; there is nothing to cite.
+- none — the item changes no design: copy or label text, or data wired into an existing
+  element without changing how it looks. It touches no design or stylesheet and is built like
+  any other code change.
 
-Design package input:
-${packagesDir ? `  ${packagesDir}` : '  (none supplied: use the loose composed artifacts below)'}
-This is the ONE selected package root. Its contents, including \`styles/tokens.css\`,
-must be directly inside it. Do not search timestamped children, siblings or old export
-locations. If it is missing or incomplete, name the missing package/file in the evidence;
-the owner supplies the package. Do not package, copy, regenerate or select a substitute.
+THE SUPPLIED cds BUNDLES — each packages exactly one artifact; the newest of a kind and slug is
+listed, older ones are not supplied:
+${bundleLines || '  (none: no bundle is supplied, so no item takes bundle)'}
 
-Read the relevant approved target/delta views and follow their scoped design hand-off
-references (including linked source views) FIRST. Preserve the selected mock/package and
-its scope; do not replace that design with a newer unrelated package. This is the existing
-architecture-to-TRD-to-detailing hand-off, not a requirement for technical fields in the PRD.
-Optional PRD visual references: ${hasText(prdInput.path) ? prdInput.path : '(no PRD path supplied)'}
-The PRD defines business requirements; it need not carry package paths or implementation
-details. A visual reference may help identify the artifact. If an explicit caller-selected
-package conflicts with the scoped architecture hand-off or an explicit design reference,
-report the conflict rather than silently substitute either. Resolve absolute references directly. For relative references, use the
-base named by the reference (for example its named repository or the selected package root);
-ordinary relative file links resolve beside the source document. Do not silently rebase a
-vault link onto the implementation repository. If a selected path is missing, its base is
-ambiguous, or its intended artifact cannot be identified, report that in \`evidenceSummary\`
-and the item's evidence, leave its build-spec unresolved, and do not fabricate a citation
-or fall back to another design. Packaging details belong in this technical hand-off, not in
-new mandatory PRD fields.
+Match an item to a bundle only when the bundle packages the artifact that item builds: read the
+bundle's build spec and design, and the approved target/delta views with their scoped design
+references (linked source views included). The PRD (${hasText(prdInput.path) ? prdInput.path : 'no PRD path supplied'})
+may name a visual reference that helps identify the artifact; it carries no package paths.
+Use only the bundles listed above, at the paths listed. Do not package, copy or regenerate a
+bundle, and do not cite a directory that is not listed. When no listed bundle packages the
+item, it takes cds or none, decided by whether it changes design.
 
-Within this exact root, use README.md and MANIFEST.tsv when present to match each UI item
-to its design. An aggregate may contain \`{shells,pages,views}/<slug>/spec/build-spec.md\`
-and the corresponding \`design/<kind>.html\`, with shared \`styles/\` and \`assets/\`.
-A single-artifact layout may instead have \`spec/build-spec.md\` and \`design/\` directly
-inside the same selected root. Read the actual layout; no batch-* name is required.
-Do not choose a spec merely because it exists: it must describe the item being built.
-
-Record the selected package's actual absolute root in \`uiAuthority.bundlePath\` (the directory
-holding \`styles/tokens.css\`), and actual absolute build-spec paths in \`uiAuthority.buildSpecs\`.
-Read the matching build spec and design payload, following their asset/style references.
-If the matching artifact is missing or ambiguous, report that unresolved item. Packaging alone does not approve unrelated designs. If the item's artifact
-is not packaged and no explicit package reference failed, consult its loose composed artifact:
+The loose composed artifacts may help you understand the existing design; they are not
+supplied mockups and never make an item a bundle item:
 ${mocksDir ? `  composed pages and views: ${mocksDir}` : '  composed pages and views: (no directory supplied)'}
 ${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no directory supplied)'}
 
-Cite the artifact path you used beside the \`file:line\` for every \`ui\` item. List every artifact
-path you opened in \`uiAuthority.artifactsConsulted\`, the loose shells and pages in
-\`uiAuthority.shellsConsulted\` / \`uiAuthority.pagesConsulted\`, and the mocks directory in
-\`uiAuthority.mocksDir\`.
+Record one entry per \`ui\` item in \`uiAuthority.uiItems\`: \`item\` (the item id),
+\`designSource\` (bundle | cds | none), \`reason\` (one sentence: which bundle packages it, or
+what design it changes, or why it changes none), and for a bundle item only: \`bundle\` (the
+bundle directory exactly as listed), \`buildSpec\` (its build spec exactly as listed) and
+\`sections\` (the IDs in that build spec's Sections table — S1, S2, … — that the item builds;
+an empty list when it builds the whole artifact or the table carries no IDs). The Spec cites
+these and every Task that builds the item carries them in its build contract. List every
+artifact path you opened in \`uiAuthority.artifactsConsulted\` and the mocks directory in
+\`uiAuthority.mocksDir\`.` : `═══ THIS REPOSITORY HOLDS NO UI ═══
 
-For every \`ui\` item resolved against a packaged artifact, add one entry to
-\`uiAuthority.buildSpecs\`: \`item\` (the item id), \`buildSpec\` (the absolute path of that
-artifact's \`spec/build-spec.md\`), and \`sections\` (the IDs in that build spec's Sections table —
-S1, S2, … — that the item builds; an empty list when it builds the whole artifact or the table
-carries no IDs). The Spec cites these and every Task that builds the item carries them in its
-build contract, so record only paths you read.
-
-If neither the bundle nor the mocks directory exists, say so in \`evidenceSummary\`.` : `═══ THIS REPOSITORY HOLDS NO UI ═══
-
-Do not look for the cds hand-off bundle or the design mocks.`}
+Its items take no design source and \`uiAuthority\` stays empty.`}
 
 ═══ SEARCH BUDGET ═══
 
@@ -261,7 +265,7 @@ Determine whether any upstream contract, shared schema, event, library version, 
 1. Write your whole detailing, as ONE JSON object, to ${reconPath} with the Write tool, replacing the file if it exists (Read it first if the Write tool asks you to). Write no other file. Its keys:
    - \`items\`: one object per item above: \`id\`, \`element\`, \`status\` (${STATUSES.join(' | ')}), \`from\`, \`to\`, \`evidence\` (a list of strings, each \`file:line\` you read with what it shows), \`plannedBy\` (the bead id, for planned-elsewhere only), \`surface\` (ui | service | infra | data | unknown).
    - \`evidenceSummary\`: a string.
-   - \`uiAuthority\`: \`bundlePath\`, \`mocksDir\`, \`artifactsConsulted\`, \`shellsConsulted\`, \`pagesConsulted\`, \`buildSpecs\` (each \`{ item, buildSpec, sections }\`), as described above; empty values when the repository holds no UI.
+   - \`uiAuthority\`: \`uiItems\` (each \`{ item, designSource, reason, bundle?, buildSpec?, sections? }\`), \`mocksDir\`, \`artifactsConsulted\`, as described above; empty values when the repository holds no UI.
    - \`dependencyChanges\`: \`current\` (true or false), \`changeFindings\` (each \`{ dependency, change, invalidates }\`), \`evidence\`.
 2. Then run exactly this command:
    ${recordCommand}
@@ -310,7 +314,13 @@ const idle = (Array.isArray(facts.idle) ? facts.idle : [])
   .map((x) => ({ id: x.id.trim(), status: hasText(x.status) ? x.status.trim() : '', plannedBy: hasText(x.plannedBy) ? x.plannedBy.trim() : null }))
 const uiWork = (Array.isArray(facts.uiWork) ? facts.uiWork : [])
   .filter((u) => u && hasText(u.id))
-  .map((u) => ({ id: u.id.trim(), buildSpec: hasText(u.buildSpec) ? u.buildSpec.trim() : null, sections: ids(u.sections) }))
+  .map((u) => ({
+    id: u.id.trim(),
+    designSource: hasText(u.designSource) ? u.designSource.trim() : null,
+    bundle: hasText(u.bundle) ? u.bundle.trim() : null,
+    buildSpec: hasText(u.buildSpec) ? u.buildSpec.trim() : null,
+    sections: ids(u.sections),
+  }))
 const detailingFile = resumed ? replayPath : reconPath
 
 log(`Detailing of ${repos[0]} (${detailingFile}): ${facts.itemCount} item(s) — ${STATUSES.map((s) => `${counts[s]} ${s}`).join(', ')}.`)
@@ -324,7 +334,7 @@ return {
   work,
   idle,
   uiWork,
-  bundlePath: hasText(facts.bundlePath) ? facts.bundlePath.trim() : null,
+  bundles: [...new Set(uiWork.map((u) => u.bundle).filter(Boolean))],
   mocksDir: hasText(facts.mocksDir) ? facts.mocksDir.trim() : mocksDir || null,
   dependenciesCurrent: typeof facts.dependenciesCurrent === 'boolean' ? facts.dependenciesCurrent : null,
   dependencyFindings: Number(facts.dependencyFindings) || 0,

@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cdsbundles import DESIGN_SOURCES, bundle_problem
+
 #: The surfaces a Task may declare; anything else is dropped.
 SURFACES = (
     "api-contract",
@@ -206,6 +208,8 @@ class Task:
     blocked_by_external: list[str] = field(default_factory=list)
     cds_bundle_path: str | None = None
     cds_build_specs: list[str] = field(default_factory=list)
+    cds_design_source: str | None = None
+    cds_bundles: list[str] = field(default_factory=list)
 
 
 def _sizes(score: dict | None) -> dict[str, str] | None:
@@ -440,110 +444,153 @@ def _surfaces(value: object) -> list[str] | None:
 UI_SURFACE = "web-ui"
 
 
-def _is_bundle(path: Path) -> bool:
-    """Return whether a directory is a cds hand-off bundle: it holds styles/tokens.css."""
-    return (path / "styles" / "tokens.css").is_file()
+@dataclass
+class UiDesign:
+    """The design source one `ui` delta item takes, as the detailing resolved it."""
+
+    source: str
+    bundle: str | None = None
+    cites: list[str] = field(default_factory=list)
 
 
 def ui_authority(
     directory: Path, slug: str, packages_dir: str | None = None
-) -> tuple[str | None, dict[str, list[str]]]:
-    """Return the cds bundle and the build specs per delta item the detailing resolved.
+) -> dict[str, UiDesign]:
+    """Return the design source of each `ui` delta item the detailing resolved.
 
-    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`.
-    The caller's exact package root must agree with the saved selection. Without
-    a caller override, the saved root is authoritative. No directory scan or
-    producer environment fallback can select a different design.
+    Reads `uiAuthority.uiItems` of the repository's saved detailing, `recon-<slug>.json`.
+    Each item takes `bundle` (a cds bundle the owner supplied packages it), `cds` (it changes
+    design and is designed with the CDS design system) or `none` (it changes no design).
+    A `bundle` item's bundle must be the newest of its kind and slug, hold the build spec its
+    `bundle.json` names, and, when the caller names a packages directory, sit in it.
 
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
-        packages_dir: The exact selected bundle root, or None to use the saved selection.
+        packages_dir: The packages directory a cited bundle must sit in, or None.
 
     Returns:
-        The bundle path (None when none resolves), and per delta item id its build-spec
-        citations: the absolute `build-spec.md` path, followed by `#<Section ID>` for
-        each Section it builds.
+        Per delta item id its design: the source, and for a `bundle` item the bundle path
+        and its build-spec citations (the absolute `build-spec.md` path, followed by
+        `#<Section ID>` for each Section it builds).
+
+    Raises:
+        HierarchyError: An item names no known design source, or a `bundle` item cites a
+            bundle or build spec that cannot be built from.
     """
     path = directory / f"recon-{slug}.json"
     ua = _read_json(path).get("uiAuthority") if path.is_file() else None
     ua = ua if isinstance(ua, dict) else {}
-    named = str(ua.get("bundlePath") or "").strip()
-    entries = []
-    for entry in ua.get("buildSpecs") or []:
+    within = (
+        Path(packages_dir).expanduser().resolve()
+        if str(packages_dir or "").strip()
+        else None
+    )
+    designs: dict[str, UiDesign] = {}
+    for entry in ua.get("uiItems") or []:
         if not isinstance(entry, dict):
             continue
         item = str(entry.get("item") or "").strip()
-        spec = str(entry.get("buildSpec") or "").strip()
-        if item and spec:
-            entries.append((item, spec, str_list(entry.get("sections"))))
-    supplied = packages_dir or named
-    if not supplied:
-        raise HierarchyError(f"recon-{slug}.json: no selected cds package root")
-    root = Path(supplied).expanduser().resolve()
-    if not _is_bundle(root):
-        raise HierarchyError(
-            f"cds package is not ready at {root}: styles/tokens.css must be directly inside it; "
-            "place the complete package there, not inside a timestamped child"
-        )
-    if named and Path(named).expanduser().resolve() != root:
-        raise HierarchyError(
-            f"recon-{slug}.json: saved cds package {named} conflicts with {root}"
-        )
-    bundle = str(root)
-    cites: dict[str, list[str]] = {}
-    for item, spec, sections in entries:
-        candidate = Path(spec)
-        if not candidate.is_absolute():
-            candidate = root / candidate
-        candidate = candidate.resolve()
-        if not candidate.is_relative_to(root) or not candidate.is_file():
+        source = str(entry.get("designSource") or "").strip()
+        if not item or item in designs:
+            continue
+        if source not in DESIGN_SOURCES:
             raise HierarchyError(
-                f"recon-{slug}.json: build spec is missing or outside selected package: {spec}"
+                f"recon-{slug}.json: ui item {item} has design source "
+                f"{json.dumps(source)}, not one of {', '.join(DESIGN_SOURCES)}"
             )
-        spec = str(candidate)
-        cites.setdefault(item, []).extend(
-            [f"{spec}#{x}" for x in sections] if sections else [spec]
+        if source != "bundle":
+            designs[item] = UiDesign(source)
+            continue
+        bundle = str(entry.get("bundle") or "").strip()
+        spec = str(entry.get("buildSpec") or "").strip()
+        problem = bundle_problem(bundle, spec)
+        if problem:
+            raise HierarchyError(f"recon-{slug}.json: ui item {item}: {problem}")
+        root = Path(bundle).resolve()
+        if within is not None and root.parent != within:
+            raise HierarchyError(
+                f"recon-{slug}.json: ui item {item} cites the bundle {root}, which is "
+                f"not in the packages directory {within}"
+            )
+        spec = str(Path(spec).resolve())
+        sections = str_list(entry.get("sections"))
+        designs[item] = UiDesign(
+            "bundle",
+            str(root),
+            [f"{spec}#{x}" for x in sections] if sections else [spec],
         )
-    return bundle, cites
+    return designs
+
+
+def task_design(
+    requirement_ids: list[str], designs: dict[str, UiDesign]
+) -> tuple[str, list[str], list[str]]:
+    """Return the design source a web-ui Task takes from the `ui` items it cites.
+
+    `bundle` when any cited item takes a supplied bundle, else `cds` when any takes the CDS
+    design system or the Task cites no `ui` item, else `none`.
+
+    Args:
+        requirement_ids: The delta item ids the Task cites.
+        designs: Per delta item id its design.
+
+    Returns:
+        The source, the distinct bundles of the cited `bundle` items, and their build-spec
+        citations.
+    """
+    cited = [designs[r] for r in requirement_ids if r in designs]
+    sources = {d.source for d in cited}
+    bundles = list(dict.fromkeys(d.bundle for d in cited if d.bundle))
+    cites = list(dict.fromkeys(c for d in cited for c in d.cites))
+    if "bundle" in sources:
+        return "bundle", bundles, cites
+    if "cds" in sources or not cited:
+        return "cds", [], []
+    return "none", [], []
 
 
 def check_cds_contract(slug: str, tasks: list[Task]) -> None:
-    """Refuse a web-ui Task whose build contract does not name its cds bundle and build specs.
+    """Refuse a web-ui Task whose build contract does not match its design source.
 
-    Every Task with the web-ui surface is built from the cds design system, so its
-    contract names the cds bundle and at least one `build-spec.md` citation, each of
-    them a file that exists.
+    A web-ui Task takes one design source. A `bundle` Task names the one supplied bundle it
+    builds against and at least one `build-spec.md` citation, each a file that exists. A
+    `cds` Task (designed with the CDS design system) and a `none` Task (no design change)
+    name no bundle.
 
     Args:
         slug: The Story's repository slug.
         tasks: The Story's Tasks.
 
     Raises:
-        HierarchyError: A web-ui Task resolves no bundle, cites no ui delta item with a
-            resolved build spec, or cites a build spec that does not exist.
+        HierarchyError: A web-ui Task has no known design source, or a `bundle` Task names
+            no bundle, more than one bundle, no build spec, or a build spec that does not
+            exist.
     """
     problems = []
     for t in tasks:
         if UI_SURFACE not in (t.surfaces or []):
             continue
+        if t.cds_design_source not in DESIGN_SOURCES:
+            problems.append(f"{t.key} has no design source")
+            continue
+        if t.cds_design_source != "bundle":
+            continue
         if not t.cds_bundle_path:
             problems.append(
-                f"{t.key} resolves no cds bundle (the detailing names none and "
-                "--packages-dir names no selected package)"
+                f"{t.key} builds ui items from more than one supplied cds bundle "
+                f"({', '.join(t.cds_bundles)}); a Task builds against one bundle, so "
+                "split it by bundle"
+                if len(t.cds_bundles) > 1
+                else f"{t.key} takes a supplied bundle but names none"
             )
         if not t.cds_build_specs:
-            problems.append(
-                f"{t.key} cites, in requirementIds ({', '.join(t.requirement_ids) or 'none'}), "
-                f"no ui delta item recon-{slug}.json resolves to a cds build-spec.md; a ui "
-                "item with no packaged build spec is packaged with cds:package-change first"
-            )
+            problems.append(f"{t.key} takes a supplied bundle but cites no build spec")
         missing = sorted(
-            {c.split("#", 1)[0] for c in t.cds_build_specs}
-            - {
+            {
                 c.split("#", 1)[0]
                 for c in t.cds_build_specs
-                if Path(c.split("#", 1)[0]).is_file()
+                if not Path(c.split("#", 1)[0]).is_file()
             }
         )
         if missing:
@@ -552,7 +599,7 @@ def check_cds_contract(slug: str, tasks: list[Task]) -> None:
             )
     if problems:
         msg = (
-            f"tasks-{slug}.json: web-ui Tasks without their cds contract: "
+            f"tasks-{slug}.json: web-ui Tasks whose cds contract does not hold: "
             + "; ".join(problems)
         )
         raise HierarchyError(msg)
@@ -595,7 +642,7 @@ def read_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         story_decision_ids: The Story's decision ids, which a Task citing none inherits.
-        packages_dir: The exact selected bundle root, or None to use the saved selection.
+        packages_dir: The packages directory a cited bundle must sit in, or None.
 
     Returns:
         The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.
@@ -623,10 +670,10 @@ def read_tasks(
         else None
     )
     by_key = {t["key"]: t for t in unique}
-    bundle, ui_cites = (
+    designs = (
         ui_authority(directory, slug, packages_dir)
         if any(UI_SURFACE in (_surfaces(t.get("surfaces")) or []) for t in unique)
-        else (None, {})
+        else {}
     )
     tasks = []
     for key in order:
@@ -634,16 +681,10 @@ def read_tasks(
         cited = [p for p in str_list(t.get("specPaths")) if p in refs]
         surfaces = _surfaces(t.get("surfaces"))
         ui = bool(surfaces) and UI_SURFACE in surfaces
-        build_specs = (
-            list(
-                dict.fromkeys(
-                    c
-                    for r in str_list(t.get("requirementIds"))
-                    for c in ui_cites.get(r, [])
-                )
-            )
+        source, bundles, build_specs = (
+            task_design(str_list(t.get("requirementIds")), designs)
             if ui
-            else []
+            else (None, [], [])
         )
         tasks.append(
             Task(
@@ -670,8 +711,10 @@ def read_tasks(
                 blocked_by_external=list(
                     dict.fromkeys(str_list(t.get("blockedByExternal")))
                 ),
-                cds_bundle_path=bundle if ui else None,
+                cds_bundle_path=bundles[0] if len(bundles) == 1 else None,
                 cds_build_specs=build_specs,
+                cds_design_source=source,
+                cds_bundles=bundles,
             )
         )
     return tasks

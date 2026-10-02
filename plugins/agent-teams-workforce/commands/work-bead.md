@@ -178,7 +178,7 @@ One line each, no more:
 - what you did NOT do
 - the worktree and branch the work landed on
 - the PR URL, or the explicit reason there is none
-- for a `web-ui` Task, the `cdsAudit` verdict and finding count
+- for a `web-ui` Task whose design source is `bundle` or `cds`, the `cdsAudit` verdict and finding count
 
 When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped:
 
