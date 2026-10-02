@@ -165,7 +165,6 @@ const LIFECYCLE_RUN_SCHEMA = {
   additionalProperties: false,
   required: ['exitCode', 'output'],
   properties: {
-    pluginRoot: { type: ['string', 'null'] },
     exitCode: { type: 'integer' },
     output: { type: 'object' },
   },
@@ -212,7 +211,7 @@ async function runScript(label, phaseName, commandArgs) {
 
 ${command}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
     { label, phase: phaseName, model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
   )
   if (!out) return { error: `the ${label} runner returned no result` }
@@ -236,7 +235,7 @@ async function holdForPerson(epicId) {
 
 python3 ${shellq(`${lifecycle.pluginRoot}/skills/beads-contract/scripts/beads-contract.py`)} -C ${shellq(emitTarget)} metadata set ${shellq(epicId)} 'elaboration_state=' 'elaboration_state_cause=${HOLD_CAUSE}' 'elaboration_state_owner='
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
     { label: 'epic:hold', phase: currentPhase || 'Architecture', model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
   )
   lifecycle.held = !!(out && out.exitCode === 0 && out.output && !out.output.error)
@@ -309,7 +308,7 @@ const started = await settleAgent(
 
 python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${startArgs}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
   { label: 'epic:start', phase: 'Epic Lifecycle', model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
 )
 if (!started) {
