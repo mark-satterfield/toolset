@@ -24,8 +24,9 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 ## PRD Validation
 
-`prd-to-spec` checks the PRD file with `depscore.py prd-parse` and dispatches none of these agents; the
-`prd-validation` workflow runs on its own.
+`prd-to-spec` reads what it takes from the PRD file with `depscore.py prd-parse`, assuming the PRD was
+validated before its Epic was made ready, and dispatches none of these agents; the `prd-validation`
+workflow runs on its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |

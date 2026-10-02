@@ -47,9 +47,9 @@
                          and commit the removal in the repository holding them; no `bd` call
     arch-commit          commit the architecture files an integration changed, staging only
                          those paths, and push the branch; no `bd` call
-    prd-parse            check that a PRD file has the structure elaboration reads: readable,
-                         not superseded, an H1, requirement headings with acceptance criteria
-                         under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
+    prd-parse            read from a PRD file what elaboration takes (its requirement headings),
+                         assuming the PRD was validated before its Epic was made ready; fails
+                         only on a file that cannot be read; no `bd` call
     spec-ui-check        check that a saved spec document has a section per `ui` item, citing a
                          cds `spec/build-spec.md` that exists, the one the detailing resolved, and
                          its resolved Section IDs; no `bd` call

@@ -1,11 +1,11 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an two business requirements no design can satisfy together, or an architecture that contradicts itself where common sense cannot settle it, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository, and a placement in the control repository, in the repository holding the architecture, in a repository the steward refuses or in one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason; a repository the steward created that the approved target does not name, checked with depscore.py arch-target-names, holds the Epic too), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, reads what it takes from the PRD file with depscore.py prd-parse, which assumes the PRD was validated before its Epic was made ready and holds the Epic for a person only when the file cannot be read, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an two business requirements no design can satisfy together, or an architecture that contradicts itself where common sense cannot settle it, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository, and a placement in the control repository, in the repository holding the architecture, in a repository the steward refuses or in one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason; a repository the steward created that the approved target does not name, checked with depscore.py arch-target-names, holds the Epic too), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
-    { title: 'PRD Validation', detail: 'depscore.py prd-parse: the PRD file is readable, not superseded, has an H1, requirement headings with acceptance criteria under Requirements, and a Definition of Done; a failed check holds the Epic for a person' },
+    { title: 'PRD Parse', detail: 'depscore.py prd-parse reads what elaboration takes from the PRD, assuming it was validated before its Epic was made ready; only a file that cannot be read holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'the architecture mini writes the target and delta for the Epic and integrates the approved target into the effective version; only two business requirements no design can satisfy together, or an architecture that contradicts itself where common sense cannot settle it, hold the Epic for the owner' },
     { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes; the polyrepo-steward rules each span repository buildable and active, and a placement in the control repository or a refused repository holds the Epic' },
@@ -64,7 +64,7 @@ const EXPECTED_PHASES = [
   'Epic Lifecycle',
   'PRD',
   'Epic',
-  'PRD Validation',
+  'PRD Parse',
   'Architecture',
   'Repo Scoping',
   'TRD Authoring',
@@ -634,14 +634,14 @@ const epic = { key: epicRef.key || epicBeadId, ...epicRef, id: epicBeadId, type:
 produced.epic = epic
 recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
 
-enterPhase('PRD Validation')
+enterPhase('PRD Parse')
 if (!hasText(prd.path)) {
   const why = 'the PRD carries no file path: depscore.py prd-parse reads the PRD from its file (prd.path)'
   return await holdForHuman('prd-parse', { reason: why }, [`Pass the PRD of ${epicBeadId} as a file in prd.path: ${why}`], 'the PRD file path has been supplied')
 }
-const prdParse = await runScript('prd:parse', 'PRD Validation', `prd-parse --prd ${shellq(prd.path)}`)
+const prdParse = await runScript('prd:parse', 'PRD Parse', `prd-parse --prd ${shellq(prd.path)}`)
 if (!prdParse || prdParse.error) {
-  const died = dispatchDeaths('PRD Validation')
+  const died = dispatchDeaths('PRD Parse')
   return partial('prd-parse', {
     reason: `depscore.py prd-parse did not return a result for ${prd.path}: ${(prdParse && prdParse.error) || 'no result'}`,
     ...(died.length ? { dispatchFailed: true, dispatchFailures: died } : {}),
@@ -653,7 +653,7 @@ if (prdParse.ok !== true) {
   return await holdForHuman(
     'prd-parse',
     { reason: `the PRD at ${prd.path} failed depscore.py prd-parse: ${named}`, failedChecks },
-    [`Fix the PRD at ${prd.path} so depscore.py prd-parse passes: ${named}`],
+    [`Make the PRD at ${prd.path} readable: ${named}`],
     'the PRD has been fixed'
   )
 }

@@ -25,12 +25,8 @@ MAX_HEADINGS = 40
 #: The frontmatter key holding a document's lifecycle state.
 STATE_KEY = "lifecycle_state"
 
-#: The lifecycle state of a PRD that may not be elaborated.
-SUPERSEDED = "superseded"
-
-#: The section holding a PRD's requirements, and the one holding its Definition of Done.
+#: The section holding a PRD's requirements.
 REQUIREMENTS_SECTION = "Requirements"
-DONE_SECTION = "Definition of Done"
 
 #: The heading level of a PRD section, and the levels of the requirement headings in one.
 SECTION_LEVEL = 2
@@ -39,11 +35,7 @@ REQUIREMENT_LEVELS = (3, 4)
 #: A level-3 or level-4 heading under Requirements that names no requirement.
 LEGEND_HEADING = "priority legend"
 
-#: The marker that opens a requirement's acceptance criteria.
-CRITERIA_MARKER = "**Acceptance Criteria:**"
-
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-_THEMATIC_BREAK = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
 
 
 def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
@@ -196,20 +188,20 @@ def _section(
 
 
 def prd_parse(path: Path) -> dict:
-    """Check that a PRD file has the structure elaboration reads; runs no `bd` command.
+    """Read from a PRD file what elaboration takes from it; runs no `bd` command.
 
-    The checks: the file is readable; its frontmatter `lifecycle_state` is not
-    `superseded`; it has an H1; `## Requirements` holds at least one level-3 or level-4
-    heading other than a Priority Legend and at least one `**Acceptance Criteria:**`
-    block; `## Definition of Done` is not empty.
+    Parsing assumes the PRD was validated before its Epic was made ready: it checks
+    nothing about the PRD's content and ignores everything it does not take. It takes
+    the level-3 and level-4 headings under `## Requirements`, other than a Priority
+    Legend, when the PRD has that section. The one failure is a file that cannot be read.
 
     Args:
         path: The PRD file.
 
     Returns:
-        `{ok, prd, requirementHeadings, failed, summary}`: `ok` is true when every check
-        passes; `failed` names each failed check with its reason; `requirementHeadings`
-        lists the level-3 and level-4 headings under `## Requirements`.
+        `{ok, prd, requirementHeadings, failed, summary}`: `ok` is false only when the file
+        cannot be read, and `failed` then names that; `requirementHeadings` lists the
+        headings taken, empty when the PRD has none.
     """
     failed: list[dict] = []
     headings_found: list[str] = []
@@ -219,26 +211,10 @@ def prd_parse(path: Path) -> dict:
         failed.append({"check": "readable", "reason": f"{path} is not readable: {exc}"})
         text = None
     if text is not None:
-        lines, state = _body_and_state(text)
-        if state.lower() == SUPERSEDED:
-            failed.append(
-                {
-                    "check": "not-superseded",
-                    "reason": f"frontmatter {STATE_KEY} is {state}",
-                }
-            )
+        lines, _ = _body_and_state(text)
         outline = _outline(lines)
-        if not any(level == 1 for level, _, _ in outline):
-            failed.append({"check": "h1", "reason": "the PRD has no level-1 heading"})
         reqs = _section(lines, outline, REQUIREMENTS_SECTION)
-        if reqs is None:
-            failed.append(
-                {
-                    "check": "requirements",
-                    "reason": f"the PRD has no `## {REQUIREMENTS_SECTION}` section",
-                }
-            )
-        else:
+        if reqs is not None:
             first, end = reqs
             headings_found = [
                 t
@@ -247,33 +223,6 @@ def prd_parse(path: Path) -> dict:
                 and lvl in REQUIREMENT_LEVELS
                 and t.strip().lower() != LEGEND_HEADING
             ]
-            if not headings_found:
-                failed.append(
-                    {
-                        "check": "requirement-headings",
-                        "reason": f"`## {REQUIREMENTS_SECTION}` holds no level-3 or "
-                        "level-4 requirement heading other than a Priority Legend",
-                    }
-                )
-            if not any(CRITERIA_MARKER in line for line in lines[first:end]):
-                failed.append(
-                    {
-                        "check": "acceptance-criteria",
-                        "reason": f"`## {REQUIREMENTS_SECTION}` holds no "
-                        f"`{CRITERIA_MARKER}` block",
-                    }
-                )
-        done = _section(lines, outline, DONE_SECTION)
-        if done is None or not any(
-            line.strip() and not _THEMATIC_BREAK.match(line)
-            for line in lines[done[0] : done[1]]
-        ):
-            failed.append(
-                {
-                    "check": "definition-of-done",
-                    "reason": f"`## {DONE_SECTION}` is missing or empty",
-                }
-            )
     return {
         "ok": not failed,
         "prd": str(path),
