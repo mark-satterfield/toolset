@@ -368,9 +368,14 @@ function normalizeResume(r) {
     if (!hasText(id)) continue
     phases[id] = { names: Array.isArray(names[id]) ? names[id].filter(hasText) : derivedNames(id) }
   }
-  return { root: r.root, dir: r.dir, epicId: r.epicId, phases }
+  const stale = (Array.isArray(r.stale) ? r.stale : []).filter((e) => e && hasText(e.reason))
+  return { root: r.root, dir: r.dir, epicId: r.epicId, phases, stale }
 }
 const RESUME = normalizeResume(a.resume)
+for (const e of (RESUME && RESUME.stale) || []) {
+  log(`STALE ${e.step || 'saved file'}${hasText(e.what) ? ` (${e.what})` : ''}: ${e.reason} — recreated, not reused`)
+  runLedger.push({ phase: 'artifacts', event: 'stale', phaseId: e.step || null, artifacts: hasText(e.what) ? [e.what] : [], reason: e.reason })
+}
 
 const ARTIFACT_ROOT = repoPath || a.beadsRepoPath || null
 const SS_ROOT = [RESUME && RESUME.root, a.projectRoot].filter(hasText).map((r) => r.replace(/\/+$/, ''))[0] || null
@@ -436,7 +441,27 @@ function repoSlug(repo) {
   slugCache.set(repo, slug)
   return slug
 }
-const resumeFresh = (phaseId) => (RESUME && RESUME.phases[phaseId]) || null
+/** The steps whose saved files a step's saved files were built from. */
+function stepUpstream(phaseId) {
+  if (phaseId === 'repo-scoping' || phaseId === 'trd') return ['architecture']
+  if (phaseId === TASK_DEPS_PHASE) return Object.keys(artPhases).filter((k) => k.startsWith('tasks:'))
+  const m = /^(recon|spec|tasks):(.+)$/.exec(phaseId)
+  if (!m) return []
+  if (m[1] === 'recon') return ['architecture', 'repo-scoping']
+  if (m[1] === 'spec') return ['trd', 'repo-scoping', `recon:${m[2]}`]
+  return [`spec:${m[2]}`]
+}
+/** Returns the saved step to reuse, or null: a step is reused only when the resume ruled it fresh and every step it was built from was reused in this run. */
+function resumeFresh(phaseId) {
+  const hit = (RESUME && RESUME.phases[phaseId]) || null
+  if (!hit) return null
+  const redone = stepUpstream(phaseId).filter((up) => artPhases[up] !== 'reused')
+  if (!redone.length) return hit
+  const reason = `built from ${redone.map((up) => `${up} (${artPhases[up] || 'not reached'})`).join(', ')}, which this run did not reuse`
+  log(`STALE ${phaseId} (${hit.names.join(', ') || 'no file named'}): ${reason} — recreated, not reused`)
+  runLedger.push({ phase: 'artifacts', event: 'stale', phaseId, artifacts: hit.names, reason })
+  return null
+}
 function reuseFrom(phaseId, hit) {
   runLedger.push({ phase: 'artifacts', event: 'reused', phaseId, artifacts: hit.names })
   log(`Phase '${phaseId}' reused from saved artifacts (${hit.names.join(', ') || 'none named'})`)
@@ -956,7 +981,7 @@ function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),
     delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
-    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('repo-scoping.json')], { slug }),
+    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json')], { slug }),
     depscore: beadsArgs.script,
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
@@ -995,7 +1020,6 @@ async function authorSpecForRepo(repo, repoIndex) {
   const storyKey = `S${repoIndex + 1}`
   const slug = repoSlug(repo)
   const specPhase = `spec:${slug}`
-  const specHit = resumeFresh(specPhase)
   const reconPhase = `recon:${slug}`
   const reconHit = resumeFresh(reconPhase)
   const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
@@ -1016,6 +1040,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     }
   }
   await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
+  const specHit = resumeFresh(specPhase)
   const args = specArgs(repo, storyKey, slug, recon)
   const r = await workflow('agent-teams-workforce:spec-authoring', specHit ? { ...args, replay: true } : args)
   const specAuthoring = r && r.ok === true && r.story
