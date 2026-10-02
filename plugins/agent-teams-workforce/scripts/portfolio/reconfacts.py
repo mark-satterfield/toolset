@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Read one repository's saved detailing on disk and report only what the workflows branch on.
 
 `depscore.py recon-facts` runs `recon_facts`. The detailing of a repository, saved as
@@ -223,6 +222,40 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
             "failedItems": problems[:MAX_PROBLEMS],
         }
     work = [r["id"] for r in items if r["status"] in WORK_STATUSES]
+    ui = _ui_authority(
+        body.get("uiAuthority"),
+        [
+            r["id"]
+            for r in items
+            if r["status"] in WORK_STATUSES and r["surface"] == "ui"
+        ],
+    )
+    if ui["uiWork"]:
+        root = Path(ui["bundlePath"]).resolve() if ui["bundlePath"] else None
+        ui_problems = []
+        for item in ui["uiWork"]:
+            spec = Path(item["buildSpec"]) if item["buildSpec"] else None
+            if (
+                root is None
+                or not (root / "styles/tokens.css").is_file()
+                or spec is None
+                or not spec.is_absolute()
+                or not spec.is_file()
+                or not spec.resolve().is_relative_to(root)
+            ):
+                ui_problems.append(
+                    {
+                        "id": item["id"],
+                        "problem": "no existing item-matched build spec inside the selected cds package; supply the package and resolve this item before Spec authoring",
+                    }
+                )
+        if ui_problems:
+            return head | {
+                "ok": False,
+                "itemCount": len(items),
+                "problemCount": len(ui_problems),
+                "failedItems": ui_problems[:MAX_PROBLEMS],
+            }
     findings = dc.get("changeFindings")
     return (
         head
@@ -237,14 +270,7 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
                 if r["status"] not in WORK_STATUSES
             ],
         }
-        | _ui_authority(
-            body.get("uiAuthority"),
-            [
-                r["id"]
-                for r in items
-                if r["status"] in WORK_STATUSES and r["surface"] == "ui"
-            ],
-        )
+        | ui
         | {
             "dependenciesCurrent": dc["current"],
             "dependencyFindings": len(findings) if isinstance(findings, list) else 0,

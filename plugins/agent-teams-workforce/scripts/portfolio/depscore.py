@@ -628,8 +628,8 @@ def build_parser() -> argparse.ArgumentParser:
         task_parser.add_argument(
             "--packages-dir",
             default=None,
-            help="the cds packages directory a web-ui Task's bundle falls back to "
-            "(default: $CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR)",
+            help="the exact cds package root, holding styles/tokens.css directly "
+            "(default: the saved reconciliation selection; no newest-directory search)",
         )
         task_parser.add_argument(
             "--project-root",

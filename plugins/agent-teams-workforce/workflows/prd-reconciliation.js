@@ -31,7 +31,7 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
 //   items: [{ id, element, views? }] (the delta items placed in this repository),
 //   delta: { targetDir, deltaDir },
-//   mocksDir?, packagesDir?, shellsDir? (packagesDir is a selected bundle or search root; caller supplies design system paths), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
+//   mocksDir?, packagesDir?, shellsDir? (packagesDir is the exact selected bundle root; caller supplies design system paths), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
 //   artifacts: { dir, relDir?, epicId, script, phase, inputs?, slug } (required: the detailing lives only in recon-<slug>.json),
 //   depscore: <absolute path of depscore.py> (required: recon-facts reads the saved detailing),
 //   replay?: { files: { recon: <absolute path of a saved result> } }
@@ -73,7 +73,7 @@ const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true
 if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
 if (!hasText(delta.deltaDir)) return refuse('no delta supplied: delta.deltaDir names the views the items come from')
 if (!placed.length) return refuse(`no delta item is placed in ${repos[0]}`)
-if (uiCheck && !mocksDir && !packagesDir) return refuse(`${repos[0]} serves a user interface and no design system directory was supplied: pass packagesDir or mocksDir, which the caller resolves from CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR and CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`)
+if (uiCheck && !packagesDir) return refuse(`${repos[0]} serves a user interface: packagesDir must name the host-configured exact CDS package root, not the producer export parent`)
 if (!reconPath) return refuse(`no artifact directory and slug were supplied for ${repos[0]}: the detailing exists only as recon-<slug>.json in the Epic's artifact directory, which the sessions downstream read by path`)
 if (!depscorePath) return refuse('no absolute depscore.py path was supplied in `depscore`: depscore.py recon-facts reads the saved detailing')
 
@@ -99,6 +99,10 @@ It prints one small JSON object on stdout. Return the process exit code as \`exi
   if (!out) return { error: `the ${label} runner returned no result`, dispatchFailed: true }
   const o = out.output || {}
   if (out.exitCode !== 0 || hasText(o.error)) return { error: hasText(o.error) ? o.error.trim().slice(0, 600) : `depscore.py recon-facts exited ${out.exitCode}` }
+  if (o.ok === true && Array.isArray(o.uiWork) && o.uiWork.length &&
+      String(o.bundlePath || '').replace(/\/+$/, '') !== packagesDir.replace(/\/+$/, '')) {
+    return { error: `the detailing selected ${o.bundlePath || '(none)'}, not configured package root ${packagesDir || '(none)'}` }
+  }
   if (typeof o.ok !== 'boolean') return { error: `depscore.py recon-facts printed no verdict for ${file}` }
   return { facts: o }
 }
@@ -183,9 +187,10 @@ For every item whose \`surface\` is \`ui\`, the design system's output is the ta
 
 Design package input:
 ${packagesDir ? `  ${packagesDir}` : '  (none supplied: use the loose composed artifacts below)'}
-If this directory itself holds \`styles/tokens.css\`, it is the caller's explicitly selected
-package for this run: inspect it directly, not its children or a newer sibling. Otherwise it
-is a search root, not a selection or approval of every package beneath it.
+This is the ONE selected package root. Its contents, including \`styles/tokens.css\`,
+must be directly inside it. Do not search timestamped children, siblings or old export
+locations. If it is missing or incomplete, name the missing package/file in the evidence;
+the owner supplies the package. Do not package, copy, regenerate or select a substitute.
 
 Read the relevant approved target/delta views and follow their scoped design hand-off
 references (including linked source views) FIRST. Preserve the selected mock/package and
@@ -196,7 +201,7 @@ The PRD defines business requirements; it need not carry package paths or implem
 details. A visual reference may help identify the artifact. If an explicit caller-selected
 package conflicts with the scoped architecture hand-off or an explicit design reference,
 report the conflict rather than silently substitute either. Resolve absolute references directly. For relative references, use the
-base named by the reference (for example its named repository or the package search root);
+base named by the reference (for example its named repository or the selected package root);
 ordinary relative file links resolve beside the source document. Do not silently rebase a
 vault link onto the implementation repository. If a selected path is missing, its base is
 ambiguous, or its intended artifact cannot be identified, report that in \`evidenceSummary\`
@@ -204,34 +209,17 @@ and the item's evidence, leave its build-spec unresolved, and do not fabricate a
 or fall back to another design. Packaging details belong in this technical hand-off, not in
 new mandatory PRD fields.
 
-Inspect candidate README/specs to match the item before selecting by recency; the newest
-unrelated package is not its design. Accept BOTH existing layouts:
-
-  Single-design package from \`cds:package-change\`:
-    <change-slug>-<timestamp>/
-      README.md                     package index
-      spec/build-spec.md            selected artifact's build contract — READ THIS
-      design/page.html | shell.html | view.html
-      styles/                       generated stylesheet set and manifest
-      assets/                       referenced assets, when present
-      state/                        composer record
-      update/                       brownfield source/diff, when present
-    No MANIFEST.tsv or pages/views/shells subdirectories are required.
-
-  Legacy batch package:
-    batch-<timestamp>/
-      MANIFEST.tsv                  match the item to its artifact
-      {shells,pages,views}/<slug>/spec/build-spec.md
-      {shells,pages,views}/<slug>/design/<kind>.html
-      styles/                       shared stylesheet set
-      assets/                       shared assets
-      unpackaged.md                 loose artifacts excluded from this batch, when present
+Within this exact root, use README.md and MANIFEST.tsv when present to match each UI item
+to its design. An aggregate may contain \`{shells,pages,views}/<slug>/spec/build-spec.md\`
+and the corresponding \`design/<kind>.html\`, with shared \`styles/\` and \`assets/\`.
+A single-artifact layout may instead have \`spec/build-spec.md\` and \`design/\` directly
+inside the same selected root. Read the actual layout; no batch-* name is required.
+Do not choose a spec merely because it exists: it must describe the item being built.
 
 Record the selected package's actual absolute root in \`uiAuthority.bundlePath\` (the directory
 holding \`styles/tokens.css\`), and actual absolute build-spec paths in \`uiAuthority.buildSpecs\`.
 Read the matching build spec and design payload, following their asset/style references.
-If multiple applicable packages remain ambiguous, report the ambiguity rather than choose
-by timestamp. Packaging alone does not approve unrelated designs. If the item's artifact
+If the matching artifact is missing or ambiguous, report that unresolved item. Packaging alone does not approve unrelated designs. If the item's artifact
 is not packaged and no explicit package reference failed, consult its loose composed artifact:
 ${mocksDir ? `  composed pages and views: ${mocksDir}` : '  composed pages and views: (no directory supplied)'}
 ${shellsDir ? `  composed shells: ${shellsDir}` : '  composed shells: (no directory supplied)'}

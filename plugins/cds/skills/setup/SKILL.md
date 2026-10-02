@@ -36,7 +36,7 @@ Ask in this order. Each step gathers exactly one decision.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` — default output for `generate-css`.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` — default output for `compose-page` mocks.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` — the shells output area where `compose-shell` stores composed Shells (one file per Shell, named per Shell; `compose-view` resolves Shells by name from here). When left unset, a `shells/` directory that is a sibling of the mocks directory is used automatically.
-   - `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` — the output root where `package-change` writes each hand-off bundle (`batch-*` directories). The agent-teams-workforce SDLC pipeline reads it, with the mocks and shells directories, to build and audit UI against the newest bundle, and refuses to elaborate an Epic while any of the three is unset.
+   - `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` — the producer output parent where `package-change` writes a timestamped single-output hand-off bundle. It does not aggregate every mock. The agent-teams-workforce consumer separately receives an exact selected package root from its host; it does not select the newest child of this producer directory.
 5. Confirm the captured values back to the user before writing.
 
 ## Pipeline

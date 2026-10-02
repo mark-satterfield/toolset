@@ -146,7 +146,7 @@ Build contract, written by the decomposition phase onto each Task and read back 
 | `decision_ids` | JSON array of architecture view paths | the architecture the Task was designed against; every phase that writes code receives it |
 | `surfaces` | JSON array, **or the literal `unknown`** | never required |
 | `test_strategy` | JSON object, **or the literal `unknown`** | never required |
-| `cds_bundle_path` | one absolute path: the cds hand-off bundle (`batch-*` directory) | written on a Task whose `surfaces` include `web-ui`, when the detailing resolved a bundle |
+| `cds_bundle_path` | one absolute path: the exact selected cds package root | written on a Task whose `surfaces` include `web-ui`, when the detailing resolved a bundle |
 | `cds_build_specs` | JSON array of absolute `spec/build-spec.md` paths, each with `#<Section ID>` when the Task builds only some Sections | written on a `web-ui` Task for the `ui` delta items its `requirement_ids` cite, from the detailing's `uiAuthority.buildSpecs` |
 
 **`unknown` is not `[]`, and the difference is the whole point.** A null `surfaces` means nobody

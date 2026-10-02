@@ -93,11 +93,13 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   archPath:       "$ATW_ARCH_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
   artifactScript: "$ATW_ARTIFACT_SCRIPT",
-  designSystem:   {packagesDir: "$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR",
+  designSystem:   {packagesDir: "<host-configured exact package root>",
                    mocksDir:    "$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR",
                    shellsDir:   "$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR"}
 }})
 ```
+
+`designSystem.packagesDir` is the selected package itself, not the CDS producer output parent. Its `styles/tokens.css` is directly under that path; no newest-package search is performed. Consumed by: reconciliation and task decomposition — resolves item-specific build contracts.
 
 `$ROOT` is the printed plugin root. The run resolves the root it runs its own scripts
 under itself; pass none.

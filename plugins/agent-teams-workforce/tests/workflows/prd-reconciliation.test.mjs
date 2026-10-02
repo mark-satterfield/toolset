@@ -116,13 +116,13 @@ test('the resolved cds bundle travels with the detailing so spec authoring can r
   const { result } = await detail({
     items: [item('D1', 'add', { surface: 'ui' }), item('D2', 'done')],
     uiAuthority: {
-      bundlePath: '/repo/auth/design-mocks/packages/batch-20260819T191805Z',
+      bundlePath: '/architecture/arc42/design-packages',
       artifactsConsulted: ['views/settings-profile/spec/build-spec.md'],
       shellsConsulted: ['personal-agent-shell.html'],
       pagesConsulted: [],
     },
   })
-  assert.equal(result.uiAuthority.bundlePath, '/repo/auth/design-mocks/packages/batch-20260819T191805Z')
+  assert.equal(result.uiAuthority.bundlePath, '/architecture/arc42/design-packages')
   assert.deepEqual(result.uiAuthority.artifactsConsulted, ['views/settings-profile/spec/build-spec.md'])
   assert.equal(result.uiAuthority.mocksDir, '/design/pages', 'the mocks directory is the one the caller supplied')
 })

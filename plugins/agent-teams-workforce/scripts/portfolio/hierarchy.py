@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -440,48 +439,10 @@ def _surfaces(value: object) -> list[str] | None:
 #: The surface whose Tasks carry the cds design system in their build contract.
 UI_SURFACE = "web-ui"
 
-#: The environment variable naming the cds packages directory, the fallback for
-#: `--packages-dir` (cds:package-change writes each hand-off bundle under it).
-PACKAGES_DIR_ENV = "CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR"
-
-#: The timestamp a cds hand-off bundle's directory name ends with.
-_BUNDLE_STAMP = re.compile(r"(\d{8}T\d{6}Z)$")
-
 
 def _is_bundle(path: Path) -> bool:
     """Return whether a directory is a cds hand-off bundle: it holds styles/tokens.css."""
     return (path / "styles" / "tokens.css").is_file()
-
-
-def newest_bundle(packages_dir: str | None) -> str | None:
-    """Return an explicitly selected cds bundle, else the newest bundle under a search root.
-
-    Args:
-        packages_dir: An explicit cds bundle or packages search directory, or None.
-
-    Returns:
-        The absolute selected bundle path, else the child bundle whose name ends with
-        the latest timestamp; None when the directory is unset, missing or holds no bundle.
-    """
-    root = Path(packages_dir).expanduser() if packages_dir else None
-    if root is None or not root.is_dir():
-        return None
-    if _is_bundle(root):
-        return str(root.resolve())
-    stamped = [
-        (m.group(1), d)
-        for d in root.iterdir()
-        if d.is_dir() and _is_bundle(d) and (m := _BUNDLE_STAMP.search(d.name))
-    ]
-    return str(max(stamped)[1].resolve()) if stamped else None
-
-
-def _bundle_of(spec: str) -> str | None:
-    """Return the bundle a build spec sits in: its nearest ancestor holding styles/tokens.css."""
-    for parent in Path(spec).parents:
-        if _is_bundle(parent):
-            return str(parent)
-    return None
 
 
 def ui_authority(
@@ -489,16 +450,15 @@ def ui_authority(
 ) -> tuple[str | None, dict[str, list[str]]]:
     """Return the cds bundle and the build specs per delta item the detailing resolved.
 
-    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`. The
-    An explicit `bundlePath` or selected package directory must exist and agree with
-    the build-spec locations; conflicts raise HierarchyError rather than substitute
-    another design. Without a selection, infer one bundle from the specs, else use
-    the existing newest-child fallback under the package search directory.
+    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`.
+    The caller's exact package root must agree with the saved selection. Without
+    a caller override, the saved root is authoritative. No directory scan or
+    producer environment fallback can select a different design.
 
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
-        packages_dir: A selected bundle or search directory, or None for the environment's.
+        packages_dir: The exact selected bundle root, or None to use the saved selection.
 
     Returns:
         The bundle path (None when none resolves), and per delta item id its build-spec
@@ -517,43 +477,31 @@ def ui_authority(
         spec = str(entry.get("buildSpec") or "").strip()
         if item and spec:
             entries.append((item, spec, str_list(entry.get("sections"))))
-    if packages_dir and not Path(packages_dir).expanduser().is_dir():
-        raise HierarchyError(f"cds package directory is missing: {packages_dir}")
-    supplied = packages_dir or os.environ.get(PACKAGES_DIR_ENV, "").strip() or None
-    selected = (
-        str(Path(supplied).expanduser().resolve())
-        if supplied and _is_bundle(Path(supplied).expanduser())
-        else None
-    )
-    if named and not _is_bundle(Path(named)):
+    supplied = packages_dir or named
+    if not supplied:
+        raise HierarchyError(f"recon-{slug}.json: no selected cds package root")
+    root = Path(supplied).expanduser().resolve()
+    if not _is_bundle(root):
         raise HierarchyError(
-            f"recon-{slug}.json: selected cds bundle is missing or invalid: {named}"
+            f"cds package is not ready at {root}: styles/tokens.css must be directly inside it; "
+            "place the complete package there, not inside a timestamped child"
         )
-    bundle = str(Path(named).resolve()) if named else selected
-    if selected and bundle != selected:
+    if named and Path(named).expanduser().resolve() != root:
         raise HierarchyError(
-            f"recon-{slug}.json: selected cds bundle {selected} conflicts with {bundle}"
+            f"recon-{slug}.json: saved cds package {named} conflicts with {root}"
         )
-    inferred = {
-        b for _, spec, _ in entries if spec.startswith("/") and (b := _bundle_of(spec))
-    }
-    if bundle and any(str(Path(b).resolve()) != bundle for b in inferred):
-        raise HierarchyError(
-            f"recon-{slug}.json: cds build specs conflict with selected bundle {bundle}"
-        )
-    if bundle is None:
-        if len(inferred) > 1:
-            raise HierarchyError(
-                f"recon-{slug}.json: cds build specs name multiple bundles"
-            )
-        bundle = next(iter(inferred), None) or newest_bundle(supplied)
+    bundle = str(root)
     cites: dict[str, list[str]] = {}
     for item, spec, sections in entries:
-        if not spec.startswith("/"):
-            base = named or bundle
-            if not base:
-                continue
-            spec = f"{base.rstrip('/')}/{spec}"
+        candidate = Path(spec)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        candidate = candidate.resolve()
+        if not candidate.is_relative_to(root) or not candidate.is_file():
+            raise HierarchyError(
+                f"recon-{slug}.json: build spec is missing or outside selected package: {spec}"
+            )
+        spec = str(candidate)
         cites.setdefault(item, []).extend(
             [f"{spec}#{x}" for x in sections] if sections else [spec]
         )
@@ -582,7 +530,7 @@ def check_cds_contract(slug: str, tasks: list[Task]) -> None:
         if not t.cds_bundle_path:
             problems.append(
                 f"{t.key} resolves no cds bundle (the detailing names none and "
-                f"${PACKAGES_DIR_ENV} or --packages-dir holds no bundle)"
+                "--packages-dir names no selected package)"
             )
         if not t.cds_build_specs:
             problems.append(
@@ -647,7 +595,7 @@ def read_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         story_decision_ids: The Story's decision ids, which a Task citing none inherits.
-        packages_dir: A selected bundle or search directory, or None for the environment's.
+        packages_dir: The exact selected bundle root, or None to use the saved selection.
 
     Returns:
         The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.
@@ -675,7 +623,11 @@ def read_tasks(
         else None
     )
     by_key = {t["key"]: t for t in unique}
-    bundle, ui_cites = ui_authority(directory, slug, packages_dir)
+    bundle, ui_cites = (
+        ui_authority(directory, slug, packages_dir)
+        if any(UI_SURFACE in (_surfaces(t.get("surfaces")) or []) for t in unique)
+        else (None, {})
+    )
     tasks = []
     for key in order:
         t = by_key[key]

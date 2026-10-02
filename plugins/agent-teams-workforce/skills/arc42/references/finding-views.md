@@ -24,6 +24,8 @@ the root lists it for people; an agent reads the same fields from the files dire
 view belongs to is the folder it lives in: `arc42/` is effective, `target/<subject>/` is a target,
 `target/<subject>/delta/` is its delta, `built/<subject>/` is built.
 
+Packaged design support files (for example `arc42/design-packages/` build specs, composer state, HTML, stylesheets and assets) are not architecture views. Exclude that package subtree from view inventories, missing-frontmatter findings and lifecycle-promotion lists; follow its files only as design references from relevant views. Consumed by: architecture survey, authors, maintainers and conformance reviewers — keeps generated UI artifacts out of architectural coverage and promotion. This does not exempt package bytes from the workflow's existing write/snapshot protection.
+
 ## Finding the views for an element
 
 1. List every Markdown file under the architecture root whose frontmatter names the element in
