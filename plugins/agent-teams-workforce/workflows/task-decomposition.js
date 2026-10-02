@@ -32,6 +32,7 @@ async function settleAgent(prompt, opts) {
 // args: {
 //   spec: { id?, title?, description?, source?, repoPath? }, story: { id?, key?, title? },
 //   specDocs?: [{ path, ref }], repoPath?, pluginRoot,
+//   detailingPath?: <absolute path of the repository's saved delta detailing, recon-<slug>.json; the maker reads it>,
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
 //   packagesDir?: string (the cds packages directory a web-ui Task's bundle falls back to; else
@@ -83,11 +84,15 @@ const existingBlock = writtenPath
   ? `\n\nEXISTING TASKS under this Story: read the file ${writtenPath} — the result of writing this Story — and take its "existingTasks" list (none when the file or the list is absent or empty). When a task you write covers the same work as one of them, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.\n\nOPEN TASKS OF OTHER EPICS in this repository: take the "otherEpicTasks" list of the same file (none when it is absent or empty). When work you would give a task is already planned by one of them, or by a bead a \`planned-elsewhere\` item names, do not write that task: put that Task's id in \`blockedByExternal\` of every task of yours that needs the work built first. Otherwise set \`blockedByExternal\` to an empty list.`
   : '\n\nEXISTING TASKS: none. Set every task\'s `reuses` to null and its `blockedByExternal` to an empty list.'
 
+const detailingPath = typeof a.detailingPath === 'string' && a.detailingPath.trim().startsWith('/') ? a.detailingPath.trim() : null
+const detailingBlock = detailingPath
+  ? `\n\nTHE DELTA DETAILING of this repository is the file ${detailingPath}. Read it: its \`items\` give each delta item its id (the ids \`requirementIds\` cites), its status, its element, the \`from\` and \`to\` state, its surface and its evidence; its \`uiAuthority.buildSpecs\` give the cds build spec each \`ui\` item resolves to.`
+  : ''
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
 ${spec.source ? `Source: ${spec.source}` : ''}
 Repository: ${repoPath || '(repo path not provided)'}
-Parent Story: ${storyRef}${story.title ? ` — ${story.title}` : ''}${docsBlock}${existingBlock}`
+Parent Story: ${storyRef}${story.title ? ` — ${story.title}` : ''}${detailingBlock}${docsBlock}${existingBlock}`
 
 // The surface names tdd-red and integration select writers and suites by.
 const SURFACES = ['api-contract', 'event-chain', 'auth', 'performance', 'web-ui', 'ios', 'android', 'cross-platform-mobile', 'ml', 'data-pipeline']

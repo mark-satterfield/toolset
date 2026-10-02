@@ -35,6 +35,7 @@ async function settleAgent(prompt, opts) {
 //   architecture?: { targetDir, deltaDir } (the approved target and its delta),
 //   accessPatterns?: string[], repoPath, storyKey? ('S1'), epic: { key?, id?, title? },
 //   uiItems?: [{ id, element?, buildSpec?, sections? }] (the repository's `ui` work items and the cds build spec each was resolved to),
+//   detailingPath?: <absolute path of the repository's saved delta detailing, recon-<slug>.json; the makers read it>,
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
 //   replay?: true
@@ -192,7 +193,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
 const beadsFrom = (x) => (x && typeof x === 'object' && ['script', 'repo', 'epicId'].every((k) => hasText(x[k])) ? x : null)
 
 /** Returns the context block every maker reads: spec header, the repository's constraints, the target and delta views, and the TRD. */
-function ctxBlock(s, trd, constraints, arch) {
+function ctxBlock(s, trd, constraints, arch, detailingPath) {
   const trdOnDisk = trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
   return [
     `Spec ${s.id || ''}: ${s.title || ''}`,
@@ -202,6 +203,9 @@ function ctxBlock(s, trd, constraints, arch) {
     "The architecture reaches this spec through the TRD: the owner's constraints (arc42 section 2) and the patterns the effective views establish for the API type, the runtime libraries, the event path and the data stores. Follow them as the TRD states them; a spec that departs from an established pattern states its reason and evidence.",
     arch && hasText(arch.deltaDir)
       ? `THE APPROVED TARGET is ${arch.targetDir || '(the folder above the delta)'}, and the change alone, its delta, is ${arch.deltaDir}. Read the delta views for the items listed below, and the target views they need: the spec specifies the change they show for this repository, and nothing the delta does not change.`
+      : '',
+    hasText(detailingPath)
+      ? `THE DELTA DETAILING of this repository is the file ${detailingPath}. Read it: its \`items\` give each delta item placed here its status (add, modify, remove, done, planned-elsewhere), the \`from\` state the code on main holds, the \`to\` state the target makes it, its surface and its file:line evidence.`
       : '',
     constraints && constraints.length
       ? `Context and constraints for this repository:\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
@@ -299,7 +303,7 @@ async function main(a) {
     }, w && w.summary, null)
   }
 
-  const ctx = ctxBlock(s, trd, constraints, a && a.architecture)
+  const ctx = ctxBlock(s, trd, constraints, a && a.architecture, a && a.detailingPath)
   const specMakerCtx = `${ctx}\n\n${makerRules({ cites: true })}`
   const criteriaMakerCtx = `${ctx}\n\n${makerRules({ cites: false })}`
   const contractsBrief = persistBrief(
@@ -310,7 +314,7 @@ async function main(a) {
       : 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content'
   )
   const uiBrief = uiItems.length
-    ? `\n4. \`uiSpec\` — one entry per UI item below, specifying it BY REFERENCE to its cds build spec: \`itemId\` (the item id), \`buildSpec\` (the absolute path of the \`spec/build-spec.md\` it is built from — the one given below where one is given), \`sections\` (the build spec's Section IDs it builds; an empty list when it builds the whole artifact) and \`content\` (what the repository builds for the item, citing those Sections). Styling comes from the cds bundle's shared stylesheets: specify no CSS, tokens or component stylesheet of your own. The workflow reads the document you save and checks that every UI item has a section headed by its item id that cites the absolute path of its spec/build-spec.md (a file that exists in the cds bundle) and every Section ID given for it below.\n\nUI items:\n${uiItems.map((u) => `- ${u.id}${u.element ? ` ${u.element}` : ''}: ${u.buildSpec ? `${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}` : 'no packaged build spec was resolved — find its spec/build-spec.md in the cds bundle named under UI AUTHORITY'}`).join('\n')}`
+    ? `\n4. \`uiSpec\` — one entry per UI item below, specifying it BY REFERENCE to its cds build spec: \`itemId\` (the item id), \`buildSpec\` (the absolute path of the \`spec/build-spec.md\` it is built from — the one given below where one is given), \`sections\` (the build spec's Section IDs it builds; an empty list when it builds the whole artifact) and \`content\` (what the repository builds for the item, citing those Sections). Styling comes from the cds bundle's shared stylesheets: specify no CSS, tokens or component stylesheet of your own. The workflow reads the document you save and checks that every UI item has a section headed by its item id that cites the absolute path of its spec/build-spec.md (a file that exists in the cds bundle) and every Section ID given for it below.\n\nUI items${hasText(a && a.detailingPath) ? ` (each item's element and its from and to state are in the detailing file ${a.detailingPath})` : ''}:\n${uiItems.map((u) => `- ${u.id}${u.element ? ` ${u.element}` : ''}: ${u.buildSpec ? `${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}` : 'no packaged build spec was resolved — find its spec/build-spec.md in the cds bundle named under UI AUTHORITY'}`).join('\n')}`
     : ''
   const contractsPrompt = (rework) => `Author the ${uiItems.length ? 'four' : 'three'} INTERFACE CONTRACT artifacts for this feature, each under its own key.
 

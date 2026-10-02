@@ -894,73 +894,51 @@ const trd = trdAuthoring.artifact.trd
 const prdSummaryFallback = () => (hasText(prd.path) ? `The PRD is the document at ${prd.path}.` : prd.body || '')
 
 enterPhase('Spec Authoring')
-const INVENTORY_CAP = 12000
-const WORK_STATUSES = ['add', 'modify', 'remove']
-const workItems = (recon) => (Array.isArray(recon && recon.items) ? recon.items : []).filter((r) => r && WORK_STATUSES.includes(r.status))
-const idleItems = (recon) => (Array.isArray(recon && recon.items) ? recon.items : []).filter((r) => r && !WORK_STATUSES.includes(r.status))
-const inventoryLine = (r) => {
-  const bits = [`- ${r.id}${r.surface ? ` (${r.surface})` : ''} [${r.status}] ${r.element}`, `    CHANGE: ${r.from || '(unstated)'} → ${r.to || '(unstated)'}`]
-  if (Array.isArray(r.evidence) && r.evidence.length) bits.push(`    evidence: ${r.evidence.join('; ')}`)
-  return bits.join('\n')
-}
+const idleText = (recon) => (Array.isArray(recon && recon.idle) ? recon.idle : []).map((r) => `${r.id} [${r.status}${r.plannedBy ? ` by ${r.plannedBy}` : ''}]`).join('; ')
+const workIds = (recon) => (Array.isArray(recon && recon.work) ? recon.work : [])
+/** The delta detailing as a pointer: its file, and the ids of the items that make work and that do not. The items stay in the file. */
 const renderInventory = (recon, repo) => {
-  const work = workItems(recon)
-  const idle = idleItems(recon)
-  const idleLine = idle.length
-    ? `\n\nNo specification for these items: ${idle.map((r) => `${r.id} ${r.element} [${r.status}${r.plannedBy ? ` by ${r.plannedBy}` : ''}]`).join('; ')}.`
-    : ''
-  if (!work.length) return `THE DELTA FOR ${repo}: no item placed here is marked add, modify or remove, so there is no change to specify.${idleLine}`
+  const work = workIds(recon)
+  const idle = idleText(recon)
+  const idleLine = idle ? `\n\nNo specification for these items: ${idle}.` : ''
+  const file = `THE DELTA DETAILING for ${repo} is the file ${recon.reconPath}. Read it: its \`items\` give each delta item placed here its status, the \`from\` state the code on main holds, the \`to\` state the approved target makes it, its surface and its file:line evidence.`
+  if (!work.length) return `${file}\n\nNo item placed here is marked add, modify or remove, so there is no change to specify.${idleLine}`
   return (
-    `THE DELTA FOR ${repo} — specify the change for each item below, and only these: the code on main holds the \`from\` state, and the approved target makes it the \`to\` state.\n` +
+    `${file}\n\nSpecify the change for these items, and only these: ${work.join(', ')}.\n` +
     '  add    — the element is new here: specify it.\n' +
     '  modify — the element exists: specify the change from what it is to what the target makes it.\n' +
-    '  remove — the element is removed: specify its removal.\n\n' +
-    work.map(inventoryLine).join('\n') +
+    '  remove — the element is removed: specify its removal.' +
     idleLine
-  ).slice(0, INVENTORY_CAP)
-}
-const renderDependencies = (recon) => {
-  const dc = (recon && recon.dependencyChanges) || null
-  if (!dc || dc.current !== false) return ''
-  const findings = Array.isArray(dc.changeFindings) ? dc.changeFindings.filter((f) => f && hasText(f.dependency)) : []
-  return (
-    'UPSTREAM DEPENDENCY CHANGES since the delta was designed. Specify against what is true now.\n\n' +
-    findings.map((f) => `- ${f.dependency}\n    changed: ${f.change || '(unstated)'}\n    invalidates: ${f.invalidates || '(unstated)'}`).join('\n')
   )
 }
+const renderDependencies = (recon) => {
+  if (!recon || recon.dependenciesCurrent !== false) return ''
+  return `UPSTREAM DEPENDENCY CHANGES since the delta was designed: ${recon.dependencyFindings} finding(s) in \`dependencyChanges.changeFindings\` of ${recon.reconPath}. Read them and specify against what is true now.`
+}
 const renderUiAuthority = (recon) => {
-  const ua = (recon && recon.uiAuthority) || {}
-  const artifacts = (Array.isArray(ua.artifactsConsulted) ? ua.artifactsConsulted : []).filter(hasText)
-  const uiIds = workItems(recon).filter((r) => r.surface === 'ui').map((r) => r.id)
-  if (!uiIds.length && !hasText(ua.bundlePath) && !hasText(ua.mocksDir)) return ''
+  const ui = uiItemsOf(recon)
+  if (!ui.length && !hasText(recon && recon.bundlePath) && !hasText(recon && recon.mocksDir)) return ''
   return [
     'UI AUTHORITY — for a `ui` item the cds design artifacts are the target state, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the loose composed artifact, the delta views.',
-    uiIds.length ? `UI items: ${uiIds.join(', ')}.` : '',
-    hasText(ua.bundlePath)
-      ? `cds HAND-OFF BUNDLE: ${ua.bundlePath}\nSpecify each UI item from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${ua.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
-      : `No cds hand-off bundle was resolved. Specify against the composed artifact${hasText(ua.mocksDir) ? ` under ${ua.mocksDir}` : ''} and record in the spec which artifact you used.`,
-    hasText(ua.mocksDir) ? `Composed mocks: ${ua.mocksDir}` : '',
-    artifacts.length ? `Artifacts matched to these items:\n${artifacts.map((x) => `  - ${x}`).join('\n')}` : '',
-    uiItemsOf(recon).some((u) => u.buildSpec)
-      ? `Build specs per UI item:\n${uiItemsOf(recon).filter((u) => u.buildSpec).map((u) => `  - ${u.id}: ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`).join('\n')}`
+    ui.length ? `UI items: ${ui.map((u) => u.id).join(', ')}.` : '',
+    hasText(recon.bundlePath)
+      ? `cds HAND-OFF BUNDLE: ${recon.bundlePath}\nSpecify each UI item from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${recon.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
+      : `No cds hand-off bundle was resolved. Specify against the composed artifact${hasText(recon.mocksDir) ? ` under ${recon.mocksDir}` : ''} and record in the spec which artifact you used.`,
+    hasText(recon.mocksDir) ? `Composed mocks: ${recon.mocksDir}` : '',
+    `The artifacts matched to these items are \`uiAuthority.artifactsConsulted\` in ${recon.reconPath}.`,
+    ui.some((u) => u.buildSpec)
+      ? `Build specs per UI item:\n${ui.filter((u) => u.buildSpec).map((u) => `  - ${u.id}: ${u.buildSpec}${u.sections.length ? ` (Sections ${u.sections.join(', ')})` : ''}`).join('\n')}`
       : '',
   ].filter(hasText).join('\n\n')
 }
 /** Returns each `ui` work item of a detailing with the build spec the detailing resolved it to, or a null buildSpec. */
 function uiItemsOf(recon) {
-  const ua = (recon && recon.uiAuthority) || {}
-  const specs = (Array.isArray(ua.buildSpecs) ? ua.buildSpecs : []).filter((b) => b && hasText(b.item) && hasText(b.buildSpec))
-  return workItems(recon)
-    .filter((r) => r.surface === 'ui')
-    .map((r) => {
-      const hit = specs.find((b) => b.item.trim() === r.id)
-      return {
-        id: r.id,
-        element: r.element || null,
-        buildSpec: hit ? hit.buildSpec.trim() : null,
-        sections: hit && Array.isArray(hit.sections) ? hit.sections.filter(hasText) : [],
-      }
-    })
+  return (Array.isArray(recon && recon.uiWork) ? recon.uiWork : []).map((u) => ({
+    id: u.id,
+    element: null,
+    buildSpec: u.buildSpec || null,
+    sections: Array.isArray(u.sections) ? u.sections.filter(hasText) : [],
+  }))
 }
 const specConstraints = (recon, repo) => {
   const c = [renderInventory(recon, repo), renderDependencies(recon), renderUiAuthority(recon)].filter(hasText)
@@ -979,6 +957,7 @@ function reconArgs(repo, slug, reconReplay) {
     items: itemsPlacedIn(repo),
     delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
     artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('repo-scoping.json')], { slug }),
+    depscore: beadsArgs.script,
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
     repos: [repo],
@@ -1006,6 +985,7 @@ function specArgs(repo, storyKey, slug, recon) {
     epic,
     artifacts: artFor(`spec:${slug}`, [artPath('trd.md'), artPath('repo-scoping.json'), artPath(`recon-${slug}.json`), ...PRD_INPUTS], { slug }),
     beads: beadsArgs,
+    detailingPath: recon.reconPath,
     constraints: specConstraints(recon, repo),
     ...(uiItemsOf(recon).length ? { uiItems: uiItemsOf(recon) } : {}),
   }
@@ -1029,7 +1009,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       recon: null,
       specAuthoring: {
         ok: false,
-        stage: 'detailing',
+        stage: (recon && hasText(recon.stage) && recon.stage !== 'input' ? recon.stage : 'detailing'),
         reason: why,
         ...(!recon || recon.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (recon && recon.dispatchFailures) || [] } : {}),
       },
@@ -1093,13 +1073,12 @@ recRuled(`${specPairs.length} of ${repos.length} repo(s) specified.`, { status: 
 enterPhase('Task Decomposition')
 const inventoryBrief = (repo) => {
   const recon = reconByRepo.get(repo)
-  const work = workItems(recon)
-  const idle = idleItems(recon)
-  if (!work.length && !idle.length) return ''
+  if (!recon || !hasText(recon.reconPath)) return ''
   return (
     '\n\n=== DELTA DETAILING — what needs a Task ===\n' +
-    `Needs a Task (add, modify, remove): ${work.map((r) => `${r.id} ${r.element} [${r.status}]`).join('; ') || 'none'}\n` +
-    `No Task (done, or planned by another Epic's bead): ${idle.map((r) => `${r.id} ${r.element} [${r.status}${r.plannedBy ? ` by ${r.plannedBy}` : ''}]`).join('; ') || 'none'}`
+    `The detailing is the file ${recon.reconPath}: read it for each item's element, its from and to state, its surface and its evidence.\n` +
+    `Needs a Task (add, modify, remove): ${workIds(recon).join(', ') || 'none'}\n` +
+    `No Task (done, or planned by another Epic's bead): ${idleText(recon) || 'none'}`
   )
 }
 const stories = specPairs.map((p) => p.story)
@@ -1139,6 +1118,7 @@ function decompArgs(pair) {
       repoPath: pair.repoPath,
     },
     specDocs: docs,
+    ...(reconByRepo.get(pair.repoPath) && hasText(reconByRepo.get(pair.repoPath).reconPath) ? { detailingPath: reconByRepo.get(pair.repoPath).reconPath } : {}),
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
     pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor(`tasks:${slug}`, [...docs.map((d) => d.path), artPath(`story-${slug}.json`)], { slug }),
@@ -1445,7 +1425,8 @@ return {
       storyEdgeLine +
       targetLine +
       (specFailures.length || decompositionFailures.length || crossStory.reason
-        ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}.`
+        ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}.` +
+          (specFailures.length ? ` No spec: ${specFailures.map((x) => `${x.repoPath} at ${x.stage || 'spec-authoring'}: ${x.reason}`).join('; ')}`.slice(0, 1500) : '')
         : ''),
     runJournal
   ),

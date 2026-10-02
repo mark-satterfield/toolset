@@ -61,6 +61,11 @@
     spec-ui-check        check that a saved spec document has a section per `ui` item, citing a
                          cds `spec/build-spec.md` that exists, the one the detailing resolved, and
                          its resolved Section IDs; no `bd` call
+    recon-facts          check a repository's saved detailing (`recon-<slug>.json`) against the
+                         delta items placed in it and print only the facts the workflows branch
+                         on (usable or not and why, the ids that make work, each `ui` work
+                         item's build spec, the cds bundle, whether dependencies are current);
+                         a file that cannot be read or parsed is an error; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -129,6 +134,7 @@ from archresume import ResumeError, resume_facts
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
 from specui import SpecUiError, spec_ui_check
+from reconfacts import ReconError, recon_facts
 from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
@@ -909,6 +915,24 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="the repository's ui items as JSON: [{id, buildSpec?, sections?}]",
     )
+
+    rcf = sub.add_parser(
+        "recon-facts",
+        help="the facts the workflows branch on from one repository's saved detailing; "
+        "writes nothing, runs no `bd` command",
+        parents=[common],
+    )
+    rcf.add_argument(
+        "--file",
+        type=Path,
+        required=True,
+        help="the saved detailing, recon-<slug>.json",
+    )
+    rcf.add_argument(
+        "--items",
+        required=True,
+        help="the ids of the delta items placed in the repository, comma-separated",
+    )
     return parser
 
 
@@ -1003,6 +1027,8 @@ def run(args: argparse.Namespace) -> dict:
         return head | prd_parse(args.prd)
     if command == "spec-ui-check":
         return head | spec_ui_check(args.doc, args.items)
+    if command == "recon-facts":
+        return head | recon_facts(args.file, split_ids(args.items))
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(
@@ -1228,6 +1254,7 @@ def main(argv: list[str] | None = None) -> int:
         HierarchyError,
         SpecUiError,
         ResumeError,
+        ReconError,
         rubric.WsjfError,
         json.JSONDecodeError,
         OSError,
