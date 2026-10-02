@@ -812,7 +812,18 @@ async function runRepoScoping() {
   return { scoping: ruled, scopeHit: null }
 }
 
-const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json'), artPath('architecture/architecture-update.json'), a.archPath || null].filter(Boolean)
+/** The architecture the TRD is built from, as trd-authoring hands it to its author: this Epic's target and delta, section 2, and the effective views (subject or shows) of the elements the delta changes. */
+const ARC42_DIR = hasText(a.archPath) ? `${a.archPath.replace(/\/+$/, '')}/arc42` : null
+const deltaElements = [...new Set(deltaItems.map((i) => i.element.trim()))].sort()
+const TRD_INPUTS = [
+  ...PRD_INPUTS,
+  artPath('architecture/decision.md'),
+  artPath('architecture/target.json'),
+  artPath('architecture/architecture-update.json'),
+  delta.targetDir,
+  ARC42_DIR ? `${ARC42_DIR}/02-architecture-constraints` : null,
+  ARC42_DIR && deltaElements.length ? `arch-views:${JSON.stringify({ dir: ARC42_DIR, elements: deltaElements })}` : null,
+].filter(hasText)
 /** Returns { mode: 'resumed' | 'ran', trdAuthoring: { ok, artifact } }. */
 async function runTrdAuthoring() {
   const trdHit = resumeFresh('trd')
@@ -981,7 +992,7 @@ function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),
     delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
-    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json')], { slug }),
+    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json'), `git-main:${repo}`], { slug }),
     depscore: beadsArgs.script,
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
