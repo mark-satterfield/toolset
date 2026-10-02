@@ -1,8 +1,9 @@
 # Finding views through the catalog
 
 Downstream phases (the TRD, Specs, Tasks, an integration, a review) read the views that show the
-elements they work on. They find them through the catalog, not by reading sections in order and not
-from a packet of extracted sentences.
+elements they work on. The catalog locates existing views; the MODEL determines which views are
+needed, including views that have no file yet. Read the full relevant views rather than a packet of
+extracted sentences. Coverage evidence is described in `coverage-evidence.md`.
 
 ## The catalog
 
@@ -49,3 +50,18 @@ view belongs to is the folder it lives in: `arc42/` is effective, `target/<subje
 A view with missing or invalid catalog frontmatter cannot be found this way. Report it to the caller
 by path; do not fall back to guessing which views matter, because a view the phase misses is a view
 it leaves contradicting the design.
+
+## Finding coverage that the catalog cannot list
+
+Before declaring coverage complete, establish the subjects and changed elements from the supplied
+design and source inventory, independently of the existing view files. Apply the MODEL's coverage
+obligations at every affected scope; use the MENU to select views for the reader questions. Then
+compare those obligations with catalog hits and the actual file inventory, including files whose
+metadata is missing or invalid. Record naming aliases explicitly. No catalog hit is a discovery
+result, not a conclusion that the view is unnecessary.
+
+Read adjacent parent, runtime, deployment, data and shared-concern views as the MODEL requires.
+A per-change assessment follows the effects of that change across scopes; it does not certify all
+unrelated architecture. A whole-project assessment needs an explicit project-wide inventory and
+separately commissioned scope. Missing design evidence is reported to the caller, never filled by
+inventing a design or dismissed as not applicable.

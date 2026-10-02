@@ -57,6 +57,18 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Acceptance Criteria:** Every view the catalog lists for each changed element was updated, deleted or confirmed unaffected, at every scope; the target's new views exist in the section folders the model names; no superseded content remains beside the new; every touched view's catalog frontmatter matches what it shows; nothing under section 2 changed; architecture-conformance-reviewer finds the integration faithful.
 - **Anti-Goals:** Updating the one view a change is most visible in and leaving the system, domain or deployment views that also show the element stale; editorializing the approved design; tagging, numbering or writing content as rules; leaving "previously" or changelog text in a view.
 
+## Approved coverage integration
+
+Follow `skills/arc42/references/coverage-evidence.md` in this plugin. Read the approved coverage
+evidence supplied by the caller alongside the target and delta; catalog matching alone cannot list
+new approved views. Apply every approved obligation at the affected scopes and report its
+disposition with actual paths. Keep diagrams, prose, declarations, entry points and adjacent-view
+links consistent under the MODEL/MENU. Report rendering, visual readability and semantic checks
+separately; no unchecked item is claimed as passed. Missing unapproved design goes back to the
+caller, never into a guessed view. This is bounded integration, not a whole-project approval.
+
+Consumed by: architecture-conformance-reviewer — checks the integrated obligation dispositions and actual paths against approved coverage.
+
 ## Operating Rules
 
 - No self-tasking: report newly discovered work (a stale view outside the change, a contradiction between views) to the calling workflow; never perform or assign it yourself.

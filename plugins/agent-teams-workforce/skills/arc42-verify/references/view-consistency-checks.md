@@ -25,14 +25,17 @@ behaviour, deployment.
 For a target, also compare the target views with the delta: every change the target makes appears in
 the delta, and the delta describes nothing the target does not hold.
 
-## Check 2 — Every element shown has views of its own subject
+## Check 2 — Applicable subjects have sufficient coverage
 
-Every element in a `shows` list is the `subject` of at least one view at its own scope (a service has
-its component view, a concept has its section 8 file).
+Establish subjects independently of the current catalog and apply the MODEL coverage obligations
+at the reviewed scopes. Use `../../arc42/references/coverage-evidence.md`. Inspect the actual views,
+including the needed parent and adjacent views, not only metadata. An element need not have a
+separate document when an existing view sufficiently answers its applicable reader questions.
 
-- **Severity:** `WARN` for a component or table with no view of its own; `FAIL` for a service or a
-  concept with none.
-- **Evidence:** name the element and the views that show it.
+- **Severity:** `FAIL` for a demonstrated applicable obligation left absent or incomplete; explicitly
+  report unassessed evidence or a justified not-applicable result using the MODEL's vocabulary.
+- **Evidence:** name the subject, question, MODEL obligation, inventory sources, paths inspected and
+  the content or named absence. Never infer a whole-project pass from a bounded change review.
 
 ## Check 3 — No view conflicts with a section 2 constraint
 
@@ -68,6 +71,6 @@ no-conflict assertion.)
 ## Reporting
 
 Emit findings under the **View consistency** heading of the verdict, in check order. A clean run
-reports `[PASS] views agree at every scope; every element has its own views; no constraint conflicts;
+reports `[PASS] views agree at every scope; applicable subjects have sufficient coverage; no constraint conflicts;
 no dangling links`. Never resolve a contradiction by editing a view: that belongs to `arc42-maintain`
 or a new target.

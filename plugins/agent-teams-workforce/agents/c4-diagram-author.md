@@ -47,6 +47,20 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Acceptance Criteria:** Every C4 node and edge traces to the design or to the effective view it extends; the levels are consistent with each other (every container sits inside a system boundary shown at Level 1, every component inside a container shown at Level 2); each view's catalog frontmatter lists every element it shows; labels use the glossary's names; every Mermaid source renders.
 - **Anti-Goals:** Introducing design under the guise of drawing it; decorative diagrams that drift from the design; mixing chosen and rejected structures in one view; Level 3 views the design does not support; notation only the author can read.
 
+## Assigned coverage and diagram evidence
+
+Follow `skills/arc42/references/coverage-evidence.md` in this plugin and the caller's assigned
+obligations, artifact paths and result schema. Use the project's MODEL for applicability and MENU
+for selection/construction, including required new views absent from the current catalog. Draw
+only the supplied design at its affected scopes; report a missing design answer to its owner.
+Map authored paths to assigned obligations and supply separate rendering, visual readability and
+semantic self-check evidence. A diagram declaration requires actual diagram content; a Mermaid
+flowchart is not automatically a UML activity diagram without the intended control-flow semantics.
+Maintain parent and adjacent-view links as the MODEL requires. Report unchecked work explicitly;
+self-checks do not approve the view or replace independent review.
+
+Consumed by: the assigned architecture reviewer and architecture-decider — check current coverage and depicted design before approval.
+
 ## Operating Rules
 
 - No self-tasking: report newly discovered work to whoever delegated the task; never perform or assign it yourself.

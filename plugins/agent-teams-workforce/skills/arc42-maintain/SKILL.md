@@ -49,17 +49,21 @@ request to edit an effective view for an unapproved design is refused and routed
    (correction): every element added, changed or removed.
 2. **Find every effective view that shows each one**, through the catalog, at every scope. A changed
    service shows in the system container view, its domain view, and its own component, data,
-   sequence and deployment views; each of them is in scope.
+   sequence and deployment views as applicable under the MODEL. Reconcile the approved coverage
+   evidence with actual files, including approved new views absent from the catalog. Follow
+   `../arc42/references/coverage-evidence.md`; an unapproved design gap is reported, not designed here.
 3. **Update or delete each view.** Replace it with the target's view where the target has one; update
    it in place where the target changed only part of what it shows; delete it where the change
    removes its subject. Add the target's new views in the section folder the MODEL names, named for
    their subject.
 4. **Keep the catalog true.** Every view you touch has `view_type`, `scope`, `subject` and `shows`
-   matching what it now shows.
+   matching what it now shows. Update the affected entry points and adjacent-view links as the
+   MODEL requires; check diagrams, prose and metadata together.
 5. **Check the invariants** in `references/consistency-rules.md` across every view you touched and
    every view that links to them.
 6. **Report** (below). The files you changed stay `in-review`; the caller moves them to `effective`
-   once a conformance review has approved the integration.
+   once a conformance review has approved the integration. Report the disposition of each approved
+   coverage obligation, with actual paths and checks performed; do not approve your own evidence.
 
 ## Section 2 is the owner's
 
@@ -88,7 +92,7 @@ Report exactly four things:
 
 1. **Changed elements** — the elements the target or the build changed.
 2. **Views changed** — every effective view you updated, added or deleted, by path, with one line
-   each on what it now shows.
+   each on what it now shows, mapped to the approved coverage obligations and their dispositions.
 3. **Invariant check** — each rule in `references/consistency-rules.md` and whether it holds, with
    the path of any view that breaks it.
 4. **Not integrated** — anything you could not apply (a conflict with a constraint, a view the
@@ -105,6 +109,8 @@ rather than guessing: a contradicting effective version misleads every design th
 - You do not edit PRDs, the TRD or Specs. The phases that own them read the delta.
 - You do not keep a built file once the effective version matches it; report it so the caller removes
   it.
+
+Consumed by: architecture-conformance-reviewer — checks approved coverage against the integration dispositions and actual files.
 
 ## References
 

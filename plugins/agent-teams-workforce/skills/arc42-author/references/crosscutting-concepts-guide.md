@@ -31,7 +31,9 @@ views in sections 5 and 6.
 
 1. **Describe, do not command.** "Event consumers deduplicate by event id and store the id for the
    retry window" describes the design. "Consumers MUST deduplicate" is a rule and does not belong.
-2. **Show it.** At least one diagram, structure or behaviour, with the prose around it.
+2. **Show it.** Choose the structural and behavioural views the MODEL makes applicable, using the
+   MENU to construct them. A declared diagram has actual diagram content; any prose-only model
+   exception follows the MODEL and is justified in the caller's assessment.
 3. **Link rather than repeat.** A concept refers to a constraint in section 2 or a service view by
    link, without restating it.
 4. **No tags or ids.** The catalog frontmatter (`subject`, `shows`) is how a phase finds the concept.

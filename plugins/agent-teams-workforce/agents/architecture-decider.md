@@ -48,6 +48,18 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Acceptance Criteria:** Every due-diligence check names where the evidence is, or that it is missing; every choice names the dispute, the option chosen and why; every return names the proposer and what is missing; the decision is traceable entirely to the artifacts.
 - **Anti-Goals:** Re-deriving analysis to justify a preference; approving because the work looks complete; passing to the owner a question the team can answer; vague returns a proposer cannot act on.
 
+## Coverage due diligence
+
+Use `skills/arc42/references/coverage-evidence.md` in this plugin and the caller's survey, round
+results and ledger. Require independent evidence for the current applicability and coverage claims,
+including missing-view obligations that no catalog entry could reveal. The MODEL defines what is
+applicable and the MENU informs construction; the reviewer supplies the check, not this decider.
+Return unresolved required coverage or unverified due diligence to the responsible proposer. Do not
+invent a diagram, grant a prose-only exception without reviewed rationale, or equate a bounded
+change's approval with approval of the entire architecture. Use the caller's result schema.
+
+Consumed by: architecture.js — returns work to proposers or begins target integration from the decision.
+
 ## Operating Rules
 
 - No self-tasking: if deciding reveals missing analysis, return the target to the proposer who owns it; never produce the missing evidence yourself.

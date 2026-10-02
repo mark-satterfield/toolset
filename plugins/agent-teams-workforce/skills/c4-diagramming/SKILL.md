@@ -44,6 +44,19 @@ this body.
   catalog frontmatter of the view (`view_type`, `scope`, `subject`, `shows`,
   `lifecycle_state`), so every view can be found by the elements it shows.
 
+## Project coverage and validation
+
+Read the MODEL and MENU under the caller's architecture root and follow assigned coverage using
+`../arc42/references/coverage-evidence.md`. Existing catalog hits guide reuse, not whether a missing
+view is required. Select only the applicable views the design supports; report missing design to
+the caller. Keep prose, diagram declarations and parent/adjacent links consistent.
+
+Use the actual reader's rendering environment, including Obsidian when that is the project target.
+Record rendering, visual readability and semantic self-checks separately in the caller's result
+schema. A successful parse is not a readability check; unavailable inspection is reported, not
+passed. Consumed by: the assigned architecture reviewer and architecture-decider — check the
+current view evidence before approval; self-checks do not replace their independent review.
+
 ## Workflow
 
 1. **Fix the question and the audience.** A diagram exists to answer one question for one

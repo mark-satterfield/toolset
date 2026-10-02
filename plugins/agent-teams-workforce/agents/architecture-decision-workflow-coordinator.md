@@ -76,6 +76,18 @@ The architecture team, and what each member does. The calling workflow gives the
 - **c4-diagram-author** — Draws C4 views (Level 1 System Context, Level 2 Container, Level 3 Component) as Mermaid, for the target or the effective version.
 - **uml-diagram-author** — Draws UML views (sequence, state, activity, class) as Mermaid, for the target or the effective version.
 
+## Coverage routing
+
+Use the caller's coverage evidence in the survey, round results and ledger, following
+`skills/arc42/references/coverage-evidence.md` in this plugin. Assign every applicable missing or
+incomplete obligation to a proposer or diagram author with explicit file ownership, including new
+views that the catalog cannot list. Route the resulting evidence and revised applicability
+rationales to independent reviewers; a previous review does not cover changed evidence. A design
+gap belongs to a proposer, not to a diagram author's discretion. Return the caller's structured
+round plan only; do not write an assessment, decide applicability yourself or declare approval.
+
+Consumed by: architecture.js — dispatches the round plan and checks the saved due-diligence ledger before decision.
+
 ## Operating Rules
 
 - You route; the calling workflow dispatches. Name each dispatch completely, because the workflow runs exactly what you name.

@@ -14,7 +14,8 @@ first: a view in the wrong place is reported once there, and its catalog checks 
 | Subject folders | Inside a section, views below the system scope sit in folders named for their domain, service or component | Service views loose at the section root among system views |
 | Names | Files and folders are named for their subject | A name carries a PRD, an Epic, a bead id, a date or a pipeline gate (`-adjudicated`, `-v2`, `-proposal`) |
 | Versions | Target views are in `target/<subject>/` with the arc42 section layout, the delta in `target/<subject>/delta/`, built in `built/<subject>/` | A target view inside `arc42/`; a delta outside its target; a `<subject>` named for an Epic or a date |
-| Diagrams in views | Diagrams are Mermaid in the view files they belong to | A diagram in a folder outside the sections, or a binary diagram format with no Mermaid view |
+| Diagrams in views | Actual content fulfils the declared type and the MODEL/MENU construction requirements; rendering, visual readability and semantics were checked separately | A diagram declaration with no diagram, unsupported notation/semantics, or a failed check; report an unavailable check explicitly instead of passing it |
+| Navigation | The MODEL-required entry points, highest-scope views and adjacent-view links are present and usable | A subject is unreachable through required navigation or a highest-scope obligation is left to an index alone |
 | Section 2 | `02-architecture-constraints/` holds only its `README.md` with the owner's constraints | Other files in section 2 |
 | Section 4 | `04-solution-strategy/README.md` is about one page of enterprise-level direction | Implementation detail (one service's technology, a table design) in section 4 — `WARN`; a section 4 several times that length — `FAIL` |
 
@@ -28,7 +29,7 @@ holds no view) carries the catalog frontmatter.
 | `view_type` | Present, and a type the MENU lists | Missing, or a type the MENU does not list |
 | `scope` | One of `system`, `domain`, `service`, `component`, `concept` | Missing or another value |
 | `subject` | Present, and the one thing the view describes, named as the glossary and repositories name it | Missing; names a PRD, Epic, bead or date |
-| `shows` | A list of every element in the view's diagram | Missing; an element in the diagram absent from the list (`FAIL`); a listed element the diagram does not contain (`WARN`) |
+| `shows` | Names the architectural elements actually shown at the declared abstraction, including a justified prose-only model where the MODEL permits one | Missing or inconsistent with the actual content; name the missing or unsupported element |
 | `lifecycle_state` | `in-review` or `effective` | Missing or another value; a target or delta file marked `effective` before approval |
 | Scope and place agree | A `scope: service` view sits in that service's subject folder; a `scope: concept` view sits in section 8 | Scope and folder disagree |
 
@@ -37,3 +38,11 @@ holds no view) carries the catalog frontmatter.
 For each check, emit one verdict line, `[STATUS] <path> — <observation>`, with an indented
 `evidence:` line quoting the frontmatter or the file name, or naming the absence. Report only what is
 and is not true; do not propose the fix.
+
+## Coverage evidence
+
+Apply `../../arc42/references/coverage-evidence.md` to the independently established subject
+inventory. Use the MODEL's applicability conditions and assessment vocabulary, not a fixed count
+of view types. A catalog label or Mermaid fence is not proof of adequate coverage. Record a named
+absence only after checking the relevant files and inventory; record insufficient evidence as
+unassessed. Prose-only exceptions need the MODEL's rationale and honest type, not an automatic pass.

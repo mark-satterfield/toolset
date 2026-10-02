@@ -6,7 +6,11 @@ under the architecture root); the table of scopes and views is the MODEL's, and 
 it. The views a subject needs depend on what it is: the lists below are where to start, not a
 checklist.
 
-Every view is a diagram and the prose around it, carries the catalog frontmatter, and describes the
+Apply the MODEL's coverage conditions and prose-only exceptions; these templates are not a
+checklist of mandatory diagrams. A section entry point embeds or links its highest-scope view as
+the MODEL permits.
+
+Every diagram view is a diagram and the prose around it, carries the catalog frontmatter, and describes the
 design its version holds (`../../arc42/references/living-document-rules.md`). Skeletons are at the
 bottom.
 
@@ -48,7 +52,7 @@ The architectural style and the few approaches everything else follows, about on
 
 | Scope | Views | Where |
 |---|---|---|
-| System | container diagram; integration diagram; N-tier (layers) diagram | `README.md` |
+| System | container diagram; integration diagram; N-tier (layers) diagram | `README.md` or its directly linked overview, as the MODEL permits |
 | Domain | context map and domain model; container view of its services; integration | `<domain>/README.md` |
 | Service | component diagram; logical and physical data model or ERD | `<domain>/<service>/...` |
 | Component | class, module or package diagram; physical data model; state machine | `<domain>/<service>/<component>...` |
@@ -76,7 +80,7 @@ the flow has one.
 
 | Scope | Views | Where |
 |---|---|---|
-| System | deployment, infrastructure and environment diagrams | `README.md` |
+| System | deployment, infrastructure and environment diagrams | `README.md` or its directly linked overview, as the MODEL permits |
 | System | network diagram | `network.md` |
 | Service | deployment of its stacks | `<domain>/<service>/...` |
 

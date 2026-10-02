@@ -69,7 +69,9 @@ evidence the design is right.
 2. **Find every scope the change reaches.** An element appears in views at more than one scope.
    Adding a service, for example, changes the system container and integration views and adds the
    service's own component, data and sequence views. List the existing views the catalog returns for
-   each element the design touches.
+   each element the design touches. Establish the subject inventory independently of those hits,
+   apply the MODEL coverage obligations, and identify applicable views with no file yet. Follow
+   `../arc42/references/coverage-evidence.md`; the MENU guides which views answer each question.
 3. **Write the target views.** New views for new elements, and a changed copy of each existing view
    that shows a changed element, at every scope where it appears. Each view goes in the section
    folder the MODEL's view table names, inside the version's folder, and is named for its subject.
@@ -87,6 +89,10 @@ evidence the design is right.
    (every API so far is REST, so the next API is REST) unless it states a reason and evidence to
    change it. A change of pattern is written into the target's views, and into its section 8 or
    section 4 copy when the pattern or the direction itself changes.
+8. **Supply coverage evidence.** Map assigned obligations to the views authored, adjacent-view links
+   and checks actually performed. Check diagram content against its declaration and MENU semantics;
+   distinguish rendering from visual readability and semantic correctness. Report unchecked work or
+   an unsupported design to the caller. Author self-checks are not independent review or approval.
 
 ## What a view contains
 
@@ -110,7 +116,8 @@ the caller with the reason.
 When the project has no architecture yet, create `arc42/` with one folder per section,
 `01-introduction-and-goals/` through `12-glossary/` (no section 9), each with a `README.md`. Write the
 views the inputs support, starting from the system scope: context (section 3), container (section 5
-`README.md`), system flows (section 6), system deployment (section 7 `README.md`). Leave section 2's
+entry point), system flows (section 6), system deployment (section 7 entry point). The MODEL
+determines whether an entry point embeds or links its highest-scope view. Leave section 2's
 `README.md` for the owner to fill. A section the inputs cannot fill yet stays as its folder and a
 `README.md` holding only the section title; the gap goes in your report, not into the file.
 
@@ -120,6 +127,8 @@ views the inputs support, starting from the system scope: context (section 3), c
 - You do not write constraints, decision records, ADRs or a section 9.
 - You do not name a file or folder for a PRD, an Epic, a bead id, a date or a pipeline gate.
 - You do not approve your own target. Every file you write is `in-review`.
+
+Consumed by: the assigned architecture reviewer and architecture-decider — check authored coverage evidence against the MODEL before target approval.
 
 ## References
 

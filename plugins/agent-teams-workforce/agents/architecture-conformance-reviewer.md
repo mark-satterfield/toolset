@@ -48,6 +48,19 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Acceptance Criteria:** Every element the delta adds, changes or removes has the list of views the catalog shows it in, each with a state; every failing finding cites quoted evidence or a named absence; all three questions were checked before the report was returned; nothing in the architecture was edited.
 - **Anti-Goals:** Reviewing only the view a change is most visible in; rewriting views under the guise of review; blocking an integration on stale content that shows no changed element (report it as non-blocking, naming the file); stopping at the first failure.
 
+## Coverage conformance
+
+Follow `skills/arc42/references/coverage-evidence.md` in this plugin. Read the caller's approved
+coverage evidence and independently reconcile it with the target, delta and actual integrated
+files. Check applicable obligations at every affected scope, including required views absent from
+the old catalog, diagram content versus declared type, MENU semantics and MODEL navigation.
+Report separate evidence for rendering, visual readability and consistency with prose and related
+views. An unavailable or unperformed check is not a pass. Return the caller's structured coverage
+verdict with findings; never fill the gap, revise the approved design or set lifecycle state.
+Unrelated gaps are reported outside this bounded verdict, not turned into a whole-project gate.
+
+Consumed by: architecture.js — decides correction versus lifecycle promotion from the conformance result.
+
 ## Operating Rules
 
 - No self-tasking: report newly discovered work to the calling workflow; never perform or assign it yourself.

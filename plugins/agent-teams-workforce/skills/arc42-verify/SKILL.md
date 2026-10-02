@@ -45,21 +45,27 @@ owner, acts on.
 | **Layout and naming** | Every section is a folder with a `README.md`; no section 9; views sit in the section the MODEL's view table names; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; target, delta and built use the same layout in their own folders | `references/verification-checklist.md` |
 | **Catalog** | Every view carries `view_type` (a MENU type), `scope`, `subject`, `shows` and `lifecycle_state`, with valid values, and `shows` matches what the view's diagram shows | `references/verification-checklist.md` |
 | **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
-| **View consistency** | No two views contradict each other; every element shown has views of its own subject; no view conflicts with a section 2 constraint; no dangling links | `references/view-consistency-checks.md` |
+| **View consistency** | No two views contradict each other; applicable subjects have the coverage the MODEL requires; no view conflicts with a section 2 constraint; navigation and links satisfy the MODEL | `references/view-consistency-checks.md` |
 
 ## How to run the verification
 
 1. **Resolve the scope.** Take the architecture root the router resolved, and the version the caller
    names (`arc42/`, `target/<subject>/` with its `delta/`, or `built/<subject>/`). With no version
    named, verify `arc42/`. When the root cannot be resolved, ask one question; do not guess between
-   candidates.
-2. **Load the rules** from the MODEL, the MENU and the references above.
+   candidates. Distinguish a bounded change review from a whole-project assessment explicitly;
+   neither a sample nor a per-change pass is a whole-project verdict.
+2. **Load the rules** from the MODEL, the MENU and the references above. Establish the subject
+   inventory independently of catalog entries, then assess applicability using
+   `../arc42/references/coverage-evidence.md`. A missing view cannot disappear from the assessment
+   merely because it has no catalog entry.
 3. **Assert each check.** Walk the four families in order. For every check, record `PASS`, `FAIL` or
    `WARN` with the path, a one-line observation and the evidence (a quoted line, or a named absence).
    A `FAIL` without evidence is not reported.
 4. **Run every check.** Do not stop at the first failure: the caller gets the full picture in one
    pass.
-5. **Emit the verdict** in the structure below. That is the entire output.
+5. **Emit the verdict** in the structure below with the caller-requested coverage evidence. Record
+   the MODEL assessment results separately from lifecycle and the check verdict. Name omitted or
+   unverified checks; a missing renderer or visual inspection cannot be counted as a passing check.
 
 ```text
 resolve root and version
@@ -109,6 +115,8 @@ of what must change for the architecture to pass, phrased as findings for the au
 - You do not soften a `FAIL` into a `WARN`. The verdict is mechanical.
 - You do not edit any file. If you reach for the Edit tool, you have left the verifier contract: stop
   and report instead.
+
+Consumed by: the commissioning caller — uses the bounded verdict and named evidence to route correction; architecture-conformance-reviewer uses the checks when reviewing an integration.
 
 ## References
 

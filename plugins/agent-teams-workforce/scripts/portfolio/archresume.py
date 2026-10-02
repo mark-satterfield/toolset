@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Read the architecture step's saved work on disk and report only what its control flow needs.
 
 `depscore.py arch-resume` runs `resume_facts`. The architecture step saves every session's
@@ -19,6 +18,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
+from archcoverage import coverage_facts, integration_revision
 
 ROUND_FILE = re.compile(
     r"^r(\d+)-(\d+)-(proposer|diagram|reviewer|cost)-([a-z0-9-]+)\.json$"
@@ -298,6 +299,7 @@ def _decision(work: Path, roles: dict[str, str]) -> dict | None:
     kinds = [_text(c.get("kind")) for c in concerns]
     return {
         "verdict": _text(dec.get("verdict")),
+        "coverageRevision": _text(dec.get("coverageRevision")),
         "round": dec.get("round") if isinstance(dec.get("round"), int) else 0,
         "returnTo": returned,
         "ownerConcerns": len(concerns),
@@ -353,6 +355,8 @@ def _integration(work: Path) -> dict:
             "n": n,
             "path": str(p),
             "conforms": r.get("conforms") is True,
+            "coverageRevision": _text(r.get("coverageRevision")),
+            "coverageChecks": r.get("coverageChecks", []),
             "reviewedFiles": _paths(r.get("reviewedFiles")),
             "findings": len(r.get("findings"))
             if isinstance(r.get("findings"), list)
@@ -386,6 +390,7 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
     work = Path(work_dir)
     roles = parse_roster(roster)
     survey = None
+    s = {}
     sj = work / "survey.json"
     if sj.is_file():
         s = _load(sj)
@@ -396,8 +401,10 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
             "saved": (work / "survey.md").is_file() and bool(_text(s.get("subject"))),
             "subject": _text(s.get("subject")),
             "capabilities": len(caps) if isinstance(caps, list) else 0,
+            "coverageSaved": bool(s.get("coverage")),
         }
     ledger = _rounds(work, roles, parse_assign(assign))
+    coverage, coverage_summary = coverage_facts(work, s, ledger.files)
     ledger_path = work / LEDGER_NAME
     if work.is_dir():
         ledger_path.write_text(
@@ -406,6 +413,7 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
                     "claims": ledger.claims,
                     "findings": ledger.findings,
                     "savedResults": ledger.files,
+                    **coverage,
                 },
                 indent=1,
             )
@@ -423,11 +431,15 @@ def resume_facts(work_dir: str, *, roster: str, assign: str = "") -> dict:
             unreviewed[c["by"]] = unreviewed.get(c["by"], 0) + 1
     integration = _integration(work)
     decision = _decision(work, roles)
+    integration["coverageRevision"] = integration_revision(
+        coverage_summary["revision"], integration["update"], work
+    )
     return {
         "dir": str(work),
         "exists": work.is_dir(),
         "ledger": str(ledger_path) if work.is_dir() else None,
         "survey": survey,
+        "coverage": coverage_summary,
         "rounds": {
             "last": ledger.last,
             "results": len(ledger.files),
