@@ -221,7 +221,7 @@ const analysisSchema = {
 const analysis = await settleAgent(
   `You are an INDEPENDENT PRD validation analyst. You did not author this PRD and you never rewrite it — you only inspect it, applying EVERY lens below in one pass. Shared ground rules for all lenses:
 - This is a WHAT-level PRD. A requirement that names a desired outcome without naming its implementation mechanism is NOT defective — never flag absent mechanism, thresholds, schemas, or quantified NFRs.
-- This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. A requirement owned by a sibling is not a gap, a cross-PRD contract is not a conflict, and naming a sibling's behavior is not a boundary violation — flag a violation only where this PRD claims to OWN behavior a sibling owns.
+- This PRD is one slice of a decomposed set and names no other PRD: ordering between features is carried by Epic dependency edges, not by the PRD. Behavior another feature provides is not a gap in this one.
 - The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.
 - Keep every issue/question/detail field under 40 words. Report findings, not essays, and do not restate one finding as several.
 
@@ -249,7 +249,7 @@ Repository under consideration: ${repo}
 PRD under validation:
 ${prdBlock}
 
-READING BUDGET: the PRD is the entire object of every lens. Read nothing else unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document, or Lens 0 checks the architecture, and then read only the views its searches point at. Do not survey the repository or the polyrepo.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
+READING BUDGET: the PRD is the entire object of every lens. Read nothing else unless Lens 0 checks the architecture, and then read only the views its searches point at. Do not survey the repository or the polyrepo.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
   {
     label: 'validate:all-lenses',
     effort: 'low',

@@ -130,14 +130,15 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
 
    **When you find a contradiction like this in your own draft, fix it.** Close the under-specified
    `Given`; do not reword it into vagueness, and do not delete the criterion that exposed the
-   conflict. **In an existing PRD, show the user the contradiction and the repair, and edit the PRD
-   only with their OK.** No workflow or pipeline ever edits a PRD.
+   conflict. **In an existing PRD, make the repair.** No workflow or pipeline ever edits a PRD.
 8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
-   Dependencies (table + status), Measurable Outcomes (table + baseline/target/method), Visual
-   References, Definition of Done.
-9. **Raise every unresolved input gap with the user, never in the PRD.** A PRD holds requirements
-   only — no risks, open questions, notes, or discussion. Never invent a requirement, metric, or
-   constraint to look finished; never smooth an upstream contradiction into vague language.
+   Measurable Outcomes (table + baseline/target/method), Visual References, Definition of Done.
+   A PRD names no other PRD: ordering between Epics is carried by Epic dependency edges in beads.
+9. **Settle every input gap within the feature's purpose by best-in-class practice and write it
+   in; leave out anything outside the feature's purpose.** The owner gives high-level requirements
+   and never gets product questions about scope they did not request; a list the owner provides is
+   the complete list. A PRD holds requirements only — no risks, open questions, notes, or
+   discussion. Never smooth a contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
 11. **Run `scripts/check_prd.py` on your draft and resolve every error** before you finish.
 12. **Sync the Epic half** — `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — and say so in your reply.
@@ -170,7 +171,7 @@ The linter covers the structural items (✓-able by `check_prd.py`); the rest re
 - [ ] Problem stated as user pain, with Evidence (or justified deletion) — judgment
 - [ ] No HOW leaked into any section — judgment
 - [ ] Each P0 acceptance criterion is genuinely testable — judgment
-- [ ] Dependencies, Measurable Outcomes tables fully filled — judgment
+- [ ] Measurable Outcomes table fully filled; no other PRD named — judgment
 - [ ] Every requirement/metric traces to an upstream source — judgment
 
 ## Anti-Goals

@@ -210,19 +210,6 @@ Names should sort and group naturally when listed alphabetically.
 
 ---
 
-## Dependencies
-
-<!--
-  What must exist, be built, or be true before this feature can work?
-  Include other features, services, data, third-party APIs, or infrastructure.
-  Note whether each dependency exists today or is blocked.
--->
-
-| Dependency | Status                         | Notes    |
-| ---------- | ------------------------------ | -------- |
-| [Name]     | Exists / Blocked / In Progress | [Detail] |
-
----
 
 ## Measurable Outcomes
 
