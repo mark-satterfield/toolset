@@ -142,9 +142,12 @@ class Ledger:
             agent: The agent that wrote the result.
             result: The parsed result.
             file: The result file.
+
+        Raises:
+            ResumeError: The result is not a JSON object.
         """
         if not isinstance(result, dict):
-            return
+            raise ResumeError(f"{file}: not a JSON object")
         self.files.append(file)
         self.saved.append(f"r{n}-{seq}")
         self.last = max(self.last, n)
