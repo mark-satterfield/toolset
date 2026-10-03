@@ -10,6 +10,47 @@ export const meta = {
     { title: 'Integrate', detail: 'the architecture-maintainer integrates the target into arc42; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the reviewed files to effective; depscore.py arch-commit commits and pushes the integrated files' },
   ],
 }
+// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// Runtime replay identifies calls by their unchanged prompt/options and start order.
+// Recovery metadata stays in workflow arguments and never enters those options.
+const fableInput = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const fableTypes = new Set((Array.isArray(fableInput.fableAgentTypes) ? fableInput.fableAgentTypes : []).map((name) => String(name).replace(/^agent-teams-workforce:/, '')))
+const fablePath = fableInput.fableInvocationPath || 'root'
+const fableRecovery = fableInput.fableRecovery && typeof fableInput.fableRecovery === 'object' ? fableInput.fableRecovery : null
+let fableAgentOrdinal = 0
+let fableChildOrdinal = 0
+function fableEvent(event, identity, error = null) {
+  log(`FABLE-CALL ${JSON.stringify({ event, ...identity, ...(error === null ? {} : { error }) })}`)
+}
+async function fableAgent(prompt, options) {
+  const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
+  const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
+  const cutoffs = (fableRecovery && fableRecovery.cutoffs) || {}
+  const cutoff = Number.isInteger(cutoffs[fablePath]) && cutoffs[fablePath] >= 0 ? cutoffs[fablePath] : 0
+  const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
+  fableEvent('start', identity)
+  try {
+    const result = await agent(prompt, call)
+    if (!result) fableEvent('failed', identity)
+    return result
+  } catch (error) {
+    const message = String((error && error.message) || error)
+    fableEvent('failed', identity, message)
+    if (isFable && /out of (?:usage )?credits|seven_day_overage_included|fable.{0,40}(?:limit|allowance)/i.test(message)) return null
+    throw error
+  }
+}
+async function fableWorkflow(name, input) {
+  const invocationPath = `${fablePath}/${fableChildOrdinal++}:${name}`
+  return await workflow(name, {
+    ...input,
+    fableAgentTypes: fableInput.fableAgentTypes || [],
+    fableInvocationPath: invocationPath,
+    ...(fableRecovery ? { fableRecovery } : {}),
+  })
+}
+// ===== SHARED BLOCK fable — END =====
+
 
 let dispatchInterruption = null
 function dispatchOutcome(result) {
@@ -30,7 +71,7 @@ async function run(prompt, opts) {
   if (dispatchInterruption) return null
   let message = 'returned nothing'
   try {
-    const out = await agent(prompt, opts)
+    const out = await fableAgent(prompt, opts)
     if (out) return out
   } catch (err) {
     message = String((err && err.message) || err)

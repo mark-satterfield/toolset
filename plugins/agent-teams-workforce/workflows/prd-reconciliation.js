@@ -4,6 +4,47 @@ export const meta = {
     'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), gives each ui item its design source — bundle (a single-artifact cds bundle the owner supplied in the packages directory packages it; the newest bundle of a kind and slug is the supplied one), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design) ; a bundle or cds item also names its artifact (kind and slug, as a bundle.json names it), so a mockup supplied later is found when the Task is built — and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s design source with the bundle and build spec of a bundle item, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
   phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
+// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// Runtime replay identifies calls by their unchanged prompt/options and start order.
+// Recovery metadata stays in workflow arguments and never enters those options.
+const fableInput = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const fableTypes = new Set((Array.isArray(fableInput.fableAgentTypes) ? fableInput.fableAgentTypes : []).map((name) => String(name).replace(/^agent-teams-workforce:/, '')))
+const fablePath = fableInput.fableInvocationPath || 'root'
+const fableRecovery = fableInput.fableRecovery && typeof fableInput.fableRecovery === 'object' ? fableInput.fableRecovery : null
+let fableAgentOrdinal = 0
+let fableChildOrdinal = 0
+function fableEvent(event, identity, error = null) {
+  log(`FABLE-CALL ${JSON.stringify({ event, ...identity, ...(error === null ? {} : { error }) })}`)
+}
+async function fableAgent(prompt, options) {
+  const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
+  const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
+  const cutoffs = (fableRecovery && fableRecovery.cutoffs) || {}
+  const cutoff = Number.isInteger(cutoffs[fablePath]) && cutoffs[fablePath] >= 0 ? cutoffs[fablePath] : 0
+  const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
+  fableEvent('start', identity)
+  try {
+    const result = await agent(prompt, call)
+    if (!result) fableEvent('failed', identity)
+    return result
+  } catch (error) {
+    const message = String((error && error.message) || error)
+    fableEvent('failed', identity, message)
+    if (isFable && /out of (?:usage )?credits|seven_day_overage_included|fable.{0,40}(?:limit|allowance)/i.test(message)) return null
+    throw error
+  }
+}
+async function fableWorkflow(name, input) {
+  const invocationPath = `${fablePath}/${fableChildOrdinal++}:${name}`
+  return await workflow(name, {
+    ...input,
+    fableAgentTypes: fableInput.fableAgentTypes || [],
+    fableInvocationPath: invocationPath,
+    ...(fableRecovery ? { fableRecovery } : {}),
+  })
+}
+// ===== SHARED BLOCK fable — END =====
+
 // BEGIN interruption propagation — no retry or replay of completed dispatches.
 let dispatchInterruption = null
 function dispatchOutcome(result) {
@@ -374,7 +415,7 @@ async function settleAgent(prompt, opts) {
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
   try {
-    const out = await agent(prompt, o)
+    const out = await fableAgent(prompt, o)
     if (out) return out
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)

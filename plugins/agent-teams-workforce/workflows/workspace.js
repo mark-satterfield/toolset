@@ -4,6 +4,47 @@ export const meta = {
     "Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). The git work is mechanical and runs as gitfacts.py provision through relayrun.py, so the workflow receives its result checked; a second, separate gitfacts.py facts run verifies the tree independently (a git tree of the same repository, a linked worktree, on the branch reported). With stashUncommitted, a reused tree's uncommitted changes are stashed (`git stash push --include-untracked`) under a message naming the run, so the run starts from the branch head and the earlier work stays recoverable. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, provisioning fails, verification disagrees, or the tree is on a default branch or a detached HEAD. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { ok, applicable, repoPath, branch, reused, stashed, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.",
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
+// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// Runtime replay identifies calls by their unchanged prompt/options and start order.
+// Recovery metadata stays in workflow arguments and never enters those options.
+const fableInput = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const fableTypes = new Set((Array.isArray(fableInput.fableAgentTypes) ? fableInput.fableAgentTypes : []).map((name) => String(name).replace(/^agent-teams-workforce:/, '')))
+const fablePath = fableInput.fableInvocationPath || 'root'
+const fableRecovery = fableInput.fableRecovery && typeof fableInput.fableRecovery === 'object' ? fableInput.fableRecovery : null
+let fableAgentOrdinal = 0
+let fableChildOrdinal = 0
+function fableEvent(event, identity, error = null) {
+  log(`FABLE-CALL ${JSON.stringify({ event, ...identity, ...(error === null ? {} : { error }) })}`)
+}
+async function fableAgent(prompt, options) {
+  const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
+  const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
+  const cutoffs = (fableRecovery && fableRecovery.cutoffs) || {}
+  const cutoff = Number.isInteger(cutoffs[fablePath]) && cutoffs[fablePath] >= 0 ? cutoffs[fablePath] : 0
+  const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
+  fableEvent('start', identity)
+  try {
+    const result = await agent(prompt, call)
+    if (!result) fableEvent('failed', identity)
+    return result
+  } catch (error) {
+    const message = String((error && error.message) || error)
+    fableEvent('failed', identity, message)
+    if (isFable && /out of (?:usage )?credits|seven_day_overage_included|fable.{0,40}(?:limit|allowance)/i.test(message)) return null
+    throw error
+  }
+}
+async function fableWorkflow(name, input) {
+  const invocationPath = `${fablePath}/${fableChildOrdinal++}:${name}`
+  return await workflow(name, {
+    ...input,
+    fableAgentTypes: fableInput.fableAgentTypes || [],
+    fableInvocationPath: invocationPath,
+    ...(fableRecovery ? { fableRecovery } : {}),
+  })
+}
+// ===== SHARED BLOCK fable — END =====
+
 // BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
 let dispatchInterruption = null
 function dispatchOutcome(result) {
@@ -51,7 +92,7 @@ async function settleWorkflow(name, input) {
   if (dispatchInterruption) return dispatchOutcome({})
   const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
   try {
-    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    const out = await fableWorkflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
     if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
     return out
   } catch (err) {
@@ -409,7 +450,7 @@ async function settleAgent(prompt, opts) {
   for (let attempt = 1; ; attempt++) {
     if (dispatchInterruption) return null
     try {
-      const out = await agent(prompt, call)
+      const out = await fableAgent(prompt, call)
       if (out) {
 
         return out

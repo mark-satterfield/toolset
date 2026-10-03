@@ -4,6 +4,47 @@ export const meta = {
     'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and, given args.archPath, whether the architecture already describes each technical rule; a technical requirement is a major finding, since a PRD keeps business requirements only.',
   phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
 }
+// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// Runtime replay identifies calls by their unchanged prompt/options and start order.
+// Recovery metadata stays in workflow arguments and never enters those options.
+const fableInput = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const fableTypes = new Set((Array.isArray(fableInput.fableAgentTypes) ? fableInput.fableAgentTypes : []).map((name) => String(name).replace(/^agent-teams-workforce:/, '')))
+const fablePath = fableInput.fableInvocationPath || 'root'
+const fableRecovery = fableInput.fableRecovery && typeof fableInput.fableRecovery === 'object' ? fableInput.fableRecovery : null
+let fableAgentOrdinal = 0
+let fableChildOrdinal = 0
+function fableEvent(event, identity, error = null) {
+  log(`FABLE-CALL ${JSON.stringify({ event, ...identity, ...(error === null ? {} : { error }) })}`)
+}
+async function fableAgent(prompt, options) {
+  const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
+  const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
+  const cutoffs = (fableRecovery && fableRecovery.cutoffs) || {}
+  const cutoff = Number.isInteger(cutoffs[fablePath]) && cutoffs[fablePath] >= 0 ? cutoffs[fablePath] : 0
+  const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
+  fableEvent('start', identity)
+  try {
+    const result = await agent(prompt, call)
+    if (!result) fableEvent('failed', identity)
+    return result
+  } catch (error) {
+    const message = String((error && error.message) || error)
+    fableEvent('failed', identity, message)
+    if (isFable && /out of (?:usage )?credits|seven_day_overage_included|fable.{0,40}(?:limit|allowance)/i.test(message)) return null
+    throw error
+  }
+}
+async function fableWorkflow(name, input) {
+  const invocationPath = `${fablePath}/${fableChildOrdinal++}:${name}`
+  return await workflow(name, {
+    ...input,
+    fableAgentTypes: fableInput.fableAgentTypes || [],
+    fableInvocationPath: invocationPath,
+    ...(fableRecovery ? { fableRecovery } : {}),
+  })
+}
+// ===== SHARED BLOCK fable — END =====
+
 // BEGIN interruption propagation — no retry or replay of completed dispatches.
 let dispatchInterruption = null
 function dispatchOutcome(result) {
@@ -374,7 +415,7 @@ async function settleAgent(prompt, opts) {
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
   try {
-    const out = await agent(prompt, o)
+    const out = await fableAgent(prompt, o)
     if (out) return out
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
