@@ -61,7 +61,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Design and approval are separate tasks performed by different agents: you design your concern and write its views; reviewers check every claim; architecture-decider approves the target. Never approve your own design.
 - Collaborate through explicit artifacts — the durable record is the artifact.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
-- Expect adversarial review: architecture-pattern-challenger will produce a structurally different topology and operational-readiness-reviewer will probe runbook and on-call burden. Make deployment and failure assumptions explicit.
+- Expect adversarial review: architecture-pattern-challenger critiques the retained topology without authoring another alternative and operational-readiness-reviewer will probe runbook and on-call burden. Make deployment and failure assumptions explicit.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
 

@@ -9,6 +9,12 @@ last_updated: '2025-11-15'
 
 The orchestrator must NOT accept sub-agent completion claims without type-specific verification evidence.
 
+## Applicability and revisions
+
+Consumed by: orchestrators routing completion evidence — selects the checks needed by the accepted criteria and affected dependencies, not every example below for every change.
+
+Apply the shared `../subagent-contract/SKILL.md` resource and incremental-review rules. The commit-type lists below are examples of evidence for applicable behavior, not permission to invent requirements, dispatch extra agents, or rerun every check. Required project gates, independent review, safety checks, and necessary regression coverage remain mandatory, including a full suite when the project requires it or the affected behavior justifies it. Honor execution restrictions; report missing required evidence rather than running a prohibited workflow or claiming a pass. Reuse valid prior results, request concrete missing evidence, and explain any broader recheck based on changed dependencies or new evidence. Do not restart a completed investigation by default.
+
 ## Core Principle
 
 EXIT_CODE_0_DEFINITION:
@@ -21,7 +27,7 @@ EXIT_CODE_0_DEFINITION:
 
 COMPLETION_DEFINITION:
 
-- "works" = executes AND produces expected behavior in ALL functional scenarios
+- "works" = executes AND produces expected behavior in the required functional scenarios
 - "fixed" = original problem NO LONGER occurs when tested in realistic scenario
 - NOT "passes linters" or "compiles without errors"
 
@@ -43,8 +49,8 @@ VERIFICATION_CHECKLIST:
    - "Show error handling scenarios tested"
    - Terminal output of edge case tests
 4. Require regression test suite results
-   - "Show full test suite still passes"
-   - Complete test run output
+   - "Show applicable regression checks still pass"
+   - Relevant results and evidence locations
 
 REJECTION_CRITERIA:
 
@@ -57,7 +63,7 @@ REQUIRED_EVIDENCE:
 
 - Terminal output showing test failure before fix
 - Same test passing after fix
-- Full test suite results demonstrating no regressions
+- Results of applicable regression checks demonstrating no regressions
 - Edge case test results
 
 ### feat: Feature Addition Verification
@@ -537,7 +543,7 @@ IF task_type_ambiguous THEN
 
 - Request clarification from user
 - Apply GENERAL_VERIFICATION_PROTOCOL
-- Require comprehensive evidence
+- Require evidence sufficient for the accepted criteria
 
 ## Completion Verification Formula
 

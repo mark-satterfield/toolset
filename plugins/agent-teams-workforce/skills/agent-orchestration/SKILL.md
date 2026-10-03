@@ -220,7 +220,7 @@ These items are inherited from CLAUDE.md or tool descriptions — do not repeat 
 
 - "Full project context available — explore freely" — agents always have full tool access
 - "Check `<functions>` list for MCP tools" — tool descriptions already tell agents this
-- "Maximize parallel execution" — CLAUDE.md already instructs this
+- General delegation rules already supplied by the shared contract — do not repeat them
 - "Activate relevant skills for domain expertise" — CLAUDE.md already covers skill activation
 - "This Python project uses `uv`" — CLAUDE.md already states the toolchain
 - Language/toolchain conventions already in CLAUDE.md (uv, pnpm, cargo, etc.)
@@ -232,7 +232,7 @@ ECOSYSTEM CONTEXT:
 - Full project context available — explore freely with all tools
 - Check <functions> list for MCP tools — prefer MCP specialists over built-in
 - This Python project uses `uv` — activate `uv` skill
-- Maximize parallel execution for independent tool calls
+- Follow inherited scope and verification constraints
 ```
 
 All four lines are already in CLAUDE.md or tool descriptions. This section adds zero information.
@@ -448,80 +448,9 @@ flowchart TD
 
 ## Pattern Expansion — From Single Instance to Systemic Fix
 
-When user identifies a code smell, bug, or anti-pattern at a specific location, treat it as a symptom of a broader pattern that likely exists elsewhere.
+When the user identifies a problem at a specific location, begin with that problem and its affected dependencies. Do not infer permission for a codebase-wide cleanup from a single example. Expand investigation or repair when evidence identifies a shared cause or wider impact, and briefly explain that need before material extra work. Preserve explicit scope boundaries.
 
-**What users say vs what they mean:**
-
-- "Fix walrus operator in `_some_func()`" → "Audit and fix ALL instances of this pattern"
-- "Add error handling to this API call" → "Audit all similar operations"
-- "This validation is duplicated" → "Find and eliminate all instances systemically"
-
-**Reason**: Users point out single instances as examples. Treating them as systemic saves user effort and improves codebase quality comprehensively.
-
-<!-- Converted from flowchart: diamond now states the evaluable question about observable signal properties -->
-
-```mermaid
-flowchart TD
-    Signal(["User message received"]) --> Q{"Does the user message name<br>a specific code location<br>and did they say 'only this one'?"}
-    Q -->|"Yes — user explicitly scoped to one instance"| Single["Treat as single-instance fix —<br>do not expand scope"]
-    Q -->|"No — location named without explicit scope limit"| QType{"What category is the<br>named problem?"}
-    QType -->|"Code smell at a specific location"| A1["Delegate — audit entire file/module<br>for all instances of this pattern"]
-    QType -->|"Missing error handling on one operation"| A2["Delegate — audit all similar<br>operations in the codebase"]
-    QType -->|"Duplicated validation logic"| A3["Delegate — find and eliminate<br>all duplication instances systemically"]
-    QType -->|"Inefficient loop or iteration pattern"| A4["Delegate — search codebase<br>for all matching patterns"]
-    QType -->|"Missing type hint on one function"| A5["Delegate — audit all<br>function signatures in scope"]
-    Single --> Done(["Delegation scoped"])
-    A1 & A2 & A3 & A4 & A5 --> Done
-```
-
-**Include symptom locations (observational):**
-
-- "Error occurs at server.py:142"
-- "User reported issue in yq_wrapper.py:274-327"
-
-**State what agent should discover — do not prescribe changes:**
-
-- Replace "Replace server.py:127-138 with helper function" → "User identified duplication pattern at server.py:127-138. Audit entire file for similar patterns."
-- Replace "Change line 42 to use walrus operator" → "User identified assign-then-check pattern at line 42. Audit for all instances."
-
-**Default assumption**: Unless user explicitly says "only this one", treat code smell/bug mentions as representative of a broader pattern requiring systemic remediation.
-
-## Holistic vs Micromanaged Delegation
-
-**Micromanaged delegation (prevents agent understanding):**
-
-```text
-OBSERVATIONS:
-- Walrus operator opportunity at _some_func():45-47
-
-YOUR TASK:
-1. Create helper at line 120
-2. Replace lines 127-138 with call
-3. Replace lines 180-191 with call
-```
-
-Problem: Orchestrator already did investigation. Agent becomes code-editing tool without context.
-
-**Holistic delegation (enables agent understanding):**
-
-```text
-OBSERVATIONS:
-- User identified assign-then-check pattern at _some_func():45-47
-- This suggests developer consistently missed walrus operator opportunities
-- Code smell indicates systematic review needed across file/module
-
-DEFINITION OF SUCCESS:
-- Pattern eliminated from [file/module] scope
-- All assign-then-check conditionals converted to walrus where appropriate
-
-YOUR TASK:
-1. Verify acceptance criteria via `/am-i-complete` before claiming done
-2. Fix the specific instance user identified
-3. Audit entire [file/module] for similar patterns
-4. Apply same fix to all discovered instances
-5. Document pattern occurrences found and fixed
-6. Verify `/am-i-complete` checklist items satisfied with evidence
-```
+Include the observed location and accepted outcome in the delegation. A repair brief carries the existing artifact, findings, and valid evidence forward; the agent establishes the cause and changes only what is needed for correctness. Broader cleanup without a demonstrated connection is separate work, not an automatic prerequisite.
 
 ## Anti-Patterns to Avoid
 
@@ -745,10 +674,10 @@ flowchart TD
     Q2 -->|"Yes — shared file mutations"| Serialize["Sequence those units<br>Parallelize the rest via TeamCreate"]
     Q2 -->|"No — fully independent"| Teams["TeamCreate<br>One Agent() per task<br>All launch concurrently"]
 
-    Teams --> Liberal["Share criteria and existing artifacts;<br>avoid duplicate discovery"]
+    Teams --> Reuse["Share criteria and existing artifacts;<br>avoid duplicate discovery"]
     Single --> Done(["Delegate"])
     Serialize --> Done
-    Liberal --> Done
+    Reuse --> Done
 ```
 
 **Potential parallel assignments — first check distinct need, benefit, and workflow limits:**
@@ -764,8 +693,8 @@ flowchart TD
 
 - Failures are related — fixing one fixes others (explore first, then dispatch)
 - Tasks share output state — task B needs task A's result
-- You don't know what's broken yet — do a single investigation first, then parallelize the fixes
+- You don't know what's broken yet — do a single investigation first, then justify any separate fix assignments
 
 For complete TeamCreate mechanics, step-by-step dispatch pattern, and example prompts, activate the dispatch or delegation skill available in the host project.
 
-When no project-specific dispatch skill is installed, use the agent definitions in `../../agents/` to select independent agents and launch them in parallel according to the host agent runtime.
+When no project-specific dispatch skill is installed, use the agent definitions in `../../agents/` to select the bounded assignments justified above; use parallel dispatch only when those assignments benefit from it.

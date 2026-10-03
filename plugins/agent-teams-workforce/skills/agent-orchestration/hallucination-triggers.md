@@ -71,26 +71,21 @@ Output contains temporal scheduling language inappropriate for AI agent work:
 #### Issue Indicator
 
 1. **Wrong audience model** - Thinking human team with fixed time capacity, not AI agents
-2. **Wrong execution model** - Missing that AI work scales arbitrarily with parallelization
+2. **Wrong execution model** - Assuming unlimited agents or linear speedup without accounting for dependencies, token use, and coordination
 3. **Missing actual requirements** - Should specify dependencies, priorities, sync points instead
 4. **Borrowed framework hallucination** - Importing human project management conventions
 
 #### Next Actions
 
-1. **Immediate**: Remove all temporal language from plan
+1. **Immediate**: Remove unsupported duration promises; preserve real owner deadlines and measured constraints
 2. **Replace with**:
    - Priority ordering (Priority 1, 2, 3 based on importance/dependencies)
    - Explicit dependencies ("depends on Task A completion")
    - Parallelization markers ("can parallelize with Task B")
    - Synchronization checkpoints ("SYNC: review outputs before next fan-out")
-3. **Verify**: Ask "Could 50 AI agents complete this in hours? Could 1 agent complete it in days? Then timeline is meaningless."
+3. **Verify**: Identify dependencies, actual resource constraints, and evidence for any estimate; justify additional agents rather than assuming they make the estimate achievable.
 
-**Why Critical**: Timelines are fundamentally meaningless for AI agent work because:
-
-- 50 parallel agents complete "Week 1" work in hours
-- 1 sequential agent might take days/weeks for same work
-- Execution rate depends entirely on chosen parallelization strategy
-- AI agents don't have "weeks" - they execute based on task availability
+**Why Critical**: Unmeasured speedup claims encourage unnecessary fanout. Elapsed time depends on dependencies, tool latency, review and repair, and available resources as well as justified parallel work. Do not invent deadlines or erase real ones; distinguish an evidence-based estimate from a promise.
 
 **Example**:
 
@@ -352,8 +347,8 @@ HALLUCINATION DETECTION TRIGGERS:
    → MUST verify claim with tools or mark "unverified"
 
 2. TIMELINE/TIMESPAN: "Week N", "X hours", "Sprint N", "Q1", "By [date]", any temporal scheduling
-   → Indicates wrong execution model for AI agents (work scales with parallelization, not time)
-   → MUST replace with: priority ordering, dependencies, sync checkpoints, parallelization markers
+   → Requires evidence for the estimate; parallelism alone does not establish duration
+   → Preserve real deadlines; replace unsupported estimates with priorities, dependencies, and justified dispatch choices
 
 3. PSEUDO-QUANTIFICATION: Ratings without scales, metrics without sources, statistics without verification, precision without basis
    → Indicates "borrowed rigor" - mimicking authoritative analysis without underlying verification
@@ -486,7 +481,7 @@ Total: 4 weeks, 104 hours estimated effort
 **Issues**:
 
 - Sprint language (AI agents don't have sprints)
-- Hour estimates (meaningless - could be 50 parallel agents or 1 sequential)
+- Hour estimates without measured evidence or resource assumptions
 - Calendar timespan (4 weeks - arbitrary for AI work)
 - Missing: dependencies, acceptance criteria, sync points, parallelization strategy
 
@@ -582,9 +577,9 @@ When reviewing agent output for hallucinations:
    - Never claim 100%/all/every without showing verification
 
 4. **For AI agent plans**:
-   - Remove all temporal language
+   - Preserve real deadlines; remove unsupported duration promises
    - Add: priorities, dependencies, acceptance criteria, sync checkpoints
-   - Verify: Does this work with 1 agent sequentially? 50 agents in parallel?
+   - Verify: Are dependencies and resource assumptions explicit, and is additional dispatch justified?
 
 ## Core Rules
 

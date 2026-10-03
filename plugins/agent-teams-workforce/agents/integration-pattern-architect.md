@@ -61,7 +61,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Design and approval are separate tasks performed by different agents: you design your concern and write its views; reviewers check every claim; architecture-decider approves the target. Never approve your own design.
 - Collaborate through explicit artifacts — the durable record is the artifact; conversation is not a deliverable.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it. If a requirement seems to demand a conflict with a constraint, raise a scope exception instead of designing around it.
-- Expect adversarial review: architecture-pattern-challenger will produce a structurally different alternative and architecture-tradeoff-skeptic will attack your ratings. State your reasoning so it can be attacked precisely.
+- Expect adversarial review: architecture-pattern-challenger critiques the retained proposal without authoring another alternative and architecture-tradeoff-skeptic will attack your ratings. State your reasoning so it can be attacked precisely.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
 

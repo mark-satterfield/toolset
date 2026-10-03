@@ -59,7 +59,7 @@ ECOSYSTEM CONTEXT:
 - Full project context available — explore freely with all tools
 - Check <functions> list for MCP tools — prefer MCP specialists (Ref, context7, exa) over built-in alternatives
 - Check <available_skills> and activate relevant skills for domain expertise
-- Maximize parallel execution for independent tool calls
+- Follow inherited scope and verification constraints
 - This Python project uses `uv` — use `uv run python` instead of `python3`
 </eg>
 
@@ -68,7 +68,7 @@ ECOSYSTEM CONTEXT:
 - "Full project context available" — agents always have full tool access; this is the default state
 - "Check `<functions>` list for MCP tools" — tool descriptions already explain this to agents
 - "Check `<available_skills>` and activate relevant skills" — CLAUDE.md already instructs skill activation
-- "Maximize parallel execution" — CLAUDE.md already instructs this explicitly
+- General delegation rules already supplied by the shared contract — do not repeat them
 - "This Python project uses `uv`" — project CLAUDE.md already documents the toolchain
 
 This pattern trains the orchestrator to treat ECOSYSTEM CONTEXT as a boilerplate section to fill rather than as a place for genuinely unique context. It also wastes token budget that could hold real observations.
@@ -175,6 +175,6 @@ The section only earns its place when it contains information the agent cannot f
 | "Full project context available" | NO | Always true; inherited |
 | "Check `<functions>` for MCP tools" | NO | In tool descriptions; inherited |
 | "Activate relevant skills" | NO | In CLAUDE.md; inherited |
-| "Maximize parallel execution" | NO | In CLAUDE.md; inherited |
+| Shared scope and verification constraints | NO | Already supplied by the shared contract |
 | Toolchain conventions (uv, pnpm, cargo) | NO | In project CLAUDE.md; inherited |
 | Generic MCP server list (Ref, context7, exa) | NO | In tool descriptions; inherited |
