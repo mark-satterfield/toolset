@@ -283,3 +283,10 @@ shown the answer is not a checker.
 - **prd-validation-analyst** — Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.
 - **cds-finding-reviewer** — Independently classifies findings from the CDS audit against the configured design system.
 - **cds-ui-implementer** — Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.
+
+## Cumulative regression assurance
+
+| Agent | Category | Purpose |
+| --- | --- | --- |
+| regression-impact-assessor | plan | Maps affected components and current requirements across PRDs to retained tests and executable evidence |
+| regression-coverage-reviewer | test | Independently checks discovery, layer coverage, preservation and source-backed supersession |

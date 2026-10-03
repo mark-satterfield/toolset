@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:cumulative-regression]
 effort: medium
 color: red
 ---
@@ -61,3 +61,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.
+
+## Cumulative regression evidence
+
+When the workflow supplies `regressionPlanPath`, read that artifact and its cited current source requirements before acting. Apply the cumulative-regression skill within your assigned role. Preserve still-valid tests from earlier PRDs, identify missing applicable test layers and report actual test IDs and execution artifacts using the caller's schema. A passing selected suite does not demonstrate complete requirement coverage. Existing valid behavior tests need not fail during Red; only new unimplemented behavior requires intended failure. Do not edit the approved requirement scope or authorize supersession yourself.
