@@ -812,6 +812,10 @@ if (!architecture.ok) {
       : [`The architecture of ${epicBeadId} found business requirements no design can satisfy together, or a contradiction in the architecture: ${architecture.reason}`]
     return await holdForHuman('architecture', architecture, actions, 'the PRD or the architecture says which side holds')
   }
+  // Any other architecture stop that names actions for the owner holds the Epic: a re-dispatch meets the same stop.
+  if (Array.isArray(art.requiredHumanActions) && art.requiredHumanActions.length) {
+    return await holdForHuman('architecture', { ...architecture, headline: art.headline }, art.requiredHumanActions.slice(), 'what the actions above name has been done')
+  }
   return partial('architecture', architecture)
 }
 const archArt = architecture.artifact || {}

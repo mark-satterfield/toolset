@@ -693,6 +693,7 @@ def resume_facts(
             "findings": len(ledger.findings),
             "openFindings": open_findings,
             "unreviewedClaims": unreviewed,
+            "overlapWarnings": rounds["overlapWarnings"],
         },
         "decision": decision,
         "integration": integration,

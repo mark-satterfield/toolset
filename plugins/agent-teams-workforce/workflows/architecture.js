@@ -129,9 +129,18 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
   )
   if (!out) return { error: `the ${label} runner returned no result` }
   if (out.exitCode !== 0 || !out.output || out.output.error) {
-    return { error: (out.output && out.output.error) || `depscore.py exited ${out.exitCode}`, output: out.output || null }
+    const raw = String((out.output && out.output.error) || `depscore.py exited ${out.exitCode}`)
+    const exception = exceptionOf(raw)
+    return { error: exception ? `${exception} (depscore.py exited ${out.exitCode}; full output: ${raw})` : raw, exception, output: out.output || null }
   }
   return out.output
+}
+/** Returns the exception line a Python traceback in `text` ends with (e.g. "ValueError: ..."), or '' when it holds none. */
+function exceptionOf(text) {
+  const s = String(text || '')
+  if (!/Traceback \(most recent call last\)/.test(s)) return ''
+  const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
+  return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
 }
 /** Records files a session wrote without a shell, with the artifact recorder. */
 async function recordFiles(label, phaseName, files) {
@@ -239,8 +248,9 @@ async function readFacts(label, phaseName, proposalTeam = null, roundPlan = null
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
   const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`)
   if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
-    return { error: (out && out.error) || 'depscore.py arch-resume printed no facts' }
+    return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
   }
+  for (const w of listed(out.rounds.overlapWarnings)) log(`Rounds: ${w}`)
   return out
 }
 
@@ -346,7 +356,7 @@ Review is an independent safety net against that same basis, not a source of new
 const COORDINATOR_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['readyForDecision', 'reason', 'proposalTeam', 'dispatches'],
+  required: ['readyForDecision', 'reason', 'proposalTeam', 'dispatches', 'overlaps'],
   properties: {
     // Consumed by arch-resume and runRound: persist and enforce the effort-wide proposal budget.
     proposalTeam: {
@@ -364,14 +374,30 @@ const COORDINATOR_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['agentType', 'role', 'task', 'files', 'answers', 'claimIds', 'claimFiles', 'overlapReason'],
+        required: ['agentType', 'role', 'task', 'files', 'answers', 'claimIds', 'claimFiles'],
         properties: {
           agentType: { type: 'string' },
           role: { type: 'string', enum: Object.keys(ROSTER) },
           task: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
           answers: { type: 'array', items: { type: 'string' } },
-          claimIds: { type: 'array', items: { type: 'string' } }, claimFiles: { type: 'array', items: { type: 'string' } }, overlapReason: { type: 'string' },
+          claimIds: { type: 'array', items: { type: 'string' } }, claimFiles: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    // Consumed by: unjustifiedOverlaps before the plan is saved, and archrounds.overlap_justified on resume.
+    // One entry per overlap: the coordinator decides it once, with one reason.
+    overlaps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['files', 'claimIds', 'agentTypes', 'reason'],
+        properties: {
+          files: { type: 'array', items: { type: 'string' } },
+          claimIds: { type: 'array', items: { type: 'string' } },
+          agentTypes: { type: 'array', items: { type: 'string' } },
+          reason: { type: 'string' },
         },
       },
     },
@@ -575,8 +601,17 @@ if (!treeBefore || treeBefore.error) {
 
 let facts = await readFacts('resume:read-saved', 'Survey')
 if (facts.error) {
-  const why = `the saved work of this step in ${WORK} could not be read: ${facts.error}. The step stops rather than redo finished work; the saved files stay on disk for the next attempt (a file named above that is damaged can be deleted, and only its work is redone).`
-  return { ok: false, stage: 'resume', headline: `Architecture could not read its saved work in ${WORK}`, reason: why, error: why, ...died('Survey') }
+  const why = `depscore.py arch-resume failed: ${facts.error}. The saved work of this step in ${WORK} could not be read; the step stops rather than redo finished work, and the saved files stay on disk for the next attempt (a file named above that is damaged can be deleted, and only its work is redone).`
+  return {
+    ok: false,
+    stage: 'resume',
+    headline: facts.exception ? `Architecture resume failed: ${facts.exception}` : `Architecture could not read its saved work in ${WORK}: ${facts.error}`,
+    reason: why,
+    error: why,
+    // A Python exception is deterministic: every re-dispatch meets it again, so the owner is told.
+    ...(facts.exception ? { deterministicFailure: true, requiredHumanActions: [`depscore.py arch-resume raised ${facts.exception} reading the saved architecture work in ${WORK}; every run of this Epic meets it again. Fix the cause (the script or the saved file it names), then re-run the Epic.`] } : {}),
+    ...died('Survey'),
+  }
 }
 const resumedFacts = facts
 
@@ -808,6 +843,43 @@ function writerWaves(list) {
 }
 
 const cleanFile = (f) => String(f || '').trim().replace(/^\/+/, '')
+const agentName = (x) => String(x || '').trim().replace(AGENT_PREFIX, '')
+/** The plan's overlap entries that state a reason, normalized as they are saved. */
+const planOverlaps = (plan) =>
+  (Array.isArray(plan && plan.overlaps) ? plan.overlaps : [])
+    .filter((o) => o && hasText(o.reason))
+    .map((o) => ({ files: listed(o.files).map(cleanFile), claimIds: listed(o.claimIds), agentTypes: listed(o.agentTypes).map(agentName), reason: o.reason.trim() }))
+/**
+ * Returns, for each claim id or draft file that two or more review dispatches of the plan share,
+ * a refusal when no `overlaps` entry with a reason names it (and, when the entry names agentTypes,
+ * every reviewer sharing it). An empty list means the plan states a reason for every overlap.
+ */
+function unjustifiedOverlaps(plan) {
+  const holders = new Map()
+  for (const d of Array.isArray(plan && plan.dispatches) ? plan.dispatches : []) {
+    const name = agentName(d && d.agentType)
+    if (!REVIEW_ROLES.includes(roleOf(name)) || roleOf(name) !== d.role) continue
+    const items = [...listed(d.claimIds).map((i) => `claim ${i}`), ...listed(d.claimFiles).map(cleanFile).filter(Boolean).map((f) => `draft file ${f}`)]
+    for (const item of items) {
+      const names = holders.get(item) || new Set()
+      names.add(name)
+      holders.set(item, names)
+    }
+  }
+  const entries = planOverlaps(plan)
+  const refusals = []
+  for (const [item, names] of holders) {
+    if (names.size < 2) continue
+    const sharing = [...names]
+    const covered = entries.some((o) =>
+      (!o.agentTypes.length || sharing.every((x) => o.agentTypes.includes(x))) &&
+      (item.startsWith('claim ') ? o.claimIds.includes(item.slice(6)) : o.files.includes(item.slice(11))))
+    if (!covered) refusals.push(`${item} is assigned to ${sharing.join(', ')} and no \`overlaps\` entry names it with a reason`)
+  }
+  return refusals
+}
+const MAX_PLAN_FIXES = 2
+
 /** Validates the coordinator's dispatches and adds those the ledger requires; returns { dispatches, rejected, stuck }. */
 function settleDispatches(plan, n) {
   const out = []
@@ -839,10 +911,9 @@ function settleDispatches(plan, n) {
       same.files = [...new Set([...same.files, ...files])]
       same.answers = [...new Set([...same.answers, ...answers])]
       same.claimIds = [...new Set([...same.claimIds, ...listed(d.claimIds)])]
-      same.claimFiles = [...new Set([...same.claimFiles, ...listed(d.claimFiles)])]
-      same.overlapReason = [same.overlapReason, d.overlapReason].filter(Boolean).join("; ")
+      same.claimFiles = [...new Set([...same.claimFiles, ...listed(d.claimFiles).map(cleanFile)])]
     } else {
-      out.push({ agentType: name, role, task: String(d.task || ''), files, answers, claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile), overlapReason: String(d.overlapReason || '') })
+      out.push({ agentType: name, role, task: String(d.task || ''), files, answers, claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile) })
     }
   }
   const legacyMissing = listed(ledgerFacts().legacyProposersWithoutClaims)
@@ -930,7 +1001,7 @@ async function runRound(n, dispatches) {
   if (reviewers.length) {
     if (ordered.length > reviewers.length) {
       const mid = await readFacts(`round${n}:ledger-writers`, 'Rounds')
-      if (mid.error) return { error: mid.error }
+      if (mid.error) return { error: mid.error, exception: mid.exception }
       facts = mid
       if (mid.rounds.pendingPlan && mid.rounds.pendingPlan.dispatches.some(d => WRITER_ROLES.includes(d.role) && !d.complete)) return { silent: mid.rounds.pendingPlan.dispatches.filter(d => WRITER_ROLES.includes(d.role) && !d.complete).map(d => d.agentType) }
       ordered = mid.rounds.pendingPlan ? mid.rounds.pendingPlan.dispatches : ordered
@@ -940,7 +1011,7 @@ async function runRound(n, dispatches) {
     reviewers.forEach((d, i) => results.set(d.seq, got[i]))
   }
   const after = await readFacts(`round${n}:ledger`, 'Rounds')
-  if (after.error) return { error: after.error }
+  if (after.error) return { error: after.error, exception: after.exception }
   facts = after
   const savedKeys = listed(facts.rounds.saved)
   const unsaved = ordered.filter((d) => results.get(d.seq) && !savedKeys.includes(`r${n}-${d.seq}`))
@@ -1030,8 +1101,7 @@ while (!decision) {
   const pendingPlan = facts.rounds.pendingPlan
   const n = pendingPlan ? pendingPlan.round : lastRound + 1
   if (!pendingGaps.length && n > 1) pendingGaps = await decisionGaps(`rounds:gaps-${n - 1}`)
-  const plan = pendingPlan || await run(
-    `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${roundLimit}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
+  const coordinatorBrief = `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${roundLimit}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
 
 PRD: ${prdRef}
 THE SURVEY: ${SURVEY_MD} and ${SURVEY_JSON}. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
@@ -1064,15 +1134,38 @@ HOW TO ROUTE:
 - Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} only for targeted critique of a concrete unresolved weakness; it does not create a competing design or add a proposer.
 - When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
-- Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Explicit overlap requires overlapReason on every overlapping dispatch. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. Keep each required reviewer's task a bounded domain question even with no claims.
+- Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Assigning the same claimId or claimFile to two or more reviewers is an overlap, and an overlap is one decision you make: state it once in \`overlaps\`, as one entry naming the shared \`files\` and \`claimIds\`, the reviewer \`agentTypes\` that share them, and the one \`reason\`. The reviewers' dispatches carry no reason. The script refuses a plan with an overlap no entry names, and sends it back to you; return \`overlaps: []\` when no two reviewers share anything. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. Keep each required reviewer's task a bounded domain question even with no claims.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
 - For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
 - Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
-- Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`,
-    { label: `round${n}:coordinate`, phase: 'Rounds', agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA }
-  )
+- Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`
+  let plan = pendingPlan
+  // A plan is saved durably and never replaced, so an overlap with no stated reason is refused before it is saved.
+  for (let fix = 0, refusal = ''; !pendingPlan; fix++) {
+    plan = await run(`${coordinatorBrief}${refusal}`, { label: fix ? `round${n}:coordinate-fix${fix}` : `round${n}:coordinate`, phase: 'Rounds', agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA })
+    const overlapRefusals = plan ? unjustifiedOverlaps(plan) : []
+    if (!overlapRefusals.length) break
+    if (fix >= MAX_PLAN_FIXES) {
+      const why = `the architecture-decision-workflow-coordinator's plan for round ${n} assigns the same review work to several reviewers without stating why, after ${MAX_PLAN_FIXES} correction(s): ${overlapRefusals.join('; ')}. The plan was not saved.`
+      log(`Round ${n}: ${why}`)
+      return {
+        ok: false,
+        stage: 'round-plan',
+        deterministicFailure: true,
+        headline: `Architecture stopped: the coordinator's round ${n} plan has reviewer overlaps with no stated reason after ${MAX_PLAN_FIXES} corrections`,
+        reason: why,
+        error: why,
+        requiredHumanActions: [`The architecture-decision-workflow-coordinator returned ${MAX_PLAN_FIXES + 1} plans for round ${n} of ${subject}, each assigning the same claims or draft files to several reviewers with no \`overlaps\` entry stating why: ${overlapRefusals.join('; ')}. No plan was saved. Check the overlap rule the coordinator is given (the coordinator brief in workflows/architecture.js), then re-run the Epic.`],
+        subject,
+        ...surveyPaths,
+      }
+    }
+    log(`Round ${n}: plan refused — ${overlapRefusals.join('; ')}`)
+    retries.push({ step: `round${n}:coordinate`, whatChanged: `the plan was refused for reviewer overlaps with no stated reason: ${overlapRefusals.join('; ')}` })
+    refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${overlapRefusals.join('; ')}. Return the whole plan again. For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.`
+  }
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
   const teamFacts = await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
   if (teamFacts.error || !teamFacts.proposalTeam || !teamFacts.proposalTeam.lead) return { ok: false, stage: 'rounds', reason: teamFacts.error || 'coordinator did not select a proposal lead; saved work retained', subject }
@@ -1090,7 +1183,7 @@ HOW TO ROUTE:
   }
   for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
   if (!pendingPlan) {
-    const orderedPlan = { round: n, proposalTeam: facts.proposalTeam, readyForDecision: plan.readyForDecision, dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
+    const orderedPlan = { round: n, proposalTeam: facts.proposalTeam, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
     const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', null, orderedPlan)
     if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
     facts = savedPlan
@@ -1109,9 +1202,9 @@ HOW TO ROUTE:
   for (const d of settled.dispatches) for (const id of d.answers) asked.set(id, { agentType: d.agentType, round: n, clarified: (d.clarified || []).includes(id) })
   const roundRun = await runRound(n, settled.dispatches)
   if (roundRun.error) {
-    const why = `round ${n} ran, and its saved results in ${ROUNDS_DIR} could not be read: ${roundRun.error}. The step stops; the saved results stay on disk for the next attempt.`
+    const why = `depscore.py arch-resume failed after round ${n}: ${roundRun.error}. The saved results in ${ROUNDS_DIR} could not be read; the step stops, and the saved results stay on disk for the next attempt.`
     log(`Round ${n}: ${why}`)
-    return { ok: false, stage: 'rounds', headline: `Architecture could not read the saved results of round ${n}`, reason: why, error: why, subject, ...surveyPaths }
+    return { ok: false, stage: 'rounds', headline: roundRun.exception ? `Architecture round ${n} failed: ${roundRun.exception}` : `Architecture could not read the saved results of round ${n}: ${roundRun.error}`, reason: why, error: why, subject, ...surveyPaths }
   }
   const silent = roundRun.silent
   silentLast = silent

@@ -13,6 +13,29 @@ def save_ledger(path: Path, payload: dict) -> None:
     temporary.replace(path)
 
 
+def overlap_justified(plan: dict, claim: dict, reviewers: list) -> bool:
+    """Return whether the plan states a reason for several reviewers sharing one claim.
+
+    The coordinator states one reason per overlap in the plan's ``overlaps``. A plan
+    saved before that field existed counts as justified when any overlapping dispatch
+    carries a non-empty ``overlapReason``.
+
+    Returns:
+        True when a plan-level overlap entry or a legacy dispatch reason covers it.
+    """
+    names = {d.get("agentType") for d in reviewers}
+    for entry in plan.get("overlaps") or []:
+        if not isinstance(entry, dict) or not str(entry.get("reason", "")).strip():
+            continue
+        agents = {str(a).strip() for a in entry.get("agentTypes") or [] if a}
+        if agents and not names <= agents:
+            continue
+        files = {str(f).strip().lstrip("/") for f in entry.get("files") or [] if f}
+        if claim["id"] in (entry.get("claimIds") or []) or claim.get("file") in files:
+            return True
+    return any(str(d.get("overlapReason", "")).strip() for d in reviewers)
+
+
 def round_facts(
     work: Path,
     plans: list,
@@ -30,6 +53,7 @@ def round_facts(
             raise ValueError("finish pending round before selecting another")
         plans.append(incoming)
     gaps = []
+    warnings = []
     for plan in plans:
         n = plan.get("round")
         dispatches = plan.get("dispatches")
@@ -79,13 +103,15 @@ def round_facts(
                 for c in d.get("assignedClaims", []):
                     by_claim.setdefault((c["id"], c["revision"]), []).append(d)
             for (cid, revision), reviewers in by_claim.items():
-                if len(reviewers) > 1 and any(
-                    not d.get("overlapReason", "").strip() for d in reviewers
-                ):
-                    raise ValueError(
-                        f"overlapping review of {cid} requires explicit reason"
-                    )
                 claim = next(c for c in ledger.claims if c["id"] == cid)
+                if len(reviewers) > 1 and not overlap_justified(plan, claim, reviewers):
+                    warning = (
+                        f"round {n}: claim {cid} is reviewed by "
+                        f"{', '.join(d['agentType'] for d in reviewers)} "
+                        "with no stated overlap reason"
+                    )
+                    if warning not in warnings:
+                        warnings.append(warning)
                 if not claim["active"] or claim["revision"] != revision:
                     continue
                 for d in reviewers:
@@ -102,4 +128,10 @@ def round_facts(
         [ledger.last if not pending else pending["round"] - 1]
         + [p["round"] for p in plans if p["complete"]]
     )
-    return {"plans": plans, "last": last, "pendingPlan": pending, "reviewGaps": gaps}
+    return {
+        "plans": plans,
+        "last": last,
+        "pendingPlan": pending,
+        "reviewGaps": gaps,
+        "overlapWarnings": warnings,
+    }
