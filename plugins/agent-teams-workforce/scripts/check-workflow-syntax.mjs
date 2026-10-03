@@ -34,6 +34,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { syncSharedBlocks } from './shared-blocks.mjs'
 import { findForbiddenConstructs, findNondeterminism, compileWorkflowBody, neutralizeMetaExport, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -316,8 +317,14 @@ console.log(
         `(the runner refuses either statically, so that a resumed run reads what the first one read)`,
 )
 
+// Every workflow carries each shared block it is listed for, byte for byte as scripts/shared-blocks/
+// holds it (see scripts/shared-blocks.mjs): a copy edited in place is a drift, not a fix.
+const sharedProblems = syncSharedBlocks()
+for (const p of sharedProblems) console.log(`FAIL  ${p}`)
+console.log(sharedProblems.length ? `\n${sharedProblems.length} shared-block problem(s)` : 'every shared block copy matches its canonical text')
+
 process.exit(
-  failures.length || refErrors.length || escapees.length || strictness.length || nondeterminism.length
+  failures.length || refErrors.length || escapees.length || strictness.length || nondeterminism.length || sharedProblems.length
     ? 1
     : 0,
 )

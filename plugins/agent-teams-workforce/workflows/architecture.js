@@ -98,236 +98,355 @@ const beadPrefix = epicId.includes('-') ? `${epicId.split('-')[0]}-` : ''
 const FORBID = [epicId, beadPrefix, prd.id, prdBase].filter(hasText)
 
 
-/** Returns the save-and-record instruction for files a session writes under the architecture working directory. */
-function persistBrief(files, what) {
-  const inputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter(hasText)
-  const record = (file) => `python3 ${shq(ART.script)} record ${shq(file)} --epic ${shq(ART.epicId)} --phase ${shq(ART.phase)}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
-  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. No other session writes it for you.
-1. Write ${what} with the Write tool, replacing the whole file if it exists (Read it first if the Write tool asks you to):
-${files.map((f) => `   - ${f}`).join('\n')}
-2. Then run, for each file, exactly this command:
-${files.map((f) => `   ${record(f)}`).join('\n')}
-If a step fails, say so in your result and still return your result. Never improvise another way to write, move or record a file.`
-}
-
-const RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
-}
-/** A depscore.py run: the relay block, when printed, has its shape validated by the runtime; relayProblem checks its values. */
-const RELAY_RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: {
-    exitCode: { type: 'integer' },
-    output: {
-      type: 'object',
-      properties: {
-        relay: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['file', 'sha256', 'bytes', 'checksum'],
-          properties: { file: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, checksum: { type: 'string' } },
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
+//
+// A workflow script cannot run a command or read a file. A command reaches the shell only as
+// text a runner session types, and its result reaches the script only as that session's copy.
+// Neither copy is trusted:
+// - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
+//   list; the program refuses (exit 3, nothing run) a command line typed differently;
+// - every result is printed as a sealed envelope, the facts plus relay: { file, sha256, bytes,
+//   exit, checksum }, where checksum is the SHA-256 of the canonical JSON of { exit, view }.
+//   The script recomputes it over the copy it receives and accepts only an exact copy. A
+//   result saved in a relay file is read again (re-running nothing) when the copy is altered.
+// depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
+// other program, and checks or writes a saved JSON file against the hash of the value this
+// script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
+// one step that runs before the plugin root is known. canonicalJson spells the same bytes as
+// scripts/portfolio/relay.py canonical().
+const relayKit = (() => {
+  const SHORT = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
+  /** The canonical JSON of a value: sorted keys, no whitespace, ASCII only. */
+  function canonicalJson(v) {
+    if (v === null) return 'null'
+    if (v === true) return 'true'
+    if (v === false) return 'false'
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
+      return String(v)
+    }
+    if (typeof v === 'string') {
+      let out = '"'
+      for (let i = 0; i < v.length; i++) {
+        const unit = v.charCodeAt(i)
+        const esc = unit < 0x80 ? SHORT[v[i]] : undefined
+        if (esc) out += esc
+        else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
+        else out += `\\u${unit.toString(16).padStart(4, '0')}`
+      }
+      return `${out}"`
+    }
+    if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
+    if (typeof v === 'object') return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
+    throw new Error(`a ${typeof v} has no JSON spelling`)
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]
+  /** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
+  function sha256Ascii(text) {
+    const bytes = []
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i)
+      if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
+      bytes.push(c)
+    }
+    const bits = bytes.length * 8
+    bytes.push(0x80)
+    while (bytes.length % 64 !== 56) bytes.push(0)
+    for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+    const W = new Array(64)
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+    for (let off = 0; off < bytes.length; off += 64) {
+      for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
+      for (let t = 16; t < 64; t++) {
+        const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
+        const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
+        W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+      }
+      let [a, b, c, d, e, f, g, h] = H
+      for (let t = 0; t < 64; t++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+        h = g
+        g = f
+        f = e
+        e = (d + t1) >>> 0
+        d = c
+        c = b
+        b = a
+        a = (t1 + t2) >>> 0
+      }
+      ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
+    }
+    return H.map((x) => x.toString(16).padStart(8, '0')).join('')
+  }
+  /** The SHA-256 of a value's canonical JSON. */
+  const sha256Json = (v) => sha256Ascii(canonicalJson(v))
+  /** One shell word, single-quoted. */
+  const quote = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+  /**
+   * The argument list a POSIX shell makes of a command line built from bare words and single
+   * quoting. A line using any other shell feature (double quotes, $, backticks, ;, |, &, <, >, a
+   * glob) is refused: its argument list is not knowable here, so it cannot be checked.
+   */
+  function shellWords(line) {
+    const words = []
+    let word = null
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === "'") {
+        const close = line.indexOf("'", i + 1)
+        if (close < 0) throw new Error('shellWords: unterminated quote')
+        word = (word || '') + line.slice(i + 1, close)
+        i = close
+      } else if (ch === '\\') {
+        if (i + 1 >= line.length) throw new Error('shellWords: trailing backslash')
+        word = (word || '') + line[i + 1]
+        i += 1
+      } else if (/\s/.test(ch)) {
+        if (word !== null) words.push(word)
+        word = null
+      } else if (/["$`;|&<>*?[\]{}()~#!]/.test(ch)) {
+        throw new Error(`shellWords: ${JSON.stringify(ch)} is a shell feature the checksum cannot cover; quote it`)
+      } else {
+        word = (word || '') + ch
+      }
+    }
+    if (word !== null) words.push(word)
+    return words
+  }
+  /** A runner's return: the printed object, whose relay block's shape the runtime validates. */
+  const SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['exitCode', 'output'],
+    properties: {
+      exitCode: { type: 'integer' },
+      output: {
+        type: 'object',
+        properties: {
+          relay: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['file', 'sha256', 'bytes', 'exit', 'checksum'],
+            properties: {
+              file: { type: ['string', 'null'] },
+              sha256: { type: ['string', 'null'] },
+              bytes: { type: ['integer', 'null'] },
+              exit: { type: 'integer' },
+              checksum: { type: 'string' },
+            },
+          },
         },
       },
     },
-  },
-}
-
-// A workflow script cannot run a command or read a file: a depscore.py command reaches the shell only
-// as text a runner session types, and its result reaches the script only as that session's copy. Neither
-// copy is trusted. The command carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
-// list, and depscore.py refuses (exit 3, nothing run) a command line typed differently. The result is
-// written in full to a relay file, and stdout carries only the few facts the script branches on with
-// the SHA-256 of their canonical JSON; the script recomputes it over the copy it receives and accepts
-// only an exact copy, reading the saved result again (relay-read, which re-runs nothing) on a mismatch.
-// See scripts/portfolio/relay.py; canonicalJson and sha256Ascii below spell the same bytes.
-const SHORT_ESCAPES = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
-/** The canonical JSON of a value, as relay.py's canonical() spells it: sorted keys, no whitespace, ASCII only. */
-function canonicalJson(v) {
-  if (v === null) return 'null'
-  if (v === true) return 'true'
-  if (v === false) return 'false'
-  if (typeof v === 'number') {
-    if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
-    return String(v)
   }
-  if (typeof v === 'string') {
-    let out = '"'
-    for (let i = 0; i < v.length; i++) {
-      const unit = v.charCodeAt(i)
-      const esc = unit < 0x80 ? SHORT_ESCAPES[v[i]] : undefined
-      if (esc) out += esc
-      else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
-      else out += `\\u${unit.toString(16).padStart(4, '0')}`
+  const HEX = /^[0-9a-f]{64}$/
+  /** Why a runner's copy is not the exact envelope the program printed (for relay file `file`), or ''. */
+  function problem(output, file) {
+    const r = output && output.relay
+    if (!r || typeof r !== 'object') return 'the result came back without its relay block'
+    if (!HEX.test(String(r.checksum)) || !Number.isInteger(r.exit)) return 'the relay block is malformed'
+    if (r.file !== file && !(r.file === null && r.exit === 3)) return `the relay block names ${JSON.stringify(r.file)}, not ${JSON.stringify(file)}`
+    const { relay: _relay, ...view } = output
+    let got = ''
+    try {
+      got = sha256Json({ exit: r.exit, view })
+    } catch (err) {
+      return `the copy cannot be hashed: ${String((err && err.message) || err)}`
     }
-    return `${out}"`
+    return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... the program printed`
   }
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
-  if (typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
-  throw new Error(`a ${typeof v} has no JSON spelling`)
-}
-const SHA256_K = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-]
-/** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
-function sha256Ascii(text) {
-  const bytes = []
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
-    bytes.push(c)
-  }
-  const bits = bytes.length * 8
-  bytes.push(0x80)
-  while (bytes.length % 64 !== 56) bytes.push(0)
-  for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
-  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
-  const W = new Array(64)
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n))
-  for (let off = 0; off < bytes.length; off += 64) {
-    for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
-    for (let t = 16; t < 64; t++) {
-      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
-      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
-      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
-    }
-    let [a, b, c, d, e, f, g, h] = H
-    for (let t = 0; t < 64; t++) {
-      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[t] + W[t]) >>> 0
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
-      h = g
-      g = f
-      f = e
-      e = (d + t1) >>> 0
-      d = c
-      c = b
-      b = a
-      a = (t1 + t2) >>> 0
-    }
-    ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
-  }
-  return H.map((x) => x.toString(16).padStart(8, '0')).join('')
-}
-/** The argument list a POSIX shell makes of a command line built from bare words and shq() quoting. */
-function shellWords(line) {
-  const words = []
-  let word = null
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === "'") {
-      const close = line.indexOf("'", i + 1)
-      if (close < 0) throw new Error('shellWords: unterminated quote')
-      word = (word || '') + line.slice(i + 1, close)
-      i = close
-    } else if (ch === '\\') {
-      word = (word || '') + line[i + 1]
-      i += 1
-    } else if (/\s/.test(ch)) {
-      if (word !== null) words.push(word)
-      word = null
-    } else {
-      word = (word || '') + ch
-    }
-  }
-  if (word !== null) words.push(word)
-  return words
-}
-/** The depscore.py command line for `tail` (its arguments), led by the checksum of their argument list. */
-const checkedCommand = (tail) => `python3 ${shq(DS.script)} --argv-sha256 ${sha256Ascii(canonicalJson(shellWords(tail)))} ${tail}`
-/** Why a runner's copy of a relayed result is not the exact copy of what depscore.py printed, or ''. */
-function relayProblem(output, file) {
-  const r = output && output.relay
-  if (!r || typeof r !== 'object') return 'the result came back without its relay block'
-  if (r.file !== file) return `the relay block names ${JSON.stringify(r.file)}, not ${file}`
-  if (!/^[0-9a-f]{64}$/.test(String(r.checksum)) || !/^[0-9a-f]{64}$/.test(String(r.sha256)) || !Number.isInteger(r.bytes)) return 'the relay block is malformed'
-  const { relay: _relay, ...shown } = output
-  let got = ''
-  try {
-    got = sha256Ascii(canonicalJson(shown))
-  } catch (err) {
-    return `the copy cannot be hashed: ${String((err && err.message) || err)}`
-  }
-  return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... depscore.py printed`
-}
-const RELAY_DIR = `${WORK}/relay`
-const RELAY_ATTEMPTS = 3
-let relaySeq = 0
-/** One runner session: runs `command` once and returns { exitCode, output } as printed, or null. */
-function runCommand(label, phaseName, command) {
-  return run(
-    `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the script checks it against the checksum it carries and refuses any difference.
+  const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
 
 ${command}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every hexadecimal string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The script checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: phaseName, model: 'haiku', effort: 'low', schema: RELAY_RUN_SCHEMA }
-  )
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The workflow checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not one JSON object, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`
+  /**
+   * Runs `command` in a runner session until an exact copy of its envelope comes back, at most
+   * `attempts` times. An altered copy is read again with `reread` when there is one (re-running
+   * nothing), else the command is run again (only read-only and idempotent commands have no
+   * reread). A command line typed wrong (exit 3) and a relay file the command never wrote (exit 4)
+   * are run again. Returns { ok: true, exit, view } or { ok: false, error, noResult? }.
+   */
+  async function exec(dispatch, { label, phase, command, reread = null, file = null, attempts = 3 }) {
+    let line = command
+    let why = ''
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const out = await dispatch(prompt(line), { label: attempt === 1 ? label : `${label}:again-${attempt - 1}`, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+      if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
+      why = problem(out.output, file)
+      if (why) {
+        log(`${label}: ${why}; ${reread ? 'reading the saved result again' : 'running it again'}`)
+        if (reread) line = reread
+        continue
+      }
+      const exit = out.output.relay.exit
+      const { relay: _relay, ...view } = out.output
+      if (exit === 3 || exit === 4) {
+        why = String(view.error || (exit === 3 ? 'the command line was typed differently' : 'no saved result'))
+        log(`${label}: ${why}; running the command again`)
+        line = command
+        continue
+      }
+      return { ok: true, exit, view }
+    }
+    return { ok: false, error: `${label} did not reach the workflow as printed in ${attempts} attempt(s): ${why}${file ? ` (its full result is in ${file})` : ''}; nothing was taken from an altered copy` }
+  }
+  /** The exception line a Python traceback in `text` ends with, or ''. */
+  function exceptionOf(text) {
+    const s = String(text || '')
+    if (!/Traceback \(most recent call last\)/.test(s)) return ''
+    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
+    return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
+  }
+  /** The checked command line running python3 `script` with the argument list `rest`. */
+  const pythonLine = (script, rest) => ['python3', script, '--argv-sha256', sha256Json(rest), ...rest].map(quote).join(' ')
+  /**
+   * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
+   * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
+   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   */
+  async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
+    let rest
+    try {
+      rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
+    } catch (err) {
+      return { error: `${label}: ${String((err && err.message) || err)}` }
+    }
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), reread: pythonLine(script, ['relay-read', '--relay', file]), file })
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0 || r.view.error) {
+      const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
+      const exception = exceptionOf(raw)
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+    }
+    return { ...r.view, relayFile: file }
+  }
+  /**
+   * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
+   * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
+   * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
+   * or { ok: false, error }.
+   */
+  async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
+    const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), reread: pythonLine(runner, ['read', '--relay', file]), file })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    return { ok: true, ...r.view, relayFile: file }
+  }
+  /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
+  async function checkFile(dispatch, { label, phase, runner, file, value }) {
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, ['check-file', '--file', file, '--sha256', sha256Json(value)]) })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    return { ok: true, exists: r.view.exists === true, parsed: r.view.parsed === true, match: r.view.match === true }
+  }
+  /**
+   * Makes the JSON file `file` hold exactly `value`, the schema-validated result a session
+   * returned: checks the file, and when it differs (or is missing) writes `value` through
+   * relayrun.py write-file, which refuses a copy that does not hash as built, then checks again.
+   * Returns { ok, rewritten, error? }.
+   */
+  async function ensureJson(dispatch, { label, phase, runner, file, value }) {
+    const first = await checkFile(dispatch, { label: `${label}:check`, phase, runner, file, value })
+    if (!first.ok) return { ok: false, rewritten: false, error: first.error }
+    if (first.match) return { ok: true, rewritten: false }
+    log(`${label}: ${file} ${first.exists ? 'differs from the result the session returned' : 'was not saved'}; writing the returned result`)
+    const w = await exec(dispatch, { label: `${label}:write`, phase, command: pythonLine(runner, ['write-file', '--file', file, '--sha256', sha256Json(value), '--json', canonicalJson(value)]) })
+    if (!w.ok || w.exit !== 0 || w.view.written !== true) return { ok: false, rewritten: false, error: (w.ok ? String(w.view.error || 'not written') : w.error) }
+    const again = await checkFile(dispatch, { label: `${label}:recheck`, phase, runner, file, value })
+    return again.ok && again.match ? { ok: true, rewritten: true } : { ok: false, rewritten: true, error: again.error || `${file} still differs after it was written` }
+  }
+  const BOOT = [
+    'import hashlib, json, sys',
+    'a = sys.orig_argv',
+    'i = a.index("-c")',
+    'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
+    'c = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=True)',
+    'h = lambda v: hashlib.sha256(c(v).encode("ascii")).hexdigest()',
+    'def emit(view, ex=0):',
+    '    print(c(dict(view, relay={"file": None, "sha256": None, "bytes": None, "exit": ex, "checksum": h({"exit": ex, "view": view})})))',
+    '    sys.exit(ex)',
+    'if h([boot, code] + args) != want:',
+    '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
+    'exec(code, {"ARGS": args, "emit": emit, "__name__": "__relay__"})',
+  ].join('\n')
+  /**
+   * Runs the Python `code` (which reads its arguments from ARGS and calls emit(obj) once with a
+   * JSON object holding no floats) under a bootstrap that checks the command line, payload included,
+   * and seals what it emits. Read-only payloads only: an altered copy runs it again. Returns
+   * { ok: true, view } or { ok: false, error }.
+   */
+  async function inline(dispatch, { label, phase, code, args = [] }) {
+    const words = args.map(String)
+    const command = ['python3', '-c', BOOT, sha256Json([BOOT, code, ...words]), code, ...words].map(quote).join(' ')
+    const r = await exec(dispatch, { label, phase, command })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
+    return { ok: true, view: r.view }
+  }
+  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, SCHEMA }
+})()
+// ===== SHARED BLOCK relay — END =====
+
+/** Where the full results relayed to this script are saved, one numbered file per command. */
+const RELAY_DIR = `${WORK}/relay`
+/** scripts/portfolio/relayrun.py, beside depscore.py: runs any other program, and checks or writes saved JSON, through the checked relay. */
+const RELAY_RUNNER = DS.script.replace(/[^/]+$/, 'relayrun.py')
+let relaySeq = 0
+/** The next relay file, named for its label. */
+function nextRelayFile(label) {
+  relaySeq += 1
+  return `${RELAY_DIR}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
+}
+/** Runs one depscore.py command through the checked relay; returns the facts it printed with `relayFile`, or { error, exception? }. */
+function depscore(label, phaseName, commandArgs) {
+  return relayKit.depscore(run, { label, phase: phaseName, script: DS.script, repo: DS.repo, tail: commandArgs, file: nextRelayFile(label) })
+}
+/** The artifact recorder's command for one saved file. */
+function recordArgv(file) {
+  const inputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter(hasText)
+  return ['python3', ART.script, 'record', file, '--epic', ART.epicId, '--phase', ART.phase, ...(inputs.length ? ['--inputs', ...inputs] : [])]
+}
+/** Records saved files with the artifact recorder, one checked command each; returns the files it did not record. */
+async function recordFiles(label, phaseName, files) {
+  const failed = []
+  for (const f of files) {
+    const name = String(f).split('/').pop()
+    const r = await relayKit.run(run, { label: `${label}:${name}`, phase: phaseName, runner: RELAY_RUNNER, argv: recordArgv(f), file: nextRelayFile(`${label}-${name}`) })
+    if (!r.ok || r.exitCode !== 0) failed.push(f)
+  }
+  if (failed.length) log(`${label}: the recorder did not record ${failed.join(', ')}`)
+  return failed
 }
 /**
- * Runs one depscore.py command and returns the facts it printed, checked to be an exact copy, with
- * `relayFile` (the saved full result, for the sessions that need its details); or { error }. A command
- * line typed wrong (exit 3, nothing ran) is run again; an altered copy of the result is read again from
- * the relay file, never by running the command twice.
+ * Saves a session's structured result: makes `file` hold exactly `value` (the result as the runtime
+ * validated it against the session's schema; a saved copy that differs or is missing is rewritten
+ * through relayrun.py, which refuses a copy that does not hash as built), then records it. Returns
+ * whether the file now holds the result and was recorded.
  */
-async function depscore(label, phaseName, commandArgs) {
-  relaySeq += 1
-  const relayFile = `${RELAY_DIR}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
-  const first = checkedCommand(`-C ${shq(DS.repo)} --relay ${shq(relayFile)} ${commandArgs}`)
-  const again = checkedCommand(`relay-read --relay ${shq(relayFile)}`)
-  let ran = false
-  let problem = ''
-  for (let attempt = 1; attempt <= RELAY_ATTEMPTS; attempt++) {
-    const out = await runCommand(attempt === 1 ? label : `${label}:${ran ? 'reread' : 'rerun'}-${attempt - 1}`, phaseName, ran ? again : first)
-    if (!out) return { error: `the ${label} runner returned no result` }
-    if (out.exitCode === 3) {
-      problem = `the runner typed the command differently from the one built: ${String((out.output && out.output.error) || 'exit 3')}`
-      log(`${label}: ${problem}; running it again`)
-      continue
-    }
-    if (out.exitCode !== 0 || !out.output || out.output.error) {
-      const raw = String((out.output && out.output.error) || `depscore.py exited ${out.exitCode}`)
-      const exception = exceptionOf(raw)
-      return { error: exception ? `${exception} (depscore.py exited ${out.exitCode}; full output: ${raw})` : raw, exception, output: out.output || null }
-    }
-    ran = true
-    problem = relayProblem(out.output, relayFile)
-    if (!problem) {
-      const { relay: _relay, ...shown } = out.output
-      return { ...shown, relayFile }
-    }
-    log(`${label}: ${problem}; reading the saved result again from ${relayFile}`)
+async function saveResult(label, phaseName, file, value) {
+  const saved = await relayKit.ensureJson(run, { label: `${label}:save`, phase: phaseName, runner: RELAY_RUNNER, file, value })
+  if (!saved.ok) {
+    log(`${label}: ${file} could not be made to hold the returned result: ${saved.error}`)
+    return false
   }
-  return { error: `depscore.py's result for ${label} did not reach the workflow as printed in ${RELAY_ATTEMPTS} attempt(s): ${problem}. Its full result is in ${relayFile}; nothing was taken from an altered copy.` }
+  return !(await recordFiles(`${label}:record`, phaseName, [file])).length
 }
-/** Returns the exception line a Python traceback in `text` ends with (e.g. "ValueError: ..."), or '' when it holds none. */
-function exceptionOf(text) {
-  const s = String(text || '')
-  if (!/Traceback \(most recent call last\)/.test(s)) return ''
-  const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
-  return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
+/** Returns the save instruction for files a session writes under the architecture working directory; the script checks and records them. */
+function persistBrief(files, what) {
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. No other session writes it for you.
+Write ${what} with the Write tool, replacing the whole file if it exists (Read it first if the Write tool asks you to):
+${files.map((f) => `   - ${f}`).join('\n')}
+The workflow checks each saved JSON file against the result you return and records every file; run no record command. Never improvise another way to write or move a file.`
 }
-/** Records files a session wrote without a shell, with the artifact recorder. */
-async function recordFiles(label, phaseName, files) {
-  const inputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter(hasText)
-  const commands = files.map((f) => `python3 ${shq(ART.script)} record ${shq(f)} --epic ${shq(ART.epicId)} --phase ${shq(ART.phase)}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`)
-  const out = await run(
-    `Run exactly these shell commands, one at a time, in order, and change nothing else:
-
-${commands.join('\n')}
-
-Return the exit code of the last command that ran as \`exitCode\` and, as \`output\`, an object { "failed": [<each command that exited non-zero, with its stderr>] }. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: phaseName, model: 'haiku', effort: 'low', schema: RUN_SCHEMA }
-  )
-  if (!out || out.exitCode !== 0) log(`${label}: the recorder did not record ${files.join(', ')}`)
-}
-
 
 const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any product repository.
 - \`arc42/\` is the effective version: the approved architecture. \`arc42/02-architecture-constraints/README.md\` holds the owner's constraints; read it in full. \`arc42/04-solution-strategy/README.md\` holds the enterprise-level strategy; read it. Every other section is the design so far, as views.
@@ -788,22 +907,21 @@ async function constraintsGuard(before, label, phaseName) {
 /**
  * Fingerprints every file of arc42/, target/ and built/ with depscore.py arch-snapshot. The per-file
  * hashes stay on disk: `save` writes them to that file, and each file in `against` (a fingerprint
- * saved earlier) yields the files created, changed and deleted since it, in `diffs`, in that order.
- * Returns the result or { error }.
+ * saved earlier) yields the NUMBER of files created, changed and deleted since it, in `diffs`, in
+ * that order; their names stay in the relay file (`relayFile`, under result.diffs). Returns the
+ * result or { error }.
  */
 async function treeSnapshot(label, phaseName, { save, against = [] } = {}) {
-  const out = await depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)}${save ? ` --save ${shq(save)}` : ''}${against.map((f) => ` --against ${shq(f)}`).join('')}`)
+  const out = await depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)} --counts${save ? ` --save ${shq(save)}` : ''}${against.map((f) => ` --against ${shq(f)}`).join('')}`)
   if (!out || out.error) return out || { error: 'no result' }
   if (against.length && (!Array.isArray(out.diffs) || out.diffs.length !== against.length)) return { error: 'depscore.py arch-snapshot printed no difference for a saved fingerprint' }
   return out
 }
-/** Returns diff `i` of a snapshot as absolute paths: { created, changed, deleted }. */
-function treeDiff(snap, i) {
+/** The number of files diff `i` of a snapshot created, changed or deleted. */
+function diffCount(snap, i) {
   const d = (snap && Array.isArray(snap.diffs) && snap.diffs[i]) || {}
-  const abs = (rel) => `${archPath}/${rel}`
-  return { created: listed(d.created).map(abs), changed: listed(d.changed).map(abs), deleted: listed(d.deleted).map(abs) }
+  return (Number(d.created) || 0) + (Number(d.changed) || 0) + (Number(d.deleted) || 0)
 }
-const diffFiles = (d) => [...d.created, ...d.changed, ...d.deleted]
 
 const before = await constraintsSnapshot('constraints:before', 'Survey', true)
 if (!before || before.error || !hasText(before.kept)) {
@@ -875,6 +993,11 @@ Write survey.md as the readable survey and survey.json as your structured result
     { label: 'survey:reality', phase: 'Survey', agentType: 'prd-reality-reconciler', effort: 'medium', schema: SURVEY_SCHEMA }
   )
   if (!surveyed) return { ok: false, stage: 'survey', reason: 'the prd-reality-reconciler returned no survey', ...died('Survey') }
+  if (!(await saveResult('survey:reality', 'Survey', SURVEY_JSON, surveyed))) {
+    const why = `the survey the prd-reality-reconciler returned could not be saved to ${SURVEY_JSON}`
+    return { ok: false, stage: 'survey', reason: why, error: why, ...died('Survey') }
+  }
+  await recordFiles('survey:record', 'Survey', [SURVEY_MD])
   survey = { subject: surveyed.subject, capabilities: Array.isArray(surveyed.capabilities) ? surveyed.capabilities.length : 0 }
 }
 facts = await readFacts('survey:coverage-facts', 'Survey')
@@ -1207,14 +1330,18 @@ async function runRound(n, dispatches) {
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
   const held = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1 }))
   let ordered = held.map((d) => ({ ...d, file: resultFile(n, d) }))
-  const go = (d) => () =>
-    run(dispatchPrompt(n, d, d.file), {
-      label: `round${n}:${d.role}:${d.agentType}`,
+  // A dispatch's result counts once the script has made its result file hold exactly what it returned.
+  const go = (d) => async () => {
+    const label = `round${n}:${d.role}:${d.agentType}`
+    const got = await run(dispatchPrompt(n, d, d.file), {
+      label,
       phase: 'Rounds',
       agentType: dispatchName(d.agentType),
       effort: d.role === 'proposer' ? 'high' : 'medium',
       schema: WRITER_ROLES.includes(d.role) ? WRITER_SCHEMA : REVIEW_SCHEMA,
     })
+    return got && (await saveResult(label, 'Rounds', d.file, got)) ? got : null
+  }
   const results = new Map()
   for (const wave of writerWaves(ordered.filter((d) => WRITER_ROLES.includes(d.role) && !d.complete))) {
     const got = await parallel(wave.items.map(go))
@@ -1279,7 +1406,9 @@ Set \`round\` to ${n}.
 Write ${DECISION_MD} (your decision as one readable Markdown document) and ${DECISION_JSON} (your complete structured result, exactly as you return it, as ONE JSON object) with the Write tool, replacing each if it exists (Read it first if the Write tool asks). Write no other file.`,
     { label: `decide:round${n}`, phase: 'Decide', agentType: 'agent-teams-workforce:architecture-decider', effort: 'high', schema: DECISION_SCHEMA }
   )
-  if (dec) await recordFiles('decide:record', 'Decide', [DECISION_MD, DECISION_JSON])
+  if (!dec) return dec
+  if (!(await saveResult(`decide:round${n}`, 'Decide', DECISION_JSON, dec))) return null
+  await recordFiles('decide:record', 'Decide', [DECISION_MD])
   return dec
 }
 
@@ -1461,11 +1590,11 @@ if (!treeRounds || treeRounds.error) {
   const why = `the architecture could not be fingerprinted after the rounds: ${(treeRounds && treeRounds.error) || 'no result'}`
   return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...died('Rounds') }
 }
-const roundWrites = diffFiles(treeDiff(treeRounds, 0))
-if (roundWrites.length) {
-  const why = `sessions wrote in the architecture at ${archPath} before the target was approved; the survey and the rounds write only under ${WORK}: ${roundWrites.join(', ')}`
+const roundWrites = diffCount(treeRounds, 0)
+if (roundWrites) {
+  const why = `sessions wrote ${roundWrites} file(s) in the architecture at ${archPath} before the target was approved (listed under result.diffs in ${treeRounds.relayFile}); the survey and the rounds write only under ${WORK}`
   log(`Rounds: ${why}`)
-  return { ok: false, stage: 'architecture-written', deterministicFailure: true, reason: why, error: why, files: roundWrites, subject }
+  return { ok: false, stage: 'architecture-written', deterministicFailure: true, reason: why, error: why, filesListedIn: treeRounds.relayFile, subject }
 }
 
 // ---------------------------------------------------------------- Target
@@ -1489,18 +1618,11 @@ Read approved coverage rows/checks in ${LEDGER_JSON} and approval ${DECISION_JSO
 
 Report every file you changed, created or deleted as an absolute path under ${ARC42}, every view the catalog listed for a changed element and what you did to it, and every contradiction with another effective view or open target.`
 const updateBrief = persistBrief([UPDATE_JSON], 'your complete structured result, exactly as you return it, as ONE JSON object')
-/** The saved integration report's file lists (the report itself stays in UPDATE_JSON), or null. */
+/** The integration's file lists, written by depscore.py arch-integration-files; the script holds only their counts. */
+const FILES_JSON = `${WORK}/integration-files.json`
+/** Facts the saved integration left: its report's counts (the report itself stays in UPDATE_JSON), its fingerprint, its last review. */
 const savedFacts = resumedFacts.integration || {}
-const savedUpdate = savedFacts.update && typeof savedFacts.update === 'object'
-  ? {
-      changedFiles: listed(savedFacts.update.changedFiles),
-      createdFiles: listed(savedFacts.update.createdFiles),
-      deletedFiles: listed(savedFacts.update.deletedFiles),
-      constraintIssues: [],
-      contradictions: [],
-      openItemsSaved: (Number(savedFacts.update.constraintIssues) || 0) + (Number(savedFacts.update.contradictions) || 0),
-    }
-  : null
+const savedUpdate = savedFacts.update && typeof savedFacts.update === 'object' ? savedFacts.update : null
 const INTEGRATE_BEFORE = `${WORK}/integrate-before.json`
 const savedTree = savedFacts.beforeSaved === true
 const integrateBefore = savedTree ? { saved: INTEGRATE_BEFORE } : await treeSnapshot('tree:before-integrate', 'Integrate', { save: INTEGRATE_BEFORE })
@@ -1509,64 +1631,69 @@ if (!integrateBefore || integrateBefore.error) {
   return { ok: false, stage: 'integrate', reason: why, error: why, decision, subject, targetDir, deltaDir, ...died('Integrate') }
 }
 if (savedUpdate && !savedTree) log('Integrate: no fingerprint was saved before the earlier integration pass; its files are taken from its report and this pass is measured')
-/** The last saved review's facts: { n, path, conforms, reviewedFiles, findings: count }. */
+/** The last saved review's facts: { n, path, conforms, coverageRevision, findings: count }. */
 const lastSavedReview = savedFacts.lastReview && typeof savedFacts.lastReview === 'object' ? savedFacts.lastReview : null
 
 let integrationCoverageRevision = savedFacts.coverageRevision || ''
 let integrationCoverageRows = coverageRowsOf(facts)
+/** The integration as the script tracks it: counts from arch-integration-files; the lists are in FILES_JSON, the report in UPDATE_JSON. */
 let update = null
 let reviewPass = lastSavedReview ? Number(lastSavedReview.n) || 0 : 0
 const reusedSaved = !!(savedUpdate && lastSavedReview && lastSavedReview.conforms === true && lastSavedReview.coverageRevision === savedFacts.coverageRevision)
 if (reusedSaved) {
-  update = savedUpdate
   log('Integrate: reused the saved integration and its conforming review')
 } else {
-  update = await run(
+  const report = await run(
     savedUpdate
       ? `You are the architecture-maintainer, RESUMING an integration a previous session began and did not finish. Its report is ${UPDATE_JSON}; its edits are in the working tree (\`git status --short\` in the repository holding ${archPath}). Do not start over: finish every view the previous pass left inconsistent with the target or with the other views of the same element, then return the complete report for both passes.\n\n${INTEGRATE_TASK}${updateBrief}`
       : `You are the architecture-maintainer.\n\n${INTEGRATE_TASK}${updateBrief}`,
     { label: 'integrate:maintain', phase: 'Integrate', agentType: 'architecture-maintainer', effort: 'medium', schema: MAINTAIN_SCHEMA }
   )
-  if (!update) return { ok: false, stage: 'integrate', reason: 'the architecture-maintainer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir }
+  if (!report) return { ok: false, stage: 'integrate', reason: 'the architecture-maintainer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir }
+  if (!(await saveResult('integrate:maintain', 'Integrate', UPDATE_JSON, report))) {
+    const why = `the integration report the architecture-maintainer returned could not be saved to ${UPDATE_JSON}`
+    return { ok: false, stage: 'integrate', reason: why, error: why, decision, subject, targetDir, deltaDir }
+  }
 }
 
-const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
-const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
+/** What the integration report returns: counts and where the lists are. */
+const updateFacts = (f) => ({
+  reportPath: UPDATE_JSON,
+  filesPath: FILES_JSON,
+  touched: Number(f.touched) || 0,
+  deleted: Number(f.deleted) || 0,
+  unreported: Number(f.unreported) || 0,
+  constraintIssues: Number(f.constraintIssues) || 0,
+  contradictions: Number(f.contradictions) || 0,
+})
 /**
- * Adds to a report every file the integration wrote since INTEGRATE_BEFORE, measured from the tree,
- * so an unreported write is reviewed too, and saves the tree to TREE_LAST; with `sinceLast` it also
- * names the files changed since the previous measurement. Returns { update, changedSinceLast } or { failure }.
+ * Measures what the integration wrote since INTEGRATE_BEFORE with depscore.py arch-integration-files,
+ * which unions it with the saved report, writes the lists to FILES_JSON and saves the tree to
+ * TREE_LAST; with `sinceLast` it also counts the files changed since the previous measurement.
+ * Returns { update, changedSinceLast, relayFile } or { failure }.
  */
-async function measured(u, label, sinceLast) {
-  const now = await treeSnapshot(label, 'Integrate', { save: TREE_LAST, against: sinceLast ? [INTEGRATE_BEFORE, TREE_LAST] : [INTEGRATE_BEFORE] })
+async function measured(label, sinceLast, accumulate) {
+  const now = await depscore(label, 'Integrate', `arch-integration-files --arch-root ${shq(archPath)} --before ${shq(INTEGRATE_BEFORE)} --report ${shq(UPDATE_JSON)} --files-out ${shq(FILES_JSON)} --save-last ${shq(TREE_LAST)}${sinceLast ? ` --last ${shq(TREE_LAST)}` : ''}${accumulate ? ' --accumulate' : ''}`)
   if (!now || now.error) {
-    const why = `the architecture could not be fingerprinted after the integration: ${(now && now.error) || 'no result'}`
-    return { failure: { ok: false, stage: 'integrate', reason: why, error: why, architectureUpdate: u, decision, subject, targetDir, deltaDir, ...died('Integrate') } }
+    const why = `the architecture could not be measured after the integration: ${(now && now.error) || 'no result'}`
+    return { failure: { ok: false, stage: 'integrate', reason: why, error: why, architectureUpdate: update, decision, subject, targetDir, deltaDir, ...died('Integrate') } }
   }
-  const d = treeDiff(now, 0)
-  const unreported = diffFiles(d).filter((f) => !allTouched(u).includes(f))
-  if (unreported.length) log(`Integrate: files written and not reported, added to the review: ${unreported.join(', ')}`)
-  const union = (key, extra) => [...new Set([...listed(u[key]), ...extra])]
-  return {
-    changedSinceLast: sinceLast ? diffFiles(treeDiff(now, 1)) : [],
-    update: { ...u, changedFiles: union('changedFiles', d.changed), createdFiles: union('createdFiles', d.created), deletedFiles: union('deletedFiles', d.deleted) },
-  }
+  if (Number(now.unreported) > 0) log(`Integrate: ${now.unreported} file(s) written and not reported, added to the review (listed under unreported in ${FILES_JSON})`)
+  return { update: { ...updateFacts(now), section2: Number(now.section2) || 0, outside: Number(now.outside) || 0 }, changedSinceLast: Number(now.changedSinceLast) || 0 }
 }
 /** Returns the failure when the integration wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
 async function outOfBounds(u) {
-  const inSection2 = allTouched(u).filter((f) => f === CONSTRAINTS || f.startsWith(`${CONSTRAINTS}/`))
-  const outside = allTouched(u).filter((f) => !f.startsWith(`${ARC42}/`))
-  if (!inSection2.length && !outside.length) return null
-  if (inSection2.length) {
+  if (!u.section2 && !u.outside) return null
+  if (u.section2) {
     const guard = await constraintsGuard(before, 'constraints:integrate-bounds', 'Integrate')
     if (guard) return { ...guard, architectureUpdate: u, decision, subject, targetDir, deltaDir }
   }
-  const why = inSection2.length
-    ? `the integration wrote in section 2, which holds the owner's constraints: ${inSection2.join(', ')}`
-    : `the integration wrote files outside the effective version ${ARC42}: ${outside.join(', ')}`
+  const why = u.section2
+    ? `the integration wrote ${u.section2} file(s) in section 2, which holds the owner's constraints (listed under section2 in ${FILES_JSON})`
+    : `the integration wrote ${u.outside} file(s) outside the effective version ${ARC42} (listed under outside in ${FILES_JSON})`
   return { ok: false, stage: 'integrate', deterministicFailure: true, reason: why, error: why, architectureUpdate: u, decision, subject, targetDir, deltaDir }
 }
-const firstMeasure = await measured(update, 'tree:after-integrate')
+const firstMeasure = await measured('tree:after-integrate', false, false)
 if (firstMeasure.failure) return firstMeasure.failure
 update = firstMeasure.update
 const bounds = await outOfBounds(update)
@@ -1574,12 +1701,12 @@ if (bounds) return bounds
 
 /** Names where a review's findings are: the review file, and the changed files it did not review. */
 const findingsWhere = (c) =>
-  `the \`findings\` in ${c.path}${listed(c.missed).length ? `, and these files the integration changed or created that the review did not review: ${listed(c.missed).join(', ')}` : ''}`
-/** Runs one conformance review; a changed file the review does not cover is a finding. `again` names the previous review and the files the correction changed. */
+  `the \`findings\` in ${c.path}${Number(c.missedCount) > 0 ? `, and the ${c.missedCount} file(s) the integration changed or created that the review did not review (listed under result.missed in ${c.checkFile})` : ''}`
+/** Runs one conformance review; a changed file the review does not cover is a finding. `again` names the previous review and the number of files the correction changed. */
 async function review(again) {
   reviewPass += 1
   const againBlock = again
-    ? `\nTHIS IS REVIEW ${reviewPass}. The previous review's findings are ${findingsWhere(again.previous)}; read them. Correction ${again.correction} changed these files to answer them: ${again.changed.join(', ')}. Confirm each finding is resolved, and check the changed files as fully as the rest.\n`
+    ? `\nTHIS IS REVIEW ${reviewPass}. The previous review's findings are ${findingsWhere(again.previous)}; read them. Correction ${again.correction} changed ${again.changed} file(s) to answer them (listed under changedSinceLast in ${FILES_JSON}). Confirm each finding is resolved, and check the changed files as fully as the rest.\n`
     : ''
   const reviewFile = `${WORK}/conformance-${reviewPass}.json`
   const current = await readFacts(`integrate:coverage-${reviewPass}`, 'Integrate')
@@ -1593,9 +1720,7 @@ async function review(again) {
     `You are the architecture-conformance-reviewer. Check one integration of an approved target into the effective version; report findings and fix nothing.
 
 THE APPROVED TARGET: ${targetDir} (the change alone in ${deltaDir}).
-THE INTEGRATION REPORT: ${UPDATE_JSON}. The files it changed or created, every one of which you review:
-${touched(update).map((f) => `- ${f}`).join('\n') || '- (none)'}
-Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
+THE INTEGRATION REPORT: ${UPDATE_JSON}. The ${update.touched} file(s) it changed or created, every one of which you review, are the \`touched\` list in ${FILES_JSON}; the ${update.deleted} it deleted are its \`deleted\` list.
 ${againBlock}
 ${ARCH_WHERE}
 
@@ -1604,30 +1729,33 @@ Read approved coverage in ${LEDGER_JSON} and decision ${DECISION_JSON}. Independ
 Check that the integration applied the approved target exactly, no more and no less; that every effective view the catalog lists for each changed element was updated or deleted, at every scope; that the new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming, and one finding per problem with its file and evidence; \`conforms\` is true only when there is no finding.${persistBrief([reviewFile], 'your complete structured result, exactly as you return it, as ONE JSON object')}`,
     { label: `integrate:review-${reviewPass}`, phase: 'Integrate', agentType: 'agent-teams-workforce:architecture-conformance-reviewer', effort: 'medium', schema: CONFORMANCE_SCHEMA }
   )
-  return got ? covered({ ...got, path: reviewFile }) : null
+  if (!got || !(await saveResult(`integrate:review-${reviewPass}`, 'Integrate', reviewFile, got))) return null
+  return covered({ ...got, path: reviewFile })
 }
-/** Marks a review not conforming when it leaves a changed file unreviewed, naming those files in `missed`. */
-function covered(c) {
-  const missed = touched(update).filter((f) => !listed(c.reviewedFiles).includes(f))
-  const checks = Array.isArray(c.coverageChecks) ? c.coverageChecks : []
-  // Every approved row needs a verified check with evidence, at the row's revision: the verified checks'
-  // [{id, revision}] list must hash to the one arch-resume computed from the ledger.
-  const verifiedCheck = (id) => checks.find((check) => check && check.id === id && check.verdict === 'verified' && hasText(check.evidence))
-  const unverified = integrationCoverageRows.ids.filter((id) => !verifiedCheck(id))
-  const coverageFindings = unverified.map((id) => ({ file: UPDATE_JSON, finding: `coverage ${id} lacks verified integration evidence`, evidence: 'no current per-obligation conformance check' }))
-  if (!unverified.length) {
-    const rows = [...integrationCoverageRows.ids].sort().map((id) => ({ id, revision: String(verifiedCheck(id).revision || '') }))
-    if (sha256Ascii(canonicalJson(rows)) !== integrationCoverageRows.sha) coverageFindings.push({ file: UPDATE_JSON, finding: 'a verified coverage check is not at the approved revision of its ledger row', evidence: `the verified checks' id/revision list does not match the approved rows in ${LEDGER_JSON}` })
+/**
+ * Checks a saved review with depscore.py arch-review-check: a changed file it does not cover, an
+ * approved coverage row without a verified check at its revision, or a review bound to another
+ * coverage revision is a finding, and the review does not conform. Returns the review with
+ * missedCount and checkFile, or null when the check could not run.
+ */
+async function covered(c) {
+  const check = await depscore(`integrate:review-check-${reviewPass}`, 'Integrate', `arch-review-check --review ${shq(c.path)} --files ${shq(FILES_JSON)} --check-ids ${shq(integrationCoverageRows.ids.join(','))} --checks-sha256 ${shq(integrationCoverageRows.sha)} --coverage-revision ${shq(integrationCoverageRevision)}`)
+  if (!check || check.error) {
+    log(`Integrate: the review in ${c.path} could not be checked: ${(check && check.error) || 'no result'}`)
+    return null
   }
-  if (coverageFindings.length) return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...coverageFindings] }
-  if (c.coverageRevision !== integrationCoverageRevision) return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), { file: UPDATE_JSON, finding: 'coverage review is missing or stale for current integrated content', evidence: 'coverageRevision does not match the current integration' }] }
-  if (!missed.length) return { ...c, missed: [] }
-  return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...missed.map((f) => ({ file: f, finding: 'changed or created by the integration and not reviewed', evidence: 'absent from reviewedFiles' }))] }
+  const findings = Array.isArray(c.findings) ? [...c.findings] : []
+  if (Number(check.coverageUnverified) > 0) findings.push({ file: UPDATE_JSON, finding: `${check.coverageUnverified} approved coverage row(s) lack verified integration evidence (listed under result.coverageUnverified in ${check.relayFile})`, evidence: 'no current per-obligation conformance check' })
+  else if (check.checksAtRevision !== true) findings.push({ file: UPDATE_JSON, finding: 'a verified coverage check is not at the approved revision of its ledger row', evidence: `the verified checks' id/revision list does not match the approved rows in ${LEDGER_JSON}` })
+  if (check.revisionMatches !== true) findings.push({ file: UPDATE_JSON, finding: 'coverage review is missing or stale for current integrated content', evidence: 'coverageRevision does not match the current integration' })
+  if (Number(check.missed) > 0) findings.push({ file: FILES_JSON, finding: `${check.missed} file(s) changed or created by the integration were not reviewed (listed under result.missed in ${check.relayFile})`, evidence: 'absent from reviewedFiles' })
+  const conforms = check.conforms === true && findings.length === 0
+  return { ...c, findings, conforms, missedCount: Number(check.missed) || 0, checkFile: check.relayFile }
 }
 
-let conformance = lastSavedReview && lastSavedReview.conforms === true && reusedSaved ? covered(lastSavedReview) : null
+let conformance = lastSavedReview && lastSavedReview.conforms === true && reusedSaved ? await covered({ ...lastSavedReview, findings: [] }) : null
 if (!conformance || conformance.conforms !== true) conformance = await review()
-if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
+if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result, or its review could not be checked', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
 let corrections = 0
 while (conformance.conforms !== true && corrections < MAX_CORRECTIONS) {
   corrections += 1
@@ -1638,23 +1766,26 @@ ${INTEGRATE_TASK}${updateBrief}`,
     { label: `integrate:correct-${corrections}`, phase: 'Integrate', agentType: 'architecture-maintainer', effort: 'medium', schema: MAINTAIN_SCHEMA }
   )
   if (!fixed) return { ok: false, stage: 'integrate', reason: `the architecture-maintainer returned no result for correction ${corrections}`, ...died('Integrate'), decision, subject, targetDir, deltaDir }
-  const merged = (key) => [...new Set([...listed(update[key]), ...listed(fixed[key])])]
-  const fixMeasure = await measured({ ...fixed, changedFiles: merged('changedFiles'), createdFiles: merged('createdFiles'), deletedFiles: merged('deletedFiles') }, `tree:after-correct-${corrections}`, true)
+  if (!(await saveResult(`integrate:correct-${corrections}`, 'Integrate', UPDATE_JSON, fixed))) {
+    const why = `the corrected integration report could not be saved to ${UPDATE_JSON}`
+    return { ok: false, stage: 'integrate', reason: why, error: why, decision, subject, targetDir, deltaDir }
+  }
+  const fixMeasure = await measured(`tree:after-correct-${corrections}`, true, true)
   if (fixMeasure.failure) return fixMeasure.failure
   update = fixMeasure.update
   const fixedBounds = await outOfBounds(update)
   if (fixedBounds) return fixedBounds
   const changedNow = fixMeasure.changedSinceLast
-  if (!changedNow.length) {
+  if (!changedNow) {
     const why = `correction ${corrections} changed no file, so a further review would judge the same integration; the findings stand: ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
     log(`Integrate: ${why}`)
     return { ok: false, stage: 'integrate', reason: why, error: why, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir, retries }
   }
-  const whatChanged = `correction ${corrections} changed ${changedNow.join(', ')} to answer ${(conformance.findings || []).length} finding(s)`
+  const whatChanged = `correction ${corrections} changed ${changedNow} file(s) to answer ${(conformance.findings || []).length} finding(s)`
   retries.push({ step: 'integrate:review', attempt: reviewPass + 1, whatChanged })
   log(`Integrate: review again — ${whatChanged}`)
   conformance = await review({ correction: corrections, changed: changedNow, previous: conformance })
-  if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
+  if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result, or its review could not be checked', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
 }
 if (conformance.conforms !== true) {
   const why = `the integration does not conform after ${corrections} correction pass(es): ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
@@ -1670,9 +1801,8 @@ if (finalCoverage.error || hasGaps(finalCoverage) || finalCoverage.coverage.revi
   return { ok: false, stage: 'integrate', reason: 'conformance evidence is unsaved or stale; retained work requires a fresh review before promotion', subject, targetDir, deltaDir }
 }
 let approval = null
-const toApprove = touched(update)
-if (toApprove.length) {
-  approval = await depscore('integrate:approve', 'Integrate', `arch-approve --arch-files ${shq(toApprove.join(','))} --reviewed-files ${shq(listed(conformance.reviewedFiles).join(','))} --arch-root ${shq(ARC42)}`)
+if (update.touched) {
+  approval = await depscore('integrate:approve', 'Integrate', `arch-approve --arch-files-from ${shq(FILES_JSON)} --reviewed-from ${shq(conformance.path)} --arch-root ${shq(ARC42)}`)
   const n = approval && approval.summary ? approval.summary : null
   const notSet = approval && !approval.error ? [...listed(approval.unreviewed), ...(approval.refused || []).map((x) => x.path), ...(approval.failed || []).map((x) => x.path)] : []
   if (!n || approval.error || notSet.length) {
@@ -1685,9 +1815,8 @@ if (toApprove.length) {
 }
 
 let vaultCommit = null
-const toCommit = allTouched(update)
-if (toCommit.length) {
-  vaultCommit = await depscore('integrate:commit', 'Integrate', `arch-commit --arch-root ${shq(ARC42)} --files ${shq(toCommit.join(','))} --message ${shq(`docs(architecture): integrate the approved target for ${subject}`)}`)
+if (update.touched + update.deleted) {
+  vaultCommit = await depscore('integrate:commit', 'Integrate', `arch-commit --arch-root ${shq(ARC42)} --files-from ${shq(FILES_JSON)} --message ${shq(`docs(architecture): integrate the approved target for ${subject}`)}`)
   if (!vaultCommit || vaultCommit.error || vaultCommit.ok === false) {
     const why = `depscore.py arch-commit did not commit and push the integrated files: ${(vaultCommit && (vaultCommit.error || listed(vaultCommit.refusals).join('; '))) || 'no result'}`
     return { ok: false, stage: 'commit', reason: why, error: why, vaultCommit, approval, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir }
@@ -1711,11 +1840,7 @@ return {
   vaultCommit,
   rounds: lastRound,
   retries,
-  openItems: [
-    ...listed(update.constraintIssues),
-    ...listed(update.contradictions),
-    ...(Number(update.openItemsSaved) > 0 ? [`${update.openItemsSaved} constraint issue(s) and contradiction(s) recorded in ${UPDATE_JSON}`] : []),
-  ],
+  openItems: update.constraintIssues + update.contradictions > 0 ? [`${update.constraintIssues} constraint issue(s) and ${update.contradictions} contradiction(s) recorded in ${UPDATE_JSON}`] : [],
   architectureUpdatePath: UPDATE_JSON,
   ledgerPath: LEDGER_JSON,
 }

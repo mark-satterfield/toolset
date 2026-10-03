@@ -222,24 +222,9 @@ const artPhases = {}
 const artReport = { dir: null, epicId: null, filing: {} }
 
 const lifecycle = { started: false, owner: null, pluginRoot: null, start: null, finish: null, release: null, held: false }
-const LIFECYCLE_RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: {
-    exitCode: { type: 'integer' },
-    output: { type: 'object' },
-  },
-}
-const RESOLVE_PLUGIN_ROOT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
-}
 const RESOLVE_PLUGIN_ROOT_PY = `import json, os, sys
 from pathlib import Path
-repo = os.path.normpath(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else ""
+repo = os.path.normpath(ARGS[0]) if ARGS and ARGS[0] else ""
 control = os.environ.get("ATW_CONTROL_REPO", "").strip()
 projects = {p for p in (repo, os.path.normpath(control) if control else "") if p}
 config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
@@ -247,8 +232,7 @@ reg = Path(config) / "plugins" / "installed_plugins.json"
 try:
     plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
 except (OSError, ValueError) as exc:
-    print(json.dumps({"pluginRoot": None, "problem": f"{reg} is unreadable: {exc}"}))
-    sys.exit(0)
+    emit({"pluginRoot": None, "problem": f"{reg} is unreadable: {exc}"})
 ranked = []
 for key, entries in plugins.items():
     if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
@@ -262,194 +246,324 @@ for key, entries in plugins.items():
         elif e.get("scope") == "user":
             ranked.append((1, path))
 if ranked:
-    print(json.dumps({"pluginRoot": os.path.normpath(sorted(ranked)[0][1]), "problem": None}))
-else:
-    print(json.dumps({"pluginRoot": None, "problem": f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/depscore.py at user scope or for {sorted(projects)}"}))`
-/** A depscore.py run: the relay block, when printed, has its shape validated by the runtime; relayProblem checks its values. */
-const RELAY_RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: {
-    exitCode: { type: 'integer' },
-    output: {
-      type: 'object',
-      properties: {
-        relay: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['file', 'sha256', 'bytes', 'checksum'],
-          properties: { file: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, checksum: { type: 'string' } },
+    emit({"pluginRoot": os.path.normpath(sorted(ranked)[0][1]), "problem": None})
+emit({"pluginRoot": None, "problem": f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/depscore.py at user scope or for {sorted(projects)}"})`
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
+//
+// A workflow script cannot run a command or read a file. A command reaches the shell only as
+// text a runner session types, and its result reaches the script only as that session's copy.
+// Neither copy is trusted:
+// - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
+//   list; the program refuses (exit 3, nothing run) a command line typed differently;
+// - every result is printed as a sealed envelope, the facts plus relay: { file, sha256, bytes,
+//   exit, checksum }, where checksum is the SHA-256 of the canonical JSON of { exit, view }.
+//   The script recomputes it over the copy it receives and accepts only an exact copy. A
+//   result saved in a relay file is read again (re-running nothing) when the copy is altered.
+// depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
+// other program, and checks or writes a saved JSON file against the hash of the value this
+// script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
+// one step that runs before the plugin root is known. canonicalJson spells the same bytes as
+// scripts/portfolio/relay.py canonical().
+const relayKit = (() => {
+  const SHORT = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
+  /** The canonical JSON of a value: sorted keys, no whitespace, ASCII only. */
+  function canonicalJson(v) {
+    if (v === null) return 'null'
+    if (v === true) return 'true'
+    if (v === false) return 'false'
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
+      return String(v)
+    }
+    if (typeof v === 'string') {
+      let out = '"'
+      for (let i = 0; i < v.length; i++) {
+        const unit = v.charCodeAt(i)
+        const esc = unit < 0x80 ? SHORT[v[i]] : undefined
+        if (esc) out += esc
+        else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
+        else out += `\\u${unit.toString(16).padStart(4, '0')}`
+      }
+      return `${out}"`
+    }
+    if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
+    if (typeof v === 'object') return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
+    throw new Error(`a ${typeof v} has no JSON spelling`)
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]
+  /** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
+  function sha256Ascii(text) {
+    const bytes = []
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i)
+      if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
+      bytes.push(c)
+    }
+    const bits = bytes.length * 8
+    bytes.push(0x80)
+    while (bytes.length % 64 !== 56) bytes.push(0)
+    for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+    const W = new Array(64)
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+    for (let off = 0; off < bytes.length; off += 64) {
+      for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
+      for (let t = 16; t < 64; t++) {
+        const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
+        const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
+        W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+      }
+      let [a, b, c, d, e, f, g, h] = H
+      for (let t = 0; t < 64; t++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+        h = g
+        g = f
+        f = e
+        e = (d + t1) >>> 0
+        d = c
+        c = b
+        b = a
+        a = (t1 + t2) >>> 0
+      }
+      ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
+    }
+    return H.map((x) => x.toString(16).padStart(8, '0')).join('')
+  }
+  /** The SHA-256 of a value's canonical JSON. */
+  const sha256Json = (v) => sha256Ascii(canonicalJson(v))
+  /** One shell word, single-quoted. */
+  const quote = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+  /**
+   * The argument list a POSIX shell makes of a command line built from bare words and single
+   * quoting. A line using any other shell feature (double quotes, $, backticks, ;, |, &, <, >, a
+   * glob) is refused: its argument list is not knowable here, so it cannot be checked.
+   */
+  function shellWords(line) {
+    const words = []
+    let word = null
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === "'") {
+        const close = line.indexOf("'", i + 1)
+        if (close < 0) throw new Error('shellWords: unterminated quote')
+        word = (word || '') + line.slice(i + 1, close)
+        i = close
+      } else if (ch === '\\') {
+        if (i + 1 >= line.length) throw new Error('shellWords: trailing backslash')
+        word = (word || '') + line[i + 1]
+        i += 1
+      } else if (/\s/.test(ch)) {
+        if (word !== null) words.push(word)
+        word = null
+      } else if (/["$`;|&<>*?[\]{}()~#!]/.test(ch)) {
+        throw new Error(`shellWords: ${JSON.stringify(ch)} is a shell feature the checksum cannot cover; quote it`)
+      } else {
+        word = (word || '') + ch
+      }
+    }
+    if (word !== null) words.push(word)
+    return words
+  }
+  /** A runner's return: the printed object, whose relay block's shape the runtime validates. */
+  const SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['exitCode', 'output'],
+    properties: {
+      exitCode: { type: 'integer' },
+      output: {
+        type: 'object',
+        properties: {
+          relay: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['file', 'sha256', 'bytes', 'exit', 'checksum'],
+            properties: {
+              file: { type: ['string', 'null'] },
+              sha256: { type: ['string', 'null'] },
+              bytes: { type: ['integer', 'null'] },
+              exit: { type: 'integer' },
+              checksum: { type: 'string' },
+            },
+          },
         },
       },
     },
-  },
-}
-// A workflow script cannot run a command or read a file: a depscore.py command reaches the shell only
-// as text a runner session types, and its result reaches the script only as that session's copy. Neither
-// copy is trusted. The command carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
-// list, and depscore.py refuses (exit 3, nothing run) a command line typed differently. The result is
-// written in full to a relay file, and stdout carries only the few facts the script branches on with
-// the SHA-256 of their canonical JSON; the script recomputes it over the copy it receives and accepts
-// only an exact copy, reading the saved result again (relay-read, which re-runs nothing) on a mismatch.
-// See scripts/portfolio/relay.py; canonicalJson and sha256Ascii below spell the same bytes.
-const SHORT_ESCAPES = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
-/** The canonical JSON of a value, as relay.py's canonical() spells it: sorted keys, no whitespace, ASCII only. */
-function canonicalJson(v) {
-  if (v === null) return 'null'
-  if (v === true) return 'true'
-  if (v === false) return 'false'
-  if (typeof v === 'number') {
-    if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
-    return String(v)
   }
-  if (typeof v === 'string') {
-    let out = '"'
-    for (let i = 0; i < v.length; i++) {
-      const unit = v.charCodeAt(i)
-      const esc = unit < 0x80 ? SHORT_ESCAPES[v[i]] : undefined
-      if (esc) out += esc
-      else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
-      else out += `\\u${unit.toString(16).padStart(4, '0')}`
+  const HEX = /^[0-9a-f]{64}$/
+  /** Why a runner's copy is not the exact envelope the program printed (for relay file `file`), or ''. */
+  function problem(output, file) {
+    const r = output && output.relay
+    if (!r || typeof r !== 'object') return 'the result came back without its relay block'
+    if (!HEX.test(String(r.checksum)) || !Number.isInteger(r.exit)) return 'the relay block is malformed'
+    if (r.file !== file && !(r.file === null && r.exit === 3)) return `the relay block names ${JSON.stringify(r.file)}, not ${JSON.stringify(file)}`
+    const { relay: _relay, ...view } = output
+    let got = ''
+    try {
+      got = sha256Json({ exit: r.exit, view })
+    } catch (err) {
+      return `the copy cannot be hashed: ${String((err && err.message) || err)}`
     }
-    return `${out}"`
+    return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... the program printed`
   }
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
-  if (typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
-  throw new Error(`a ${typeof v} has no JSON spelling`)
-}
-const SHA256_K = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-]
-/** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
-function sha256Ascii(text) {
-  const bytes = []
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
-    bytes.push(c)
-  }
-  const bits = bytes.length * 8
-  bytes.push(0x80)
-  while (bytes.length % 64 !== 56) bytes.push(0)
-  for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
-  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
-  const W = new Array(64)
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n))
-  for (let off = 0; off < bytes.length; off += 64) {
-    for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
-    for (let t = 16; t < 64; t++) {
-      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
-      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
-      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+  const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
+
+${command}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The workflow checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not one JSON object, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`
+  /**
+   * Runs `command` in a runner session until an exact copy of its envelope comes back, at most
+   * `attempts` times. An altered copy is read again with `reread` when there is one (re-running
+   * nothing), else the command is run again (only read-only and idempotent commands have no
+   * reread). A command line typed wrong (exit 3) and a relay file the command never wrote (exit 4)
+   * are run again. Returns { ok: true, exit, view } or { ok: false, error, noResult? }.
+   */
+  async function exec(dispatch, { label, phase, command, reread = null, file = null, attempts = 3 }) {
+    let line = command
+    let why = ''
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const out = await dispatch(prompt(line), { label: attempt === 1 ? label : `${label}:again-${attempt - 1}`, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+      if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
+      why = problem(out.output, file)
+      if (why) {
+        log(`${label}: ${why}; ${reread ? 'reading the saved result again' : 'running it again'}`)
+        if (reread) line = reread
+        continue
+      }
+      const exit = out.output.relay.exit
+      const { relay: _relay, ...view } = out.output
+      if (exit === 3 || exit === 4) {
+        why = String(view.error || (exit === 3 ? 'the command line was typed differently' : 'no saved result'))
+        log(`${label}: ${why}; running the command again`)
+        line = command
+        continue
+      }
+      return { ok: true, exit, view }
     }
-    let [a, b, c, d, e, f, g, h] = H
-    for (let t = 0; t < 64; t++) {
-      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[t] + W[t]) >>> 0
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
-      h = g
-      g = f
-      f = e
-      e = (d + t1) >>> 0
-      d = c
-      c = b
-      b = a
-      a = (t1 + t2) >>> 0
+    return { ok: false, error: `${label} did not reach the workflow as printed in ${attempts} attempt(s): ${why}${file ? ` (its full result is in ${file})` : ''}; nothing was taken from an altered copy` }
+  }
+  /** The exception line a Python traceback in `text` ends with, or ''. */
+  function exceptionOf(text) {
+    const s = String(text || '')
+    if (!/Traceback \(most recent call last\)/.test(s)) return ''
+    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
+    return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
+  }
+  /** The checked command line running python3 `script` with the argument list `rest`. */
+  const pythonLine = (script, rest) => ['python3', script, '--argv-sha256', sha256Json(rest), ...rest].map(quote).join(' ')
+  /**
+   * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
+   * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
+   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   */
+  async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
+    let rest
+    try {
+      rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
+    } catch (err) {
+      return { error: `${label}: ${String((err && err.message) || err)}` }
     }
-    ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
-  }
-  return H.map((x) => x.toString(16).padStart(8, '0')).join('')
-}
-/** The argument list a POSIX shell makes of a command line built from bare words and shellq() quoting. */
-function shellWords(line) {
-  const words = []
-  let word = null
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === "'") {
-      const close = line.indexOf("'", i + 1)
-      if (close < 0) throw new Error('shellWords: unterminated quote')
-      word = (word || '') + line.slice(i + 1, close)
-      i = close
-    } else if (ch === '\\') {
-      word = (word || '') + line[i + 1]
-      i += 1
-    } else if (/\s/.test(ch)) {
-      if (word !== null) words.push(word)
-      word = null
-    } else {
-      word = (word || '') + ch
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), reread: pythonLine(script, ['relay-read', '--relay', file]), file })
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0 || r.view.error) {
+      const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
+      const exception = exceptionOf(raw)
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
     }
+    return { ...r.view, relayFile: file }
   }
-  if (word !== null) words.push(word)
-  return words
-}
-/** The command line running `script` with `tail` (its arguments), led by the checksum of their argument list. */
-const checkedCommand = (script, tail) => `python3 ${shellq(script)} --argv-sha256 ${sha256Ascii(canonicalJson(shellWords(tail)))} ${tail}`
-/** Why a runner's copy of a relayed result is not the exact copy of what depscore.py printed, or ''. */
-function relayProblem(output, file) {
-  const r = output && output.relay
-  if (!r || typeof r !== 'object') return 'the result came back without its relay block'
-  if (r.file !== file) return `the relay block names ${JSON.stringify(r.file)}, not ${file}`
-  if (!/^[0-9a-f]{64}$/.test(String(r.checksum)) || !/^[0-9a-f]{64}$/.test(String(r.sha256)) || !Number.isInteger(r.bytes)) return 'the relay block is malformed'
-  const { relay: _relay, ...shown } = output
-  let got = ''
-  try {
-    got = sha256Ascii(canonicalJson(shown))
-  } catch (err) {
-    return `the copy cannot be hashed: ${String((err && err.message) || err)}`
+  /**
+   * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
+   * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
+   * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
+   * or { ok: false, error }.
+   */
+  async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
+    const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), reread: pythonLine(runner, ['read', '--relay', file]), file })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    return { ok: true, ...r.view, relayFile: file }
   }
-  return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... depscore.py printed`
-}
-/** Where depscore.py saves the full results it relays: the Epic's artifacts directory once known (set below), else the beads repository's run folder. */
+  /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
+  async function checkFile(dispatch, { label, phase, runner, file, value }) {
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, ['check-file', '--file', file, '--sha256', sha256Json(value)]) })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    return { ok: true, exists: r.view.exists === true, parsed: r.view.parsed === true, match: r.view.match === true }
+  }
+  /**
+   * Makes the JSON file `file` hold exactly `value`, the schema-validated result a session
+   * returned: checks the file, and when it differs (or is missing) writes `value` through
+   * relayrun.py write-file, which refuses a copy that does not hash as built, then checks again.
+   * Returns { ok, rewritten, error? }.
+   */
+  async function ensureJson(dispatch, { label, phase, runner, file, value }) {
+    const first = await checkFile(dispatch, { label: `${label}:check`, phase, runner, file, value })
+    if (!first.ok) return { ok: false, rewritten: false, error: first.error }
+    if (first.match) return { ok: true, rewritten: false }
+    log(`${label}: ${file} ${first.exists ? 'differs from the result the session returned' : 'was not saved'}; writing the returned result`)
+    const w = await exec(dispatch, { label: `${label}:write`, phase, command: pythonLine(runner, ['write-file', '--file', file, '--sha256', sha256Json(value), '--json', canonicalJson(value)]) })
+    if (!w.ok || w.exit !== 0 || w.view.written !== true) return { ok: false, rewritten: false, error: (w.ok ? String(w.view.error || 'not written') : w.error) }
+    const again = await checkFile(dispatch, { label: `${label}:recheck`, phase, runner, file, value })
+    return again.ok && again.match ? { ok: true, rewritten: true } : { ok: false, rewritten: true, error: again.error || `${file} still differs after it was written` }
+  }
+  const BOOT = [
+    'import hashlib, json, sys',
+    'a = sys.orig_argv',
+    'i = a.index("-c")',
+    'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
+    'c = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=True)',
+    'h = lambda v: hashlib.sha256(c(v).encode("ascii")).hexdigest()',
+    'def emit(view, ex=0):',
+    '    print(c(dict(view, relay={"file": None, "sha256": None, "bytes": None, "exit": ex, "checksum": h({"exit": ex, "view": view})})))',
+    '    sys.exit(ex)',
+    'if h([boot, code] + args) != want:',
+    '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
+    'exec(code, {"ARGS": args, "emit": emit, "__name__": "__relay__"})',
+  ].join('\n')
+  /**
+   * Runs the Python `code` (which reads its arguments from ARGS and calls emit(obj) once with a
+   * JSON object holding no floats) under a bootstrap that checks the command line, payload included,
+   * and seals what it emits. Read-only payloads only: an altered copy runs it again. Returns
+   * { ok: true, view } or { ok: false, error }.
+   */
+  async function inline(dispatch, { label, phase, code, args = [] }) {
+    const words = args.map(String)
+    const command = ['python3', '-c', BOOT, sha256Json([BOOT, code, ...words]), code, ...words].map(quote).join(' ')
+    const r = await exec(dispatch, { label, phase, command })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
+    return { ok: true, view: r.view }
+  }
+  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, SCHEMA }
+})()
+// ===== SHARED BLOCK relay — END =====
+
+/** Where the full results relayed to this script are saved: the Epic's artifacts directory once known (set below), else the beads repository's run folder. */
 let relayDir = null
-const RELAY_ATTEMPTS = 3
 let relaySeq = 0
-/**
- * Runs one depscore.py command and returns what it printed, checked to be an exact copy, with
- * `relayFile` (the saved full result); or { error }. A command line typed wrong (exit 3, nothing ran)
- * is run again; an altered copy of the result is read again from the relay file, never by running the
- * command twice. See scripts/portfolio/relay.py.
- */
-async function runScript(label, phaseName, commandArgs) {
-  const script = `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`
+/** The next relay file, named for its label. */
+function nextRelayFile(label) {
   const dir = relayDir || `${emitTarget}/.claude/workflow-runs/relay/${String(epicBeadId || 'run').replace(/[^A-Za-z0-9._-]+/g, '_')}`
   relaySeq += 1
-  const relayFile = `${dir}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
-  const first = checkedCommand(script, `-C ${shellq(emitTarget)} --relay ${shellq(relayFile)} ${commandArgs}`)
-  const again = checkedCommand(script, `relay-read --relay ${shellq(relayFile)}`)
-  let ran = false
-  let problem = ''
-  for (let attempt = 1; attempt <= RELAY_ATTEMPTS; attempt++) {
-    const out = await settleAgent(
-      `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the script checks it against the checksum it carries and refuses any difference.
-
-${ran ? again : first}
-
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every hexadecimal string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The script checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-      { label: attempt === 1 ? label : `${label}:${ran ? 'reread' : 'rerun'}-${attempt - 1}`, phase: phaseName, model: 'haiku', effort: 'low', schema: RELAY_RUN_SCHEMA }
-    )
-    if (!out) return { error: `the ${label} runner returned no result` }
-    if (out.exitCode === 3) {
-      problem = `the runner typed the command differently from the one built: ${String((out.output && out.output.error) || 'exit 3')}`
-      log(`${label}: ${problem}; running it again`)
-      continue
-    }
-    if (out.exitCode !== 0 || !out.output || out.output.error) {
-      return { error: (out.output && out.output.error) || `depscore.py exited ${out.exitCode}`, output: out.output || null }
-    }
-    ran = true
-    problem = relayProblem(out.output, relayFile)
-    if (!problem) {
-      const { relay: _relay, ...shown } = out.output
-      return { ...shown, relayFile }
-    }
-    log(`${label}: ${problem}; reading the saved result again from ${relayFile}`)
-  }
-  return { error: `depscore.py's result for ${label} did not reach the workflow as printed in ${RELAY_ATTEMPTS} attempt(s): ${problem}. Its full result is in ${relayFile}; nothing was taken from an altered copy.` }
+  return `${dir}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
+}
+/** scripts/portfolio/relayrun.py of the plugin: runs any other program through the checked relay. */
+const relayRunner = () => `${lifecycle.pluginRoot}/scripts/portfolio/relayrun.py`
+/** Runs one depscore.py command through the checked relay; returns the facts it printed with `relayFile`, or { error }. */
+function runScript(label, phaseName, commandArgs) {
+  return relayKit.depscore(settleAgent, { label, phase: phaseName, script: `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`, repo: emitTarget, tail: commandArgs, file: nextRelayFile(label) })
+}
+/** Runs any other program (argv, no shell) through the checked relay; returns relayKit.run's result. */
+function runProgram(label, phaseName, argv, opts = {}) {
+  return relayKit.run(settleAgent, { label, phase: phaseName, runner: relayRunner(), argv, file: nextRelayFile(label), ...opts })
 }
 const HOLD_CAUSE = 'awaiting-human-action'
 /** Returns the instruction that hands a held Epic back to elaboration. */
@@ -461,15 +575,8 @@ function restoreStep(epicId, after = 'what it names has been settled') {
 }
 /** Clears the Epic's elaboration_state with cause awaiting-human-action; returns whether the write succeeded. */
 async function holdForPerson(epicId) {
-  const out = await settleAgent(
-    `Run exactly this one shell command, once, and change nothing else:
-
-python3 ${shellq(`${lifecycle.pluginRoot}/skills/beads-contract/scripts/beads-contract.py`)} -C ${shellq(emitTarget)} metadata set ${shellq(epicId)} 'elaboration_state=' 'elaboration_state_cause=${HOLD_CAUSE}' 'elaboration_state_owner='
-
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label: 'epic:hold', phase: currentPhase || 'Architecture', model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
-  )
-  lifecycle.held = !!(out && out.exitCode === 0 && out.output && !out.output.error)
+  const out = await runProgram('epic:hold', currentPhase || 'Architecture', ['python3', `${lifecycle.pluginRoot}/skills/beads-contract/scripts/beads-contract.py`, '-C', emitTarget, 'metadata', 'set', epicId, 'elaboration_state=', `elaboration_state_cause=${HOLD_CAUSE}`, 'elaboration_state_owner='])
+  lifecycle.held = !!(out && out.ok && out.exitCode === 0 && out.json && !out.json.error)
   log(lifecycle.held ? `Epic ${epicId}: elaboration_state cleared (cause ${HOLD_CAUSE})` : `Epic ${epicId}: could NOT be held for a person — it stays in_progress`)
   return lifecycle.held
 }
@@ -504,15 +611,8 @@ let pluginRootProblem = ''
 if (hasText(a.pluginRoot) && a.pluginRoot.trim().startsWith('/')) {
   lifecycle.pluginRoot = a.pluginRoot.trim().replace(/\/+$/, '')
 } else {
-  const found = await settleAgent(
-    `Run this shell command exactly once and change nothing else:
-
-python3 -c ${shellq(RESOLVE_PLUGIN_ROOT_PY)} ${shellq(emitTarget)}
-
-It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not set any variable, do not run any other command.`,
-    { label: 'resolve-plugin-root', phase: 'Epic Lifecycle', model: 'haiku', effort: 'low', schema: RESOLVE_PLUGIN_ROOT_SCHEMA }
-  )
-  if (!found) {
+  const found = await relayKit.inline(settleAgent, { label: 'resolve-plugin-root', phase: 'Epic Lifecycle', code: RESOLVE_PLUGIN_ROOT_PY, args: [emitTarget] })
+  if (found.noResult) {
     return {
       ...handback(false, 'epic-lifecycle', `the plugin-root resolver for ${epicBeadId} returned no result`),
       stage: DISPATCH_FAILED_STAGE,
@@ -520,7 +620,7 @@ It prints one JSON object on stdout. Return its process exit code as \`exitCode\
       dispatchFailures: dispatchDeaths('Epic Lifecycle'),
     }
   }
-  const o = found.output || {}
+  const o = found.ok ? found.view : { error: found.error }
   if (hasText(o.pluginRoot) && o.pluginRoot.trim().startsWith('/')) {
     lifecycle.pluginRoot = o.pluginRoot.trim().replace(/\/+$/, '')
     log(`pluginRoot was not passed; the plugin registry gives ${lifecycle.pluginRoot}`)
@@ -531,15 +631,8 @@ It prints one JSON object on stdout. Return its process exit code as \`exitCode\
 if (!lifecycle.pluginRoot) {
   return handback(false, 'epic-lifecycle', `refused: no-plugin-root — pluginRoot has no value (${pluginRootProblem}): pass pluginRoot in the Workflow args or install agent-teams-workforce so $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json (default ~/.claude) records it`)
 }
-const started = await settleAgent(
-  `Run exactly this one shell command, once, and change nothing else:
-
-python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${startArgs}
-
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-  { label: 'epic:start', phase: 'Epic Lifecycle', model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
-)
-if (!started) {
+const started = await runScript('epic:start', 'Epic Lifecycle', startArgs)
+if (started.noResult) {
   return {
     ...handback(false, 'epic-lifecycle', `the Epic lifecycle runner for ${epicBeadId} returned no result`),
     stage: DISPATCH_FAILED_STAGE,
@@ -547,10 +640,10 @@ if (!started) {
     dispatchFailures: dispatchDeaths('Epic Lifecycle'),
   }
 }
-lifecycle.start = started.output || null
-const startOut = started.output || {}
-if (started.exitCode !== 0 || startOut.error) {
-  return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error || `depscore.py exited ${started.exitCode}`}`)
+lifecycle.start = started.error ? started.output || null : started
+const startOut = started.error ? { error: started.error } : started
+if (startOut.error) {
+  return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error}`)
 }
 if (startOut.ok !== true) {
   const refusal = startOut.refusal || {}
@@ -630,34 +723,44 @@ if (ART_ON) relayDir = `${ART_DIR}/relay`
 artReport.epicId = ART_EPIC
 log(ART_ON ? `Artifacts: ${ART_DIR}` : `ARTIFACTS DISABLED — no working directory or recorder (artifactScript=${JSON.stringify(ART_SCRIPT)})`)
 
-const STEP_RECORD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode'],
-  properties: { exitCode: { type: 'integer' }, output: { type: 'string' } },
-}
 /** Records a step as passed or reused; a passed step is appended to STEPS.md with artifactio.py step. */
 async function acceptPhase(phaseId, status) {
   artPhases[phaseId] = status
   log(`ACCEPTED ${JSON.stringify({ phase: phaseId, status })}`)
   if (status !== 'passed' || !ART_ON) return
-  const wrote = await settleAgent(
-    `Run exactly this one command and report its exit code and its output. Run nothing else, read nothing else, and change nothing else.\n\npython3 ${shellq(ART_SCRIPT)} step ${shellq(ART_EPIC)} ${shellq(phaseId)}`,
-    { label: `steps:record:${phaseId}`, phase: currentPhase || 'PRD', model: 'haiku', effort: 'low', schema: STEP_RECORD_SCHEMA }
-  )
-  if (!wrote || wrote.exitCode !== 0) log(`Step '${phaseId}' was NOT written to STEPS.md (${(wrote && wrote.output) || 'no answer'})`)
+  const wrote = await runProgram(`steps:record:${phaseId}`, currentPhase || 'PRD', ['python3', ART_SCRIPT, 'step', ART_EPIC, phaseId], { tail: 5 })
+  if (!wrote.ok || wrote.exitCode !== 0) log(`Step '${phaseId}' was NOT written to STEPS.md (${wrote.ok ? wrote.stderrTail || wrote.stdoutTail || `exit ${wrote.exitCode}` : wrote.error})`)
 }
 /** Returns the artifact descriptor a mini saves into, or undefined when artifacts are off. */
 function artFor(phaseId, inputs, extra) {
   if (!ART_ON) return undefined
   return { dir: ART_DIR, relDir: ART_REL, epicId: ART_EPIC, script: ART_SCRIPT, phase: phaseId, inputs: (inputs || []).filter(hasText), ...(extra || {}) }
 }
-/** Returns the save-and-record instruction appended to a session prompt, or '' when artifacts are off. */
+/** Returns the save instruction appended to a session prompt, or '' when artifacts are off; the script checks and records the file (saveResult). */
 function persistBrief(art, name, what) {
   if (!art) return ''
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN.\nWrite ${what} to ${art.dir}/${name} with the Write tool, replacing the whole file if it exists (Read it first if the Write tool asks you to). Write no other file for this. The workflow checks the saved file against the result you return and records it; run no record command.`
+}
+/**
+ * Saves a session's structured result under an artifact descriptor: makes the file hold exactly
+ * `value` (the result as the runtime validated it; a differing or missing copy is rewritten through
+ * relayrun.py, which refuses a copy that does not hash as built), then records it with the
+ * artifact recorder. Returns whether both succeeded.
+ */
+async function saveResult(label, phaseName, art, name, value) {
+  if (!art) return true
   const file = `${art.dir}/${name}`
-  const record = `python3 ${shellq(art.script)} record ${shellq(file)} --epic ${shellq(art.epicId)} --phase ${shellq(art.phase)}${art.inputs.length ? ` --inputs ${art.inputs.map(shellq).join(' ')}` : ''}`
-  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN.\n1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (Read it first if the Write tool asks you to). Write no other file for this.\n2. Then run exactly this command:\n   ${record}\nIf a step fails, say so in your result and still return your result.`
+  const saved = await relayKit.ensureJson(settleAgent, { label: `${label}:save`, phase: phaseName, runner: relayRunner(), file, value })
+  if (!saved.ok) {
+    log(`${label}: ${file} could not be made to hold the returned result: ${saved.error}`)
+    return false
+  }
+  const rec = await runProgram(`${label}:record`, phaseName, ['python3', art.script, 'record', file, '--epic', art.epicId, '--phase', art.phase, ...(art.inputs.length ? ['--inputs', ...art.inputs] : [])], { tail: 5 })
+  if (!rec.ok || rec.exitCode !== 0) {
+    log(`${label}: the recorder did not record ${file} (${rec.ok ? rec.stderrTail || `exit ${rec.exitCode}` : rec.error})`)
+    return false
+  }
+  return true
 }
 const slugCache = new Map()
 /** Returns the stable artifact slug of a repository, suffixed when two repositories share a basename. */
@@ -876,7 +979,7 @@ if (!architecture) {
         ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || dispatchDeaths('Architecture') } : {}),
       }
   if (architecture.ok) {
-    const changed = r.architectureUpdate ? [...(r.architectureUpdate.changedFiles || []), ...(r.architectureUpdate.createdFiles || [])].length : 0
+    const changed = r.architectureUpdate ? Number(r.architectureUpdate.touched) || 0 : 0
     recRuled(`Architecture approved for ${r.subject}: target ${r.targetDir}; ${changed} effective file(s) integrated.`, { status: 'done' })
     await acceptPhase('architecture', 'passed')
   }
@@ -956,6 +1059,7 @@ async function runRepoScoping() {
     }
   }
   const ruled = await settleWorkflow('agent-teams-workforce:repo-scoping', {
+    pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json')]),
     prd: { id: prd.id, title: prd.title, path: prd.path },
     delta,
@@ -995,6 +1099,7 @@ async function runTrdAuthoring() {
     }
   }
   const r = await settleWorkflow('agent-teams-workforce:trd-authoring', {
+    pluginRoot: lifecycle.pluginRoot,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: delta,
     surveyPath: artPath('architecture/survey.json'),
@@ -1392,20 +1497,16 @@ if (decompositions.filter((d) => Array.isArray(d.artifact.tasks) && d.artifact.t
 } else {
   crossStory.ran = true
   const depsHit = resumeFresh(TASK_DEPS_PHASE)
-  const depscore = `python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)}`
   const spanArgs = `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`
   const edgeOut = (name) => `--out ${shellq(`${ART_DIR}/task-edges/${name}.json`)}`
-  const EDGE_WRITE_BRIEF = `WRITE THE TASK EDGES TO OTHER STORIES with exactly this one command:
-   ${depscore} write-all-task-edges --epic ${shellq(epicBeadId)} ${spanArgs} ${edgeOut('all')}
-Run it in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000. It prints one short JSON object. Return ONE entry in \`writes\`: its exit code as \`exitCode\` and its stdout as \`stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`
-  const WRITES_SCHEMA = {
-    type: 'array',
-    items: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['exitCode', 'stdout'],
-      properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
-    },
+  /** Writes the saved Task edges between Stories to beads with depscore.py write-all-task-edges; returns its checked summary or null. */
+  const writeEdges = async () => {
+    const out = await runScript('beads:write-all-task-edges', 'Task Decomposition', `write-all-task-edges --epic ${shellq(epicBeadId)} ${spanArgs} ${edgeOut('all')}`)
+    if (out.error) {
+      crossStory.reason = `depscore.py write-all-task-edges did not write the Task edges between Stories: ${out.error}`
+      return null
+    }
+    return out.summary && out.summary.blockers ? out.summary : null
   }
   let ran = null
   if (!ART_ON) {
@@ -1413,14 +1514,7 @@ Run it in the FOREGROUND (never set run_in_background) with the Bash tool's \`ti
   } else if (depsHit && depsHit.names.includes('task-deps.json')) {
     reuseFrom(TASK_DEPS_PHASE, depsHit)
     await acceptPhase(TASK_DEPS_PHASE, 'reused')
-    ran = await settleAgent(`${EDGE_WRITE_BRIEF}\n\nChange nothing else.`, {
-      label: 'beads:write-all-task-edges',
-      phase: 'Task Decomposition',
-      model: 'haiku',
-      effort: 'low',
-      schema: { type: 'object', additionalProperties: false, required: ['writes'], properties: { writes: WRITES_SCHEMA } },
-    })
-    if (!ran) crossStory.reason = 'the session that writes the Task edges between Stories returned nothing'
+    ran = await writeEdges()
   } else {
     const byStory = new Map()
     for (const t of tasks) {
@@ -1451,7 +1545,7 @@ Do NOT add, remove, split or rescope Tasks. Do NOT write code.
 
 ${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 'your complete answer (edges, acyclic, cycle) as ONE JSON object')}
 
-Then, once that file is saved and recorded, and before you return — unless you set acyclic=false, in which case return an empty \`writes\`: ${EDGE_WRITE_BRIEF}`,
+Write nothing to beads: the workflow writes the edges from that file.`,
       {
         label: 'sequence:cross-story-tasks',
         effort: 'medium',
@@ -1460,7 +1554,7 @@ Then, once that file is saved and recorded, and before you return — unless you
         schema: {
           type: 'object',
           additionalProperties: false,
-          required: ['edges', 'acyclic', 'writes'],
+          required: ['edges', 'acyclic'],
           properties: {
             edges: {
               type: 'array',
@@ -1478,7 +1572,6 @@ Then, once that file is saved and recorded, and before you return — unless you
             },
             acyclic: { type: 'boolean' },
             cycle: { type: 'array', items: { type: 'string' } },
-            writes: WRITES_SCHEMA,
           },
         },
       }
@@ -1487,20 +1580,15 @@ Then, once that file is saved and recorded, and before you return — unless you
       crossStory.reason = 'the mapper returned nothing, so no Task edge between Stories was derived'
     } else if (mapped.acyclic === false) {
       crossStory.reason = `the mapper reported a cycle across Stories (${(mapped.cycle || []).join(' -> ') || 'not named'}) and returned no edges`
+    } else if (!(await saveResult('sequence:cross-story-tasks', 'Task Decomposition', artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', mapped))) {
+      crossStory.reason = `the Task edges between Stories the mapper returned could not be saved to ${artPath('task-deps.json')}`
     } else {
       await acceptPhase(TASK_DEPS_PHASE, 'passed')
-      ran = mapped
+      ran = await writeEdges()
     }
   }
   if (ran) {
-    const first = Array.isArray(ran.writes) && ran.writes[0] ? ran.writes[0] : null
-    let plan = null
-    try {
-      const out = first ? JSON.parse(first.stdout) : null
-      plan = out && out.summary && out.summary.blockers ? out.summary : null
-    } catch (err) {
-      plan = null
-    }
+    const plan = ran
     if (plan) {
       crossStory.edges = Object.entries(plan.blockers).flatMap(([to, froms]) => (Array.isArray(froms) ? froms : []).map((from) => ({ from, to })))
       crossStory.rejected = Number(plan.rejected) || 0

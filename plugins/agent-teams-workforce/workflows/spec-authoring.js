@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Contract and data-model makers run in parallel, then the existing criteria maker reads their completed documents after UI citation repair to finish the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item stating its design source: a bundle item (the owner supplied a cds bundle) cites that bundle\'s spec/build-spec.md and its resolved Section IDs; a cds item states that it is designed with the CDS design system; a none item states that it changes no design. The script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has its section and that every bundle item cites the build spec the detailing resolved and its Section IDs; a gap sends the contracts back to their maker once, and a second gap fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — Spec authoring. Contract and data-model makers run in parallel, then the existing criteria maker reads their completed documents after UI citation repair to finish the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item stating its design source: a bundle item (the owner supplied a cds bundle) cites that bundle\'s spec/build-spec.md and its resolved Section IDs; a cds item states that it is designed with the CDS design system; a none item states that it changes no design. The script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has its section and that every bundle item cites the build spec the detailing resolved and its Section IDs; a gap sends the contracts back to their maker once, and a second gap fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, and saves it as story-<slug>.json; the script checks that file holds exactly what the session returned (writing it when it does not), records every saved document with the artifact script, and writes that ONE Story bead with one depscore.py write-story command through the checked relay, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and the script runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Author specs', detail: 'contracts and data model in parallel, then criteria from their completed documents after UI repair' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
@@ -33,6 +33,304 @@ function captureDispatchInterruption(err, name) {
   dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
 }
 // END interruption propagation
+
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
+//
+// A workflow script cannot run a command or read a file. A command reaches the shell only as
+// text a runner session types, and its result reaches the script only as that session's copy.
+// Neither copy is trusted:
+// - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
+//   list; the program refuses (exit 3, nothing run) a command line typed differently;
+// - every result is printed as a sealed envelope, the facts plus relay: { file, sha256, bytes,
+//   exit, checksum }, where checksum is the SHA-256 of the canonical JSON of { exit, view }.
+//   The script recomputes it over the copy it receives and accepts only an exact copy. A
+//   result saved in a relay file is read again (re-running nothing) when the copy is altered.
+// depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
+// other program, and checks or writes a saved JSON file against the hash of the value this
+// script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
+// one step that runs before the plugin root is known. canonicalJson spells the same bytes as
+// scripts/portfolio/relay.py canonical().
+const relayKit = (() => {
+  const SHORT = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
+  /** The canonical JSON of a value: sorted keys, no whitespace, ASCII only. */
+  function canonicalJson(v) {
+    if (v === null) return 'null'
+    if (v === true) return 'true'
+    if (v === false) return 'false'
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
+      return String(v)
+    }
+    if (typeof v === 'string') {
+      let out = '"'
+      for (let i = 0; i < v.length; i++) {
+        const unit = v.charCodeAt(i)
+        const esc = unit < 0x80 ? SHORT[v[i]] : undefined
+        if (esc) out += esc
+        else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
+        else out += `\\u${unit.toString(16).padStart(4, '0')}`
+      }
+      return `${out}"`
+    }
+    if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
+    if (typeof v === 'object') return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
+    throw new Error(`a ${typeof v} has no JSON spelling`)
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]
+  /** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
+  function sha256Ascii(text) {
+    const bytes = []
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i)
+      if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
+      bytes.push(c)
+    }
+    const bits = bytes.length * 8
+    bytes.push(0x80)
+    while (bytes.length % 64 !== 56) bytes.push(0)
+    for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+    const W = new Array(64)
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+    for (let off = 0; off < bytes.length; off += 64) {
+      for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
+      for (let t = 16; t < 64; t++) {
+        const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
+        const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
+        W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+      }
+      let [a, b, c, d, e, f, g, h] = H
+      for (let t = 0; t < 64; t++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+        h = g
+        g = f
+        f = e
+        e = (d + t1) >>> 0
+        d = c
+        c = b
+        b = a
+        a = (t1 + t2) >>> 0
+      }
+      ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
+    }
+    return H.map((x) => x.toString(16).padStart(8, '0')).join('')
+  }
+  /** The SHA-256 of a value's canonical JSON. */
+  const sha256Json = (v) => sha256Ascii(canonicalJson(v))
+  /** One shell word, single-quoted. */
+  const quote = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+  /**
+   * The argument list a POSIX shell makes of a command line built from bare words and single
+   * quoting. A line using any other shell feature (double quotes, $, backticks, ;, |, &, <, >, a
+   * glob) is refused: its argument list is not knowable here, so it cannot be checked.
+   */
+  function shellWords(line) {
+    const words = []
+    let word = null
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === "'") {
+        const close = line.indexOf("'", i + 1)
+        if (close < 0) throw new Error('shellWords: unterminated quote')
+        word = (word || '') + line.slice(i + 1, close)
+        i = close
+      } else if (ch === '\\') {
+        if (i + 1 >= line.length) throw new Error('shellWords: trailing backslash')
+        word = (word || '') + line[i + 1]
+        i += 1
+      } else if (/\s/.test(ch)) {
+        if (word !== null) words.push(word)
+        word = null
+      } else if (/["$`;|&<>*?[\]{}()~#!]/.test(ch)) {
+        throw new Error(`shellWords: ${JSON.stringify(ch)} is a shell feature the checksum cannot cover; quote it`)
+      } else {
+        word = (word || '') + ch
+      }
+    }
+    if (word !== null) words.push(word)
+    return words
+  }
+  /** A runner's return: the printed object, whose relay block's shape the runtime validates. */
+  const SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['exitCode', 'output'],
+    properties: {
+      exitCode: { type: 'integer' },
+      output: {
+        type: 'object',
+        properties: {
+          relay: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['file', 'sha256', 'bytes', 'exit', 'checksum'],
+            properties: {
+              file: { type: ['string', 'null'] },
+              sha256: { type: ['string', 'null'] },
+              bytes: { type: ['integer', 'null'] },
+              exit: { type: 'integer' },
+              checksum: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  }
+  const HEX = /^[0-9a-f]{64}$/
+  /** Why a runner's copy is not the exact envelope the program printed (for relay file `file`), or ''. */
+  function problem(output, file) {
+    const r = output && output.relay
+    if (!r || typeof r !== 'object') return 'the result came back without its relay block'
+    if (!HEX.test(String(r.checksum)) || !Number.isInteger(r.exit)) return 'the relay block is malformed'
+    if (r.file !== file && !(r.file === null && r.exit === 3)) return `the relay block names ${JSON.stringify(r.file)}, not ${JSON.stringify(file)}`
+    const { relay: _relay, ...view } = output
+    let got = ''
+    try {
+      got = sha256Json({ exit: r.exit, view })
+    } catch (err) {
+      return `the copy cannot be hashed: ${String((err && err.message) || err)}`
+    }
+    return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... the program printed`
+  }
+  const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
+
+${command}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The workflow checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not one JSON object, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`
+  /**
+   * Runs `command` in a runner session until an exact copy of its envelope comes back, at most
+   * `attempts` times. An altered copy is read again with `reread` when there is one (re-running
+   * nothing), else the command is run again (only read-only and idempotent commands have no
+   * reread). A command line typed wrong (exit 3) and a relay file the command never wrote (exit 4)
+   * are run again. Returns { ok: true, exit, view } or { ok: false, error, noResult? }.
+   */
+  async function exec(dispatch, { label, phase, command, reread = null, file = null, attempts = 3 }) {
+    let line = command
+    let why = ''
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const out = await dispatch(prompt(line), { label: attempt === 1 ? label : `${label}:again-${attempt - 1}`, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+      if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
+      why = problem(out.output, file)
+      if (why) {
+        log(`${label}: ${why}; ${reread ? 'reading the saved result again' : 'running it again'}`)
+        if (reread) line = reread
+        continue
+      }
+      const exit = out.output.relay.exit
+      const { relay: _relay, ...view } = out.output
+      if (exit === 3 || exit === 4) {
+        why = String(view.error || (exit === 3 ? 'the command line was typed differently' : 'no saved result'))
+        log(`${label}: ${why}; running the command again`)
+        line = command
+        continue
+      }
+      return { ok: true, exit, view }
+    }
+    return { ok: false, error: `${label} did not reach the workflow as printed in ${attempts} attempt(s): ${why}${file ? ` (its full result is in ${file})` : ''}; nothing was taken from an altered copy` }
+  }
+  /** The exception line a Python traceback in `text` ends with, or ''. */
+  function exceptionOf(text) {
+    const s = String(text || '')
+    if (!/Traceback \(most recent call last\)/.test(s)) return ''
+    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
+    return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
+  }
+  /** The checked command line running python3 `script` with the argument list `rest`. */
+  const pythonLine = (script, rest) => ['python3', script, '--argv-sha256', sha256Json(rest), ...rest].map(quote).join(' ')
+  /**
+   * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
+   * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
+   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   */
+  async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
+    let rest
+    try {
+      rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
+    } catch (err) {
+      return { error: `${label}: ${String((err && err.message) || err)}` }
+    }
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), reread: pythonLine(script, ['relay-read', '--relay', file]), file })
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0 || r.view.error) {
+      const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
+      const exception = exceptionOf(raw)
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+    }
+    return { ...r.view, relayFile: file }
+  }
+  /**
+   * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
+   * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
+   * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
+   * or { ok: false, error }.
+   */
+  async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
+    const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), reread: pythonLine(runner, ['read', '--relay', file]), file })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    return { ok: true, ...r.view, relayFile: file }
+  }
+  /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
+  async function checkFile(dispatch, { label, phase, runner, file, value }) {
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, ['check-file', '--file', file, '--sha256', sha256Json(value)]) })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    return { ok: true, exists: r.view.exists === true, parsed: r.view.parsed === true, match: r.view.match === true }
+  }
+  /**
+   * Makes the JSON file `file` hold exactly `value`, the schema-validated result a session
+   * returned: checks the file, and when it differs (or is missing) writes `value` through
+   * relayrun.py write-file, which refuses a copy that does not hash as built, then checks again.
+   * Returns { ok, rewritten, error? }.
+   */
+  async function ensureJson(dispatch, { label, phase, runner, file, value }) {
+    const first = await checkFile(dispatch, { label: `${label}:check`, phase, runner, file, value })
+    if (!first.ok) return { ok: false, rewritten: false, error: first.error }
+    if (first.match) return { ok: true, rewritten: false }
+    log(`${label}: ${file} ${first.exists ? 'differs from the result the session returned' : 'was not saved'}; writing the returned result`)
+    const w = await exec(dispatch, { label: `${label}:write`, phase, command: pythonLine(runner, ['write-file', '--file', file, '--sha256', sha256Json(value), '--json', canonicalJson(value)]) })
+    if (!w.ok || w.exit !== 0 || w.view.written !== true) return { ok: false, rewritten: false, error: (w.ok ? String(w.view.error || 'not written') : w.error) }
+    const again = await checkFile(dispatch, { label: `${label}:recheck`, phase, runner, file, value })
+    return again.ok && again.match ? { ok: true, rewritten: true } : { ok: false, rewritten: true, error: again.error || `${file} still differs after it was written` }
+  }
+  const BOOT = [
+    'import hashlib, json, sys',
+    'a = sys.orig_argv',
+    'i = a.index("-c")',
+    'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
+    'c = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=True)',
+    'h = lambda v: hashlib.sha256(c(v).encode("ascii")).hexdigest()',
+    'def emit(view, ex=0):',
+    '    print(c(dict(view, relay={"file": None, "sha256": None, "bytes": None, "exit": ex, "checksum": h({"exit": ex, "view": view})})))',
+    '    sys.exit(ex)',
+    'if h([boot, code] + args) != want:',
+    '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
+    'exec(code, {"ARGS": args, "emit": emit, "__name__": "__relay__"})',
+  ].join('\n')
+  /**
+   * Runs the Python `code` (which reads its arguments from ARGS and calls emit(obj) once with a
+   * JSON object holding no floats) under a bootstrap that checks the command line, payload included,
+   * and seals what it emits. Read-only payloads only: an altered copy runs it again. Returns
+   * { ok: true, view } or { ok: false, error }.
+   */
+  async function inline(dispatch, { label, phase, code, args = [] }) {
+    const words = args.map(String)
+    const command = ['python3', '-c', BOOT, sha256Json([BOOT, code, ...words]), code, ...words].map(quote).join(' ')
+    const r = await exec(dispatch, { label, phase, command })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
+    return { ok: true, view: r.view }
+  }
+  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, SCHEMA }
+})()
+// ===== SHARED BLOCK relay — END =====
 
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
@@ -169,16 +467,10 @@ const CRITERIA_SCHEMA = {
 const STORY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'description', 'write'],
+  required: ['title', 'description'],
   properties: {
     title: { type: 'string' },
     description: { type: 'string' },
-    write: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['exitCode', 'stdout'],
-      properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
-    },
   },
 }
 
@@ -187,39 +479,47 @@ function artifactsFrom(x) {
   return ['dir', 'script', 'epicId', 'phase'].every((k) => typeof x[k] === 'string' && x[k]) ? x : null
 }
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+/** The save instruction appended to a maker's prompt; the workflow records (and, for JSON, checks) the file after the maker returns. */
 function persistBrief(art, name, what) {
   if (!art) return ''
-  const file = `${art.dir}/${name}`
-  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
-  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
-  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN.\n1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (Read it first, then Write). Write no other file for this.\n2. Then run exactly this command:\n   ${record}\nIf a step fails, say so in your result and still return your result.`
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN.\nWrite ${what} to ${art.dir}/${name} with the Write tool, replacing the whole file if it exists (Read it first, then Write). Write no other file for this, and run no command to record it: the workflow records it after you return.\nIf the write fails, say so in your result and still return your result.`
 }
 
 function hasText(x) {
   return typeof x === 'string' && x.trim().length > 0
 }
 
-const WRITE_RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
-}
-/** Runs one depscore.py write command in a runner session; returns its JSON output, or { error }. */
-async function runWrite(label, phaseName, command) {
-  const out = await settleAgent(
-    `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else:
-
-${command}
-
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: phaseName, model: 'haiku', effort: 'low', schema: WRITE_RUN_SCHEMA }
-  )
-  if (!out) return { error: `the ${label} runner returned no result` }
-  if (out.exitCode !== 0 || !out.output || out.output.error) {
-    return { error: (out.output && out.output.error) || `depscore.py exited ${out.exitCode}` }
+/**
+ * The checked relay for one repository's spec authoring: depscore.py commands through
+ * relayKit.depscore, the artifact script's `record` through relayrun.py (beside depscore.py),
+ * and the saved JSON through relayKit.ensureJson. Relay files are numbered under the Epic's
+ * artifact directory, per repository slug, so parallel runs for other repositories never share one.
+ */
+function relayFor(art, slug, beads) {
+  const runner = beads.script.replace(/[^/]+$/, 'relayrun.py')
+  const dir = `${art.dir}/relay/spec-${slug}`
+  let seq = 0
+  const file = (label) => {
+    seq += 1
+    return `${dir}/${String(seq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
   }
-  return out.output
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter(hasText)
+  return {
+    /** Runs one depscore.py command; returns its checked output, or { error }. */
+    depscore: (label, phaseName, tail, repo) => relayKit.depscore(settleAgent, { label, phase: phaseName, script: beads.script, repo: repo || null, tail, file: file(label) }),
+    /** Records the artifact `name` with the artifact script's `record`; returns '' or why it was not recorded. */
+    async record(name, label, phaseName) {
+      const argv = ['python3', art.script, 'record', `${art.dir}/${name}`, '--epic', art.epicId, '--phase', art.phase, ...(inputs.length ? ['--inputs', ...inputs] : [])]
+      const r = await relayKit.run(settleAgent, { label, phase: phaseName, runner, argv, file: file(label), keys: ['sha256', 'bytes'], tail: 20 })
+      if (!r.ok) return r.error
+      return r.exitCode === 0 ? '' : `the record command exited ${r.exitCode}: ${String(r.stderrTail || r.stdoutTail || '').trim().slice(0, 600)}`
+    },
+    /** Makes `${art.dir}/${name}` hold exactly `value`; returns '' or why it does not. */
+    async ensureJson(name, label, phaseName, value) {
+      const r = await relayKit.ensureJson(settleAgent, { label, phase: phaseName, runner, file: `${art.dir}/${name}`, value })
+      return r.ok ? '' : r.error || 'not saved'
+    },
+  }
 }
 const beadsFrom = (x) => (x && typeof x === 'object' && ['script', 'repo', 'epicId'].every((k) => hasText(x[k])) ? x : null)
 
@@ -295,12 +595,24 @@ async function main(a) {
     return { ok: false, stage: 'input', reason: 'no artifact directory or beads target was supplied, so the Story bead cannot be written' }
   }
   const writtenPath = `${ART.dir}/story-${artSlug}.written.json`
-  const storyCommand = [
-    `python3 ${shq(beads.script)} -C ${shq(beads.repo)} write-story`,
+  const relay = relayFor(ART, artSlug, beads)
+  const storyTail = [
+    'write-story',
     `--epic ${shq(beads.epicId)} --dir ${shq(ART.dir)} --slug ${shq(artSlug)} --repo ${shq(repoPath)}`,
     hasText(beads.projectRoot) ? `--project-root ${shq(beads.projectRoot)}` : '',
     `--out ${shq(writtenPath)}`,
   ].filter(Boolean).join(' ')
+  /** Writes the Story bead from the saved story-<slug>.json with depscore.py write-story; returns its checked output, or { error }. */
+  const writeStory = () => relay.depscore('beads:write-story', 'Emit story', storyTail, beads.repo)
+  /** Every save or record that did not land, named; the run goes on, as it did when the makers recorded their own files. */
+  const persistErrors = []
+  const recordOrNote = async (name, label, phaseName) => {
+    const why = await relay.record(name, label, phaseName)
+    if (why) {
+      persistErrors.push(`${name}: ${why}`)
+      log(`${name} was not recorded: ${why}`)
+    }
+  }
 
   /** Returns the spec-authoring result; `summary` is write-story's relayed summary, or null. */
   function storyResult(authored, summary, draft) {
@@ -326,7 +638,8 @@ async function main(a) {
 
   if (a && a.replay === true) {
     log(`Spec authoring replayed: the Story is written from the saved story-${artSlug}.json`)
-    const w = await runWrite('beads:write-story', 'Emit story', storyCommand)
+    const w = await writeStory()
+    if (w.error) log(`write-story did not report its result: ${w.error}`)
     return storyResult({
       resumed: true,
       spec: { id: s.id || null, title: s.title || null, service: s.service || null, repoPath },
@@ -335,7 +648,7 @@ async function main(a) {
       apiSpec: { summary: '' },
       decisionIds: [],
       note: 'Replayed: the spec documents on disk are handed downstream as paths.',
-    }, w && w.summary, null)
+    }, w.error ? null : w.summary, null)
   }
 
   const ctx = ctxBlock(s, trd, constraints, a && a.architecture, a && a.detailingPath)
@@ -411,12 +724,15 @@ ${specMakerCtx}${contractsBrief}${pointerNote}`
     }
   }
 
+  await recordOrNote(`spec-${artSlug}.md`, 'record:contracts', 'Author specs')
+  await recordOrNote(`spec-${artSlug}.data-model.md`, 'record:data-model', 'Author specs')
+
   // The saved spec document is what later phases read, so its UI sections are checked by
   // depscore.py spec-ui-check reading the file, beside the check on the structured uiSpec.
-  const uiCheckCommand = `python3 ${shq(beads.script)} spec-ui-check --doc ${shq(`${ART.dir}/spec-${artSlug}.md`)} --items ${shq(JSON.stringify(uiItems.map((u) => ({ id: u.id, designSource: u.designSource, buildSpec: u.buildSpec, sections: u.sections }))))}`
+  const uiCheckTail = `spec-ui-check --doc ${shq(`${ART.dir}/spec-${artSlug}.md`)} --items ${shq(JSON.stringify(uiItems.map((u) => ({ id: u.id, designSource: u.designSource, buildSpec: u.buildSpec, sections: u.sections }))))}`
   const uiGapsOf = async (draft, round) => {
     const own = uiCitationGaps(uiItems, draft.uiSpec)
-    const doc = await runWrite(`ui-citation-check${round}`, 'Author specs', uiCheckCommand)
+    const doc = await relay.depscore(`ui-citation-check${round}`, 'Author specs', uiCheckTail, null)
     if (doc.error) return { error: `depscore.py spec-ui-check could not check spec-${artSlug}.md: ${doc.error}` }
     const seen = new Set()
     return {
@@ -435,7 +751,10 @@ ${specMakerCtx}${contractsBrief}${pointerNote}`
       contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose section, in the uiSpec you returned or in the spec document you saved, is missing or, for a bundle item, does not cite its build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nRead the current saved document ${ART.dir}/spec-${artSlug}.md first. Repair only the cited item sections and any directly affected references; preserve all other valid API, event, error and UI content, decisions, obligation IDs and source provenance. Return all four artifacts with the unchanged portions retained and save the same document, keeping a section for every UI item and every bundle item specified by reference to its spec/build-spec.md and its Section IDs. If a cited fix requires a wider behavioral change, identify that conflict instead of silently rewriting the accepted remainder.`),
       { ...contractsOpts, label: 'author:contracts:rework' }
     )
-    if (reworked) contractsDraft = reworked
+    if (reworked) {
+      contractsDraft = reworked
+      await recordOrNote(`spec-${artSlug}.md`, 'record:contracts:rework', 'Author specs')
+    }
     uiCheck = await uiGapsOf(contractsDraft, ':rework')
     if (uiCheck.error) return uiCheckFailed(uiCheck)
     uiGaps = uiCheck.gaps
@@ -476,6 +795,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
       ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
     }
   }
+  await recordOrNote(`spec-${artSlug}.criteria.md`, 'record:criteria', 'Author specs')
 
   const apiSpec = contractsDraft.apiSpec
   const uiSpec = uiItems.length && Array.isArray(contractsDraft.uiSpec) ? contractsDraft.uiSpec : []
@@ -508,11 +828,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
   const storyDraft = await settleAgent(
     `Author the Story bead this Spec pairs with. A Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked and never itself decomposed — do NOT include a task breakdown, a WSJF score, or any priority.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set:\n${specDigest}${specDocPaths.length ? `\n\nThe spec documents:\n${specDocPaths.map((p) => `- ${p}`).join('\n')}` : ''}\n\n${storyCtx}${storyBrief}
 
-Then, once that file is saved and recorded, and before you return, write the Story bead: run exactly this one command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000:
-
-${storyCommand}
-
-It prints one short JSON object. Return its exit code as \`write.exitCode\` and its stdout as \`write.stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`,
+Run no bd command and do not write the Story bead: the workflow writes it from the saved file after you return.`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
@@ -532,13 +848,24 @@ It prints one short JSON object. Return its exit code as \`write.exitCode\` and 
     }
   }
 
-  let relayed = null
-  try {
-    relayed = storyDraft.write ? JSON.parse(storyDraft.write.stdout).summary : null
-  } catch (err) {
-    relayed = null
+  // The Story file write-story reads must hold exactly what the writer returned, decisionIds
+  // included; a file that cannot be made to hold it writes no bead.
+  const storyValue = { title: storyDraft.title, description: storyDraft.description, decisionIds }
+  const storySaveError = await relay.ensureJson(`story-${artSlug}.json`, 'save:story', 'Emit story', storyValue)
+  if (storySaveError) {
+    return {
+      ok: false,
+      stage: 'story',
+      reason: `story-${artSlug}.json does not hold the Story the writer returned, so no Story bead was written: ${storySaveError}`,
+      ...(persistErrors.length ? { persistErrors } : {}),
+    }
   }
+  await recordOrNote(`story-${artSlug}.json`, 'record:story', 'Emit story')
+  const written = await writeStory()
+  if (written.error) log(`write-story did not report its result: ${written.error}`)
+  const relayed = written.error ? null : written.summary
   return storyResult({
+    ...(persistErrors.length ? { persistErrors } : {}),
     unresolvedArtifacts: [],
     spec: {
       id: s.id || null,

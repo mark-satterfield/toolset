@@ -76,6 +76,11 @@
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
+    arch-integration-files  measure the files an integration wrote since its saved
+                         fingerprint, union them with the maintainer's report, write the lists
+                         to a files file and relay their counts; no `bd` call
+    arch-review-check    check a saved conformance review against the integration's files and
+                         the approved coverage rows; relays counts; no `bd` call
     saved-target         the facts a resumed elaboration needs from an Epic's saved architecture
                          target and integration report; no `bd` call
     saved-span           the saved span ruling (`repo-scoping.json`) a resumed elaboration
@@ -107,6 +112,7 @@ from pathlib import Path
 
 import beadgraph
 import relay
+from archfiles import files_from, integration_files, review_check
 from resumefacts import saved_span, saved_target
 from archresume import ResumeError, resume_facts
 from archstate import (
@@ -747,12 +753,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     aap.add_argument(
         "--arch-files",
-        required=True,
+        default="",
         help="the architecture files the integration changed or created, comma-separated",
     )
     aap.add_argument(
+        "--arch-files-from",
+        type=Path,
+        default=None,
+        help="instead of --arch-files: the `touched` list of an arch-integration-files "
+        "files file",
+    )
+    aap.add_argument(
+        "--reviewed-from",
+        type=Path,
+        default=None,
+        help="instead of --reviewed-files: the `reviewedFiles` list of a saved "
+        "conformance review",
+    )
+    aap.add_argument(
         "--reviewed-files",
-        required=True,
+        default="",
         help="the files the conformance review checked and found conforming, "
         "comma-separated; only these are promoted",
     )
@@ -824,6 +844,69 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="a fingerprint saved with --save; report the files created, changed and "
         "deleted since it (repeatable)",
+    )
+    asn.add_argument(
+        "--counts",
+        action="store_true",
+        help="relay only the number of files created, changed and deleted per diff; the "
+        "names stay in the relay file",
+    )
+
+    aif = sub.add_parser(
+        "arch-integration-files",
+        help="measure the files an integration wrote since its saved fingerprint, union them "
+        "with the maintainer's report, and write the lists to a files file; relays counts; "
+        "no `bd` call",
+        parents=[common],
+    )
+    aif.add_argument("--arch-root", required=True, help="the architecture directory")
+    aif.add_argument(
+        "--before", type=Path, required=True, help="the fingerprint saved before"
+    )
+    aif.add_argument(
+        "--report", type=Path, required=True, help="the maintainer's saved report"
+    )
+    aif.add_argument(
+        "--files-out", type=Path, required=True, help="the files file to write"
+    )
+    aif.add_argument(
+        "--last", type=Path, default=None, help="the previous measurement's fingerprint"
+    )
+    aif.add_argument(
+        "--save-last",
+        type=Path,
+        default=None,
+        help="save this measurement's fingerprint",
+    )
+    aif.add_argument(
+        "--accumulate",
+        action="store_true",
+        help="keep the reported lists already in the files file",
+    )
+
+    arc = sub.add_parser(
+        "arch-review-check",
+        help="check a saved conformance review against the integration's files and the "
+        "approved coverage rows; relays counts; no `bd` call",
+        parents=[common],
+    )
+    arc.add_argument("--review", type=Path, required=True, help="the saved review")
+    arc.add_argument(
+        "--files",
+        type=Path,
+        required=True,
+        help="the arch-integration-files files file",
+    )
+    arc.add_argument(
+        "--check-ids", default="", help="the approved coverage row ids, comma-separated"
+    )
+    arc.add_argument(
+        "--checks-sha256",
+        default="",
+        help="the SHA-256 of the approved rows' canonical [{id, revision}]",
+    )
+    arc.add_argument(
+        "--coverage-revision", default="", help="the revision the review must bind to"
     )
 
     arz = sub.add_parser(
@@ -947,7 +1030,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="the architecture directory the files sit under",
     )
     acm.add_argument(
-        "--files", required=True, help="the integrated files to commit, comma-separated"
+        "--files", default="", help="the integrated files to commit, comma-separated"
+    )
+    acm.add_argument(
+        "--files-from",
+        type=Path,
+        default=None,
+        help="instead of --files: the `all` list of an arch-integration-files files file",
     )
     acm.add_argument("--message", required=True, help="the commit message")
 
@@ -1040,7 +1129,11 @@ def run(args: argparse.Namespace) -> dict:
     if command == "plan-task-edges":
         return head | plan_task_edges(args.dir, split_ids(args.repos))
     if command == "arch-approve":
-        files = split_ids(args.arch_files)
+        files = (
+            files_from(args.arch_files_from, "touched")
+            if args.arch_files_from
+            else split_ids(args.arch_files)
+        )
         if args.dry_run:
             return head | {
                 "dryRun": True,
@@ -1048,7 +1141,11 @@ def run(args: argparse.Namespace) -> dict:
                 "summary": {"dryRun": True, "files": len(files)},
             }
         return head | approve_arch(
-            files, arch_root=args.arch_root, reviewed=split_ids(args.reviewed_files)
+            files,
+            arch_root=args.arch_root,
+            reviewed=files_from(args.reviewed_from, "reviewedFiles")
+            if args.reviewed_from
+            else split_ids(args.reviewed_files),
         )
     if command == "arch-constraints":
         return head | snapshot_constraints(args.arch_root, keep=args.keep)
@@ -1072,6 +1169,8 @@ def run(args: argparse.Namespace) -> dict:
         if args.save is not None or args.against:
             result.pop("files", None)
             result["diffs"] = diffs
+        if args.counts:
+            result["countsOnly"] = True
         return result
     if command == "saved-target":
         return head | saved_target(args.art_dir)
@@ -1106,8 +1205,29 @@ def run(args: argparse.Namespace) -> dict:
             args.arch_root, split_ids(args.files), message=args.message
         )
     if command == "arch-commit":
-        return head | commit_integration(
-            args.arch_root, split_ids(args.files), message=args.message
+        files = (
+            files_from(args.files_from, "all")
+            if args.files_from
+            else split_ids(args.files)
+        )
+        return head | commit_integration(args.arch_root, files, message=args.message)
+    if command == "arch-integration-files":
+        return head | integration_files(
+            args.arch_root,
+            before=args.before,
+            report=args.report,
+            files_out=args.files_out,
+            last=args.last,
+            save_last=args.save_last,
+            accumulate=args.accumulate,
+        )
+    if command == "arch-review-check":
+        return head | review_check(
+            args.review,
+            files=args.files,
+            check_ids=split_ids(args.check_ids),
+            checks_sha256=args.checks_sha256,
+            coverage_revision=args.coverage_revision,
         )
     if command == "prd-parse":
         return head | prd_parse(args.prd)
@@ -1342,18 +1462,25 @@ def main(argv: list[str] | None = None) -> int:
         list(sys.argv[1:] if argv is None else argv)
     )
     if typed_wrong:
-        print(json.dumps({"error": typed_wrong, "argvMismatch": True}, indent=2))
+        print(json.dumps(relay.mismatch_envelope(typed_wrong), separators=(",", ":")))
         return 3
     args = build_parser().parse_args(argv)
     args.directory = getattr(args, "directory", None)
     out = getattr(args, "out", None)
     relay_file = getattr(args, "relay", None)
+    if args.command == "relay-read":
+        if relay_file is None:
+            print(json.dumps({"error": "relay-read needs --relay FILE"}, indent=2))
+            return 2
+        try:
+            shown = relay.read(relay_file)
+        except (relay.RelayError, json.JSONDecodeError, OSError) as exc:
+            print(json.dumps({"error": str(exc), "command": args.command}, indent=2))
+            return 2
+        print(json.dumps(shown, separators=(",", ":")))
+        return shown["relay"]["exit"]
+    status = 0
     try:
-        if args.command == "relay-read":
-            if relay_file is None:
-                raise relay.RelayError("relay-read needs --relay FILE")
-            print(json.dumps(relay.read(relay_file), separators=(",", ":")))
-            return 0
         payload = run(args)
     except (
         SequencingError,
@@ -1366,12 +1493,11 @@ def main(argv: list[str] | None = None) -> int:
         ReconError,
         relay.RelayError,
         rubric.WsjfError,
-        json.JSONDecodeError,
+        ValueError,
         OSError,
     ) as exc:
-        print(json.dumps({"error": str(exc), "command": args.command}, indent=2))
-        return 2
-    if out is not None:
+        payload, status = {"error": str(exc), "command": args.command}, 2
+    if status == 0 and out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         payload = {
@@ -1382,7 +1508,7 @@ def main(argv: list[str] | None = None) -> int:
         }
     if relay_file is not None:
         try:
-            shown = relay.write(args.command, payload, relay_file)
+            shown = relay.write(args.command, payload, relay_file, status)
         except (relay.RelayError, OSError) as exc:
             print(
                 json.dumps(
@@ -1391,9 +1517,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         print(json.dumps(shown, separators=(",", ":")))
-        return 0
+        return status
     print(json.dumps(payload, indent=2))
-    return 0
+    return status
 
 
 if __name__ == "__main__":

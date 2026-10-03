@@ -139,6 +139,30 @@ def canonical(value: object) -> str:
     raise RelayError(f"a {type(value).__name__} has no JSON spelling")
 
 
+def _integration_view(integration: object) -> object:
+    """arch-resume's integration facts with the report's file lists and the last review's
+    checks as counts; arch-integration-files and arch-review-check read them from disk.
+
+    Args:
+        integration: The `integration` facts.
+
+    Returns:
+        The reduced facts.
+    """
+    if not isinstance(integration, dict):
+        return integration
+    out = dict(integration)
+    if isinstance(out.get("update"), dict):
+        out["update"] = _counted(
+            out["update"], ("changedFiles", "createdFiles", "deletedFiles")
+        )
+    if isinstance(out.get("lastReview"), dict):
+        out["lastReview"] = _counted(
+            out["lastReview"], ("coverageChecks", "reviewedFiles")
+        )
+    return out
+
+
 def _arch_resume_view(result: dict) -> dict:
     """The facts of `arch-resume` the architecture workflow branches on, and nothing else.
 
@@ -197,7 +221,7 @@ def _arch_resume_view(result: dict) -> dict:
             "second": team.get("second") or "",
         },
         "decision": result.get("decision"),
-        "integration": result.get("integration"),
+        "integration": _integration_view(result.get("integration")),
         "coverage": {
             "revision": cov.get("revision"),
             "gapCount": len(gaps) if isinstance(gaps, list) else 0,
@@ -226,6 +250,41 @@ def _arch_resume_view(result: dict) -> dict:
     }
 
 
+def _counted(result: dict, keys: tuple[str, ...]) -> dict:
+    """A result with the named lists replaced by their lengths.
+
+    Args:
+        result: The result.
+        keys: The keys whose list values become counts.
+
+    Returns:
+        The reduced copy.
+    """
+    return {
+        k: (len(v) if k in keys and isinstance(v, list) else v)
+        for k, v in result.items()
+    }
+
+
+#: Per command, the lists its relay view carries as counts; the names stay in the relay file.
+COUNTED = {
+    "arch-integration-files": (
+        "touched",
+        "deleted",
+        "all",
+        "unreported",
+        "section2",
+        "outside",
+        "changedSinceLast",
+        "reportedTouched",
+        "reportedDeleted",
+    ),
+    "arch-review-check": ("missed", "coverageUnverified"),
+    "arch-approve": ("promoted", "unchanged", "noFrontmatter", "wouldApprove"),
+    "arch-commit": ("files",),
+}
+
+
 def view(command: str, result: dict) -> dict:
     """The part of a command's result the workflow script receives.
 
@@ -234,73 +293,121 @@ def view(command: str, result: dict) -> dict:
         result: Its full result.
 
     Returns:
-        For `arch-resume`, `_arch_resume_view`; for every other command, the result as printed.
+        For `arch-resume`, `_arch_resume_view`; for a command in COUNTED, its lists as counts;
+        for `arch-snapshot --counts`, each diff's lists as counts; otherwise the result.
     """
-    if command == "arch-resume" and not result.get("error"):
+    if result.get("error"):
+        return dict(result)
+    if command == "arch-resume":
         return _arch_resume_view(result)
+    if command in COUNTED:
+        return _counted(result, COUNTED[command])
+    if command == "arch-snapshot" and result.get("countsOnly"):
+        diffs = [
+            _counted(d, ("created", "changed", "deleted"))
+            for d in result.get("diffs") or []
+            if isinstance(d, dict)
+        ]
+        return dict(result) | {"diffs": diffs}
     return dict(result)
 
 
-def envelope(command: str, result: dict, path: Path) -> dict:
-    """The object printed on stdout for a relayed result.
+def checksum(shown: dict, exit_code: int) -> str:
+    """The SHA-256 a relayed view is checked against: of the canonical `{exit, view}`.
 
     Args:
-        command: The depscore.py command.
-        result: Its full result.
-        path: The relay file holding the full result.
+        shown: The view.
+        exit_code: The exit status reported with it.
 
     Returns:
-        The view with its `relay` block.
+        The lower-case hex digest.
     """
-    shown = view(command, result)
-    data = path.read_bytes()
+    text = canonical({"exit": exit_code, "view": shown})
+    return hashlib.sha256(text.encode("ascii")).hexdigest()
+
+
+def seal(shown: dict, exit_code: int, path: Path | None) -> dict:
+    """The object printed on stdout: the view with its `relay` block.
+
+    Args:
+        shown: The view.
+        exit_code: The exit status the printing process ends with.
+        path: The relay file holding the full result, or None when nothing was saved.
+
+    Returns:
+        The envelope `{...view, relay: {file, sha256, bytes, exit, checksum}}`.
+    """
+    data = path.read_bytes() if path is not None and path.is_file() else None
     return shown | {
         "relay": {
-            "file": str(path),
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "bytes": len(data),
-            "checksum": hashlib.sha256(canonical(shown).encode("ascii")).hexdigest(),
+            "file": str(path) if path is not None else None,
+            "sha256": hashlib.sha256(data).hexdigest() if data is not None else None,
+            "bytes": len(data) if data is not None else None,
+            "exit": exit_code,
+            "checksum": checksum(shown, exit_code),
         }
     }
 
 
-def write(command: str, result: dict, path: Path) -> dict:
-    """Write the full result to the relay file and return the envelope to print.
+def save(command: str, result: dict, shown: dict, exit_code: int, path: Path) -> dict:
+    """Write a full result and the view printed for it to the relay file; return the envelope.
 
     Args:
-        command: The depscore.py command.
+        command: The command that produced the result.
         result: Its full result.
+        shown: The view printed for it.
+        exit_code: The exit status printed with it.
         path: The relay file.
 
     Returns:
         The envelope.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps({"command": command, "result": result}, indent=2) + "\n"
-    path.write_text(text, encoding="utf-8")
-    return envelope(command, result, path)
+    saved = {"command": command, "exitCode": exit_code, "view": shown, "result": result}
+    path.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
+    return seal(shown, exit_code, path)
+
+
+def write(command: str, result: dict, path: Path, exit_code: int = 0) -> dict:
+    """Write a depscore.py result to the relay file and return the envelope to print.
+
+    Args:
+        command: The depscore.py command.
+        result: Its full result.
+        path: The relay file.
+        exit_code: The exit status depscore.py ends with.
+
+    Returns:
+        The envelope.
+    """
+    return save(command, result, view(command, result), exit_code, path)
 
 
 def read(path: Path) -> dict:
     """The envelope of a relay file written earlier, re-running nothing.
 
+    A missing file yields a sealed `{missing: true}` view with exit 4: the command never saved a
+    result, so the caller knows it may run it again.
+
     Args:
         path: The relay file.
 
     Returns:
-        The same envelope `write` returned for it.
+        The same envelope as when the file was written, or the missing-file envelope.
 
     Raises:
         RelayError: When the file does not hold a relayed result.
     """
+    if not path.is_file():
+        return seal({"missing": True, "error": f"{path} does not exist"}, 4, path)
     saved = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(saved, dict)
-        or not isinstance(saved.get("command"), str)
-        or not isinstance(saved.get("result"), dict)
+        or not isinstance(saved.get("view"), dict)
+        or not isinstance(saved.get("exitCode"), int)
     ):
         raise RelayError(f"{path}: not a relay file")
-    return envelope(saved["command"], saved["result"], path)
+    return seal(saved["view"], saved["exitCode"], path)
 
 
 ARGV_FLAG = "--argv-sha256"
@@ -328,3 +435,15 @@ def argv_mismatch(argv: list[str]) -> tuple[list[str], str]:
             f"the command line differs from the one the workflow script built ({ARGV_FLAG} {want}, typed arguments hash to {got})",
         )
     return rest, ""
+
+
+def mismatch_envelope(why: str) -> dict:
+    """The sealed envelope printed, with exit 3, for a command line typed wrong: nothing ran.
+
+    Args:
+        why: The mismatch.
+
+    Returns:
+        The envelope, with no relay file.
+    """
+    return seal({"argvMismatch": True, "error": why}, 3, None)

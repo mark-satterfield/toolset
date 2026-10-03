@@ -68,6 +68,304 @@ async function settleWorkflow(name, input) {
 }
 // END bounded dispatch policy
 
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
+//
+// A workflow script cannot run a command or read a file. A command reaches the shell only as
+// text a runner session types, and its result reaches the script only as that session's copy.
+// Neither copy is trusted:
+// - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
+//   list; the program refuses (exit 3, nothing run) a command line typed differently;
+// - every result is printed as a sealed envelope, the facts plus relay: { file, sha256, bytes,
+//   exit, checksum }, where checksum is the SHA-256 of the canonical JSON of { exit, view }.
+//   The script recomputes it over the copy it receives and accepts only an exact copy. A
+//   result saved in a relay file is read again (re-running nothing) when the copy is altered.
+// depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
+// other program, and checks or writes a saved JSON file against the hash of the value this
+// script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
+// one step that runs before the plugin root is known. canonicalJson spells the same bytes as
+// scripts/portfolio/relay.py canonical().
+const relayKit = (() => {
+  const SHORT = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
+  /** The canonical JSON of a value: sorted keys, no whitespace, ASCII only. */
+  function canonicalJson(v) {
+    if (v === null) return 'null'
+    if (v === true) return 'true'
+    if (v === false) return 'false'
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
+      return String(v)
+    }
+    if (typeof v === 'string') {
+      let out = '"'
+      for (let i = 0; i < v.length; i++) {
+        const unit = v.charCodeAt(i)
+        const esc = unit < 0x80 ? SHORT[v[i]] : undefined
+        if (esc) out += esc
+        else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
+        else out += `\\u${unit.toString(16).padStart(4, '0')}`
+      }
+      return `${out}"`
+    }
+    if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
+    if (typeof v === 'object') return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
+    throw new Error(`a ${typeof v} has no JSON spelling`)
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]
+  /** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
+  function sha256Ascii(text) {
+    const bytes = []
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i)
+      if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
+      bytes.push(c)
+    }
+    const bits = bytes.length * 8
+    bytes.push(0x80)
+    while (bytes.length % 64 !== 56) bytes.push(0)
+    for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+    const W = new Array(64)
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+    for (let off = 0; off < bytes.length; off += 64) {
+      for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
+      for (let t = 16; t < 64; t++) {
+        const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
+        const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
+        W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+      }
+      let [a, b, c, d, e, f, g, h] = H
+      for (let t = 0; t < 64; t++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+        h = g
+        g = f
+        f = e
+        e = (d + t1) >>> 0
+        d = c
+        c = b
+        b = a
+        a = (t1 + t2) >>> 0
+      }
+      ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
+    }
+    return H.map((x) => x.toString(16).padStart(8, '0')).join('')
+  }
+  /** The SHA-256 of a value's canonical JSON. */
+  const sha256Json = (v) => sha256Ascii(canonicalJson(v))
+  /** One shell word, single-quoted. */
+  const quote = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+  /**
+   * The argument list a POSIX shell makes of a command line built from bare words and single
+   * quoting. A line using any other shell feature (double quotes, $, backticks, ;, |, &, <, >, a
+   * glob) is refused: its argument list is not knowable here, so it cannot be checked.
+   */
+  function shellWords(line) {
+    const words = []
+    let word = null
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === "'") {
+        const close = line.indexOf("'", i + 1)
+        if (close < 0) throw new Error('shellWords: unterminated quote')
+        word = (word || '') + line.slice(i + 1, close)
+        i = close
+      } else if (ch === '\\') {
+        if (i + 1 >= line.length) throw new Error('shellWords: trailing backslash')
+        word = (word || '') + line[i + 1]
+        i += 1
+      } else if (/\s/.test(ch)) {
+        if (word !== null) words.push(word)
+        word = null
+      } else if (/["$`;|&<>*?[\]{}()~#!]/.test(ch)) {
+        throw new Error(`shellWords: ${JSON.stringify(ch)} is a shell feature the checksum cannot cover; quote it`)
+      } else {
+        word = (word || '') + ch
+      }
+    }
+    if (word !== null) words.push(word)
+    return words
+  }
+  /** A runner's return: the printed object, whose relay block's shape the runtime validates. */
+  const SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['exitCode', 'output'],
+    properties: {
+      exitCode: { type: 'integer' },
+      output: {
+        type: 'object',
+        properties: {
+          relay: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['file', 'sha256', 'bytes', 'exit', 'checksum'],
+            properties: {
+              file: { type: ['string', 'null'] },
+              sha256: { type: ['string', 'null'] },
+              bytes: { type: ['integer', 'null'] },
+              exit: { type: 'integer' },
+              checksum: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  }
+  const HEX = /^[0-9a-f]{64}$/
+  /** Why a runner's copy is not the exact envelope the program printed (for relay file `file`), or ''. */
+  function problem(output, file) {
+    const r = output && output.relay
+    if (!r || typeof r !== 'object') return 'the result came back without its relay block'
+    if (!HEX.test(String(r.checksum)) || !Number.isInteger(r.exit)) return 'the relay block is malformed'
+    if (r.file !== file && !(r.file === null && r.exit === 3)) return `the relay block names ${JSON.stringify(r.file)}, not ${JSON.stringify(file)}`
+    const { relay: _relay, ...view } = output
+    let got = ''
+    try {
+      got = sha256Json({ exit: r.exit, view })
+    } catch (err) {
+      return `the copy cannot be hashed: ${String((err && err.message) || err)}`
+    }
+    return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... the program printed`
+  }
+  const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
+
+${command}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The workflow checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not one JSON object, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`
+  /**
+   * Runs `command` in a runner session until an exact copy of its envelope comes back, at most
+   * `attempts` times. An altered copy is read again with `reread` when there is one (re-running
+   * nothing), else the command is run again (only read-only and idempotent commands have no
+   * reread). A command line typed wrong (exit 3) and a relay file the command never wrote (exit 4)
+   * are run again. Returns { ok: true, exit, view } or { ok: false, error, noResult? }.
+   */
+  async function exec(dispatch, { label, phase, command, reread = null, file = null, attempts = 3 }) {
+    let line = command
+    let why = ''
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const out = await dispatch(prompt(line), { label: attempt === 1 ? label : `${label}:again-${attempt - 1}`, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+      if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
+      why = problem(out.output, file)
+      if (why) {
+        log(`${label}: ${why}; ${reread ? 'reading the saved result again' : 'running it again'}`)
+        if (reread) line = reread
+        continue
+      }
+      const exit = out.output.relay.exit
+      const { relay: _relay, ...view } = out.output
+      if (exit === 3 || exit === 4) {
+        why = String(view.error || (exit === 3 ? 'the command line was typed differently' : 'no saved result'))
+        log(`${label}: ${why}; running the command again`)
+        line = command
+        continue
+      }
+      return { ok: true, exit, view }
+    }
+    return { ok: false, error: `${label} did not reach the workflow as printed in ${attempts} attempt(s): ${why}${file ? ` (its full result is in ${file})` : ''}; nothing was taken from an altered copy` }
+  }
+  /** The exception line a Python traceback in `text` ends with, or ''. */
+  function exceptionOf(text) {
+    const s = String(text || '')
+    if (!/Traceback \(most recent call last\)/.test(s)) return ''
+    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean)
+    return [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt)(:|$)/.test(l)) || lines[lines.length - 1] || ''
+  }
+  /** The checked command line running python3 `script` with the argument list `rest`. */
+  const pythonLine = (script, rest) => ['python3', script, '--argv-sha256', sha256Json(rest), ...rest].map(quote).join(' ')
+  /**
+   * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
+   * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
+   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   */
+  async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
+    let rest
+    try {
+      rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
+    } catch (err) {
+      return { error: `${label}: ${String((err && err.message) || err)}` }
+    }
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), reread: pythonLine(script, ['relay-read', '--relay', file]), file })
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0 || r.view.error) {
+      const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
+      const exception = exceptionOf(raw)
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+    }
+    return { ...r.view, relayFile: file }
+  }
+  /**
+   * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
+   * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
+   * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
+   * or { ok: false, error }.
+   */
+  async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
+    const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), reread: pythonLine(runner, ['read', '--relay', file]), file })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    return { ok: true, ...r.view, relayFile: file }
+  }
+  /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
+  async function checkFile(dispatch, { label, phase, runner, file, value }) {
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, ['check-file', '--file', file, '--sha256', sha256Json(value)]) })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    return { ok: true, exists: r.view.exists === true, parsed: r.view.parsed === true, match: r.view.match === true }
+  }
+  /**
+   * Makes the JSON file `file` hold exactly `value`, the schema-validated result a session
+   * returned: checks the file, and when it differs (or is missing) writes `value` through
+   * relayrun.py write-file, which refuses a copy that does not hash as built, then checks again.
+   * Returns { ok, rewritten, error? }.
+   */
+  async function ensureJson(dispatch, { label, phase, runner, file, value }) {
+    const first = await checkFile(dispatch, { label: `${label}:check`, phase, runner, file, value })
+    if (!first.ok) return { ok: false, rewritten: false, error: first.error }
+    if (first.match) return { ok: true, rewritten: false }
+    log(`${label}: ${file} ${first.exists ? 'differs from the result the session returned' : 'was not saved'}; writing the returned result`)
+    const w = await exec(dispatch, { label: `${label}:write`, phase, command: pythonLine(runner, ['write-file', '--file', file, '--sha256', sha256Json(value), '--json', canonicalJson(value)]) })
+    if (!w.ok || w.exit !== 0 || w.view.written !== true) return { ok: false, rewritten: false, error: (w.ok ? String(w.view.error || 'not written') : w.error) }
+    const again = await checkFile(dispatch, { label: `${label}:recheck`, phase, runner, file, value })
+    return again.ok && again.match ? { ok: true, rewritten: true } : { ok: false, rewritten: true, error: again.error || `${file} still differs after it was written` }
+  }
+  const BOOT = [
+    'import hashlib, json, sys',
+    'a = sys.orig_argv',
+    'i = a.index("-c")',
+    'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
+    'c = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=True)',
+    'h = lambda v: hashlib.sha256(c(v).encode("ascii")).hexdigest()',
+    'def emit(view, ex=0):',
+    '    print(c(dict(view, relay={"file": None, "sha256": None, "bytes": None, "exit": ex, "checksum": h({"exit": ex, "view": view})})))',
+    '    sys.exit(ex)',
+    'if h([boot, code] + args) != want:',
+    '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
+    'exec(code, {"ARGS": args, "emit": emit, "__name__": "__relay__"})',
+  ].join('\n')
+  /**
+   * Runs the Python `code` (which reads its arguments from ARGS and calls emit(obj) once with a
+   * JSON object holding no floats) under a bootstrap that checks the command line, payload included,
+   * and seals what it emits. Read-only payloads only: an altered copy runs it again. Returns
+   * { ok: true, view } or { ok: false, error }.
+   */
+  async function inline(dispatch, { label, phase, code, args = [] }) {
+    const words = args.map(String)
+    const command = ['python3', '-c', BOOT, sha256Json([BOOT, code, ...words]), code, ...words].map(quote).join(' ')
+    const r = await exec(dispatch, { label, phase, command })
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
+    return { ok: true, view: r.view }
+  }
+  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, SCHEMA }
+})()
+// ===== SHARED BLOCK relay — END =====
+
 const dispatchFailures = []
 // Returns the recorded dispatch failures of the named phases, or all of them when none is named.
 function dispatchDeaths(...phases) {
@@ -118,55 +416,8 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-const RUN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['results'],
-  properties: {
-    results: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['name', 'exitCode', 'output'],
-        properties: {
-          name: { type: 'string' },
-          exitCode: { type: 'integer' },
-          output: { type: 'object' },
-        },
-      },
-    },
-  },
-}
 const failures = []
 let currentPhase = null
-// Runs `steps` ([{ name, command }]) in one runner session, in order. Returns name -> printed JSON;
-// a command reported as failed maps to null and is recorded in `failures`; one not reported maps to null.
-async function runSteps(label, steps) {
-  const out = await settleAgent(
-    `Run these shell commands, in this order, each exactly once, from any directory, and change nothing else. Run every one of them even when an earlier one fails.
-
-${steps.map((s, i) => `${i + 1}. name "${s.name}":\n   ${s.command}`).join('\n')}
-
-Each prints one JSON object on stdout. Return one entry per command in \`results\`: its name exactly as given, its process exit code as \`exitCode\`, and that JSON object, parsed and unaltered, as \`output\`. If a command's stdout is not JSON, its \`output\` is {"error": "<stdout and stderr, verbatim>"}. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: currentPhase, model: 'haiku', effort: 'low', schema: RUN_SCHEMA }
-  )
-  const byName = new Map((out && Array.isArray(out.results) ? out.results : []).map((r) => [r && r.name, r]))
-  const outputs = {}
-  for (const s of steps) {
-    const r = byName.get(s.name)
-    if (!r) {
-      log(`${s.name}: ${out ? 'the runner did not report this command' : 'the runner returned no result'}; its effect is read from the tracker by the next plan`)
-      outputs[s.name] = null
-    } else if (r.exitCode !== 0 || (r.output && r.output.error)) {
-      failures.push({ step: s.name, reason: (r.output && r.output.error) || `exit ${r.exitCode}` })
-      outputs[s.name] = null
-    } else {
-      outputs[s.name] = r.output || {}
-    }
-  }
-  return outputs
-}
 function enter(title) {
   currentPhase = title
   phase(title)
@@ -193,15 +444,9 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', archPath: 'ATW_ARCH_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
 const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
-const RESOLVE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['exitCode', 'output'],
-  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
-}
-const RESOLVE_PY = `import json, os, sys, tempfile, time
+const RESOLVE_PY = `import json, os, tempfile, time
 from pathlib import Path
-name, wanted = sys.argv[1], json.loads(sys.argv[2])
+name, wanted = ARGS[0], json.loads(ARGS[1])
 env_of = {"repoPath": "ATW_CONTROL_REPO", "archPath": "ATW_ARCH_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
 out, problems = {}, {}
 def from_env(key):
@@ -250,7 +495,7 @@ if "workDir" in wanted:
     out["workDir"] = os.path.realpath(tempfile.mkdtemp(prefix=f"{name}-"))
 out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
-print(json.dumps(out))`
+emit(out)`
 // Fills each path arg the caller left out, and only from the environment: repoPath from
 // $ATW_CONTROL_REPO, archPath from $ATW_ARCH_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the
@@ -263,18 +508,9 @@ async function resolveArgs(given, name, required) {
   const lacking = [...PATH_ARGS, ...OPTIONAL_PATH_ARGS].filter((k) => !isAbsolute(out[k]))
   const problems = {}
   if (lacking.length) {
-    const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`
-    const got = await settleAgent(
-      `Run this shell command exactly once and change nothing else:
-
-python3 -c ${q(RESOLVE_PY)} ${q(name)} ${q(JSON.stringify(lacking))}
-
-It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not set any variable, do not run any other command.`,
-      { label: 'resolve-paths', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }
-    )
-    const found = (got && got.output) || {}
-    if (!got) problems.resolver = 'the path resolver returned no result'
-    else if (found.error) problems.resolver = String(found.error).slice(0, 500)
+    const got = await relayKit.inline(settleAgent, { label: 'resolve-paths', code: RESOLVE_PY, args: [name, JSON.stringify(lacking)] })
+    const found = got.ok ? got.view : {}
+    if (!got.ok) problems.resolver = String(got.error || 'the path resolver returned no result').slice(0, 500)
     Object.assign(problems, found.problems && typeof found.problems === 'object' ? found.problems : {})
     for (const k of lacking) {
       if (isAbsolute(found[k])) {
@@ -319,33 +555,43 @@ const only = Array.isArray(a.only) ? a.only.filter((id) => typeof id === 'string
 const dryRun = a.dryRun === true
 const repo = String(a.repoPath || '').replace(/\/+$/, '')
 const work = String(a.workDir || '').replace(/\/+$/, '')
-const DS = `${String(a.pluginRoot || '').replace(/\/+$/, '')}/scripts/portfolio/depscore.py`
+const PORTFOLIO = `${String(a.pluginRoot || '').replace(/\/+$/, '')}/scripts/portfolio`
+const DS = `${PORTFOLIO}/depscore.py`
+const RUNNER = `${PORTFOLIO}/relayrun.py`
 const file = (name) => `${work}/${name}`
-const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const flags = `${a.all === true ? '--all ' : ''}${a.rejudge === true ? '--rejudge ' : ''}${only.length ? `--only ${shq(only.join(','))} ` : ''}`
 const dry = dryRun ? ' --dry-run' : ''
+
+let relaySeq = 0
+// Runs one depscore.py command through the checked relay (its full result saved in a numbered relay
+// file under <workDir>/relay). Returns what it printed, checked; or null — a command that failed is
+// recorded in `failures`, and one whose runner returned nothing is left to the next plan, which reads
+// its effect from the tracker.
+async function step(name, tail) {
+  relaySeq += 1
+  const relayFile = file(`relay/${String(relaySeq).padStart(3, '0')}-${name.replace(/[^A-Za-z0-9._-]+/g, '-')}.json`)
+  const r = await relayKit.depscore(settleAgent, { label: name, phase: currentPhase, script: DS, repo, tail, file: relayFile })
+  if (!r.error) return r
+  if (r.noResult) {
+    log(`${name}: the runner returned no result; its effect is read from the tracker by the next plan`)
+    return null
+  }
+  failures.push({ step: name, reason: r.error })
+  return null
+}
 
 enter('Plan')
 const planFile = file('score-plan.json')
 const prdDir = file('prd')
 const inputPath = (level) => file(`judge-input-${level}.json`)
-const planned = await runSteps('plan', [
-  { name: 'score-plan', command: cmd('score-plan', `${flags}--out ${shq(planFile)}`) },
-  ...['epic', 'task'].map((level) => ({
-    name: `judge-input:${level}`,
-    command: cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(inputPath(level))}`),
-  })),
-])
-const plan = (planned['score-plan'] && planned['score-plan'].summary) || {}
+const planned = await step('score-plan', `score-plan ${flags}--out ${shq(planFile)}`)
+const plan = (planned && planned.summary) || {}
 log(`Plan: ${plan.epicsToJudge || 0} Epic(s) and ${plan.tasksToJudge || 0} Task(s) to judge, ${plan.toAdopt || 0} stored value(s) to adopt`)
 
 const inputs = {}
 for (const level of ['epic', 'task']) {
-  if (!((level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)) {
-    for (let i = failures.length - 1; i >= 0; i--) if (failures[i].step === `judge-input:${level}`) failures.splice(i, 1)
-    continue
-  }
-  const out = planned[`judge-input:${level}`]
+  if (!((level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)) continue
+  const out = await step(`judge-input:${level}`, `judge-input --plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(inputPath(level))}`)
   if (out) inputs[level] = { path: inputPath(level), summary: out.summary || {} }
 }
 const epicIds = inputs.epic && Array.isArray(inputs.epic.summary.ids) ? inputs.epic.summary.ids.filter((id) => typeof id === 'string' && id) : []
@@ -354,14 +600,60 @@ const taskGroups = inputs.task && Array.isArray(inputs.task.summary.groups)
   : []
 
 enter('Judge')
-const JUDGE_SCHEMA = {
+const UNSCORED_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['path', 'judged'],
+  required: ['id', 'reason'],
+  properties: { id: { type: 'string' }, reason: { type: 'string' } },
+}
+const SIZE_PROPERTIES = {
+  jobSize: { type: 'integer' },
+  sizeLow: { type: 'integer' },
+  sizeHigh: { type: 'integer' },
+  sizeConfidence: { type: 'integer' },
+}
+// A judgment is the JSON file `record` reads; the session returns it and the script saves it.
+const EPIC_JUDGMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['rubric', 'scores', 'unscored'],
   properties: {
-    path: { type: 'string' },
-    judged: { type: 'integer' },
-    unscored: { type: 'array', items: { type: 'string' } },
+    rubric: { type: 'string', enum: ['epic-wsjf'] },
+    scores: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'userBusinessValue', 'timeCriticality', 'confidence', 'rationale'],
+        properties: {
+          id: { type: 'string' },
+          userBusinessValue: { type: 'integer' },
+          timeCriticality: { type: 'integer' },
+          confidence: { type: 'integer' },
+          ...SIZE_PROPERTIES,
+          rationale: { type: 'object' },
+        },
+      },
+    },
+    unscored: { type: 'array', items: UNSCORED_SCHEMA },
+  },
+}
+const TASK_JUDGMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['rubric', 'scores', 'unscored'],
+  properties: {
+    rubric: { type: 'string', enum: ['task-wsjf'] },
+    scores: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'jobSize', 'sizeLow', 'sizeHigh', 'sizeConfidence', 'rationale'],
+        properties: { id: { type: 'string' }, ...SIZE_PROPERTIES, rationale: { type: 'object' } },
+      },
+    },
+    unscored: { type: 'array', items: UNSCORED_SCHEMA },
   },
 }
 const epicDir = file('judgments/epic')
@@ -383,10 +675,8 @@ ${JUDGE_RULES}
 
 Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`sizedFromTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. Only an Epic whose elaboration is done takes its size from its Tasks; until then it is sized by this estimate, never by the Tasks written so far. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the architecture and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
 
-Write ${epicDir}/${id}.json as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when sizedFromTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}.
-
-Return the path you wrote, how many items you judged (1 or 0), and the ids you could not judge.`,
-  { label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
+Your judgment is ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when sizedFromTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}. Write it to ${epicDir}/${id}.json, and return that same object, exactly as written.`,
+  { label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: EPIC_JUDGMENT_SCHEMA }
 )
 
 const judgeTasks = (group) => {
@@ -400,28 +690,36 @@ ${JUDGE_RULES}
 
 For each of those Tasks, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split: say so in its rationale, and record the size you judged. Do not reduce it to 13.
 
-Write ${taskDir}/${group.key}.json as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item.
-
-Return the path you wrote, how many Tasks you judged, and the ids you could not judge.`,
-    { label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
+Your judgment is ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item. Write it to ${taskDir}/${group.key}.json, and return that same object, exactly as written.`,
+    { label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: TASK_JUDGMENT_SCHEMA }
   )
 }
 
+// After a session returns, the script makes its judgment file hold exactly the judgment returned
+// (relayKit.ensureJson): `record` reads the files, so no file is trusted to the session's own write.
+async function judgeAndSave(job) {
+  const out = await job.judge()
+  if (!out) return null
+  const saved = await relayKit.ensureJson(settleAgent, { label: `save:${job.level}:${job.key}`, phase: 'Judge', runner: RUNNER, file: job.file, value: out })
+  if (saved.ok) return out
+  log(`${job.level} ${job.key}: the judgment could not be saved to ${job.file}: ${saved.error}`)
+  return null
+}
 const jobs = [
-  ...epicIds.map((id) => ({ level: 'epic', key: id, ids: [id], run: () => judgeEpic(id) })),
-  ...taskGroups.map((g) => ({ level: 'task', key: g.key, ids: g.tasks.slice(), run: () => judgeTasks(g) })),
+  ...epicIds.map((id) => ({ level: 'epic', key: id, ids: [id], file: `${epicDir}/${id}.json`, judge: () => judgeEpic(id) })),
+  ...taskGroups.map((g) => ({ level: 'task', key: g.key, ids: g.tasks.slice(), file: `${taskDir}/${g.key}.json`, judge: () => judgeTasks(g) })),
 ]
 const judging = {
   epic: { sessions: 0, judged: 0, failed: [], failedSessions: 0 },
   task: { sessions: 0, judged: 0, failed: [], failedGroups: [], failedSessions: 0 },
 }
-const judged = await parallel(jobs.map((job) => () => job.run()))
+const judged = await parallel(jobs.map((job) => () => judgeAndSave(job)))
 jobs.forEach((job, n) => {
   const out = judged[n]
   const tally = judging[job.level]
   tally.sessions += 1
   if (out) {
-    tally.judged += out.judged || 0
+    tally.judged += Array.isArray(out.scores) ? out.scores.length : 0
     return
   }
   tally.failedSessions += 1
@@ -432,15 +730,14 @@ const judgingFailed = [...judging.epic.failed, ...judging.task.failed]
 log(`Judged ${judging.epic.judged} Epic(s) in ${judging.epic.sessions} session(s) and ${judging.task.judged} Task(s) in ${judging.task.sessions} session(s); record reads every judgment file on disk`)
 
 enter('Apply')
-const recordArgs = [`--plan ${shq(planFile)}`, `--epics-dir ${shq(epicDir)}`, `--tasks-dir ${shq(taskDir)}`]
-const records = !planned['score-plan'] || (plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0
-const applied = await runSteps('apply', [
-  ...(records ? [{ name: 'record', command: cmd('record', `${recordArgs.join(' ')}${dry} --out ${shq(file('record.json'))}`) }] : []),
-  { name: 'score', command: cmd('score', `--out ${shq(file('score.json'))}${dry}`) },
-])
-const recorded = records && applied.record ? applied.record.summary || {} : null
+const records = !planned || (plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0
+const recordOut = records
+  ? await step('record', `record --plan ${shq(planFile)} --epics-dir ${shq(epicDir)} --tasks-dir ${shq(taskDir)}${dry} --out ${shq(file('record.json'))}`)
+  : null
+const scoreOut = await step('score', `score --out ${shq(file('score.json'))}${dry}`)
+const recorded = records && recordOut ? recordOut.summary || {} : null
 
-const score = applied.score ? applied.score.summary || {} : null
+const score = scoreOut ? scoreOut.summary || {} : null
 if (score) {
   log(`Scored ${score.epicsScored} Epic(s) (${score.epicsWritten} written) and ${score.tasksScored} Task(s) (${score.tasksWritten} written) — detail in ${file('score.json')}`)
 }
