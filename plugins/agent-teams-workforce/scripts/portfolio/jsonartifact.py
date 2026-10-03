@@ -266,6 +266,8 @@ def main() -> int:
     parser.add_argument("--counts", default="")
     parser.add_argument("--recover", action="store_true")
     parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--research-agent", default="")
+    parser.add_argument("--research-repo", type=Path)
     args = parser.parse_args()
     if args.document or args.source:
         try:
@@ -304,7 +306,19 @@ def main() -> int:
                 or checkpoint.get("status") != "complete"
                 or checkpoint.get("revision", "") != args.revision
             ):
-                print(json.dumps({"pending": True}))
+                pending = {"pending": True}
+                if args.research_agent and args.research_repo is not None:
+                    from researchrecovery import recover
+
+                    research = recover(
+                        args.candidate,
+                        args.revision,
+                        args.research_agent,
+                        args.research_repo,
+                    )
+                    if research:
+                        pending["research"] = research
+                print(json.dumps(pending))
                 return 0
             args.recover = True
         if args.recover and receipt is None:

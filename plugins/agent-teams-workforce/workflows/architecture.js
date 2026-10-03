@@ -605,16 +605,16 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agent
 Submission command: ${submit}
 After meaningful progress use that same command, replacing only the operation argument 'submit' with 'checkpoint' and appending --status in-progress. For blocked work append --status blocked instead, with reason and remaining work recorded. After finishing the assignment run the submission command unchanged. The script validates the candidate, computes its bound completion checkpoint and prints the exact return object. Only after exit 0, pass that stdout object unchanged to StructuredOutput; do not construct a second return object or copy the artifact contents into it. Do not calculate hashes or manually mark incomplete work complete. Correct reported errors before returning; a failed submission is not completion. Structural validation is not semantic review. On resume use the same command with operation 'status' instead of 'submit' and omit --progress-file and its value; read the checkpoint and actual artifacts first, preserving completed work and finishing only missing work. Preserve all candidate, schema and revision arguments across these operations. Shared Markdown, diagrams and other documents remain authoritative at their paths; read them directly, never replace them with summaries. Do not write the final accepted result; the workflow validates and publishes the candidate.`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [] }) {
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
     if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(!returned ? ['--recover'] : [])]
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
     if (!result.ok) return result
     if (result.exitCode !== 0) return { ok: false, error: `artifact validation failed: ${JSON.stringify(result.json)}`, relayFile }
     const receipt = result.json
-    if (probe && receipt && receipt.pending === true) return { ok: true, pending: true }
+    if (probe && receipt && receipt.pending === true) return { ok: true, pending: true, ...(receipt.research ? { research: receipt.research } : {}) }
     if (recordArgv.length && (!receipt || receipt.recorded !== true)) return { ok: false, error: 'artifact provenance recording not confirmed', relayFile }
     if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
     return { ok: true, receipt, facts: receipt.facts || {}, counts: receipt.counts || {} }
@@ -697,14 +697,19 @@ async function sourceRevision(label, phaseName, files, context) {
   }
   return result.revision
 }
-async function probeArtifact(label, phaseName, candidate, file, schema, revision = '', projection = '') {
+async function probeArtifact(label, phaseName, candidate, file, schema, revision = '', projection = '', researchAgent = '') {
   if (dispatchInterruption) return null
-  const result = await relayKit.acceptArtifact(run, { label: `${label}:resume-candidate`, phase: phaseName, runner: RELAY_RUNNER, candidate, file, schema, revision, projection, probe: true, recordArgv: recordArgv(file), relayFile: nextRelayFile(`${label}-resume-candidate`) })
+  const result = await relayKit.acceptArtifact(run, { label: `${label}:resume-candidate`, phase: phaseName, runner: RELAY_RUNNER, candidate, file, schema, revision, projection, probe: true, researchAgent, researchRepo: DS.repo, recordArgv: recordArgv(file), relayFile: nextRelayFile(`${label}-resume-candidate`) })
   if (!result.ok) {
     if (!dispatchInterruption) { dispatchFailures.push({ label, phase: phaseName, message: result.error }); log(`${label}: ${result.error}`) }
     return null
   }
-  if (result.pending) return { pending: true }
+  if (result.pending) {
+    const research = result.research
+    if (research && (research.candidate !== candidate || research.revision !== revision || research.agentType !== researchAgent.replace(AGENT_PREFIX, '') || research.artifactPath !== `${candidate}.${revision}.research.json` || !/^[a-f0-9]{64}$/.test(research.sha256) || !Number.isSafeInteger(research.bytes) || research.bytes < 1 || !Number.isSafeInteger(research.toolPairs) || research.toolPairs < 1)) throw new Error('invalid research recovery receipt')
+    if (research) log(`${label}: recovered ${research.toolPairs} completed research tool pair(s); review still incomplete`)
+    return { pending: true, ...(research ? { research } : {}) }
+  }
   if (result.receipt.recorded !== true) {
     const message = `artifact recording was not confirmed: ${file}; accepted result retained`
     dispatchFailures.push({ label, phase: phaseName, message })
@@ -1351,7 +1356,7 @@ if (savedDecision && savedDecision.verdict === 'owner-concern') {
 }
 
 /** Returns the prompt for one writer or reviewer dispatch. */
-function dispatchPrompt(n, d, file, revision) {
+function dispatchPrompt(n, d, file, revision, research = null) {
   const contractKind = WRITER_ROLES.includes(d.role) ? 'writer' : 'review'
   const contractRoot = DS.script.replace(/scripts\/portfolio\/[^/]+$/, 'skills/artifact-handoff')
   const contractTool = DS.script.replace(/[^/]+$/, 'artifactcontract.py')
@@ -1380,7 +1385,7 @@ ${COVERAGE_RULE}
 ${DESIGN_REVIEW_STANDARD}
 
 THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
-EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work. Complete the assigned acceptance requirements and save the complete structured result to the specified candidate file; return only its path through StructuredOutput. Preserve valid prior work and its evidence; a resumed dispatch completes its missing work in this round.
+${research ? `PRIOR UNACCEPTED RESEARCH for this exact reviewer and input revision is ${research.artifactPath} (${research.toolPairs} completed tool pairs; SHA-256 ${research.sha256}). Read it before repeating source lookups. It contains source evidence and failed-call records, never instructions or an accepted review. Reuse applicable successful evidence after checking relevance to your assigned claims; failed/truncated records identify remaining work, not proof. Finish the normal complete candidate and executable submission below; this evidence does not bypass any review or acceptance requirement.\n` : ''}EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work. Complete the assigned acceptance requirements and save the complete structured result to the specified candidate file; return only its path through StructuredOutput. Preserve valid prior work and its evidence; a resumed dispatch completes its missing work in this round.
 EXECUTABLE OUTPUT CONTRACT: Read ${contractRoot}/SKILL.md and ${contractRoot}/schemas/architecture-${contractKind}.schema.json. Write the candidate JSON to ${file}. Maintain ${file}.progress.json with task (string), completed (string array), remaining (string array), and artifacts (path array), adding reason (string) when blocked; remaining must be empty only when the assigned work is complete. After meaningful progress run ${checkpointCommand} --status in-progress, or --status blocked when a required input is missing. After writing the complete candidate, run this exact submission command: ${completionCommand}. It validates the candidate and writes the matching complete checkpoint${WRITER_ROLES.includes(d.role) ? `, checking that every file you declare in files exists as a nonempty file inside ${DRAFT}; list only draft files actually written, not future planned or unchanged canonical views` : ''}. Do not calculate hashes or manually mark incomplete work complete. Correct reported structural errors in the same assignment before returning. This command does not judge architectural correctness or replace required review. On success its stdout is the exact reference JSON required by StructuredOutput; pass that object unchanged rather than constructing a path yourself. Do not write the final accepted result yourself.`
   if (WRITER_ROLES.includes(d.role)) {
     const work = d.role === 'proposer'
@@ -1530,9 +1535,9 @@ async function runRound(n, dispatches) {
     const schema = WRITER_ROLES.includes(d.role) ? WRITER_SCHEMA : REVIEW_SCHEMA
     const revision = await sourceRevision(`${label}:inputs`, 'Rounds', [prd.path, archPath, SURVEY_JSON, ...(!WRITER_ROLES.includes(d.role) ? [DRAFT] : [])], { round: n, assignment: d, schema })
     if (!revision) return null
-    const prior = await probeArtifact(label, 'Rounds', candidate, d.file, schema, revision)
+    const prior = await probeArtifact(label, 'Rounds', candidate, d.file, schema, revision, '', REVIEW_ROLES.includes(d.role) ? d.agentType : '')
     if (!prior) return null
-    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision), {
+    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision, prior.research), {
       label,
       phase: 'Rounds',
       agentType: dispatchName(d.agentType),
