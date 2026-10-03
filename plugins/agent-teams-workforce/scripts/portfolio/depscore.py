@@ -898,12 +898,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="the arch-integration-files files file",
     )
     arc.add_argument(
-        "--check-ids", default="", help="the approved coverage row ids, comma-separated"
-    )
-    arc.add_argument(
-        "--checks-sha256",
-        default="",
-        help="the SHA-256 of the approved rows' canonical [{id, revision}]",
+        "--coverage-from",
+        type=Path,
+        required=True,
+        help="the relay file of the arch-resume run holding the approved coverage rows",
     )
     arc.add_argument(
         "--coverage-revision", default="", help="the revision the review must bind to"
@@ -1225,8 +1223,7 @@ def run(args: argparse.Namespace) -> dict:
         return head | review_check(
             args.review,
             files=args.files,
-            check_ids=split_ids(args.check_ids),
-            checks_sha256=args.checks_sha256,
+            coverage_from=args.coverage_from,
             coverage_revision=args.coverage_revision,
         )
     if command == "prd-parse":
@@ -1462,7 +1459,7 @@ def main(argv: list[str] | None = None) -> int:
         list(sys.argv[1:] if argv is None else argv)
     )
     if typed_wrong:
-        print(json.dumps(relay.mismatch_envelope(typed_wrong), separators=(",", ":")))
+        print(relay.line(relay.mismatch_envelope(typed_wrong)))
         return 3
     args = build_parser().parse_args(argv)
     args.directory = getattr(args, "directory", None)
@@ -1477,8 +1474,8 @@ def main(argv: list[str] | None = None) -> int:
         except (relay.RelayError, json.JSONDecodeError, OSError) as exc:
             print(json.dumps({"error": str(exc), "command": args.command}, indent=2))
             return 2
-        print(json.dumps(shown, separators=(",", ":")))
-        return shown["relay"]["exit"]
+        print(relay.line(shown))
+        return shown["~exit"]
     status = 0
     try:
         payload = run(args)
@@ -1516,7 +1513,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 2
-        print(json.dumps(shown, separators=(",", ":")))
+        print(relay.line(shown))
         return status
     print(json.dumps(payload, indent=2))
     return status

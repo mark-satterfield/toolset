@@ -5,8 +5,8 @@ copies what it prints. This script is what the session types, for every command 
 `depscore.py` (which carries the same protocol itself). It takes, first, `--argv-sha256 HEX`: the
 SHA-256 of the canonical JSON of the argument list after it, so a command line typed differently
 from the one the workflow built is refused (exit 3) before anything runs. Everything it prints is
-one sealed envelope (see relay.py): the facts, plus `relay: {file, sha256, bytes, exit,
-checksum}`, which the workflow checks the session's copy against.
+one sealed, flat envelope line (see relay.py): the facts, plus `~exit`, `~checksum` and the
+relay file's `~file`, `~sha256`, `~bytes`, which the workflow checks the session's copy against.
 
 Commands:
 
@@ -42,7 +42,7 @@ def _dump(envelope: dict) -> None:
     Args:
         envelope: The sealed envelope.
     """
-    print(json.dumps(envelope, separators=(",", ":")))
+    print(relay.line(envelope))
 
 
 def _tail(text: str, n: int) -> str:
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         _dump(relay.seal({"error": str(exc)}, 2, None))
         return 2
     _dump(shown)
-    return shown["relay"]["exit"]
+    return shown["~exit"]
 
 
 if __name__ == "__main__":

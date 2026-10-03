@@ -7,13 +7,14 @@ trusted; both are checked deterministically:
 
 - `--argv-sha256 HEX` (first on the command line): the SHA-256 of the canonical JSON of the
   argument list after it. A command line typed differently from the one the script built is
-  refused with exit 3 before anything runs, so the script can have it run again.
+  refused with exit 3 before anything runs.
 - `--relay FILE`: the full result is written to FILE as `{"command": ..., "result": ...}`, and
   stdout carries only the result's relay VIEW, the few facts the script branches on (for
-  `arch-resume` see `view`), plus `relay: {file, sha256, bytes, checksum}`: FILE's SHA-256 and
-  size, and the SHA-256 of the view's canonical JSON. The script computes the same canonical
-  JSON of what the runner returned and accepts it only when the checksums match; on a
-  mismatch it has `relay-read` print the same envelope again from FILE, re-running nothing.
+  `arch-resume` see `view`), flattened to one object of scalars (`flatten`), plus `~file`,
+  `~sha256`, `~bytes` (FILE's path, SHA-256 and size), `~exit` and `~checksum`, the SHA-256 of
+  the canonical JSON of `{exit, view}`; it is printed as one canonical line (`line`). The
+  runner returns that line verbatim; the script parses it, recomputes the checksum, accepts
+  only an exact copy and never retries a mismatch.
   Sessions that need the details are given FILE's path.
 
 The canonical form is ASCII only (every other character a `\\uXXXX` escape of its UTF-16
@@ -169,8 +170,8 @@ def _arch_resume_view(result: dict) -> dict:
     Prose (coverage gap texts, overlap warnings), finding verdicts and files, the dispatch
     files, answers and claim assignments of a pending plan, and the hash rows of the coverage
     checks stay in the relay file and in `ledger.json`, which the sessions read. The checks
-    are reduced to their ids and the SHA-256 of their canonical `[{id, revision}]` list
-    (sorted by id), which the script compares with a review's verified checks.
+    are reduced to their count; `arch-review-check --coverage-from` reads the rows from the
+    relay file.
 
     Args:
         result: The full `arch-resume` result.
@@ -225,8 +226,7 @@ def _arch_resume_view(result: dict) -> dict:
         "coverage": {
             "revision": cov.get("revision"),
             "gapCount": len(gaps) if isinstance(gaps, list) else 0,
-            "checkIds": [r["id"] for r in rows],
-            "checksSha256": hashlib.sha256(canonical(rows).encode("ascii")).hexdigest(),
+            "rows": len(rows),
         },
         "rounds": {
             "last": rounds.get("last"),
@@ -285,6 +285,16 @@ COUNTED = {
 }
 
 
+#: Keys no workflow reads that depscore.py echoes back (the data source, warnings, the
+#: dry-run plan, the command's own name): left out of every view, kept in the relay file.
+ECHOED = ("source", "warnings", "planned", "command", "dryRun")
+#: Per command, the only top-level keys its view carries, when a workflow reads few of many.
+WHITELIST = {
+    "elaboration-start": ("ok", "refusal", "owner", "previousState"),
+    "elaboration-finish": ("ok", "lifecycle", "missing", "summary", "storyEdges"),
+}
+
+
 def view(command: str, result: dict) -> dict:
     """The part of a command's result the workflow script receives.
 
@@ -297,37 +307,96 @@ def view(command: str, result: dict) -> dict:
         for `arch-snapshot --counts`, each diff's lists as counts; otherwise the result.
     """
     if result.get("error"):
-        return dict(result)
+        return {"error": result["error"]}
     if command == "arch-resume":
         return _arch_resume_view(result)
+    if command in WHITELIST:
+        return {k: result[k] for k in WHITELIST[command] if k in result}
+    out = {k: v for k, v in result.items() if k not in ECHOED}
     if command in COUNTED:
-        return _counted(result, COUNTED[command])
+        return _counted(out, COUNTED[command])
     if command == "arch-snapshot" and result.get("countsOnly"):
         diffs = [
             _counted(d, ("created", "changed", "deleted"))
             for d in result.get("diffs") or []
             if isinstance(d, dict)
         ]
-        return dict(result) | {"diffs": diffs}
-    return dict(result)
+        return out | {"diffs": diffs}
+    return out
 
 
-def checksum(shown: dict, exit_code: int) -> str:
-    """The SHA-256 a relayed view is checked against: of the canonical `{exit, view}`.
+def _segment(key: object) -> str:
+    """One path segment of a flat key: `~` written `~0` and `/` written `~1`.
+
+    Args:
+        key: An object key.
+
+    Returns:
+        The escaped segment.
+    """
+    return str(key).replace("~", "~0").replace("/", "~1")
+
+
+def flatten(shown: dict) -> dict:
+    """A view as one flat object of scalars, so a runner copies one line of plain values.
+
+    Each scalar leaf is keyed by its path, segments joined by `/` (see `_segment`). A nested
+    object, list or null is marked by a key ending in `/~{}` (its key count), `/~#` (its length)
+    or `/~null` (1), and a non-empty list of non-empty strings without commas is one key ending
+    in `/~,` holding them comma-joined, so the workflow rebuilds the view exactly, empty ones
+    included. Keys
+    starting with `~` at the top level are the relay's own.
 
     Args:
         shown: The view.
+
+    Returns:
+        The flat view.
+    """
+    out: dict = {}
+
+    def walk(value: object, path: str) -> None:
+        join = (lambda seg: f"{path}/{seg}") if path else (lambda seg: seg)
+        if isinstance(value, dict):
+            if path:
+                out[join("~{}")] = len(value)
+            for k, v in value.items():
+                walk(v, join(_segment(k)))
+        elif (
+            isinstance(value, (list, tuple))
+            and value
+            and all(isinstance(v, str) and v and "," not in v for v in value)
+        ):
+            out[join("~,")] = ",".join(value)
+        elif isinstance(value, (list, tuple)):
+            out[join("~#")] = len(value)
+            for i, v in enumerate(value):
+                walk(v, join(str(i)))
+        elif value is None:
+            out[join("~null")] = 1
+        else:
+            out[path] = value
+
+    walk(shown, "")
+    return out
+
+
+def checksum(flat: dict, exit_code: int) -> str:
+    """The SHA-256 a relayed flat view is checked against: of the canonical `{exit, view}`.
+
+    Args:
+        flat: The flat view.
         exit_code: The exit status reported with it.
 
     Returns:
         The lower-case hex digest.
     """
-    text = canonical({"exit": exit_code, "view": shown})
+    text = canonical({"exit": exit_code, "view": flat})
     return hashlib.sha256(text.encode("ascii")).hexdigest()
 
 
 def seal(shown: dict, exit_code: int, path: Path | None) -> dict:
-    """The object printed on stdout: the view with its `relay` block.
+    """The object printed on stdout: the flat view with the relay's own keys.
 
     Args:
         shown: The view.
@@ -335,18 +404,30 @@ def seal(shown: dict, exit_code: int, path: Path | None) -> dict:
         path: The relay file holding the full result, or None when nothing was saved.
 
     Returns:
-        The envelope `{...view, relay: {file, sha256, bytes, exit, checksum}}`.
+        The flat envelope: the view's leaves plus `~exit`, `~checksum` and, with a relay
+        file, `~file`, `~sha256` and `~bytes`. No value in it is null, a list or an object.
     """
-    data = path.read_bytes() if path is not None and path.is_file() else None
-    return shown | {
-        "relay": {
-            "file": str(path) if path is not None else None,
-            "sha256": hashlib.sha256(data).hexdigest() if data is not None else None,
-            "bytes": len(data) if data is not None else None,
-            "exit": exit_code,
-            "checksum": checksum(shown, exit_code),
-        }
-    }
+    flat = flatten(shown)
+    env = flat | {"~exit": exit_code, "~checksum": checksum(flat, exit_code)}
+    if path is not None:
+        env["~file"] = str(path)
+        if path.is_file():
+            data = path.read_bytes()
+            env["~sha256"] = hashlib.sha256(data).hexdigest()
+            env["~bytes"] = len(data)
+    return env
+
+
+def line(envelope: dict) -> str:
+    """The one line printed for an envelope: its canonical JSON.
+
+    Args:
+        envelope: The flat envelope.
+
+    Returns:
+        The line.
+    """
+    return canonical(envelope)
 
 
 def save(command: str, result: dict, shown: dict, exit_code: int, path: Path) -> dict:

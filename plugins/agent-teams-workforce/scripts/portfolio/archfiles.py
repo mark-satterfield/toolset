@@ -10,12 +10,10 @@ file, so no file list passes through a model on its way between commands.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 from archstate import snapshot_tree, tree_diff
-from relay import canonical
 
 EFFECTIVE = "arc42"
 CONSTRAINTS = "arc42/02-architecture-constraints"
@@ -150,24 +148,11 @@ def integration_files(
     return result
 
 
-def _rows_sha(rows: list[dict]) -> str:
-    """The SHA-256 of the canonical JSON of coverage rows, as arch-resume computes it.
-
-    Args:
-        rows: `[{id, revision}]`, sorted by id.
-
-    Returns:
-        The hex digest.
-    """
-    return hashlib.sha256(canonical(rows).encode("ascii")).hexdigest()
-
-
 def review_check(
     review: Path,
     *,
     files: Path,
-    check_ids: list[str],
-    checks_sha256: str,
+    coverage_from: Path,
     coverage_revision: str,
 ) -> dict:
     """Check a saved conformance review against the integration's files and approved coverage.
@@ -175,8 +160,9 @@ def review_check(
     Args:
         review: The saved review (`conformance-N.json`).
         files: The files file `integration_files` wrote.
-        check_ids: The approved coverage row ids.
-        checks_sha256: The SHA-256 the verified checks' `[{id, revision}]` must hash to.
+        coverage_from: The relay file of the `arch-resume` run that read the approved
+            coverage: its `result.coverage.checksNeeded` rows (`{id, revision}`) are the rows
+            every one of which needs a verified check at its revision.
         coverage_revision: The coverage revision the review must be bound to.
 
     Returns:
@@ -190,6 +176,16 @@ def review_check(
         return {"error": f"{review}: no saved review"}
     if not isinstance(f, dict):
         return {"error": f"{files}: no saved integration files"}
+    saved = _load(coverage_from)
+    result = saved.get("result") if isinstance(saved, dict) else None
+    cov = result.get("coverage") if isinstance(result, dict) else None
+    if not isinstance(cov, dict) or not isinstance(cov.get("checksNeeded"), list):
+        return {"error": f"{coverage_from}: no arch-resume coverage rows"}
+    needed = {
+        str(row.get("id")): str(row.get("revision") or "")
+        for row in cov["checksNeeded"]
+        if isinstance(row, dict) and row.get("id")
+    }
     reviewed = set(_paths(r.get("reviewedFiles")))
     checks = [c for c in r.get("coverageChecks") or [] if isinstance(c, dict)]
 
@@ -207,14 +203,10 @@ def review_check(
             None,
         )
 
-    unverified = [cid for cid in check_ids if verified(cid) is None]
-    at_revision = False
-    if not unverified:
-        rows = [
-            {"id": cid, "revision": str(verified(cid).get("revision") or "")}
-            for cid in sorted(check_ids)
-        ]
-        at_revision = _rows_sha(rows) == checks_sha256
+    unverified = sorted(cid for cid in needed if verified(cid) is None)
+    at_revision = not unverified and all(
+        str(verified(cid).get("revision") or "") == rev for cid, rev in needed.items()
+    )
     findings = r.get("findings")
     return {
         "missed": [p for p in _paths(f.get("touched")) if p not in reviewed],

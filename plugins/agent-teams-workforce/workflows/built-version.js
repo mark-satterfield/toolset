@@ -17,10 +17,12 @@ export const meta = {
 // Neither copy is trusted:
 // - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
 //   list; the program refuses (exit 3, nothing run) a command line typed differently;
-// - every result is printed as a sealed envelope, the facts plus relay: { file, sha256, bytes,
-//   exit, checksum }, where checksum is the SHA-256 of the canonical JSON of { exit, view }.
-//   The script recomputes it over the copy it receives and accepts only an exact copy. A
-//   result saved in a relay file is read again (re-running nothing) when the copy is altered.
+// - every result is printed as ONE line: a flat object of scalars (the view's leaves keyed by
+//   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
+//   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
+//   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
+//   copy, then rebuilds the view. Nothing is retried: a copy that does not match fails the
+//   step with the exact reason, and the program's full result stays in its relay file.
 // depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
 // other program, and checks or writes a saved JSON file against the hash of the value this
 // script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
@@ -132,83 +134,96 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the printed object, whose relay block's shape the runtime validates. */
+  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
   const SCHEMA = {
     type: 'object',
     additionalProperties: false,
-    required: ['exitCode', 'output'],
-    properties: {
-      exitCode: { type: 'integer' },
-      output: {
-        type: 'object',
-        properties: {
-          relay: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['file', 'sha256', 'bytes', 'exit', 'checksum'],
-            properties: {
-              file: { type: ['string', 'null'] },
-              sha256: { type: ['string', 'null'] },
-              bytes: { type: ['integer', 'null'] },
-              exit: { type: 'integer' },
-              checksum: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
+    required: ['exitCode', 'stdout'],
+    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
   }
   const HEX = /^[0-9a-f]{64}$/
-  /** Why a runner's copy is not the exact envelope the program printed (for relay file `file`), or ''. */
-  function problem(output, file) {
-    const r = output && output.relay
-    if (!r || typeof r !== 'object') return 'the result came back without its relay block'
-    if (!HEX.test(String(r.checksum)) || !Number.isInteger(r.exit)) return 'the relay block is malformed'
-    if (r.file !== file && !(r.file === null && r.exit === 3)) return `the relay block names ${JSON.stringify(r.file)}, not ${JSON.stringify(file)}`
-    const { relay: _relay, ...view } = output
+  /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
+  const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
+  /**
+   * Rebuilds a view from its flat form (scripts/portfolio/relay.py flatten): leaves keyed by
+   * `/`-joined paths (`~0` is `~`, `~1` is `/`), containers and nulls marked by `/~{}`, `/~#`,
+   * `/~null`; a list of plain strings is one comma-joined value marked `/~,`.
+   */
+  function unflatten(flat) {
+    const root = {}
+    const at = new Map([['', root]])
+    const unesc = (seg) => seg.replace(/~1/g, '/').replace(/~0/g, '~')
+    const MARK = { '~{}': 1, '~#': 1, '~null': 1, '~,': 1 }
+    const entries = Object.keys(flat).map((k) => {
+      const segs = k.split('/')
+      const mark = MARK[segs[segs.length - 1]] ? segs[segs.length - 1] : null
+      return { k, segs: mark ? segs.slice(0, -1) : segs, mark, v: flat[k] }
+    })
+    entries.sort((x, y) => (x.mark ? x.segs.length - 0.5 : x.segs.length) - (y.mark ? y.segs.length - 0.5 : y.segs.length))
+    for (const e of entries) {
+      const parentKey = e.segs.slice(0, -1).join('/')
+      const parent = at.get(parentKey)
+      if (!parent) throw new Error(`unflatten: ${e.k} has no container`)
+      const last = e.segs[e.segs.length - 1]
+      const slot = Array.isArray(parent) ? Number(last) : unesc(last)
+      const value = e.mark === '~{}' ? {} : e.mark === '~#' ? new Array(Number(e.v) || 0) : e.mark === '~null' ? null : e.mark === '~,' ? String(e.v).split(',') : e.v
+      parent[slot] = value
+      if (e.mark === '~{}' || e.mark === '~#') at.set(e.segs.join('/'), value)
+    }
+    return root
+  }
+  /** Parses a runner's stdout copy and checks it is exactly the envelope the program printed; returns { env, flat } or { why }. */
+  function parse(stdout, file) {
+    let env
+    try {
+      env = JSON.parse(String(stdout || '').trim())
+    } catch (err) {
+      env = null
+    }
+    if (!env || typeof env !== 'object' || Array.isArray(env)) {
+      const text = String(stdout || '')
+      const exception = exceptionOf(text)
+      return { why: exception ? `the program failed: ${exception}` : `stdout is not one JSON line: ${JSON.stringify(text.slice(0, 300))}` }
+    }
+    if (!HEX.test(String(env['~checksum'])) || !Number.isInteger(env['~exit'])) return { why: 'the copy has no relay checksum or exit status' }
+    const named = env['~file'] === undefined ? null : env['~file']
+    if (named !== file && !(named === null && env['~exit'] === 3)) return { why: `the copy names relay file ${JSON.stringify(named)}, not ${JSON.stringify(file)}` }
+    const flat = {}
+    for (const k of Object.keys(env)) if (!RELAY_KEYS.includes(k)) flat[k] = env[k]
     let got = ''
     try {
-      got = sha256Json({ exit: r.exit, view })
+      got = sha256Json({ exit: env['~exit'], view: flat })
     } catch (err) {
-      return `the copy cannot be hashed: ${String((err && err.message) || err)}`
+      return { why: `the copy cannot be hashed: ${String((err && err.message) || err)}` }
     }
-    return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... the program printed`
+    if (got !== env['~checksum']) return { why: `the copy hashes to ${got}, not to the ${env['~checksum']} the program printed` }
+    return { env, flat }
   }
   const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
 
 ${command}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The workflow checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not one JSON object, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   /**
-   * Runs `command` in a runner session until an exact copy of its envelope comes back, at most
-   * `attempts` times. An altered copy is read again with `reread` when there is one (re-running
-   * nothing), else the command is run again (only read-only and idempotent commands have no
-   * reread). A command line typed wrong (exit 3) and a relay file the command never wrote (exit 4)
-   * are run again. Returns { ok: true, exit, view } or { ok: false, error, noResult? }.
+   * Runs `command` once in a runner session and accepts only an exact copy of the one line it
+   * printed. Nothing is retried: a copy that does not match, a command line typed differently
+   * (exit 3) or any other failure fails the step at once with the exact reason. Returns
+   * { ok: true, exit, view } or { ok: false, error, noResult? }.
    */
-  async function exec(dispatch, { label, phase, command, reread = null, file = null, attempts = 3 }) {
-    let line = command
-    let why = ''
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const out = await dispatch(prompt(line), { label: attempt === 1 ? label : `${label}:again-${attempt - 1}`, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
-      if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
-      why = problem(out.output, file)
-      if (why) {
-        log(`${label}: ${why}; ${reread ? 'reading the saved result again' : 'running it again'}`)
-        if (reread) line = reread
-        continue
-      }
-      const exit = out.output.relay.exit
-      const { relay: _relay, ...view } = out.output
-      if (exit === 3 || exit === 4) {
-        why = String(view.error || (exit === 3 ? 'the command line was typed differently' : 'no saved result'))
-        log(`${label}: ${why}; running the command again`)
-        line = command
-        continue
-      }
-      return { ok: true, exit, view }
+  async function exec(dispatch, { label, phase, command, file = null }) {
+    const out = await dispatch(prompt(command), { label, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+    if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
+    const got = parse(out.stdout, file)
+    if (got.why) return { ok: false, error: `${label}: the runner's copy did not match the line the program printed (${got.why})${file ? `; the program's result is in ${file}` : ''}` }
+    const exit = got.env['~exit']
+    let view
+    try {
+      view = unflatten(got.flat)
+    } catch (err) {
+      return { ok: false, error: `${label}: the printed view could not be rebuilt: ${String((err && err.message) || err)}` }
     }
-    return { ok: false, error: `${label} did not reach the workflow as printed in ${attempts} attempt(s): ${why}${file ? ` (its full result is in ${file})` : ''}; nothing was taken from an altered copy` }
+    if (exit === 3) return { ok: false, error: `${label}: ${String(view.error || 'the runner typed the command line differently from the one built')}; nothing ran` }
+    return { ok: true, exit, view }
   }
   /** The exception line a Python traceback in `text` ends with, or ''. */
   function exceptionOf(text) {
@@ -231,7 +246,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
     } catch (err) {
       return { error: `${label}: ${String((err && err.message) || err)}` }
     }
-    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), reread: pythonLine(script, ['relay-read', '--relay', file]), file })
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file })
     if (!r.ok) return { error: r.error, noResult: !!r.noResult }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
@@ -248,7 +263,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
-    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), reread: pythonLine(runner, ['read', '--relay', file]), file })
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file })
     if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
     return { ok: true, ...r.view, relayFile: file }
@@ -282,8 +297,26 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
     'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
     'c = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=True)',
     'h = lambda v: hashlib.sha256(c(v).encode("ascii")).hexdigest()',
+    'def flat(v, p="", o=None):',
+    '    o = {} if o is None else o',
+    '    j = (lambda s: p + "/" + s) if p else (lambda s: s)',
+    '    if isinstance(v, dict):',
+    '        if p:',
+    '            o[j("~{}")] = len(v)',
+    '        for k, x in v.items():',
+    '            flat(x, j(str(k).replace("~", "~0").replace("/", "~1")), o)',
+    '    elif isinstance(v, list):',
+    '        o[j("~#")] = len(v)',
+    '        for n, x in enumerate(v):',
+    '            flat(x, j(str(n)), o)',
+    '    elif v is None:',
+    '        o[j("~null")] = 1',
+    '    else:',
+    '        o[p] = v',
+    '    return o',
     'def emit(view, ex=0):',
-    '    print(c(dict(view, relay={"file": None, "sha256": None, "bytes": None, "exit": ex, "checksum": h({"exit": ex, "view": view})})))',
+    '    f = flat(view)',
+    '    print(c(dict(f, **{"~exit": ex, "~checksum": h({"exit": ex, "view": f})})))',
     '    sys.exit(ex)',
     'if h([boot, code] + args) != want:',
     '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
@@ -292,7 +325,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
   /**
    * Runs the Python `code` (which reads its arguments from ARGS and calls emit(obj) once with a
    * JSON object holding no floats) under a bootstrap that checks the command line, payload included,
-   * and seals what it emits. Read-only payloads only: an altered copy runs it again. Returns
+   * and seals what it emits. Returns
    * { ok: true, view } or { ok: false, error }.
    */
   async function inline(dispatch, { label, phase, code, args = [] }) {
@@ -303,7 +336,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, SCHEMA }
+  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
 
