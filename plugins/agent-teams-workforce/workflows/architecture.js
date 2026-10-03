@@ -116,24 +116,195 @@ const RUN_SCHEMA = {
   required: ['exitCode', 'output'],
   properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
 }
-/** Runs one depscore.py command in a runner session; returns its JSON output or { error }. */
-async function depscore(label, phaseName, commandArgs) {
-  const command = `python3 ${shq(DS.script)} -C ${shq(DS.repo)} ${commandArgs}`
-  const out = await run(
-    `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else:
+/** A depscore.py run: the relay block, when printed, has its shape validated by the runtime; relayProblem checks its values. */
+const RELAY_RUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: {
+    exitCode: { type: 'integer' },
+    output: {
+      type: 'object',
+      properties: {
+        relay: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['file', 'sha256', 'bytes', 'checksum'],
+          properties: { file: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, checksum: { type: 'string' } },
+        },
+      },
+    },
+  },
+}
+
+// A workflow script cannot run a command or read a file: a depscore.py command reaches the shell only
+// as text a runner session types, and its result reaches the script only as that session's copy. Neither
+// copy is trusted. The command carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
+// list, and depscore.py refuses (exit 3, nothing run) a command line typed differently. The result is
+// written in full to a relay file, and stdout carries only the few facts the script branches on with
+// the SHA-256 of their canonical JSON; the script recomputes it over the copy it receives and accepts
+// only an exact copy, reading the saved result again (relay-read, which re-runs nothing) on a mismatch.
+// See scripts/portfolio/relay.py; canonicalJson and sha256Ascii below spell the same bytes.
+const SHORT_ESCAPES = { '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }
+/** The canonical JSON of a value, as relay.py's canonical() spells it: sorted keys, no whitespace, ASCII only. */
+function canonicalJson(v) {
+  if (v === null) return 'null'
+  if (v === true) return 'true'
+  if (v === false) return 'false'
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) throw new Error(`${v} has no JSON spelling`)
+    return String(v)
+  }
+  if (typeof v === 'string') {
+    let out = '"'
+    for (let i = 0; i < v.length; i++) {
+      const unit = v.charCodeAt(i)
+      const esc = unit < 0x80 ? SHORT_ESCAPES[v[i]] : undefined
+      if (esc) out += esc
+      else if (unit >= 0x20 && unit <= 0x7e) out += v[i]
+      else out += `\\u${unit.toString(16).padStart(4, '0')}`
+    }
+    return `${out}"`
+  }
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`
+  if (typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${canonicalJson(k)}:${canonicalJson(v[k])}`).join(',')}}`
+  throw new Error(`a ${typeof v} has no JSON spelling`)
+}
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]
+/** The SHA-256, in lower-case hex, of an ASCII text (canonicalJson's output is ASCII only). */
+function sha256Ascii(text) {
+  const bytes = []
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c > 0x7f) throw new Error('sha256Ascii: the text is not ASCII')
+    bytes.push(c)
+  }
+  const bits = bytes.length * 8
+  bytes.push(0x80)
+  while (bytes.length % 64 !== 56) bytes.push(0)
+  for (const w of [Math.floor(bits / 0x100000000), bits >>> 0]) bytes.push((w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255)
+  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+  const W = new Array(64)
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+  for (let off = 0; off < bytes.length; off += 64) {
+    for (let t = 0; t < 16; t++) W[t] = ((bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) | (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3]) >>> 0
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3)
+      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10)
+      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0
+    }
+    let [a, b, c, d, e, f, g, h] = H
+    for (let t = 0; t < 64; t++) {
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[t] + W[t]) >>> 0
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+      h = g
+      g = f
+      f = e
+      e = (d + t1) >>> 0
+      d = c
+      c = b
+      b = a
+      a = (t1 + t2) >>> 0
+    }
+    ;[a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = (H[i] + x) >>> 0 })
+  }
+  return H.map((x) => x.toString(16).padStart(8, '0')).join('')
+}
+/** The argument list a POSIX shell makes of a command line built from bare words and shq() quoting. */
+function shellWords(line) {
+  const words = []
+  let word = null
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === "'") {
+      const close = line.indexOf("'", i + 1)
+      if (close < 0) throw new Error('shellWords: unterminated quote')
+      word = (word || '') + line.slice(i + 1, close)
+      i = close
+    } else if (ch === '\\') {
+      word = (word || '') + line[i + 1]
+      i += 1
+    } else if (/\s/.test(ch)) {
+      if (word !== null) words.push(word)
+      word = null
+    } else {
+      word = (word || '') + ch
+    }
+  }
+  if (word !== null) words.push(word)
+  return words
+}
+/** The depscore.py command line for `tail` (its arguments), led by the checksum of their argument list. */
+const checkedCommand = (tail) => `python3 ${shq(DS.script)} --argv-sha256 ${sha256Ascii(canonicalJson(shellWords(tail)))} ${tail}`
+/** Why a runner's copy of a relayed result is not the exact copy of what depscore.py printed, or ''. */
+function relayProblem(output, file) {
+  const r = output && output.relay
+  if (!r || typeof r !== 'object') return 'the result came back without its relay block'
+  if (r.file !== file) return `the relay block names ${JSON.stringify(r.file)}, not ${file}`
+  if (!/^[0-9a-f]{64}$/.test(String(r.checksum)) || !/^[0-9a-f]{64}$/.test(String(r.sha256)) || !Number.isInteger(r.bytes)) return 'the relay block is malformed'
+  const { relay: _relay, ...shown } = output
+  let got = ''
+  try {
+    got = sha256Ascii(canonicalJson(shown))
+  } catch (err) {
+    return `the copy cannot be hashed: ${String((err && err.message) || err)}`
+  }
+  return got === r.checksum ? '' : `the copy hashes to ${got.slice(0, 12)}..., not to the ${r.checksum.slice(0, 12)}... depscore.py printed`
+}
+const RELAY_DIR = `${WORK}/relay`
+const RELAY_ATTEMPTS = 3
+let relaySeq = 0
+/** One runner session: runs `command` once and returns { exitCode, output } as printed, or null. */
+function runCommand(label, phaseName, command) {
+  return run(
+    `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the script checks it against the checksum it carries and refuses any difference.
 
 ${command}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: phaseName, model: 'haiku', effort: 'low', schema: RUN_SCHEMA }
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object as \`output\`, copied exactly: every key and value as printed, every list complete and in order, every hexadecimal string character for character. Never summarize, shorten, count, reorder, rename or omit anything. The script checks your copy against the SHA-256 the object carries and rejects any difference. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+    { label, phase: phaseName, model: 'haiku', effort: 'low', schema: RELAY_RUN_SCHEMA }
   )
-  if (!out) return { error: `the ${label} runner returned no result` }
-  if (out.exitCode !== 0 || !out.output || out.output.error) {
-    const raw = String((out.output && out.output.error) || `depscore.py exited ${out.exitCode}`)
-    const exception = exceptionOf(raw)
-    return { error: exception ? `${exception} (depscore.py exited ${out.exitCode}; full output: ${raw})` : raw, exception, output: out.output || null }
+}
+/**
+ * Runs one depscore.py command and returns the facts it printed, checked to be an exact copy, with
+ * `relayFile` (the saved full result, for the sessions that need its details); or { error }. A command
+ * line typed wrong (exit 3, nothing ran) is run again; an altered copy of the result is read again from
+ * the relay file, never by running the command twice.
+ */
+async function depscore(label, phaseName, commandArgs) {
+  relaySeq += 1
+  const relayFile = `${RELAY_DIR}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
+  const first = checkedCommand(`-C ${shq(DS.repo)} --relay ${shq(relayFile)} ${commandArgs}`)
+  const again = checkedCommand(`relay-read --relay ${shq(relayFile)}`)
+  let ran = false
+  let problem = ''
+  for (let attempt = 1; attempt <= RELAY_ATTEMPTS; attempt++) {
+    const out = await runCommand(attempt === 1 ? label : `${label}:${ran ? 'reread' : 'rerun'}-${attempt - 1}`, phaseName, ran ? again : first)
+    if (!out) return { error: `the ${label} runner returned no result` }
+    if (out.exitCode === 3) {
+      problem = `the runner typed the command differently from the one built: ${String((out.output && out.output.error) || 'exit 3')}`
+      log(`${label}: ${problem}; running it again`)
+      continue
+    }
+    if (out.exitCode !== 0 || !out.output || out.output.error) {
+      const raw = String((out.output && out.output.error) || `depscore.py exited ${out.exitCode}`)
+      const exception = exceptionOf(raw)
+      return { error: exception ? `${exception} (depscore.py exited ${out.exitCode}; full output: ${raw})` : raw, exception, output: out.output || null }
+    }
+    ran = true
+    problem = relayProblem(out.output, relayFile)
+    if (!problem) {
+      const { relay: _relay, ...shown } = out.output
+      return { ...shown, relayFile }
+    }
+    log(`${label}: ${problem}; reading the saved result again from ${relayFile}`)
   }
-  return out.output
+  return { error: `depscore.py's result for ${label} did not reach the workflow as printed in ${RELAY_ATTEMPTS} attempt(s): ${problem}. Its full result is in ${relayFile}; nothing was taken from an altered copy.` }
 }
 /** Returns the exception line a Python traceback in `text` ends with (e.g. "ValueError: ..."), or '' when it holds none. */
 function exceptionOf(text) {
@@ -247,28 +418,30 @@ const assigned = new Map()
 async function readFacts(label, phaseName, proposalTeam = null, roundPlan = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
   const command = `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`
-  let out = null
-  let problem = ''
-  // The facts reach the script through a runner session; a pending plan it relays altered is read again once.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    out = await depscore(attempt ? `${label}-reread` : label, phaseName, command)
-    if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
-      return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
-    }
-    problem = pendingPlanProblem(out.rounds)
-    if (!problem) break
-    log(`${label}: the arch-resume facts came back altered (${problem})${attempt ? '' : '; reading them again'}`)
+  const out = await depscore(label, phaseName, command)
+  if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration || !out.coverage || !Number.isInteger(out.coverage.gapCount) || !Array.isArray(out.coverage.checkIds)) {
+    return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
   }
-  if (problem) return { error: `depscore.py arch-resume's facts about the saved round plan came back altered twice: ${problem}. The saved work in ${WORK} is untouched.` }
-  for (const w of listed(out.rounds.overlapWarnings)) log(`Rounds: ${w}`)
-  if (hasText(out.rounds.planKept)) log(`Rounds: ${out.rounds.planKept}`)
+  const problem = pendingPlanProblem(out.rounds)
+  if (problem) return { error: `depscore.py arch-resume reported a pending round plan that is not the shape it prints: ${problem}. The saved work in ${WORK} is untouched.` }
+  // The open findings arrive grouped by owner ({ owner: { answered: [id], open: [id] } }); their verdicts and files are in the ledger.
+  out.rounds.openFindings = Object.entries(out.rounds.openFindings || {}).flatMap(([owner, s]) => [
+    ...listed(s && s.answered).map((id) => ({ id, owner, answered: true })),
+    ...listed(s && s.open).map((id) => ({ id, owner, answered: false })),
+  ])
+  if (Number(out.rounds.overlapWarnings) > 0) log(`Rounds: ${out.rounds.overlapWarnings} reviewer overlap warning(s), listed under result.rounds.overlapWarnings in ${out.relayFile}`)
+  if (out.rounds.planKept === true) log(`Rounds: the plan already saved for round ${out.rounds.pendingRound} stands (result.rounds.planKept in ${out.relayFile})`)
   return out
 }
+/** True when arch-resume's facts report coverage gaps, or do not say how many. */
+const hasGaps = (f) => !f || !f.coverage || !Number.isInteger(f.coverage.gapCount) || f.coverage.gapCount > 0
+/** The approved coverage rows as arch-resume reports them: their ids and the SHA-256 of their canonical [{id, revision}] list. */
+const coverageRowsOf = (f) => ({ ids: listed(f && f.coverage && f.coverage.checkIds), sha: String((f && f.coverage && f.coverage.checksSha256) || '') })
 
 /**
  * Returns why the pending round plan in arch-resume's facts is not the shape depscore.py prints
  * (pendingRound and pendingDispatches agree with pendingPlan, which lists every dispatch in seq
- * order with at least one not complete), or '' when it is.
+ * order, each { seq, role, agentType, complete }, with at least one not complete), or '' when it is.
  */
 function pendingPlanProblem(rounds) {
   const pp = rounds.pendingPlan
@@ -277,8 +450,8 @@ function pendingPlanProblem(rounds) {
   if (pp === null) return pr === null ? '' : `pendingRound is ${pr} but pendingPlan is null`
   if (typeof pp !== 'object' || pp.round !== pr || !Number.isInteger(pr)) return `pendingPlan round ${pp && pp.round} does not match pendingRound ${pr}`
   if (!Array.isArray(pp.dispatches) || pp.dispatches.length !== rounds.pendingDispatches) return `pendingPlan.dispatches is not a list of ${rounds.pendingDispatches} dispatch(es)`
-  const bad = pp.dispatches.findIndex((d, i) => !d || d.seq !== i + 1 || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean' || !Array.isArray(d.files) || !Array.isArray(d.answers))
-  if (bad >= 0) return `pendingPlan dispatch ${bad + 1} lacks its seq, role, agentType, complete, files or answers`
+  const bad = pp.dispatches.findIndex((d, i) => !d || d.seq !== i + 1 || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean')
+  if (bad >= 0) return `pendingPlan dispatch ${bad + 1} lacks its seq, role, agentType or complete`
   if (pp.dispatches.every((d) => d.complete)) return 'pendingPlan has no dispatch left to run'
   return ''
 }
@@ -287,13 +460,14 @@ function pendingPlanProblem(rounds) {
 const resultFile = (n, d) => `${ROUNDS_DIR}/r${n}-${d.seq}-${d.role}-${d.agentType}.json`
 /**
  * Returns the dispatches of a saved pending plan, ready to run: the identity and completion
- * arch-resume reports for each, with the task the script holds for it this run (`local`, by seq
- * and agent) when it has one. A dispatch with no task here reads its task from the plan in ledger.json.
+ * arch-resume reports for each, with the task, files and answers the script holds for it this run
+ * (`local`, by seq and agent) when it has them. A dispatch without them here (files and answers null)
+ * reads its task, files, answers and assigned claims from its plan entry in ledger.json.
  */
 function planDispatches(pp, local = []) {
   return pp.dispatches.map((c) => {
     const l = local.find((x) => x.seq === c.seq && x.agentType === c.agentType && x.role === c.role) || {}
-    return { ...l, ...c, files: listed(c.files), answers: listed(c.answers), file: resultFile(pp.round, c) }
+    return { ...l, ...c, files: Array.isArray(l.files) ? listed(l.files) : null, answers: Array.isArray(l.answers) ? listed(l.answers) : null, file: resultFile(pp.round, c) }
   })
 }
 
@@ -751,10 +925,11 @@ if (lastRound) log(`Rounds: resumed after round ${lastRound} — ${ledgerLine()}
 
 /** Returns what still stands between the draft and a decision. */
 async function decisionGaps(label) {
-  const gaps = [...listed(facts.coverage && facts.coverage.gaps)]
+  const gaps = []
+  if (hasGaps(facts)) gaps.push(`${facts.coverage && Number.isInteger(facts.coverage.gapCount) ? facts.coverage.gapCount : 'an unknown number of'} coverage gap(s): each is listed under result.coverage.gaps in ${facts.relayFile}, with its row in ${LEDGER_JSON}`)
   const proposed = writersSoFar().some((w) => roleOf(w) === 'proposer')
   if (!proposed) gaps.push('no proposer has written the target yet')
-  for (const f of openFindings()) gaps.push(`finding ${f.id} (${f.verdict}) on ${f.file || 'the draft'} ${f.answered ? 'awaits independent resolution of its answer' : 'needs a bounded evidenced repair'}; owner ${f.owner || 'not known — assign it to a writer'}`)
+  for (const f of openFindings()) gaps.push(`finding ${f.id} (its verdict and file are in ${LEDGER_JSON}) ${f.answered ? 'awaits independent resolution of its answer' : 'needs a bounded evidenced repair'}; owner ${f.owner || 'not known — assign it to a writer'}`)
   for (const [w, k] of unreviewedByWriter()) gaps.push(`${k} claim(s) by ${w} have no reviewer verdict (the claims by ${w} in ${LEDGER_JSON} whose \`verdicts\` list is empty)`)
   for (const w of listed(ledgerFacts().proposersWithoutClaims)) gaps.push(`proposer ${w} stated no claims: a design with no claims cannot be reviewed; it states the claims a reviewer checks`)
   if (proposed) {
@@ -770,7 +945,7 @@ async function decisionGaps(label) {
 
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
 const savedDecision = facts.decision && typeof facts.decision === 'object' && hasText(facts.decision.verdict) ? facts.decision : null
-const savedCoverageValid = !!(savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && facts.coverage && !facts.coverage.gaps.length && savedDecision.coverageRevision === facts.coverage.revision)
+const savedCoverageValid = !!(savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && !hasGaps(facts) && savedDecision.coverageRevision === facts.coverage.revision)
 let decision = savedDecision && savedDecision.verdict === 'approve' && savedCoverageValid ? savedDecision : null
 // Legacy approval gets one bounded supplemental round, retaining its prior work.
 const roundLimit = MAX_ROUNDS + (savedDecision && savedDecision.verdict === 'approve' && (!savedDecision.coverageRevision || resumedFacts.contractVersion !== 2) ? 1 : 0)
@@ -828,7 +1003,9 @@ function dispatchPrompt(n, d, file) {
   const taskLine = hasText(d.task)
     ? `YOUR TASK THIS ROUND, from the coordinator: ${d.task}`
     : `YOUR TASK THIS ROUND, from the coordinator, is the \`task\` of ${planEntry}: read it there first, with that dispatch's \`files\` and \`answers\`.`
-  const answersBlock = d.answers.length
+  const answersBlock = d.answers === null
+    ? `\nFINDINGS YOU ANSWER THIS ROUND are the \`answers\` of ${planEntry} (none when that list is empty). Read each in the \`findings\` list of the ledger ${LEDGER_JSON} (its verdict, the claim, the file and the reviewer's evidence), and answer every one in \`answers\` by its id: \`fixed\` (name the change you made) or \`disputed\` (with your evidence).\n`
+    : d.answers.length
     ? `\nFINDINGS YOU ANSWER THIS ROUND: ${d.answers.join(', ')}. Read each in the \`findings\` list of the ledger ${LEDGER_JSON} (its verdict, the claim, the file and the reviewer's evidence), and answer every one in \`answers\` by its id: \`fixed\` (name the change you made) or \`disputed\` (with your evidence).\n`
     : ''
   const shared = `PRD: ${prdRef}
@@ -852,7 +1029,7 @@ EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your
     return `You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
 
 ${taskLine}
-${d.files.length ? `THE DRAFT FILES YOU OWN THIS ROUND, relative to ${DRAFT} (write only these; other sessions may be writing the rest):\n${d.files.map((f) => `- ${f}`).join('\n')}` : 'You were named no draft files this round: change no view another writer owns, and name every file you write in `files`.'}
+${d.files === null ? `THE DRAFT FILES YOU OWN THIS ROUND are the \`files\` of ${planEntry}, relative to ${DRAFT} (write only these; other sessions may be writing the rest). When that list is empty, change no view another writer owns, and name every file you write in \`files\`.` : d.files.length ? `THE DRAFT FILES YOU OWN THIS ROUND, relative to ${DRAFT} (write only these; other sessions may be writing the rest):\n${d.files.map((f) => `- ${f}`).join('\n')}` : 'You were named no draft files this round: change no view another writer owns, and name every file you write in `files`.'}
 ${answersBlock}
 ${shared}
 
@@ -860,7 +1037,6 @@ ${DRAFT_RULES}
 
 Use claimId="" for a new claim or the existing ledger id for an explicit revision. Keep unchanged ids; supersedes lists only deliberately replaced claims you own. Cite evidenceRefs and do not silently discard findings. A writer answer proposes a fix/dispute; independent resolution is still required. Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
-  const assignedCount = Number(d.assignedClaimCount) || 0
   return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
 
 ${taskLine}
@@ -870,20 +1046,21 @@ THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the chan
 ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
-YOUR ASSIGNED CLAIM REVISIONS are the ${assignedCount} \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
+YOUR ASSIGNED CLAIM REVISIONS are the \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
 Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
 }
 
-/** Groups writers so no two in one wave own the same draft file; a writer naming no file runs alone. */
+/** Groups writers so no two in one wave own the same draft file; a writer naming no file (or whose files are known only to its plan entry) runs alone. */
 function writerWaves(list) {
   const waves = []
   for (const d of list) {
-    const wave = d.files.length ? waves.find((w) => !w.solo && d.files.every((f) => !w.files.has(f))) : null
+    const files = d.files || []
+    const wave = files.length ? waves.find((w) => !w.solo && files.every((f) => !w.files.has(f))) : null
     if (wave) {
       wave.items.push(d)
-      d.files.forEach((f) => wave.files.add(f))
+      files.forEach((f) => wave.files.add(f))
     } else {
-      waves.push({ solo: !d.files.length, items: [d], files: new Set(d.files) })
+      waves.push({ solo: !files.length, items: [d], files: new Set(files) })
     }
   }
   return waves
@@ -1126,7 +1303,7 @@ while (!decision) {
       }
       if (dec.verdict === 'approve') {
         const approvedFacts = await readFacts('decide:coverage-check', 'Decide')
-        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || !approvedFacts.coverage || approvedFacts.coverage.gaps.length || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
+        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || hasGaps(approvedFacts) || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
           return { ok: false, stage: 'decide', reason: 'approval lacks saved independent coverage evidence for the current views; saved work retained', subject }
         }
         facts = approvedFacts
@@ -1176,7 +1353,7 @@ Assign coverage ids explicitly in each writer/reviewer task. Coverage gaps in th
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
 HOW TO ROUTE:
-- Return proposalTeam: lead, second, unresolvedIssue, evidence, whySecond (empty strings for the optional second fields). Default one lead for the entire architecture effort, consolidating all concerns. Never more than two proposer identities across rounds. Retain this saved team: ${JSON.stringify(facts.proposalTeam || {})}. A second is exceptional: name the specific unresolved issue, its source/claim/finding evidence, and why the lead cannot resolve it alone; merely touching another concern is not justification. Once selected, identities cannot be replaced; later rounds revise their retained work. A PRD already served needs only a no-change delta.
+- Return proposalTeam: lead, second, unresolvedIssue, evidence, whySecond (empty strings for the optional second fields). Default one lead for the entire architecture effort, consolidating all concerns. Never more than two proposer identities across rounds. Retain the saved team (lead ${(facts.proposalTeam && facts.proposalTeam.lead) || 'none yet'}${facts.proposalTeam && facts.proposalTeam.second ? `, second ${facts.proposalTeam.second}` : ''}; the whole saved team is \`proposalTeam\` in ${LEDGER_JSON}). A second is exceptional: name the specific unresolved issue, its source/claim/finding evidence, and why the lead cannot resolve it alone; merely touching another concern is not justification. Once selected, identities cannot be replaced; later rounds revise their retained work. A PRD already served needs only a no-change delta.
 - Do not split proposals among diagram authors, reviewers or renamed specialists. Diagram authors depict settled design only; reviewers critique without writing competing proposals. Reuse all legacy results as input to the lead, not instructions to redispatch their authors.
 - Every design is reviewed before a decision by ${REQUIRED_CHALLENGERS.join(', ')} and by a cost reviewer; the list below names any that have not yet run.
 - Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} only for targeted critique of a concrete unresolved weakness; it does not create a competing design or add a proposer.
@@ -1241,7 +1418,7 @@ HOW TO ROUTE:
       const why = `depscore.py arch-resume saved round ${n}'s plan but reports round ${saved.round} pending; saved work retained`
       return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
     }
-    if (saved && hasText(savedPlan.rounds.planKept)) {
+    if (saved && savedPlan.rounds.planKept === true) {
       // A plan for this round was already saved: it stands, and the new one is set aside.
       plan = { ...plan, readyForDecision: saved.readyForDecision }
       settled.dispatches = planDispatches(saved)
@@ -1263,7 +1440,7 @@ HOW TO ROUTE:
     return { ok: false, stage: 'rounds', reason: why, error: why, rejected, subject, ...surveyPaths }
   }
   log(`Round ${n}: ${settled.dispatches.map((d) => `${d.role}:${d.agentType}`).join(', ')}`)
-  for (const d of settled.dispatches) for (const id of d.answers) asked.set(id, { agentType: d.agentType, round: n, clarified: (d.clarified || []).includes(id) })
+  for (const d of settled.dispatches) for (const id of listed(d.answers)) asked.set(id, { agentType: d.agentType, round: n, clarified: (d.clarified || []).includes(id) })
   const roundRun = await runRound(n, settled.dispatches)
   if (roundRun.error) {
     const why = `depscore.py arch-resume failed after round ${n}: ${roundRun.error}. The saved results in ${ROUNDS_DIR} could not be read; the step stops, and the saved results stay on disk for the next attempt.`
@@ -1336,7 +1513,7 @@ if (savedUpdate && !savedTree) log('Integrate: no fingerprint was saved before t
 const lastSavedReview = savedFacts.lastReview && typeof savedFacts.lastReview === 'object' ? savedFacts.lastReview : null
 
 let integrationCoverageRevision = savedFacts.coverageRevision || ''
-let integrationCoverageRows = facts.coverage.checksNeeded
+let integrationCoverageRows = coverageRowsOf(facts)
 let update = null
 let reviewPass = lastSavedReview ? Number(lastSavedReview.n) || 0 : 0
 const reusedSaved = !!(savedUpdate && lastSavedReview && lastSavedReview.conforms === true && lastSavedReview.coverageRevision === savedFacts.coverageRevision)
@@ -1406,12 +1583,12 @@ async function review(again) {
     : ''
   const reviewFile = `${WORK}/conformance-${reviewPass}.json`
   const current = await readFacts(`integrate:coverage-${reviewPass}`, 'Integrate')
-  if (current.error || current.coverage.gaps.length || current.coverage.revision !== decision.coverageRevision) {
+  if (current.error || hasGaps(current) || current.coverage.revision !== decision.coverageRevision) {
     log('Integrate: approved coverage changed or lost review evidence; retain work for targeted reapproval')
     return null
   }
   integrationCoverageRevision = current.integration.coverageRevision
-  integrationCoverageRows = current.coverage.checksNeeded
+  integrationCoverageRows = coverageRowsOf(current)
   const got = await run(
     `You are the architecture-conformance-reviewer. Check one integration of an approved target into the effective version; report findings and fix nothing.
 
@@ -1433,8 +1610,16 @@ Check that the integration applied the approved target exactly, no more and no l
 function covered(c) {
   const missed = touched(update).filter((f) => !listed(c.reviewedFiles).includes(f))
   const checks = Array.isArray(c.coverageChecks) ? c.coverageChecks : []
-  const missingCoverage = integrationCoverageRows.filter((row) => !checks.some((check) => check.id === row.id && check.revision === row.revision && check.verdict === 'verified' && hasText(check.evidence)))
-  if (missingCoverage.length) return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...missingCoverage.map((row) => ({ file: UPDATE_JSON, finding: `coverage ${row.id} lacks verified integration evidence`, evidence: 'no current per-obligation conformance check' }))] }
+  // Every approved row needs a verified check with evidence, at the row's revision: the verified checks'
+  // [{id, revision}] list must hash to the one arch-resume computed from the ledger.
+  const verifiedCheck = (id) => checks.find((check) => check && check.id === id && check.verdict === 'verified' && hasText(check.evidence))
+  const unverified = integrationCoverageRows.ids.filter((id) => !verifiedCheck(id))
+  const coverageFindings = unverified.map((id) => ({ file: UPDATE_JSON, finding: `coverage ${id} lacks verified integration evidence`, evidence: 'no current per-obligation conformance check' }))
+  if (!unverified.length) {
+    const rows = [...integrationCoverageRows.ids].sort().map((id) => ({ id, revision: String(verifiedCheck(id).revision || '') }))
+    if (sha256Ascii(canonicalJson(rows)) !== integrationCoverageRows.sha) coverageFindings.push({ file: UPDATE_JSON, finding: 'a verified coverage check is not at the approved revision of its ledger row', evidence: `the verified checks' id/revision list does not match the approved rows in ${LEDGER_JSON}` })
+  }
+  if (coverageFindings.length) return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...coverageFindings] }
   if (c.coverageRevision !== integrationCoverageRevision) return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), { file: UPDATE_JSON, finding: 'coverage review is missing or stale for current integrated content', evidence: 'coverageRevision does not match the current integration' }] }
   if (!missed.length) return { ...c, missed: [] }
   return { ...c, conforms: false, missed, findings: [...(Array.isArray(c.findings) ? c.findings : []), ...missed.map((f) => ({ file: f, finding: 'changed or created by the integration and not reviewed', evidence: 'absent from reviewedFiles' }))] }
@@ -1481,7 +1666,7 @@ if (guardIntegrate) return { ...guardIntegrate, subject, targetDir, deltaDir, ar
 
 // Consumed by: lifecycle promotion below — do not promote evidence changed after review.
 const finalCoverage = await readFacts('integrate:coverage-final', 'Integrate')
-if (finalCoverage.error || finalCoverage.coverage.gaps.length || finalCoverage.coverage.revision !== decision.coverageRevision || finalCoverage.integration.coverageRevision !== conformance.coverageRevision || !finalCoverage.integration.lastReview || finalCoverage.integration.lastReview.coverageRevision !== conformance.coverageRevision) {
+if (finalCoverage.error || hasGaps(finalCoverage) || finalCoverage.coverage.revision !== decision.coverageRevision || finalCoverage.integration.coverageRevision !== conformance.coverageRevision || !finalCoverage.integration.lastReview || finalCoverage.integration.lastReview.coverageRevision !== conformance.coverageRevision) {
   return { ok: false, stage: 'integrate', reason: 'conformance evidence is unsaved or stale; retained work requires a fresh review before promotion', subject, targetDir, deltaDir }
 }
 let approval = null

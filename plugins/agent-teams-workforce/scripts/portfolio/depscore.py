@@ -76,24 +76,38 @@
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
+    saved-target         the facts a resumed elaboration needs from an Epic's saved architecture
+                         target and integration report; no `bd` call
+    saved-span           the saved span ruling (`repo-scoping.json`) a resumed elaboration
+                         replays; no `bd` call
+    relay-read           print again the relay envelope of a result saved with `--relay FILE`,
+                         re-running nothing; no `bd` call
     story-edges          derive and write the Story -> Story `blocks` edges from Epic order within
                          a repository and from Task edges between Stories in any repository;
                          a Story whose order is contradictory gets no edge written
                          `elaboration-finish` and a Task-level `apply-edges` run it after they write
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
-and stdout carries only its `summary`. `--dry-run` computes, writes nothing, and returns the
-writes under `planned`.
+and stdout carries only its `summary`. With `--relay FILE` the full object is written to FILE
+and stdout carries its relay view with a `relay` block (`file`, `checksum`, `chars`) a workflow
+script checks the copy a runner session returns against; `relay-read --relay FILE` prints that
+same envelope again from FILE without re-running the command. A leading
+`--argv-sha256 HEX` refuses, with exit 3 and nothing run, a command line typed differently from
+the one the workflow script built (see relay.py). `--dry-run`
+computes, writes nothing, and returns the writes under `planned`.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import beadgraph
+import relay
+from resumefacts import saved_span, saved_target
 from archresume import ResumeError, resume_facts
 from archstate import (
     commit_integration,
@@ -368,12 +382,40 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="write the full result here and print only its summary",
     )
+    common.add_argument(
+        "--relay",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="write the full result here and print its relay view with a checksum",
+    )
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[common],
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    for name, what in (
+        (
+            "saved-target",
+            "the saved architecture target's facts a resumed elaboration needs",
+        ),
+        (
+            "saved-span",
+            "the saved span ruling (repo-scoping.json) a resumed elaboration replays",
+        ),
+    ):
+        sv = sub.add_parser(name, help=f"{what}; no `bd` call", parents=[common])
+        sv.add_argument(
+            "--art-dir", type=Path, required=True, help="the Epic's artifacts directory"
+        )
+
+    sub.add_parser(
+        "relay-read",
+        help="print again the relay envelope of the result saved with --relay FILE; "
+        "re-runs nothing; no `bd` call",
+        parents=[common],
+    )
 
     asp = sub.add_parser(
         "assess-plan",
@@ -1031,6 +1073,10 @@ def run(args: argparse.Namespace) -> dict:
             result.pop("files", None)
             result["diffs"] = diffs
         return result
+    if command == "saved-target":
+        return head | saved_target(args.art_dir)
+    if command == "saved-span":
+        return head | saved_span(args.art_dir)
     if command == "arch-resume":
         return head | resume_facts(
             args.work_dir,
@@ -1283,7 +1329,8 @@ def _story_edges_summary(result: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point. Prints one JSON object; exit 2 means the command refused.
+    """Entry point. Prints one JSON object; exit 2 means the command refused, exit 3 that the
+    command line was not the one its `--argv-sha256` names (nothing ran).
 
     Args:
         argv: The command line, or None for `sys.argv`.
@@ -1291,10 +1338,22 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The process exit status.
     """
+    argv, typed_wrong = relay.argv_mismatch(
+        list(sys.argv[1:] if argv is None else argv)
+    )
+    if typed_wrong:
+        print(json.dumps({"error": typed_wrong, "argvMismatch": True}, indent=2))
+        return 3
     args = build_parser().parse_args(argv)
     args.directory = getattr(args, "directory", None)
     out = getattr(args, "out", None)
+    relay_file = getattr(args, "relay", None)
     try:
+        if args.command == "relay-read":
+            if relay_file is None:
+                raise relay.RelayError("relay-read needs --relay FILE")
+            print(json.dumps(relay.read(relay_file), separators=(",", ":")))
+            return 0
         payload = run(args)
     except (
         SequencingError,
@@ -1305,6 +1364,7 @@ def main(argv: list[str] | None = None) -> int:
         SpecUiError,
         ResumeError,
         ReconError,
+        relay.RelayError,
         rubric.WsjfError,
         json.JSONDecodeError,
         OSError,
@@ -1320,6 +1380,18 @@ def main(argv: list[str] | None = None) -> int:
             "warnings": payload.get("warnings", []),
             "summary": payload.get("summary", {}),
         }
+    if relay_file is not None:
+        try:
+            shown = relay.write(args.command, payload, relay_file)
+        except (relay.RelayError, OSError) as exc:
+            print(
+                json.dumps(
+                    {"error": f"--relay: {exc}", "command": args.command}, indent=2
+                )
+            )
+            return 2
+        print(json.dumps(shown, separators=(",", ":")))
+        return 0
     print(json.dumps(payload, indent=2))
     return 0
 
