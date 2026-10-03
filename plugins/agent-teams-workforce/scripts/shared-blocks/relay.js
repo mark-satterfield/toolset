@@ -374,17 +374,27 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agent
     return { ok: true, view: r.view }
   }
   const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
-  function artifactBrief(candidate, schema, revision = '') {
-    return `\n\nAUTHORITATIVE ARTIFACT HANDOFF: Write the complete JSON result ONCE to ${candidate}, with schema ${JSON.stringify(schema)}. Return only {"artifactPath":"${candidate}"} using StructuredOutput, never a second payload copy. Keep ${candidate}.checkpoint current with status, artifactPath, schemaSha256, task, completed, remaining and artifacts (paths). Before returning set status="complete", artifactPath="${candidate}", schemaSha256="${sha256Json(schema)}", revision=${JSON.stringify(revision)}. On resume read the checkpoint and actual artifacts first, preserve completed work and finish only missing work. Shared Markdown, diagrams and other documents remain authoritative at their paths; read them directly, never replace them with summaries. Do not write the final accepted result; the workflow validates and publishes the candidate.`
+  function artifactBrief(candidate, schema, revision = '', helper) {
+    if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
+    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision]
+    const command = (operation, extra = []) => ['python3', helper, operation, ...binding, ...extra].map(quote).join(' ')
+    const progress = `${candidate}.progress.json`
+    const submit = command('submit', ['--progress-file', progress])
+    return `\n\nAUTHORITATIVE ARTIFACT HANDOFF: Write the complete JSON result ONCE to ${candidate}, using the schema in the submission command below. Maintain ${progress} with task (string), completed and remaining (string arrays), and artifacts (path array); include reason when blocked.
+Submission command: ${submit}
+After meaningful progress use that same command, replacing only the operation argument 'submit' with 'checkpoint' and appending --status in-progress. For blocked work append --status blocked instead, with reason and remaining work recorded. After finishing the assignment run the submission command unchanged. The script validates the candidate, computes its bound completion checkpoint and prints the exact return object. Only after exit 0, pass that stdout object unchanged to StructuredOutput; do not construct a second return object or copy the artifact contents into it. Do not calculate hashes or manually mark incomplete work complete. Correct reported errors before returning; a failed submission is not completion. Structural validation is not semantic review. On resume use the same command with operation 'status' instead of 'submit' and omit --progress-file and its value; read the checkpoint and actual artifacts first, preserving completed work and finishing only missing work. Preserve all candidate, schema and revision arguments across these operations. Shared Markdown, diagrams and other documents remain authoritative at their paths; read them directly, never replace them with summaries. Do not write the final accepted result; the workflow validates and publishes the candidate.`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false }) {
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [] }) {
     if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
     const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(!returned ? ['--recover'] : [])]
-    const result = await run(dispatch, { label, phase, runner, argv: args, file: relayFile })
+    if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
+    const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
+    const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
     if (!result.ok) return result
     if (result.exitCode !== 0) return { ok: false, error: `artifact validation failed: ${JSON.stringify(result.json)}`, relayFile }
     const receipt = result.json
     if (probe && receipt && receipt.pending === true) return { ok: true, pending: true }
+    if (recordArgv.length && (!receipt || receipt.recorded !== true)) return { ok: false, error: 'artifact provenance recording not confirmed', relayFile }
     if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
     return { ok: true, receipt, facts: receipt.facts || {}, counts: receipt.counts || {} }
   }

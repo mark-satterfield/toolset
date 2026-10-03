@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "artifactPath", "schemaSha256", "revision", "task", "completed", "remaining", "artifacts"],
+  "properties": {
+    "status": {"enum": ["in-progress", "blocked", "complete"]},
+    "artifactPath": {"type": "string", "minLength": 1},
+    "schemaSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "candidateSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "revision": {"type": "string", "minLength": 1},
+    "task": {"type": "string", "minLength": 1},
+    "completed": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "remaining": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "reason": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "complete"}}}, "then": {"required": ["candidateSha256"], "properties": {"remaining": {"maxItems": 0}}}},
+    {"if": {"properties": {"status": {"const": "blocked"}}}, "then": {"required": ["reason"], "properties": {"remaining": {"minItems": 1}}}}
+  ]
+}

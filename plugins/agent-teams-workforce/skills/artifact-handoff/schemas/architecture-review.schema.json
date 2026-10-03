@@ -1,0 +1,166 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "findings",
+    "coverageChecks",
+    "resolutions",
+    "summary"
+  ],
+  "properties": {
+    "repairChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repairId",
+          "revision",
+          "verdict",
+          "evidence",
+          "files"
+        ],
+        "properties": {
+          "repairId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "revise"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "coverageChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision",
+          "verdict",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "unsupported",
+              "wrong"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resolutions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "findingId",
+          "revision",
+          "verdict",
+          "evidence"
+        ],
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "findingId": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claimId",
+          "claimRevision",
+          "claim",
+          "file",
+          "verdict",
+          "evidence",
+          "owner"
+        ],
+        "properties": {
+          "claimId": {
+            "type": "string"
+          },
+          "claimRevision": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "unsupported",
+              "wrong"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "estimates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

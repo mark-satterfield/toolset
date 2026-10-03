@@ -1,0 +1,269 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "files",
+    "claims",
+    "answers",
+    "businessConflicts",
+    "coverage",
+    "summary"
+  ],
+  "properties": {
+    "repairAnswers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repairId",
+          "response"
+        ],
+        "properties": {
+          "repairId": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "subject",
+          "scope",
+          "obligation",
+          "sources",
+          "views",
+          "status",
+          "action",
+          "reason",
+          "evidenceRefs",
+          "disposition",
+          "dispositionReason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "obligation": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Present and sufficient",
+              "Present but incomplete",
+              "Required and absent",
+              "Not yet applicable",
+              "Not assessed"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "unchanged",
+              "remove",
+              "not-applicable",
+              "unresolved"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "heading",
+                "repo",
+                "revision",
+                "url"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "heading": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "required",
+              "unrelated-debt"
+            ]
+          },
+          "dispositionReason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claimId",
+          "claim",
+          "file",
+          "citation",
+          "supersedes",
+          "evidenceRefs"
+        ],
+        "properties": {
+          "claimId": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          },
+          "supersedes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "heading",
+                "repo",
+                "revision",
+                "url"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "heading": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "answers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "findingId",
+          "response",
+          "evidence"
+        ],
+        "properties": {
+          "findingId": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "disputed"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "businessConflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requirements",
+          "why"
+        ],
+        "properties": {
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}
