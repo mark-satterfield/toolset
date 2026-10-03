@@ -7,6 +7,7 @@ description: >-
   final step of a composite workflow; writes only under .claude/workflow-runs/.
 tools: Read, Write, Bash
 disallowedTools: Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
+skills: [agent-teams-workforce:subagent-contract]
 model: haiku
 permissionMode: acceptEdits
 maxTurns: 8

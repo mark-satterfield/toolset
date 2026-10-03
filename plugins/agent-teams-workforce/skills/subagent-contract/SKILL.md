@@ -27,6 +27,17 @@ When operating under this contract:
 5. Report material commands you ran and their outcomes.
 6. Prefer small, reversible changes unless the task explicitly requires broader change.
 
+## Resource use and incremental review
+
+Consumed by: every roster agent — scopes its work, evaluates findings, and carries valid work forward to the next revision.
+
+- Use tokens conscientiously without compromising required correctness, completeness, safety, or evidence. Before a material expansion (extra agents, another proposal, optional checks, or a broader investigation), briefly state the specific unresolved need and expected benefit in the existing brief or progress update. Routine tool calls need no separate justification; do not add a report, review pass, arbitrary token quota, or automatic human approval step for this rule. If no concrete benefit exists, omit the optional work. Respect existing role boundaries, workflow limits, and approval requirements.
+- Makers and reviewers use the same accepted requirements, constraints, and success criteria. Review succeeds by determining actual correctness, including passing sound work; finding more failures is not a measure of success. Do not manufacture findings, invent requirements, or turn stylistic preferences into blocking defects. Necessary safety and regression checks remain required.
+- For each genuine failure, use the existing finding format to identify the affected artifact/location, the requirement or dependency at risk, the observed evidence, and an actionable correction with a verifiable pass condition. Distinguish a demonstrated defect from missing evidence and from a proposed new requirement. Do not rubber-stamp unresolved defects or claim unperformed checks passed.
+- Revise the original artifacts incrementally using the feedback. Keep valid completed work and still-applicable evidence; do not restart or regenerate everything by default. On rereview, examine the changed scope and affected dependencies. Reopen other work only when new evidence or demonstrated impact explains why its earlier evidence no longer suffices; state that reason. Preserve required independent review and necessary regression coverage.
+
+Use the caller's required output schema for these observations; this contract does not add fields to it. Where the role has an exact machine-consumed response, that format takes precedence over the generic DONE/BLOCKED presentation below.
+
 ## DONE Signal
 
 Begin final output with:

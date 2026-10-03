@@ -23,6 +23,16 @@ orchestrator that reads source, runs diagnostics, and forms its own view of the
 code has spent that shared resource and acquired opinions that compete with the
 agents chartered to hold them.
 
+## Resource and revision discipline
+
+Consumed by: dispatching orchestrators, including agents that delegate — bounds fanout and routes repair work without discarding valid progress.
+
+Apply `../subagent-contract/SKILL.md` to every dispatch. Match fanout to the specific unresolved work, consolidate compatible concerns under the existing owner, and respect workflow caps. Before materially adding agents, proposals, or optional checks, briefly state the concrete need and expected benefit in the existing brief or update. A difficult task or several touched concerns alone is not a reason to spawn more agents. Routine routing needs no extra report or automatic human approval.
+
+For repairs, pass the original artifact, actionable findings and pass conditions, shared accepted criteria, and valid prior evidence in a bounded repair brief. Revise that work instead of restarting by default. Route rereview to changed scope and affected dependencies; require stated new evidence or impact before reopening other work. Do not reward finding failures, invent new requirements, or force an automatic pass: genuine defects and missing required evidence still block, while necessary independent, safety, and regression checks remain intact.
+
+This is behavioral guidance, not a new hook or permission to bypass the guards below.
+
 ## Enforcement, not advice
 
 Every constraint here is a hook that terminates with exit code 2.

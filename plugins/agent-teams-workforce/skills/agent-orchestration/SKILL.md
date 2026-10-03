@@ -15,10 +15,10 @@ The orchestrator's role:
 - Define measurable success criteria
 - Enable comprehensive discovery via world-building context
 - Trust agent expertise and their 200k context windows
-- Use agents liberally to keep the orchestrator's context window clean
-- When a problem is hard, throw more compute at it — spawn agents in parallel rather than working sequentially in the orchestrator
+- Use bounded delegation with a specific purpose for each agent; apply the resource-use and incremental-review rules in `../subagent-contract/SKILL.md`.
+- Before adding agents or proposals, identify the unresolved need and expected benefit; difficulty alone is not a reason to multiply work. Preserve workflow caps and required independent review.
 
-**Reason**: Sub-agents are specialized experts with full tool access. Prescribing implementation limits their ability to discover better solutions. The orchestrator's context window is finite and shared across the whole session — agents get fresh context per task. Parallel dispatch solves more, faster, without accumulating context debt.
+**Reason**: Sub-agents are specialized experts with full tool access. Prescribing implementation limits their ability to discover better solutions. The orchestrator's context window is finite and shared across the whole session — agents get fresh context per task. Parallel dispatch can reduce elapsed time, but duplicate reading and coordination also consume tokens. Choose it when the independent work justifies that cost.
 
 ## Scientific Method Alignment
 
@@ -141,7 +141,7 @@ CONTEXT:
 
 YOUR TASK:
 1. Use the `/am-i-complete` checklist as your working guide throughout this task
-2. Perform comprehensive context gathering using:
+2. Gather the context needed to meet the accepted criteria, expanding only for an identified gap, using:
    - Available functions and MCP tools from the <functions> list
    - Relevant skills from the <available_skills> list
    - Project file exploration and structure analysis
@@ -156,7 +156,7 @@ YOUR TASK:
 8. Only report completion after all `/am-i-complete` criteria satisfied with evidence
 
 INVESTIGATION REQUIREMENTS:
-- Trace the issue through the complete stack before proposing fixes
+- Trace the issue through the affected path and dependencies needed to establish the cause; do not scan unrelated layers by default
 - Document discoveries at each layer (e.g., UI → Logic → System → Hardware)
 - Identify both symptom AND root cause
 - Explain why addressing root cause instead of patching symptom
@@ -727,9 +727,9 @@ flowchart TD
 
 ## Parallel Dispatch — Teams as Standard Mechanism
 
-Agent teams are the standard mechanism for parallel work. When you have 2+ independent tasks, reach for TeamCreate first. Single `Agent()` calls are for exactly one task.
+When separate independent assignments have a concrete benefit, use the host runtime's team mechanism for parallel work. Multiple touched concerns alone do not justify multiple agents: consolidate compatible work under its existing owner and respect workflow caps.
 
-**Reason**: Teams keep the orchestrator's context window clean, get results faster, and have been validated at scale (60+ parallel issues in a single session). The coordination overhead is minimal compared to the throughput gain.
+**Reason**: Parallelism can save time, but every new context repeats startup and discovery. Justify material extra dispatch in the existing brief before acting; this adds no automatic human approval requirement.
 
 ### Dispatch Decision
 
@@ -737,19 +737,21 @@ Agent teams are the standard mechanism for parallel work. When you have 2+ indep
 flowchart TD
     Start(["Work to dispatch"]) --> Q1{"How many independent<br>units of work?"}
     Q1 -->|"Exactly 1"| Single["Single Agent() call<br>No team needed"]
-    Q1 -->|"2 or more"| Q2
+    Q1 -->|"2 or more"| Benefit{"Distinct need and benefit<br>justify extra agents within workflow caps?"}
+    Benefit -->|"Yes"| Q2
+    Benefit -->|"No"| Single
 
     Q2{"Do any units write<br>to the same file?"}
     Q2 -->|"Yes — shared file mutations"| Serialize["Sequence those units<br>Parallelize the rest via TeamCreate"]
     Q2 -->|"No — fully independent"| Teams["TeamCreate<br>One Agent() per task<br>All launch concurrently"]
 
-    Teams --> Liberal["Liberal use encouraged —<br>throw compute at the problem<br>context window stays clean"]
+    Teams --> Liberal["Share criteria and existing artifacts;<br>avoid duplicate discovery"]
     Single --> Done(["Delegate"])
     Serialize --> Done
     Liberal --> Done
 ```
 
-**When to dispatch immediately (no analysis needed):**
+**Potential parallel assignments — first check distinct need, benefit, and workflow limits:**
 
 - 2+ test files failing with different root causes
 - Multiple subsystems to modify independently

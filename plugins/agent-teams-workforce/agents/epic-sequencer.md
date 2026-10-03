@@ -17,7 +17,7 @@ disallowedTools: AskUserQuestion, Agent, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 120
-skills: [agent-teams-workforce:epic-sequencing]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:epic-sequencing]
 effort: medium
 isolation: none
 color: purple

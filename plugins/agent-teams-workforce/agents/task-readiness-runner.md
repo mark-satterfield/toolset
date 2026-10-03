@@ -10,7 +10,7 @@ description: >-
   No workflow currently dispatches it.
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
-skills: [agent-teams-workforce:beads-contract]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract]
 model: haiku
 permissionMode: acceptEdits
 effort: low
