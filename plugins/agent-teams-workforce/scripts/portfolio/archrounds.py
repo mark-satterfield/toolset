@@ -51,7 +51,16 @@ def round_facts(
     legacy_round = ledger.last if not plans else 0
     decision_path = work / "decision.json"
     decision = json.loads(decision_path.read_text()) if decision_path.is_file() else {}
-    resume_round = legacy_round if legacy_round > decision.get("round", 0) else None
+    newer_results = decision_path.is_file() and any(
+        Path(name).name.startswith(f"r{legacy_round}-")
+        and Path(name).stat().st_mtime > decision_path.stat().st_mtime
+        for name in ledger.files
+    )
+    resume_round = (
+        legacy_round
+        if legacy_round and (legacy_round > decision.get("round", 0) or newer_results)
+        else None
+    )
     if incoming:
         same = next((p for p in plans if p["round"] == incoming.get("round")), None)
         if same is not None and same is plans[-1] and not _done(work, same):

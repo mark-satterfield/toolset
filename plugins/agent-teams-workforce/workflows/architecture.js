@@ -841,8 +841,8 @@ const COORDINATOR_SCHEMA = {
 const REPAIR_ANSWERS_SCHEMA = { type: 'array', items: { type: 'object', additionalProperties: false,
   required: ['repairId', 'response'], properties: { repairId: { type: 'string' }, response: { type: 'string' } } } }
 const REPAIR_CHECKS_SCHEMA = { type: 'array', items: { type: 'object', additionalProperties: false,
-  required: ['repairId', 'revision', 'verdict', 'evidence'], properties: {
-    repairId: { type: 'string' }, revision: { type: 'string' },
+  required: ['repairId', 'revision', 'verdict', 'evidence', 'files'], properties: {
+    repairId: { type: 'string' }, revision: { type: 'string' }, files: { type: 'array', items: { type: 'string' } },
     verdict: { type: 'string', enum: ['verified', 'revise'] }, evidence: { type: 'string' },
   } } }
 const WRITER_SCHEMA = {
@@ -1285,7 +1285,7 @@ ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
 YOUR ASSIGNED CLAIM REVISIONS are the \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
-Read \`repairRequests\` in ${LEDGER_JSON}. Independently verify answered repairs within your assigned scope against the current artifacts; return \`repairChecks\` with repairId, the current revision, verified/revise and concrete evidence. Do not repeat resolved repair requests without identifying new evidence of a current defect.
+Read \`repairRequests\` in ${LEDGER_JSON}. Independently verify answered repairs within your assigned scope against the current artifacts; return \`repairChecks\` with repairId, the current revision, verified/revise, concrete evidence and files: the draft-relative or absolute evidence/contract file paths you actually inspected for that repair. A verified repair must bind its relevant files, including affected dependencies; unrelated file edits will not invalidate that acceptance. A revise check may use an empty files list. Do not repeat resolved repair requests without identifying new evidence of a current defect.
 Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
 }
 

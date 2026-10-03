@@ -13,14 +13,6 @@ def _hash(value: object) -> str:
 
 def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> list:
     """Keep completed repairs reviewable without repeatedly dispatching their maker."""
-    draft = work / "draft"
-    revision = _hash(
-        {
-            str(p.relative_to(draft)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(draft.rglob("*"))
-            if p.is_file()
-        }
-    )
     requests = {r["id"]: dict(r) for r in previous}
     decision_path = work / "decision.json"
     decision = json.loads(decision_path.read_text()) if decision_path.is_file() else {}
@@ -40,12 +32,14 @@ def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> l
                 "decisionRound": decision.get("round", 0),
                 "decisionTime": decision_path.stat().st_mtime,
                 "status": "open",
-                "revision": revision,
+                "revision": _hash([key, "unbound"]),
+                "files": [],
             },
         )
     for request in requests.values():
+        revision = _revision(work, request["id"], request.get("files", []))
         if request["revision"] != revision:
-            # Changed content requires independent confirmation, not automatic maker rework.
+            # Changed bound evidence requires review, not automatic maker rework.
             if request["status"] == "resolved":
                 request["status"] = "answered"
             request["revision"] = revision
@@ -99,7 +93,71 @@ def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> l
                     ):
                         request["review"] = {**check, "by": agent, "result": name}
                         if check.get("verdict") == "verified":
+                            files = check.get("files")
+                            if (
+                                not isinstance(files, list)
+                                or not files
+                                or any(
+                                    not isinstance(f, str) or not f.strip()
+                                    for f in files
+                                )
+                            ):
+                                request["status"] = "answered"
+                                request["bindingError"] = (
+                                    "verified repair requires explicit evidence files"
+                                )
+                                continue
+                            if not _readable(work, files):
+                                request["status"] = "answered"
+                                request["bindingError"] = (
+                                    "repair evidence files must be readable regular files; relative paths must stay within draft"
+                                )
+                                continue
+                            request.pop("bindingError", None)
+                            request["files"] = sorted(set(files))
+                            request["revision"] = _revision(
+                                work, request["id"], request["files"]
+                            )
                             request["status"] = "resolved"
                         elif check.get("verdict") == "revise":
                             request["status"] = "open"
     return list(requests.values())
+
+
+def _revision(work: Path, repair_id: str, files: list) -> str:
+    """Bind acceptance only to the views/contracts independently named by its checker."""
+    if not files:
+        return _hash([repair_id, "unbound"])
+    evidence = {}
+    for name in files:
+        path = Path(name)
+        if not path.is_absolute():
+            path = work / "draft" / path
+        try:
+            evidence[str(path)] = (
+                hashlib.sha256(path.read_bytes()).hexdigest()
+                if path.is_file()
+                else "absent or not a regular file"
+            )
+        except FileNotFoundError:
+            evidence[str(path)] = "absent"
+        except OSError as exc:
+            evidence[str(path)] = f"unreadable: {exc}"
+    return _hash(evidence)
+
+
+def _readable(work: Path, files: list[str]) -> bool:
+    """Refuse acceptance bound to an absent or unreadable alleged evidence file."""
+    for name in files:
+        path = Path(name)
+        if not path.is_absolute():
+            path = work / "draft" / path
+            if not path.resolve().is_relative_to((work / "draft").resolve()):
+                return False
+        try:
+            if not path.is_file():
+                return False
+            path.read_bytes()
+        except OSError:
+            return False
+    return True
