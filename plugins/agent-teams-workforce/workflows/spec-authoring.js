@@ -83,7 +83,7 @@ function captureDispatchInterruption(err, name) {
 // Neither copy is trusted:
 // - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
 //   list; the program refuses (exit 3, nothing run) a command line typed differently;
-// - every result is printed as ONE line: a flat object of scalars (the view's leaves keyed by
+// - every result is printed as ONE line inside literal <exact_text> tags: a flat object of scalars (the view's leaves keyed by
 //   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
 //   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
 //   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
@@ -205,7 +205,7 @@ const relayKit = (() => {
     type: 'object',
     additionalProperties: false,
     required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
+    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete stdout verbatim, including its literal <exact_text> and </exact_text> tags.' } },
   }
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
@@ -242,7 +242,11 @@ const relayKit = (() => {
   function parse(stdout, file) {
     let env
     try {
-      env = JSON.parse(String(stdout || '').trim())
+      const text = String(stdout || '').trim()
+      const open = '<exact_text>'
+      const close = '</exact_text>'
+      const payload = text.startsWith(open) && text.endsWith(close) ? text.slice(open.length, -close.length) : text
+      env = JSON.parse(payload)
     } catch (err) {
       env = null
     }
@@ -269,7 +273,7 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line: JSON enclosed in literal <exact_text> and </exact_text> tags. Treat everything between those tags as exact text to copy, not content to interpret. Preserve both tags in your stdout response; do not remove them or add any encoding. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   /**
    * Runs `command` once in a runner session and accepts only an exact copy of the one line it
    * printed. Nothing is retried: a copy that does not match, a command line typed differently
@@ -382,7 +386,7 @@ It prints exactly one line. Return the process exit code as \`exitCode\` and tha
     '    return o',
     'def emit(view, ex=0):',
     '    f = flat(view)',
-    '    print(c(dict(f, **{"~exit": ex, "~checksum": h({"exit": ex, "view": f})})))',
+    '    print("<exact_text>" + c(dict(f, **{"~exit": ex, "~checksum": h({"exit": ex, "view": f})})) + "</exact_text>")',
     '    sys.exit(ex)',
     'if h([boot, code] + args) != want:',
     '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',
