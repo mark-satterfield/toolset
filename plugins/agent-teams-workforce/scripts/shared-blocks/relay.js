@@ -219,9 +219,75 @@ const relayKit = (() => {
 ${command}
 
 It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+  let captureOrdinal = 0
+  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
+  const CAPTURE_SCHEMA = { type: 'object', additionalProperties: false, required: ['exitCode', 'stdout', 'receipt'], properties: { ...SCHEMA.properties, receipt: RECEIPT_SCHEMA } }
+  const MANIFEST_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt'], properties: { receipt: RECEIPT_SCHEMA } }
+  const CHUNK_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt', 'index', 'chunk', 'sha256'], properties: { receipt: RECEIPT_SCHEMA, index: { type: 'integer' }, chunk: { type: 'string' }, sha256: { type: 'string' } } }
+  const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
+  async function captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal) {
+    const argv = shellWords(command)
+    const commandSha256 = sha256Json(argv)
+    const request = sha256Json({ execution: fableInput.relayExecutionId, invocation: fablePath, ordinal, commandSha256 })
+    const runner = readRunner.replace(/[^/]+$/, 'relaycapture.py')
+    const common = ['--directory', `${file}.captures`, '--request', request, '--command-sha256', commandSha256]
+    const options = { phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
+    const recovered = new Set()
+    const send = async (command, opts) => {
+      const before = new Set(typeof dispatchFailures === 'undefined' ? [] : dispatchFailures)
+      const result = await dispatch(capturePrompt(command), opts)
+      if (typeof dispatchFailures !== 'undefined') for (const entry of dispatchFailures) if (!before.has(entry) && entry.label === opts.label && entry.phase === opts.phase) recovered.add(entry)
+      return result
+    }
+    const finish = result => {
+      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const index = dispatchFailures.indexOf(entry); if (index >= 0) dispatchFailures.splice(index, 1) }
+      if (recovered.size) log(`RELAY_CAPTURE_RECOVERED ${JSON.stringify({ label, request, recoveredDispatches: recovered.size })}`)
+      return result
+    }
+    const valid = receipt => receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && Number.isInteger(receipt.exitCode)
+    const same = (a, b) => valid(a) && canonicalJson(a) === canonicalJson(b)
+    const matches = (text, digest) => { try { return sha256Ascii(text) === digest } catch (_) { return false } }
+    const out = await send(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)]), { ...options, label, schema: CAPTURE_SCHEMA })
+    if (!out && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
+    let receipt = out && out.receipt
+    if (out && valid(receipt) && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && matches(out.stdout, receipt.sha256) && out.exitCode === receipt.exitCode) return finish(out)
+    log(`RELAY_CAPTURE_RECOVERY ${JSON.stringify({ label, request, reason: 'capture copy failed byte or invocation validation; reading saved output only' })}`)
+    // Recover even when the model damaged the independent receipt: the file is bound to
+    // the nonce + invocation + command we hold, not to any value the model copied.
+    receipt = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const manifest = await send(pythonLine(runner, ['manifest', ...common]), { ...options, label: `${label}:receipt${attempt + 1}`, schema: MANIFEST_SCHEMA })
+      if (!manifest && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
+      if (manifest && valid(manifest.receipt)) { receipt = manifest.receipt; break }
+    }
+    if (!valid(receipt)) return { captureError: 'the exact invocation has no valid saved capture receipt' }
+    if (receipt.bytes > 65536) return { captureError: `saved output is ${receipt.bytes} bytes, exceeding the 65536-byte bounded copy recovery limit; original command was not rerun` }
+    let stdout = ''
+    const count = Math.ceil(receipt.bytes / 1024)
+    for (let index = 0; index < count; index++) {
+      let accepted = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const chunk = await send(pythonLine(runner, ['chunk', ...common, '--sha256', receipt.sha256, '--index', String(index)]), { ...options, label: `${label}:chunk${index + 1}:${attempt + 1}`, schema: CHUNK_SCHEMA })
+        if (!chunk && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
+        if (chunk && same(chunk.receipt, receipt) && chunk.index === index && typeof chunk.chunk === 'string' && chunk.chunk.length === Math.min(1024, receipt.bytes - index * 1024) && HEX.test(String(chunk.sha256)) && matches(chunk.chunk, chunk.sha256)) { accepted = chunk.chunk; break }
+      }
+      if (accepted === null) return { captureError: `saved capture chunk ${index + 1}/${count} failed validation after two reads` }
+      stdout += accepted
+    }
+    if (sha256Ascii(stdout) !== receipt.sha256) return { captureError: 'reconstructed capture does not match the original saved byte digest' }
+    return finish({ exitCode: receipt.exitCode, stdout, receipt })
+  }
   /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
   async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
-    const out = await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
+    const ordinal = captureOrdinal++
+    const out = file && readRunner && fableInput.relayExecutionId
+      ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
+      : await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
+    if (out && out.captureError) {
+      const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 2, reason: out.captureError })}`
+      log(error)
+      return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
+    }
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
     let got = parse(out.stdout, file)
     if (got.why) {

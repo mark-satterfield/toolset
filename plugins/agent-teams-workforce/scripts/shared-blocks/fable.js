@@ -45,6 +45,7 @@ async function fableWorkflow(name, input) {
     ...input,
     fableAgentTypes: fableInput.fableAgentTypes || [],
     fableInvocationPath: invocationPath,
+    ...(fableInput.relayExecutionId ? { relayExecutionId: fableInput.relayExecutionId } : {}),
     ...(fableRecovery ? { fableRecovery } : {}),
   })
 }
