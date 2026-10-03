@@ -8,7 +8,7 @@ description: >-
 tools: Read, Write, Bash
 disallowedTools: Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:subagent-contract]
-model: haiku
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 16
 effort: low

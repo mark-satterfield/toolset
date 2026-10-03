@@ -11,7 +11,7 @@ description: >-
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract]
-model: haiku
+model: sonnet
 permissionMode: acceptEdits
 effort: low
 ---

@@ -468,7 +468,9 @@ def write(command: str, result: dict, path: Path, exit_code: int = 0) -> dict:
     return save(command, result, view(command, result), exit_code, path)
 
 
-def read(path: Path) -> dict:
+def read(
+    path: Path, expected_sha256: str = "", expected_bytes: int | None = None
+) -> dict:
     """The envelope of a relay file written earlier, re-running nothing.
 
     A missing file yields a sealed `{missing: true}` view with exit 4: the command never saved a
@@ -476,6 +478,8 @@ def read(path: Path) -> dict:
 
     Args:
         path: The relay file.
+        expected_sha256: Optional digest from the original command receipt.
+        expected_bytes: Optional size from that receipt.
 
     Returns:
         The same envelope as when the file was written, or the missing-file envelope.
@@ -485,14 +489,28 @@ def read(path: Path) -> dict:
     """
     if not path.is_file():
         return seal({"missing": True, "error": f"{path} does not exist"}, 4, path)
-    saved = json.loads(path.read_text(encoding="utf-8"))
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if expected_sha256 and digest != expected_sha256:
+        raise RelayError(
+            f"{path}: saved relay bytes differ from the original command receipt"
+        )
+    if expected_bytes is not None and len(data) != expected_bytes:
+        raise RelayError(
+            f"{path}: saved relay size differs from the original command receipt"
+        )
+    saved = json.loads(data.decode("utf-8"))
     if (
         not isinstance(saved, dict)
         or not isinstance(saved.get("view"), dict)
         or not isinstance(saved.get("exitCode"), int)
     ):
         raise RelayError(f"{path}: not a relay file")
-    return seal(saved["view"], saved["exitCode"], path)
+    return seal(saved["view"], saved["exitCode"], None) | {
+        "~file": str(path),
+        "~sha256": digest,
+        "~bytes": len(data),
+    }
 
 
 ARGV_FLAG = "--argv-sha256"

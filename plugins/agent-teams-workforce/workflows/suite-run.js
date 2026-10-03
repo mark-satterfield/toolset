@@ -115,8 +115,8 @@ async function settleWorkflow(name, input) {
 //   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
 //   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
 //   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
-//   copy, then rebuilds the view. Nothing is retried: a copy that does not match fails the
-//   step with the exact reason, and the program's full result stays in its relay file.
+//   copy, then rebuilds the view. A damaged copy can retry only reading the exact saved
+//   receipt twice; the original command never repeats. Exhaustion pauses this item visibly.
 // depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
 // other program, and checks or writes a saved JSON file against the hash of the value this
 // script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
@@ -317,7 +317,7 @@ const relayKit = (() => {
     } catch (err) {
       return { why: `the copy cannot be hashed: ${String((err && err.message) || err)}` }
     }
-    if (got !== env['~checksum']) return { why: `the copy hashes to ${got}, not to the ${env['~checksum']} the program printed` }
+    if (got !== env['~checksum']) return { env, why: `the copy hashes to ${got}, not to the ${env['~checksum']} the program printed` }
     return { env, flat }
   }
   const prompt = (command) => `Run exactly this one shell command, once, in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else. Type the command exactly as written below, character for character: the program checks it against the checksum it carries and refuses any difference.
@@ -325,17 +325,37 @@ const relayKit = (() => {
 ${command}
 
 It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
-  /**
-   * Runs `command` once in a runner session and accepts only an exact copy of the one line it
-   * printed. Nothing is retried: a copy that does not match, a command line typed differently
-   * (exit 3) or any other failure fails the step at once with the exact reason. Returns
-   * { ok: true, exit, view } or { ok: false, error, noResult? }.
-   */
-  async function exec(dispatch, { label, phase, command, file = null }) {
-    const out = await dispatch(prompt(command), { label, phase, model: 'haiku', effort: 'low', schema: SCHEMA })
+  /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
+  async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
+    const out = await dispatch(prompt(command), { label, phase, model: 'sonnet', effort: 'low', schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
-    const got = parse(out.stdout, file)
-    if (got.why) return { ok: false, error: `${label}: the runner's copy did not match the line the program printed (${got.why})${file ? `; the program's result is in ${file}` : ''}` }
+    let got = parse(out.stdout, file)
+    if (got.why) {
+      const receipt = got.env
+      const bound = out.exitCode === 0 && receipt && receipt['~exit'] === 0 && file && readRunner && HEX.test(String(receipt['~sha256'])) && Number.isInteger(receipt['~bytes']) && receipt['~bytes'] >= 0
+      let attempts = 1
+      let reason = got.why
+      if (bound) {
+        const readCommand = pythonLine(readRunner, ['read', '--relay', file, '--sha256', receipt['~sha256'], '--bytes', String(receipt['~bytes'])])
+        for (let retry = 1; retry <= 2; retry++) {
+          attempts++
+          log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt: retry, reason })}`)
+          const copied = await dispatch(`The previous response failed validation: ${reason}. The original command has already completed. Do not execute it again. This corrective attempt only reads the saved result whose bytes must match the original receipt.
+
+${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, model: 'sonnet', effort: 'low', schema: SCHEMA })
+          got = copied ? parse(copied.stdout, file) : { why: 'the corrective reader returned no result' }
+          if (!got.why && (copied.exitCode !== 0 || got.env['~sha256'] !== receipt['~sha256'] || got.env['~bytes'] !== receipt['~bytes'] || got.env['~exit'] !== 0)) got = { why: 'the corrective read did not return the successful original receipt' }
+          if (!got.why) break
+          reason = got.why
+        }
+      }
+      if (got.why) {
+        const detail = { label, relayFile: file, attempts, reason: `${reason}${bound ? '' : '; no successful saved receipt is available for safe read-only recovery'}` }
+        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify(detail)}`
+        log(error)
+        return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
+      }
+    }
     const exit = got.env['~exit']
     let view
     try {
@@ -367,7 +387,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     } catch (err) {
       return { error: `${label}: ${String((err && err.message) || err)}` }
     }
-    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file })
+    const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file, readRunner: script.replace(/[^/]+$/, 'relayrun.py') })
     if (!r.ok) return { error: r.error, noResult: !!r.noResult }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
@@ -384,7 +404,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
-    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file })
+    const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file, readRunner: runner })
     if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
     return { ok: true, ...r.view, relayFile: file }
@@ -650,7 +670,7 @@ if (!ran) {
   const resolved = await settleAgent(resolvePrompt, {
     label: `suite-run${label ? `:${label}` : ''}:resolve`,
     phase: 'Run',
-    model: 'haiku',
+    model: 'sonnet',
     effort: 'low',
     schema: RESOLVE_SCHEMA,
   })
@@ -704,7 +724,7 @@ if (exitCode === 0) {
   const parsed = await settleAgent(parsePrompt(ran, exitCode, file), {
     label: `suite-run${label ? `:${label}` : ''}:failures`,
     phase: 'Run',
-    model: 'haiku',
+    model: 'sonnet',
     effort: 'low',
     schema: PARSE_SCHEMA,
   })

@@ -8,7 +8,7 @@ description: >-
   No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: haiku
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract]

@@ -15,8 +15,9 @@ Commands:
         stdout, stderr and exit status go to FILE; the view carries `exitCode`, `json` (stdout
         parsed when it is one JSON object, reduced to the top-level KEYS when given; else null),
         `stdoutBytes`, `stderrBytes`, and with `--tail N` the last N lines of each.
-    read --relay FILE
-        Print the envelope saved in FILE again, re-running nothing.
+    read --relay FILE [--sha256 HEX] [--bytes N]
+        Print the envelope saved in FILE again, re-running nothing. Optional receipt checks
+        refuse a stale or changed file instead of substituting it for the original result.
     check-file --file F --sha256 HEX
         Whether F holds JSON whose canonical form hashes to HEX (`match`), as a workflow checks a
         file a session saved against the schema-validated result the session returned.
@@ -220,6 +221,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("argv", nargs=argparse.REMAINDER)
     read = sub.add_parser("read", help="print a saved envelope again")
     read.add_argument("--relay", type=Path, required=True)
+    read.add_argument("--sha256", default="")
+    read.add_argument("--bytes", type=int, default=None)
     check = sub.add_parser(
         "check-file", help="whether a saved JSON file equals a hashed value"
     )
@@ -256,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "write-file":
         return _write_file(args)
     try:
-        shown = relay.read(args.relay)
+        shown = relay.read(args.relay, args.sha256, args.bytes)
     except (relay.RelayError, ValueError, OSError) as exc:
         _dump(relay.seal({"error": str(exc)}, 2, None))
         return 2
