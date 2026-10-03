@@ -13,7 +13,7 @@ mcpServers:
   - awslabs-dynamodb-mcp-server
 model: fable
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer, agent-teams-workforce:rds]
 effort: medium
 isolation: worktree

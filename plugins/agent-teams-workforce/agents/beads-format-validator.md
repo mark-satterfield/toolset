@@ -10,7 +10,7 @@ tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: haiku
 permissionMode: acceptEdits
-maxTurns: 45
+maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract]
 effort: low
 isolation: worktree

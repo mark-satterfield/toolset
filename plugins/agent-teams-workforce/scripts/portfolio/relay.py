@@ -223,6 +223,7 @@ def _arch_resume_view(result: dict) -> dict:
             "second": team.get("second") or "",
         },
         "decision": result.get("decision"),
+        "repairs": result.get("repairs"),
         "integration": _integration_view(result.get("integration")),
         "coverage": {
             "revision": cov.get("revision"),
@@ -231,6 +232,7 @@ def _arch_resume_view(result: dict) -> dict:
         },
         "rounds": {
             "last": rounds.get("last"),
+            "resumeRound": rounds.get("resumeRound"),
             "pendingRound": rounds.get("pendingRound"),
             "pendingDispatches": rounds.get("pendingDispatches"),
             "pendingPlan": plan,

@@ -12,7 +12,7 @@ mcpServers:
   - awslabs-dynamodb-mcp-server
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:aws-mcp-setup]
 effort: medium
 isolation: worktree

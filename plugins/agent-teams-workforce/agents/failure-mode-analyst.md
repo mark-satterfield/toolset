@@ -11,7 +11,7 @@ mcpServers:
   - aws-mcp
 model: fable
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:observability-designer]
 effort: medium
 isolation: worktree

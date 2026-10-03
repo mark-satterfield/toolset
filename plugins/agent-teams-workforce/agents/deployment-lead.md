@@ -7,7 +7,7 @@ tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
-maxTurns: 75
+maxTurns: 150
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration]
 effort: medium
 isolation: worktree

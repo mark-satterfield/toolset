@@ -9,7 +9,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
 effort: medium
 isolation: worktree

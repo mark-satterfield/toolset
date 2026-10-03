@@ -17,7 +17,7 @@ disallowedTools: AskUserQuestion, Edit, Write, Agent
 # reviews, adjudicates, rules or classifies onto this tier.
 model: haiku
 permissionMode: acceptEdits
-maxTurns: 20
+maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
 effort: low
 color: cyan

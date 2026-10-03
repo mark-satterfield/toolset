@@ -10,7 +10,7 @@ disallowedTools: Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:subagent-contract]
 model: haiku
 permissionMode: acceptEdits
-maxTurns: 8
+maxTurns: 16
 effort: low
 ---
 

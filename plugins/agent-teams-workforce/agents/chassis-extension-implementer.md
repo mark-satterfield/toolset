@@ -11,7 +11,7 @@ mcpServers:
   - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda]
 effort: medium
 color: green

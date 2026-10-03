@@ -10,7 +10,7 @@ tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: fable
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:tech-debt-tracker]
 effort: medium
 isolation: worktree

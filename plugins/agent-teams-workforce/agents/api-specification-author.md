@@ -13,7 +13,7 @@ mcpServers:
   - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]
 effort: medium
 isolation: worktree

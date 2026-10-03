@@ -12,7 +12,7 @@ mcpServers:
   - aws-mcp
 model: opus
 permissionMode: acceptEdits
-maxTurns: 45
+maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:aws-cdk-development]
 effort: low
 isolation: worktree

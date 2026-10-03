@@ -670,7 +670,7 @@ function pendingPlanProblem(rounds) {
   if (pp === null) return pr === null ? '' : `pendingRound is ${pr} but pendingPlan is null`
   if (typeof pp !== 'object' || pp.round !== pr || !Number.isInteger(pr)) return `pendingPlan round ${pp && pp.round} does not match pendingRound ${pr}`
   if (!Array.isArray(pp.dispatches) || pp.dispatches.length !== rounds.pendingDispatches) return `pendingPlan.dispatches is not a list of ${rounds.pendingDispatches} dispatch(es)`
-  const bad = pp.dispatches.findIndex((d, i) => !d || d.seq !== i + 1 || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean')
+  const bad = pp.dispatches.findIndex((d, i) => !d || !Number.isInteger(d.seq) || d.seq < 1 || (i > 0 && d.seq <= pp.dispatches[i - 1].seq) || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean')
   if (bad >= 0) return `pendingPlan dispatch ${bad + 1} lacks its seq, role, agentType or complete`
   if (pp.dispatches.every((d) => d.complete)) return 'pendingPlan has no dispatch left to run'
   return ''
@@ -680,15 +680,12 @@ function pendingPlanProblem(rounds) {
 const resultFile = (n, d) => `${ROUNDS_DIR}/r${n}-${d.seq}-${d.role}-${d.agentType}.json`
 /**
  * Returns the dispatches of a saved pending plan, ready to run: the identity and completion
- * arch-resume reports for each, with the task, files and answers the script holds for it this run
- * (`local`, by seq and agent) when it has them. A dispatch without them here (files and answers null)
- * reads its task, files, answers and assigned claims from its plan entry in ledger.json.
+ * arch-resume reports for each. Task, files, answers and assigned claims are always read from
+ * the authoritative plan entry in ledger.json, including reconciled legacy plans.
  */
-function planDispatches(pp, local = []) {
-  return pp.dispatches.map((c) => {
-    const l = local.find((x) => x.seq === c.seq && x.agentType === c.agentType && x.role === c.role) || {}
-    return { ...l, ...c, files: Array.isArray(l.files) ? listed(l.files) : null, answers: Array.isArray(l.answers) ? listed(l.answers) : null, file: resultFile(pp.round, c) }
-  })
+function planDispatches(pp) {
+  // The loader can reconcile a retained plan. Never override it with stale in-memory scope.
+  return pp.dispatches.map((c) => ({ ...c, task: '', files: null, answers: null, file: resultFile(pp.round, c) }))
 }
 
 const CONFLICT_ITEMS = {
@@ -788,6 +785,7 @@ const SURVEY_SCHEMA = {
 }
 // Consumed by maker, checker and decider prompts: one shared completion standard.
 const DESIGN_REVIEW_STANDARD = `Use the same acceptance basis throughout: applicable PRD outcomes, settled owner decisions and section-2 constraints, the relevant MODEL obligations, existing source evidence, and the retained target/delta. The lead reconciles the combined design before handing it to reviewers: contracts, event publishers, ownership, security and failure behavior must agree across its views. Inspect cited implementation and tests; distinguish evidence read from behavior actually verified. Do this within the existing authoring pass, not a new agent or audit pass.
+BEFORE HANDOFF, the producer checks the same concrete obligations the reviewers will check, where relevant to this change: exact contract fields and identifiers across producer/consumer boundaries; event publisher, subscriber and owner agreement; data ownership and lifecycle; authorization and trust boundaries; failure, retry and idempotency behavior; cost assumptions with unit math; and consistency of the target, delta and their diagrams. Trace these against the applicable PRD outcomes, owner constraints, source evidence and MODEL obligations. Supply sufficient detail and evidence for independent verification in the retained views, not merely in the agent summary. This is completion of the assigned design, not permission to add product requirements, unrelated redesign or hypothetical scale. When a repair crosses a retained view boundary, repair the connected contract and views together within the ledger's reconciled ownership scope; do not leave a known contradiction because an earlier task named only one file.
 Review is an independent safety net against that same basis, not a source of new requirements or preferred redesigns. Each finding identifies the violated requirement/constraint/contract or concrete correctness defect, its evidence and the bounded repair. Do not reopen a settled mechanism just to offer another design. On later rounds review the changed claims/views and their affected dependencies, retaining still-valid evidence; do not demand fresh unrelated proposals. New evidence of a real defect must still be reported. Neither this shared standard nor the proposer cap guarantees approval.`
 
 const COORDINATOR_SCHEMA = {
@@ -840,11 +838,19 @@ const COORDINATOR_SCHEMA = {
     },
   },
 }
+const REPAIR_ANSWERS_SCHEMA = { type: 'array', items: { type: 'object', additionalProperties: false,
+  required: ['repairId', 'response'], properties: { repairId: { type: 'string' }, response: { type: 'string' } } } }
+const REPAIR_CHECKS_SCHEMA = { type: 'array', items: { type: 'object', additionalProperties: false,
+  required: ['repairId', 'revision', 'verdict', 'evidence'], properties: {
+    repairId: { type: 'string' }, revision: { type: 'string' },
+    verdict: { type: 'string', enum: ['verified', 'revise'] }, evidence: { type: 'string' },
+  } } }
 const WRITER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['files', 'claims', 'answers', 'businessConflicts', 'coverage', 'summary'],
   properties: {
+    repairAnswers: REPAIR_ANSWERS_SCHEMA,
     files: { type: 'array', items: { type: 'string' } },
     coverage: COVERAGE_SCHEMA,
     claims: {
@@ -874,6 +880,7 @@ const REVIEW_SCHEMA = {
   additionalProperties: false,
   required: ['findings', 'coverageChecks', 'resolutions', 'summary'],
   properties: {
+    repairChecks: REPAIR_CHECKS_SCHEMA,
     coverageChecks: COVERAGE_CHECKS_SCHEMA,
     resolutions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['findingId', 'revision', 'verdict', 'evidence'], properties: { revision: { type: 'string' }, findingId: { type: 'string' }, verdict: { type: 'string', enum: ['accepted', 'rejected'] }, evidence: { type: 'string' } } } },
     findings: {
@@ -1101,8 +1108,10 @@ Write survey.md as the readable survey and survey.json as your structured result
   await recordFiles('survey:record', 'Survey', [SURVEY_MD])
   survey = { subject: surveyed.subject, capabilities: Array.isArray(surveyed.capabilities) ? surveyed.capabilities.length : 0 }
 }
-facts = await readFacts('survey:coverage-facts', 'Survey')
-if (facts.error) return { ok: false, stage: 'survey', reason: facts.error }
+if (!savedSurvey) {
+  facts = await readFacts('survey:coverage-facts', 'Survey')
+  if (facts.error) return { ok: false, stage: 'survey', reason: facts.error }
+}
 /** Where the survey is; failures name the files, never carry the survey. */
 const surveyPaths = { surveyPath: SURVEY_MD, surveyJsonPath: SURVEY_JSON }
 // The subject as named; depscore.py arch-target derives the folder name every later step uses.
@@ -1150,6 +1159,8 @@ if (lastRound) log(`Rounds: resumed after round ${lastRound} — ${ledgerLine()}
 /** Returns what still stands between the draft and a decision. */
 async function decisionGaps(label) {
   const gaps = []
+  for (const id of listed(facts.repairs && facts.repairs.open)) gaps.push(`repair ${id} requires its bounded correction in ${LEDGER_JSON}`)
+  for (const id of listed(facts.repairs && facts.repairs.checksNeeded)) gaps.push(`repair ${id} awaits independent verification of the current artifacts in ${LEDGER_JSON}`)
   if (hasGaps(facts)) gaps.push(`${facts.coverage && Number.isInteger(facts.coverage.gapCount) ? facts.coverage.gapCount : 'an unknown number of'} coverage gap(s): each is listed under result.coverage.gaps in ${facts.relayFile}, with its row in ${LEDGER_JSON}`)
   const proposed = writersSoFar().some((w) => roleOf(w) === 'proposer')
   if (!proposed) gaps.push('no proposer has written the target yet')
@@ -1169,7 +1180,8 @@ async function decisionGaps(label) {
 
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
 const savedDecision = facts.decision && typeof facts.decision === 'object' && hasText(facts.decision.verdict) ? facts.decision : null
-const savedCoverageValid = !!(savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && !hasGaps(facts) && savedDecision.coverageRevision === facts.coverage.revision)
+const repairsPending = (value) => !!(listed(value.repairs && value.repairs.open).length || listed(value.repairs && value.repairs.checksNeeded).length)
+const savedCoverageValid = !!(!repairsPending(facts) && savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && !hasGaps(facts) && savedDecision.coverageRevision === facts.coverage.revision)
 let decision = savedDecision && savedDecision.verdict === 'approve' && savedCoverageValid ? savedDecision : null
 // Legacy approval gets one bounded supplemental round, retaining its prior work.
 const roundLimit = MAX_ROUNDS + (savedDecision && savedDecision.verdict === 'approve' && (!savedDecision.coverageRevision || resumedFacts.contractVersion !== 2) ? 1 : 0)
@@ -1245,7 +1257,7 @@ ${COVERAGE_RULE}
 ${DESIGN_REVIEW_STANDARD}
 
 THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
-EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work.`
+EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work. Complete the assigned acceptance requirements, save the complete structured result to the specified file, and then call StructuredOutput with that same result. Preserve valid prior work and its evidence; a resumed dispatch completes its missing work in this round.`
   if (WRITER_ROLES.includes(d.role)) {
     const work = d.role === 'proposer'
       ? `Consolidate the retained target across all affected concerns, using your expertise (${ROSTER.proposer[d.agentType]}), existing source evidence and the settled mechanism. Revise the existing design; do not reopen settled choices or create a proposal per concern. Work from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
@@ -1259,6 +1271,8 @@ ${shared}
 
 ${DRAFT_RULES}
 
+Read \`repairRequests\` in ${LEDGER_JSON}. For each open repair assigned to you or transferred to the retained lead, complete its missing diligence and return \`repairAnswers\` with its exact repairId and a response identifying the changed views/evidence. Retain resolved repairs; do not redo them.
+
 Use claimId="" for a new claim or the existing ledger id for an explicit revision. Keep unchanged ids; supersedes lists only deliberately replaced claims you own. Cite evidenceRefs and do not silently discard findings. A writer answer proposes a fix/dispute; independent resolution is still required. Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
   return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
@@ -1271,6 +1285,7 @@ ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
 YOUR ASSIGNED CLAIM REVISIONS are the \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
+Read \`repairRequests\` in ${LEDGER_JSON}. Independently verify answered repairs within your assigned scope against the current artifacts; return \`repairChecks\` with repairId, the current revision, verified/revise and concrete evidence. Do not repeat resolved repair requests without identifying new evidence of a current defect.
 Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
 }
 
@@ -1422,9 +1437,9 @@ function settleDispatches(plan, n) {
  */
 async function runRound(n, dispatches) {
   // Last boundary before any agent call; automatic returns and legacy owners cannot bypass it.
-  const proposers = dispatches.filter((d) => d.role === 'proposer')
+  const proposers = dispatches.filter((d) => d.role === 'proposer' && !d.complete)
   const team = facts.proposalTeam || {}
-  if (proposers.length > 2 || new Set(proposers.map((d) => d.agentType)).size !== proposers.length || proposers.some((d) => ![team.lead, team.second].filter(Boolean).includes(d.agentType))) {
+  if (new Set(proposers.map((d) => d.agentType)).size > 2 || proposers.some((d) => ![team.lead, team.second].filter(Boolean).includes(d.agentType))) {
     return { error: 'proposal budget exceeded; saved work retained, no round agents dispatched' }
   }
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
@@ -1444,20 +1459,22 @@ async function runRound(n, dispatches) {
     return got && (await saveResult(label, 'Rounds', d.file, got)) ? got : null
   }
   const results = new Map()
+  let writersAttempted = false
   for (const wave of writerWaves(ordered.filter((d) => WRITER_ROLES.includes(d.role) && !d.complete))) {
+    writersAttempted = true
     const got = await parallel(wave.items.map(go))
     wave.items.forEach((d, i) => results.set(d.seq, got[i]))
     if (dispatchInterruption) return { silent: wave.items.filter((d, i) => !got[i]).map(d => d.agentType) }
   }
-  if (facts.rounds.pendingPlan) ordered = planDispatches(facts.rounds.pendingPlan, held)
+  if (facts.rounds.pendingPlan) ordered = planDispatches(facts.rounds.pendingPlan)
   let reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
   if (reviewers.length) {
-    if (ordered.length > reviewers.length) {
+    if (writersAttempted) {
       const mid = await readFacts(`round${n}:ledger-writers`, 'Rounds')
       if (mid.error) return { error: mid.error, exception: mid.exception }
       facts = mid
       if (mid.rounds.pendingPlan && mid.rounds.pendingPlan.dispatches.some(d => WRITER_ROLES.includes(d.role) && !d.complete)) return { silent: mid.rounds.pendingPlan.dispatches.filter(d => WRITER_ROLES.includes(d.role) && !d.complete).map(d => d.agentType) }
-      ordered = mid.rounds.pendingPlan ? planDispatches(mid.rounds.pendingPlan, held) : ordered
+      ordered = mid.rounds.pendingPlan ? planDispatches(mid.rounds.pendingPlan) : ordered
       reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
     }
     const got = await parallel(reviewers.map(go))
@@ -1466,6 +1483,10 @@ async function runRound(n, dispatches) {
   const after = await readFacts(`round${n}:ledger`, 'Rounds')
   if (after.error) return { error: after.error, exception: after.exception }
   facts = after
+  if (facts.rounds.pendingPlan) {
+    if (facts.rounds.pendingPlan.round !== n) return { error: `round ${n} finished dispatching but saved round ${facts.rounds.pendingPlan.round} is pending; saved work retained` }
+    return { silent: facts.rounds.pendingPlan.dispatches.filter((d) => !d.complete).map((d) => d.agentType) }
+  }
   const savedKeys = listed(facts.rounds.saved)
   const unsaved = ordered.filter((d) => results.get(d.seq) && !savedKeys.includes(`r${n}-${d.seq}`))
   if (unsaved.length) log(`Round ${n}: ${unsaved.map((d) => d.agentType).join(', ')} returned a result but did not save it to its result file; it counts as no result`)
@@ -1473,10 +1494,11 @@ async function runRound(n, dispatches) {
 }
 
 /** Runs the decider over the artifacts; returns its decision or null. */
-async function decide(n) {
+async function decide(n, correction = '') {
   phase('Decide')
   const dec = await run(
     `You are the architecture-decider. Decide whether the draft target below is approved. You produced none of it, and you decide from the artifacts alone: read them.
+${correction}
 
 ARTIFACTS:
 - the PRD: ${hasText(prd.path) ? prd.path : '(inline — see the survey)'}
@@ -1490,6 +1512,7 @@ ${PRD_RULE}
 ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
+Read \`repairRequests\` in ${LEDGER_JSON}, including prior answers and independent checks. Do not reissue resolved repairs from an older decision; a new defect must identify current evidence and the concrete remaining violation.
 Read all coverage rows and independent checks in ${LEDGER_JSON}; check completeness against the MODEL, not only existing catalog hits. Set coverageRevision to the ledger's coverageRevision. Approval requires resolved relevant obligations with independent current-content evidence; never approve from an aggregate boolean.
 
 The team has designed, challenged and settled this target in its rounds, led by the coordinator. You are not its lead: you approve its result, and you choose only where the team left competing solutions it could not settle.
@@ -1514,12 +1537,14 @@ Write ${DECISION_MD} (your decision as one readable Markdown document) and ${DEC
 }
 
 phase('Rounds')
+let staleDecisionCorrection = ''
+let staleDecisionCorrected = false
 let ready = !!(savedDecision && savedDecision.verdict === 'approve') || facts.rounds.readyForDecision === true
 while (!decision) {
   if (ready) {
     pendingGaps = await decisionGaps(`rounds:gaps-${lastRound}`)
     if (!pendingGaps.length) {
-      const dec = await decide(lastRound)
+      const dec = await decide(lastRound, staleDecisionCorrection)
       if (!dec) return { ok: false, stage: 'decide', reason: 'the architecture-decider returned nothing', ...died('Decide'), subject, ...surveyPaths }
       const concerns = (Array.isArray(dec.ownerConcerns) ? dec.ownerConcerns : []).filter((c) => c && hasText(c.concern))
       if (dec.verdict === 'owner-concern' || concerns.length) {
@@ -1533,28 +1558,38 @@ while (!decision) {
       }
       if (dec.verdict === 'approve') {
         const approvedFacts = await readFacts('decide:coverage-check', 'Decide')
-        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || hasGaps(approvedFacts) || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
+        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || hasGaps(approvedFacts) || repairsPending(approvedFacts) || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
           return { ok: false, stage: 'decide', reason: 'approval lacks saved independent coverage evidence for the current views; saved work retained', subject }
         }
         facts = approvedFacts
         decision = dec
         break
       }
-      forced = returnedTo(dec)
-      if (!forced.length) return { ok: false, stage: 'decide', reason: 'the architecture-decider returned the target to no proposer on its roster', decision: dec, subject }
-      log(`Decide: returned to ${forced.map((f) => f.agentType).join(', ')}`)
+      const repairFacts = await readFacts('decide:repair-status', 'Decide')
+      if (repairFacts.error) return { ok: false, stage: 'decide', reason: repairFacts.error, subject }
+      facts = repairFacts
+      forced = returnedTo(facts.decision || {})
+      if (!forced.length && !repairsPending(facts)) {
+        if (staleDecisionCorrected) return { ok: false, stage: 'decide', deterministicFailure: true, reason: `the architecture-decider repeated a return with no unresolved repair after correction: ${JSON.stringify(dec.returnTo || [])}; current repair evidence is in ${LEDGER_JSON}; saved work retained, no writer redispatched`, decision: dec, subject }
+        staleDecisionCorrected = true
+        staleDecisionCorrection = `YOUR LAST RETURN WAS NOT ACTIONABLE (${JSON.stringify(dec.returnTo || [])}): the saved ledger has no unresolved repair request. Read repairRequests, their answers and independent current-revision checks in ${LEDGER_JSON}. Do not repeat a resolved request. Decide again from the current artifacts: approve when the existing acceptance requirements are met, or identify a concrete new defect with current evidence. Nothing has been sent back to a writer.`
+        retries.push({ step: `decide:round${lastRound}`, whatChanged: 'the decision was told its return contained no unresolved repair and directed to the saved independent resolution evidence' })
+        log(`Decide: stale return suppressed; asking the decider once to consider saved resolution evidence`)
+        continue
+      }
+      log(`Decide: ${forced.length ? `returned to ${forced.map((f) => f.agentType).join(', ')}` : 'answered repairs require independent verification; no writer redispatch'}`)
       phase('Rounds')
     }
     ready = false
   }
-  if (!facts.rounds.pendingPlan && lastRound >= roundLimit) {
+  if (!facts.rounds.pendingPlan && !facts.rounds.resumeRound && lastRound >= roundLimit) {
     const gaps = pendingGaps.length ? pendingGaps : await decisionGaps('rounds:gaps-final')
     const why = `${roundLimit} round(s) ran and the target is not ready for a decision: ${gaps.join('; ') || 'the coordinator never declared it ready'}`
     log(`Rounds: ${why}`)
     return { ok: false, stage: 'rounds', reason: why, error: why, gaps, subject, ...surveyPaths, ...died('Rounds') }
   }
   const pendingPlan = facts.rounds.pendingPlan
-  const n = pendingPlan ? pendingPlan.round : lastRound + 1
+  const n = pendingPlan ? pendingPlan.round : (facts.rounds.resumeRound || lastRound + 1)
   if (!pendingGaps.length && n > 1) pendingGaps = await decisionGaps(`rounds:gaps-${n - 1}`)
   const coordinatorBrief = `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${roundLimit}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
 
@@ -1591,6 +1626,7 @@ HOW TO ROUTE:
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
 - Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Assigning the same claimId or claimFile to two or more reviewers is an overlap, and an overlap is one decision you make: state it once in \`overlaps\`, as one entry naming the shared \`files\` and \`claimIds\`, the reviewer \`agentTypes\` that share them, and the one \`reason\`. The reviewers' dispatches carry no reason. The script refuses a plan with an overlap no entry names, and sends it back to you; return \`overlaps: []\` when no two reviewers share anything. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. Keep each required reviewer's task a bounded domain question even with no claims.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
+- Route open \`repairRequests\` from the ledger to the retained lead and answered repairs to an independent reviewer. Include their IDs in the bounded task. Do not redispatch resolved repairs merely because an older decision still names them.
 - For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
 - Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
@@ -1653,7 +1689,7 @@ HOW TO ROUTE:
       plan = { ...plan, readyForDecision: saved.readyForDecision }
       settled.dispatches = planDispatches(saved)
     } else {
-      settled.dispatches = saved ? planDispatches(saved, orderedPlan.dispatches.map((d, i) => ({ ...d, seq: i + 1 }))) : orderedPlan.dispatches
+      settled.dispatches = saved ? planDispatches(saved) : orderedPlan.dispatches
     }
   }
   if (pendingPlan && !settled.dispatches.some((d) => !d.complete)) {

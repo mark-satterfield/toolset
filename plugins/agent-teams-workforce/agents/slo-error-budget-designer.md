@@ -11,7 +11,7 @@ mcpServers:
   - aws-mcp
 model: opus
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:cloudwatch]
 effort: medium
 isolation: worktree

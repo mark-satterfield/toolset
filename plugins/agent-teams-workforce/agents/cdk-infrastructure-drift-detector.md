@@ -8,7 +8,7 @@ tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits
-maxTurns: 45
+maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation]
 effort: low
 isolation: worktree

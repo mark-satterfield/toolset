@@ -10,7 +10,7 @@ tools: Read, Glob, Grep, Agent, SendMessage, Bash
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit
 model: opus
 permissionMode: default
-maxTurns: 100
+maxTurns: 200
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:beads-contract]
 effort: medium
 isolation: worktree

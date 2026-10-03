@@ -13,7 +13,7 @@ tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 45
+maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
 effort: low
 isolation: worktree

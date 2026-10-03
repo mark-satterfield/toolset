@@ -21,6 +21,7 @@ from pathlib import Path
 
 from archcoverage import coverage_facts, integration_revision
 from archevidence import digest, evidence_state, view_bindings, view_content
+from archrepairs import repair_facts
 from archrounds import compact_plan, round_facts, save_ledger
 
 ROUND_FILE = re.compile(
@@ -573,6 +574,7 @@ def resume_facts(
         ledger,
         roles,
         selected,
+        coverage.get("coverage", []),
     )
     previous_findings = {f["id"]: f for f in previous.get("findings", [])}
     for finding in ledger.findings:
@@ -633,6 +635,13 @@ def resume_facts(
     )
     coverage["coverageRevision"] = coverage_summary["revision"]
     coverage_summary["gaps"].extend(rounds["reviewGaps"])
+    repairs = repair_facts(
+        work, previous.get("repairRequests", []), ledger.files, selected.get("lead", "")
+    )
+    repair_summary = {
+        "open": [r["id"] for r in repairs if r["status"] == "open"],
+        "checksNeeded": [r["id"] for r in repairs if r["status"] == "answered"],
+    }
     ledger_path = work / LEDGER_NAME
     if work.is_dir():
         save_ledger(
@@ -645,11 +654,17 @@ def resume_facts(
                 "claims": ledger.claims,
                 "findings": ledger.findings,
                 "savedResults": ledger.files,
+                "repairRequests": repairs,
                 **coverage,
             },
         )
     integration = _integration(work)
     decision = _decision(work, roles)
+    if decision:
+        decision["returnTo"] = sorted(
+            {r["agentType"] for r in repairs if r["status"] == "open"}
+        )
+        decision["repairChecksNeeded"] = repair_summary["checksNeeded"]
     integration["coverageRevision"] = integration_revision(
         coverage_summary["revision"], integration["update"], work
     )
@@ -663,6 +678,7 @@ def resume_facts(
         "proposalTeam": selected,
         "rounds": {
             "last": rounds["last"],
+            "resumeRound": rounds["resumeRound"],
             "pendingPlan": compact_plan(rounds["pendingPlan"]),
             "pendingRound": rounds["pendingPlan"]["round"]
             if rounds["pendingPlan"]
@@ -703,6 +719,7 @@ def resume_facts(
             "overlapWarnings": rounds["overlapWarnings"],
         },
         "decision": decision,
+        "repairs": repair_summary,
         "integration": integration,
         "summary": {
             "survey": bool(survey and survey["saved"]),
