@@ -83,7 +83,7 @@ function captureDispatchInterruption(err, name) {
 // Neither copy is trusted:
 // - every command line carries --argv-sha256, the SHA-256 of the canonical JSON of its argument
 //   list; the program refuses (exit 3, nothing run) a command line typed differently;
-// - every result is printed as ONE line inside literal <exact_text> tags: a flat object of scalars (the view's leaves keyed by
+// - every result is printed as ONE RELAY64v1: line carrying base64 canonical JSON: a flat object of scalars (the view's leaves keyed by
 //   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
 //   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
 //   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
@@ -205,7 +205,7 @@ const relayKit = (() => {
     type: 'object',
     additionalProperties: false,
     required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete stdout verbatim, including its literal <exact_text> and </exact_text> tags.' } },
+    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
   }
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
@@ -238,6 +238,29 @@ const relayKit = (() => {
     }
     return root
   }
+  function decodeTransport(text) {
+    const prefix = 'RELAY64v1:'
+    if (!text.startsWith(prefix)) return text
+    const encoded = text.slice(prefix.length)
+    if (!encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new Error('invalid relay base64 alphabet or padding')
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    let decoded = ''
+    for (let i = 0; i < encoded.length; i += 4) {
+      const a = alphabet.indexOf(encoded[i])
+      const b = alphabet.indexOf(encoded[i + 1])
+      const c = encoded[i + 2] === '=' ? 0 : alphabet.indexOf(encoded[i + 2])
+      const d = encoded[i + 3] === '=' ? 0 : alphabet.indexOf(encoded[i + 3])
+      if ((encoded[i + 2] === '=' && (b & 15)) || (encoded[i + 3] === '=' && encoded[i + 2] !== '=' && (c & 3))) throw new Error('noncanonical relay base64 padding bits')
+      const bytes = [(a << 2) | (b >> 4)]
+      if (encoded[i + 2] !== '=') bytes.push(((b & 15) << 4) | (c >> 2))
+      if (encoded[i + 3] !== '=') bytes.push(((c & 3) << 6) | d)
+      for (const byte of bytes) {
+        if (byte > 0x7f) throw new Error('relay payload must be canonical ASCII JSON, a strict UTF-8 subset')
+        decoded += String.fromCharCode(byte)
+      }
+    }
+    return decoded
+  }
   /** Parses a runner's stdout copy and checks it is exactly the envelope the program printed; returns { env, flat } or { why }. */
   function parse(stdout, file) {
     let env
@@ -246,14 +269,14 @@ const relayKit = (() => {
       const open = '<exact_text>'
       const close = '</exact_text>'
       const payload = text.startsWith(open) && text.endsWith(close) ? text.slice(open.length, -close.length) : text
-      env = JSON.parse(payload)
+      env = JSON.parse(decodeTransport(payload))
     } catch (err) {
       env = null
     }
     if (!env || typeof env !== 'object' || Array.isArray(env)) {
       const text = String(stdout || '')
       const exception = exceptionOf(text)
-      return { why: exception ? `the program failed: ${exception}` : `stdout is not one JSON line: ${JSON.stringify(text.slice(0, 300))}` }
+      return { why: exception ? `the program failed: ${exception}` : `stdout is not one valid relay envelope line: ${JSON.stringify(text.slice(0, 300))}` }
     }
     if (!HEX.test(String(env['~checksum'])) || !Number.isInteger(env['~exit'])) return { why: 'the copy has no relay checksum or exit status' }
     const named = env['~file'] === undefined ? null : env['~file']
@@ -273,7 +296,7 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line: JSON enclosed in literal <exact_text> and </exact_text> tags. Treat everything between those tags as exact text to copy, not content to interpret. Preserve both tags in your stdout response; do not remove them or add any encoding. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   /**
    * Runs `command` once in a runner session and accepts only an exact copy of the one line it
    * printed. Nothing is retried: a copy that does not match, a command line typed differently
@@ -361,7 +384,7 @@ It prints exactly one line: JSON enclosed in literal <exact_text> and </exact_te
     return again.ok && again.match ? { ok: true, rewritten: true } : { ok: false, rewritten: true, error: again.error || `${file} still differs after it was written` }
   }
   const BOOT = [
-    'import hashlib, json, sys',
+    'import base64, hashlib, json, sys',
     'a = sys.orig_argv',
     'i = a.index("-c")',
     'boot, want, code, args = a[i + 1], a[i + 2], a[i + 3], a[i + 4:]',
@@ -386,7 +409,7 @@ It prints exactly one line: JSON enclosed in literal <exact_text> and </exact_te
     '    return o',
     'def emit(view, ex=0):',
     '    f = flat(view)',
-    '    print("<exact_text>" + c(dict(f, **{"~exit": ex, "~checksum": h({"exit": ex, "view": f})})) + "</exact_text>")',
+    '    print("RELAY64v1:" + base64.b64encode(c(dict(f, **{"~exit": ex, "~checksum": h({"exit": ex, "view": f})})).encode("ascii")).decode("ascii"))',
     '    sys.exit(ex)',
     'if h([boot, code] + args) != want:',
     '    emit({"argvMismatch": True, "error": "the command line differs from the one the workflow script built"}, 3)',

@@ -12,7 +12,7 @@ trusted; both are checked deterministically:
   stdout carries only the result's relay VIEW, the few facts the script branches on (for
   `arch-resume` see `view`), flattened to one object of scalars (`flatten`), plus `~file`,
   `~sha256`, `~bytes` (FILE's path, SHA-256 and size), `~exit` and `~checksum`, the SHA-256 of
-  the canonical JSON of `{exit, view}`; it is printed inside literal `<exact_text>` tags on one line (`line`). The
+  the canonical JSON of `{exit, view}`; its canonical ASCII JSON is base64-encoded after `RELAY64v1:` on one line (`line`). The
   runner returns that line verbatim; the script parses it, recomputes the checksum, accepts
   only an exact copy and never retries a mismatch.
   Sessions that need the details are given FILE's path.
@@ -24,6 +24,7 @@ and the workflow script produce the same bytes.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -419,7 +420,7 @@ def seal(shown: dict, exit_code: int, path: Path | None) -> dict:
 
 
 def line(envelope: dict) -> str:
-    """The one line printed for an envelope: tagged canonical JSON.
+    """The versioned base64 transport line for an envelope.
 
     Args:
         envelope: The flat envelope.
@@ -427,7 +428,8 @@ def line(envelope: dict) -> str:
     Returns:
         The line.
     """
-    return f"<exact_text>{canonical(envelope)}</exact_text>"
+    encoded = base64.b64encode(canonical(envelope).encode("ascii")).decode("ascii")
+    return f"RELAY64v1:{encoded}"
 
 
 def save(command: str, result: dict, shown: dict, exit_code: int, path: Path) -> dict:
