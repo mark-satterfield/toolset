@@ -68,8 +68,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.
 
-## Retained architecture proposal role
+## Coordinated architecture proposal work
 
-When architecture.js selects you as its lead proposer, consolidate one retained target and delta across all affected concerns using the survey, source evidence and earlier drafts. Your specialty guides that work; it does not require dispatching a different author for every other concern. Preserve settled mechanisms and evidenced existing behavior; inspect and state concrete gaps rather than assume implementation is complete. If selected as the optional second, address only the specific unresolved issue in the durable proposalTeam justification. Later rounds revise this retained work. Do not delegate additional proposal authors or create a proposal per diagram/view.
+The architecture-decision-workflow-coordinator selects the specialists needed for the PRD and existing architecture. Complete your assigned concern and connected contracts within the supplied file ownership; preserve valid prior work and report missing scope to the coordinator. There is no lead proposer or fixed proposer count. Other selected authors own their assigned concerns; coordinate through the retained target, delta and evidence. Later rounds revise only work whose evidence requires it. Do not self-assign additional authors or create one proposal per view.
 
-Consumed by: architecture.js — reads your saved claims, answers and coverage into the retained design's review ledger.
+Consumed by: architecture.js — reads your saved claims, answers and coverage into the design's independent review ledger.

@@ -657,9 +657,9 @@ const assigned = new Map()
  * it, and prints only the facts the control flow branches on. No saved content comes back here:
  * sessions get file paths. Returns the facts or { error }.
  */
-async function readFacts(label, phaseName, proposalTeam = null, roundPlan = null) {
+async function readFacts(label, phaseName, roundPlan = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
-  const command = `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`
+  const command = `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`
   const out = await depscore(label, phaseName, command)
   if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration || !out.coverage || !Number.isInteger(out.coverage.gapCount)) {
     return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
@@ -806,24 +806,15 @@ const SURVEY_SCHEMA = {
   },
 }
 // Consumed by maker, checker and decider prompts: one shared completion standard.
-const DESIGN_REVIEW_STANDARD = `Use the same acceptance basis throughout: applicable PRD outcomes, settled owner decisions and section-2 constraints, the relevant MODEL obligations, existing source evidence, and the retained target/delta. The lead reconciles the combined design before handing it to reviewers: contracts, event publishers, ownership, security and failure behavior must agree across its views. Inspect cited implementation and tests; distinguish evidence read from behavior actually verified. Do this within the existing authoring pass, not a new agent or audit pass.
+const DESIGN_REVIEW_STANDARD = `Use the same acceptance basis throughout: applicable PRD outcomes, settled owner decisions and section-2 constraints, the relevant MODEL obligations, existing source evidence, and the retained target/delta. The assigned writers reconcile their connected contracts in the combined design before handing it to reviewers: contracts, event publishers, ownership, security and failure behavior must agree across its views. Inspect cited implementation and tests; distinguish evidence read from behavior actually verified. Do this within the existing authoring pass, not a new agent or audit pass.
 BEFORE HANDOFF, the producer checks the same concrete obligations the reviewers will check, where relevant to this change: exact contract fields and identifiers across producer/consumer boundaries; event publisher, subscriber and owner agreement; data ownership and lifecycle; authorization and trust boundaries; failure, retry and idempotency behavior; cost assumptions with unit math; and consistency of the target, delta and their diagrams. Trace these against the applicable PRD outcomes, owner constraints, source evidence and MODEL obligations. Supply sufficient detail and evidence for independent verification in the retained views, not merely in the agent summary. This is completion of the assigned design, not permission to add product requirements, unrelated redesign or hypothetical scale. When a repair crosses a retained view boundary, repair the connected contract and views together within the ledger's reconciled ownership scope; do not leave a known contradiction because an earlier task named only one file.
-Review is an independent safety net against that same basis, not a source of new requirements or preferred redesigns. Each finding identifies the violated requirement/constraint/contract or concrete correctness defect, its evidence and the bounded repair. Do not reopen a settled mechanism just to offer another design. On later rounds review the changed claims/views and their affected dependencies, retaining still-valid evidence; do not demand fresh unrelated proposals. New evidence of a real defect must still be reported. Neither this shared standard nor the proposer cap guarantees approval.`
+Review is an independent safety net against that same basis, not a source of new requirements or preferred redesigns. Each finding identifies the violated requirement/constraint/contract or concrete correctness defect, its evidence and the bounded repair. Do not reopen a settled mechanism just to offer another design. On later rounds review the changed claims/views and their affected dependencies, retaining still-valid evidence; do not demand fresh unrelated proposals. New evidence of a real defect must still be reported. Neither this shared standard nor the selection of specialists guarantees approval.`
 
 const COORDINATOR_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['readyForDecision', 'reason', 'proposalTeam', 'dispatches', 'overlaps'],
+  required: ['readyForDecision', 'reason', 'dispatches', 'overlaps'],
   properties: {
-    // Consumed by arch-resume and runRound: persist and enforce the effort-wide proposal budget.
-    proposalTeam: {
-      type: 'object', additionalProperties: false,
-      required: ['lead', 'second', 'unresolvedIssue', 'evidence', 'whySecond'],
-      properties: {
-        lead: { type: 'string' }, second: { type: 'string' },
-        unresolvedIssue: { type: 'string' }, evidence: { type: 'string' }, whySecond: { type: 'string' },
-      },
-    },
     readyForDecision: { type: 'boolean' },
     reason: { type: 'string' },
     dispatches: {
@@ -831,11 +822,13 @@ const COORDINATOR_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['agentType', 'role', 'task', 'files', 'answers', 'claimIds', 'claimFiles'],
+        required: ['agentType', 'role', 'task', 'selectionReason', 'repairIds', 'files', 'answers', 'claimIds', 'claimFiles'],
         properties: {
           agentType: { type: 'string' },
           role: { type: 'string', enum: Object.keys(ROSTER) },
           task: { type: 'string' },
+          selectionReason: { type: 'string', minLength: 1 },
+          repairIds: { type: 'array', items: { type: 'string' } },
           files: { type: 'array', items: { type: 'string' } },
           answers: { type: 'array', items: { type: 'string' } },
           claimIds: { type: 'array', items: { type: 'string' } }, claimFiles: { type: 'array', items: { type: 'string' } },
@@ -1282,7 +1275,7 @@ THE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it f
 EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work. Complete the assigned acceptance requirements, save the complete structured result to the specified file, and then call StructuredOutput with that same result. Preserve valid prior work and its evidence; a resumed dispatch completes its missing work in this round.`
   if (WRITER_ROLES.includes(d.role)) {
     const work = d.role === 'proposer'
-      ? `Consolidate the retained target across all affected concerns, using your expertise (${ROSTER.proposer[d.agentType]}), existing source evidence and the settled mechanism. Revise the existing design; do not reopen settled choices or create a proposal per concern. Work from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
+      ? `Complete your assigned concerns in the retained target, using your expertise (${ROSTER.proposer[d.agentType]}), existing source evidence and the settled mechanism. Revise the existing design; do not reopen settled choices or create a proposal per concern. Work from the effective version, at every scope the change reaches (system, domain, service, component, concept), as views of the types in ${MENU}: diagrams and prose. Write the target views and the delta views for it into the draft. A design that departs from an established pattern states its reason and evidence in the view's prose.`
       : `Draw the views your task names (${ROSTER.diagram[d.agentType]}) into the draft, from the design the proposers wrote there. Depict nothing that design does not contain.`
     return `You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
 
@@ -1293,7 +1286,7 @@ ${shared}
 
 ${DRAFT_RULES}
 
-Read \`repairRequests\` in ${LEDGER_JSON}. For each open repair assigned to you or transferred to the retained lead, complete its missing diligence and return \`repairAnswers\` with its exact repairId and a response identifying the changed views/evidence. Retain resolved repairs; do not redo them.
+Read \`repairRequests\` in ${LEDGER_JSON}. For each open repair assigned to you by the coordinator, complete its missing diligence and return \`repairAnswers\` with its exact repairId and a response identifying the changed views/evidence. Retain resolved repairs; do not redo them.
 
 Use claimId="" for a new claim or the existing ledger id for an explicit revision. Keep unchanged ids; supersedes lists only deliberately replaced claims you own. Cite evidenceRefs and do not silently discard findings. A writer answer proposes a fix/dispute; independent resolution is still required. Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
@@ -1384,7 +1377,7 @@ function settleDispatches(plan, n) {
     }
     const answers = WRITER_ROLES.includes(role) ? listed(d.answers) : []
     for (const id of answers) {
-      const f = openFindings().find((x) => x.id === id && !x.owner)
+      const f = openFindings().find((x) => x.id === id && !x.answered)
       if (f) {
         f.owner = name
         assigned.set(id, name)
@@ -1393,39 +1386,19 @@ function settleDispatches(plan, n) {
     const same = out.find((x) => x.agentType === name)
     if (same) {
       same.task = `${same.task}\n${d.task}`
+      same.selectionReason += `; ${d.selectionReason || ''}`
+      same.repairIds = [...new Set([...same.repairIds, ...listed(d.repairIds)])]
       same.files = [...new Set([...same.files, ...files])]
       same.answers = [...new Set([...same.answers, ...answers])]
       same.claimIds = [...new Set([...same.claimIds, ...listed(d.claimIds)])]
       same.claimFiles = [...new Set([...same.claimFiles, ...listed(d.claimFiles).map(cleanFile)])]
     } else {
-      out.push({ agentType: name, role, task: String(d.task || ''), files, answers, claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile) })
+      out.push({ agentType: name, role, task: String(d.task || ''), selectionReason: String(d.selectionReason || ''), repairIds: listed(d.repairIds), files, answers, claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile) })
     }
   }
-  const legacyMissing = listed(ledgerFacts().legacyProposersWithoutClaims)
-  if (legacyMissing.length) {
-    const lead = facts.proposalTeam.lead
-    const task = `Consolidate the retained drafts and results from ${legacyMissing.join(', ')}: they stated no reviewable claims. Inspect their existing work and its evidence, repair gaps, and state the consolidated claims for independent review; do not merely repeat earlier claims.`
-    const same = out.find((d) => d.agentType === lead)
-    if (same) same.task += `\n${task}`
-    else out.push({ agentType: lead, role: 'proposer', task, files: [], answers: [] })
-  }
+  // Only the coordinator selects authors. Missing assignments remain ledger gaps,
+  // rather than silently creating additional writer dispatches here.
   for (const d of out) d.answers = d.answers.filter((id) => openFindings().some((f) => f.id === id && f.owner === d.agentType))
-  for (const r of forced) {
-    const role = roleOf(r.agentType)
-    if (!role || !WRITER_ROLES.includes(role)) continue
-    const recipient = role === 'proposer' ? facts.proposalTeam.lead : r.agentType
-    const same = out.find((x) => x.agentType === recipient)
-    const task = `The architecture-decider returned the target to you. Read \`returnTo\` in ${DECISION_JSON} (the decision in full is ${DECISION_MD}) for the due diligence it names as missing from your design, and supply it.`
-    if (same) same.task = `${same.task}\n${task}`
-    else out.push({ agentType: recipient, role, task, files: [], answers: [] })
-    retries.push({ step: `round${n}:${r.agentType}`, whatChanged: `the architecture-decider returned the target naming missing due diligence (in ${DECISION_JSON})` })
-  }
-  for (const f of openFindings()) {
-    if (f.answered || !f.owner || out.some((x) => x.agentType === f.owner && x.answers.includes(f.id))) continue
-    const same = out.find((x) => x.agentType === f.owner)
-    if (same) same.answers.push(f.id)
-    else out.push({ agentType: f.owner, role: roleOf(f.owner), task: 'Answer the findings named below.', files: [], answers: [f.id] })
-  }
   // A finding handed back to the writer that left it unanswered is re-sent once, with that named in its
   // task; still unanswered after that, it is not sent a third time.
   const stuck = []
@@ -1443,11 +1416,6 @@ function settleDispatches(plan, n) {
     d.clarified = again
     retries.push({ step: `round${n}:${d.agentType}`, findings: again, whatChanged: `round ${n} tells ${d.agentType} that its round ${prev} result ${result} for finding(s) ${again.join(', ')}` })
   }
-  const proposers = out.filter((d) => d.role === 'proposer')
-  const allowed = [facts.proposalTeam.lead, facts.proposalTeam.second].filter(Boolean)
-  if (proposers.length > 2 || proposers.some((d) => !allowed.includes(d.agentType))) {
-    return { dispatches: [], rejected: [...bad, 'proposal budget: only the retained lead and justified second may write proposals'], stuck, budgetError: true }
-  }
   return { dispatches: out, rejected: bad, stuck }
 }
 
@@ -1458,12 +1426,6 @@ function settleDispatches(plan, n) {
  * whose result was not saved) or { error } when the saved results could not be read.
  */
 async function runRound(n, dispatches) {
-  // Last boundary before any agent call; automatic returns and legacy owners cannot bypass it.
-  const proposers = dispatches.filter((d) => d.role === 'proposer' && !d.complete)
-  const team = facts.proposalTeam || {}
-  if (new Set(proposers.map((d) => d.agentType)).size > 2 || proposers.some((d) => ![team.lead, team.second].filter(Boolean).includes(d.agentType))) {
-    return { error: 'proposal budget exceeded; saved work retained, no round agents dispatched' }
-  }
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
   const held = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1 }))
@@ -1628,7 +1590,7 @@ THE LEDGER is ${LEDGER_JSON}: every claim with its reviewer verdicts, and every 
 
 WHAT STANDS BETWEEN THE DRAFT AND A DECISION:
 ${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : n === 1 ? '- nothing is written yet' : '- nothing'}
-${teamNotes ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN were raised at the decision: they are the \`ownerConcerns\` in ${DECISION_JSON} (readable in ${DECISION_MD}). Read them and route each to the writers it concerns, and to reviewers.\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => f.agentType).join(', ')}; what each is missing is in \`returnTo\` of ${DECISION_JSON}. The retained lead consolidates this missing diligence; do not reinstate legacy specialist fanout.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
+${teamNotes ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN were raised at the decision: they are the \`ownerConcerns\` in ${DECISION_JSON} (readable in ${DECISION_MD}). Read them and route each to the writers it concerns, and to reviewers.\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => f.agentType).join(', ')}; what each is missing is in \`returnTo\` of ${DECISION_JSON}. Select the specialists needed for the named missing diligence; preserve completed work.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
 
 ${PRD_RULE}
 
@@ -1640,24 +1602,24 @@ Assign coverage ids explicitly in each writer/reviewer task. Coverage gaps in th
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
 HOW TO ROUTE:
-- Return proposalTeam: lead, second, unresolvedIssue, evidence, whySecond (empty strings for the optional second fields). Default one lead for the entire architecture effort, consolidating all concerns. Never more than two proposer identities across rounds. Retain the saved team (lead ${(facts.proposalTeam && facts.proposalTeam.lead) || 'none yet'}${facts.proposalTeam && facts.proposalTeam.second ? `, second ${facts.proposalTeam.second}` : ''}; the whole saved team is \`proposalTeam\` in ${LEDGER_JSON}). A second is exceptional: name the specific unresolved issue, its source/claim/finding evidence, and why the lead cannot resolve it alone; merely touching another concern is not justification. Once selected, identities cannot be replaced; later rounds revise their retained work. A PRD already served needs only a no-change delta.
-- Do not split proposals among diagram authors, reviewers or renamed specialists. Diagram authors depict settled design only; reviewers critique without writing competing proposals. Reuse all legacy results as input to the lead, not instructions to redispatch their authors.
+- You are the architecture lead and coordinate only; do not author design. Assess the PRD, existing code, effective architecture and relevant in-progress targets before selecting the proposer(s) needed. There is no fixed proposer count or retained lead author. For each dispatch provide selectionReason naming the applicable requirement, evidence or unresolved concern and why that specialist is needed; do not dispatch the entire roster by default. Reuse valid prior work. A PRD already served needs only a no-change delta.
+- Keep design, review and approval separate. Diagram authors depict settled design; reviewers critique without authoring proposals. Preserve valid existing specialist results and assign only the remaining work.
 - Every design is reviewed before a decision by ${REQUIRED_CHALLENGERS.join(', ')} and by a cost reviewer; the list below names any that have not yet run.
 - Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} only for targeted critique of a concrete unresolved weakness; it does not create a competing design or add a proposer.
 - When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
 - Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Assigning the same claimId or claimFile to two or more reviewers is an overlap, and an overlap is one decision you make: state it once in \`overlaps\`, as one entry naming the shared \`files\` and \`claimIds\`, the reviewer \`agentTypes\` that share them, and the one \`reason\`. The reviewers' dispatches carry no reason. The script refuses a plan with an overlap no entry names, and sends it back to you; return \`overlaps: []\` when no two reviewers share anything. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. Keep each required reviewer's task a bounded domain question even with no claims.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
-- Route open \`repairRequests\` from the ledger to the retained lead and answered repairs to an independent reviewer. Include their IDs in the bounded task. Do not redispatch resolved repairs merely because an older decision still names them.
+- Route open \`repairRequests\` to the appropriate selected writer using repairIds, and answered repairs to an independent reviewer. Include their IDs in the bounded task. Do not redispatch resolved repairs merely because an older decision still names them.
 - For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
-- Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
+- Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Reassign an outstanding finding explicitly through its selected writer's answers when its concern requires a different specialist; preserve accepted answers.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
 - Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`
   let plan = pendingPlan
   // A plan is saved durably and never replaced, so an overlap with no stated reason is refused before it is saved.
   for (let fix = 0, refusal = ''; !pendingPlan; fix++) {
-    plan = await run(`${coordinatorBrief}${refusal}`, { label: fix ? `round${n}:coordinate-fix${fix}` : `round${n}:coordinate`, phase: 'Rounds', agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA })
+    plan = await run(`${coordinatorBrief}${refusal}`, { label: fix ? `round${n}:coordinate-fix${fix}` : `round${n}:coordinate`, phase: 'Rounds', agentType: 'architecture-decision-workflow-coordinator', effort: 'medium', schema: COORDINATOR_SCHEMA })
     const overlapRefusals = plan ? unjustifiedOverlaps(plan) : []
     if (!overlapRefusals.length) break
     if (fix >= MAX_PLAN_FIXES) {
@@ -1680,12 +1642,7 @@ HOW TO ROUTE:
     refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${overlapRefusals.join('; ')}. Return the whole plan again. For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.`
   }
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
-  // A saved pending plan runs on the team already saved; only a new plan can name the team.
-  const teamFacts = pendingPlan ? facts : await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
-  if (teamFacts.error || !teamFacts.proposalTeam || !teamFacts.proposalTeam.lead) return { ok: false, stage: 'rounds', reason: teamFacts.error || 'coordinator did not select a proposal lead; saved work retained', subject }
-  facts = teamFacts
   const settled = pendingPlan ? { dispatches: planDispatches(pendingPlan), rejected: [], stuck: [] } : settleDispatches(plan, n)
-  if (settled.budgetError) return { ok: false, stage: 'rounds', reason: settled.rejected.join('; '), subject }
   rejected = settled.rejected
   forced = []
   teamNotes = false
@@ -1697,8 +1654,8 @@ HOW TO ROUTE:
   }
   for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
   if (!pendingPlan) {
-    const orderedPlan = { round: n, proposalTeam: facts.proposalTeam, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
-    const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', null, orderedPlan)
+    const orderedPlan = { round: n, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
+    const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', orderedPlan)
     if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
     facts = savedPlan
     const saved = savedPlan.rounds.pendingPlan

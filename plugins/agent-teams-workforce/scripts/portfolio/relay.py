@@ -182,7 +182,6 @@ def _arch_resume_view(result: dict) -> dict:
     """
     rounds = result.get("rounds") or {}
     cov = result.get("coverage") or {}
-    team = result.get("proposalTeam") or {}
     survey = result.get("survey") or {}
     open_by_owner: dict[str, dict[str, list[str]]] = {}
     for f in rounds.get("openFindings") or []:
@@ -217,10 +216,6 @@ def _arch_resume_view(result: dict) -> dict:
         "survey": {
             k: survey.get(k)
             for k in ("saved", "coverageSaved", "subject", "capabilities")
-        },
-        "proposalTeam": {
-            "lead": team.get("lead") or "",
-            "second": team.get("second") or "",
         },
         "decision": result.get("decision"),
         "repairs": result.get("repairs"),

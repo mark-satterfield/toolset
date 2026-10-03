@@ -98,8 +98,6 @@ def round_facts(
                 )
                 incoming["legacyContinuation"] = True
             plans.append(incoming)
-    if plans:
-        reconcile_scope(work, plans[-1], coverage or [], team)
 
     gaps = []
     warnings = []
@@ -109,19 +107,6 @@ def round_facts(
         if not isinstance(n, int) or n < 1 or not isinstance(dispatches, list):
             raise ValueError("invalid durable round plan")
         writers = [d for d in dispatches if d.get("role") in ("proposer", "diagram")]
-        proposers = [
-            d["agentType"]
-            for d in writers
-            if d["role"] == "proposer"
-            and not d.get("legacySaved")
-            and not d.get("scopeCoverageIds")
-        ]
-        if (
-            len(proposers) > 2
-            or len(set(proposers)) != len(proposers)
-            or any(w not in (team.get("lead"), team.get("second")) for w in proposers)
-        ):
-            raise ValueError("durable plan exceeds retained proposal budget")
         for seq, d in enumerate(dispatches, 1):
             if roles.get(d.get("agentType")) != d.get("role"):
                 raise ValueError("durable plan names invalid role")
@@ -245,113 +230,3 @@ def compact_plan(plan: dict | None) -> dict | None:
             for d in plan["dispatches"]
         ],
     }
-
-
-def reconcile_scope(work: Path, plan: dict, rows: list, team: dict) -> None:
-    """Complete restricted legacy assignments without discarding their saved output."""
-    dispatches = plan.get("dispatches", [])
-    lead = team.get("lead")
-    if not lead or not dispatches:
-        return
-    covered = {key for d in dispatches for key in d.get("scopeCoverageIds", [])}
-    needed = {}
-    for row in rows:
-        if (
-            row.get("excluded")
-            or row.get("status") in ("Present and sufficient", "Not yet applicable")
-            or row.get("id") in covered
-        ):
-            continue
-        paths = []
-        for view in row.get("views", []):
-            path = Path(view)
-            if path.is_relative_to(work / "draft"):
-                paths.append(str(path.relative_to(work / "draft")))
-        if paths:
-            needed[row["id"]] = paths
-    if not needed:
-        return
-    # A saved output is retained. New work gets a distinct result identity in the same round.
-    pending_writers = [
-        d
-        for seq, d in enumerate(dispatches, 1)
-        if d.get("role") in ("proposer", "diagram")
-        and not (
-            work
-            / "rounds"
-            / f"r{plan['round']}-{d.get('seq', seq)}-{d['role']}-{d['agentType']}.json"
-        ).is_file()
-    ]
-    lead_pending = next(
-        (d for d in pending_writers if d.get("agentType") == lead), None
-    )
-    owned = {
-        f for d in pending_writers if d is not lead_pending for f in d.get("files", [])
-    }
-    files = sorted({f for paths in needed.values() for f in paths} - owned)
-    if not files:
-        return
-    task = (
-        "Finish only unresolved required coverage rows "
-        + ", ".join(needed)
-        + ". Preserve accepted work and the previous producer result. You own the listed "
-        "draft views needed by these obligations; create missing views and reconcile "
-        "their references. Return changed claims and coverage, without repeating completed work."
-    )
-    if lead_pending:
-        lead_pending["files"] = sorted(set(lead_pending.get("files", [])) | set(files))
-        lead_pending["task"] = str(lead_pending.get("task", "")) + "\n" + task
-        lead_pending["scopeCoverageIds"] = sorted(
-            set(lead_pending.get("scopeCoverageIds", [])) | set(needed)
-        )
-    else:
-        dispatches.append(
-            {
-                "role": "proposer",
-                "agentType": lead,
-                "task": task,
-                "files": files,
-                "answers": [],
-                "scopeCoverageIds": list(needed),
-            }
-        )
-    pending_reviews = [
-        d
-        for seq, d in enumerate(dispatches, 1)
-        if d.get("role") in ("reviewer", "cost")
-        and not (
-            work
-            / "rounds"
-            / f"r{plan['round']}-{d.get('seq', seq)}-{d['role']}-{d['agentType']}.json"
-        ).is_file()
-    ]
-    if not pending_reviews:
-        reviewer = next((d for d in dispatches if d.get("role") == "reviewer"), None)
-        if reviewer:
-            pending_reviews = [
-                {
-                    "role": "reviewer",
-                    "agentType": reviewer["agentType"],
-                    "task": "Independently review only the supplemental coverage repair and its changed claims.",
-                    "files": [],
-                    "answers": [],
-                }
-            ]
-            dispatches.extend(pending_reviews)
-    for reviewer in pending_reviews:
-        reviewer.pop("assignedClaims", None)
-    if pending_reviews:
-        reviewer = pending_reviews[0]
-        assigned_elsewhere = {
-            f for other in pending_reviews[1:] for f in other.get("claimFiles", [])
-        }
-        reviewer["claimFiles"] = sorted(
-            set(reviewer.get("claimFiles", [])) | (set(files) - assigned_elsewhere)
-        )
-        reviewer["task"] = (
-            str(reviewer.get("task", ""))
-            + "\nIndependently verify supplemental coverage rows "
-            + ", ".join(needed)
-            + " at their current revisions and only the changed claims in the supplemental files."
-        )
-    plan["readyForDecision"] = False

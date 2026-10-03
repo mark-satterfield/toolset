@@ -262,6 +262,7 @@ shown the answer is not a checker.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
+| filing-clerk | execute | Searches for the canonical documentation home before filing; placement-only workflow requests return a path without writing. |
 | documentation-lead | orchestrate | Routes documentation work triggered by shipped changes, tracks which artifacts lack current documentation, and reports documentation currency to the production readiness review |
 | api-documentation-writer | execute | Generates human-readable API documentation from OpenAPI and GraphQL specs: endpoint guides, examples, SDK snippets. |
 | readme-writer | execute | Writes and maintains README files for repositories and directories: setup instructions, usage, onboarding flows. |

@@ -118,14 +118,16 @@ def parse_assign(spec: str) -> dict[str, str]:
 class Ledger:
     """The claims and findings of the rounds, folded in round order."""
 
-    def __init__(self, assign: dict[str, str], lead: str = "") -> None:
+    def __init__(self, assign: dict[str, str], historical_author: str = "") -> None:
         """Start an empty ledger.
 
         Args:
             assign: Owners the coordinator assigned to findings that had none.
         """
         self.assign = assign
-        self.lead = lead
+        self.historical_author = historical_author
+        self.authorized_files: set[str] = set()
+        self.authorized_claims: set[str] = set()
         self.claims: list[dict] = []
         self.findings: list[dict] = []
         self.writers: list[str] = []
@@ -234,7 +236,13 @@ class Ledger:
                 old = next((x for x in self.claims if x["id"] == cid), None)
                 if c.get("claimId") and not old:
                     raise ResumeError(f"unknown revised claim {cid}")
-                if old and old["by"] != agent and agent != self.lead:
+                if (
+                    old
+                    and old["by"] != agent
+                    and agent != self.historical_author
+                    and old.get("file") not in self.authorized_files
+                    and cid not in self.authorized_claims
+                ):
                     raise ResumeError(
                         f"claim {cid} belongs to {old['by']}; do not silently transfer ownership"
                     )
@@ -289,7 +297,12 @@ class Ledger:
                     )
                     if (
                         not target
-                        or (target["by"] != agent and agent != self.lead)
+                        or (
+                            target["by"] != agent
+                            and agent != self.historical_author
+                            and target.get("file") not in self.authorized_files
+                            and target["id"] not in self.authorized_claims
+                        )
                         or target["id"] == cid
                     ):
                         raise ResumeError(f"invalid superseded claim {superseded}")
@@ -316,7 +329,11 @@ class Ledger:
 
 
 def _rounds(
-    work: Path, roles: dict[str, str], assign: dict[str, str], lead: str = ""
+    work: Path,
+    roles: dict[str, str],
+    assign: dict[str, str],
+    historical: dict | None = None,
+    plans: list | None = None,
 ) -> Ledger:
     """Fold every saved round result, in round order.
 
@@ -328,7 +345,8 @@ def _rounds(
     Returns:
         The ledger.
     """
-    ledger = Ledger(assign, lead)
+    ledger = Ledger(assign)
+    historical = historical or {}
     folder = work / "rounds"
     found = []
     for p in folder.iterdir() if folder.is_dir() else []:
@@ -336,6 +354,25 @@ def _rounds(
         if p.is_file() and m and roles.get(m.group(4)) == m.group(3):
             found.append((int(m.group(1)), int(m.group(2)), m.group(3), m.group(4), p))
     for n, seq, role, agent, p in sorted(found):
+        ledger.historical_author = (
+            historical.get("author", "")
+            if str(p) in historical.get("results", [])
+            else ""
+        )
+        dispatch = next(
+            (
+                d
+                for plan in (plans or [])
+                if plan.get("round") == n
+                for d in plan.get("dispatches", [])
+                if d.get("seq") == seq
+                and d.get("agentType") == agent
+                and d.get("role") == role
+            ),
+            {},
+        )
+        ledger.authorized_files = set(dispatch.get("files") or [])
+        ledger.authorized_claims = set(dispatch.get("claimIds") or [])
         ledger.absorb(n, seq, role, agent, _load(p), str(p))
     return ledger
 
@@ -449,38 +486,6 @@ def _integration(work: Path) -> dict:
     }
 
 
-def proposal_team(saved: dict, requested: dict, roles: dict) -> dict:
-    """Validate the durable two-person proposal budget consumed by architecture.js."""
-    team = requested or saved
-    if not team:
-        return {}
-    if not isinstance(team, dict):
-        raise ResumeError("proposalTeam must be an object")
-    lead, second = _text(team.get("lead")), _text(team.get("second"))
-    if roles.get(lead) != "proposer" or (second and roles.get(second) != "proposer"):
-        raise ResumeError(
-            "proposalTeam must name a lead and at most one proposer specialist"
-        )
-    if second == lead:
-        raise ResumeError("proposalTeam lead and second must differ")
-    if saved and (
-        lead != saved.get("lead") or (saved.get("second") and second != saved["second"])
-    ):
-        raise ResumeError(
-            "proposalTeam cannot replace retained proposers with new specialists"
-        )
-    if second and not all(
-        _text(team.get(k)) for k in ("unresolvedIssue", "evidence", "whySecond")
-    ):
-        raise ResumeError(
-            "second proposer needs a specific unresolved issue, evidence and why the lead cannot resolve it alone"
-        )
-    return {
-        k: _text(team.get(k))
-        for k in ("lead", "second", "unresolvedIssue", "evidence", "whySecond")
-    }
-
-
 def resume_facts(
     work_dir: str, *, roster: str, assign: str = "", team: str = "", plan: str = ""
 ) -> dict:
@@ -518,40 +523,18 @@ def resume_facts(
         }
     ledger_path = work / LEDGER_NAME
     previous = _load(ledger_path) if ledger_path.is_file() else {}
-    selected = proposal_team(
-        previous.get("proposalTeam", {}), json.loads(team) if team else {}, roles
-    )
+    historical = previous.get("historicalAuthoring")
+    if historical is None:
+        historical = {
+            "author": (previous.get("proposalTeam") or {}).get("lead", ""),
+            "results": [str(path) for path in (work / "rounds").glob("r*-*.json")]
+            if (previous.get("proposalTeam") or {}).get("lead")
+            else [],
+        }
     assignments = dict(previous.get("assignments", {}))
     assignments.update(parse_assign(assign))
-    ledger = _rounds(work, roles, assignments, selected.get("lead", ""))
-    if selected:
-        # Preserve answered history; transfer only outstanding legacy proposer findings.
-        active = {selected["lead"], selected["second"]}
-        for finding in ledger.findings:
-            if (
-                finding["verdict"] != "verified"
-                and not any(
-                    old.get("id") == finding["id"]
-                    and (old.get("resolution") or {}).get("verdict") == "accepted"
-                    for old in previous.get("findings", [])
-                )
-                and roles.get(finding["owner"]) == "proposer"
-                and finding["owner"] not in active
-            ):
-                assignments[finding["id"]] = selected["lead"]
-        ledger = _rounds(work, roles, assignments, selected.get("lead", ""))
-    legacy_without_claims = [
-        w
-        for w, count in ledger.proposer_claims.items()
-        if not count and selected and w not in {selected["lead"], selected["second"]}
-    ]
-    if selected:
-        selected["adoptedAfterRound"] = previous.get("proposalTeam", {}).get(
-            "adoptedAfterRound", ledger.last
-        )
-    consolidation_due = bool(legacy_without_claims) and not any(
-        c["by"] == selected["lead"] and c["round"] > selected["adoptedAfterRound"]
-        for c in ledger.claims
+    ledger = _rounds(
+        work, roles, assignments, historical, previous.get("roundPlans", [])
     )
     coverage, coverage_summary = coverage_facts(work, s, ledger.files)
     old_claims = {c["id"]: c for c in previous.get("claims", [])}
@@ -573,7 +556,7 @@ def resume_facts(
         json.loads(plan) if plan else None,
         ledger,
         roles,
-        selected,
+        {},
         coverage.get("coverage", []),
     )
     previous_findings = {f["id"]: f for f in previous.get("findings", [])}
@@ -636,7 +619,11 @@ def resume_facts(
     coverage["coverageRevision"] = coverage_summary["revision"]
     coverage_summary["gaps"].extend(rounds["reviewGaps"])
     repairs = repair_facts(
-        work, previous.get("repairRequests", []), ledger.files, selected.get("lead", "")
+        work,
+        previous.get("repairRequests", []),
+        ledger.files,
+        historical,
+        rounds["plans"],
     )
     repair_summary = {
         "open": [r["id"] for r in repairs if r["status"] == "open"],
@@ -648,7 +635,7 @@ def resume_facts(
             ledger_path,
             {
                 "contractVersion": 2,
-                "proposalTeam": selected,
+                "historicalAuthoring": historical,
                 "assignments": assignments,
                 "roundPlans": rounds["plans"],
                 "claims": ledger.claims,
@@ -675,7 +662,7 @@ def resume_facts(
         "ledger": str(ledger_path) if work.is_dir() else None,
         "survey": survey,
         "coverage": coverage_summary,
-        "proposalTeam": selected,
+        "historicalAuthoring": historical,
         "rounds": {
             "last": rounds["last"],
             "resumeRound": rounds["resumeRound"],
@@ -696,20 +683,14 @@ def resume_facts(
             "saved": ledger.saved,
             "writers": ledger.writers,
             "reviewers": ledger.reviewers,
-            "legacyProposersWithoutClaims": legacy_without_claims
-            if consolidation_due
-            else [],
             "proposersWithoutClaims": sorted(
-                set(
-                    [
-                        w
-                        for w, k in ledger.proposer_claims.items()
-                        if not k
-                        and (
-                            not selected or w in {selected["lead"], selected["second"]}
-                        )
-                    ]
-                    + ([selected["lead"]] if consolidation_due else [])
+                w
+                for w, count in ledger.proposer_claims.items()
+                if not count
+                and any(
+                    w == Path(name).stem.split("-", 3)[3]
+                    and name not in historical.get("results", [])
+                    for name in ledger.files
                 )
             ),
             "claims": len(ledger.claims),

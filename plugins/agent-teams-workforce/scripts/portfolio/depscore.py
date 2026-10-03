@@ -113,7 +113,6 @@ from pathlib import Path
 import beadgraph
 import relay
 from archfiles import files_from, integration_files, review_check
-from resumefacts import saved_span, saved_target
 from archresume import ResumeError, resume_facts
 from archstate import (
     commit_integration,
@@ -157,6 +156,7 @@ from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from prds import prd_parse
 from reconfacts import ReconError, recon_facts
+from resumefacts import saved_span, saved_target
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from specui import SpecUiError, spec_ui_check
 from storyedges import story_edges
@@ -932,7 +932,7 @@ def build_parser() -> argparse.ArgumentParser:
     arz.add_argument(
         "--proposal-team",
         default="",
-        help="architecture.js durable lead and optional justified specialist as JSON",
+        help="deprecated compatibility input; coordinator dispatches select architecture specialists",
     )
 
     arz.add_argument(

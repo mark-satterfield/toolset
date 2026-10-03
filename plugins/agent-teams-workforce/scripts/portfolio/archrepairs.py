@@ -11,7 +11,9 @@ def _hash(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> list:
+def repair_facts(
+    work: Path, previous: list, results: list[str], historical: dict, plans: list
+) -> list:
     """Keep completed repairs reviewable without repeatedly dispatching their maker."""
     requests = {r["id"]: dict(r) for r in previous}
     decision_path = work / "decision.json"
@@ -45,9 +47,21 @@ def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> l
             request["revision"] = revision
         for name in results:
             path = Path(name)
-            round_name, _, role, agent = path.stem.split("-", 3)
+            round_name, seq, role, agent = path.stem.split("-", 3)
             n = int(round_name[1:])
             result = json.loads(path.read_text())
+            assigned = {
+                d.get("agentType")
+                for plan in plans
+                if plan.get("round") == n
+                for d in plan.get("dispatches", [])
+                if request["id"] in d.get("repairIds", [])
+                and d.get("seq") == int(seq)
+                and d.get("role") == role
+            }
+            permitted = {request["agentType"], *assigned}
+            if name in historical.get("results", []):
+                permitted.add(historical.get("author", ""))
             if role in ("proposer", "diagram"):
                 explicit = any(
                     a.get("repairId") == request["id"] and a.get("response")
@@ -61,13 +75,10 @@ def repair_facts(work: Path, previous: list, results: list[str], lead: str) -> l
                         and path.stat().st_mtime
                         > request.get("decisionTime", float("inf"))
                     )
-                ) and agent in (
-                    request["agentType"],
-                    lead,
-                )
+                ) and agent in permitted
                 if (
                     request["status"] == "open"
-                    and agent in (request["agentType"], lead)
+                    and agent in permitted
                     and (explicit or legacy)
                 ):
                     request["status"] = "answered"
