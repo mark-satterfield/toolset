@@ -246,12 +246,55 @@ const assigned = new Map()
  */
 async function readFacts(label, phaseName, proposalTeam = null, roundPlan = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
-  const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`)
-  if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
-    return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
+  const command = `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`
+  let out = null
+  let problem = ''
+  // The facts reach the script through a runner session; a pending plan it relays altered is read again once.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    out = await depscore(attempt ? `${label}-reread` : label, phaseName, command)
+    if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
+      return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
+    }
+    problem = pendingPlanProblem(out.rounds)
+    if (!problem) break
+    log(`${label}: the arch-resume facts came back altered (${problem})${attempt ? '' : '; reading them again'}`)
   }
+  if (problem) return { error: `depscore.py arch-resume's facts about the saved round plan came back altered twice: ${problem}. The saved work in ${WORK} is untouched.` }
   for (const w of listed(out.rounds.overlapWarnings)) log(`Rounds: ${w}`)
+  if (hasText(out.rounds.planKept)) log(`Rounds: ${out.rounds.planKept}`)
   return out
+}
+
+/**
+ * Returns why the pending round plan in arch-resume's facts is not the shape depscore.py prints
+ * (pendingRound and pendingDispatches agree with pendingPlan, which lists every dispatch in seq
+ * order with at least one not complete), or '' when it is.
+ */
+function pendingPlanProblem(rounds) {
+  const pp = rounds.pendingPlan
+  const pr = rounds.pendingRound
+  if (pp === undefined || pr === undefined || rounds.pendingDispatches === undefined) return 'pendingPlan, pendingRound or pendingDispatches is missing'
+  if (pp === null) return pr === null ? '' : `pendingRound is ${pr} but pendingPlan is null`
+  if (typeof pp !== 'object' || pp.round !== pr || !Number.isInteger(pr)) return `pendingPlan round ${pp && pp.round} does not match pendingRound ${pr}`
+  if (!Array.isArray(pp.dispatches) || pp.dispatches.length !== rounds.pendingDispatches) return `pendingPlan.dispatches is not a list of ${rounds.pendingDispatches} dispatch(es)`
+  const bad = pp.dispatches.findIndex((d, i) => !d || d.seq !== i + 1 || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean' || !Array.isArray(d.files) || !Array.isArray(d.answers))
+  if (bad >= 0) return `pendingPlan dispatch ${bad + 1} lacks its seq, role, agentType, complete, files or answers`
+  if (pp.dispatches.every((d) => d.complete)) return 'pendingPlan has no dispatch left to run'
+  return ''
+}
+
+/** The result file of one dispatch of round n, as depscore.py arch-resume names it. */
+const resultFile = (n, d) => `${ROUNDS_DIR}/r${n}-${d.seq}-${d.role}-${d.agentType}.json`
+/**
+ * Returns the dispatches of a saved pending plan, ready to run: the identity and completion
+ * arch-resume reports for each, with the task the script holds for it this run (`local`, by seq
+ * and agent) when it has one. A dispatch with no task here reads its task from the plan in ledger.json.
+ */
+function planDispatches(pp, local = []) {
+  return pp.dispatches.map((c) => {
+    const l = local.find((x) => x.seq === c.seq && x.agentType === c.agentType && x.role === c.role) || {}
+    return { ...l, ...c, files: listed(c.files), answers: listed(c.answers), file: resultFile(pp.round, c) }
+  })
 }
 
 const CONFLICT_ITEMS = {
@@ -781,6 +824,10 @@ if (savedDecision && savedDecision.verdict === 'owner-concern') {
 
 /** Returns the prompt for one writer or reviewer dispatch. */
 function dispatchPrompt(n, d, file) {
+  const planEntry = `the dispatch with \`seq\` ${d.seq} (${d.agentType}) in the round ${n} entry of \`roundPlans\` in ${LEDGER_JSON}`
+  const taskLine = hasText(d.task)
+    ? `YOUR TASK THIS ROUND, from the coordinator: ${d.task}`
+    : `YOUR TASK THIS ROUND, from the coordinator, is the \`task\` of ${planEntry}: read it there first, with that dispatch's \`files\` and \`answers\`.`
   const answersBlock = d.answers.length
     ? `\nFINDINGS YOU ANSWER THIS ROUND: ${d.answers.join(', ')}. Read each in the \`findings\` list of the ledger ${LEDGER_JSON} (its verdict, the claim, the file and the reviewer's evidence), and answer every one in \`answers\` by its id: \`fixed\` (name the change you made) or \`disputed\` (with your evidence).\n`
     : ''
@@ -804,7 +851,7 @@ EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your
       : `Draw the views your task names (${ROSTER.diagram[d.agentType]}) into the draft, from the design the proposers wrote there. Depict nothing that design does not contain.`
     return `You are the ${d.agentType}, a writer on the architecture team for this PRD, round ${n}. ${work}
 
-YOUR TASK THIS ROUND, from the coordinator: ${d.task}
+${taskLine}
 ${d.files.length ? `THE DRAFT FILES YOU OWN THIS ROUND, relative to ${DRAFT} (write only these; other sessions may be writing the rest):\n${d.files.map((f) => `- ${f}`).join('\n')}` : 'You were named no draft files this round: change no view another writer owns, and name every file you write in `files`.'}
 ${answersBlock}
 ${shared}
@@ -813,17 +860,17 @@ ${DRAFT_RULES}
 
 Use claimId="" for a new claim or the existing ledger id for an explicit revision. Keep unchanged ids; supersedes lists only deliberately replaced claims you own. Cite evidenceRefs and do not silently discard findings. A writer answer proposes a fix/dispute; independent resolution is still required. Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
-  const assignedClaims = Array.isArray(d.assignedClaims) ? d.assignedClaims : []
+  const assignedCount = Number(d.assignedClaimCount) || 0
   return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
 
-YOUR TASK THIS ROUND, from the coordinator: ${d.task}
+${taskLine}
 
 THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the change alone in \`delta/\`). Read it; write nothing in it and nothing in ${archPath}.
 
 ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
-YOUR ASSIGNED CLAIM REVISIONS: ${JSON.stringify(assignedClaims)}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
+YOUR ASSIGNED CLAIM REVISIONS are the ${assignedCount} \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
 Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
 }
 
@@ -981,7 +1028,8 @@ async function runRound(n, dispatches) {
   }
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
-  let ordered = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1, file: `${ROUNDS_DIR}/r${n}-${i + 1}-${d.role}-${d.agentType}.json` }))
+  const held = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1 }))
+  let ordered = held.map((d) => ({ ...d, file: resultFile(n, d) }))
   const go = (d) => () =>
     run(dispatchPrompt(n, d, d.file), {
       label: `round${n}:${d.role}:${d.agentType}`,
@@ -996,7 +1044,7 @@ async function runRound(n, dispatches) {
     wave.items.forEach((d, i) => results.set(d.seq, got[i]))
     if (dispatchInterruption) return { silent: wave.items.filter((d, i) => !got[i]).map(d => d.agentType) }
   }
-  if (facts.rounds.pendingPlan) ordered = facts.rounds.pendingPlan.dispatches
+  if (facts.rounds.pendingPlan) ordered = planDispatches(facts.rounds.pendingPlan, held)
   let reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
   if (reviewers.length) {
     if (ordered.length > reviewers.length) {
@@ -1004,7 +1052,7 @@ async function runRound(n, dispatches) {
       if (mid.error) return { error: mid.error, exception: mid.exception }
       facts = mid
       if (mid.rounds.pendingPlan && mid.rounds.pendingPlan.dispatches.some(d => WRITER_ROLES.includes(d.role) && !d.complete)) return { silent: mid.rounds.pendingPlan.dispatches.filter(d => WRITER_ROLES.includes(d.role) && !d.complete).map(d => d.agentType) }
-      ordered = mid.rounds.pendingPlan ? mid.rounds.pendingPlan.dispatches : ordered
+      ordered = mid.rounds.pendingPlan ? planDispatches(mid.rounds.pendingPlan, held) : ordered
       reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
     }
     const got = await parallel(reviewers.map(go))
@@ -1167,10 +1215,11 @@ HOW TO ROUTE:
     refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${overlapRefusals.join('; ')}. Return the whole plan again. For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.`
   }
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
-  const teamFacts = await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
+  // A saved pending plan runs on the team already saved; only a new plan can name the team.
+  const teamFacts = pendingPlan ? facts : await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
   if (teamFacts.error || !teamFacts.proposalTeam || !teamFacts.proposalTeam.lead) return { ok: false, stage: 'rounds', reason: teamFacts.error || 'coordinator did not select a proposal lead; saved work retained', subject }
   facts = teamFacts
-  const settled = pendingPlan ? { dispatches: pendingPlan.dispatches, rejected: [], stuck: [] } : settleDispatches(plan, n)
+  const settled = pendingPlan ? { dispatches: planDispatches(pendingPlan), rejected: [], stuck: [] } : settleDispatches(plan, n)
   if (settled.budgetError) return { ok: false, stage: 'rounds', reason: settled.rejected.join('; '), subject }
   rejected = settled.rejected
   forced = []
@@ -1187,7 +1236,22 @@ HOW TO ROUTE:
     const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', null, orderedPlan)
     if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
     facts = savedPlan
-    settled.dispatches = savedPlan.rounds.pendingPlan ? savedPlan.rounds.pendingPlan.dispatches : orderedPlan.dispatches
+    const saved = savedPlan.rounds.pendingPlan
+    if (saved && saved.round !== n) {
+      const why = `depscore.py arch-resume saved round ${n}'s plan but reports round ${saved.round} pending; saved work retained`
+      return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
+    }
+    if (saved && hasText(savedPlan.rounds.planKept)) {
+      // A plan for this round was already saved: it stands, and the new one is set aside.
+      plan = { ...plan, readyForDecision: saved.readyForDecision }
+      settled.dispatches = planDispatches(saved)
+    } else {
+      settled.dispatches = saved ? planDispatches(saved, orderedPlan.dispatches.map((d, i) => ({ ...d, seq: i + 1 }))) : orderedPlan.dispatches
+    }
+  }
+  if (pendingPlan && !settled.dispatches.some((d) => !d.complete)) {
+    const why = `round ${n}'s saved plan has no dispatch left to run, yet depscore.py arch-resume reports it pending; saved work retained`
+    return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
   }
   if (!settled.dispatches.length) {
     if (plan.readyForDecision === true) {

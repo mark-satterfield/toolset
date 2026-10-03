@@ -46,12 +46,21 @@ def round_facts(
 ) -> dict:
     """Settle existing plan identities and bind post-writer review without another agent."""
     plans = json.loads(json.dumps(plans))
+    kept = ""
     if incoming:
-        if any(p["round"] == incoming.get("round") for p in plans):
+        same = next((p for p in plans if p["round"] == incoming.get("round")), None)
+        if same is not None and same is plans[-1] and not _done(work, same):
+            # The saved plan of an unfinished round stands; its missing dispatches run.
+            kept = (
+                f"round {same['round']} already has a saved plan that is not complete; "
+                "the saved plan is kept and the new plan was not saved"
+            )
+        elif same is not None:
             raise ValueError("cannot replace a durable round plan")
-        if plans and not plans[-1].get("complete"):
+        elif plans and not _done(work, plans[-1]):
             raise ValueError("finish pending round before selecting another")
-        plans.append(incoming)
+        else:
+            plans.append(incoming)
     gaps = []
     warnings = []
     for plan in plans:
@@ -134,4 +143,51 @@ def round_facts(
         "pendingPlan": pending,
         "reviewGaps": gaps,
         "overlapWarnings": warnings,
+        "planKept": kept,
+    }
+
+
+def _done(work: Path, plan: dict) -> bool:
+    """Return whether every dispatch of a saved plan has its result file on disk.
+
+    Returns:
+        True when each dispatch's result file exists (an empty plan is done).
+    """
+    n = plan.get("round")
+    return all(
+        (
+            work / "rounds" / f"r{n}-{seq}-{d.get('role')}-{d.get('agentType')}.json"
+        ).is_file()
+        for seq, d in enumerate(plan.get("dispatches") or [], 1)
+    )
+
+
+def compact_plan(plan: dict | None) -> dict | None:
+    """Return the pending plan as the few facts architecture.js branches on.
+
+    The full plan (each dispatch's task, claim assignments and result file) stays in
+    ledger.json, where the dispatched sessions read it; printing it would pass tens of
+    kilobytes through the runner that relays this output.
+
+    Returns:
+        None for no plan, else round, readyForDecision and each dispatch's identity.
+    """
+    if not plan:
+        return None
+    return {
+        "round": plan["round"],
+        "readyForDecision": bool(plan.get("readyForDecision")),
+        "complete": bool(plan.get("complete")),
+        "dispatches": [
+            {
+                "seq": d["seq"],
+                "role": d.get("role"),
+                "agentType": d.get("agentType"),
+                "complete": bool(d.get("complete")),
+                "files": list(d.get("files") or []),
+                "answers": list(d.get("answers") or []),
+                "assignedClaimCount": len(d.get("assignedClaims") or []),
+            }
+            for d in plan["dispatches"]
+        ],
     }

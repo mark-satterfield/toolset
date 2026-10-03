@@ -21,7 +21,7 @@ from pathlib import Path
 
 from archcoverage import coverage_facts, integration_revision
 from archevidence import digest, evidence_state, view_bindings, view_content
-from archrounds import round_facts, save_ledger
+from archrounds import compact_plan, round_facts, save_ledger
 
 ROUND_FILE = re.compile(
     r"^r(\d+)-(\d+)-(proposer|diagram|reviewer|cost)-([a-z0-9-]+)\.json$"
@@ -663,7 +663,14 @@ def resume_facts(
         "proposalTeam": selected,
         "rounds": {
             "last": rounds["last"],
-            "pendingPlan": rounds["pendingPlan"],
+            "pendingPlan": compact_plan(rounds["pendingPlan"]),
+            "pendingRound": rounds["pendingPlan"]["round"]
+            if rounds["pendingPlan"]
+            else None,
+            "pendingDispatches": len(rounds["pendingPlan"]["dispatches"])
+            if rounds["pendingPlan"]
+            else 0,
+            "planKept": rounds["planKept"],
             "readyForDecision": bool(
                 rounds["plans"]
                 and rounds["plans"][-1].get("complete")
