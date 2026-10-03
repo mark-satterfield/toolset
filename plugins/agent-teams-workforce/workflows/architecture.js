@@ -379,7 +379,9 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
           const copied = await dispatch(`The previous response failed validation: ${reason}. The original command has already completed. Do not execute it again. This corrective attempt only reads the saved result whose bytes must match the original receipt.
 
 ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, model: 'sonnet', effort: 'low', schema: SCHEMA })
-          got = copied ? parse(copied.stdout, file) : { why: 'the corrective reader returned no result' }
+          // The dispatch wrapper owns quota/API interruptions; do not turn one into a copy hold.
+          if (!copied) return { ok: false, noResult: true, error: `${label}: the corrective reader returned no result` }
+          got = parse(copied.stdout, file)
           if (!got.why && (copied.exitCode !== 0 || got.env['~sha256'] !== receipt['~sha256'] || got.env['~bytes'] !== receipt['~bytes'] || got.env['~exit'] !== 0)) got = { why: 'the corrective read did not return the successful original receipt' }
           if (!got.why) break
           reason = got.why
