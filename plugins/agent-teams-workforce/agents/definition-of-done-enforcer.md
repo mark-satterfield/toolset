@@ -5,7 +5,7 @@ description: >-
   true/false statements rather than checklists. Use for Spec Authoring
   work requiring DoD authoring, verifiability
   discipline, and completion semantics.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

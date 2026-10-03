@@ -5,7 +5,7 @@ description: >-
   derivable into tests without interpretation. Use for Spec Authoring
   work requiring testability review, ambiguity
   detection, and completeness checking.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits

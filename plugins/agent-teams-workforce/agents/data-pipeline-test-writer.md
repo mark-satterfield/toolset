@@ -5,7 +5,7 @@ description: >-
   quality, replay safety — confirming each fails for the intended reason. Use
   for Test Design work requiring pipeline test authoring, data
   quality assertions, and replay-safety checks.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -6,7 +6,7 @@ description: >-
   client-side handling. Use for Implementation work requiring
   WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito
   integration.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

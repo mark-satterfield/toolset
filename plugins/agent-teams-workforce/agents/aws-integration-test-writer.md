@@ -5,7 +5,7 @@ description: >-
   effective architecture describes, hop by hop. Use for Test Design work requiring AWS
   integration test authoring, event-driven flow assertions, and test harness
   design.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

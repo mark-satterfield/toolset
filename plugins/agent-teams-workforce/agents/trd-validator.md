@@ -9,7 +9,7 @@ description: >-
   Use for TRD Authoring work requiring testability review,
   feasibility checking, architecture-conflict detection, and traceability verification.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits

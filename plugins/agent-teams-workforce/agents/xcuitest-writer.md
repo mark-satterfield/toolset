@@ -6,7 +6,7 @@ description: >-
   reason. Use for Test Design work requiring XCUITest authoring,
   iOS UI flow coverage, accessibility-identifier queries, and Red
   confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

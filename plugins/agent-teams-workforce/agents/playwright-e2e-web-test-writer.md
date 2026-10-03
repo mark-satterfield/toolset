@@ -4,7 +4,7 @@ description: >-
   Writes failing Playwright E2E web tests for UI and API flows from spec
   acceptance criteria. Use for Test Design work requiring E2E test
   authoring, user journey coverage, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

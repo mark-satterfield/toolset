@@ -6,7 +6,7 @@ description: >-
   every compaction verbatim, never summarized away. Use for Governance work
   requiring context-packet assembly, compaction-safe constraint preservation,
   and manifest maintenance.
-tools: Read, Write, Edit, Glob, Grep
+tools: Read, Write, Edit, Glob, Grep, Skill
 disallowedTools: AskUserQuestion, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

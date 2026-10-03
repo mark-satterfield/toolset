@@ -6,7 +6,7 @@ description: >-
   findings are competitive, not gate-stopping. Use for Adversarial Validation
   phase work requiring exhaustion probing, resilience evaluation, and
   competitive-finding reporting.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

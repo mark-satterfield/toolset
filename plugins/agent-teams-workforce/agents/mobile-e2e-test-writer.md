@@ -5,7 +5,7 @@ description: >-
   cross-platform mobile flows before implementation, confirming each fails
   for the intended reason. Use for Test Design work requiring
   mobile E2E authoring, Detox and Maestro scripting, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

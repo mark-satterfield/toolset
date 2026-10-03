@@ -5,7 +5,7 @@ description: >-
   event contracts. Use for Test Design work requiring contract
   test authoring, consumer expectation modeling, and provider verification
   setup.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

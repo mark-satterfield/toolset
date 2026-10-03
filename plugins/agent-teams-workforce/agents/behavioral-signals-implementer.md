@@ -5,7 +5,7 @@ description: >-
   and recommendation models; minimum code to pass failing tests. Use for
   Implementation work requiring event signal capture, feature
   engineering, and ML feature delivery.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   built on the chassis, subscription lifecycle, refunds, and idempotent
   operations, with secrets in Secrets Manager. Use for Implementation work requiring Stripe integration, payment webhook handling, and
   subscription lifecycle management.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

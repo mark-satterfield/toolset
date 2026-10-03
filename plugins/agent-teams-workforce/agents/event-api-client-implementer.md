@@ -5,7 +5,7 @@ description: >-
   envelope the effective architecture describes. Use for
   Implementation work requiring publishing clients, envelope
   construction, and event contract conformance.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   partition keys, checkpointing — writing minimum code to pass failing
   data-pipeline tests. Use for Implementation work requiring
   stream producer authoring, consumer logic, and event contract adherence.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -6,7 +6,7 @@ description: >-
   work requiring scoring validation, consistency
   auditing, and prioritization challenge.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

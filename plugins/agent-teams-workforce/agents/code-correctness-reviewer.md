@@ -5,7 +5,7 @@ description: >-
   verifying the test suite stays green. Use for Code Quality
   work requiring independent change-set review, regression detection, and
   behavior-preservation verification.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

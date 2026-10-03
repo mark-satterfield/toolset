@@ -7,7 +7,7 @@ description: >-
   corrects one item's clearly-wrong input, or names what a person must do with a
   concrete diagnosis. One incident per distinct failure signature. Use when a
   dispatch failed and something has to decide what that means.
-tools: Read, Glob, Grep, Write, Edit, Bash
+tools: Read, Glob, Grep, Write, Edit, Bash, Skill
 disallowedTools: AskUserQuestion, NotebookEdit
 model: opus
 permissionMode: acceptEdits

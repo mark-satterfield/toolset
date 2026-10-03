@@ -6,7 +6,7 @@ description: >-
   reporting each confirmed bypass. Use for Adversarial Validation phase
   work requiring auth-flow attack, Cognito probing, and
   minimal-reproduction reporting.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

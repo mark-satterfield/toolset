@@ -6,7 +6,7 @@ description: >-
   pass/loop/escalate with structured feedback; competitive criteria are
   recorded as flags by the gate script and never reach it. Use for Governance work requiring gate adjudication,
   constitutive-constraint enforcement, and conflict classification.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

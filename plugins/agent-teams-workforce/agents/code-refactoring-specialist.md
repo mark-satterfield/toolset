@@ -5,7 +5,7 @@ description: >-
   keeping tests green after every change. Use for Code Quality
   work requiring behavior-preserving restructuring, duplication removal, and
   complexity reduction.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

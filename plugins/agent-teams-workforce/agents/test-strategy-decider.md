@@ -5,7 +5,7 @@ description: >-
   coverage thresholds — from analyses routed by the calling workflow; generates
   no analysis of its own. Use for Test Design work requiring
   strategy adjudication, evidence weighing, and rationale recording.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

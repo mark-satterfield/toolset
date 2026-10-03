@@ -5,7 +5,7 @@ description: >-
   minimum code to pass failing unit tests. Use for Implementation
   work requiring recommendation pipeline assembly, candidate
   sourcing, re-ranking, and serving-layer composition.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

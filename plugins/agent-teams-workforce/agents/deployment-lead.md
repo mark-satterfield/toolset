@@ -3,7 +3,7 @@ name: deployment-lead
 description: >-
   Routes the feature deployment sequence, validates preconditions per step,
   and reports evidence to Gate 5. Use for Deployment team work requiring delegation, sequencing discipline, and gate reporting.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

@@ -5,7 +5,7 @@ description: >-
   relevance, embedding drift — confirming each fails before the component
   exists. Use for Test Design work requiring ML evaluation design,
   metric/threshold encoding, dataset construction, and drift detection.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

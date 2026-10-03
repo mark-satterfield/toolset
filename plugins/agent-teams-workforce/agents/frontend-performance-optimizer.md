@@ -4,7 +4,7 @@ description: >-
   Optimizes frontend performance in green-tested code without breaking
   tests. Use for Code Quality work requiring bundle trimming,
   render-path optimization, and Core Web Vitals improvement.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

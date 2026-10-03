@@ -6,7 +6,7 @@ description: >-
   reporting each confirmed escalation with a minimal reproduction. Use for
   Adversarial Validation phase work requiring authorization attack and
   IAM-model probing.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   event-flow runs — partial writes, orphaned records, divergent state. Use for
   Integration Testing work requiring cross-store
   verification, DynamoDB assertions, and eventual-consistency validation.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

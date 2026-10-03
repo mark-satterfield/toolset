@@ -5,7 +5,7 @@ description: >-
   pass failing data-pipeline suites. Use for Implementation work
   requiring Glue job authoring, PySpark transformations, and batch pipeline
   construction.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

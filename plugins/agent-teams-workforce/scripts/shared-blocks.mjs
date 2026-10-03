@@ -17,6 +17,7 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { agentContracts } from './agent-contracts.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = join(HERE, '..', 'workflows')
@@ -90,7 +91,15 @@ export const beginMarker = (name) => `// ===== SHARED BLOCK ${name} — BEGIN (c
 export const endMarker = (name) => `// ===== SHARED BLOCK ${name} — END =====`
 
 /** The canonical text of one block. */
-export const canonicalBlock = (name) => readFileSync(join(HERE, 'shared-blocks', `${name}.js`), 'utf8').replace(/\n+$/, '')
+export const canonicalBlock = (name) => {
+  const text = readFileSync(join(HERE, 'shared-blocks', `${name}.js`), 'utf8').replace(/\n+$/, '')
+  // Registry data is generated from owned definitions; no manually maintained allowlist.
+  if (name !== 'fable') return text
+  const core = ['subagent-contract', 'artifact-handoff'].map(skill =>
+    readFileSync(join(HERE, '..', 'skills', skill, 'SKILL.md'), 'utf8')).join('\n\n')
+  return text.replace('/* OWNED_AGENT_CONTRACTS */ {}', () => JSON.stringify(agentContracts(join(HERE, '..'))))
+    .replace("/* OWNED_CORE_CONTRACTS */ ''", () => JSON.stringify(core))
+}
 
 /** The text between a block's markers in `source`, or null when the source lacks the markers. */
 export function extractBlock(source, name) {

@@ -6,6 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from jsonartifact import read_artifact
+
 
 def _hash(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
@@ -17,7 +19,7 @@ def repair_facts(
     """Keep completed repairs reviewable without repeatedly dispatching their maker."""
     requests = {r["id"]: dict(r) for r in previous}
     decision_path = work / "decision.json"
-    decision = json.loads(decision_path.read_text()) if decision_path.is_file() else {}
+    decision = read_artifact(decision_path) if decision_path.is_file() else {}
     for returned in decision.get("returnTo") or []:
         if not isinstance(returned, dict) or not returned.get("missing"):
             continue
@@ -49,7 +51,7 @@ def repair_facts(
             path = Path(name)
             round_name, seq, role, agent = path.stem.split("-", 3)
             n = int(round_name[1:])
-            result = json.loads(path.read_text())
+            result = read_artifact(path)
             assigned = {
                 d.get("agentType")
                 for plan in plans

@@ -5,7 +5,7 @@ description: >-
   Telemetry plumbing for the SDLC workflow scripts — records which phases ran and which
   specialists were chosen so unnecessary repetition can be mined over time. Invoked as the
   final step of a composite workflow; writes only under .claude/workflow-runs/.
-tools: Read, Write, Bash
+tools: Read, Write, Bash, Skill
 disallowedTools: Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:subagent-contract]
 model: sonnet

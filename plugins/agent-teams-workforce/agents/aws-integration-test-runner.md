@@ -5,7 +5,7 @@ description: >-
   reporting structured pass/fail, coverage, and flakiness results. Use for
   Integration Testing work requiring suite
   execution, coverage measurement, and flakiness detection.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

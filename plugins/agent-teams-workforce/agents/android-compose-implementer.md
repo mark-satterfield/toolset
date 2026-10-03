@@ -5,7 +5,7 @@ description: >-
   code to pass failing Espresso suites. Use for Implementation
   work requiring Compose UI, Kotlin state and navigation wiring, and on-device
   ML Kit integration.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   current docs, and reports doc currency to the production readiness review.
   Use for cross-cutting Documentation team work requiring delegation, currency
   tracking, and readiness reporting.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

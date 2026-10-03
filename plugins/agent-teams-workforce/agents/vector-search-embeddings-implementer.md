@@ -5,7 +5,7 @@ description: >-
   generation, index read/write, similarity queries. Use for Implementation
   work requiring embedding pipelines, vector index access, and
   similarity queries.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

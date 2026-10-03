@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 
+from jsonartifact import read_artifact
+
 
 def save_ledger(path: Path, payload: dict) -> None:
     temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -50,7 +52,7 @@ def round_facts(
     kept = ""
     legacy_round = ledger.last if not plans else 0
     decision_path = work / "decision.json"
-    decision = json.loads(decision_path.read_text()) if decision_path.is_file() else {}
+    decision = read_artifact(decision_path) if decision_path.is_file() else {}
     newer_results = decision_path.is_file() and any(
         Path(name).name.startswith(f"r{legacy_round}-")
         and Path(name).stat().st_mtime > decision_path.stat().st_mtime
@@ -120,7 +122,7 @@ def round_facts(
             d["file"] = str(file)
             d["complete"] = file.is_file()
             if file.is_file():
-                result = json.loads(file.read_text())
+                result = read_artifact(file)
                 required = (
                     ("files", "claims", "answers") if d in writers else ("findings",)
                 )

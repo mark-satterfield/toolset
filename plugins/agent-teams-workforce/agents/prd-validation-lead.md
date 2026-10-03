@@ -5,7 +5,7 @@ description: >-
   Selects bounded analysts and routes their findings without making solution
   or approval decisions. The active prd-validation mini uses one analyst
   session across seven lenses and does not dispatch this lead.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

@@ -4,7 +4,7 @@ description: >-
   Runs project linters and applies formatting and style fixes while keeping
   tests green. Use for Code Quality work requiring lint
   execution, formatting cleanup, and style-convention enforcement.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

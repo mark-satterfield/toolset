@@ -14,6 +14,7 @@ from pathlib import Path
 
 from archevidence import evidence_state, view_bindings
 from archstate import snapshot_tree
+from jsonartifact import read_artifact
 
 
 def _digest(value: object) -> str:
@@ -70,7 +71,7 @@ def coverage_facts(work: Path, survey: dict, results: list[str]) -> tuple[dict, 
         if row.get("id"):
             rows[row["id"]] = {"row": row, "by": "survey"}
     for name in results:
-        result = json.loads(Path(name).read_text(encoding="utf-8"))
+        result = read_artifact(Path(name))
         role = Path(name).stem.split("-", 3)[2]
         agent = Path(name).stem.split("-", 3)[3]
         if role in ("proposer", "diagram"):

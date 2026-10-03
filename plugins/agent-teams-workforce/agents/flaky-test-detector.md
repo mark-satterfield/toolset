@@ -7,7 +7,7 @@ description: >-
   requiring flakiness verification, rerun-based reproduction, and
   root-cause findings.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   data sources, authorization. Use for Implementation work
   requiring AppSync API construction, resolver and data source wiring, and
   authorization setup.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -6,7 +6,7 @@ description: >-
   surfaces the fix touches, and the repository it lives in; never fixes. The
   bug-triage workflow dispatches it as its diagnosis step. Use for bug diagnosis
   requiring evidence-chain analysis.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

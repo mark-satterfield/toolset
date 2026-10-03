@@ -6,7 +6,7 @@ description: >-
   architecture, from the design it is given. Use for Architecture Analysis
   work requiring C4 diagramming, container decomposition, and component
   views.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

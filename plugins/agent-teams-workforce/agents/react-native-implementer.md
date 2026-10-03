@@ -5,7 +5,7 @@ description: >-
   to pass failing Detox and Maestro tests. Use for Implementation
   work requiring React Native components, navigation and state wiring, and
   native module integration.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

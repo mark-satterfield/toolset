@@ -5,7 +5,7 @@ description: >-
   jobs-to-be-done, empathy maps. Use for PRD Creation
   work requiring behavioral segmentation, jobs-to-be-done framing, and empathy
   mapping.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

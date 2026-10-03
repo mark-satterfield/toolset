@@ -5,7 +5,7 @@ description: >-
   SQL, NoSQL, command, and template injection; reports each confirmed path
   with a minimal reproduction. Use for Adversarial Validation phase work
   requiring injection probing and input-boundary attack.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

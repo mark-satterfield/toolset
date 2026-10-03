@@ -6,7 +6,7 @@ description: >-
   and open security groups, reporting each with a minimal reproduction. Use
   for Adversarial Validation phase work requiring IaC security scanning, CDK
   and cloud-config review, and misconfiguration reporting.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - aws-mcp

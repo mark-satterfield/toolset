@@ -6,7 +6,7 @@ description: >-
   writes TRD content, only pass/rework signals. Use for TRD Authoring work requiring maker-checker loop coordination, delegation, and
   read-only orchestration.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

@@ -5,7 +5,7 @@ description: >-
   with cited evidence. Use for cross-cutting Documentation team work requiring
   accuracy verification, claim-by-claim checking, and completeness review.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

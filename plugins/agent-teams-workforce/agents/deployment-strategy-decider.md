@@ -6,7 +6,7 @@ description: >-
   Deployment team work requiring decision adjudication,
   evidence weighing, and rationale recording.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

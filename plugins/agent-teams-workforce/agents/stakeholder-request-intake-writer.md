@@ -5,7 +5,7 @@ description: >-
   problem, desired outcome, constraints, urgency. Use for PRD Creation
   work requiring request structuring, problem framing,
   and urgency classification.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

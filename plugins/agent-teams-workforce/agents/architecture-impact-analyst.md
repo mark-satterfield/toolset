@@ -7,12 +7,12 @@ description: >-
   unaffected, not yet elaborated, elaborated but unbuilt, or already built. Read-only — it changes no bead and writes no
   code. Use after an architecture ruling created, changed or retired
   architecture views.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Edit, Write, Agent
 model: opus
 permissionMode: default
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
 effort: low
 isolation: worktree
 color: cyan

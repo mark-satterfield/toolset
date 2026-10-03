@@ -12,7 +12,7 @@ description: >-
   both directions, drawing an edge it is unsure of at low confidence. Emits every edge
   to or from the Epic with a reason and a confidence, accounts for every owned edge standing
   on it — kept, or withdrawn with a reason — and validates the file before reporting.
-tools: Read, Write, Bash, Glob, Grep
+tools: Read, Write, Bash, Glob, Grep, Skill
 disallowedTools: AskUserQuestion, Agent, Edit
 model: opus
 permissionMode: acceptEdits

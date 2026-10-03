@@ -6,7 +6,7 @@ description: >-
   refactoring. Use for
   Code Quality work requiring complexity scoring, duplication
   detection, and refactor planning.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: fable
 permissionMode: acceptEdits

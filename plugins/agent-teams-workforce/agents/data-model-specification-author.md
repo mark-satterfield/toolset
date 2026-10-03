@@ -4,7 +4,7 @@ description: >-
   Writes DynamoDB table specifications: key design, GSI/LSI definitions,
   access patterns, and capacity estimates. Use for Spec Authoring work requiring DynamoDB data modeling and access-pattern
   specification.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - awslabs-dynamodb-mcp-server

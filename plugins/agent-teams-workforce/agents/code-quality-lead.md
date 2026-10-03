@@ -5,7 +5,7 @@ description: >-
   change, and reports to Gate 2c. Use for Code Quality work
   requiring delegation, refactor sequencing, green-test verification, and gate
   reporting.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

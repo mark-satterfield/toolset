@@ -5,7 +5,7 @@ description: >-
   endpoints and event consumers; writes minimum code to pass failing unit
   tests. Use for Implementation work requiring Lambda handlers,
   chassis extension, and endpoint/consumer business logic.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp

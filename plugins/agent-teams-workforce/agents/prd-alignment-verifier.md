@@ -5,7 +5,7 @@ description: >-
   acceptance criteria, flagging missing coverage and scope creep. Use for
   Spec Authoring work requiring traceability auditing
   and coverage gap detection.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -5,7 +5,7 @@ description: >-
   from the Task's build contract — its spec documents and the architecture
   views it was designed against. Use for Implementation work requiring
   implementer selection.
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent, SendMessage
 model: sonnet
 permissionMode: default

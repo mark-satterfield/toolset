@@ -5,7 +5,7 @@ description: >-
   writes minimum code to pass failing data-pipeline tests. Use for
   Implementation work requiring lake layout, partition key
   construction, and lifecycle policy definition.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

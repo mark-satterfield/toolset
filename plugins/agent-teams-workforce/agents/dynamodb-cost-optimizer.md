@@ -4,7 +4,7 @@ description: >-
   Optimizes DynamoDB capacity, access patterns, and cost without changing
   behavior or breaking tests. Use for Code Quality work
   requiring capacity-mode tuning, query efficiency, and index cost reduction.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, Skill
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - awslabs-dynamodb-mcp-server

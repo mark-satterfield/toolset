@@ -6,7 +6,7 @@ description: >-
   fields, unencrypted storage — reporting each confirmed exposure. Use for
   Adversarial Validation phase work requiring data-leak scanning,
   secret/PII detection, and minimal-reproduction reporting.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

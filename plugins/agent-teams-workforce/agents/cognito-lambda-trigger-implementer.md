@@ -5,7 +5,7 @@ description: >-
   customization, custom auth challenges — on the chassis the architecture describes.
   Use for Implementation work requiring Cognito trigger logic,
   auth flows, and user pool event processing.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

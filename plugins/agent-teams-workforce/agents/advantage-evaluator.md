@@ -8,7 +8,7 @@ description: >-
   revision). Use for Governance work requiring advantage-principle
   evaluation, speculative-execution oversight, commit-or-revert verdicts, and
   gate-exhaustion rulings.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

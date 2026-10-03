@@ -5,7 +5,7 @@ description: >-
   target or the effective version of the architecture, from the design it is
   given. Use for Architecture Analysis work requiring runtime sequence and
   state views, activity views, and domain-model class views.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

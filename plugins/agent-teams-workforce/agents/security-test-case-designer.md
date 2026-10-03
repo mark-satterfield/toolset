@@ -5,7 +5,7 @@ description: >-
   negative paths, authorization matrices. Use for Test Design work
   requiring threat-model-driven test design, abuse case coverage, and
   authorization matrix verification.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

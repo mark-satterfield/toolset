@@ -6,7 +6,7 @@ description: >-
   covered — runs only those tests and rules whether they are red,
   already-satisfied or not-encoded. The tdd-red workflow dispatches it for both
   steps. Never writes or repairs a test.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

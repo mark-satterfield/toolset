@@ -5,7 +5,7 @@ description: >-
   ARIA, focus management, screen-reader flows — reporting violations with
   locations and remediations; never fixes. Use for Code Quality work requiring WCAG validation, accessibility regression
   detection, and focus-order review.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

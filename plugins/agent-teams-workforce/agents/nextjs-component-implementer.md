@@ -5,7 +5,7 @@ description: >-
   fetching, Next.js routing — writing minimum code to pass failing unit tests.
   Visual component and page work goes to cds:cds-ui-author, which builds with
   the cds design system.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

@@ -6,7 +6,7 @@ description: >-
   for Gate 4. Use for Task Decomposition work requiring
   delegation, pipeline sequencing, and gate reporting.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

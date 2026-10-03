@@ -5,7 +5,7 @@ description: >-
   usage rules — as a maintained glossary. Use for Architecture Analysis
   work requiring domain glossary authoring,
   terminology consistency, and language-to-code alignment.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

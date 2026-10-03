@@ -5,7 +5,7 @@ description: >-
   implementation exists, confirming each fails for the intended reason. Use
   for Test Design work requiring unit test authoring,
   criterion-to-test translation, fixture/mock design, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

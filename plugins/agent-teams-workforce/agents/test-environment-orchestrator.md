@@ -5,7 +5,7 @@ description: >-
   functions and data stores the suites depend on — confirming readiness. Use for
   Integration Testing work requiring environment
   provisioning, state reset, fixture seeding, and readiness confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__generate_resources
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__generate_resources, Skill
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp

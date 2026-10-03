@@ -6,7 +6,7 @@ description: >-
   Integration Testing work requiring
   consumer-driven contract verification, schema compatibility checks, and
   cross-repo boundary testing.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

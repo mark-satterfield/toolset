@@ -4,7 +4,7 @@ description: >-
   Writes failing performance benchmarks with budgets from the spec's
   non-functional requirements. Use for Test Design work requiring
   benchmark authoring, NFR-to-budget translation, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

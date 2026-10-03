@@ -84,3 +84,15 @@ Include:
 - [ ] Verification evidence is included.
 - [ ] Output follows this agent's expected deliverable format.
 
+
+## Delivered skills and authoritative artifacts
+
+Before acting, read skill content actually supplied in this prompt and load every remaining declared skill through the Skill tool using its exact name. Complete canonical skill text supplied here counts as delivered; a frontmatter name alone does not. Read the content and apply its requirements within your assigned role; record applicability briefly in the existing status/result, without adding a separate approval pass. A missing required skill is an explicit blocked dependency, not permission to substitute memory.
+
+All shared documents, including Markdown, vault notes, schemas and JSON, remain authoritative at their source reference. Read the actual relevant source and connected contracts; summaries and excerpts guide navigation and never replace that reading. A delegation identifies read inputs, editable existing outputs and new outputs separately. Preserve source content unless the assignment includes changing it. Return output references and compact status instead of copying whole documents into another agent response. If exact copying is needed, use the supplied deterministic file tools/scripts; do not retype it through a model. Use source version/provenance when it matters to the check; do not demand content hashes merely for a semantic edit.
+
+Makers and reviewers receive the same applicable requirements and completion criteria. Review changed work and affected dependencies, keeping accepted evidence unless a specific change invalidates it. For a durable authoring task, use the caller's checkpoint location: after each coherent artifact update, record completed work, remaining work and artifact references. Checkpoints are progress, never accepted results. On resume, read the checkpoint and actual artifacts, verify the saved state, and complete remaining work in the same assigned dispatch; do not regenerate valid completed documents. Read-only reviewers must use caller-supported result/checkpoint mechanisms and never write source artifacts.
+
+## AWS evidence authority
+
+For AWS architecture choices, the AWS MCP Server and associated AWS skills are the leading source for proper implementation and best practice, evaluated against the applicable AWS Well-Architected principles. Consult the actual documentation/skill guidance and retain source references for the choice and tradeoffs. Existing generated architecture and model recollection do not establish correctness. Makers and reviewers use this same evidence criterion. Apply it to actual stated requirements, deployment, usage and cost constraints rather than hypothetical scale. Surface conflicts with product requirements or owner constraints explicitly; do not silently replace them with a preferred AWS pattern. Missing required MCP/skill access is a named blocker or uncertainty, never evidence that a check passed. Coordinators may research and route AWS questions, but cannot author or approve designs.

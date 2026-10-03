@@ -5,7 +5,7 @@ description: >-
   pass failing unit tests. Use for Implementation work requiring
   model invocation clients, prompt assembly, embeddings generation, and
   inference error handling.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

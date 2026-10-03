@@ -5,7 +5,7 @@ description: >-
   performant given key design, indexes, and capacity estimates. Use for Spec
   Authoring work requiring access-pattern validation,
   key/index review, and performance risk detection.
-tools: Read, Glob, Grep, Bash, Write, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs
+tools: Read, Glob, Grep, Bash, Write, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - awslabs-dynamodb-mcp-server

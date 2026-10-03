@@ -8,14 +8,14 @@ description: >-
   writes section 2. Use for Architecture Analysis work requiring integration of
   an approved design, correction of the architecture from a build, or
   current-state maintenance of the arc42 views.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42, agent-teams-workforce:arc42-maintain, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42, agent-teams-workforce:arc42-maintain, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
 effort: medium
 isolation: worktree
 color: cyan

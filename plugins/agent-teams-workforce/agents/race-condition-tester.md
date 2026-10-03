@@ -6,7 +6,7 @@ description: >-
   updates, replay duplication — reporting each defect with a minimal
   reproduction. Use for Adversarial Validation phase work requiring
   concurrency attack and idempotency probing.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

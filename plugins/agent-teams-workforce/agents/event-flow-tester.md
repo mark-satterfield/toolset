@@ -6,7 +6,7 @@ description: >-
   for Integration Testing work requiring
   event-driven flow validation, EventBridge rule verification, and
   queue/consumer checks.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

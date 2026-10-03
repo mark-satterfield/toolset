@@ -5,7 +5,7 @@ description: >-
   tables, views, SQL — writing minimum code to pass failing data-pipeline
   tests. Use for Implementation work requiring analytics SQL
   authoring, external table definition, and warehouse modeling.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

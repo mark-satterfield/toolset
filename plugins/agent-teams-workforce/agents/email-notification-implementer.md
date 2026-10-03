@@ -5,7 +5,7 @@ description: >-
   templates, rendering pipelines, delivery via AWS messaging, and
   bounce/complaint handling. Use for Implementation work
   requiring email template construction and delivery wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

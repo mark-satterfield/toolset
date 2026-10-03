@@ -221,7 +221,7 @@ ${command}
 It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
   async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
-    const out = await dispatch(prompt(command), { label, phase, model: 'sonnet', effort: 'low', schema: SCHEMA })
+    const out = await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
     let got = parse(out.stdout, file)
     if (got.why) {
@@ -236,7 +236,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
           log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt: retry, reason })}`)
           const copied = await dispatch(`The previous response failed validation: ${reason}. The original command has already completed. Do not execute it again. This corrective attempt only reads the saved result whose bytes must match the original receipt.
 
-${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, model: 'sonnet', effort: 'low', schema: SCHEMA })
+${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
           // The dispatch wrapper owns quota/API interruptions; do not turn one into a copy hold.
           if (!copied) return { ok: false, noResult: true, error: `${label}: the corrective reader returned no result` }
           got = parse(copied.stdout, file)
@@ -373,5 +373,51 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, model
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  return { canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
+  function artifactBrief(candidate, schema, revision = '') {
+    return `\n\nAUTHORITATIVE ARTIFACT HANDOFF: Write the complete JSON result ONCE to ${candidate}, with schema ${JSON.stringify(schema)}. Return only {"artifactPath":"${candidate}"} using StructuredOutput, never a second payload copy. Keep ${candidate}.checkpoint current with status, artifactPath, schemaSha256, task, completed, remaining and artifacts (paths). Before returning set status="complete", artifactPath="${candidate}", schemaSha256="${sha256Json(schema)}", revision=${JSON.stringify(revision)}. On resume read the checkpoint and actual artifacts first, preserve completed work and finish only missing work. Shared Markdown, diagrams and other documents remain authoritative at their paths; read them directly, never replace them with summaries. Do not write the final accepted result; the workflow validates and publishes the candidate.`
+  }
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false }) {
+    if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(!returned ? ['--recover'] : [])]
+    const result = await run(dispatch, { label, phase, runner, argv: args, file: relayFile })
+    if (!result.ok) return result
+    if (result.exitCode !== 0) return { ok: false, error: `artifact validation failed: ${JSON.stringify(result.json)}`, relayFile }
+    const receipt = result.json
+    if (probe && receipt && receipt.pending === true) return { ok: true, pending: true }
+    if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
+    return { ok: true, receipt, facts: receipt.facts || {}, counts: receipt.counts || {} }
+  }
+  async function authorArtifact(dispatch, options, produce, interrupted = () => false) {
+    const paused = () => ({ ok: false, noResult: true, error: 'artifact dispatch interrupted; saved work retained' })
+    if (interrupted()) return paused()
+    const prior = await acceptArtifact(dispatch, { ...options, label: `${options.label}:probe`, relayFile: `${options.relayFile}.probe`, returned: null, probe: true })
+    if (interrupted()) return paused()
+    if (!prior.ok || !prior.pending) return prior
+    const returned = await produce()
+    if (interrupted()) return paused()
+    return acceptArtifact(dispatch, { ...options, returned, probe: false })
+  }
+  async function artifactRevision(dispatch, { label, phase, runner, files = [], relayFile, context = {} }) {
+    if (!Array.isArray(files)) return { ok: false, error: 'artifact revision requires explicit source paths' }
+    let receipts = []
+    if (files.length) {
+      const result = await run(dispatch, { label, phase, runner, argv: ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), ...files.flatMap(file => ['--source', file])], file: relayFile })
+      if (!result.ok) return result
+      if (result.exitCode !== 0 || !result.json || !Array.isArray(result.json.receipts)) return { ok: false, error: `source fingerprint failed: ${JSON.stringify(result.json)}` }
+      receipts = result.json.receipts
+      if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 0 || !['file', 'directory'].includes(r.format))) return { ok: false, error: 'invalid source receipt' }
+    }
+    return { ok: true, revision: sha256Json({ receipts, context }) }
+  }
+  async function documentReceipt(dispatch, { label, phase, runner, files, relayFile }) {
+    if (!Array.isArray(files) || !files.length) return { ok: false, error: 'document receipt requires explicit file paths' }
+    const result = await run(dispatch, { label, phase, runner, argv: ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), ...files.flatMap(file => ['--document', file])], file: relayFile })
+    if (!result.ok) return result
+    if (result.exitCode !== 0 || !result.json || !Array.isArray(result.json.receipts)) return { ok: false, error: `document verification failed: ${JSON.stringify(result.json)}` }
+    const receipts = result.json.receipts
+    if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
+    return { ok: true, receipts }
+  }
+  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()

@@ -5,7 +5,7 @@ description: >-
   reporting isolation defects without fixing them. Use for Test Design
   work requiring isolation validation, order-dependence detection,
   fixture audit, and flakiness prevention.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

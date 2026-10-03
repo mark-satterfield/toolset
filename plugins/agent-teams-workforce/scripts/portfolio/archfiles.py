@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 from archstate import snapshot_tree, tree_diff
+from jsonartifact import read_artifact
 
 EFFECTIVE = "arc42"
 CONSTRAINTS = "arc42/02-architecture-constraints"
@@ -28,7 +29,7 @@ def _load(path: Path) -> object:
     Returns:
         The parsed value, or None when the file is absent.
     """
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    return read_artifact(path) if path.is_file() else None
 
 
 def _paths(value: object) -> list[str]:
@@ -88,7 +89,7 @@ def integration_files(
     was = _load(before)
     if not isinstance(was, dict):
         return {"error": f"{before}: no saved fingerprint"}
-    absolute = lambda rels: [f"{root}/{r}" for r in rels]  # noqa: E731
+    absolute = lambda rels: [f"{root}/{r}" for r in rels]
     diff = tree_diff(was, now)
     since_last: list[str] = []
     if last is not None:
@@ -234,5 +235,5 @@ def files_from(path: Path, key: str) -> list[str]:
     """
     value = _load(path)
     if not isinstance(value, dict) or not isinstance(value.get(key), list):
-        raise ValueError(f"{path} holds no list `{key}`")
+        raise ValueError(f"{path} holds no list `{key}`")  # noqa: TRY004 -- invalid saved content
     return _paths(value[key])

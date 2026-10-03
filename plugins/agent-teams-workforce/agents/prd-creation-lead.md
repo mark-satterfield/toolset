@@ -5,7 +5,7 @@ description: >-
   then hands off to prd-validation-lead — makes no product decisions. Use for
   PRD Creation work requiring sequenced delegation,
   artifact tracking, and validation handoff.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

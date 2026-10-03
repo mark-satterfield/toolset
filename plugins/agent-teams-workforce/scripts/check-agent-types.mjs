@@ -131,12 +131,16 @@ for (const file of files) {
     else if (!defined.has(bare) || !existsSync(path.join(agentsDir, `${bare}.md`))) missing.push(where)
   }
   computed += [...raw.matchAll(COMPUTED)].length
-  if (raw.includes(PREFIXED_AT_RUNTIME)) {
-    const setMatch = raw.match(USER_LEVEL_SET)
+  // The shared identity block contains every owned name as registry data, not
+  // as a workflow's dynamic routing roster. Its generated copy is checked by
+  // shared-blocks; inspect the actual workflow routing code for roster gaps.
+  const routing = raw.replace(/\/\/ ===== SHARED BLOCK fable [\s\S]*?\/\/ ===== SHARED BLOCK fable — END =====/g, '')
+  if (routing.includes(PREFIXED_AT_RUNTIME)) {
+    const setMatch = routing.match(USER_LEVEL_SET)
     const listed = new Set(setMatch ? [...setMatch[1].matchAll(QUOTED)].map((q) => q[2]) : [])
-    const literal = new Set([...raw.matchAll(LITERAL)].map((m) => m[2]))
+    const literal = new Set([...routing.matchAll(LITERAL)].map((m) => m[2]))
     const named = new Set(
-      [...raw.matchAll(QUOTED)].map((q) => q[2]).filter((n) => userLevel.has(n) && !literal.has(n))
+      [...routing.matchAll(QUOTED)].map((q) => q[2]).filter((n) => userLevel.has(n) && !literal.has(n))
     )
     for (const n of named) if (!listed.has(n)) rosterGaps.push({ file, name: n, why: 'is missing from USER_LEVEL_AGENTS' })
     for (const n of listed) if (!userLevel.has(n)) rosterGaps.push({ file, name: n, why: 'is in USER_LEVEL_AGENTS but declares no mcpServers' })

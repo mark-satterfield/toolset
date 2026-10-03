@@ -5,7 +5,7 @@ description: >-
   test, and deploy stages. Use for Deployment team work
   requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy
   configuration.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

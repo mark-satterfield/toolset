@@ -6,7 +6,7 @@ description: >-
   Enforcer outcomes, tracks work state — never evaluates quality. Use for
   Governance work requiring phase sequencing, team-lead dispatch, gate-outcome
   routing, and work-state tracking.
-tools: Read, Glob, Grep, Agent, SendMessage, Bash
+tools: Read, Glob, Grep, Agent, SendMessage, Bash, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit
 model: opus
 permissionMode: default

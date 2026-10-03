@@ -262,6 +262,7 @@ shown the answer is not a checker.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
+| workflow-command-runner | execute | Runs one checked workflow command and relays its compact receipt without interpreting payloads. |
 | filing-clerk | execute | Searches for the canonical documentation home before filing; placement-only workflow requests return a path without writing. |
 | documentation-lead | orchestrate | Routes documentation work triggered by shipped changes, tracks which artifacts lack current documentation, and reports documentation currency to the production readiness review |
 | api-documentation-writer | execute | Generates human-readable API documentation from OpenAPI and GraphQL specs: endpoint guides, examples, SDK snippets. |
@@ -274,3 +275,11 @@ shown the answer is not a checker.
 ## Standalone
 
 - `polyrepo-steward` — caretaker and librarian of the project's repositories: answers count/ownership/structure/status questions from live facts it checks against the repositories and GitHub, and performs all repository work — create, deprecate, archive, rebase, search, `AGENTS.md` propagation, template upkeep. Reached via the `polyrepo-router` skill or the `/polyrepo-steward` command.
+
+## Named workflow helpers
+
+- **test-command-resolver** — Resolves the applicable test command from repository instructions and configuration without running tests.
+- **test-failure-parser** — Extracts concrete failing test identifiers and errors from a saved test log without rerunning tests.
+- **prd-validation-analyst** — Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.
+- **cds-finding-reviewer** — Independently classifies findings from the CDS audit against the configured design system.
+- **cds-ui-implementer** — Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.

@@ -4,7 +4,7 @@ description: >-
   Writes user-facing feature guides from specs and shipped behavior. Use for
   cross-cutting Documentation team work requiring feature guide writing,
   task-oriented walkthroughs, and audience-appropriate explanation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

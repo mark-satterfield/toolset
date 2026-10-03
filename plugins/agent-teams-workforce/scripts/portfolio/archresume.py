@@ -23,6 +23,7 @@ from archcoverage import coverage_facts, integration_revision
 from archevidence import digest, evidence_state, view_bindings, view_content
 from archrepairs import repair_facts
 from archrounds import compact_plan, round_facts, save_ledger
+from jsonartifact import read_artifact
 
 ROUND_FILE = re.compile(
     r"^r(\d+)-(\d+)-(proposer|diagram|reviewer|cost)-([a-z0-9-]+)\.json$"
@@ -63,7 +64,7 @@ def _load(path: Path) -> object:
         ResumeError: The file cannot be read or is not JSON.
     """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return read_artifact(path)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ResumeError(f"{path}: {exc}") from exc
 

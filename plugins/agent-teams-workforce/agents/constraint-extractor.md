@@ -5,7 +5,7 @@ description: >-
   consumed by downstream phases. Use for PRD Validation
   work requiring constraint identification, manifest authoring, and
   source-cited classification.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

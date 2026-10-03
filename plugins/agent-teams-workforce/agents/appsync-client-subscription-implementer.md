@@ -5,7 +5,7 @@ description: >-
   Implementation work requiring GraphQL subscription wiring,
   connection lifecycle handling, real-time state updates, and reconnection
   handling.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

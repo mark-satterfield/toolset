@@ -6,7 +6,7 @@ description: >-
   Deployment team work requiring cost analysis, unit
   economics modeling, and budget impact assessment.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 mcpServers:
   - aws-mcp

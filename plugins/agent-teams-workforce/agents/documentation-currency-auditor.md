@@ -5,7 +5,7 @@ description: >-
   missing docs per artifact with cited evidence, and names the writer that
   owns each stale doc. Use for cross-cutting Documentation team work requiring
   currency auditing, staleness detection, and coverage mapping.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

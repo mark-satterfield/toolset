@@ -5,7 +5,7 @@ description: >-
   idempotency — on Lambdas built on the chassis; configures, never rebuilds. Use
   for Implementation work requiring Power Tools configuration,
   idempotency setup, and observability wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

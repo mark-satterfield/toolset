@@ -5,7 +5,7 @@ description: >-
   and acceptance criteria. Use for PRD Validation
   work requiring requirement structure checks, acceptance-criteria audits,
   and completeness scoring.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits

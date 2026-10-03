@@ -4,7 +4,7 @@ description: >-
   Confirms the raw PRD stays within one bounded context, flagging
   cross-domain scope creep as findings. Use for PRD Validation work requiring bounded-context verification, domain ownership
   checks, and scope-creep detection.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

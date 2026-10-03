@@ -6,7 +6,7 @@ description: >-
   pass/rework signals. Use for Spec Authoring work
   requiring maker-checker loop coordination, delegation, and read-only
   orchestration.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

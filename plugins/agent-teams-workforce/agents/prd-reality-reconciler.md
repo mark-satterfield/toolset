@@ -10,14 +10,14 @@ description: >-
   step's SURVEY: for each capability a PRD needs, the effective views that
   show it, the code on main that implements it, the open beads that plan work
   on it, and the open targets that change it.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - aws-mcp
 model: opus
 permissionMode: acceptEdits
 maxTurns: 120
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
 effort: medium
 isolation: worktree
 color: blue

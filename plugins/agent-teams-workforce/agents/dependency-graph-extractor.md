@@ -5,7 +5,7 @@ description: >-
   events, data contracts — flagging nonexistent dependencies. Use for PRD
   Validation work requiring dependency identification,
   existence verification, and manifest authoring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

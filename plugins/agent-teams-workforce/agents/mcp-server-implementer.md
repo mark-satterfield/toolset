@@ -5,7 +5,7 @@ description: >-
   deployments — tool definitions and schemas, authorization, transport config,
   CDK deployment wiring. Use for Implementation work
   requiring MCP tool definitions, gateway-fronted deployments, and CDK wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

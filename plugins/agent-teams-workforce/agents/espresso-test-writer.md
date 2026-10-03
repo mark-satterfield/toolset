@@ -5,7 +5,7 @@ description: >-
   criteria, confirming each test fails for the intended reason. Use for Test
   Design work requiring Espresso authoring, Android UI coverage,
   Compose semantics matchers, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

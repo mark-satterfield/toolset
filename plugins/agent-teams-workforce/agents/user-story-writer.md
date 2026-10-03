@@ -4,7 +4,7 @@ description: >-
   Writes the ONE Story bead a Spec pairs with — a single-repository container
   with a title, a description and the out-of-repo work the spec set implies.
   Use for Spec Authoring work requiring the Story that pairs with a Spec.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

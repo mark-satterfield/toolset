@@ -5,7 +5,7 @@ description: >-
   cascade: scope, requirements, success metrics, competitive context. Use
   for PRD Creation work requiring requirement
   drafting, scope articulation, and success-metric derivation.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

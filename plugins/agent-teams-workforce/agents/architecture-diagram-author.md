@@ -6,12 +6,12 @@ description: >-
   the design it is given. Use for Architecture Analysis work requiring
   architecture diagramming, event and data flow views, deployment views and
   context maps.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
 effort: medium
 isolation: worktree
 color: cyan

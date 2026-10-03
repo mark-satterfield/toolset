@@ -6,7 +6,7 @@ description: >-
   in designated test environments only. Use for Adversarial Validation
   phase work requiring contract-boundary attack, API/event schema probing,
   and minimal-reproduction reporting.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

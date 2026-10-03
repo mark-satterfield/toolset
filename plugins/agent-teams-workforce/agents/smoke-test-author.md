@@ -5,7 +5,7 @@ description: >-
   against live endpoints. Use for Deployment team work
   requiring smoke test authoring, post-deployment verification, and
   critical-path coverage.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

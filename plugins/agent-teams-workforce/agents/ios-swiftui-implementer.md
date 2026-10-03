@@ -5,7 +5,7 @@ description: >-
   XCUITest suites. Use for Implementation work requiring SwiftUI
   views, StoreKit purchase flows, on-device CoreML integration, and
   passkey/WebAuthn client wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

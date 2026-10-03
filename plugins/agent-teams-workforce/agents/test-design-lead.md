@@ -4,7 +4,7 @@ description: >-
   Routes spec acceptance criteria to test writers, confirms Red (every new
   test fails), and reports to Gate 2a. Use for Test Design work
   requiring delegation, criterion-to-test routing, and gate reporting.
-tools: Read, Glob, Grep, Agent, SendMessage
+tools: Read, Glob, Grep, Agent, SendMessage, Skill
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

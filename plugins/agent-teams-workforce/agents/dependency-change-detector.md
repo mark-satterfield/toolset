@@ -5,7 +5,7 @@ description: >-
   classifying each as unchanged, reconciled, or needing reconciliation. Use
   for Spec Freshness phase work requiring manifest and lockfile diffing,
   upstream contract comparison, and breaking-change detection.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits

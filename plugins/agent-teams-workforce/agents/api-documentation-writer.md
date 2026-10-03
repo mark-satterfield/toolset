@@ -5,7 +5,7 @@ description: >-
   APIs — guides, examples, SDK snippets. Use for cross-cutting Documentation
   team work requiring API reference writing, example generation, and SDK
   snippet authoring.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits

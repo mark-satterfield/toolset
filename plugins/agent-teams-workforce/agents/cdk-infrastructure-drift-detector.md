@@ -4,7 +4,7 @@ description: >-
   Detects drift between deployed infrastructure and its CDK stacks, reporting
   divergences with evidence. Use for Deployment team
   work requiring CDK validation, drift detection, and template diffing.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits

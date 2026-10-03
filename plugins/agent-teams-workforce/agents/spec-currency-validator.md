@@ -5,7 +5,7 @@ description: >-
   begins, flagging drift since authoring. Use for Spec Freshness phase work
   requiring spec-to-codebase comparison, drift detection, and currency
   evidence gathering.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Skill
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits
