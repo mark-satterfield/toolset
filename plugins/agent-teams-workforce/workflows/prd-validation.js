@@ -4,6 +4,33 @@ export const meta = {
     'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and, given args.archPath, whether the architecture already describes each technical rule; a technical requirement is a major finding, since a PRD keeps business requirements only.',
   phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -11,6 +38,7 @@ function dispatchDeaths(...phases) {
 }
 // Runs agent(); returns its result, or null after recording the failure in dispatchFailures.
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -20,6 +48,7 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -260,7 +289,7 @@ READING BUDGET: the PRD is the entire object of every lens. Read nothing else un
 
 if (!analysis) {
   const why = 'the validation analyst session returned nothing; the PRD was not judged'
-  return {
+  return dispatchOutcome({
     ok: false,
     stage: 'agent-dispatch-failed',
     error: why,
@@ -276,7 +305,7 @@ if (!analysis) {
     completenessGaps: [],
     constraints: [],
     boundaryFindings: [],
-  }
+  })
 }
 
 const ambiguities = analysis.ambiguities || []
@@ -306,7 +335,7 @@ findings.sort((x, y) => sevRank(x.severity) - sevRank(y.severity))
 const blockers = findings.filter((f) => f.severity === 'blocker').length
 const validationVerdict = blockers ? 'fail' : 'pass'
 
-return {
+return dispatchOutcome({
   ok: validationVerdict === 'pass',
   stage: validationVerdict === 'pass' ? 'done' : 'Validate',
   headline: validationVerdict === 'pass' ? `PRD validated: ${findings.length} finding(s), none blocking` : `PRD validation failed: ${blockers} blocker finding(s)`,
@@ -338,4 +367,4 @@ return {
     mode: 'combined',
     ok: validationVerdict === 'pass',
   },
-}
+})

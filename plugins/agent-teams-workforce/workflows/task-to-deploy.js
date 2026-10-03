@@ -15,6 +15,65 @@ export const meta = {
     { title: 'Run Ledger', detail: 'writes the run journal on every exit path' },
   ],
 }
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
+}
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
 
 // args: {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
@@ -60,9 +119,9 @@ let designSource = !isUiTask
       ? 'bundle'
       : 'cds'
 
-if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied' }
+if (!bead.id) return dispatchOutcome({ ok: false, stage: 'input', error: 'no bead.id supplied' })
 if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
-  return { ok: false, stage: 'input', error: 'no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json' }
+  return dispatchOutcome({ ok: false, stage: 'input', error: 'no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json' })
 }
 
 const runLedger = []
@@ -134,6 +193,28 @@ function implementersOf(artifact) {
 
 const list = (v) => (Array.isArray(v) ? v.filter(Boolean) : [])
 
+// Consumed by greenLoop: a Red update must disposition every requested test before Green retries.
+function checkTestDecisions(issues, decisions) {
+  const requested = [...new Set((Array.isArray(issues) ? issues : []).map((x) => String((x && x.testId) || '').trim()).filter(Boolean))]
+  const returned = Array.isArray(decisions) ? decisions : []
+  const problems = []
+  const accepted = []
+  for (const id of requested) {
+    const matches = returned.filter((x) => x && String(x.testId || '').trim() === id)
+    if (matches.length !== 1) {
+      problems.push(`${id}: expected one disposition, received ${matches.length}`)
+      continue
+    }
+    const decision = matches[0]
+    if (!['update', 'delete', 'keep'].includes(decision.action) || typeof decision.reason !== 'string' || !decision.reason.trim()) {
+      problems.push(`${id}: disposition needs a valid action and a nonempty reason`)
+      continue
+    }
+    accepted.push({ testId: id, action: decision.action, reason: decision.reason })
+  }
+  return { problems, decisions: accepted }
+}
+
 // A suite-run failure, { kind: test | load, file, test, line }, keyed the same way in every run.
 const entryOf = (f) =>
   f && typeof f === 'object'
@@ -179,7 +260,7 @@ async function fingerprint(tree, files, label) {
   const command = `cd ${shq(tree)} && for f in ${files.map(shq).join(' ')}; do if [ -f "$f" ]; then printf '%s\\t%s\\n' "$f" "$(git hash-object -- "$f")"; else printf '%s\\tmissing\\n' "$f"; fi; done`
   let out = null
   try {
-    out = await agent(
+    out = await guardedAgent(
       `Run exactly this one shell command, once, and change nothing else:
 
 ${command}
@@ -308,7 +389,7 @@ const findingText = (f) => `${f.file}:${f.line} ${f.rule} ${f.value}${f.reason ?
 async function auditCds(tree, bundle, label) {
   let out = null
   try {
-    out = await agent(
+    out = await guardedAgent(
       `Run exactly this one shell command, once, in the FOREGROUND, and change nothing else:
 
 python3 -c ${shq(RUN_CDS_AUDIT_PY)} ${shq(tree)} ${shq(bundle)} ${shq(String(a.cdsRoot || '').trim())} ${CDS_AUDIT_MAX_FINDINGS}
@@ -340,7 +421,7 @@ It prints one JSON object on stdout and exits 0 (clean), 1 (findings) or 2 (it c
   for (let pass = 1; unruled.length && pass <= 2; pass++) {
     let judged = null
     try {
-      judged = await agent(
+      judged = await guardedAgent(
         `Use the Skill tool to load cds:audit-against-system, then rule on findings a deterministic cds audit could not rule on. They come from the files this Task changed in the work tree at ${tree}, audited against the cds bundle at ${bundle} (its stylesheet set is the only design system the app may use).
 
 Each finding is a class name the bundle's stylesheets do not name. Read the line in the file, the applicable bundle design artifacts and stylesheets, and the audit-against-system skill. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs. A static mock communicates design intent without specifying every detail; preserve its established intent and any explicit precision requirements, and use judgment with the Task requirements, configured cds and approved application standards for unspecified interactions, states and responsive behavior. When no mock is supplied and the Task delegates UI design, judge that design against configured cds and the approved application standards; absence of a pre-existing Page or Section preset is not itself a missing capability.
@@ -439,7 +520,7 @@ async function selectDesign() {
   ]
   let out = null
   try {
-    out = await agent(
+    out = await guardedAgent(
       `Run exactly this one shell command, once, in the FOREGROUND, and change nothing else:
 
 python3 -c ${shq(RUN_CDS_SELECT_PY)} ${shq(String(a.pluginRoot || '').trim())} ${argv.map(shq).join(' ')}
@@ -487,7 +568,7 @@ const LIVE_AUDIT_SCHEMA = {
 async function auditCdsLive(tree, label) {
   let out = null
   try {
-    out = await agent(
+    out = await guardedAgent(
       `Use the Skill tool to load cds:audit-against-system, then audit the UI files this Task changed against the live Configurable Design System (cds) — the project's design system config and the stylesheets, tokens and components it defines. No mockup was supplied for this Task: its UI was designed with cds, so the live design system is the only standard it is held to.
 
 The files: those the work tree at ${tree} changed against HEAD, untracked included (\`git -C ${shq(tree)} status --porcelain\`), restricted to markup, component, script and stylesheet files. Change no file.
@@ -567,7 +648,7 @@ try {
     }
 
     enterPhase('Workspace')
-    const workspace = await workflow('agent-teams-workforce:workspace', {
+    const workspace = await settleWorkflow('agent-teams-workforce:workspace', {
       repoPath: bead.repoPath,
       beadId: story.id,
       branchPrefix: 'story',
@@ -616,7 +697,7 @@ try {
     let intent = null
     if (isInfra) {
       enterPhase('Infra Intent')
-      intent = await workflow('agent-teams-workforce:infra-intent', {
+      intent = await settleWorkflow('agent-teams-workforce:infra-intent', {
         change: { id: bead.id, title: bead.title, description: bead.description, repoPath: workRepoPath },
       })
       if (!intent || !intent.provisioningIntent) {
@@ -638,7 +719,7 @@ try {
 
     // ── Baseline: the suite command the repository declares, resolved once and reused ──
     enterPhase('Baseline')
-    const baseline = await workflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, label: 'baseline' })
+    const baseline = await settleWorkflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, label: 'baseline' })
     if (baseline && baseline.resolveError) {
       return {
         ...handback(false, 'baseline', `baseline: ${workRepoPath} declares no test command (${baseline.resolveError}). A Task is committed only when the repository's whole suite passes, so the repository must say how its suite runs.`, { baseline }),
@@ -650,9 +731,11 @@ try {
     }
     const suiteCommand = String(baseline.command).trim()
     contract.suiteCommand = suiteCommand
+    // Consumed by tdd-green selection and implementation briefs: explicit runtime repair authority.
+    contract.baselineRepairScope = 'affected-repository'
     const baselineIds = failingIds(baseline)
     const runSuite = async (label) => {
-      const r = await workflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, command: suiteCommand, label })
+      const r = await settleWorkflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, command: suiteCommand, label })
       return r || null
     }
     log(`Baseline: \`${suiteCommand}\` exited ${baseline.exitCode}; ${baselineIds.size} failing before any change`)
@@ -682,7 +765,7 @@ try {
     let previousRedKey = null
     for (let round = 1; ; round++) {
       enterPhase('Red')
-      red = await workflow('agent-teams-workforce:tdd-red', {
+      red = await settleWorkflow('agent-teams-workforce:tdd-red', {
         contract,
         feedback: redFeedback,
         ...(redFiles.length ? { red: { testFiles: [...redFiles] } } : {}),
@@ -728,11 +811,12 @@ try {
 
     // ── Green: loops until the whole suite exits 0. The CDS Audit sends its violations back through
     // this same loop, with tag 'cds-green' and the findings as the first round's feedback. ──
-    const baselineNote = baselineIds.size
-      ? `\nThe suite already failed before this Task on: ${[...failures(baseline).values()].map(describe).join('; ')}. Green means the whole suite exits 0, so these must pass too.`
+    const baselineNote = baseline.exitCode !== 0
+      ? `\nBASELINE REPAIR IS ASSIGNED: fix ALL pre-existing suite failures in ${workRepoPath}, including failures outside the Task's feature. ${baselineIds.size ? [...failures(baseline).values()].map(describe).join('; ') : 'No individual failing test IDs were parsed; diagnose the baseline output.'} Green still requires the whole suite to exit 0.\nBaseline evidence:\n${runText(baseline)}`
       : ''
     let green = null
     let finalRun = null
+    const acceptedTestDecisions = new Map()
     /** Runs Green rounds until the suite exits 0; returns { run } when green, or { stop } (a handback) when the loop ends without it. */
     const greenLoop = async (firstFeedback, tag, what) => {
       let greenFeedback = firstFeedback
@@ -741,12 +825,12 @@ try {
         enterPhase('Green')
         const testPrint = await fingerprint(workRepoPath, [...redFiles], `${tag}-${round}:tests-before`)
         if (testPrint.error) return { stop: handback(false, 'green', `${what}: Red's test files could not be fingerprinted before Green round ${round}: ${testPrint.error}`, {}) }
-        const g = await workflow('agent-teams-workforce:tdd-green', {
+        const g = await settleWorkflow('agent-teams-workforce:tdd-green', {
           contract,
           red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
           implementer,
           implementers: implementersOf(green),
-          feedback: greenFeedback,
+          feedback: `${greenFeedback}${acceptedTestDecisions.size ? `\n\nAccepted test-author rulings (retain these unless new evidence warrants reopening):\n${JSON.stringify([...acceptedTestDecisions.values()])}` : ''}`,
         })
         if (g && g.ledger) runLedger.push(g.ledger)
         if (!g || g.dispatchFailed) {
@@ -792,7 +876,7 @@ try {
         const issues = list(g.testIssues)
         if (issues.length) {
           enterPhase('Red')
-          const updated = await workflow('agent-teams-workforce:tdd-red', {
+          const updated = await settleWorkflow('agent-teams-workforce:tdd-red', {
             contract,
             testIssues: issues,
             red: { testFiles: [...redFiles] },
@@ -802,6 +886,12 @@ try {
           if (!updated || updated.dispatchFailed) {
             return { stop: handback(false, stageOf('red', updated), `red (update): ${(updated && updated.reason) || 'the Red update returned nothing'}`, { green: g, red: updated, issues }) }
           }
+          const rulingCheck = checkTestDecisions(issues, updated.decisions)
+          if (rulingCheck.problems.length) {
+            return { stop: handback(false, 'red-decisions-incomplete', `red (update): ${rulingCheck.problems.join('; ')}; return one justified disposition for each requested test ID before Green continues`, { green: g, red: updated, issues, acceptedTestDecisions: [...acceptedTestDecisions.values()] }) }
+          }
+          for (const decision of rulingCheck.decisions) acceptedTestDecisions.set(decision.testId, decision)
+          runLedger.push({ phase: 'red:test-rulings', round: `${tag}-${round}`, decisions: rulingCheck.decisions })
           addRedFiles(updated)
           redUpdated = true
           run = await runSuite(`${tag === 'green' ? '' : `${tag}-`}red-update-${round}`)
@@ -825,7 +915,7 @@ try {
         if (round >= MAX_GREEN_ROUNDS) {
           return { stop: handback(false, 'green', `${what}: the suite is not green after ${round} Green round(s): ${run.summary || `exit ${run.exitCode}`}`, { green: g, run }) }
         }
-        greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author has ruled on the tests you named; their decisions are in the tests now.' : ''}\n${runText(run)}${baselineNote}`
+        greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author ruled on the named tests; the exact accepted decisions are attached below.' : ''}\n${runText(run)}${baselineNote}`
         runLedger.push({
           phase: 'retry:green',
           round: `${tag}-${round + 1}`,
@@ -839,7 +929,7 @@ try {
 
     // ── Refactor: ends green, refactored or restored to its snapshot ──
     enterPhase('Refactor')
-    const refactor = await workflow('agent-teams-workforce:tdd-refactor', { contract, green })
+    const refactor = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract, green })
     if (refactor && refactor.ledger) runLedger.push(refactor.ledger)
     if (!refactor || refactor.dispatchFailed) {
       return handback(false, stageOf('refactor', refactor), `refactor: ${(refactor && refactor.reason) || 'the Refactor phase returned nothing'}`, { refactor })
@@ -854,7 +944,7 @@ try {
       if (!snapshot) {
         return handback(false, 'refactor', `refactor: the suite is red after the refactor and the refactor recorded no snapshot to restore: ${refactorRun.summary || `exit ${refactorRun.exitCode}`}`, { refactor, run: refactorRun })
       }
-      restored = await workflow('agent-teams-workforce:tdd-refactor', { contract, restoreTo: snapshot })
+      restored = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract, restoreTo: snapshot })
       if (!restored || restored.dispatchFailed || restored.restored !== true) {
         return handback(false, stageOf('refactor', restored), `refactor: the suite is red after the refactor and the tree could not be restored to ${snapshot}`, { refactor, restored, run: refactorRun })
       }
@@ -928,7 +1018,7 @@ ${audit.violations.map(findingText).join('\n')}${baselineNote}`
     }
 
     enterPhase('Documentation')
-    const docs = await workflow('agent-teams-workforce:documentation', { contract, green })
+    const docs = await settleWorkflow('agent-teams-workforce:documentation', { contract, green })
     if (docs && docs.ledger) runLedger.push(docs.ledger)
 
     enterPhase('Commit')
@@ -936,7 +1026,7 @@ ${audit.violations.map(findingText).join('\n')}${baselineNote}`
     if (!validRun(finalRun) || finalRun.exitCode !== 0) {
       return handback(false, stageOf('commit', finalRun), `commit: the final suite run did not exit 0 (${(finalRun && (finalRun.summary || `exit ${finalRun.exitCode}`)) || 'no result'}), so nothing was committed`, { run: finalRun })
     }
-    const committed = await workflow('agent-teams-workforce:settle', {
+    const committed = await settleWorkflow('agent-teams-workforce:settle', {
       repoPath: workRepoPath,
       commitOnly: true,
       branch: workspace.branch || null,
@@ -980,4 +1070,13 @@ ${audit.violations.map(findingText).join('\n')}${baselineNote}`
   const detailPath = persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   if (result) result.detailPath = detailPath || null
 }
-return result
+return dispatchOutcome(result)
+
+async function guardedAgent(prompt, options) {
+  if (dispatchInterruption) return null
+  try { return await agent(prompt, options) } catch (err) {
+    const plan = dispatchRetry(err, (options && options.label) || 'agent', 1, 0, dispatchPolicy(options), false)
+    if (plan.interruption) dispatchInterruption = plan.interruption
+    throw err
+  }
+}

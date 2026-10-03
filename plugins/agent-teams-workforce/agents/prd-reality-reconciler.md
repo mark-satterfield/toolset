@@ -59,6 +59,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Acceptance Criteria:** Every placed item appears exactly once and no other item appears; every status is one of the five; every `add`, `modify`, `remove` and `done` cites a `file:line` on `main` you read; every `planned-elsewhere` names its bead in `plannedBy`; every UI item cites the artifact it was resolved against at the highest authority level available; no artifact was created or modified other than the result file the brief names.
 - **Anti-Goals:** Marking an item `done` because the repository "looks like" it has the element; marking an item `add` without searching for it; reading what is deployed instead of the code on `main`; settling for the loose mock without first checking the bundle; softening a finding in either direction to be agreeable.
 
+## Carry evidence into detailing
+
+Consumed by: specification authors and task decomposition through the saved detailing file. In per-repository detailing mode, reuse the supplied survey's relevant evidenceRefs and preserve exact repository, main commit, file:line and originating obligation/claim IDs in each item's existing evidence strings. Record what is established, the remaining gap and any changed revision or unanswered question requiring a targeted source read. Carry historical citations forward when refreshing changed evidence; no fresh fleet survey or invented revision. Survey mode retains the separate scope and output contract below.
+
 ## The architecture survey
 
 The architecture step dispatches you once per Epic, before anyone designs, to SURVEY rather than to inventory one repository. The brief says which job it is.

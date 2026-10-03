@@ -6,15 +6,44 @@ export const meta = {
     { title: 'Place and provision', detail: 'the polyrepo-steward places each delta item in a repository and creates the new repositories the approved target names' },
   ],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 
 const dispatchFailures = []
 
 async function run(prompt, opts) {
+  if (dispatchInterruption) return null
   let message = 'returned nothing'
   try {
     const out = await agent(prompt, opts)
     if (out) return out
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     message = String((err && err.message) || err).slice(0, 300)
   }
   dispatchFailures.push({ label: opts.label, agentType: opts.agentType || null, phase: opts.phase, message })
@@ -65,10 +94,10 @@ const died = (phaseName) => {
 }
 
 if (!hasText(delta.deltaDir) || !hasText(delta.targetDir)) {
-  return { ...fail('no approved target and delta were supplied: the span is the repositories the delta changes'), stage: 'input', deterministicFailure: true }
+  return dispatchOutcome({ ...fail('no approved target and delta were supplied: the span is the repositories the delta changes'), stage: 'input', deterministicFailure: true })
 }
 if (!items.length) {
-  return { ...fail(`the delta at ${delta.deltaDir} lists no item: depscore.py arch-delta found no element in its views' \`shows\``), stage: 'input', deterministicFailure: true }
+  return dispatchOutcome({ ...fail(`the delta at ${delta.deltaDir} lists no item: depscore.py arch-delta found no element in its views' \`shows\``), stage: 'input', deterministicFailure: true })
 }
 
 phase('Place and provision')
@@ -170,7 +199,7 @@ Every item appears exactly once: in one placement or in noCode. Change nothing i
 )
 
 if (!placed) {
-  return fail('the polyrepo-steward returned no placement, so the repositories the delta changes were not established.', died('Place and provision'))
+  return dispatchOutcome(fail('the polyrepo-steward returned no placement, so the repositories the delta changes were not established.', died('Place and provision')))
 }
 
 const known = new Set(items.map((i) => i.id))
@@ -209,10 +238,10 @@ const faults = [
   creationFailures.length ? `not created: ${creationFailures.map((f) => `${f.proposedName} (${f.error})`).join('; ')}` : '',
 ].filter(Boolean)
 if (faults.length) {
-  return fail(`the placement of the delta items is incomplete — ${faults.join('; ')}`, { placements, noCode, createdRepos, creationFailures })
+  return dispatchOutcome(fail(`the placement of the delta items is incomplete — ${faults.join('; ')}`, { placements, noCode, createdRepos, creationFailures }))
 }
 if (!repos.length) {
-  return fail('the polyrepo-steward placed the delta in no repository: every item was recorded as having no code in this project.', { noCode, createdRepos, creationFailures })
+  return dispatchOutcome(fail('the polyrepo-steward placed the delta in no repository: every item was recorded as having no code in this project.', { noCode, createdRepos, creationFailures }))
 }
 
 log(
@@ -221,7 +250,7 @@ log(
     `${noCode.length ? `; ${noCode.length} item(s) with no code here` : ''}.`
 )
 
-return {
+return dispatchOutcome({
   ok: true,
   repos,
   placements,
@@ -241,4 +270,4 @@ return {
     createdRepoCount: createdRepos.length,
     ok: true,
   },
-}
+})

@@ -67,6 +67,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
+## Preserve implementation evidence and bounded repairs
+
+Consumed by: the criteria writer after contract/data-model authoring, and task decomposition through the saved spec documents. Retain exact repository/commit/file:line provenance and linked delta/TRD obligation IDs from the supplied detailing in existing spec sections. Reuse sufficient unchanged evidence; explain the changed revision or unanswered question before targeted source reads. For a directed UI citation repair, read the existing saved document, repair the named gaps and affected references, and preserve valid API/event/error/UI content, decisions and provenance. Return the complete artifact with its unchanged portions retained.
+
 ## Cite the architecture you designed against
 
 Return `decisionIds` and carry the same list in the document's YAML frontmatter as

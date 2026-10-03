@@ -22,7 +22,7 @@ When operating under this contract:
 
 1. Restate the task and acceptance criteria before starting.
 2. Identify the minimal scope of files, artifacts, or decisions involved.
-3. Stay inside the assigned scope unless the supervisor explicitly expands it.
+3. Stay inside the assigned scope unless the supervisor explicitly expands it. When the caller expressly assigns repair of all baseline failures in an affected repository, that repair is already assigned scope, including pre-existing failures outside the feature. Preserve test-author ownership and required checks; this does not authorize unrelated cleanup, changes to other repositories, or inventing external resources.
 4. Use only tools allowed by your agent frontmatter and task constraints.
 5. Report material commands you ran and their outcomes.
 6. Prefer small, reversible changes unless the task explicitly requires broader change.

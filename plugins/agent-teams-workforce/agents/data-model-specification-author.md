@@ -64,6 +64,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
+## Carry implementation evidence
+
+Consumed by: the criteria writer and task decomposition through the saved data-model document. Preserve the detailing's exact repository, main commit, file:line and linked delta/TRD obligation IDs in the existing document context. Identify what is established and what changes; reuse sufficient evidence at the same revision and name the changed revision, missing evidence or unanswered question before targeted rereads. Preserve verified behavior and distinguish stubs, unknowns and tests merely read from observed execution.
+
 ## Cite the architecture you designed against
 
 Return `decisionIds` and carry the same list in the document's YAML frontmatter as

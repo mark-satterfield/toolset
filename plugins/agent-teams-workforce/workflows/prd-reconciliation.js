@@ -4,6 +4,33 @@ export const meta = {
     'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere also names the open bead that plans it), gives each ui item its design source — bundle (a single-artifact cds bundle the owner supplied in the packages directory packages it; the newest bundle of a kind and slug is the supplied one), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design) ; a bundle or cds item also names its artifact (kind and slug, as a bundle.json names it), so a mockup supplied later is found when the Task is built — and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. The session saves the detailing as recon-<slug>.json and returns no item content; depscore.py recon-facts checks the saved file on disk and returns only the facts the callers branch on (the ids that make work, the ids that do not, each ui work item\'s design source with the bundle and build spec of a bundle item, whether dependencies are current), and the callers hand the file path to the sessions that read it. A saved result is replayed through the same check instead of dispatching the session; a saved file that cannot be read or is not a usable detailing stops the run, naming the file, and the repository is never detailed again behind it.',
   phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -11,6 +38,7 @@ function dispatchDeaths(...phases) {
 }
 // Runs agent(); returns its result, or null after recording the failure in dispatchFailures.
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -20,6 +48,7 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -70,11 +99,11 @@ const replayFile = a.replay && a.replay.files && a.replay.files.recon
 const replayPath = typeof replayFile === 'string' && replayFile.startsWith('/') ? replayFile : null
 
 const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true, headline: `Detailing refused its input: ${why}`, reason: why, error: why })
-if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
-if (!hasText(delta.deltaDir)) return refuse('no delta supplied: delta.deltaDir names the views the items come from')
-if (!placed.length) return refuse(`no delta item is placed in ${repos[0]}`)
-if (!reconPath) return refuse(`no artifact directory and slug were supplied for ${repos[0]}: the detailing exists only as recon-<slug>.json in the Epic's artifact directory, which the sessions downstream read by path`)
-if (!depscorePath) return refuse('no absolute depscore.py path was supplied in `depscore`: depscore.py recon-facts reads the saved detailing')
+if (repos.length !== 1) return dispatchOutcome(refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`))
+if (!hasText(delta.deltaDir)) return dispatchOutcome(refuse('no delta supplied: delta.deltaDir names the views the items come from'))
+if (!placed.length) return dispatchOutcome(refuse(`no delta item is placed in ${repos[0]}`))
+if (!reconPath) return dispatchOutcome(refuse(`no artifact directory and slug were supplied for ${repos[0]}: the detailing exists only as recon-<slug>.json in the Epic's artifact directory, which the sessions downstream read by path`))
+if (!depscorePath) return dispatchOutcome(refuse('no absolute depscore.py path was supplied in `depscore`: depscore.py recon-facts reads the saved detailing'))
 
 phase('Detailing')
 
@@ -125,12 +154,12 @@ let resumed = false
 if (replayPath) {
   const read = await readFacts(replayPath, 'replay:recon-facts')
   if (read.error) {
-    return stopped('detailing-replay', `The saved detailing ${replayPath} of ${repos[0]} could not be read: ${read.error}${REDO}.`, {
+    return dispatchOutcome(stopped('detailing-replay', `The saved detailing ${replayPath} of ${repos[0]} could not be read: ${read.error}${REDO}.`, {
       file: replayPath,
       ...(read.dispatchFailed ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Detailing') } : {}),
-    })
+    }))
   }
-  if (read.facts.ok !== true) return unusable(read.facts, replayPath, 'detailing-replay', REDO)
+  if (read.facts.ok !== true) return dispatchOutcome(unusable(read.facts, replayPath, 'detailing-replay', REDO))
   facts = read.facts
   resumed = true
   log(`Detailing replayed from ${replayPath} (${facts.itemCount} item(s), ${facts.bytes} bytes on disk)`)
@@ -156,9 +185,9 @@ let bundles = []
 if (!facts && uiCheck) {
   const listed = await listBundles()
   if (listed.error) {
-    return stopped('detailing-bundles', `The cds bundles in ${packagesDir} could not be listed for ${repos[0]}: ${listed.error}.`, {
+    return dispatchOutcome(stopped('detailing-bundles', `The cds bundles in ${packagesDir} could not be listed for ${repos[0]}: ${listed.error}.`, {
       ...(listed.dispatchFailed ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Detailing') } : {}),
-    })
+    }))
   }
   bundles = listed.bundles
   log(`Detailing of ${repos[0]}: ${bundles.length} supplied cds bundle(s)${packagesDir ? ` in ${packagesDir}` : ' (no packages directory)'}`)
@@ -196,6 +225,8 @@ Give every item above exactly one entry, with one status:
 - remove   — the delta removes the element and the code still holds it. \`from\` is what the code holds; \`to\` is "removed".
 - done     — the code on \`main\` already holds the element as the delta shows it. \`from\` and \`to\` are both that state.
 - planned-elsewhere — an open bead of another Epic (a Story or Task planned and not built) already plans this change. Name it in \`plannedBy\` (the bead id; read beads with \`bd list\`, \`bd show\`, \`bd search\` only).
+
+SOURCE EVIDENCE HANDOFF. ${hasText(a.surveyPath) ? `Use relevant entries from the existing survey ${a.surveyPath}, including its evidenceRefs (path, heading, repo, revision, url; unused fields empty).` : 'No survey path was supplied; use the target/delta and bounded source evidence, identifying any unknowns.'} Resolve the exact main commit in this repository once and retain it with the repository path and file:line in each item's existing evidence strings, linked to that item's id and the originating claim/coverage or TRD requirement IDs when supplied. Keep cited document headings or URL/retrieval revision when relevant. Reuse unchanged evidence sufficient for the status; before another read, name the changed revision, unsupported claim or unanswered question in that item's from/evidence. When main changed, check the cited files/integration dependencies that can affect that item; do not resurvey unrelated source. Legacy citations without a revision require a targeted freshness check, not a fabricated commit. Preserve existing working/stub/absent/unknown distinctions and historical evidence.
 
 Cite evidence for every status in \`evidence\`: a \`file:line\` on \`main\` you read. For \`add\`, cite the file and line where the element attaches (the route table, the stack, the module that will hold it). A \`planned-elsewhere\` item carries its bead id in \`plannedBy\` and, like every status, a \`file:line\`: where the planned change attaches in the code on \`main\`. An item with no citation fails the run.
 
@@ -295,21 +326,21 @@ Determine whether any upstream contract, shared schema, event, library version, 
 if (!facts) {
   if (!session) {
     const deaths = dispatchDeaths('Detailing')
-    return stopped('detailing', `The detailing session for ${repos[0]} returned nothing, so the repository was not detailed (${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}).`, {
+    return dispatchOutcome(stopped('detailing', `The detailing session for ${repos[0]} returned nothing, so the repository was not detailed (${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}).`, {
       dispatchFailed: true,
       dispatchFailures: deaths,
-    })
+    }))
   }
   if (session.saved !== true) {
-    return stopped('detailing-save', `The detailing session for ${repos[0]} did not save ${reconPath}: ${hasText(session.error) ? session.error.trim().slice(0, 600) : 'it reported saved=false and gave no reason'}.`)
+    return dispatchOutcome(stopped('detailing-save', `The detailing session for ${repos[0]} did not save ${reconPath}: ${hasText(session.error) ? session.error.trim().slice(0, 600) : 'it reported saved=false and gave no reason'}.`))
   }
   const read = await readFacts(reconPath, 'detail:recon-facts')
   if (read.error) {
-    return stopped('detailing-read', `The detailing of ${repos[0]} was saved to ${reconPath} but could not be read back: ${read.error}.`, {
+    return dispatchOutcome(stopped('detailing-read', `The detailing of ${repos[0]} was saved to ${reconPath} but could not be read back: ${read.error}.`, {
       ...(read.dispatchFailed ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Detailing') } : {}),
-    })
+    }))
   }
-  if (read.facts.ok !== true) return unusable(read.facts, reconPath, 'detailing')
+  if (read.facts.ok !== true) return dispatchOutcome(unusable(read.facts, reconPath, 'detailing'))
   facts = read.facts
   if (Number(session.itemCount) !== Number(facts.itemCount)) log(`Detailing of ${repos[0]}: the session reported ${session.itemCount} item(s) and ${reconPath} holds ${facts.itemCount}; the file governs.`)
 }
@@ -334,7 +365,7 @@ const detailingFile = resumed ? replayPath : reconPath
 
 log(`Detailing of ${repos[0]} (${detailingFile}): ${facts.itemCount} item(s) — ${STATUSES.map((s) => `${counts[s]} ${s}`).join(', ')}.`)
 
-return {
+return dispatchOutcome({
   ok: true,
   ...(resumed ? { resumed: true } : {}),
   reconPath: detailingFile,
@@ -360,4 +391,4 @@ return {
     ...counts,
     ok: true,
   },
-}
+})

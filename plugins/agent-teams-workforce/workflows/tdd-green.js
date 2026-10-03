@@ -4,48 +4,101 @@ export const meta = {
     'Shared-tail mini — TDD Green. The implementation-lead selects the implementer(s) for the change unless the caller names one; the implementers write the minimum production code in sequence to make the failing tests pass, run the suite, and report Green. An implementer does not change tests: it names a test that contradicts the contract in testIssues, and a missing thing outside the Task in upstreamMissing.',
   phases: [{ title: 'Green', detail: 'minimum code to pass; confirm Green' }],
 }
-// settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
-const DETERMINISTIC_ERROR_TEXT =
-  /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
-const TRANSIENT_ERROR_TEXT =
-  /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
-const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
-function failureCause(err) {
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
   const e = err && typeof err === 'object' ? err : {}
-  const text = String((e && e.message) || err || '')
-  if (DETERMINISTIC_ERROR_TEXT.test(text)) return 'deterministic'
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
   const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
-    .map((v) => Number(v))
-    .find((v) => Number.isFinite(v) && v >= 100 && v < 600)
-  if (Number.isFinite(status) && TRANSIENT_STATUS.has(status)) return 'transient'
-  if (TRANSIENT_ERROR_TEXT.test(text)) return 'transient'
-  return 'deterministic'
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
 }
-function transientWaitMs(name, attempt) {
-  const scheduled = Math.min(300000, 5000 * Math.pow(3, Math.max(0, attempt - 1)))
-  let h = 2166136261
-  const key = `${name}#${attempt}`
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
-  return Math.round(scheduled * (0.5 + 0.5 * ((h >>> 0) / 4294967296)))
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
 }
-const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
+function failureCause(err) { return dispatchFailureCause(err) }
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.retryPolicy
+  delete call.schemaName
+  delete call.rethrow
   const name = o.label || o.agentType || 'agent'
+  const policy = dispatchPolicy(o)
+  const mine = []
+  let waitedMs = 0
   for (let attempt = 1; ; attempt++) {
+    if (dispatchInterruption) return null
     try {
-      const out = await agent(prompt, o)
-      if (!out) log(`${name}: returned nothing`)
-      return out || null
+      const out = await agent(prompt, call)
+      if (out) {
+
+        return out
+      }
+
+      log(name + ': returned nothing')
+      return null
     } catch (err) {
-      const message = String((err && err.message) || err).slice(0, 300)
-      if (failureCause(err) !== 'transient' || (!SETTLE_CAN_WAIT && attempt >= 3)) {
-        log(`${name}: failed — ${message}`)
+      const plan = dispatchRetry(err, name, attempt, waitedMs, policy, typeof setTimeout === 'function')
+      const message = String((err && err.message) || err)
+
+      if (!plan.retry) {
+        if (plan.interruption) dispatchInterruption = plan.interruption
+        log(name + ': stopped (' + plan.cause + ') — ' + message)
+        if (o.rethrow && !plan.interruption) throw err
         return null
       }
-      const wait = transientWaitMs(name, attempt)
-      log(`${name}: transient failure on attempt ${attempt}, retrying in ${Math.round(wait / 1000)}s — ${message}`)
-      if (SETTLE_CAN_WAIT) await new Promise((resolve) => setTimeout(resolve, wait))
+      waitedMs += plan.wait
+      log(name + ': transient failure; retry ' + (attempt + 1) + '/' + policy.maxAttempts + ' in ' + Math.round(plan.wait / 1000) + 's — ' + message.slice(0, 160))
+      await new Promise((resolve) => setTimeout(resolve, plan.wait))
     }
   }
 }
@@ -175,6 +228,11 @@ const infraBlock = (() => {
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()
 
+// Consumed by both selector and implementer prompts; only an explicit caller grants this scope.
+const scopeBlock = c.baselineRepairScope === 'affected-repository'
+  ? `\n\nASSIGNED REPAIR SCOPE: repair ALL baseline suite failures in the affected repository ${repo}, even outside this Task's feature. Diagnose and fix repository code/configuration needed for those failures; this is authorized work, not scope expansion. Preserve accepted behavior and published contracts. Test changes remain owned by Red through testIssues. Do not do unrelated cleanup or modify other repositories. Missing external resources or authority remain upstreamMissing with evidence.`
+  : ''
+
 const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}${
   beadDescription ? `\n\n${beadDescription}` : ''
 }${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}${cdsBlock}${infraBlock}
@@ -182,7 +240,7 @@ const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || 
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 ${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).join('\n')}\n` : ''}
 Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}
-Red evidence${redEvidence.length > RED_EVIDENCE_CHARS ? ` (first ${RED_EVIDENCE_CHARS} characters)` : ''}: ${redEvidence.slice(0, RED_EVIDENCE_CHARS) || 'n/a'}`
+Red evidence${redEvidence.length > RED_EVIDENCE_CHARS ? ` (first ${RED_EVIDENCE_CHARS} characters)` : ''}: ${redEvidence.slice(0, RED_EVIDENCE_CHARS) || 'n/a'}${scopeBlock}`
 
 const suiteCommand = str(c.suiteCommand)
 const suiteBlock = suiteCommand
@@ -194,14 +252,24 @@ ${repo}`
 
 phase('Green')
 
+// Routing is a required contract, never an implicit chassis default.
+function validImplementers(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((name) => IMPLEMENTER_ROSTER.includes(name))
+    ? [...new Set(value)] : null
+}
+function routingFailure(reason) {
+  return { ok: false, dispatchFailed: true, reason: `Implementer routing failed: ${reason}`, changedFiles: [],
+    ledger: { phase: 'green', beadId, chosen: [], mode: 'invalid', ok: false } }
+}
 let implementers
 let selectionMode
-const reused = Array.isArray(a.implementers) ? [...new Set(a.implementers.filter((i) => IMPLEMENTER_ROSTER.includes(i)))] : []
-if (a.implementer) {
-  implementers = [a.implementer]
+if (a.implementer !== undefined && a.implementer !== null && a.implementer !== '') {
+  implementers = validImplementers([a.implementer])
+  if (!implementers) return dispatchOutcome(routingFailure(`unsupported explicit implementer ${String(a.implementer)}; select from the implementation roster`))
   selectionMode = 'selected'
-} else if (reused.length) {
-  implementers = reused
+} else if (a.implementers !== undefined && a.implementers !== null) {
+  implementers = validImplementers(a.implementers)
+  if (!implementers) return dispatchOutcome(routingFailure('saved implementer selection is empty or contains unsupported names; supply a valid selection'))
   selectionMode = 'reused'
 } else {
   const selection = await settleAgent(
@@ -209,7 +277,7 @@ if (a.implementer) {
 
 ${treeBlock}
 
-${taskBlock}`,
+${taskBlock}${a.feedback ? `\n\nKnown suite failures and prior rulings to cover in your selection:\n${a.feedback}` : ''}`,
     {
       label: 'green:select-implementers',
       effort: 'low',
@@ -226,9 +294,9 @@ ${taskBlock}`,
       },
     }
   )
-  const picked = selection && Array.isArray(selection.implementers) ? selection.implementers.filter((i) => IMPLEMENTER_ROSTER.includes(i)) : []
-  implementers = picked.length ? picked : ['chassis-extension-implementer']
-  selectionMode = picked.length ? 'selected' : 'default'
+  implementers = validImplementers(selection && selection.implementers)
+  if (!implementers) return dispatchOutcome(routingFailure('the selector returned no valid complete selection; inspect its failure and supply supported implementers'))
+  selectionMode = 'selected'
 }
 
 const GREEN_SCHEMA = {
@@ -284,7 +352,7 @@ ${treeBlock}
 ${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}${impl === 'cds:cds-ui-author' ? `\n\nYou work in the app repo (direct-build) context: consult the design system, build with the system classes and tokens ${designSource === 'bundle' && cdsBundle ? `the cds bundle at ${cdsBundle} ships` : 'the live cds design system (the project\'s design system config) defines'}, and run audit-against-system on the files you changed before you report.` : ''}
 ${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
-Build to the contract above; do not modify the tests. When a test stands between the code and the contract — it encodes behaviour the contract removes (obsolete-by-contract), it is wrong on its own terms (defect), or its fixtures lack configuration the contract now requires (missing-config) — leave it as it is and name it in \`testIssues\` with the contract reference; the test author rules on it. When the code cannot pass because something outside this Task does not exist yet (a package, stack, parameter, table or service another Task or repository provides), name each such thing in \`upstreamMissing\` with the evidence. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,
+Build to the contract above; do not modify the tests. When a test stands between the code and the contract — it encodes behaviour the contract removes (obsolete-by-contract), it is wrong on its own terms (defect), or its fixtures lack configuration the contract now requires (missing-config) — leave it as it is and name it in \`testIssues\` with the contract reference; the test author rules on it. When the code cannot pass because a genuinely external dependency or resource does not exist yet (a package, stack, parameter, table or service outside the assigned repair scope), name each such thing in \`upstreamMissing\` with the evidence. A fixable defect or configuration inside explicitly authorized repository baseline repair is not upstreamMissing merely because it predates this Task. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,
     {
       label: `green:${impl}`,
       phase: 'Green',
@@ -310,15 +378,15 @@ const ledger = {
 }
 
 if (deadImplementers.length) {
-  return {
+  return dispatchOutcome({
     ok: false,
     dispatchFailed: true,
     reason: `implementer(s) ${deadImplementers.join(', ')} returned nothing`,
     changedFiles,
     ledger: { ...ledger, ok: false },
-  }
+  })
 }
 
 const stoppedAt =
   green.greenConfirmed !== true || green.noRegressions !== true ? [str(green.notes), str(green.evidence).slice(-1500)].filter(Boolean).join(' | ') : ''
-return { ...green, changedFiles, testIssues, upstreamMissing, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }
+return dispatchOutcome({ ...green, changedFiles, testIssues, upstreamMissing, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger })

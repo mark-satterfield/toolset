@@ -61,7 +61,7 @@ The architecture team, and what each member does. The calling workflow gives the
 - **bounded-context-mapper** — Maps domain boundaries and context relationships, returning the context map for the architecture decision.
 - **domain-event-modeler** — Models domain events, flows, and contracts as a concrete artifact.
 - **ubiquitous-language-writer** — Captures each bounded context's ubiquitous language (terms, definitions, usage rules) as a maintained glossary.
-- **architecture-pattern-challenger** — Counters each architecture proposal with a structurally different alternative, never proposing the final design.
+- **architecture-pattern-challenger** — Challenges unsupported mechanisms and simpler sufficient options within the retained target; returns findings, never a counter-design or additional proposal.
 - **architecture-tradeoff-skeptic** — Attacks trade-off ratings in architecture proposals, hunting hidden assumptions and optimistic estimates.
 - **architecture-boundary-guardian** — Validates architecture proposals against the context map and integration constraints to catch cross-context coupling.
 - **cost-impact-reviewer** — Stress-tests cost estimates at 10x, 100x, and 1000x scale to find where each option breaks first.

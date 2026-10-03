@@ -94,9 +94,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import beadgraph
+from archresume import ResumeError, resume_facts
+from archstate import (
+    commit_integration,
+    delta_items,
+    remove_built,
+    remove_target,
+    restore_constraints,
+    snapshot_constraints,
+    snapshot_tree,
+    target_names,
+    tree_diff,
+    write_target,
+)
+from archstate import promote as approve_arch
+from archstate import states as arch_states
+from assesscontext import assess_context, task_context
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
-from assesscontext import assess_context
-from assesscontext import task_context
+from beadwrite import (
+    plan_story_tasks,
+    plan_task_edges,
+    unpersisted,
+    write_all_task_edges,
+    write_story,
+    write_task,
+    write_task_edges,
+)
+from cdsbundles import list_bundles, select_build
 from edgeset import (
     ASSESSED_AT_KEY,
     ELAB_IDENTITY_KEY,
@@ -109,37 +133,12 @@ from edgeset import (
     validate,
     withdraw_edge,
 )
-from beadwrite import (
-    plan_story_tasks,
-    plan_task_edges,
-    unpersisted,
-    write_story,
-    write_task,
-    write_all_task_edges,
-    write_task_edges,
-)
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
-from archstate import promote as approve_arch
-from archstate import (
-    delta_items,
-    commit_integration,
-    remove_built,
-    remove_target,
-    restore_constraints,
-    target_names,
-    snapshot_constraints,
-    snapshot_tree,
-    write_target,
-)
-from archstate import states as arch_states
-from archstate import tree_diff
-from archresume import ResumeError, resume_facts
-from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
-from specui import SpecUiError, spec_ui_check
-from cdsbundles import list_bundles, select_build
 from reconfacts import ReconError, recon_facts
+from scoring import ScoringError, judge_input, plan, record, rubric, score
+from specui import SpecUiError, spec_ui_check
 from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
@@ -813,6 +812,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="architecture.js durable lead and optional justified specialist as JSON",
     )
 
+    arz.add_argument(
+        "--round-plan", default="", help="validated durable round plan JSON"
+    )
+
     atg = sub.add_parser(
         "arch-target",
         help="check an approved draft and write it to target/<subject>/ as in-review; "
@@ -1034,6 +1037,7 @@ def run(args: argparse.Namespace) -> dict:
             roster=args.roster,
             assign=args.assign,
             team=args.proposal_team,
+            plan=args.round_plan,
         )
     if command == "arch-target":
         return head | write_target(
@@ -1148,13 +1152,13 @@ def run(args: argparse.Namespace) -> dict:
             include_closed=args.include_closed,
             epics=epics,
         )
-    if command in ("validate", "apply-edges") and args.edges:
-        if bool(args.epic) == bool(args.task):
-            msg = (
-                "an edge proposal covers exactly one Epic or one Task: "
-                "pass --epic or --task"
-            )
-            raise SequencingError(msg)
+    if (
+        command in ("validate", "apply-edges")
+        and args.edges
+        and bool(args.epic) == bool(args.task)
+    ):
+        msg = "an edge proposal covers exactly one Epic or one Task: pass --epic or --task"
+        raise SequencingError(msg)
     level = "task" if getattr(args, "task", None) else "epic"
     item = args.task if level == "task" else getattr(args, "epic", None)
     if command == "validate":

@@ -1,7 +1,7 @@
 ---
 name: orchestrator-discipline
 description: >-
-  Orchestrator role enforcement for multi-agent workflows. Registers blocking
+  Orchestrator role enforcement for multi-agent workflows. Documents registered
   PreToolUse and PostToolUse guards that stop the orchestrator editing code,
   verifying its own output, dispatching workflows by stale name, absorbing full
   completion payloads, routing domain work to generic agents, or writing into
@@ -35,7 +35,8 @@ This is behavioral guidance, not a new hook or permission to bypass the guards b
 
 ## Enforcement, not advice
 
-Every constraint here is a hook that terminates with exit code 2.
+The blocking guards below terminate with exit code 2. The source-read hook
+records context only and returns exit 0; behavioral guidance is not itself a hook.
 
 This is the design principle, learned the hard way: **a constraint expressed as
 prose is a factor the actor weighs against other pressures, and the actor is the
@@ -105,8 +106,10 @@ Implemented in `hooks/lib/plugin-scope.cjs`.
 
 ## Registered guards
 
-All guards exempt subagent sessions, identified by `agent_id` in the hook input.
-Subagents implement, verify, and run diagnostics — that is their job.
+The orchestrator-role guards listed below exempt subagent sessions, identified
+by `agent_id` in the hook input. Subagents implement, verify, and run diagnostics.
+The separately registered main-worktree guard also binds subagents; the
+elaboration AWS guard has its own phase boundary. Neither is waived here.
 
 | Guard | Fires on | Behavior |
 | --- | --- | --- |
@@ -121,19 +124,21 @@ Subagents implement, verify, and run diagnostics — that is their job.
 
 ## Rules
 
-`rules/CLAUDE.md` is loaded into every session and carries the behavioral layer
-the guards enforce: read permission and prohibition with a falsifiable test,
-delegation constraints with no exemption categories, the investigation
-escalation anti-pattern, the tool use denial protocol, built-in tool
-enforcement, diagnostic command delegation, and epistemic identity scoping for
-the orchestrator role.
+[`rules/CLAUDE.md`](../../rules/CLAUDE.md) is the canonical behavioral authority,
+imported through `AGENT-INSTRUCTIONS.md` by the generated host block. Consult it
+for read boundaries, delegation, denial handling and diagnostic delegation.
+This skill documents hook behavior; it does not register hooks. Registration is
+in `hooks/hooks.json`. No built-in-tool misuse hook is registered.
 
 ## Correct workflow
 
 1. A task arrives. The orchestrator does not read the codebase to understand it.
 2. If current state is needed, dispatch a roster agent with the paths in the
    prompt. The agent reads in its own context and returns a verdict.
-3. If scope changed, present that to the human for a routing decision.
+3. Route already-authorized dependency investigation and repair within the
+   caller's scope, preserving required checks. Ask the human only when the next
+   action needs genuinely missing authority or a policy decision; continue
+   independent authorized work meanwhile.
 4. Dispatch implementation to the workflow that owns the phase, by `scriptPath`.
 5. Take the verdict. Route it to the gate. Do not re-derive it.
 

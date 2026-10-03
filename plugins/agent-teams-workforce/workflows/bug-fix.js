@@ -15,31 +15,66 @@ export const meta = {
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
-// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
-//
-// `agent()` fails in two different ways and the scripts used to conflate them. It
-// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
-// runtime's own retries. It THROWS when a subagent finishes without calling
-// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
-// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
-// tokens and discarded every artifact the run had already paid for.
-//
-// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
-// and it records what the engine's error text loses — that text reads
-// `agent({schema}): subagent completed without calling StructuredOutput`, which names
-// neither the agent, nor the phase, nor the schema, and points at no transcript. The
-// caller receives null, which every call site already handles, and `dispatchFailures`
-// carries the identity of what died, for the `dispatchFailed` report this script owes
-// its caller: a phase whose producing agents died is NOT adjudicated.
-//
-// Each `dispatchFailures` entry ALSO carries the CAUSE — see failureCause below — because
-// a caller that can only see THAT a dispatch produced nothing cannot tell the one failure
-// worth sending again from the many that are not. `failureCauseFor(label)` is how a call
-// site reads it back, and a TRANSIENT cause is waited out inside settleAgent itself, so
-// every dispatch in every script survives an API overload rather than only some of them.
-//
-// This block is identical in every workflow script on purpose. Workflow scripts have no
-// import mechanism, so a shared helper is shared by being the same text everywhere.
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
+}
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
+// Dispatch failures retain their identities and diagnostics; bounded retry policy is below.
 const dispatchFailures = []
 // The dispatch deaths belonging to the named phases (every death when none is named).
 // A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
@@ -67,227 +102,50 @@ function settleTranscript(err, label) {
   if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
   return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
 }
-// ── WHY A DISPATCH FAILED DECIDES WHETHER ANYTHING MAY BE SENT AGAIN ─────────────
-//
-// settleAgent used to collapse every failure into a single null, and that conflation is
-// the same defect that let a destroyed answer look like a dead agent: a call site could
-// see THAT a dispatch produced nothing and never WHY. Two causes need opposite answers,
-// and getting them the same way round is what makes this a classification and not a
-// retry loop wearing a hat.
-//
-// TRANSIENT — an Anthropic API overload (529), a rate limit (429), a quota or token
-// limit, a network timeout. The cause is EXTERNAL and TIME-VARYING, the input was never
-// the problem, and the call that failed produced nothing to pay for. Waiting and sending
-// the same dispatch again therefore has a real reason to come out differently, which is
-// the only thing that ever justifies a second attempt. This is the one case retried here,
-// and it is retried until it clears — see the backoff below. It is never answered by
-// splitting the input: the input was fine, and splitting multiplies calls against an
-// endpoint that is already failing to serve the first one.
-//
-// DETERMINISTIC — a schema rejection, an agent that finished without producing output,
-// anything settled by arithmetic. Re-issuing the identical dispatch against the identical
-// input has NO reason to produce a different result; it is a hope with a token cost, and
-// this project removed exactly those blind retries after they burned tokens to exhaustion
-// on attempts that could not succeed. The only sanctioned re-dispatch is one with
-// materially CHANGED input, such as the same work split into smaller batches.
-//
-// ANYTHING UNRECOGNISED IS DETERMINISTIC, and that direction is deliberate rather than
-// defensive. Guessing "transient" on an unknown error invents a retry that is forbidden
-// and pays for it on every unfamiliar failure; guessing "deterministic" at worst declines
-// a retry that might have worked, and the caller still has its split and its report. The
-// cheap mistake is the one to take.
-//
-// This block is identical in every workflow script, on purpose. Workflow scripts have no
-// import mechanism, so a shared helper is shared by being the same text.
-const DETERMINISTIC_ERROR_TEXT =
-  /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
-const TRANSIENT_ERROR_TEXT =
-  /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
-const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
-function failureCause(err) {
-  const e = err && typeof err === 'object' ? err : {}
-  const text = String((e && e.message) || err || '')
-  // Deterministic markers are matched FIRST, on purpose: a schema rejection whose text
-  // happens to quote a number that also reads as a status code is a schema rejection, and
-  // reading it as an overload would hand it the one retry it must never get.
-  if (DETERMINISTIC_ERROR_TEXT.test(text)) return 'deterministic'
-  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
-    .map((v) => Number(v))
-    .find((v) => Number.isFinite(v) && v >= 100 && v < 600)
-  if (Number.isFinite(status) && TRANSIENT_STATUS.has(status)) return 'transient'
-  if (TRANSIENT_ERROR_TEXT.test(text)) return 'transient'
-  return 'deterministic'
-}
-// The cause recorded for the most recent failure of THIS dispatch. Labels are unique per
-// dispatch — retireFailures already depends on that — so a lane can never read another
-// lane's cause. Null means this label has no recorded failure at all.
+// Account exhaustion interrupts; transport failures use the caller's bounded retry policy.
+function failureCause(err) { return dispatchFailureCause(err) }
 function failureCauseFor(label) {
-  for (let i = dispatchFailures.length - 1; i >= 0; i--) {
-    if (dispatchFailures[i].label === label) return dispatchFailures[i].cause || 'deterministic'
-  }
-  return null
+  const entry = dispatchFailures.slice().reverse().find((item) => item.label === label)
+  return entry ? entry.cause || 'deterministic' : null
 }
-// ── A TRANSIENT FAILURE IS WAITED OUT, NOT COUNTED DOWN ─────────────────────────
-//
-// An API overload is a server-side condition with its own clock. It clears in thirty
-// seconds, or five minutes, or fifteen; nothing this script does shortens it, and a failed
-// call costs nothing, so there is nothing here to conserve by giving up. A run started in
-// the evening must still be running in the morning, having sat out whatever happened at
-// 3am and carried on by itself. So there is NO attempt ceiling and no elapsed-time budget:
-// the wait grows, flattens at five minutes, and repeats at five minutes for as long as the
-// endpoint keeps failing. If you are about to add a maximum, you are re-introducing the
-// defect this replaced — a two-attempt budget that guaranteed a back-to-back second
-// failure and then quit.
-//
-// The schedule: 5s, then triple each time, capped at 300s — 5, 15, 45, 135, 300, 300, …
-// Five seconds is short enough that a brief blip costs seconds rather than minutes; a
-// factor of three reaches the cap on the fifth wait, about eight minutes in, so a genuine
-// outage is at the polite five-minute cadence quickly instead of hammering the endpoint
-// for an hour of doublings.
-//
-// JITTER exists because these lanes run concurrently. Identical waits make every lane that
-// failed together return together, which is the thundering herd arriving at an endpoint
-// that is already struggling. Each wait is therefore 50–100% of the scheduled interval:
-// the growth shape survives, and the lanes spread out.
-//
-// The offset is DERIVED, never drawn. A workflow script cannot draw a random number — a
-// resumed run would draw a different one — and it does not need to: what jitter has to
-// vary across is LANES, not runs. Hashing the dispatch's own identity together with the
-// attempt number gives concurrent lanes different offsets, which is the whole requirement,
-// and gives a resumed run the same one, which is the house rule.
-//
-// THE WAIT IS LOGGED, and that is the point of it being allowed to be this long. Every
-// retry prints the attempt number, the wait about to be taken and the TOTAL time spent
-// waiting so far, so someone reading a log at 3am can tell a run patiently sitting out an
-// outage from a run that is hung.
-const TRANSIENT_BACKOFF_BASE_MS = 5000
-const TRANSIENT_BACKOFF_FACTOR = 3
-const TRANSIENT_BACKOFF_CAP_MS = 300000
-const TRANSIENT_BACKOFF_JITTER = 0.5
-// FNV-1a over the dispatch identity, normalised to [0, 1). Any stable spread would do; this
-// one is four lines and needs nothing the sandbox withholds.
-function settleSpread(text) {
-  let h = 2166136261
-  for (let i = 0; i < text.length; i++) {
-    h = Math.imul(h ^ text.charCodeAt(i), 16777619)
-  }
-  return (h >>> 0) / 4294967296
-}
-function transientWaitMs(name, attempt) {
-  const scheduled = Math.min(
-    TRANSIENT_BACKOFF_CAP_MS,
-    TRANSIENT_BACKOFF_BASE_MS * Math.pow(TRANSIENT_BACKOFF_FACTOR, Math.max(0, attempt - 1))
-  )
-  const spread = settleSpread(`${name}#${attempt}`)
-  return Math.round(scheduled * (1 - TRANSIENT_BACKOFF_JITTER + TRANSIENT_BACKOFF_JITTER * spread))
-}
-// Workflow scripts are a sandbox with no Node API, and the runner guarantees only its seven
-// injected globals, so a timer is probed for rather than assumed.
-//
-// THE NO-CEILING RULE IS CONDITIONAL ON BEING ABLE TO WAIT. Without a timer there is no
-// backoff at all, and an unbounded loop with no wait is not patience — it is a hot loop
-// hammering an endpoint that is already failing, which is worse than stopping. So on a host
-// with no timer the transient retry falls back to a few immediate attempts and then reports
-// the failure, saying in the log exactly why it stopped. Every host this runs on today
-// provides setTimeout; this branch exists so that if one ever does not, the failure mode is
-// a reported stop rather than a spin.
-const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
-const TRANSIENT_ATTEMPTS_WITHOUT_WAIT = 3
-const settleSleep = (ms) =>
-  SETTLE_CAN_WAIT ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts && typeof opts === 'object' ? opts : {}
   const call = { ...o }
+  delete call.retryPolicy
   delete call.schemaName
-  const who = {
-    agentType: o.agentType || null,
-    label: o.label || null,
-    phase: o.phase || null,
-    schema: settleSchemaName(o),
-  }
-  const name = who.label || who.agentType || 'agent'
-  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
-  // The failures THIS call recorded. A dispatch that finally returns after sitting out an
-  // overload did not die, and leaving its transient entries in `dispatchFailures` would
-  // tell the caller's gate that a phase which produced its artifact must not be
-  // adjudicated. They are removed by identity, so a concurrent lane's entries are safe.
+  delete call.rethrow
+  const name = o.label || o.agentType || 'agent'
+  const policy = dispatchPolicy(o)
   const mine = []
-  const fail = (entry) => {
-    dispatchFailures.push(entry)
-    mine.push(entry)
-  }
-  const retireMine = () => {
-    for (const entry of mine) {
-      const at = dispatchFailures.indexOf(entry)
-      if (at >= 0) dispatchFailures.splice(at, 1)
-    }
-    mine.length = 0
-  }
   let waitedMs = 0
   for (let attempt = 1; ; attempt++) {
-    let out = null
+    if (dispatchInterruption) return null
     try {
-      out = await agent(prompt, call)
+      const out = await agent(prompt, call)
+      if (out) {
+        for (const entry of mine) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
+        return out
+      }
+      dispatchFailures.push({ agentType: o.agentType || null, label: o.label || null, phase: o.phase || null, outcome: 'skipped', cause: 'deterministic', attempt, message: null, note: name + ': returned nothing', schema: settleSchemaName(o), transcript: settleTranscript(null, name) })
+      log(name + ': returned nothing')
+      return null
     } catch (err) {
+      const plan = dispatchRetry(err, name, attempt, waitedMs, policy, typeof setTimeout === 'function')
       const message = String((err && err.message) || err)
-      const cause = failureCause(err)
-      fail({
-        ...who,
-        outcome: 'threw',
-        cause,
-        attempt,
-        message: message.slice(0, 300),
-        transcript: settleTranscript(err, name),
-        note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''} (${cause}): ${message.slice(0, 160)}`,
-      })
-      log(`${name}: session ended without a structured result (${cause}, attempt ${attempt}) — ${message.slice(0, 160)}`)
-      if (cause === 'transient' && !SETTLE_CAN_WAIT && attempt >= TRANSIENT_ATTEMPTS_WITHOUT_WAIT) {
-        log(
-          `${name}: TRANSIENT infrastructure failure on attempt ${attempt}, and this host provides no timer, so the dispatch ` +
-            `cannot be spaced out. Stopping rather than spinning against a failing endpoint — re-run once the API has recovered.`
-        )
-        if (o.rethrow) throw err
+      const entry = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null, outcome: 'threw', cause: plan.cause, attempt, message: message.slice(0, 300), note: name + ': ' + message.slice(0, 160), schema: settleSchemaName(o), transcript: settleTranscript(err, name) }
+      dispatchFailures.push(entry)
+      mine.push(entry)
+      if (!plan.retry) {
+        if (plan.interruption) dispatchInterruption = plan.interruption
+        log(name + ': stopped (' + plan.cause + ') — ' + message)
+        if (o.rethrow && !plan.interruption) throw err
         return null
       }
-      if (cause === 'transient') {
-        const wait = transientWaitMs(name, attempt)
-        waitedMs += wait
-        log(
-          `${name}: TRANSIENT infrastructure failure — attempt ${attempt} failed; waiting ${Math.round(wait / 1000)}s ` +
-            `before sending the same dispatch again (${Math.round(waitedMs / 1000)}s spent waiting so far). ` +
-            `This is a server-side condition with no attempt limit here: it keeps retrying, at five minutes apart once the backoff caps, until it clears.`
-        )
-        await settleSleep(wait)
-        continue
-      }
-      // A caller that owns its own failure reporting asks for the throw back, so the real
-      // reason reaches its catch instead of being flattened to "returned no result". Only
-      // a DETERMINISTIC failure ever gets here — a transient one is still being waited out.
-      if (o.rethrow) throw err
-      return null
+      waitedMs += plan.wait
+      log(name + ': transient failure; retry ' + (attempt + 1) + '/' + policy.maxAttempts + ' in ' + Math.round(plan.wait / 1000) + 's — ' + message.slice(0, 160))
+      await new Promise((resolve) => setTimeout(resolve, plan.wait))
     }
-    if (out) {
-      if (waitedMs > 0) {
-        log(`${name}: returned on attempt ${attempt} after ${Math.round(waitedMs / 1000)}s of waiting out a transient failure`)
-      }
-      retireMine()
-      return out
-    }
-    fail({
-      ...who,
-      outcome: 'skipped',
-      // A null with no error text carries no evidence of anything, and an unrecognised cause
-      // is deterministic. It is also the right answer on the merits here: the runtime has
-      // ALREADY exhausted its own retries before it hands back a null, so sending the same
-      // dispatch again is the blind retry, not the recovery.
-      cause: 'deterministic',
-      attempt,
-      message: null,
-      transcript: settleTranscript(null, name),
-      note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
-    })
-    log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
-    return null
   }
 }
 
@@ -364,7 +222,7 @@ const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
 // tree. The bound is run-wide and survives a resume, so a finding that keeps coming back ends
 // the run under the adversarial stage once it is spent.
 const MAX_SECURITY_REPAIRS = a.maxSecurityRepairs || 2
-if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
+if (!bead.id) return dispatchOutcome({ ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 })
 // A Bug is filed against a symptom and often names no repository. Triage is this
 // composite's contract producer, and the repository the defect lives in is one of its
 // findings, located beside the blast radius: with no `bead.repoPath` the run triages first
@@ -465,7 +323,7 @@ let docTrack = null
 let repairDocTrack = null
 let docContract = null
 function startDocTrack(greenArtifact) {
-  return Promise.resolve(workflow('agent-teams-workforce:documentation', { contract: docContract, green: greenArtifact })).catch((e) => {
+  return Promise.resolve(settleWorkflow('agent-teams-workforce:documentation', { contract: docContract, green: greenArtifact })).catch((e) => {
     log(`documentation track failed (non-blocking): ${(e && e.message) || e}`)
     return null
   })
@@ -591,7 +449,7 @@ ${body}
 async function settleRun() {
   if (!settleRepoPath) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
   try {
-    const out = await workflow('agent-teams-workforce:settle', {
+    const out = await settleWorkflow('agent-teams-workforce:settle', {
       repoPath: settleRepoPath,
       prCommand: PR_COMMAND,
       branch: settleBranch,
@@ -845,7 +703,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 
   for (let attempt = 1; attempt <= loopBudget; attempt++) {
     // Announce the START of the attempt. The progress panel cannot tick this phase:
-    // its work happens inside a nested workflow(), whose agents the engine puts in
+    // its work happens inside a nested settleWorkflow(), whose agents the engine puts in
     // their own "▸ <mini>" group rather than counting toward the parent phase. So
     // without this line a phase that is actively running reads as "Not started yet",
     // and only its verdict — logged below, after the fact — ever proves it ran.
@@ -896,7 +754,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
-    const verdict = await workflow('agent-teams-workforce:gate-enforce', { gate, phaseName, criteria, checks, artifact, escalateTargets })
+    const verdict = await settleWorkflow('agent-teams-workforce:gate-enforce', { gate, phaseName, criteria, checks, artifact, escalateTargets })
     // A gate that returned nothing is not asked again with the same artifact and criteria: nothing
     // in its input would differ. The judge never ruled, so this is reported under the environment
     // stage and is not a finding against the phase, whose output stands.
@@ -1041,7 +899,7 @@ async function ruleExhaustedGate(ctx) {
   const unmetOf = (v) => (v ? (v.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [])
   const checkFailed = (v) => !!(v && Array.isArray(v.deterministicChecks) && v.deterministicChecks.some((r) => r && r.met === false))
   const ask = (final) =>
-    workflow('agent-teams-workforce:gate-enforce', {
+    settleWorkflow('agent-teams-workforce:gate-enforce', {
       mode: 'exhaustion',
       noProceed: checkFailed(lastVerdict),
       gate,
@@ -1071,7 +929,7 @@ async function ruleExhaustedGate(ctx) {
       return { ok: false, dispatchFailed: true, dispatchFailures: revised.dispatchFailures || [], reason: revised.reason || `the directed revision of ${phaseName} dispatched nothing`, artifact: revised }
     }
     lastArtifact = revised
-    const verdict = await workflow('agent-teams-workforce:gate-enforce', {
+    const verdict = await settleWorkflow('agent-teams-workforce:gate-enforce', {
       gate,
       phaseName,
       criteria: route && route.criteria,
@@ -1411,7 +1269,7 @@ let contract = null
 if (!repoSupplied) {
   enterPhase('Triage')
   log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''} (no repository supplied; the diagnosis locates it)`)
-  contract = await workflow('agent-teams-workforce:bug-triage', { bead: { ...bead } })
+  contract = await settleWorkflow('agent-teams-workforce:bug-triage', { bead: { ...bead } })
   const triageFault = triageFailure(contract)
   if (triageFault) return triageFault
   const promoted = needsPrdExit(contract)
@@ -1473,7 +1331,7 @@ if (contract) contract = await adoptTriage(contract)
 // tree the caller pointed at — which twice meant `main` in a main working tree, the
 // one place the project's own rules forbid, with no branch for settle to push.
 enterPhase('Workspace')
-const workspace = await workflow('agent-teams-workforce:workspace', {
+const workspace = await settleWorkflow('agent-teams-workforce:workspace', {
   repoPath: bead.repoPath,
   beadId: bead.id,
   branchPrefix: 'fix',
@@ -1519,7 +1377,7 @@ const workBead = { ...bead, repoPath: workRepoPath }
 if (!contract) {
   enterPhase('Triage')
   log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-  const fresh = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
+  const fresh = await settleWorkflow('agent-teams-workforce:bug-triage', { bead: workBead })
   const triageFault = triageFailure(fresh)
   if (triageFault) return triageFault
   const promotedFresh = needsPrdExit(fresh)
@@ -1634,7 +1492,7 @@ const redResult = cpGreen !== undefined
   // report no gaps, and the confirm-existing branch would hand the gate back the very
   // test it just rejected — through a code path the gate's objection never reaches.
   // A re-run after a rejection authors; it does not shop for what it already wrote.
-  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract, feedback, skipDiscovery: !!(loop && loop.attempt > 1), ...(loop && loop.attempt > 1 && loop.priorArtifact ? { red: loop.priorArtifact } : {}) }),
+  phaseFn: (feedback, loop) => settleWorkflow('agent-teams-workforce:tdd-red', { contract, feedback, skipDiscovery: !!(loop && loop.attempt > 1), ...(loop && loop.attempt > 1 && loop.priorArtifact ? { red: loop.priorArtifact } : {}) }),
 })
 
 // The Green gate's deterministic checks, named once. The Deploy phase can send the run back
@@ -1668,7 +1526,7 @@ async function runGreen(phaseName, extraFeedback) {
     criteria: GREEN_CRITERIA,
     checks: GREEN_CHECKS,
     escalateTargets: ['triage'],
-    phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-green', {
+    phaseFn: (feedback, loop) => settleWorkflow('agent-teams-workforce:tdd-green', {
       contract, red: redResult.artifact, implementer: a.implementer,
       // A retry reuses the implementers the previous attempt selected, and so does every later
       // Green of this run: the change is the same change. An explicit implementer still wins
@@ -1747,7 +1605,7 @@ refactor = await gateLoop({
     const prior = loop && loop.priorArtifact
     const found = prior ? (Array.isArray(prior.findings) ? prior.findings : (prior.review && prior.review.findings) || []) : []
     const findings = found.length ? `\n\nWhy the previous refactor was undone:\n${found.join('\n')}` : ''
-    return workflow('agent-teams-workforce:tdd-refactor', {
+    return settleWorkflow('agent-teams-workforce:tdd-refactor', {
       contract, green: green.artifact, feedback: feedback ? `${feedback}${findings}` : '',
       ...(resumeSnap ? { snapshotTree: resumeSnap.tree, restoreFirst: true } : snapshotRecord ? { snapshotRecord } : {}),
     })
@@ -1806,7 +1664,7 @@ const runIntegration = async (phaseName, seed) => {
     criteria: [],
     checks: [{ field: 'passed', equals: true, label: 'the integration/contract/E2E suites passed' }],
     escalateTargets: ['green', 'red', 'triage'],
-    phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
+    phaseFn: (feedback) => settleWorkflow('agent-teams-workforce:integration', {
       contract,
       green: green.artifact,
       feedback: [seed, feedback].filter(Boolean).join('\n\n'),
@@ -1889,7 +1747,7 @@ const runAdversarial = (phaseName, seed, priorRulings) => gateLoop({
   criteria: [],
   checks: [{ field: 'constitutiveOpen', equals: 0, label: 'no confirmed constitutive (security) finding is open' }],
   escalateTargets: ['green', 'triage'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:adversarial', {
+  phaseFn: (feedback) => settleWorkflow('agent-teams-workforce:adversarial', {
     contract,
     green: green.artifact,
     feedback: [seed, feedback].filter(Boolean).join('\n\n'),
@@ -2042,7 +1900,7 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
       { field: 'smokePassed', equals: true, label: 'the smoke tests passed against the deployed dev endpoints' },
     ],
     escalateTargets: ['integration', 'green'],
-    phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
+    phaseFn: (feedback) => settleWorkflow('agent-teams-workforce:deploy', {
       contract,
       green: green.artifact,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
@@ -2249,4 +2107,4 @@ return {
   // A COMPLETED run deletes its checkpoint — resuming finished work replays it.
   if (result && result.ok === true) await cpDelete()
 }
-return result
+return dispatchOutcome(result)

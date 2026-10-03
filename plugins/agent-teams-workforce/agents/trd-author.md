@@ -63,6 +63,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 Use the supplied survey and architecture delta to locate existing owners. Inspect relevant available source/contracts/tests within this authoring pass where needed; do not add a fleet survey. In the existing TRD summary/context distinguish supported implementation, gaps, stubs and unknowns with citations. Requirements define the desired behavior; code is neither automatically correct nor a reason for wholesale replacement. State incremental obligations on existing elements, preserve evidenced behavior and compatible contracts, and surface contradictions with the approved target. A PRD or absent implementation does not by itself justify a new service, repository or product feature.
 
+## Carry source evidence into the TRD
+
+Consumed by: specification authors and the per-repository detailing — they read the TRD context to distinguish established implementation from remaining obligations. Use the supplied survey path and its evidenceRefs (path, heading, repo, revision, url), preserving exact repository/commit/file or document-heading provenance and the originating claim/coverage IDs alongside TRD requirement IDs in existing context. Keep implementation evidence separate from requirement authority. Reuse sufficient unchanged evidence; name a changed revision, missing evidence or unanswered question before a targeted reread. Legacy citations without revisions stay unverified until checked; never invent revisions or turn a test citation into execution evidence.
+
 ## Operating Rules
 
 - No self-tasking: report newly discovered work (PRD gaps, missing architecture coverage, cross-requirement inconsistencies) to the calling workflow; never perform or assign it yourself.

@@ -1,12 +1,39 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item stating its design source: a bundle item (the owner supplied a cds bundle) cites that bundle\'s spec/build-spec.md and its resolved Section IDs; a cds item states that it is designed with the CDS design system; a none item states that it changes no design. The script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has its section and that every bundle item cites the build spec the detailing resolved and its Section IDs; a gap sends the contracts back to their maker once, and a second gap fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — Spec authoring. Contract and data-model makers run in parallel, then the existing criteria maker reads their completed documents after UI citation repair to finish the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. For a repository with `ui` work items the contracts maker also returns uiSpec, one section per item stating its design source: a bundle item (the owner supplied a cds bundle) cites that bundle\'s spec/build-spec.md and its resolved Section IDs; a cds item states that it is designed with the CDS design system; a none item states that it changes no design. The script checks, in that return and in the saved spec document (depscore.py spec-ui-check reads the file), that every item has its section and that every bundle item cites the build spec the detailing resolved and its Section IDs; a gap sends the contracts back to their maker once, and a second gap fails the run at stage ui-citation. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
-    { title: 'Author specs', detail: 'three maker sessions author the spec artifacts in parallel' },
+    { title: 'Author specs', detail: 'contracts and data model in parallel, then criteria from their completed documents after UI repair' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
   ],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -14,6 +41,7 @@ function dispatchDeaths(...phases) {
 }
 // Runs agent(); returns its result, or null after recording the failure in dispatchFailures.
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -23,6 +51,7 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -202,6 +231,7 @@ function ctxBlock(s, trd, constraints, arch, detailingPath) {
     s.service ? `Owning service: ${s.service}` : '',
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
+    'Carry implementation provenance through these existing documents, alongside the obligation it supports; do not invent another evidence artifact or substitute source code for the requirement authority.',
     "The architecture reaches this spec through the TRD: the owner's constraints (arc42 section 2) and the patterns the effective views establish for the API type, the runtime libraries, the event path and the data stores. Follow them as the TRD states them; a spec that departs from an established pattern states its reason and evidence.",
     arch && hasText(arch.deltaDir)
       ? `THE APPROVED TARGET is ${arch.targetDir || '(the folder above the delta)'}, and the change alone, its delta, is ${arch.deltaDir}. Read the delta views for the items listed below, and the target views they need: the spec specifies the change they show for this repository, and nothing the delta does not change.`
@@ -225,7 +255,8 @@ function ctxBlock(s, trd, constraints, arch, detailingPath) {
 /** Returns the reading scope rule, plus the decision-citation rule when `cites` is true. */
 function makerRules({ cites }) {
   return [
-    'READING SCOPE: the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories. Prefer one targeted search over a directory walk, and never re-open a file you have already read.',
+    'READING SCOPE: the packet above is your source, and the repository named above is the ONLY repository whose implementation you may read — never survey other repositories. Read the supplied architecture/spec artifact paths as required. Prefer targeted searches; reopen a previously read file only when a changed revision, repair or named unanswered question makes that necessary.',
+    'EVIDENCE CONTINUITY: in the existing specification context and relevant sections, preserve the detailing/TRD repository path, exact source commit, file:line or heading and linked delta/TRD obligation IDs. Reuse sufficient evidence at the same main revision. State the already-established fact and the changed revision, missing evidence or unanswered question before further source reads; refresh only affected paths and integration dependencies. A legacy citation without a revision is unverified until a targeted check, not an invitation to resurvey. Preserve historical citations and distinguish working behavior, stubs, missing integration and unknowns; a test citation never claims execution.',
     'EXISTING REPOSITORY: use the supplied detailing and its file:line evidence to inspect only the entrypoints, implementation, contracts and focused tests relevant to this spec. Distinguish supported behavior, incomplete wiring, stubs and unknowns; code presence does not prove correctness, and test source does not prove a passing or live-runtime result. Specify the delta from that inspected state, preserving verified behavior and compatible contracts. State the current path, required change and evidence in the existing spec sections, with acceptance criteria and verification for the changed behavior. If the detailing is materially contradicted, report the contradiction rather than silently treating a done item as new work. Do not design a replacement service or repository merely because this work has a PRD; replacement needs an evidenced requirement and consistency with the approved architecture.',
     cites
       ? 'CITE THE ARCHITECTURE YOU DESIGNED AGAINST. Return `decisionIds` on every artifact you author: the architecture views it depends on, each a path relative to the arc42 folder with `#<heading>` when it rests on one part of the view, written as the TRD cites them, and carry the same list in YAML frontmatter as `decisionIds:` at the top of the markdown document you save. Cite only views you read, and never cite a section number in place of a view.\n\nEFFECTIVE VIEWS ARE SETTLED. A view whose file\'s frontmatter reads `lifecycle_state: effective` has been reviewed and approved: design against it as given and never re-decide it. Only a view in any other state is open to review: before your design rests on one, check it against the TRD, and where they disagree the TRD governs.'
@@ -350,7 +381,7 @@ ${specMakerCtx}${contractsBrief}${pointerNote}`
 
   phase('Author specs')
 
-  let [contractsDraft, dataModelSpecDraft, criteriaDraft] = await parallel([
+  let [contractsDraft, dataModelSpecDraft] = await parallel([
     () => settleAgent(contractsPrompt(''), contractsOpts),
     () =>
       settleAgent(
@@ -363,28 +394,12 @@ ${specMakerCtx}${contractsBrief}${pointerNote}`
           schema: SPEC_SCHEMA,
         }
       ),
-    () =>
-      settleAgent(
-        `Author two artifacts for this spec, each under its own key.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. Every behaviour the spec set states gets a criterion; cover each behaviour ONCE rather than enumerating variants of it, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria.
-2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items.
-
-${criteriaMakerCtx}${criteriaBrief}`,
-        {
-          label: 'author:criteria',
-          phase: 'Author specs',
-          effort: 'low',
-          agentType: 'acceptance-criteria-writer',
-          schema: CRITERIA_SCHEMA,
-        }
-      ),
   ])
 
   const deadMakers = [
     ['contracts', contractsDraft],
     ['data-model', dataModelSpecDraft],
-    ['criteria', criteriaDraft],
   ].filter(([, d]) => !d).map(([k]) => k)
   if (deadMakers.length) {
     const deaths = dispatchDeaths('Author specs')
@@ -417,7 +432,7 @@ ${criteriaMakerCtx}${criteriaBrief}`,
   if (uiGaps.length) {
     log(`UI citation check: ${uiGaps.map((g) => `${g.id}: ${g.problem}`).join('; ')} — the contracts go back to their maker once`)
     const reworked = await settleAgent(
-      contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose section, in the uiSpec you returned or in the spec document you saved, is missing or, for a bundle item, does not cite its build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nReturn all four artifacts again and save the document again, with a section for every UI item and every bundle item specified by reference to its spec/build-spec.md and its Section IDs.`),
+      contractsPrompt(`\n\nREWORK — the workflow's check found UI items whose section, in the uiSpec you returned or in the spec document you saved, is missing or, for a bundle item, does not cite its build spec:\n${uiGaps.map((g) => `- ${g.id}: ${g.problem}`).join('\n')}\nRead the current saved document ${ART.dir}/spec-${artSlug}.md first. Repair only the cited item sections and any directly affected references; preserve all other valid API, event, error and UI content, decisions, obligation IDs and source provenance. Return all four artifacts with the unchanged portions retained and save the same document, keeping a section for every UI item and every bundle item specified by reference to its spec/build-spec.md and its Section IDs. If a cited fix requires a wider behavioral change, identify that conflict instead of silently rewriting the accepted remainder.`),
       { ...contractsOpts, label: 'author:contracts:rework' }
     )
     if (reworked) contractsDraft = reworked
@@ -433,6 +448,32 @@ ${criteriaMakerCtx}${criteriaBrief}`,
         uiGaps,
         ...(!reworked && deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
       }
+    }
+  }
+
+  const criteriaDraft = await settleAgent(
+        `Author two artifacts for this spec, each under its own key.
+
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. Every behaviour the spec set states gets a criterion; cover each behaviour ONCE rather than enumerating variants of it, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria.
+2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items.
+
+FINAL SPEC INPUTS — read these completed documents, including the UI citation repair already applied: ${specDocPaths.slice(0, 2).join(', ')}. Derive the criteria from their actual contract/data-model/UI behavior and trace each to its delta/TRD obligation ID and source section. Preserve the supplied implementation provenance; do not re-author these documents or infer their final choices from summaries. A missing document or contradiction is an explicit unresolved input, never invented behavior.
+
+${criteriaMakerCtx}${criteriaBrief}`,
+        {
+          label: 'author:criteria',
+          phase: 'Author specs',
+          effort: 'low',
+          agentType: 'acceptance-criteria-writer',
+          schema: CRITERIA_SCHEMA,
+        }
+      )
+
+  if (!criteriaDraft) {
+    const deaths = dispatchDeaths('Author specs')
+    return {
+      ok: false, stage: 'author', reason: 'the criteria maker returned nothing after the completed spec documents — the spec set is incomplete.',
+      ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
     }
   }
 
@@ -516,4 +557,4 @@ It prints one short JSON object. Return its exit code as \`write.exitCode\` and 
   }, relayed, storyDraft)
 }
 
-return await main(typeof args === 'string' ? JSON.parse(args) : (args || {}))
+return dispatchOutcome(await main(typeof args === 'string' ? JSON.parse(args) : (args || {})))

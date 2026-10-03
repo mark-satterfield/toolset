@@ -4,40 +4,104 @@ export const meta = {
     'Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed), or reported (treeClean, hasWork, branch, prUrl, commit, blocked).',
   phases: [{ title: 'Settle', detail: 'commit, push and open the pull request' }],
 }
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
+}
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
 
 // Retries a dispatch that failed transiently (overload, rate limit, network) with capped backoff;
 // returns null, or rethrows when opts.rethrow, on any other failure.
-const DETERMINISTIC_ERROR_TEXT =
-  /structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
-const TRANSIENT_ERROR_TEXT =
-  /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
-const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
-const isTransient = (err) => {
-  const e = err && typeof err === 'object' ? err : {}
-  const text = String(e.message || err || '')
-  if (DETERMINISTIC_ERROR_TEXT.test(text)) return false
-  const status = Number(e.status || e.statusCode || (e.response && e.response.status))
-  return TRANSIENT_STATUS.has(status) || TRANSIENT_ERROR_TEXT.test(text)
-}
+function failureCause(err) { return dispatchFailureCause(err) }
 async function settleAgent(prompt, opts) {
-  const { rethrow, ...call } = opts || {}
-  const name = call.label || call.agentType || 'agent'
+  if (dispatchInterruption) return null
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.retryPolicy
+  delete call.schemaName
+  delete call.rethrow
+  const name = o.label || o.agentType || 'agent'
+  const policy = dispatchPolicy(o)
+  const mine = []
+  let waitedMs = 0
   for (let attempt = 1; ; attempt++) {
+    if (dispatchInterruption) return null
     try {
       const out = await agent(prompt, call)
-      if (!out) log(`${name}: returned nothing`)
-      return out || null
-    } catch (err) {
-      const message = String((err && err.message) || err)
-      if (isTransient(err) && typeof setTimeout === 'function') {
-        const wait = Math.min(300000, 5000 * Math.pow(3, attempt - 1))
-        log(`${name}: transient failure on attempt ${attempt}; retrying in ${Math.round(wait / 1000)}s — ${message.slice(0, 160)}`)
-        await new Promise((resolve) => setTimeout(resolve, wait))
-        continue
+      if (out) {
+
+        return out
       }
-      log(`${name}: ended without a structured result — ${message.slice(0, 160)}`)
-      if (rethrow) throw err
+
+      log(name + ': returned nothing')
       return null
+    } catch (err) {
+      const plan = dispatchRetry(err, name, attempt, waitedMs, policy, typeof setTimeout === 'function')
+      const message = String((err && err.message) || err)
+
+      if (!plan.retry) {
+        if (plan.interruption) dispatchInterruption = plan.interruption
+        log(name + ': stopped (' + plan.cause + ') — ' + message)
+        if (o.rethrow && !plan.interruption) throw err
+        return null
+      }
+      waitedMs += plan.wait
+      log(name + ': transient failure; retry ' + (attempt + 1) + '/' + policy.maxAttempts + ' in ' + Math.round(plan.wait / 1000) + 's — ' + message.slice(0, 160))
+      await new Promise((resolve) => setTimeout(resolve, plan.wait))
     }
   }
 }
@@ -132,4 +196,4 @@ Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR co
 }
 
 phase('Settle')
-return commitOnly ? await commitRun() : await settleRun()
+return dispatchOutcome(commitOnly ? await commitRun() : await settleRun())

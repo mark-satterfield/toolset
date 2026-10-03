@@ -11,15 +11,31 @@ export const meta = {
   ],
 }
 
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  return dispatchInterruption ? { ...result, ok: false, paused: true, resumable: true, dispatchFailed: true, stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message, dispatchInterruption } : result
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
 const dispatchFailures = []
 
 async function run(prompt, opts) {
+  if (dispatchInterruption) return null
   let message = 'returned nothing'
   try {
     const out = await agent(prompt, opts)
     if (out) return out
   } catch (err) {
-    message = String((err && err.message) || err).slice(0, 300)
+    message = String((err && err.message) || err)
+    const cause = dispatchFailureCause(err)
+    if (cause !== 'deterministic') dispatchInterruption = { stage: cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable', message }
   }
   dispatchFailures.push({ label: opts.label, agentType: opts.agentType || null, phase: opts.phase, message })
   log(`${opts.label}: no structured result — ${message}`)
@@ -33,6 +49,7 @@ function died(phaseName) {
     : {}
 }
 
+return dispatchOutcome(await (async () => {
 // args: { prd: { id?, title?, path?, body? }, epic: { id }, archPath, subject?, repoPath?, seedRepos?,
 //   maxRounds?, depscore: { script, repo },
 //   artifacts: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
@@ -147,7 +164,7 @@ const PRD_RULE = `THE PRD STATES WHAT, NEVER HOW. It holds the business and end-
 const BUSINESS_CONFLICT_RULE = `List in \`businessConflicts\` only two BUSINESS requirements of the PRD that no design whatsoever could satisfy together (each with the requirement and why no design can satisfy both). A technical gap, an open value, a "how" in the PRD, or a tension a design can resolve is never one: the team resolves those. This list is almost always empty.`
 
 const DRAFT_RULES = `THE DRAFT TARGET is the folder ${DRAFT}. It has the arc42 section layout (\`05-building-block-view/…\`, \`06-runtime-view/…\`, \`07-deployment-view/…\`, \`08-crosscutting-concepts/…\`, and \`03-context-and-scope/\` or \`04-solution-strategy/\` only when the change reaches them) and a \`delta/\` folder beside them.
-- A target view is the view as it will read once approved: a changed copy of each effective view that shows a changed element, at every scope where the element appears, and a new view for each new element. Copy an effective view into the draft before you change it, at the same relative path.
+- A target view is the view as it will read once approved: a changed copy of each effective view that shows a changed element, at every scope where the element appears, and coverage for new elements according to the applicable obligations in ${MODEL}. Extend a sufficient shared view when it answers the required reader question; create a new view only when no existing or shared view supplies the required coverage. Catalog every covered element in \`shows\`. Copy an effective view into the draft before you change it, at the same relative path.
 - \`delta/\` holds the views that show only what changes between the effective version and the target. Specs and Tasks are made from it.
 - Every view is Markdown with catalog frontmatter (\`view_type\` from ${MENU}, \`scope\`, \`subject\`, \`shows\`, \`lifecycle_state: in-review\`), a Mermaid diagram where the view type has one, and prose.
 - Nothing goes under \`02-architecture-constraints/\`: section 2 holds the owner's constraints.
@@ -218,9 +235,9 @@ const assigned = new Map()
  * it, and prints only the facts the control flow branches on. No saved content comes back here:
  * sessions get file paths. Returns the facts or { error }.
  */
-async function readFacts(label, phaseName, proposalTeam = null) {
+async function readFacts(label, phaseName, proposalTeam = null, roundPlan = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
-  const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}`)
+  const out = await depscore(label, phaseName, `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${proposalTeam ? ` --proposal-team ${shq(JSON.stringify(proposalTeam))}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`)
   if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration) {
     return { error: (out && out.error) || 'depscore.py arch-resume printed no facts' }
   }
@@ -254,16 +271,23 @@ const REPOS_SCHEMA = {
 }
 // Consumed by: archresume coverage folding and architecture.js decisionGaps — stable
 // ids preserve absent obligations; MODEL evidence supplies semantics, not a plugin menu.
+// Consumed by archevidence: local section/main revision binding and external provenance.
+const EVIDENCE_REFS = { type: 'array', items: { type: 'object', additionalProperties: false,
+  required: ['path', 'heading', 'repo', 'revision', 'url'], properties: {
+    path: { type: 'string' }, heading: { type: 'string' }, repo: { type: 'string' },
+    revision: { type: 'string' }, url: { type: 'string' },
+  } } }
 const COVERAGE_SCHEMA = {
   type: 'array', items: {
     type: 'object', additionalProperties: false,
-    required: ['id', 'subject', 'scope', 'obligation', 'sources', 'views', 'status', 'action', 'reason'],
+    required: ['id', 'subject', 'scope', 'obligation', 'sources', 'views', 'status', 'action', 'reason', 'evidenceRefs', 'disposition', 'dispositionReason'],
     properties: {
       id: { type: 'string' }, subject: { type: 'string' }, scope: { type: 'string' },
       obligation: { type: 'string' }, sources: { type: 'array', items: { type: 'string' } },
       views: { type: 'array', items: { type: 'string' } }, status: { type: 'string', enum: ['Present and sufficient', 'Present but incomplete', 'Required and absent', 'Not yet applicable', 'Not assessed'] },
       action: { type: 'string', enum: ['create', 'update', 'unchanged', 'remove', 'not-applicable', 'unresolved'] },
       reason: { type: 'string' },
+      evidenceRefs: EVIDENCE_REFS, disposition: { type: 'string', enum: ['required', 'unrelated-debt'] }, dispositionReason: { type: 'string' },
     },
   },
 }
@@ -281,7 +305,9 @@ const COVERAGE_CHECKS_SCHEMA = {
 }
 const COVERAGE_RULE = `COVERAGE is evidence in the existing survey/round results and ${LEDGER_JSON}, not another architecture version. Read ${MODEL} for applicable obligations and ${MENU} for selection/construction. Inventory relevant subjects from the design, repositories and contracts independently of catalog hits. Include required views that do not exist, every affected scope and horizontal concern; unrelated historical debt is non-blocking and is reported in your summary.
 Each coverage row has a stable id, subject, scope, obligation (MODEL path and heading), sources (inventory/design evidence), views (absolute paths, including expected missing paths), status (the MODEL's assessment result), action and reason. Preserve ids across rounds; omitted ids remain in the ledger. Writers replace only their assigned rows; use draft paths for created/updated views, draft/delta descriptions for removals (not the canonical file being deleted), and canonical paths only for unchanged views. Keep removal evidence stable through integration. After completing work, update status to Present and sufficient; Not yet applicable pairs only with action not-applicable. Incomplete, absent and Not assessed statuses cannot pass approval. An unknown relevant obligation uses action unresolved. Not-applicable and unchanged need concrete reasons and evidence; no-change targets still assess applicable coverage. Never invent design to fill diagrams. Diagram declarations require actual diagrams; verify rendering, readability, semantics, links and metadata as the MODEL requires, reporting limitations honestly.
-The ledger supplies each row's revision from its evidence and current view content. Reviewers copy that revision exactly into coverageChecks, with an independent verdict and evidence. A missing view or obligation can be a finding without an author claim. Recheck revised rows; old checks cannot approve new content.`
+The ledger supplies each row's revision from its evidence and current view content. Reviewers copy that revision exactly into coverageChecks, with an independent verdict and evidence. A missing view or obligation can be a finding without an author claim. Recheck revised rows; old checks cannot approve new content.
+Set disposition=required by default. For mistakenly inventoried unrelated historical debt, use unrelated-debt with dispositionReason proving it does not affect this change or dependencies; preserve its honest MODEL status. Only an independent verified current revision makes that disposition nonblocking. Retain the row and summarize it; never erase IDs.
+EvidenceRefs bind relevant views by absolute path and unique heading (empty means whole file), repository code by absolute repo, main commit revision and repository-relative path, or external docs by url and version/retrieval revision. Unused fields are empty strings. Include relevant dependencies. Source movement requires refreshed evidence; reading test source is not a test run.`
 
 const SURVEY_SCHEMA = {
   type: 'object',
@@ -338,13 +364,14 @@ const COORDINATOR_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['agentType', 'role', 'task', 'files', 'answers'],
+        required: ['agentType', 'role', 'task', 'files', 'answers', 'claimIds', 'claimFiles', 'overlapReason'],
         properties: {
           agentType: { type: 'string' },
           role: { type: 'string', enum: Object.keys(ROSTER) },
           task: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
           answers: { type: 'array', items: { type: 'string' } },
+          claimIds: { type: 'array', items: { type: 'string' } }, claimFiles: { type: 'array', items: { type: 'string' } }, overlapReason: { type: 'string' },
         },
       },
     },
@@ -362,8 +389,8 @@ const WRITER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['claim', 'file', 'citation'],
-        properties: { claim: { type: 'string' }, file: { type: 'string' }, citation: { type: 'string' } },
+        required: ['claimId', 'claim', 'file', 'citation', 'supersedes', 'evidenceRefs'],
+        properties: { claimId: { type: 'string' }, claim: { type: 'string' }, file: { type: 'string' }, citation: { type: 'string' }, supersedes: { type: 'array', items: { type: 'string' } }, evidenceRefs: EVIDENCE_REFS },
       },
     },
     answers: {
@@ -382,17 +409,18 @@ const WRITER_SCHEMA = {
 const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['findings', 'coverageChecks', 'summary'],
+  required: ['findings', 'coverageChecks', 'resolutions', 'summary'],
   properties: {
     coverageChecks: COVERAGE_CHECKS_SCHEMA,
+    resolutions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['findingId', 'revision', 'verdict', 'evidence'], properties: { revision: { type: 'string' }, findingId: { type: 'string' }, verdict: { type: 'string', enum: ['accepted', 'rejected'] }, evidence: { type: 'string' } } } },
     findings: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['claimId', 'claim', 'file', 'verdict', 'evidence', 'owner'],
+        required: ['claimId', 'claimRevision', 'claim', 'file', 'verdict', 'evidence', 'owner'],
         properties: {
-          claimId: { type: 'string' },
+          claimId: { type: 'string' }, claimRevision: { type: 'string' },
           claim: { type: 'string' },
           file: { type: 'string' },
           verdict: { type: 'string', enum: ['verified', 'unsupported', 'wrong'] },
@@ -648,7 +676,7 @@ async function decisionGaps(label) {
   const gaps = [...listed(facts.coverage && facts.coverage.gaps)]
   const proposed = writersSoFar().some((w) => roleOf(w) === 'proposer')
   if (!proposed) gaps.push('no proposer has written the target yet')
-  for (const f of openFindings()) gaps.push(`finding ${f.id} (${f.verdict}) on ${f.file || 'the draft'} is unanswered; owner ${f.owner || 'not known — assign it to a writer'}`)
+  for (const f of openFindings()) gaps.push(`finding ${f.id} (${f.verdict}) on ${f.file || 'the draft'} ${f.answered ? 'awaits independent resolution of its answer' : 'needs a bounded evidenced repair'}; owner ${f.owner || 'not known — assign it to a writer'}`)
   for (const [w, k] of unreviewedByWriter()) gaps.push(`${k} claim(s) by ${w} have no reviewer verdict (the claims by ${w} in ${LEDGER_JSON} whose \`verdicts\` list is empty)`)
   for (const w of listed(ledgerFacts().proposersWithoutClaims)) gaps.push(`proposer ${w} stated no claims: a design with no claims cannot be reviewed; it states the claims a reviewer checks`)
   if (proposed) {
@@ -664,10 +692,10 @@ async function decisionGaps(label) {
 
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
 const savedDecision = facts.decision && typeof facts.decision === 'object' && hasText(facts.decision.verdict) ? facts.decision : null
-const savedCoverageValid = !!(savedDecision && facts.coverage && !facts.coverage.gaps.length && savedDecision.coverageRevision === facts.coverage.revision)
+const savedCoverageValid = !!(savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && facts.coverage && !facts.coverage.gaps.length && savedDecision.coverageRevision === facts.coverage.revision)
 let decision = savedDecision && savedDecision.verdict === 'approve' && savedCoverageValid ? savedDecision : null
 // Legacy approval gets one bounded supplemental round, retaining its prior work.
-const roundLimit = MAX_ROUNDS + (savedDecision && savedDecision.verdict === 'approve' && !savedDecision.coverageRevision ? 1 : 0)
+const roundLimit = MAX_ROUNDS + (savedDecision && savedDecision.verdict === 'approve' && (!savedDecision.coverageRevision || resumedFacts.contractVersion !== 2) ? 1 : 0)
 /** Returns the proposers a decision returned the target to, each { agentType }; what is missing is in the decision file they read. */
 const returnedTo = (dec) =>
   (dec && Array.isArray(dec.returnTo) ? dec.returnTo : [])
@@ -748,9 +776,9 @@ ${shared}
 
 ${DRAFT_RULES}
 
-Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
+Use claimId="" for a new claim or the existing ledger id for an explicit revision. Keep unchanged ids; supersedes lists only deliberately replaced claims you own. Cite evidenceRefs and do not silently discard findings. A writer answer proposes a fix/dispute; independent resolution is still required. Return in \`files\` every draft file you wrote, relative to ${DRAFT}. Return in \`claims\` every claim your views make that a reviewer must check — about AWS (cite the documentation page you read), the code (cite repository, path and line on \`main\`), or the architecture (cite the view path and heading) — each with the draft file it is in. A design with no claims cannot be reviewed and cannot be approved: state every claim a reviewer must check. ${BUSINESS_CONFLICT_RULE}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
   }
-  const toCheck = unreviewedByWriter()
+  const assignedClaims = Array.isArray(d.assignedClaims) ? d.assignedClaims : []
   return `You are the ${d.agentType}, a ${d.role === 'cost' ? 'cost reviewer' : 'reviewer'} on the architecture team for this PRD, round ${n}: ${ROSTER[d.role][d.agentType]}.
 
 YOUR TASK THIS ROUND, from the coordinator: ${d.task}
@@ -760,9 +788,8 @@ THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the chan
 ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
-CLAIMS NOT YET REVIEWED are the claims in the ledger whose \`verdicts\` list is empty: ${toCheck.length ? toCheck.map(([w, k]) => `${k} by ${w}`).join(', ') : 'none — review the draft for problems no claim covers'}.
-
-Check each claim not yet reviewed against its citation, with your own evidence: AWS behaviour through the AWS MCP documentation tools, code by reading the cited lines on \`main\`, the architecture by reading the cited view. Mark each \`verified\`, \`unsupported\` (the citation does not show it) or \`wrong\` (the evidence shows otherwise), with the evidence you found, and the claim's ledger \`id\` as its claimId. A problem no claim covers is a finding with claimId "" and, as \`owner\`, the writer whose view it is in (writers so far: ${writersSoFar().join(', ') || 'none'}).${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
+YOUR ASSIGNED CLAIM REVISIONS: ${JSON.stringify(assignedClaims)}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
+Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}${persistBrief([file], 'your complete structured result, exactly as you return it, as ONE JSON object')}`
 }
 
 /** Groups writers so no two in one wave own the same draft file; a writer naming no file runs alone. */
@@ -811,8 +838,11 @@ function settleDispatches(plan, n) {
       same.task = `${same.task}\n${d.task}`
       same.files = [...new Set([...same.files, ...files])]
       same.answers = [...new Set([...same.answers, ...answers])]
+      same.claimIds = [...new Set([...same.claimIds, ...listed(d.claimIds)])]
+      same.claimFiles = [...new Set([...same.claimFiles, ...listed(d.claimFiles)])]
+      same.overlapReason = [same.overlapReason, d.overlapReason].filter(Boolean).join("; ")
     } else {
-      out.push({ agentType: name, role, task: String(d.task || ''), files, answers })
+      out.push({ agentType: name, role, task: String(d.task || ''), files, answers, claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile), overlapReason: String(d.overlapReason || '') })
     }
   }
   const legacyMissing = listed(ledgerFacts().legacyProposersWithoutClaims)
@@ -835,7 +865,7 @@ function settleDispatches(plan, n) {
     retries.push({ step: `round${n}:${r.agentType}`, whatChanged: `the architecture-decider returned the target naming missing due diligence (in ${DECISION_JSON})` })
   }
   for (const f of openFindings()) {
-    if (!f.owner || out.some((x) => x.agentType === f.owner && x.answers.includes(f.id))) continue
+    if (f.answered || !f.owner || out.some((x) => x.agentType === f.owner && x.answers.includes(f.id))) continue
     const same = out.find((x) => x.agentType === f.owner)
     if (same) same.answers.push(f.id)
     else out.push({ agentType: f.owner, role: roleOf(f.owner), task: 'Answer the findings named below.', files: [], answers: [f.id] })
@@ -880,7 +910,7 @@ async function runRound(n, dispatches) {
   }
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
-  const ordered = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: i + 1, file: `${ROUNDS_DIR}/r${n}-${i + 1}-${d.role}-${d.agentType}.json` }))
+  let ordered = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1, file: `${ROUNDS_DIR}/r${n}-${i + 1}-${d.role}-${d.agentType}.json` }))
   const go = (d) => () =>
     run(dispatchPrompt(n, d, d.file), {
       label: `round${n}:${d.role}:${d.agentType}`,
@@ -890,16 +920,21 @@ async function runRound(n, dispatches) {
       schema: WRITER_ROLES.includes(d.role) ? WRITER_SCHEMA : REVIEW_SCHEMA,
     })
   const results = new Map()
-  for (const wave of writerWaves(ordered.filter((d) => WRITER_ROLES.includes(d.role)))) {
+  for (const wave of writerWaves(ordered.filter((d) => WRITER_ROLES.includes(d.role) && !d.complete))) {
     const got = await parallel(wave.items.map(go))
     wave.items.forEach((d, i) => results.set(d.seq, got[i]))
+    if (dispatchInterruption) return { silent: wave.items.filter((d, i) => !got[i]).map(d => d.agentType) }
   }
-  const reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role))
+  if (facts.rounds.pendingPlan) ordered = facts.rounds.pendingPlan.dispatches
+  let reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
   if (reviewers.length) {
     if (ordered.length > reviewers.length) {
       const mid = await readFacts(`round${n}:ledger-writers`, 'Rounds')
       if (mid.error) return { error: mid.error }
       facts = mid
+      if (mid.rounds.pendingPlan && mid.rounds.pendingPlan.dispatches.some(d => WRITER_ROLES.includes(d.role) && !d.complete)) return { silent: mid.rounds.pendingPlan.dispatches.filter(d => WRITER_ROLES.includes(d.role) && !d.complete).map(d => d.agentType) }
+      ordered = mid.rounds.pendingPlan ? mid.rounds.pendingPlan.dispatches : ordered
+      reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
     }
     const got = await parallel(reviewers.map(go))
     reviewers.forEach((d, i) => results.set(d.seq, got[i]))
@@ -910,7 +945,7 @@ async function runRound(n, dispatches) {
   const savedKeys = listed(facts.rounds.saved)
   const unsaved = ordered.filter((d) => results.get(d.seq) && !savedKeys.includes(`r${n}-${d.seq}`))
   if (unsaved.length) log(`Round ${n}: ${unsaved.map((d) => d.agentType).join(', ')} returned a result but did not save it to its result file; it counts as no result`)
-  return { silent: ordered.filter((d) => !results.get(d.seq) || !savedKeys.includes(`r${n}-${d.seq}`)).map((d) => d.agentType) }
+  return { silent: ordered.filter((d) => !savedKeys.includes(`r${n}-${d.seq}`)).map((d) => d.agentType) }
 }
 
 /** Runs the decider over the artifacts; returns its decision or null. */
@@ -953,7 +988,7 @@ Write ${DECISION_MD} (your decision as one readable Markdown document) and ${DEC
 }
 
 phase('Rounds')
-let ready = !!(savedDecision && savedDecision.verdict === 'approve')
+let ready = !!(savedDecision && savedDecision.verdict === 'approve') || facts.rounds.readyForDecision === true
 while (!decision) {
   if (ready) {
     pendingGaps = await decisionGaps(`rounds:gaps-${lastRound}`)
@@ -972,7 +1007,7 @@ while (!decision) {
       }
       if (dec.verdict === 'approve') {
         const approvedFacts = await readFacts('decide:coverage-check', 'Decide')
-        if (approvedFacts.error || !approvedFacts.coverage || approvedFacts.coverage.gaps.length || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
+        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || !approvedFacts.coverage || approvedFacts.coverage.gaps.length || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
           return { ok: false, stage: 'decide', reason: 'approval lacks saved independent coverage evidence for the current views; saved work retained', subject }
         }
         facts = approvedFacts
@@ -986,15 +1021,16 @@ while (!decision) {
     }
     ready = false
   }
-  if (lastRound >= roundLimit) {
+  if (!facts.rounds.pendingPlan && lastRound >= roundLimit) {
     const gaps = pendingGaps.length ? pendingGaps : await decisionGaps('rounds:gaps-final')
     const why = `${roundLimit} round(s) ran and the target is not ready for a decision: ${gaps.join('; ') || 'the coordinator never declared it ready'}`
     log(`Rounds: ${why}`)
     return { ok: false, stage: 'rounds', reason: why, error: why, gaps, subject, ...surveyPaths, ...died('Rounds') }
   }
-  const n = lastRound + 1
+  const pendingPlan = facts.rounds.pendingPlan
+  const n = pendingPlan ? pendingPlan.round : lastRound + 1
   if (!pendingGaps.length && n > 1) pendingGaps = await decisionGaps(`rounds:gaps-${n - 1}`)
-  const plan = await run(
+  const plan = pendingPlan || await run(
     `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${roundLimit}; the script runs them. You read and route; you design, review and decide nothing, write nothing, and dispatch nothing yourself.
 
 PRD: ${prdRef}
@@ -1028,8 +1064,10 @@ HOW TO ROUTE:
 - Dispatch ${ON_DEMAND_REVIEWERS.join(', ')} only for targeted critique of a concrete unresolved weakness; it does not create a competing design or add a proposer.
 - When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
+- Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Explicit overlap requires overlapReason on every overlapping dispatch. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. Keep each required reviewer's task a bounded domain question even with no claims.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
-- Every open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
+- For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
+- Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Legacy proposer findings transfer to the retained lead; do not redispatch former owners outside proposalTeam.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
 - Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`,
@@ -1039,7 +1077,7 @@ HOW TO ROUTE:
   const teamFacts = await readFacts(`round${n}:proposal-team`, 'Rounds', plan.proposalTeam)
   if (teamFacts.error || !teamFacts.proposalTeam || !teamFacts.proposalTeam.lead) return { ok: false, stage: 'rounds', reason: teamFacts.error || 'coordinator did not select a proposal lead; saved work retained', subject }
   facts = teamFacts
-  const settled = settleDispatches(plan, n)
+  const settled = pendingPlan ? { dispatches: pendingPlan.dispatches, rejected: [], stuck: [] } : settleDispatches(plan, n)
   if (settled.budgetError) return { ok: false, stage: 'rounds', reason: settled.rejected.join('; '), subject }
   rejected = settled.rejected
   forced = []
@@ -1051,6 +1089,13 @@ HOW TO ROUTE:
     return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths, retries }
   }
   for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
+  if (!pendingPlan) {
+    const orderedPlan = { round: n, proposalTeam: facts.proposalTeam, readyForDecision: plan.readyForDecision, dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
+    const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', null, orderedPlan)
+    if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
+    facts = savedPlan
+    settled.dispatches = savedPlan.rounds.pendingPlan ? savedPlan.rounds.pendingPlan.dispatches : orderedPlan.dispatches
+  }
   if (!settled.dispatches.length) {
     if (plan.readyForDecision === true) {
       lastRound = n
@@ -1070,7 +1115,7 @@ HOW TO ROUTE:
   }
   const silent = roundRun.silent
   silentLast = silent
-  if (silent.length) log(`Round ${n}: no result from ${silent.join(', ')}`)
+  if (silent.length) return { ok: false, resumable: true, stage: 'rounds', reason: `round ${n} has unfinished dispatches: ${silent.join(', ')}; saved work retained`, ...died('Rounds'), subject, ...surveyPaths }
   lastRound = n
   pendingGaps = []
   ready = plan.readyForDecision === true || (roundLimit > MAX_ROUNDS && lastRound >= MAX_ROUNDS)
@@ -1106,7 +1151,7 @@ phase('Integrate')
 const SECTION_2_RULE = `Write nothing under ${CONSTRAINTS}: section 2 holds the owner's constraints, and only the owner changes them; the run fails on any change there. A constraint you believe should change goes in \`constraintIssues\`, with the constraint, the conflicting content and the reason.`
 const INTEGRATE_TASK = `Integrate the approved target at ${targetDir} (the change alone is in ${deltaDir}) into the effective version, the folder ${ARC42}, as the architecture documentation model's step 5 describes. For each element the delta adds, changes or removes, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update or delete each one; add the target's new views in the section folder the model names, named for their subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${targetDir} as it is: later phases read its delta.
 ${SECTION_2_RULE}
-Read approved coverage rows/checks in ${LEDGER_JSON} and approval ${DECISION_JSON}. Apply every approved coverage action, including absent/new views and affected navigation; do not invent unapproved design. Record each row id in viewsChecked.element with its view/action, using unaffected for justified unchanged/not-applicable rows and view="" for a not-applicable obligation without a path (never invent a view).
+Read approved coverage rows/checks in ${LEDGER_JSON} and approval ${DECISION_JSON}. Apply every approved coverage action, including absent/new views and affected navigation; do not invent unapproved design. For independently excluded unrelated-debt rows record only the unchanged disposition; never repair their absent views. Record each row id in viewsChecked.element with its view/action, using unaffected for justified unchanged/not-applicable rows and view="" for a not-applicable or independently excluded unrelated-debt obligation without an existing path (never invent a view).
 
 Report every file you changed, created or deleted as an absolute path under ${ARC42}, every view the catalog listed for a changed element and what you did to it, and every contradiction with another effective view or open target.`
 const updateBrief = persistBrief([UPDATE_JSON], 'your complete structured result, exactly as you return it, as ONE JSON object')
@@ -1220,7 +1265,7 @@ Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
 ${againBlock}
 ${ARCH_WHERE}
 
-Read approved coverage in ${LEDGER_JSON} and decision ${DECISION_JSON}. Independently check every approved action, including required views absent before integration, honest diagram declarations, readable rendering, cross-scope consistency and navigation. Report unrelated historical debt in summary, not blocking findings. Set coverageRevision to ${integrationCoverageRevision}; it binds this review to approved coverage and current integrated content. Return coverageChecks for EVERY approved ledger row id/revision, with verdict and evidence naming the integrated view and disposition (including unchanged/not-applicable). Do not change the design to fill a gap.
+Read approved coverage in ${LEDGER_JSON} and decision ${DECISION_JSON}. Independently check every approved action, including required views absent before integration, honest diagram declarations, readable rendering, cross-scope consistency and navigation. Report unrelated historical debt in summary, not blocking findings. Set coverageRevision to ${integrationCoverageRevision}; it binds this review to approved coverage and current integrated content. Return coverageChecks for EVERY approved ledger row id/revision, with verdict and evidence naming the integrated view and disposition (including unchanged/not-applicable and independently excluded unrelated-debt, whose missing views must not be repaired). Do not change the design to fill a gap.
 
 Check that the integration applied the approved target exactly, no more and no less; that every effective view the catalog lists for each changed element was updated or deleted, at every scope; that the new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming, and one finding per problem with its file and evidence; \`conforms\` is true only when there is no finding.${persistBrief([reviewFile], 'your complete structured result, exactly as you return it, as ONE JSON object')}`,
     { label: `integrate:review-${reviewPass}`, phase: 'Integrate', agentType: 'agent-teams-workforce:architecture-conformance-reviewer', effort: 'medium', schema: CONFORMANCE_SCHEMA }
@@ -1332,3 +1377,5 @@ return {
   architectureUpdatePath: UPDATE_JSON,
   ledgerPath: LEDGER_JSON,
 }
+
+})())

@@ -105,6 +105,10 @@ substitute a section number. The Task bead is the last place the architecture is
 somebody starts writing code, and a task citing nothing is a task a changed view can never find
 again.
 
+## Retain the evidence behind each task
+
+Consumed by: the Task's implementation and verification agents through its description and requirementIds. Carry the supplied exact repository, source commit, file:line or document heading and linked delta/TRD IDs into the existing task description. Name the established behavior and remaining gap; reuse sufficient evidence at the same main revision. A changed revision, missing evidence or unanswered question justifies a targeted read of affected paths/integrations, not another survey. Keep stubs, absent integration, working behavior and unknowns distinct, and never imply a cited test ran.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

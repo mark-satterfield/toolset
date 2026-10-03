@@ -16,6 +16,65 @@ export const meta = {
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
+}
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -23,6 +82,7 @@ function dispatchDeaths(...phases) {
   return dispatchFailures.filter((f) => named.includes(f.phase))
 }
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -32,6 +92,8 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(o), false)
+    if (plan.interruption) dispatchInterruption = plan.interruption
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -40,7 +102,7 @@ async function settleAgent(prompt, opts) {
 }
 
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-if (!a.prd) return { ok: false, stage: 'input', error: 'no prd supplied' }
+if (!a.prd) return dispatchOutcome({ ok: false, stage: 'input', error: 'no prd supplied' })
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const shellq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
 const repoPath = a.repoPath || a.prd.repoPath || null
@@ -483,6 +545,8 @@ const SAVED_TARGET_SCHEMA = {
 /** Prints only the facts a resume needs from the saved target and integration report; the files themselves stay on disk. */
 const TARGET_FACTS = [
   'import json, sys, pathlib',
+  'sys.path.insert(0, sys.argv[2])',
+  'from archevidence import saved_evidence_current',
   'd = pathlib.Path(sys.argv[1]) / "architecture"',
   't = d / "target.json"',
   'u = d / "architecture-update.json"',
@@ -490,7 +554,7 @@ const TARGET_FACTS = [
   's = (r.get("summary") or r) if isinstance(r, dict) else {}',
   'x = json.loads(u.read_text(encoding="utf-8")) if u.is_file() else {}',
   'n = lambda k: len(x.get(k) or []) if isinstance(x, dict) and isinstance(x.get(k), list) else 0',
-  'print(json.dumps({"found": r is not None, "ok": s.get("ok") is True, "subject": s.get("subject"), "targetDir": s.get("targetDir"), "deltaDir": s.get("deltaDir"), "deltaFiles": len(r.get("deltaFiles") or []) if isinstance(r, dict) and isinstance(r.get("deltaFiles"), list) else int(s.get("deltaFiles") or 0), "integratedFiles": n("changedFiles") + n("createdFiles")}))',
+  'print(json.dumps({"found": r is not None, "ok": s.get("ok") is True and saved_evidence_current(str(d)), "subject": s.get("subject"), "targetDir": s.get("targetDir"), "deltaDir": s.get("deltaDir"), "deltaFiles": len(r.get("deltaFiles") or []) if isinstance(r, dict) and isinstance(r.get("deltaFiles"), list) else int(s.get("deltaFiles") or 0), "integratedFiles": n("changedFiles") + n("createdFiles")}))',
 ].join('; ')
 /** Returns the saved target's facts a resume needs ({ ok, subject, targetDir, deltaDir, deltaFiles, integratedFiles }), or null when they cannot be read. */
 async function readSavedTarget() {
@@ -498,7 +562,7 @@ async function readSavedTarget() {
   const r = await settleAgent(
     `Run exactly this one shell command, once, and change nothing else:
 
-python3 -c ${shellq(TARGET_FACTS)} ${shellq(ART_DIR)}
+python3 -c ${shellq(TARGET_FACTS)} ${shellq(ART_DIR)} ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio`)}
 
 It prints one small JSON object. Return the process exit code as \`exitCode\` and that object's fields, copied exactly. If the command fails, return its exit code, its stderr as \`error\`, and found=false. Do not retry, do not repair, do not run any other command.`,
     { label: 'replay:read-saved-target', phase: 'Architecture', model: 'haiku', effort: 'low', schema: SAVED_TARGET_SCHEMA }
@@ -706,7 +770,7 @@ if (archHit && savedTargetSummary && savedTargetSummary.ok === true && hasText(s
   log(`Architecture: the saved target in ${ART_DIR} was not read back; the architecture mini resumes from its saved work`)
 }
 if (!architecture) {
-  const r = await workflow('agent-teams-workforce:architecture', {
+  const r = await settleWorkflow('agent-teams-workforce:architecture', {
     prd: { id: prd.id, title: prd.title, path: prd.path, body: prdByPath ? undefined : prd.body },
     epic: { id: epicBeadId },
     archPath: a.archPath,
@@ -800,7 +864,7 @@ async function runRepoScoping() {
       },
     }
   }
-  const ruled = await workflow('agent-teams-workforce:repo-scoping', {
+  const ruled = await settleWorkflow('agent-teams-workforce:repo-scoping', {
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json')]),
     prd: { id: prd.id, title: prd.title, path: prd.path },
     delta,
@@ -817,6 +881,7 @@ const TRD_INPUTS = [
   artPath('architecture/decision.md'),
   artPath('architecture/target.json'),
   artPath('architecture/architecture-update.json'),
+  artPath('architecture/survey.json'),
   delta.targetDir,
   ARC42_DIR ? `${ARC42_DIR}/02-architecture-constraints` : null,
   ARC42_DIR && deltaElements.length ? `arch-views:${JSON.stringify({ dir: ARC42_DIR, elements: deltaElements })}` : null,
@@ -838,9 +903,10 @@ async function runTrdAuthoring() {
       },
     }
   }
-  const r = await workflow('agent-teams-workforce:trd-authoring', {
+  const r = await settleWorkflow('agent-teams-workforce:trd-authoring', {
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: delta,
+    surveyPath: artPath('architecture/survey.json'),
     archPath: a.archPath,
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
@@ -995,11 +1061,12 @@ function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),
     delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
-    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json'), `git-main:${repo}`], { slug }),
+    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json'), artPath('architecture/survey.json'), `git-main:${repo}`], { slug }),
     depscore: beadsArgs.script,
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
     repos: [repo],
+    surveyPath: artPath('architecture/survey.json'),
     dependencies: a.dependencies,
     uiRepo: placementOf(repo).some((p) => p.frontend === true),
     ...(DESIGN_SYSTEM.mocksDir ? { mocksDir: DESIGN_SYSTEM.mocksDir } : {}),
@@ -1037,7 +1104,7 @@ async function authorSpecForRepo(repo, repoIndex) {
   const reconPhase = `recon:${slug}`
   const reconHit = resumeFresh(reconPhase)
   const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
-  const recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
+  const recon = await settleWorkflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
   if (recon && recon.ledger) runLedger.push(recon.ledger)
   if (!recon || recon.ok !== true) {
     const why = `the detailing of ${repo} failed, so its Spec is not authored: ${(recon && recon.reason) || 'prd-reconciliation returned nothing'}`
@@ -1056,7 +1123,7 @@ async function authorSpecForRepo(repo, repoIndex) {
   await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
   const specHit = resumeFresh(specPhase)
   const args = specArgs(repo, storyKey, slug, recon)
-  const r = await workflow('agent-teams-workforce:spec-authoring', specHit ? { ...args, replay: true } : args)
+  const r = await settleWorkflow('agent-teams-workforce:spec-authoring', specHit ? { ...args, replay: true } : args)
   const specAuthoring = r && r.ok === true && r.story
     ? { ok: true, artifact: r }
     : {
@@ -1171,7 +1238,7 @@ async function decomposeStory(pair) {
   const tasksPhase = `tasks:${slug}`
   const tasksHit = resumeFresh(tasksPhase)
   const replay = !!(tasksHit && ART_ON && tasksHit.names.includes(`tasks-${slug}.json`))
-  const r = await workflow('agent-teams-workforce:task-decomposition', replay ? { ...decompArgs(pair), replay: true } : decompArgs(pair))
+  const r = await settleWorkflow('agent-teams-workforce:task-decomposition', replay ? { ...decompArgs(pair), replay: true } : decompArgs(pair))
   if (r && r.ok === true) {
     if (replay) reuseFrom(tasksPhase, tasksHit)
     await acceptPhase(tasksPhase, replay ? 'reused' : 'passed')
@@ -1495,4 +1562,4 @@ return {
   if (result) result.artifacts = { dir: artReport.dir, epicId: artReport.epicId, phases: { ...artPhases }, filing: { ...artReport.filing } }
   if (result) result.detailPath = detailPath || null
 }
-return result
+return dispatchOutcome(result)

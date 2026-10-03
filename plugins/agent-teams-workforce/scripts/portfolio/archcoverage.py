@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 
+from archevidence import evidence_state, view_bindings
 from archstate import snapshot_tree
 
 
@@ -115,8 +116,10 @@ def coverage_facts(work: Path, survey: dict, results: list[str]) -> tuple[dict, 
         ):
             invalid.append("views")
             views = []
-        content = _files(views)
-        revision = _digest({"row": row, "files": content})
+        refs = row.get("evidenceRefs", [])
+        evidence, evidence_errors = evidence_state(refs)
+        content = view_bindings(views, refs)
+        revision = _digest({"row": row, "files": content, "evidence": evidence})
         matching = [
             c
             for c in checks
@@ -129,21 +132,47 @@ def coverage_facts(work: Path, survey: dict, results: list[str]) -> tuple[dict, 
         latest = matching[-1] if matching else None
         action = row.get("action")
         status = row.get("status")
-        if status not in ("Present and sufficient", "Not yet applicable"):
+        disposition = row.get("disposition", "required")
+        excluded = (
+            disposition == "unrelated-debt"
+            and bool(row.get("dispositionReason"))
+            and latest
+            and latest.get("verdict") == "verified"
+        )
+        if disposition not in ("required", "unrelated-debt") or (
+            disposition == "unrelated-debt" and not row.get("dispositionReason")
+        ):
+            invalid.append("disposition")
+        if evidence_errors:
+            gaps.extend(f"coverage {key}: {e}" for e in evidence_errors)
+        if not excluded and status not in (
+            "Present and sufficient",
+            "Not yet applicable",
+        ):
             gaps.append(f"coverage {key}: assessment is not resolved ({status})")
         if (status == "Not yet applicable") != (action == "not-applicable"):
             gaps.append(f"coverage {key}: assessment and action disagree")
         if invalid:
             gaps.append(f"coverage {key}: invalid {', '.join(invalid)}")
-        if action not in ("create", "update", "unchanged", "remove", "not-applicable"):
+        if not excluded and action not in (
+            "create",
+            "update",
+            "unchanged",
+            "remove",
+            "not-applicable",
+        ):
             gaps.append(
                 f"coverage {key}: applicability or required design remains unresolved"
             )
-        if action in ("create", "update", "unchanged", "remove") and (
-            not content
-            or any(
-                v == "absent" or v.startswith(("invalid:", "unreadable:"))
-                for v in content.values()
+        if (
+            not excluded
+            and action in ("create", "update", "unchanged", "remove")
+            and (
+                not content
+                or any(
+                    v == "absent" or v.startswith(("invalid:", "unreadable:"))
+                    for v in content.values()
+                )
             )
         ):
             gaps.append(f"coverage {key}: required view missing or unreadable")
@@ -158,7 +187,15 @@ def coverage_facts(work: Path, survey: dict, results: list[str]) -> tuple[dict, 
                 f"coverage {key}: current revision {revision} lacks independent verified evidence"
             )
         rendered.append(
-            {**row, "by": item["by"], "revision": revision, "review": latest}
+            {
+                **row,
+                "by": item["by"],
+                "revision": revision,
+                "review": latest,
+                "evidenceState": evidence,
+                "viewState": content,
+                "excluded": bool(excluded),
+            }
         )
     revision = _digest(
         [{"id": row["id"], "revision": row["revision"]} for row in rendered]

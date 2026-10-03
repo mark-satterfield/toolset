@@ -1,12 +1,12 @@
 # Inside the Agentic SDLC Workforce
 
-156 agents. 2 managers. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
+172 agents. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
 
 The doctrine behind the system is simple to state: the agent is not the unit of trust; the workflow is. Every agent has a narrow purpose, explicit decision boundaries, least-privilege tools, and exactly one task category — *plan*, *orchestrate*, *execute*, *approve*, or *test*. An agent that plans never decides. An agent that builds never approves its own output. An agent that finds a flaw never fixes it. Work moves between agents through explicit artifacts. Where a composite gates a phase, the gate has three possible outcomes: pass, loop with structured feedback, or escalate upstream.
 
 ## The workflows
 
-The system is a designed thing: two pipelines, a row of gates, a 156-agent doctrine of separated authorities. But doctrine is not what runs. What runs is a set of deterministic `Workflow` scripts that call agents as isolated subagents and route the next step from the facts each phase returns. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script reads the phase's reported facts (`greenConfirmed`, `deployedToDev`, `smokePassed`) and, in `bug-fix`, calls a separate gate agent; the script alone owns what happens next.
+The system is a designed thing: two pipelines, a row of gates, a 172-agent doctrine of separated authorities. But doctrine is not what runs. What runs is a set of deterministic `Workflow` scripts that call agents as isolated subagents and route the next step from the facts each phase returns. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script reads the phase's reported facts (`greenConfirmed`, `deployedToDev`, `smokePassed`) and, in `bug-fix`, calls a separate gate agent; the script alone owns what happens next.
 
 The two pipelines are conceptual. Their realization is composable: small single-phase **minis** stitched into **composites**, with Documentation running as a parallel track. The doctrine below describes the shape; the status section says how much of that shape is wired.
 

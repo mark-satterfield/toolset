@@ -6,6 +6,33 @@ export const meta = {
     { title: 'Author TRD', detail: 'author the TRD from the PRD and the target and delta views, one pass' },
   ],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -13,6 +40,7 @@ function dispatchDeaths(...phases) {
 }
 // Runs agent(); returns its result, or null after recording the failure in dispatchFailures.
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -22,6 +50,7 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -69,19 +98,19 @@ const prdContent = typeof prd.content === 'string' && prd.content.trim().length 
 const prdPath = typeof prd.path === 'string' && prd.path.startsWith('/') ? prd.path : ''
 if (!prdContent && !prdPath) {
   const why = 'no PRD supplied — prd.content is empty and prd.path is not an absolute path. Pass the PRD content or its path.'
-  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
+  return dispatchOutcome({ ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why })
 }
 const archPath = typeof a.archPath === 'string' ? a.archPath.trim() : ''
 if (!archPath.startsWith('/')) {
   const why = 'no architecture supplied — archPath is not an absolute path. Set ATW_ARCH_PATH for the run, or pass archPath.'
-  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
+  return dispatchOutcome({ ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why })
 }
 
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const target = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
 if (!target || !hasText(target.targetDir) || !hasText(target.deltaDir)) {
   const why = 'no approved target and delta supplied — architecture.targetDir and architecture.deltaDir name the views the TRD states obligations on.'
-  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
+  return dispatchOutcome({ ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why })
 }
 
 const died = (...phases) => {
@@ -157,6 +186,8 @@ THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 
 Read the architecture as the block below says, and for every view you read ask what it demands of anything this PRD builds.
 
+SOURCE EVIDENCE HANDOFF. ${typeof a.surveyPath === 'string' && a.surveyPath.trim() ? `The existing architecture survey is ${a.surveyPath}. Read its relevant coverage/claim entries and evidenceRefs; do not paste or repeat the whole survey.` : 'No survey path was supplied; treat implementation evidence not otherwise provided as unknown and use only targeted reads.'} Each evidenceRef carries path, heading, repo, revision and url (unused fields are empty). Preserve the exact relevant repository path, commit revision, file:line or document heading, and claim/coverage ID alongside the TRD requirement ID in the existing summary/context and requirement prose. Implementation evidence describes what exists; PRD and architecture references remain the authority for what is required. Before a new source read, state in that context which obligation is already established and the changed revision, missing evidence or unanswered question that requires the read. Compare the named repository's main revision with the recorded revision; unchanged, sufficient evidence can be reused. A changed revision or legacy citation without revision requires a targeted check of the affected source; preserve prior evidence as historical rather than inventing a revision. Test code read is not test execution.
+
 EXISTING IMPLEMENTATION CONTEXT. Use the supplied architecture survey and target/delta citations to identify the existing owning repository and integration points. Within this authoring pass, inspect relevant available entrypoints, contracts and focused tests when needed to distinguish a remaining obligation from an already implemented one; do not perform a new fleet survey. Code is neither presumed correct nor discarded because its provenance is uncertain. State material gaps or unknowns, with file:line evidence, in the TRD's existing summary/context; reading tests does not prove they pass or exercise live dependencies. Requirements remain the source of the desired behavior. Preserve supported behavior and compatible published contracts, and describe the incremental obligation on the named element. A missing implementation is implementation work, not a new product feature; a PRD does not itself authorize a new repository or service. Do not silently redesign an approved target: report an evidenced contradiction for resolution. The later per-repository detailing supplies the precise from/to comparison for Specs and Tasks.
 
 AN OBLIGATION BINDS ONLY WHAT THE DELTA ADDS OR CHANGES. An obligation about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where the delta adds or changes that thing, and the requirement names it: "the delta adds bucket <name>, so <name> is versioned and SSE-S3 encrypted [<view path>]". An element the delta does not touch carries no obligation here, and an obligation is never a reason to add the thing it governs: things are added by the target. Set \`appliesTo\` on every requirement to the element it governs, named as the delta names it.
@@ -213,11 +244,11 @@ CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at th
     },
   }
 )
-if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', ...died('Author TRD') }
+if (!trd) return dispatchOutcome({ ok: false, stage: 'author', reason: 'TRD authoring produced nothing', ...died('Author TRD') })
 const resultPath = ART ? authorPath : trd.trdPath || trdPath
 if (typeof resultPath === 'string' && resultPath.startsWith('/')) trd.trdPath = resultPath
 
-return {
+return dispatchOutcome({
   ok: true,
   trdPath: resultPath,
   filingPath,
@@ -226,4 +257,4 @@ return {
     ...(Array.isArray(trd.decisionIds) ? trd.decisionIds : []),
     ...(Array.isArray(trd.requirements) ? trd.requirements : []).flatMap((r) => (Array.isArray(r.archRefs) ? r.archRefs : [])),
   ].map((x) => String(x == null ? '' : x).trim()).filter(Boolean))],
-}
+})

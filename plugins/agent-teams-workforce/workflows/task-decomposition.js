@@ -6,6 +6,33 @@ export const meta = {
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
   ],
 }
+// BEGIN interruption propagation — no retry or replay of completed dispatches.
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchFailureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+}
+function captureDispatchInterruption(err, name) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  dispatchInterruption = { stage, message: stage + ': ' + name + ': ' + String((err && err.message) || err) }
+}
+// END interruption propagation
+
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
   const named = phases.filter(Boolean)
@@ -13,6 +40,7 @@ function dispatchDeaths(...phases) {
 }
 // Runs agent(); returns its result, or null after recording the failure in dispatchFailures.
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts || {}
   const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
   const name = who.label || who.agentType || 'agent'
@@ -22,6 +50,7 @@ async function settleAgent(prompt, opts) {
     dispatchFailures.push({ ...who, outcome: 'skipped', note: `${name} returned nothing` })
     log(`${name}: returned nothing`)
   } catch (err) {
+    captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
     dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
@@ -175,7 +204,7 @@ const WSJF_SKILL_DIR = typeof a.pluginRoot === 'string' && a.pluginRoot.startsWi
 const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, and upward); compare with the rubric's reference jobs. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. Value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A Task above 13 should have been split: say so in your notes, and record the size you judged.`
 
 if (!writable) {
-  return { ok: false, stage: 'input', reason: 'no artifact directory, beads target or repository was supplied, so the Task beads cannot be written', spec: specRef }
+  return dispatchOutcome({ ok: false, stage: 'input', reason: 'no artifact directory, beads target or repository was supplied, so the Task beads cannot be written', spec: specRef })
 }
 const replayed = a.replay === true
 if (replayed) log(`Decompose replayed: the Tasks are written from the saved tasks-${artSlug}.json`)
@@ -186,6 +215,8 @@ JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec in
 - A task is BUILD work: it changes code, infrastructure or documentation. The Spec's acceptance criteria are the tests of the build tasks: each build task carries in \`acceptanceCriteria\` the criteria it satisfies, and its Red step writes those tests before it builds. A task whose only work is writing or running tests is never emitted.
 - Only a delta item the detailing marks \`add\`, \`modify\` or \`remove\` makes work; a \`done\` or \`planned-elsewhere\` item gets no task. Every task cites in \`requirementIds\` at least one such item it builds: depscore.py plan-tasks refuses a task that cites none, and no bead is written.
 - When nothing needs building, return an empty \`tasks\` list with empty \`edges\` and \`scores\`, and say why in \`rationale\`. The Story then has no Tasks and goes straight to deploy and verify. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
+
+EVIDENCE CONTINUITY. In each task's existing description, retain the detailing/spec's exact repository path, source commit, file:line or document heading and the obligation IDs linked by requirementIds. State what that evidence already establishes and the concrete remaining gap. Reuse sufficient evidence at the same main revision. Before another source read, name the changed revision, missing evidence or unanswered question that calls for it; check only the relevant paths and affected integration dependencies. If the main revision changed or a legacy citation has no revision, refresh only the affected evidence and record the new revision while preserving the historical citation. Do not claim an unchanged source proves tests ran. A working path stays preserved, a stub names its missing behavior, and a missing integration cites its attachment point; none warrants a fresh fleet survey.
 
 EXISTING-REPOSITORY TASKS ARE INCREMENTAL CHANGES. In this same decomposition pass, use the detailing's citations and inspect the relevant existing entrypoints, implementation, contracts and focused tests in the named repository. Do not repeat a fleet survey. Code may be working, incomplete, a stub or unverified: neither trust it solely because it exists nor replace it wholesale because its provenance is uncertain. In each task's existing \`description\`, identify the inspected current behavior with file:line references, the concrete gap, affected files/integration points, required behavioral change and supported behavior/contracts to preserve. The task's \`acceptanceCriteria\` and \`definitionOfDone\` specify how to verify that change and the relevant regression boundary; distinguish tests merely read from results actually observed. Reuse evidenced working parts. Any replacement must have a requirement-backed reason and respect the approved architecture. Missing code becomes a bounded implementation task in the existing owner, not a new feature/service/repository by default. If current code materially contradicts a detailing status or the spec, report the conflict in \`rationale\`/\`notes\` for correction instead of silently changing the approved scope or inventing build work.
 
@@ -238,13 +269,13 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
 )
 if (!replayed && (!maker || !Array.isArray(maker.tasks))) {
   const deaths = dispatchDeaths('Decompose')
-  return {
+  return dispatchOutcome({
     ok: false,
     stage: 'decompose',
     reason: 'the decomposition returned no task list',
     spec: specRef,
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
-  }
+  })
 }
 const ran = replayed
   ? await settleAgent(`${WRITE_BRIEF}\n\nChange nothing else.`, {
@@ -283,7 +314,7 @@ const summary = written.length
 if (maker && !maker.tasks.length) log(`Story story:${artSlug}: no Tasks — ${String(maker.rationale || 'nothing to build').slice(0, 300)}`)
 log(`Story story:${artSlug}: ${written.length} write-task result(s) relayed${summary ? ` ${JSON.stringify(summary)}` : ''}; beads is read at finish`)
 
-return {
+return dispatchOutcome({
   ok: true,
   ...(replayed ? { resumed: true } : {}),
   spec: specRef,
@@ -292,4 +323,4 @@ return {
   tasks: writtenTasks,
   edges,
   summary,
-}
+})

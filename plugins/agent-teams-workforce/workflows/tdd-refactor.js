@@ -4,48 +4,101 @@ export const meta = {
     'Shared-tail mini — TDD Refactor. The code-refactoring-specialist refactors the code Green changed for clarity without changing behavior, keeps the suite green, and puts the tree back at its pre-refactor state when it cannot. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With restoreTo (a snapshot tree id the refactor recorded) one session puts the tree back at that snapshot and returns { restored }.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
-// settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
-const DETERMINISTIC_ERROR_TEXT =
-  /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
-const TRANSIENT_ERROR_TEXT =
-  /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
-const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
-function failureCause(err) {
+// BEGIN bounded dispatch policy — identical in workflow consumers (no runtime imports).
+let dispatchInterruption = null
+function dispatchOutcome(result) {
+  if (!dispatchInterruption) return result
+  const out = result && typeof result === 'object' ? result : {}
+  return { ...out, ok: false, dispatchFailed: true, paused: true, resumable: true,
+    stage: dispatchInterruption.stage, reason: dispatchInterruption.message, headline: dispatchInterruption.message,
+    ...(typeof out.passed === 'boolean' ? { passed: false } : {}),
+    ...(out.ledger ? { ledger: { ...out.ledger, ok: false } } : {}), dispatchInterruption }
+}
+function dispatchPolicy(options) {
+  const input = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  const policy = (options && options.retryPolicy) || input.retryPolicy || {}
+  return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
+    maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
+}
+function dispatchFailureCause(err) {
   const e = err && typeof err === 'object' ? err : {}
-  const text = String((e && e.message) || err || '')
-  if (DETERMINISTIC_ERROR_TEXT.test(text)) return 'deterministic'
+  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
+  if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
   const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
-    .map((v) => Number(v))
-    .find((v) => Number.isFinite(v) && v >= 100 && v < 600)
-  if (Number.isFinite(status) && TRANSIENT_STATUS.has(status)) return 'transient'
-  if (TRANSIENT_ERROR_TEXT.test(text)) return 'transient'
-  return 'deterministic'
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
 }
-function transientWaitMs(name, attempt) {
-  const scheduled = Math.min(300000, 5000 * Math.pow(3, Math.max(0, attempt - 1)))
-  let h = 2166136261
-  const key = `${name}#${attempt}`
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
-  return Math.round(scheduled * (0.5 + 0.5 * ((h >>> 0) / 4294967296)))
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
+  const cause = dispatchFailureCause(err)
+  if (cause === 'deterministic') return { retry: false, cause }
+  const e = err && typeof err === 'object' ? err : {}
+  const headers = e.headers || (e.response && e.response.headers) || {}
+  const rawRetryAfter = e.retryAfter !== undefined ? e.retryAfter : headers['retry-after']
+  const retryAfter = e.retryAfterMs !== undefined ? Number(e.retryAfterMs) : Number(rawRetryAfter) * 1000
+  // An HTTP-date without a supplied clock cannot be safely shortened to our backoff.
+  const unknownRetryDate = rawRetryAfter !== undefined && !Number.isFinite(retryAfter)
+  let hash = 2166136261
+  for (const ch of `${name}#${attempt}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619)
+  const scheduled = Math.round(Math.min(300000, 5000 * Math.pow(3, attempt - 1)) * (0.5 + 0.5 * ((hash >>> 0) / 4294967296)))
+  const wait = Math.max(scheduled, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 0)
+  if (cause === 'transient' && !unknownRetryDate && canWait && attempt < policy.maxAttempts && waitedMs + wait <= policy.maxWaitMs) return { retry: true, cause, wait }
+  const stage = cause === 'exhausted' ? 'account-quota-exhausted' : 'api-unavailable'
+  return { retry: false, cause, interruption: { stage, message: `${stage}: ${name}: ${String(e.message || err || cause)}`, attempt,
+    retryAfterMs: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null, retryAfter: rawRetryAfter || null } }
 }
-const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
+async function settleWorkflow(name, input) {
+  if (dispatchInterruption) return dispatchOutcome({})
+  const source = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+  try {
+    const out = await workflow(name, { ...input, ...(source.retryPolicy && !(input && input.retryPolicy) ? { retryPolicy: source.retryPolicy } : {}) })
+    if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
+    return out
+  } catch (err) {
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    if (!plan.interruption) throw err
+    dispatchInterruption = plan.interruption
+    return dispatchOutcome({})
+  }
+}
+// END bounded dispatch policy
+
+function failureCause(err) { return dispatchFailureCause(err) }
 async function settleAgent(prompt, opts) {
+  if (dispatchInterruption) return null
   const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.retryPolicy
+  delete call.schemaName
+  delete call.rethrow
   const name = o.label || o.agentType || 'agent'
+  const policy = dispatchPolicy(o)
+  const mine = []
+  let waitedMs = 0
   for (let attempt = 1; ; attempt++) {
+    if (dispatchInterruption) return null
     try {
-      const out = await agent(prompt, o)
-      if (!out) log(`${name}: returned nothing`)
-      return out || null
+      const out = await agent(prompt, call)
+      if (out) {
+
+        return out
+      }
+
+      log(name + ': returned nothing')
+      return null
     } catch (err) {
-      const message = String((err && err.message) || err).slice(0, 300)
-      if (failureCause(err) !== 'transient' || (!SETTLE_CAN_WAIT && attempt >= 3)) {
-        log(`${name}: failed — ${message}`)
+      const plan = dispatchRetry(err, name, attempt, waitedMs, policy, typeof setTimeout === 'function')
+      const message = String((err && err.message) || err)
+
+      if (!plan.retry) {
+        if (plan.interruption) dispatchInterruption = plan.interruption
+        log(name + ': stopped (' + plan.cause + ') — ' + message)
+        if (o.rethrow && !plan.interruption) throw err
         return null
       }
-      const wait = transientWaitMs(name, attempt)
-      log(`${name}: transient failure on attempt ${attempt}, retrying in ${Math.round(wait / 1000)}s — ${message}`)
-      if (SETTLE_CAN_WAIT) await new Promise((resolve) => setTimeout(resolve, wait))
+      waitedMs += plan.wait
+      log(name + ': transient failure; retry ' + (attempt + 1) + '/' + policy.maxAttempts + ' in ' + Math.round(plan.wait / 1000) + 's — ' + message.slice(0, 160))
+      await new Promise((resolve) => setTimeout(resolve, plan.wait))
     }
   }
 }
@@ -99,13 +152,13 @@ Run ${restoreCommands(restoreTo)}. Then run \`git -C "${repo}" add -A\` and \`gi
     }
   )
   if (!restore) {
-    return { ok: false, dispatchFailed: true, restored: false, reason: 'the restore session returned nothing', ledger: { phase: 'refactor', beadId, chosen: ['restore'], mode: 'restore', ok: false } }
+    return dispatchOutcome({ ok: false, dispatchFailed: true, restored: false, reason: 'the restore session returned nothing', ledger: { phase: 'refactor', beadId, chosen: ['restore'], mode: 'restore', ok: false } })
   }
-  return {
+  return dispatchOutcome({
     restored: restore.restored === true,
     evidence: str(restore.evidence),
     ledger: { phase: 'refactor', beadId, chosen: ['restore'], mode: 'restore', ok: restore.restored === true },
-  }
+  })
 }
 
 const suiteCommand = str(c.suiteCommand)
@@ -148,7 +201,7 @@ Deliver the files you touched, whether tests are green, whether you reverted, an
 const ledgerOf = (mode, ok) => ({ phase: 'refactor', beadId, chosen: ['code-refactoring-specialist'], mode, ok })
 
 if (!refactor) {
-  return {
+  return dispatchOutcome({
     ok: false,
     dispatchFailed: true,
     reason: 'the code-refactoring-specialist returned nothing',
@@ -156,7 +209,7 @@ if (!refactor) {
     behaviorPreserved: false,
     changedFiles: [],
     ledger: ledgerOf('default', false),
-  }
+  })
 }
 
 const snapshotTree = str(refactor.snapshotTree) || null
@@ -164,7 +217,7 @@ const changedFiles = Array.isArray(refactor.changedFiles) ? refactor.changedFile
 
 if (refactor.reverted === true) {
   log('Refactor: the refactor could not keep the suite green and was reverted')
-  return {
+  return dispatchOutcome({
     refactor,
     changedFiles: [],
     testsGreen: true,
@@ -174,11 +227,11 @@ if (refactor.reverted === true) {
     snapshotTree,
     reason: `the refactor was reverted: ${str(refactor.notes) || str(refactor.evidence).slice(-500)}`,
     ledger: ledgerOf('reverted', true),
-  }
+  })
 }
 
 if (!changedFiles.length && refactor.testsGreen === true) {
-  return {
+  return dispatchOutcome({
     refactor,
     changedFiles: [],
     testsGreen: true,
@@ -186,11 +239,11 @@ if (!changedFiles.length && refactor.testsGreen === true) {
     alreadySatisfied: true,
     snapshotTree,
     ledger: ledgerOf('nothing-to-refactor', true),
-  }
+  })
 }
 
 const testsGreen = refactor.testsGreen === true
-return {
+return dispatchOutcome({
   refactor,
   changedFiles,
   testsGreen,
@@ -198,4 +251,4 @@ return {
   snapshotTree,
   ...(testsGreen ? {} : { reason: str(refactor.evidence).slice(-1500) || 'the suite is not green after the refactor' }),
   ledger: ledgerOf('default', testsGreen),
-}
+})

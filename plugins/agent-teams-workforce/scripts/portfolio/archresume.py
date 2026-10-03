@@ -20,6 +20,8 @@ import re
 from pathlib import Path
 
 from archcoverage import coverage_facts, integration_revision
+from archevidence import digest, evidence_state, view_bindings, view_content
+from archrounds import round_facts, save_ledger
 
 ROUND_FILE = re.compile(
     r"^r(\d+)-(\d+)-(proposer|diagram|reviewer|cost)-([a-z0-9-]+)\.json$"
@@ -115,13 +117,14 @@ def parse_assign(spec: str) -> dict[str, str]:
 class Ledger:
     """The claims and findings of the rounds, folded in round order."""
 
-    def __init__(self, assign: dict[str, str]) -> None:
+    def __init__(self, assign: dict[str, str], lead: str = "") -> None:
         """Start an empty ledger.
 
         Args:
             assign: Owners the coordinator assigned to findings that had none.
         """
         self.assign = assign
+        self.lead = lead
         self.claims: list[dict] = []
         self.findings: list[dict] = []
         self.writers: list[str] = []
@@ -130,6 +133,7 @@ class Ledger:
         self.files: list[str] = []
         self.saved: list[str] = []
         self.last = 0
+        self.resolutions = []
 
     def absorb(
         self, n: int, seq: int, role: str, agent: str, result: object, file: str
@@ -157,6 +161,11 @@ class Ledger:
             return
         if agent not in self.reviewers:
             self.reviewers.append(agent)
+        self.resolutions.extend(
+            {**r, "by": agent, "round": n}
+            for r in result.get("resolutions", [])
+            if isinstance(r, dict)
+        )
         raw = result.get("findings")
         for k, x in enumerate(raw if isinstance(raw, list) else []):
             if not isinstance(x, dict) or not _text(x.get("verdict")):
@@ -167,9 +176,20 @@ class Ledger:
                 if claim_id
                 else None
             )
-            if claim:
+            revision = _text(x.get("claimRevision"))
+            if (
+                claim
+                and agent != claim["by"]
+                and _text(x.get("evidence"))
+                and (revision == claim["revision"])
+            ):
                 claim["verdicts"].append(
-                    {"by": agent, "verdict": _text(x.get("verdict"))}
+                    {
+                        "by": agent,
+                        "verdict": _text(x.get("verdict")),
+                        "revision": claim["revision"],
+                        "evidence": x.get("evidence") or "",
+                    }
                 )
             named = _text(x.get("owner"))
             owner = claim["by"] if claim else named if named in self.writers else ""
@@ -180,6 +200,7 @@ class Ledger:
                     "round": n,
                     "by": agent,
                     "claimId": claim["id"] if claim else "",
+                    "claimRevision": revision or (claim["revision"] if claim else ""),
                     "claim": x.get("claim") or "",
                     "file": x.get("file") or "",
                     "verdict": _text(x.get("verdict")),
@@ -208,17 +229,72 @@ class Ledger:
         for k, c in enumerate(raw if isinstance(raw, list) else []):
             if isinstance(c, dict) and _text(c.get("claim")):
                 stated += 1
-                self.claims.append(
+                cid = _text(c.get("claimId")) or f"C{n}.{seq}.{k + 1}"
+                old = next((x for x in self.claims if x["id"] == cid), None)
+                if c.get("claimId") and not old:
+                    raise ResumeError(f"unknown revised claim {cid}")
+                if old and old["by"] != agent and agent != self.lead:
+                    raise ResumeError(
+                        f"claim {cid} belongs to {old['by']}; do not silently transfer ownership"
+                    )
+                refs = c.get("evidenceRefs", [])
+                evidence, errors = evidence_state(refs)
+                file = c.get("file") or ""
+                view = (
+                    str(Path(self.files[-1]).parent.parent / "draft" / file)
+                    if file
+                    else ""
+                )
+                views = [view] if view else []
+                state = view_bindings(views, refs)
+                revision = digest(
                     {
-                        "id": f"C{n}.{seq}.{k + 1}",
-                        "round": n,
-                        "by": agent,
                         "claim": c.get("claim"),
-                        "file": c.get("file") or "",
-                        "citation": c.get("citation") or "",
-                        "verdicts": [],
+                        "citation": c.get("citation"),
+                        "evidence": evidence,
+                        "views": state,
                     }
                 )
+                fresh = {
+                    "id": cid,
+                    "round": n,
+                    "by": agent,
+                    "claim": c.get("claim"),
+                    "file": file,
+                    "citation": c.get("citation") or "",
+                    "evidenceRefs": refs,
+                    "evidenceState": evidence,
+                    "evidenceErrors": errors,
+                    "views": views,
+                    "viewState": state,
+                    "revision": revision,
+                    "active": True,
+                    "legacy": "claimId" not in c,
+                    "verdicts": [],
+                    "history": [],
+                }
+                if old:
+                    fresh["history"] = old["history"] + [
+                        {k: v for k, v in old.items() if k != "history"}
+                    ]
+                    if old["revision"] == revision:
+                        fresh["verdicts"] = old["verdicts"]
+                    self.claims[self.claims.index(old)] = fresh
+                else:
+                    self.claims.append(fresh)
+                for superseded in c.get("supersedes", []):
+                    target = next(
+                        (x for x in self.claims if x["id"] == superseded), None
+                    )
+                    if (
+                        not target
+                        or (target["by"] != agent and agent != self.lead)
+                        or target["id"] == cid
+                    ):
+                        raise ResumeError(f"invalid superseded claim {superseded}")
+                    target["active"] = False
+                    target["supersededBy"] = cid
+
         if role == "proposer":
             self.proposer_claims[agent] = self.proposer_claims.get(agent, 0) + stated
         answers = result.get("answers")
@@ -228,7 +304,7 @@ class Ledger:
             f = next(
                 (x for x in self.findings if x["id"] == ans.get("findingId")), None
             )
-            if not f or f["answer"] or (f["owner"] and f["owner"] != agent):
+            if not f or (f["owner"] and f["owner"] != agent):
                 continue
             f["owner"] = agent
             f["answer"] = {
@@ -238,7 +314,9 @@ class Ledger:
             }
 
 
-def _rounds(work: Path, roles: dict[str, str], assign: dict[str, str]) -> Ledger:
+def _rounds(
+    work: Path, roles: dict[str, str], assign: dict[str, str], lead: str = ""
+) -> Ledger:
     """Fold every saved round result, in round order.
 
     Args:
@@ -249,7 +327,7 @@ def _rounds(work: Path, roles: dict[str, str], assign: dict[str, str]) -> Ledger
     Returns:
         The ledger.
     """
-    ledger = Ledger(assign)
+    ledger = Ledger(assign, lead)
     folder = work / "rounds"
     found = []
     for p in folder.iterdir() if folder.is_dir() else []:
@@ -403,7 +481,7 @@ def proposal_team(saved: dict, requested: dict, roles: dict) -> dict:
 
 
 def resume_facts(
-    work_dir: str, *, roster: str, assign: str = "", team: str = ""
+    work_dir: str, *, roster: str, assign: str = "", team: str = "", plan: str = ""
 ) -> dict:
     """Read the architecture step's saved work and return the facts its control flow needs.
 
@@ -444,19 +522,23 @@ def resume_facts(
     )
     assignments = dict(previous.get("assignments", {}))
     assignments.update(parse_assign(assign))
-    ledger = _rounds(work, roles, assignments)
+    ledger = _rounds(work, roles, assignments, selected.get("lead", ""))
     if selected:
         # Preserve answered history; transfer only outstanding legacy proposer findings.
         active = {selected["lead"], selected["second"]}
         for finding in ledger.findings:
             if (
-                not finding["answer"]
-                and finding["verdict"] != "verified"
+                finding["verdict"] != "verified"
+                and not any(
+                    old.get("id") == finding["id"]
+                    and (old.get("resolution") or {}).get("verdict") == "accepted"
+                    for old in previous.get("findings", [])
+                )
                 and roles.get(finding["owner"]) == "proposer"
                 and finding["owner"] not in active
             ):
                 assignments[finding["id"]] = selected["lead"]
-        ledger = _rounds(work, roles, assignments)
+        ledger = _rounds(work, roles, assignments, selected.get("lead", ""))
     legacy_without_claims = [
         w
         for w, count in ledger.proposer_claims.items()
@@ -471,38 +553,108 @@ def resume_facts(
         for c in ledger.claims
     )
     coverage, coverage_summary = coverage_facts(work, s, ledger.files)
-    ledger_path = work / LEDGER_NAME
-    if work.is_dir():
-        ledger_path.write_text(
-            json.dumps(
-                {
-                    "proposalTeam": selected,
-                    "assignments": assignments,
-                    "claims": ledger.claims,
-                    "findings": ledger.findings,
-                    "savedResults": ledger.files,
-                    **coverage,
-                },
-                indent=1,
-            )
-            + "\n",
-            encoding="utf-8",
+    old_claims = {c["id"]: c for c in previous.get("claims", [])}
+    for claim in ledger.claims:
+        old = old_claims.get(claim["id"])
+        claim["legacyRevision"] = (old or {}).get(
+            "legacyRevision", (old or {}).get("revision", claim["revision"])
+        )
+        if claim["legacy"] and claim["legacyRevision"] != claim["revision"]:
+            claim["verdicts"] = []
+        if claim["evidenceErrors"] or any(
+            v.startswith(("unreadable:", "invalid:"))
+            for v in claim["viewState"].values()
+        ):
+            claim["verdicts"] = []
+    rounds = round_facts(
+        work,
+        previous.get("roundPlans", []),
+        json.loads(plan) if plan else None,
+        ledger,
+        roles,
+        selected,
+    )
+    previous_findings = {f["id"]: f for f in previous.get("findings", [])}
+    for finding in ledger.findings:
+        claim = next((c for c in ledger.claims if c["id"] == finding["claimId"]), None)
+        current_revision = (
+            claim["revision"]
+            if claim
+            else view_content(str(work / "draft" / finding["file"]))
+        )
+        finding["initialRevision"] = previous_findings.get(finding["id"], {}).get(
+            "initialRevision", finding["claimRevision"] or current_revision
+        )
+        finding["resolutionRevision"] = current_revision
+        finding["resolution"] = next(
+            (
+                r
+                for r in reversed(ledger.resolutions)
+                if r.get("findingId") == finding["id"]
+                and r.get("evidence")
+                and r["by"] != finding["owner"]
+                and finding["answer"]
+                and r["round"] >= finding["answer"]["round"]
+                and r.get("revision") == current_revision
+                and (
+                    finding["answer"].get("response") == "disputed"
+                    or current_revision != finding["initialRevision"]
+                )
+            ),
+            None,
         )
     open_findings = [
-        {"id": f["id"], "verdict": f["verdict"], "owner": f["owner"], "file": f["file"]}
+        {
+            "id": f["id"],
+            "verdict": f["verdict"],
+            "owner": f["owner"],
+            "file": f["file"],
+            "answered": bool(f["answer"])
+            and not (f["resolution"] and f["resolution"].get("verdict") == "rejected"),
+        }
         for f in ledger.findings
-        if f["verdict"] != "verified" and not f["answer"]
+        if f["verdict"] != "verified"
+        and not (f["resolution"] and f["resolution"].get("verdict") == "accepted")
     ]
     unreviewed: dict[str, int] = {}
     for c in ledger.claims:
-        if not c["verdicts"]:
+        if c["active"] and not c["verdicts"]:
             unreviewed[c["by"]] = unreviewed.get(c["by"], 0) + 1
+    # Bind saved approval to claims as well as coverage without changing its consumer field.
+    coverage_summary["revision"] = digest(
+        {
+            "coverage": coverage_summary["revision"],
+            "claims": [
+                {"id": c["id"], "revision": c["revision"]}
+                for c in ledger.claims
+                if c["active"]
+            ],
+        }
+    )
+    coverage["coverageRevision"] = coverage_summary["revision"]
+    coverage_summary["gaps"].extend(rounds["reviewGaps"])
+    ledger_path = work / LEDGER_NAME
+    if work.is_dir():
+        save_ledger(
+            ledger_path,
+            {
+                "contractVersion": 2,
+                "proposalTeam": selected,
+                "assignments": assignments,
+                "roundPlans": rounds["plans"],
+                "claims": ledger.claims,
+                "findings": ledger.findings,
+                "savedResults": ledger.files,
+                **coverage,
+            },
+        )
     integration = _integration(work)
     decision = _decision(work, roles)
     integration["coverageRevision"] = integration_revision(
         coverage_summary["revision"], integration["update"], work
     )
     return {
+        "contractVersion": previous.get("contractVersion", 1),
         "dir": str(work),
         "exists": work.is_dir(),
         "ledger": str(ledger_path) if work.is_dir() else None,
@@ -510,7 +662,13 @@ def resume_facts(
         "coverage": coverage_summary,
         "proposalTeam": selected,
         "rounds": {
-            "last": ledger.last,
+            "last": rounds["last"],
+            "pendingPlan": rounds["pendingPlan"],
+            "readyForDecision": bool(
+                rounds["plans"]
+                and rounds["plans"][-1].get("complete")
+                and rounds["plans"][-1].get("readyForDecision")
+            ),
             "results": len(ledger.files),
             "saved": ledger.saved,
             "writers": ledger.writers,

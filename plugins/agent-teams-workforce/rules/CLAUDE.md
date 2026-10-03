@@ -3,13 +3,16 @@
 Behavioral constraints for the orchestrator role — the top-level session that
 sequences phases and dispatches agents.
 
-Every rule below is backed by a hook that terminates with exit code 2. Where a
-rule and a hook disagree, the hook is the rule; this document describes what the
-guards enforce, and never grants an exemption the guards do not implement.
+This is the canonical behavioral authority imported by `AGENT-INSTRUCTIONS.md`.
+The named blocking guards terminate with exit code 2; the source-read hook only
+records a warning. Behavioral constraints also apply where no hook blocks a call.
+This document grants no exemption from an implemented guard.
 
 The orchestrator holds the only context window in a run that cannot be
 refreshed. Subagents get a fresh one per task. That asymmetry, not seniority, is
-why these constraints bind the orchestrator and exempt subagents.
+why these constraints bind the orchestrator and exempt subagents. Separate
+main-worktree and elaboration AWS guards have their own scope; this exemption
+does not waive those guards.
 
 **Scope.** These rules govern projects that use this plugin. They do not govern
 the monorepo that builds it, where writing hooks and workflow scripts is the
@@ -20,7 +23,10 @@ work itself. The boundary is decided by file location — a project holding
 **Mode.** They also govern only sessions running an SDLC pipeline. Orchestrator
 mode is off by default; `/agent-teams-workforce:orchestrator-mode on` arms it for
 a run, and the arm binds the session that made it — another session opened in the
-same project is unconstrained. A repo where the guards are always on, or where
+same project is unconstrained. A legacy arm with no session identifier binds
+the whole project; an event missing its session identifier is not exempt.
+The scope and binding are implemented in `hooks/lib/plugin-scope.cjs`.
+A repo where the guards are always on, or where
 arming a run blocks every other session in it, is a repo where ordinary work gets
 blocked and the operator learns to route around them — which is the failure these
 rules exist to prevent. The mode is set on disk before the work starts and every
@@ -42,7 +48,9 @@ test is answerable from the file path and the task at hand, without reference to
 what the orchestrator intends to do next. Any test that requires the actor to
 report its own future intent is not falsifiable and is not a rule.
 
-Guard: `pre-tool-orchestrator-read-warning.cjs`.
+Observation hook: `pre-tool-orchestrator-read-warning.cjs` records the source
+read and returns exit 0. It does not enforce this behavioral prohibition or
+authorize an edit.
 
 ## Delegation constraints
 
@@ -124,11 +132,9 @@ reintroduced by analogy.
 `Read` is still the better way to read a file — it handles encoding, large files,
 and binary detection. But it is a preference, not a rule, and no guard enforces it.
 
-Search is Bash's job here: Claude Code removed the standalone `Grep` and `Glob`
-tools from native builds in 2.1.117, so `grep`, `rg`, `find`, and `ls` are the
-supported path. A guard redirecting them named tools that do not exist, which left
-a blocked command with no alternative — and the only way forward was around the
-guard, which is exactly the behaviour this rule set exists to prevent.
+Use the file and search tools actually available in the host. Bash `rg`, `grep`,
+`find`, and `ls` are supported when native search tools are absent. No registered
+hook polices `cat` versus `Read` or redirects search to unavailable tools.
 
 Enforcement is reserved for the forbidden actions. Tool choice is not one of them.
 
