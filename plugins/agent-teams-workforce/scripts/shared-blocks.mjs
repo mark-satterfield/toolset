@@ -18,6 +18,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { agentContracts } from './agent-contracts.mjs'
+import { artifactCapabilityProblems } from './artifact-capabilities.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = join(HERE, '..', 'workflows')
@@ -25,6 +26,7 @@ const WORKFLOWS = join(HERE, '..', 'workflows')
 /** Every shared block: its name, and the workflows that must carry it. */
 export const SHARED_BLOCKS = Object.freeze([
   { name: 'architecture-artifacts', requiredIn: ['architecture.js'] },
+  { name: 'trd-artifact', requiredIn: ['trd-authoring.js'] },
   {
     name: 'fable',
     requiredIn: [
@@ -99,12 +101,14 @@ export const canonicalBlock = (name) => {
     return text.replace('/* ARCHITECTURE_WRITER_SCHEMA */ {}', () => schema('writer'))
       .replace('/* ARCHITECTURE_REVIEW_SCHEMA */ {}', () => schema('review'))
   }
+  if (name === 'trd-artifact') return text.replace('/* TRD_ARTIFACT_SCHEMA */ {}', () => JSON.stringify(JSON.parse(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'schemas', 'trd.schema.json'), 'utf8'))))
   // Registry data is generated from owned definitions; no manually maintained allowlist.
   if (name !== 'fable') return text
-  const core = ['subagent-contract', 'artifact-handoff'].map(skill =>
+  const core = ['subagent-contract'].map(skill =>
     readFileSync(join(HERE, '..', 'skills', skill, 'SKILL.md'), 'utf8')).join('\n\n')
   return text.replace('/* OWNED_AGENT_CONTRACTS */ {}', () => JSON.stringify(agentContracts(join(HERE, '..'))))
     .replace("/* OWNED_CORE_CONTRACTS */ ''", () => JSON.stringify(core))
+    .replace("/* OWNED_ARTIFACT_CONTRACT */ ''", () => JSON.stringify(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'SKILL.md'), 'utf8')))
 }
 
 /** The text between a block's markers in `source`, or null when the source lacks the markers. */
@@ -120,7 +124,7 @@ export function extractBlock(source, name) {
  * a listed workflow without the block, a copy that differs from the canonical text.
  */
 export function syncSharedBlocks({ write = false, only = [] } = {}) {
-  const problems = []
+  const problems = artifactCapabilityProblems(join(HERE, '..'))
   const files = readdirSync(WORKFLOWS).filter((f) => f.endsWith('.js') && (!only.length || only.includes(f)))
   for (const block of SHARED_BLOCKS) {
     const text = canonicalBlock(block.name)

@@ -302,6 +302,37 @@ def main() -> int:
                 decode(checkpoint_path.read_text()) if checkpoint_path.is_file() else {}
             )
             if (
+                isinstance(checkpoint, dict)
+                and checkpoint.get("status") == "blocked"
+                and checkpoint.get("revision", "") == args.revision
+                and checkpoint.get("artifactPath") == str(args.candidate)
+                and checkpoint.get("schemaSha256")
+                == _sha(canonical(decode(args.schema_json)))
+            ):
+                from jsonschema import Draft202012Validator
+
+                checkpoint_schema = (
+                    Path(__file__).resolve().parents[2]
+                    / "skills/artifact-handoff/schemas/checkpoint.schema.json"
+                )
+                Draft202012Validator(decode(checkpoint_schema.read_text())).validate(
+                    checkpoint
+                )
+                print(
+                    json.dumps(
+                        {
+                            "pending": True,
+                            "blocked": True,
+                            "candidate": str(args.candidate),
+                            "revision": args.revision,
+                            "reason": checkpoint.get("reason")
+                            or "producer recorded a blocked dependency",
+                            "remaining": checkpoint["remaining"],
+                        }
+                    )
+                )
+                return 0
+            if (
                 not isinstance(checkpoint, dict)
                 or checkpoint.get("status") != "complete"
                 or checkpoint.get("revision", "") != args.revision

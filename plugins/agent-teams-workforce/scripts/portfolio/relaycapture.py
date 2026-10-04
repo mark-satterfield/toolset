@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import relay
+from relayregistry import load_request
 
 CHUNK_SIZE = 1024
 MAX_BYTES = 1024 * 1024
@@ -47,20 +48,67 @@ def load(path: Path, request: str, command_sha: str) -> dict:
     return saved
 
 
+def registered_result(directory: Path, request: str, execution: str) -> dict:
+    """Materialize the exact current registered capture for the handoff hook."""
+    result = {
+        "state": "unknown",
+        "exitCode": 0,
+        "stdout": "",
+        "receipt": None,
+        "bridge": True,
+        "error": "",
+    }
+    try:
+        document = load_request(directory, request)
+        if document["executionId"] != execution:
+            raise ValueError("registered result belongs to another execution")
+        path = directory / f"{request}.json"
+        if not path.exists():
+            result["state"] = (
+                "unknown" if path.with_suffix(".claim").exists() else "not-started"
+            )
+            result["error"] = (
+                "command outcome unknown; claim exists"
+                if result["state"] == "unknown"
+                else "registered command never started; no claim or result exists"
+            )
+            return result
+        saved = load(path, request, document["commandSha256"])
+        return {
+            **result,
+            "state": "completed",
+            "exitCode": saved["exitCode"],
+            "stdout": saved["stdout"],
+            "receipt": receipt(saved),
+        }
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        result["error"] = str(exc)
+        return result
+
+
 def main(argv: list[str] | None = None) -> int:
     """Capture once, or return a manifest/chunk without executing the command."""
     rest, error = relay.argv_mismatch(list(sys.argv[1:] if argv is None else argv))
     if error:
         raise ValueError(error)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("capture", "manifest", "chunk"))
+    parser.add_argument(
+        "operation",
+        choices=("capture", "manifest", "chunk", "registered", "registered-result"),
+    )
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--request", required=True)
-    parser.add_argument("--command-sha256", required=True)
+    parser.add_argument("--command-sha256", default="")
     parser.add_argument("--index", type=int)
     parser.add_argument("--sha256")
     parser.add_argument("--argv-json")
     args = parser.parse_args(rest)
+    registered = args.operation in {"registered", "registered-result"}
+    if registered:
+        document = load_request(args.directory, args.request, wait_seconds=10)
+        args.command_sha256 = document["commandSha256"]
+        args.argv_json = json.dumps(document["argv"])
+        args.operation = "capture" if args.operation == "registered" else "manifest"
     if any(
         len(value) != 64 or any(c not in "0123456789abcdef" for c in value)
         for value in (args.request, args.command_sha256)
@@ -118,6 +166,16 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("chunk index out of range")
         chunk = saved["stdout"][args.index * CHUNK_SIZE : (args.index + 1) * CHUNK_SIZE]
         result.update(index=args.index, chunk=chunk, sha256=digest(chunk))
+    if registered:
+        # Payload travels through the command runner's StructuredOutput hook, not tokens.
+        result = {
+            "state": "completed",
+            "exitCode": saved["exitCode"],
+            "stdout": "",
+            "receipt": receipt(saved),
+            "bridge": False,
+            "error": "",
+        }
     print(json.dumps(result, ensure_ascii=True, separators=(",", ":")))
     return 0
 

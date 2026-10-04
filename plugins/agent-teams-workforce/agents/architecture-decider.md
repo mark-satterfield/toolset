@@ -7,8 +7,8 @@ description: >-
   solutions, or returns it to a named proposer with the missing due diligence.
   Generates no evidence of its own. Use for Architecture Analysis work
   requiring approval of a target and choices between competing solutions.
-tools: Read, Glob, Grep, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
-disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit, Bash
+tools: Read, Glob, Grep, Write, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
+disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60
@@ -67,7 +67,7 @@ Consumed by: architecture.js — returns work to proposers or begins target inte
 - No self-tasking: if deciding reveals missing analysis, return the target to the proposer who owns it; never produce the missing evidence yourself.
 - Design, review and approval are separate tasks performed by different agents: proposers designed the target, reviewers checked its claims, you decide from both.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
-- Write only the two decision files the calling workflow names.
+- Write only the decision files and their candidate/progress/checkpoint artifacts supplied by the calling workflow. Use Bash for the canonical artifact submission and checkpoint helpers; this does not authorize design edits or generating new evidence.
 - Separate provided facts, inferred facts, assumptions, recommendations and decisions in the decision document.
 - Prefer the skills and tools provided to you over internal training.
 

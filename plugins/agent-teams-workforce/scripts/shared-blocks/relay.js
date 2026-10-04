@@ -225,6 +225,39 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   const MANIFEST_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt'], properties: { receipt: RECEIPT_SCHEMA } }
   const CHUNK_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt', 'index', 'chunk', 'sha256'], properties: { receipt: RECEIPT_SCHEMA, index: { type: 'integer' }, chunk: { type: 'string' }, sha256: { type: 'string' } } }
   const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
+  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
+  async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
+    const argv = shellWords(command)
+    const commandSha256 = sha256Json(argv)
+    const executionId = fableInput.relayExecutionId
+    const request = sha256Json({ execution: executionId, invocation: fablePath, ordinal, commandSha256 })
+    const document = canonicalJson({ version: 1, executionId, invocation: fablePath, ordinal, request, commandSha256, argv })
+    if (document.length > 2097152) return { captureError: 'registered command exceeds the 2 MiB request bound' }
+    let operation = 'registered'
+    const recovered = new Set()
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const callLabel = attempt ? `${label}:machine-recovery${attempt}` : label
+      const before = new Set(typeof dispatchFailures === 'undefined' ? [] : dispatchFailures)
+      const binding = canonicalJson({ executionId, request, directory: fableInput.relayRequestDir, operation })
+      const out = await dispatch(`WORKFORCE_RELAY_BINDING_V1 ${binding}\nWORKFORCE_RELAY_REQUEST_V1 ${document}`, { label: callLabel, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: REGISTERED_SCHEMA, outputMode: 'machine' })
+      if (typeof dispatchFailures !== 'undefined') for (const entry of dispatchFailures) if (!before.has(entry) && entry.label === callLabel && entry.phase === phase) recovered.add(entry)
+      if (!out) {
+        if (typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
+        operation = 'registered-result'
+        continue
+      }
+      if (out.bridge !== true) return { captureError: 'deterministic StructuredOutput handoff hook did not run; captured output is retained and no model-copy fallback is permitted' }
+      if (out.state === 'not-started') { operation = 'registered'; continue }
+      if (out.state !== 'completed') return { captureError: out.error || 'registered command outcome unknown; original command will not repeat' }
+      const receipt = out.receipt
+      let exact = false
+      try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && receipt.exitCode === out.exitCode && Number.isInteger(out.exitCode) && Number.isSafeInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && HEX.test(String(receipt.sha256)) && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
+      if (!exact) return { captureError: 'machine handoff failed current request/command/exit/byte verification' }
+      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
+      return { exitCode: out.exitCode, stdout: out.stdout, receipt, machine: true }
+    }
+    return { captureError: 'registered command could not hand back its result after three bounded machine attempts' }
+  }
   async function captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -280,9 +313,14 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
   async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
     const ordinal = captureOrdinal++
-    const out = file && readRunner && fableInput.relayExecutionId
-      ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
-      : await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
+    const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
+    const out = registered
+      ? await registeredCommand(dispatch, { label, phase, command }, ordinal)
+      : fableRecovery
+        ? file && readRunner && fableInput.relayExecutionId
+          ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
+          : await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
+        : { captureError: 'deterministic relay registry is unavailable: launch with the updated host relayExecutionId, relayRequestDir and relayCaptureScript contract' }
     if (out && out.captureError) {
       const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 2, reason: out.captureError })}`
       log(error)
@@ -290,6 +328,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     }
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
     let got = parse(out.stdout, file)
+    if (got.why && out.machine) return { ok: false, error: `${label}: exact saved command output is invalid: ${got.why}` }
     if (got.why) {
       const receipt = got.env
       const bound = out.exitCode === 0 && receipt && receipt['~exit'] === 0 && file && readRunner && HEX.test(String(receipt['~sha256'])) && Number.isInteger(receipt['~bytes']) && receipt['~bytes'] >= 0
@@ -446,9 +485,13 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agent
     const command = (operation, extra = []) => ['python3', helper, operation, ...binding, ...extra].map(quote).join(' ')
     const progress = `${candidate}.progress.json`
     const submit = command('submit', ['--progress-file', progress])
-    return `\n\nAUTHORITATIVE ARTIFACT HANDOFF: Write the complete JSON result ONCE to ${candidate}, using the schema in the submission command below. Maintain ${progress} with task (string), completed and remaining (string arrays), and artifacts (path array); include reason when blocked.
+    return `\n\nARTIFACT CONTRACT DATA:
+Candidate: ${candidate}
+Progress: ${progress}
+Input revision: ${revision}
 Submission command: ${submit}
-After meaningful progress use that same command, replacing only the operation argument 'submit' with 'checkpoint' and appending --status in-progress. For blocked work append --status blocked instead, with reason and remaining work recorded. After finishing the assignment run the submission command unchanged. The script validates the candidate, computes its bound completion checkpoint and prints the exact return object. Only after exit 0, pass that stdout object unchanged to StructuredOutput; do not construct a second return object or copy the artifact contents into it. Do not calculate hashes or manually mark incomplete work complete. Correct reported errors before returning; a failed submission is not completion. Structural validation is not semantic review. On resume use the same command with operation 'status' instead of 'submit' and omit --progress-file and its value; read the checkpoint and actual artifacts first, preserving completed work and finishing only missing work. Preserve all candidate, schema and revision arguments across these operations. Shared Markdown, diagrams and other documents remain authoritative at their paths; read them directly, never replace them with summaries. Do not write the final accepted result; the workflow validates and publishes the candidate.`
+Checkpoint command: ${command('checkpoint', ['--progress-file', progress])}
+Status command: ${command('status')}`
   }
   async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
     if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
@@ -459,6 +502,10 @@ After meaningful progress use that same command, replacing only the operation ar
     if (!result.ok) return result
     if (result.exitCode !== 0) return { ok: false, error: `artifact validation failed: ${JSON.stringify(result.json)}`, relayFile }
     const receipt = result.json
+    if (probe && receipt && receipt.blocked === true) {
+      const detail = { candidate, revision, reason: String(receipt.reason || 'producer blocked'), remaining: receipt.remaining || [] }
+      return { ok: false, blocked: true, resumable: true, error: `ARTIFACT_BLOCKED ${JSON.stringify(detail)}`, ...detail }
+    }
     if (probe && receipt && receipt.pending === true) return { ok: true, pending: true, ...(receipt.research ? { research: receipt.research } : {}) }
     if (recordArgv.length && (!receipt || receipt.recorded !== true)) return { ok: false, error: 'artifact provenance recording not confirmed', relayFile }
     if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
