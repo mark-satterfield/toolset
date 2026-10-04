@@ -19,6 +19,7 @@ import json
 import re
 from pathlib import Path
 
+from archbaseline import baseline_facts
 from archcoverage import coverage_facts, integration_revision
 from archevidence import digest, evidence_state, view_bindings, view_content
 from archrepairs import repair_facts
@@ -606,10 +607,12 @@ def resume_facts(
     for c in ledger.claims:
         if c["active"] and not c["verdicts"]:
             unreviewed[c["by"]] = unreviewed.get(c["by"], 0) + 1
-    # Bind saved approval to claims as well as coverage without changing its consumer field.
+    baseline = baseline_facts(s)
+    # Bind approval to the assessed baseline and claims; per-row checks stay reusable.
     coverage_summary["revision"] = digest(
         {
             "coverage": coverage_summary["revision"],
+            "baseline": baseline["revision"],
             "claims": [
                 {"id": c["id"], "revision": c["revision"]}
                 for c in ledger.claims
@@ -662,6 +665,7 @@ def resume_facts(
         "exists": work.is_dir(),
         "ledger": str(ledger_path) if work.is_dir() else None,
         "survey": survey,
+        "baseline": baseline,
         "coverage": coverage_summary,
         "historicalAuthoring": historical,
         "rounds": {

@@ -1,5 +1,6 @@
 const ownedCoreContracts = /* OWNED_CORE_CONTRACTS */ ''
 const ownedArtifactContract = /* OWNED_ARTIFACT_CONTRACT */ ''
+const ownedBaselineContract = /* OWNED_BASELINE_CONTRACT */ ''
 const ownedAgentContracts = /* OWNED_AGENT_CONTRACTS */ {}
 // Runtime replay identifies calls by their unchanged prompt/options and start order.
 // Recovery metadata stays in workflow arguments and never enters those options.
@@ -22,10 +23,11 @@ async function fableAgent(prompt, options) {
   const outputMode = (options && options.outputMode) || (artifactSchema ? 'artifact' : 'inline')
   if (!['artifact', 'inline', 'machine'].includes(outputMode) || (outputMode === 'artifact') !== !!artifactSchema || (outputMode === 'machine' && (key !== 'workflow-command-runner' || !schema || !schema.properties || !schema.properties.bridge))) throw new Error(`OUTPUT_CONTRACT_MISMATCH: ${suppliedType}: ${outputMode}`)
   if (outputMode === 'artifact' && contract && !contract.artifactCapable) throw new Error(`ARTIFACT_CAPABILITY_MISMATCH: ${suppliedType} requires Write and Bash for its declared artifact contract`)
-  const { outputMode: _mode, ...runtimeOptions } = options || {}
+  const { outputMode: _mode, architectureBaseline = false, ...runtimeOptions } = options || {}
   options = { ...runtimeOptions, agentType: contract.agentType }
   const domainSkills = contract.skills.filter(name => !['agent-teams-workforce:subagent-contract', 'agent-teams-workforce:artifact-handoff'].includes(name))
   const contracts = outputMode === 'machine' ? '' : ownedCoreContracts + (outputMode === 'artifact' ? '\n\n' + ownedArtifactContract : '')
+  const baselineContract = outputMode !== 'machine' && (architectureBaseline === true || domainSkills.includes('agent-teams-workforce:architecture-baseline')) ? ownedBaselineContract + '\n\n' : ''
   const skillData = outputMode !== 'machine' && domainSkills.length ? `Declared domain skills: ${domainSkills.join(', ')}\n\n` : ''
   const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
   const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
@@ -34,7 +36,7 @@ async function fableAgent(prompt, options) {
   const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
   fableEvent('start', identity)
   try {
-    const result = await agent(`OUTPUT_MODE: ${outputMode}\n\n${contracts}\n\n${skillData}${prompt}`, call)
+    const result = await agent(`OUTPUT_MODE: ${outputMode}\n\n${contracts}\n\n${baselineContract}${skillData}${prompt}`, call)
     if (!result) fableEvent('failed', identity)
     return result
   } catch (error) {

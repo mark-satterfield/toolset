@@ -947,6 +947,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     atg.add_argument("--draft", required=True, help="the draft target directory")
     atg.add_argument(
+        "--baseline",
+        default="",
+        help="validated survey JSON retaining baseline and implementation work",
+    )
+    atg.add_argument(
         "--arch-root", required=True, help="the architecture directory holding target/"
     )
     atg.add_argument(
@@ -1189,6 +1194,7 @@ def run(args: argparse.Namespace) -> dict:
             subject=args.subject,
             forbid=split_ids(args.forbid),
             dry_run=args.dry_run,
+            baseline=args.baseline,
         )
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)

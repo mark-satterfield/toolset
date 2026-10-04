@@ -34,6 +34,7 @@ the effective version has been corrected to match, and commits the removal.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -629,6 +630,7 @@ def write_target(
     subject: str,
     forbid: list[str],
     dry_run: bool = False,
+    baseline: str = "",
 ) -> dict:
     """Check an approved draft and write it to `target/<subject>/`, every view `in-review`.
 
@@ -665,13 +667,49 @@ def write_target(
         }
     folder = subject_folder(subject)
     subject_refusals = _subject_refusals(subject, folder, forbid)
-    files = _draft_files(source) if source.is_dir() else []
+    manifest = None
+    baseline_refusals = []
+    if baseline:
+        from archbaseline import baseline_facts
+
+        try:
+            survey = json.loads(Path(baseline).read_text(encoding="utf-8"))
+            facts = baseline_facts(survey)
+            baseline_refusals = facts["errors"] + [
+                f"unresolved baseline: {item}" for item in facts["unknowns"]
+            ]
+            manifest = {
+                "version": 1,
+                "survey": str(Path(baseline).resolve()),
+                "surveySha256": hashlib.sha256(Path(baseline).read_bytes()).hexdigest(),
+                "designChanged": bool(facts["designWork"]),
+                "documentationChanged": bool(facts["docWork"]),
+                "entries": facts["entries"],
+                "implementationWork": facts["implementationWork"],
+                "approvalFiles": sorted(
+                    {
+                        document["path"]
+                        for entry in facts["entries"]
+                        if entry["designAction"] == "validate-existing"
+                        for document in entry["documents"]
+                        if document["lifecycle_state"] == "in-review"
+                    }
+                ),
+            }
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            baseline_refusals = [f"baseline unreadable or invalid: {exc}"]
+    no_author = bool(manifest) and not (
+        manifest["designChanged"] or manifest["documentationChanged"]
+    )
+    files = [] if no_author else (_draft_files(source) if source.is_dir() else [])
     draft_refusals = (
         _draft_refusals(source, files)
         if source.is_dir()
         else [f"the draft {source} is not a directory"]
     )
-    refusals = subject_refusals + draft_refusals
+    if no_author:
+        draft_refusals = []
+    refusals = subject_refusals + draft_refusals + baseline_refusals
     dest = root / TARGET_FOLDER / folder
     if not subject_refusals and not dest.resolve().is_relative_to(
         (root / TARGET_FOLDER).resolve()
@@ -691,6 +729,20 @@ def write_target(
         "deltaFiles": [str(dest / p.relative_to(source)) for p in delta],
         "dryRun": dry_run,
     }
+    if manifest:
+        report.update(
+            {
+                "designChanged": manifest["designChanged"],
+                "documentationChanged": manifest["documentationChanged"],
+                "implementationWork": len(manifest["implementationWork"]),
+                "approvalFiles": manifest["approvalFiles"],
+            }
+        )
+        report["files"] += [
+            str(dest / "baseline.json"),
+            str(dest / DELTA_FOLDER / "baseline.json"),
+        ]
+        report["deltaFiles"].append(str(dest / DELTA_FOLDER / "baseline.json"))
     # The summary carries what a caller acts on, because `--out` prints only the summary.
     report["summary"] = {
         key: report[key]
@@ -705,6 +757,18 @@ def write_target(
             "dryRun",
         )
     } | {"files": len(report["files"]), "deltaFiles": len(report["deltaFiles"])}
+    if manifest:
+        report["summary"].update(
+            {
+                key: report[key]
+                for key in (
+                    "designChanged",
+                    "documentationChanged",
+                    "implementationWork",
+                    "approvalFiles",
+                )
+            }
+        )
     if refusals or dry_run:
         return report
     if dest.exists():
@@ -717,6 +781,11 @@ def write_target(
             out.write_text(text, encoding="utf-8")
         else:
             shutil.copyfile(path, out)
+    if manifest:
+        (dest / DELTA_FOLDER).mkdir(parents=True, exist_ok=True)
+        content = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        (dest / "baseline.json").write_text(content, encoding="utf-8")
+        (dest / DELTA_FOLDER / "baseline.json").write_text(content, encoding="utf-8")
     return report
 
 
@@ -848,23 +917,87 @@ def delta_items(delta_dir: str) -> dict:
             refusals.append(f"{view} names no element in `shows`")
         for element in cat["shows"]:
             shown.setdefault(element, []).append(str(view))
-    if not views:
-        refusals.append(f"{root} holds no view")
+    manifest = None
+    baseline_file = root / "baseline.json"
+    if baseline_file.is_file():
+        try:
+            manifest = json.loads(baseline_file.read_text(encoding="utf-8"))
+            survey_path = Path(manifest["survey"])
+            if (
+                hashlib.sha256(survey_path.read_bytes()).hexdigest()
+                != manifest["surveySha256"]
+            ):
+                raise ValueError("survey changed since target was accepted")
+            from archbaseline import baseline_facts
+
+            facts = baseline_facts(json.loads(survey_path.read_text(encoding="utf-8")))
+            if (
+                manifest.get("version") != 1
+                or not facts["valid"]
+                or facts["unknowns"]
+                or facts["entries"] != manifest["entries"]
+                or facts["implementationWork"] != manifest.get("implementationWork")
+                or bool(facts["designWork"]) != manifest.get("designChanged")
+                or bool(facts["docWork"]) != manifest.get("documentationChanged")
+            ):
+                raise ValueError("baseline evidence is invalid or changed")
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            refusals.append(f"invalid baseline handoff: {exc}")
+            manifest = None
+    if not views and (
+        not manifest or manifest["designChanged"] or manifest["documentationChanged"]
+    ):
+        refusals.append(
+            f"{root} holds no required view or validated unchanged baseline handoff"
+        )
     items = [
         {"id": f"D{n}", "element": element, "views": shown[element]}
         for n, element in enumerate(sorted(shown, key=str.casefold), start=1)
     ]
+    if manifest:
+        for entry in sorted(manifest["entries"], key=lambda row: row["id"].casefold()):
+            if entry["id"] not in manifest["implementationWork"]:
+                continue
+            items.append(
+                {
+                    "id": f"D{len(items) + 1}",
+                    "element": entry["id"],
+                    "kind": "implementation-gap",
+                    "views": [document["path"] for document in entry["documents"]],
+                    "requirements": entry["requirements"],
+                    "subjects": entry["subjects"],
+                    "implementationAction": entry["implementationAction"],
+                    "current": entry["current"],
+                    "target": entry["target"],
+                    "disposition": entry["disposition"],
+                    "suitabilityEvidenceRefs": entry["suitabilityEvidenceRefs"],
+                    "code": entry["code"],
+                    "rationale": entry["rationale"],
+                    "baseline": str(baseline_file),
+                }
+            )
+    baseline_validated = manifest is not None and not refusals
+    baseline_summary = {
+        "baselineValidated": baseline_validated,
+        "implementationWork": len(manifest["implementationWork"])
+        if baseline_validated
+        else None,
+        "implementationComplete": baseline_validated
+        and not manifest["implementationWork"],
+    }
     return {
         "ok": not refusals,
         "refusals": refusals,
         "deltaDir": str(root),
         "views": listed,
         "items": items,
+        **baseline_summary,
         "summary": {
             "ok": not refusals,
             "refusals": refusals,
             "views": len(listed),
             "items": len(items),
+            **baseline_summary,
         },
     }
 

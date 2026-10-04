@@ -25,6 +25,7 @@ const WORKFLOWS = join(HERE, '..', 'workflows')
 
 /** Every shared block: its name, and the workflows that must carry it. */
 export const SHARED_BLOCKS = Object.freeze([
+  { name: 'architecture-baseline', requiredIn: ['architecture.js'] },
   { name: 'architecture-artifacts', requiredIn: ['architecture.js'] },
   { name: 'trd-artifact', requiredIn: ['trd-authoring.js'] },
   {
@@ -96,6 +97,7 @@ export const endMarker = (name) => `// ===== SHARED BLOCK ${name} — END =====`
 /** The canonical text of one block. */
 export const canonicalBlock = (name) => {
   const text = readFileSync(join(HERE, 'shared-blocks', `${name}.js`), 'utf8').replace(/\n+$/, '')
+  if (name === 'architecture-baseline') return text.replace('/* ARCHITECTURE_BASELINE_SCHEMA */ {}', () => JSON.stringify(JSON.parse(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'schemas', 'architecture-baseline.schema.json'), 'utf8'))))
   if (name === 'architecture-artifacts') {
     const schema = kind => JSON.stringify(JSON.parse(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'schemas', `architecture-${kind}.schema.json`), 'utf8')))
     return text.replace('/* ARCHITECTURE_WRITER_SCHEMA */ {}', () => schema('writer'))
@@ -108,6 +110,7 @@ export const canonicalBlock = (name) => {
     readFileSync(join(HERE, '..', 'skills', skill, 'SKILL.md'), 'utf8')).join('\n\n')
   return text.replace('/* OWNED_AGENT_CONTRACTS */ {}', () => JSON.stringify(agentContracts(join(HERE, '..'))))
     .replace("/* OWNED_CORE_CONTRACTS */ ''", () => JSON.stringify(core))
+    .replace("/* OWNED_BASELINE_CONTRACT */ ''", () => JSON.stringify(readFileSync(join(HERE, '..', 'skills', 'architecture-baseline', 'SKILL.md'), 'utf8')))
     .replace("/* OWNED_ARTIFACT_CONTRACT */ ''", () => JSON.stringify(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'SKILL.md'), 'utf8')))
 }
 

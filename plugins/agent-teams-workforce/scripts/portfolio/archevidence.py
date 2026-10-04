@@ -54,7 +54,7 @@ def view_content(path: str, heading: str = "") -> str:
 
 
 def evidence_state(refs: object) -> tuple[list, list[str]]:
-    """Local revisions are measured; external versions are retained without network fetches."""
+    """Bind cited source bytes; unrelated main commits do not invalidate evidence."""
     states, errors = [], []
     if not isinstance(refs, list):
         return [], ["evidenceRefs must be a list"]
@@ -65,8 +65,24 @@ def evidence_state(refs: object) -> tuple[list, list[str]]:
         path, repo = ref.get("path", ""), ref.get("repo", "")
         if repo:
             try:
+                revision = ref.get("revision")
+                if not isinstance(revision, str) or not re.fullmatch(
+                    r"[0-9a-fA-F]{7,40}", revision
+                ):
+                    errors.append(
+                        f"source revision missing or not a commit: {repo}:{path}"
+                    )
+                    states.append({"ref": ref, "error": "missing commit provenance"})
+                    continue
                 commit = subprocess.run(
-                    ["git", "-C", repo, "rev-parse", "--verify", "main^{commit}"],
+                    [
+                        "git",
+                        "-C",
+                        repo,
+                        "rev-parse",
+                        "--verify",
+                        f"{revision}^{{commit}}",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=10,
@@ -78,13 +94,21 @@ def evidence_state(refs: object) -> tuple[list, list[str]]:
                     timeout=10,
                     check=True,
                 ).stdout
+                cited = subprocess.run(
+                    ["git", "-C", repo, "show", f"{commit}:{path}"],
+                    capture_output=True,
+                    timeout=10,
+                    check=True,
+                ).stdout
                 state = {
                     "ref": ref,
                     "commit": commit,
                     "content": hashlib.sha256(content).hexdigest(),
                 }
-                if not ref.get("revision") or ref["revision"] != commit:
-                    errors.append(f"source revision changed or missing: {repo}:{path}")
+                if cited != content:
+                    errors.append(
+                        f"cited source content changed on main: {repo}:{path}"
+                    )
             except (OSError, subprocess.SubprocessError) as exc:
                 state = {"ref": ref, "error": str(exc)}
                 errors.append(f"source unreadable: {repo}:{path}")
@@ -166,5 +190,5 @@ def saved_evidence_current(work: str) -> bool:
             ):
                 return False
         return True
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return False

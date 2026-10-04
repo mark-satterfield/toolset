@@ -17,7 +17,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 120
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:architecture-baseline, agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
 effort: medium
 isolation: worktree
 color: blue

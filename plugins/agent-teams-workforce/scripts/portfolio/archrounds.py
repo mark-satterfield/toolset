@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from archevidence import digest
 from jsonartifact import read_artifact
 
 
@@ -109,6 +110,16 @@ def round_facts(
         if not isinstance(n, int) or n < 1 or not isinstance(dispatches, list):
             raise ValueError("invalid durable round plan")
         writers = [d for d in dispatches if d.get("role") in ("proposer", "diagram")]
+        if "designOwner" not in plan:
+            # Legacy plans retain work; deterministically designate their last selected
+            # author for final reconciliation instead of making a new dispatch.
+            plan["designOwner"] = writers[-1]["agentType"] if writers else ""
+        if writers and plan["designOwner"] not in {d["agentType"] for d in writers}:
+            raise ValueError("design owner is not a selected author")
+        if writers and writers[-1]["agentType"] != plan["designOwner"]:
+            raise ValueError("design owner must run after the other selected authors")
+        if not writers and plan["designOwner"]:
+            raise ValueError("review-only plan names a design owner")
         for seq, d in enumerate(dispatches, 1):
             if roles.get(d.get("agentType")) != d.get("role"):
                 raise ValueError("durable plan names invalid role")
@@ -118,6 +129,7 @@ def round_facts(
                 else max([x.get("seq", 0) for x in dispatches[: seq - 1]] + [0]) + 1
             )
             d["seq"] = seq
+            d["designOwner"] = d["agentType"] == plan["designOwner"]
             file = work / "rounds" / f"r{n}-{seq}-{d['role']}-{d['agentType']}.json"
             d["file"] = str(file)
             d["complete"] = file.is_file()
@@ -169,6 +181,34 @@ def round_facts(
                         gaps.append(
                             f"claim {cid} revision {revision} lacks assigned review by {d['agentType']}"
                         )
+        for d in dispatches:
+            if d in writers:
+                continue
+            selected = {c["id"] for c in d.get("assignedClaims", [])}
+            scope = set(d.get("coverageIds") or [])
+            rows = [
+                row for row in coverage or [] if not scope or row.get("id") in scope
+            ]
+            d["reviewInputRevision"] = digest(
+                {
+                    "task": d.get("task", ""),
+                    "selectionReason": d.get("selectionReason", ""),
+                    "claims": [
+                        {"id": c["id"], "revision": c["revision"]}
+                        for c in ledger.claims
+                        if c["id"] in selected
+                    ],
+                    "coverage": [
+                        {"id": row["id"], "revision": row["revision"]} for row in rows
+                    ],
+                    "repairs": d.get("repairIds", []),
+                    "findings": [
+                        finding
+                        for finding in ledger.findings
+                        if d.get("repairIds") or finding.get("claimId") in selected
+                    ],
+                }
+            )
         plan["complete"] = all(d["complete"] for d in dispatches)
     pending = next((p for p in plans if not p["complete"]), None)
     last = max(
@@ -218,6 +258,7 @@ def compact_plan(plan: dict | None) -> dict | None:
     return {
         "round": plan["round"],
         "readyForDecision": bool(plan.get("readyForDecision")),
+        "designOwner": plan.get("designOwner", ""),
         "complete": bool(plan.get("complete")),
         "dispatches": [
             {
@@ -225,6 +266,11 @@ def compact_plan(plan: dict | None) -> dict | None:
                 "role": d.get("role"),
                 "agentType": d.get("agentType"),
                 "complete": bool(d.get("complete")),
+                "designOwner": bool(d.get("designOwner")),
+                "coverageIds": list(d.get("coverageIds") or []),
+                "claimIds": list(d.get("claimIds") or []),
+                "claimFiles": list(d.get("claimFiles") or []),
+                "reviewInputRevision": d.get("reviewInputRevision", ""),
                 "files": list(d.get("files") or []),
                 "answers": list(d.get("answers") or []),
                 "assignedClaimCount": len(d.get("assignedClaims") or []),

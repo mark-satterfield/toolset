@@ -15,7 +15,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42, agent-teams-workforce:arc42-maintain, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
+skills: [agent-teams-workforce:architecture-baseline, agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42, agent-teams-workforce:arc42-maintain, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:senior-architect]
 effort: medium
 isolation: worktree
 color: cyan

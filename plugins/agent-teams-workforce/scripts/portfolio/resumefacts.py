@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from archevidence import saved_evidence_current
+from archbaseline import survey_freshness
 
 
 def _count(report: object, key: str) -> int:
@@ -43,9 +44,14 @@ def saved_target(art_dir: Path) -> dict:
     summary = (saved.get("summary") or saved) if isinstance(saved, dict) else {}
     report = json.loads(update.read_text(encoding="utf-8")) if update.is_file() else {}
     delta_files = saved.get("deltaFiles") if isinstance(saved, dict) else None
+    baseline_current = (
+        survey_freshness(work / "survey.json")["current"] if saved else False
+    )
     return {
         "found": saved is not None,
-        "ok": summary.get("ok") is True and saved_evidence_current(str(work)),
+        "ok": summary.get("ok") is True
+        and baseline_current
+        and saved_evidence_current(str(work)),
         "subject": summary.get("subject"),
         "targetDir": summary.get("targetDir"),
         "deltaDir": summary.get("deltaDir"),
