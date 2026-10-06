@@ -38,6 +38,7 @@ infrastructure units (C4), or about the structure and behaviour of code and inte
 |---|---|---|
 | C4 model levels | "system context diagram", "container diagram", "component diagram (C4)", "how do the services fit together", "C4 level 1/2/3/4", "deployment topology as C4" | `c4-diagramming` |
 | UML diagram types | "sequence diagram", "class diagram", "state machine", "activity diagram", "UML component diagram", "deployment diagram (UML)", "show the call flow", "model the object structure" | `uml-diagramming` |
+| Other diagram and model types, type choice, readability | "landscape", "context map", "data flow diagram", "integration diagram", "ERD", "physical data model", "network diagram", "which diagram should I use", "the labels overlap" | `architecture-diagramming` |
 
 The two genuine overlaps and how to break them:
 

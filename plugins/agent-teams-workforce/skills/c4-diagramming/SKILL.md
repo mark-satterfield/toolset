@@ -51,10 +51,13 @@ Read the MODEL and MENU under the caller's architecture root and follow assigned
 view is required. Select only the applicable views the design supports; report missing design to
 the caller. Keep prose, diagram declarations and parent/adjacent links consistent.
 
-Use the actual reader's rendering environment, including Obsidian when that is the project target.
-Record rendering, visual readability and semantic self-checks separately in the caller's result
-schema. A successful parse is not a readability check; unavailable inspection is reported, not
-passed. Consumed by: the assigned architecture reviewer and architecture-decider — check the
+The `architecture-diagramming` skill owns everything that is not C4-specific: which view type a
+question needs (including when a view is not C4 at all, such as a context map or a sequence),
+the Mermaid conventions, and the rendered-readability rule with its required verification —
+render every diagram to PNG, look at it, fix until nothing overlaps. Load it and follow it for
+every C4 view. Record rendering, visual readability and semantic self-checks separately in the
+caller's result schema. A successful parse is not a readability check; unavailable inspection is
+reported, not passed. Consumed by: the assigned architecture reviewer and architecture-decider — check the
 current view evidence before approval; self-checks do not replace their independent review.
 
 ## Workflow
@@ -98,13 +101,13 @@ current view evidence before approval; self-checks do not replace their independ
    rather than duplicated, and write the view's catalog frontmatter. A proposed design goes in
    `target/<subject>/`, not in `arc42/`.
 
-6. **Verify rendering for the target.** Confirm where the diagram will live — a GitHub
-   README/PR/issue, or a Docusaurus site — and apply the guidance in
-   `references/github-docusaurus-rendering.md` (GitHub renders Mermaid natively in fenced
-   blocks; Docusaurus needs `@docusaurus/theme-mermaid` enabled with `markdown.mermaid:
-   true`). Note the known gotchas: the C4 diagram kinds are experimental and layout is
-   auto-managed, so prefer `UpdateLayoutConfig` over hand-tuning, and keep element counts
-   modest so the auto-layout stays legible.
+6. **Verify the rendered image.** Render each diagram to PNG, look at it, and fix until nothing
+   overlaps, as `architecture-diagramming` (`references/readability.md`) requires. The Mermaid
+   C4 kinds are experimental and auto-laid-out: they often stack relationship labels on lines
+   and boxes. When `UpdateLayoutConfig` and `UpdateRelStyle` do not clear the overlap, draw the
+   same C4 view as a C4-notation `flowchart`; the C4 elements, levels and labels are what make
+   it C4. For GitHub or Docusaurus targets, `references/github-docusaurus-rendering.md` covers
+   their setup.
 
 ## Level-to-question cheat sheet
 

@@ -67,6 +67,7 @@ write.
 | Find the views that show an element, in any version | Answer from the catalog (`references/finding-views.md`); no sub-skill |
 | A C4 diagram request — system context, container, component, or code level | `c4-diagramming` |
 | A UML diagram request — class, sequence, state, activity, component, deployment | `uml-diagramming` |
+| Any other diagram or model type (landscape, context map, data flow, integration, data model, infrastructure, network, environment), choosing a type, or checking that a diagram is readable when rendered | `architecture-diagramming` |
 | Explicit sub-skill name in the user's input | Bypass routing; load the named sub-skill directly |
 
 See `references/routing-table.md` for the detailed intent-signal mapping, including how to tell C4
@@ -99,7 +100,8 @@ then load that sub-skill's `SKILL.md` and execute it.
   architecture description in the section the MODEL names. There are no decision records.
 - You do not write constraints. Section 2 holds the owner's constraints; every sub-skill reads them
   and none writes them.
-- You do not draw diagrams. C4 goes to `c4-diagramming`; UML goes to `uml-diagramming`.
+- You do not draw diagrams. C4 goes to `c4-diagramming`; UML goes to `uml-diagramming`; every
+  other type, type choice and the rendered-readability check go to `architecture-diagramming`.
 - You do not verify the documentation yourself. That is `arc42-verify`.
 
 ## References
