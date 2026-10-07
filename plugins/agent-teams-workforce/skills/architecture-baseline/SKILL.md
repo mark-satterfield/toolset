@@ -11,7 +11,7 @@ user-invocable: false
 The architecture is the current effective architecture in arc42: the canonical views whose `lifecycle_state` is `effective`. There is no separate baseline architecture. Every PRD builds on the effective architecture and leaves it updated, so it stays current as PRDs are processed. The architecture phase runs for every PRD and is never skipped; it is not architecture creation. It has three steps:
 
 1. **Assess.** Using the PRD as the guide, find and analyze the effective architecture to judge whether it meets the PRD's needs, capability by capability.
-2. **Build out.** Where the effective architecture does not completely serve the PRD, build it out from the non-effective architecture documents (see below), the code in the existing repositories on `main`, and the AWS MCP Server's documentation and skills. Building out includes independent review and approval of the proposal.
+2. **Build out.** Where the effective architecture does not completely serve the PRD, build it out from the non-effective architecture documents, with the code in the existing repositories on `main` as guidance and the AWS MCP Server as the authority on best practice (see below). Building out includes independent review and approval of the proposal.
 3. **Update arc42.** Integrate the approved result into arc42 as the new effective architecture, with a delta that records the change.
 
 ## Authority and evidence
@@ -50,8 +50,8 @@ When the effective architecture does not completely serve the PRD, authors build
 
 - the effective views, as the reviewed starting point;
 - the non-effective architecture documents named above, as design input: validate them and adopt what suits this PRD, rather than only avoiding contradiction with them;
-- the code in the existing repositories on `main`, as evidence of what is built and of established patterns;
-- the AWS MCP Server's documentation and skills, as the leading technical guidance for AWS choices.
+- the code in the existing repositories on `main`, as guidance: it may already be exactly the design the PRD needs, so reuse it when it is; it may also be stale and far out of date, so judge it against the PRD, the effective views and AWS best practice before following it, and never treat its existence as a reason to keep it;
+- the AWS MCP Server's documentation and skills (with the `aws-core` skills and AWS Well-Architected guidance), as the authority on best practice: every AWS design choice follows them, and where code or an older document disagrees with them, the best practice wins unless a business requirement or a section 2 constraint says otherwise.
 
 ## Produce the canonical assessment
 
