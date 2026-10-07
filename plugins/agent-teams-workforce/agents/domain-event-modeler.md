@@ -4,14 +4,15 @@ description: >-
   Models domain events, flows, and contracts as a concrete artifact. Use for
   Architecture Analysis work requiring domain event
   modeling, event flow mapping, and event contract definition.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:aws-solution-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: cyan

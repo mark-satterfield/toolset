@@ -5,15 +5,16 @@ description: >-
   code to pass failing tests. Use for Implementation work
   requiring single-table design, GSI query construction, and conditional write
   semantics.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__generate_data_access_layer, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__generate_data_access_layer, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
   - awslabs-dynamodb-mcp-server
+  - mcp-graphrag-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

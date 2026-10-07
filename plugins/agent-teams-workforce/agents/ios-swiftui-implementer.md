@@ -5,12 +5,12 @@ description: >-
   XCUITest suites. Use for Implementation work requiring SwiftUI
   views, StoreKit purchase flows, on-device CoreML integration, and
   passkey/WebAuthn client wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

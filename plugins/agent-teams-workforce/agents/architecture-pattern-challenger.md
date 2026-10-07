@@ -4,14 +4,15 @@ description: >-
   Independently critiques concrete structural weaknesses in the retained
   architecture without creating another proposal. Use for Architecture
   Analysis requiring targeted adversarial review and assumption stress-testing.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: cyan

@@ -162,6 +162,8 @@ writes whose results were relayed; beads itself is what `lifecycle.done` was dec
 
 ## 4. Report
 
+The report contains the following, carried by the caller's schema when one is given:
+
 - Epic: its id, and whether `lifecycle.done` set its `elaboration_state` to `done`
 - PRD: its path
 - Repo span: the repositories `repoSpan` names, and whether the run ruled them or a

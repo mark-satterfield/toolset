@@ -5,12 +5,12 @@ description: >-
   from the Task's build contract — its spec documents and the architecture
   views it was designed against. Use for Implementation work requiring
   implementer selection.
-tools: Read, Glob, Grep, Skill
+tools: Read, Glob, Grep, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent, SendMessage
 model: sonnet
 permissionMode: default
 maxTurns: 150
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

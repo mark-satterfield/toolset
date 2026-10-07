@@ -45,21 +45,9 @@ Re-run the baseline check or inspect the resulting artifact against the success 
 
 For a revision, apply the incremental-review and actionable-finding rules in `../subagent-contract/SKILL.md`: reuse valid evidence, review changes and affected dependencies, and explain any evidence-based reopening. A correct artifact passes; review is not a search for a reason to fail. Required safety, independence, and regression checks still apply.
 
-### 5. Report Result
+### 5. Result
 
-Return one of:
-
-```text
-VALIDATED
-```
-
-when all criteria are satisfied, or:
-
-```text
-GAPS_FOUND
-```
-
-when a required criterion is unmet, unclear, or unverified. Each gap must identify its evidence/location, the existing requirement or dependent behavior at risk, and the correction or missing evidence that would satisfy a verifiable pass condition. Use the caller's existing finding format, not a new artifact.
+The result states whether every criterion is satisfied, or names each gap: a required criterion that is unmet, unclear, or unverified. Each gap identifies its evidence/location, the existing requirement or dependent behavior at risk, and the correction or missing evidence that would satisfy a verifiable pass condition. The caller's schema carries the result. Only when the caller gives no schema, state it as `VALIDATED` or `GAPS_FOUND` followed by the gaps.
 
 ## Anti-Patterns
 

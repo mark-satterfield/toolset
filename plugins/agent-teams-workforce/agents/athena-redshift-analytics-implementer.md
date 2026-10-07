@@ -5,12 +5,12 @@ description: >-
   tables, views, SQL — writing minimum code to pass failing data-pipeline
   tests. Use for Implementation work requiring analytics SQL
   authoring, external table definition, and warehouse modeling.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

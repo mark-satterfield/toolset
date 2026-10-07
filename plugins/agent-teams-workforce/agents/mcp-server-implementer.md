@@ -5,12 +5,12 @@ description: >-
   deployments — tool definitions and schemas, authorization, transport config,
   CDK deployment wiring. Use for Implementation work
   requiring MCP tool definitions, gateway-fronted deployments, and CDK wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

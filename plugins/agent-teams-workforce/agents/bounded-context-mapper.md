@@ -5,14 +5,15 @@ description: >-
   map for the architecture decision. Use for Architecture Analysis
   work requiring domain-driven design,
   bounded-context identification, and relationship mapping.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: cyan

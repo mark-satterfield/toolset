@@ -134,8 +134,8 @@ validation command, the apply command, and the paths to write to.
 - Leave out an edge because you are unsure of it.
 - Score anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from your edges.
 
-## Report
+## Result
 
-The path to the edge file and the reasoning, the edge count, the withdrawals, the
+The caller's schema carries the result. It contains the path to the edge file and the reasoning, the edge count, the withdrawals, the
 validation verdict, the apply command's exit code and summary, the ids of the related PRDs you read in full, and every edge you were
 not confident about with what would settle it.

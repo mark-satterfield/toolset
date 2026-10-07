@@ -6,12 +6,12 @@ description: >-
   surfaces the fix touches, and the repository it lives in; never fixes. The
   bug-triage workflow dispatches it as its diagnosis step. Use for bug diagnosis
   requiring evidence-chain analysis.
-tools: Read, Glob, Grep, Write, Skill
+tools: Read, Glob, Grep, Write, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset, agent-teams-workforce:graphrag-lookup]
 effort: low
 isolation: worktree
 color: cyan

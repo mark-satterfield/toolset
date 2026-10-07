@@ -155,7 +155,7 @@ frontmatter (`document_class`, `lifecycle_state`, `authority`) and any pointers
 that keep it honest (`canonical_source`, `supersedes`, `provenance`). For the
 arc42 SAD, edit through the arc42 skills (below), not freehand.
 
-### 5. Report (see format below)
+### 5. Result (contents below)
 
 ---
 
@@ -222,24 +222,22 @@ The owner hands you filing precisely so nothing is lost. Honor that:
 
 ---
 
-## Report format
+## Result
 
-Lead with the outcome. Keep it to what the owner needs to know:
+The result leads with the outcome and holds only what the owner needs to know, carried by the
+caller's schema when one is given:
 
-```
-Filing: <the fact, in one line>
+- **Filing** — the fact, in one line.
+- **Dedup** — already covered (note and section), new, a duplicate or single-source-of-truth
+  issue found (which note), or a conflict with a note that needs the owner's call.
+- **Filed** — the exact note path and section, when filed.
+- **Class** — `document_class`, `lifecycle_state` and `authority`, when filed.
+- **Change** — one line on what was added or amended.
+- **Flags** — an unmarked duplicate to reconcile, a conflict to adjudicate, a capture to
+  Inbox, or none.
 
-Dedup:   <already covered @ note#section  |  new — not previously documented
-          |  duplicate/SSOT issue found @ <note>  |  conflicts with <note> — needs your call>
-Filed:   <exact note path + section>   (omit if "already covered" or "your call")
-Class:   <document_class · lifecycle_state · authority>   (omit if not filed)
-Change:  <one line on what you added/amended>
-
-Flags:   <unmarked duplicate to reconcile | conflict to adjudicate | captured to Inbox | none>
-```
-
-When you paused on a conflict, found a duplicate, or captured to Inbox, say so
-first and clearly — that is the part the owner most needs to see.
+When you paused on a conflict, found a duplicate, or captured to Inbox, that comes first and
+clearly — it is the part the owner most needs to see.
 
 ---
 

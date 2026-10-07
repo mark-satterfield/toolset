@@ -5,12 +5,12 @@ description: >-
   and recommendation models; minimum code to pass failing tests. Use for
   Implementation work requiring event signal capture, feature
   engineering, and ML feature delivery.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:senior-data-scientist, agent-teams-workforce:product-analytics]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:senior-data-scientist, agent-teams-workforce:product-analytics, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

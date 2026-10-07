@@ -190,6 +190,6 @@ If any line is malformed, rewrite the file compactly with `Write` and re-read it
 - Telemetry must never outrank the run it describes. If you cannot finish, return what you know
   and stop — never wait on anything.
 
-## Return
+## Result
 
-A short confirmation: the file path written, the number of lines, and the runId.
+The caller's schema carries the result: the file path written, the number of lines, and the runId.

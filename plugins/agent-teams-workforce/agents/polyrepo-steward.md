@@ -18,6 +18,7 @@ effort: medium
 color: yellow
 skills:
   - agent-teams-workforce:subagent-contract
+  - agent-teams-workforce:graphrag-lookup
   # Preloaded into context at startup so the steward has its full toolkit ready. It can
   # also invoke any other skill on demand via the Skill tool. (It does NOT preload
   # polyrepo-router — that is the doorway other callers use to reach the steward.)

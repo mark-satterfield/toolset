@@ -5,12 +5,12 @@ description: >-
   keeping tests green after every change. Use for Code Quality
   work requiring behavior-preserving restructuring, duplication removal, and
   complexity reduction.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: purple
 ---

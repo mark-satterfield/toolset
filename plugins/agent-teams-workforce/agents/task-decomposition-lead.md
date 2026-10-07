@@ -6,12 +6,12 @@ description: >-
   for Gate 4. Use for Task Decomposition work requiring
   delegation, pipeline sequencing, and gate reporting.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Agent, SendMessage, Skill
+tools: Read, Glob, Grep, Agent, SendMessage, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 150
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:beads-contract]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:beads-contract, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: yellow

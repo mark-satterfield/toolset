@@ -81,17 +81,10 @@ You have `tools: Bash, Skill` and no `Read`, so the CLI is how you check anythin
   the others, and it is never a reason to invent a verdict.
 - If `repoPath` is missing or `ids` is empty, do nothing and report it.
 
-## Return
+## Result
 
-```text
-{
-  "verdicts": [
-    { "id": "<the id you were given>", "ok": true, "ready": true|false, "result": "READY|INCOMPLETE|MISSING|ERROR" },
-    { "id": "<the id you were given>", "ok": false, "error": "<what went wrong>" }
-  ]
-}
-```
-
-One entry per id you were handed, in that order. Honesty is the whole value of this agent:
+The caller's schema carries the result: one verdict per id you were handed, in that order. A
+verdict the skill emitted names the id, whether it is ready, and the skill's result (READY,
+INCOMPLETE, MISSING or ERROR); an id you could not rule on names the id and what went wrong. Honesty is the whole value of this agent:
 the caller records what you report as the readiness state of work it just created, and a
 Task reported ready that the gate never actually cleared is worse than one reported failed.

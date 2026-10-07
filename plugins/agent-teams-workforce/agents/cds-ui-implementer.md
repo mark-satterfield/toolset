@@ -1,11 +1,11 @@
 ---
 name: cds-ui-implementer
 description: Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.
-tools: Read, Write, Edit, Bash, Glob, Grep, Skill
+tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__mcp-graphrag-server
 disallowedTools: Agent, SendMessage, AskUserQuestion
 model: sonnet
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, cds:apply-design-system, cds:audit-against-system, cds:compose-page]
+skills: [agent-teams-workforce:subagent-contract, cds:apply-design-system, cds:audit-against-system, cds:compose-page, agent-teams-workforce:graphrag-lookup]
 ---
 
 # cds-ui-implementer

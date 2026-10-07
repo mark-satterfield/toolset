@@ -10,14 +10,15 @@ description: >-
   step's SURVEY: for each capability a PRD needs, the effective views that
   show it, the code on main that implements it, the open beads that plan work
   on it, and the open targets that change it.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 120
-skills: [agent-teams-workforce:architecture-baseline, agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:architecture-baseline, agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: blue
@@ -72,6 +73,7 @@ The architecture step dispatches you once per Epic, before anyone designs, to SU
 - **What is deployed is not an input to the survey.** Run no AWS describe, list or get call against an account; the survey reads views, code on `main`, beads and targets.
 - **Beads are read-only**: `bd list`, `bd show`, `bd search`, run from the directory the brief names.
 - **Write `survey.md` and `survey.json`** at the paths the brief names, and nothing else.
+- **`designAction` decides whether anyone designs.** Give a capability `reuse` or `validate-existing` whenever the effective views and the code on `main` already satisfy its requirement. Give it `modify` or `new` only with a cited gap: the requirement, and the view or `file:line` that does not satisfy it.
 
 ## Existing implementation and incremental scope
 

@@ -5,12 +5,12 @@ description: >-
   metrics, drift alerts — writing minimum code to pass failing tests. Use for
   Implementation work requiring LLM telemetry instrumentation,
   quality-signal capture, and drift alerting.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:observability-designer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:observability-designer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

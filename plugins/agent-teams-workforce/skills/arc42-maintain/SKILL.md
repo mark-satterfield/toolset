@@ -88,7 +88,7 @@ conflicting content and the reason.
 
 ## Output of a pass
 
-Report exactly four things:
+The result of a pass contains four things, carried by the caller's schema:
 
 1. **Changed elements** — the elements the target or the build changed.
 2. **Views changed** — every effective view you updated, added or deleted, by path, with one line
@@ -98,8 +98,8 @@ Report exactly four things:
 4. **Not integrated** — anything you could not apply (a conflict with a constraint, a view the
    catalog could not find, a target that contradicts itself), with the reason.
 
-When applying a change would need information you do not have, stop and report the precise question
-rather than guessing: a contradicting effective version misleads every design that starts from it.
+When applying a change would need information you do not have, stop and record the precise question
+in the result rather than guessing: a contradicting effective version misleads every design that starts from it.
 
 ## What you do NOT do
 

@@ -5,12 +5,12 @@ description: >-
   data sources, authorization. Use for Implementation work
   requiring AppSync API construction, resolver and data source wiring, and
   authorization setup.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

@@ -5,12 +5,12 @@ description: >-
   pass failing data-pipeline suites. Use for Implementation work
   requiring Glue job authoring, PySpark transformations, and batch pipeline
   construction.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

@@ -5,12 +5,12 @@ description: >-
   idempotency — on Lambdas built on the chassis; configures, never rebuilds. Use
   for Implementation work requiring Power Tools configuration,
   idempotency setup, and observability wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:secrets-manager]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

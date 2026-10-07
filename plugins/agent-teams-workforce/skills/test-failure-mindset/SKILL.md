@@ -34,9 +34,9 @@ Always consider both possibilities:
 - Bulk-changing snapshots without inspecting meaningful differences.
 - Treating "make tests pass" as the goal instead of "make behavior correct."
 
-## Reporting
+## Result
 
-When reporting a test failure investigation, include:
+The result of a test failure investigation contains the following, carried by the caller's schema:
 
 - Failing test or suite.
 - What behavior the test specifies.

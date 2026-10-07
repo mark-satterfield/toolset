@@ -5,14 +5,15 @@ description: >-
   architecture describes. Use for Implementation
   work requiring SQS consumer logic, batch processing, and event
   envelope deserialization.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:sqs, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sns]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:sqs, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sns, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

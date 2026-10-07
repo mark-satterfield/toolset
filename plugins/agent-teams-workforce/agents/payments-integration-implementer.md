@@ -5,12 +5,12 @@ description: >-
   built on the chassis, subscription lifecycle, refunds, and idempotent
   operations, with secrets in Secrets Manager. Use for Implementation work requiring Stripe integration, payment webhook handling, and
   subscription lifecycle management.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

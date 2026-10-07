@@ -5,14 +5,15 @@ description: >-
   alerting, runbooks, on-call — reporting readiness findings. Use for
   Architecture Analysis work requiring observability
   assessment and on-call burden analysis.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Agent
 mcpServers:
   - aws-mcp
+  - mcp-graphrag-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:observability-designer, agent-teams-workforce:aws-solution-architect]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:observability-designer, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup]
 effort: low
 isolation: worktree
 color: cyan

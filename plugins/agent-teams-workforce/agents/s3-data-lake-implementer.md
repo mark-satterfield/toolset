@@ -5,12 +5,12 @@ description: >-
   writes minimum code to pass failing data-pipeline tests. Use for
   Implementation work requiring lake layout, partition key
   construction, and lifecycle policy definition.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:s3]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:s3, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

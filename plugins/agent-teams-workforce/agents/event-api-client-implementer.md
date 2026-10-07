@@ -5,12 +5,12 @@ description: >-
   envelope the effective architecture describes. Use for
   Implementation work requiring publishing clients, envelope
   construction, and event contract conformance.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

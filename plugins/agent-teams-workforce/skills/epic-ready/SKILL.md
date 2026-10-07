@@ -52,11 +52,11 @@ elaboration passes through: it requires the state rule above and also that the E
 scored, that every Epic it depends on has `elaboration_state=done`, and that no other run
 owns it.
 
-## Output contract — emit this and nothing else
+## Result
 
-Every invocation, for every outcome, responds with **exactly** this block. No preamble, no
-summary, no commentary before or after it. A human usually never reads it; it is a machine
-contract.
+Every invocation, for every outcome, rules on the five fields below and nothing else. When the
+caller supplies a response schema, the schema carries them. When it does not, respond with
+**exactly** this block: no preamble, no summary, no commentary before or after it.
 
 ```
 Ready: [TRUE / FALSE]

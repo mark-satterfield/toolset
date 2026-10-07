@@ -86,8 +86,7 @@ Consumed by: specification authors and the per-repository detailing — they rea
 
 ## Cite the decisions you designed against
 
-Return `decisionIds` and carry the same list in the document's YAML frontmatter as
-`decisionIds:`. Each is the path of a view you read, relative to the arc42 folder, with
+Record `decisionIds` in the document's YAML frontmatter as `decisionIds:`. Each is the path of a view you read, relative to the arc42 folder, with
 `#<heading>` when the requirement rests on one part of it. Cite only files you read, and never
 put a section number in place of a view: the citation is how a change to the architecture finds
 the work resting on it. An empty list means you checked and this artifact rests on no view.

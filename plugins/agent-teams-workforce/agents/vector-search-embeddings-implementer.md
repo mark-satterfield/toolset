@@ -5,12 +5,12 @@ description: >-
   generation, index read/write, similarity queries. Use for Implementation
   work requiring embedding pipelines, vector index access, and
   similarity queries.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: green
 ---

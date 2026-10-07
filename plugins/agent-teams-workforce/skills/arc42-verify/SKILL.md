@@ -75,7 +75,10 @@ resolve root and version
   -> emit structured verdict
 ```
 
-## Verdict format
+## Verdict
+
+The verdict contains the top-line result and every finding with its evidence, carried by the
+caller's schema. The layout below is the form it takes only when the caller gives no schema.
 
 The top-line result is the worst status seen (`FAIL` if any check failed, else `WARN` if any
 warning, else `PASS`).
