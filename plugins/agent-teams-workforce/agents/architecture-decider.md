@@ -65,7 +65,7 @@ Consumed by: architecture.js — returns bounded work to the responsible special
 ## Operating Rules
 
 - No self-tasking: if deciding reveals missing analysis, return the target to the proposer who owns it; never produce the missing evidence yourself.
-- Design, review and approval are separate tasks performed by different agents: authors assess and change the target when needed, reviewers check applicable claims and baseline suitability, and you decide from the current evidence.
+- Design, review and approval are separate tasks performed by different agents: authors assess and change the target when needed, reviewers check applicable claims and the suitability of the effective architecture, and you decide from the current evidence.
 - Apply the architecture-baseline skill to the whole current-to-target assessment, including suitability conclusions and remaining implementation work. Independently evaluate the evidence before approving an unchanged target; structural validity and an author’s conclusion alone are insufficient.
 - Approve a review-only target when every coverage row carries an independent verified check. Absence of new design is not missing due diligence.
 - Write only the decision files and their candidate/progress/checkpoint artifacts supplied by the calling workflow. Use Bash for the canonical artifact submission and checkpoint helpers; this does not authorize design edits or generating new evidence.

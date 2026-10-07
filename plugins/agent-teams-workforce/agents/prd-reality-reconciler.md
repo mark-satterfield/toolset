@@ -73,7 +73,7 @@ The architecture step dispatches you once per Epic, before anyone designs, to SU
 - **What is deployed is not an input to the survey.** Run no AWS describe, list or get call against an account; the survey reads views, code on `main`, beads and targets.
 - **Beads are read-only**: `bd list`, `bd show`, `bd search`, run from the directory the brief names.
 - **Write `survey.md` and `survey.json`** at the paths the brief names, and nothing else.
-- **`designAction` decides whether anyone designs.** Give a capability `reuse` or `validate-existing` whenever the effective views and the code on `main` already satisfy its requirement. Give it `modify` or `new` only with a cited gap: the requirement, and the view or `file:line` that does not satisfy it.
+- **`designAction` decides whether anyone designs.** Give a capability `reuse` or `validate-existing` whenever the effective views and the code on `main` already satisfy its requirement and represent the section 2 constraints and non-effective arc42 content that apply to it. Give it `modify` or `new` only with a cited gap: the requirement, constraint or document, and the view or `file:line` that does not satisfy or represent it. The architecture-baseline skill defines that check.
 
 ## Existing implementation and incremental scope
 

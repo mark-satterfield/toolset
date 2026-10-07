@@ -698,8 +698,13 @@ def write_target(
             }
         except (OSError, ValueError, TypeError, KeyError) as exc:
             baseline_refusals = [f"baseline unreadable or invalid: {exc}"]
-    no_author = bool(manifest) and not (
-        manifest["designChanged"] or manifest["documentationChanged"]
+    # A writer's draft is never dropped: when the rounds wrote draft views, the draft is the
+    # target even if the survey's assessment lists no design or documentation work.
+    draft_written = source.is_dir() and bool(_draft_files(source))
+    no_author = (
+        bool(manifest)
+        and not (manifest["designChanged"] or manifest["documentationChanged"])
+        and not draft_written
     )
     files = [] if no_author else (_draft_files(source) if source.is_dir() else [])
     draft_refusals = (
@@ -728,6 +733,7 @@ def write_target(
         "files": [str(dest / p.relative_to(source)) for p in files],
         "deltaFiles": [str(dest / p.relative_to(source)) for p in delta],
         "dryRun": dry_run,
+        "draftWritten": draft_written,
     }
     if manifest:
         report.update(
@@ -755,6 +761,7 @@ def write_target(
             "targetDir",
             "deltaDir",
             "dryRun",
+            "draftWritten",
         )
     } | {"files": len(report["files"]), "deltaFiles": len(report["deltaFiles"])}
     if manifest:
