@@ -14,7 +14,7 @@ the next bead. Stop by cancelling the loop.
 
 ## Why this is a command and not a workflow script
 
-The obvious implementation — a `sweep.js` that fetches `bd ready` and calls
+The obvious implementation — a `sweep.js` that fetches `atw-bd ready` and calls
 `workflow('task-to-deploy')` per bead — **cannot work**. The Workflow runtime
 permits one level of nesting, and the composites already spend it on their own
 minis (`task-to-deploy` → `tdd-red`, `tdd-green`, …). A sweep calling a composite
@@ -29,7 +29,7 @@ Candidates come from the tracker's own ready semantics — open, unblocked, not
 deferred or hooked:
 
 ```bash
-bd ready --type task --json -n 0 --readonly > /tmp/ready-tasks.json
+atw-bd ready --type task --json -n 0 --readonly > /tmp/ready-tasks.json
 ```
 
 **Bugs are not candidates.** A bug is a reporting mechanism, triaged by a person
@@ -41,7 +41,7 @@ triage composite to dispatch. Do not query for them here.
 rewritten by the `wsjf-scoring` workflow — read it, do not recompute it:
 
 ```bash
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
            | "\(.wsjf // "")"'
 ```
@@ -59,7 +59,7 @@ and persists `review_status`, `review_missing`, `reviewed_at`, and
 `ready_content_hash`. It is expensive only the first time — on later runs the content
 hash matches, it reuses the stored verdict and reruns nothing.
 
-**Gate on `Ready`, not on membership in `bd ready`.** `task-ready` returns a hard
+**Gate on `Ready`, not on membership in `atw-bd ready`.** `task-ready` returns a hard
 boolean, and `Ready: TRUE` requires both a `READY` pipeline result and tracker-ready
 state. Take the highest-WSJF candidate whose gate says `Ready: TRUE`. Skip any that
 comes back `FALSE` and record its `Pipeline result` — an `INCOMPLETE` issue needs
@@ -71,7 +71,7 @@ stop. That is a clean finish, not a failure.
 Then claim the winner, so a second runner cannot take the same bead:
 
 ```bash
-bd update <id> --claim
+atw-bd update <id> --claim
 ```
 
 With `--dry-run`, print the ordered candidates with their scores and gate verdicts,
@@ -80,7 +80,7 @@ name the bead you would claim, then stop without claiming or dispatching.
 ## 2. Resolve the bead and its repo
 
 ```bash
-bd show <id> --json || bd show <id>
+atw-bd show <id> --json || atw-bd show <id>
 ```
 
 Pull out `id`, `title`, `description`, `issue_type`, `labels`, and the parent
@@ -138,7 +138,7 @@ python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
 Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
 the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is, adding the Task's
-`type` and `labels` from `bd show <id> --json`, and pass the JSON object in `$ROOT/scripts/infra-vocabulary.json` as the
+`type` and `labels` from `atw-bd show <id> --json`, and pass the JSON object in `$ROOT/scripts/infra-vocabulary.json` as the
 `infraVocabulary` argument (together they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
 not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
 the repository is ruled during elaboration, so release the claim, report the id and that reason, and stop — never

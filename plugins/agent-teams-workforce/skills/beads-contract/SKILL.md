@@ -20,6 +20,29 @@ description, or in its parent Story or Epic, and the requirement is that they EX
 not that they occupy a field. Where a fact has a canonical implementation, this document names
 it and stops.
 
+## Which database: always the central one
+
+Pipeline beads — every Epic, Story and Task the pipeline files, and every bead an agent reads
+or writes for its work — live in ONE database: the central beads database of the control
+repository (`$ATW_CONTROL_REPO`). It is read and written there wherever the actor runs. A
+build or bug session runs inside a Task's own repository or worktree, and a plain `bd` there
+reaches THAT repository's database, where the central bead does not exist.
+
+So every `bd` command goes through **`atw-bd`**, the plugin's command on the Bash tool's
+`PATH`: `atw-bd show <id> --json`, `atw-bd update <id> --claim`, `atw-bd close <id>`,
+`atw-bd note <id> "..."`, `atw-bd dep add <a> <b>`, `atw-bd create ...`. It takes `bd`'s own
+arguments, runs them against the central database, and refuses `-C`, `--db` and the other
+flags that would name another. A script runs it as `beads-contract.py bd <arguments>`; every
+other command of this CLI uses the central database too. Never run a plain `bd` for a
+pipeline bead.
+
+**A bead is edited in the database it was filed in.** A bead filed in a fleet repository's
+own database is copied into the central one by the fleet sync (`bd repo sync`), which is
+one-way and copies the fleet copy over the central one every time it runs: a central edit to
+that bead is overwritten (title, status, notes). `atw-bd` and this CLI apply the rule
+themselves — a write to a fleet-filed bead runs in its own repository's database — so the
+caller names only the bead.
+
 ## Reading beads
 
 Beads is read live through `bd`, and only through `bd`. `.beads/issues.jsonl` is never read:
@@ -30,12 +53,13 @@ retried with backoff.
 ## Run it
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" <command> [-C <repoPath>] ...
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" <command> ...
 ```
 
 Every command prints ONE JSON object on stdout and reads `bd show --json --readonly` unless it
-is a `metadata set` or a `cds-audit`. `-C <repoPath>` runs `bd` from another repository. Exit status: `0` fine,
-`2` the command refused (the object carries `error`).
+is a `metadata set`, a `cds-audit` or `bd`. `-C <repoPath>` names the central repository when
+it is not `$ATW_CONTROL_REPO`. Exit status: `0` fine, `2` the command refused (the object
+carries `error`).
 
 | Command | Answers |
 | --- | --- |
@@ -47,6 +71,7 @@ is a `metadata set` or a `cds-audit`. `-C <repoPath>` runs `bd` from another rep
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
 | `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, then reads the values back into `verified`. |
+| `bd <bd arguments ...>` | Runs any `bd` command against the central database (a write to a fleet-filed bead against its own) and prints what `bd` prints. `atw-bd` is this command. |
 | `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's `cds_audit_verdict`, `cds_audit_findings`, `cds_audit_script_version`, `cds_audit_design_source` and `cds_audit_bundle` from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside `pass`, `fail`, `blocked`, `error`; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
@@ -59,7 +84,7 @@ A caller assessing every bead in a pass already holds the records from its own `
 should hand them over rather than have them fetched again:
 
 ```bash
-bd list --json | python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" \
+atw-bd list --json | python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" \
   --records - fingerprint-batch
 ```
 

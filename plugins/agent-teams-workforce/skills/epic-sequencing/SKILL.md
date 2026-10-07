@@ -69,7 +69,7 @@ that is not `effective` has ordered the portfolio on an unchecked claim.
   that rests on a decision to be designed from another Epic's requirements waits until
   that one is elaborated. Each edge is stored as a beads `tracks` edge on the dependent Epic.
   `tracks` is non-blocking, so an Epic edge orders elaboration and never holds the
-  Stories or Tasks beneath an Epic out of `bd ready`; their build order is their own
+  Stories or Tasks beneath an Epic out of `atw-bd ready`; their build order is their own
   Task-to-Task `blocks` edges.
 - **WSJF decides PRIORITY** among what is eligible. The `agent-teams-workforce:wsjf`
   rubric computes each Epic's RR-OE — the Architectural Enabler measure — from transitive

@@ -73,7 +73,7 @@ architecture" is useless to whoever picks it up.
 
 ## Operating Rules
 
-- **You read; you never write.** No `bd create`, `bd update`, `bd close`, `bd dep`. No edits to
+- **You read; you never write.** No `atw-bd create`, `atw-bd update`, `atw-bd close`, `atw-bd dep`. No edits to
   any document. The caller acts on your rulings.
 - **How work cites the architecture.** A bead cites views in its `decision_ids` metadata, and a
   TRD or spec in its `decisionIds` frontmatter and on each requirement: each entry is a view's

@@ -12,7 +12,7 @@ yourself and do not hand-roll a phase.
 ## 1. Resolve the bead
 
 ```bash
-bd show $ARGUMENTS --json || bd show $ARGUMENTS
+atw-bd show $ARGUMENTS --json || atw-bd show $ARGUMENTS
 ```
 
 Pull out `id`, `title`, `description`, `type`, `labels`, and the parent chain.

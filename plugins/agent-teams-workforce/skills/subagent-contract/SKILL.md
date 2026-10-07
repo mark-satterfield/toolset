@@ -24,6 +24,7 @@ Only when the caller supplies no response format, use `STATUS: DONE` or `STATUS:
 - Identify the minimal relevant files, artifacts and decisions. Use only allowed tools and preserve file ownership. Read-only reviewers may write caller-authorized result/checkpoint artifacts, never source artifacts.
 - An explicit assignment to repair all baseline failures in an affected repository includes pre-existing failures there. Preserve test-author ownership and required checks; this does not authorize unrelated cleanup, other repositories or invented external resources.
 - Prefer small, reversible changes unless the assignment requires broader change. Report material actions and their outcomes in the existing evidence channel, without adding fields to a fixed schema.
+- Pipeline beads are always read and written in the central beads database, wherever you run: run every `bd` command as `atw-bd` with `bd`'s own arguments, never a plain `bd` (the `beads-contract` skill).
 - Missing required context is a named dependency, not permission to guess. Distinguish facts, justified assumptions and unresolved questions; do not silently complete only the easy portion.
 
 ## Skills and authoritative artifacts

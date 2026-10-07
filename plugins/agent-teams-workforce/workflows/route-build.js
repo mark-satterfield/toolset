@@ -49,7 +49,7 @@ function decide() {
   }
   if (hasLabel('human')) {
     return skip(
-      `held for a person: ${bead.id || 'this bead'} carries the \`human\` label → SKIP until the label is removed (\`bd label remove ${bead.id || '<id>'} human\`)`,
+      `held for a person: ${bead.id || 'this bead'} carries the \`human\` label → SKIP until the label is removed (\`atw-bd label remove ${bead.id || '<id>'} human\`)`,
     )
   }
   if (type === 'task' || byLabel('task')) {

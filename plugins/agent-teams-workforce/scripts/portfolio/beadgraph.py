@@ -18,6 +18,8 @@ as a dependency.
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
 import re
 import subprocess
@@ -237,20 +239,87 @@ def connection_retryable(args: list[str], stderr: str) -> str:
     return ""
 
 
+@functools.cache
+def _contract() -> object:
+    """The beads-contract module, which holds the one rule for which database `bd` runs in.
+
+    Returns:
+        The loaded module.
+    """
+    spec = importlib.util.spec_from_file_location("beads_contract", CONTRACT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def _central() -> Path | None:
+    """The central repository, `$ATW_CONTROL_REPO`, or None for the working directory.
+
+    Returns:
+        The repository, or None.
+    """
+    central = _contract().central_repo("")
+    return Path(central) if central else None
+
+
+#: central repository -> {fleet-filed bead id: the repository it was filed in}.
+_HOMES: dict[str, dict[str, str]] = {}
+
+
+def _target(args: list[str], repo: Path | None) -> Path | None:
+    """The repository a `bd` command runs in, by the beads-contract rule.
+
+    Every command runs against the central database (`repo`, else `$ATW_CONTROL_REPO`),
+    except a write to a bead filed in a fleet repository's own database, which runs there:
+    the one-way fleet sync would copy the fleet copy back over a central edit.
+
+    Args:
+        args: The `bd` arguments.
+        repo: The central repository the caller named, or None.
+
+    Returns:
+        The repository, or None for the working directory.
+    """
+    contract = _contract()
+    central = repo if repo is not None else _central()
+    bead_id = contract.bead_operand(args)
+    if not bead_id or contract.is_read(args):
+        return central
+    key = str(central or "")
+    if key not in _HOMES:
+        try:
+            rows = _bd_json(
+                ["--readonly", "sql", "--json", contract.FLEET_QUERY], central
+            )
+        except GraphError as exc:
+            print(
+                f"[beadgraph] could not list the fleet beads ({exc}); "
+                f"{bead_id} is written in the central database",
+                file=sys.stderr,
+            )
+            rows = []
+        _HOMES[key] = contract.fleet_homes(rows, key)
+    home = _HOMES[key].get(bead_id)
+    return Path(home) if home else central
+
+
 def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     """Run `bd`, with `stdin` on its standard input, and return stdout.
 
-    A command that could not reach the beads server is run again after each pause in
-    CONNECTION_BACKOFF, as connection_retryable allows; every failed attempt is printed to
-    stderr with the command and its error.
+    It runs in the repository `_target` names: the central database, or a fleet-filed
+    bead's own for a write to it. A command that could not reach the beads server is run
+    again after each pause in CONNECTION_BACKOFF, as connection_retryable allows; every
+    failed attempt is printed to stderr with the command and its error.
 
     Raises:
         GraphError: `bd` is not on PATH, or exited nonzero with an error that is not
             retried or on its last attempt.
     """
     command = ["bd", *args]
-    if repo is not None:
-        command += ["-C", str(repo)]
+    where = _target(args, repo)
+    if where is not None:
+        command += ["-C", str(where)]
     attempts = len(CONNECTION_BACKOFF) + 1
     for attempt in range(1, attempts + 1):
         try:
@@ -293,7 +362,7 @@ def _bd_json(args: list[str], repo: Path | None) -> object:
 
     Args:
         args: The `bd` arguments.
-        repo: The repository to run `bd` from, or None for the working directory.
+        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
 
     Returns:
         The parsed stdout.
@@ -384,7 +453,7 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
     Args:
         bead_id: The bead to write.
         pairs: The keys and values to merge onto its metadata.
-        repo: The repository to run `bd` from, or None for the working directory.
+        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
 
     Raises:
         GraphError: The CLI exited nonzero.
@@ -405,7 +474,7 @@ class Writer:
     """The one path for tracker writes; a dry-run writer records each write instead.
 
     Attributes:
-        repo: The repository to run `bd` from, or None for the working directory.
+        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
         dry_run: True to record each write in `planned` and change nothing.
         planned: The writes a dry run would have made, in order.
     """
@@ -518,7 +587,7 @@ def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
     """Return every record of one issue type directly under a parent, from one `bd list` call.
 
     Args:
-        repo: The repository to run `bd` from, or None for the working directory.
+        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
         parent: The parent id.
         kind: The issue type.
 

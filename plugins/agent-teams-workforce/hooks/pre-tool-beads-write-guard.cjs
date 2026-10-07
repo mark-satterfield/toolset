@@ -60,11 +60,20 @@ const BD_WRITE_SUBCOMMANDS = [
 /** Administrative subcommands that carry no prose into an agent prompt. */
 const BD_ADMIN_SUBCOMMANDS = ['close', 'reopen', 'delete', 'rm', 'assign', 'unassign', 'move', 'defer'];
 
+/**
+ * The ways to run `bd`: `bd` itself (with or without `-C <dir>`), the plugin's `atw-bd`,
+ * and `beads-contract.py bd`, which `atw-bd` runs.
+ */
+const BD_COMMAND = '(?:bd(?:\\s+-C\\s+\\S+)?|atw-bd|\\S*beads-contract\\.py["\']?(?:\\s+-C\\s+\\S+)?\\s+bd)';
+
 /** Matches a `bd <write-subcommand>` invocation anywhere a command may start. */
 const BD_WRITE_PATTERN = new RegExp(
-  `(?:^|[;&|]|&&|\\|\\|)\\s*bd\\s+(?:${BD_WRITE_SUBCOMMANDS.join('|')})\\b`,
+  `(?:^|[;&|]|&&|\\|\\||python3?\\s)\\s*${BD_COMMAND}\\s+(?:${BD_WRITE_SUBCOMMANDS.join('|')})\\b`,
   'i',
 );
+
+/** Matches a `bd update` invocation, by any of the ways to run `bd`. */
+const BD_UPDATE_PATTERN = new RegExp(`(?:^|\\s|["'])${BD_COMMAND}\\s+update\\b`);
 
 /**
  * MCP beads tools that mutate. The read-side tools (context, ready, show) are
@@ -167,7 +176,7 @@ function main() {
 
   // `bd update --status <x>` moves a bead through the workflow and carries no
   // prose; only the text-bearing flags are the hazard.
-  if (/(?:^|\s)bd\s+update\b/.test(command) && !/(?:--notes?|--desc|--description|--comment|--title)\b/.test(command)) {
+  if (BD_UPDATE_PATTERN.test(command) && !/(?:--notes?|--desc|--description|--comment|--title)\b/.test(command)) {
     process.exit(0);
   }
 

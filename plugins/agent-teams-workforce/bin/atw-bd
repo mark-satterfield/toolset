@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# atw-bd <bd arguments ...> — runs one `bd` command against the central beads database
+# ($ATW_CONTROL_REPO), wherever it is run from; a write to a bead filed in a fleet
+# repository's own database runs there. The beads-contract skill documents it.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$here/../skills/beads-contract/scripts/beads-contract.py" bd "$@"

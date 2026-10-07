@@ -108,16 +108,16 @@ something a `bug` does the opposite: it takes the bead OUT of the routed lane an
 into the triage queue, which is the correct place for a defect report and the
 wrong place for work already decided.
 
-## How `/loop` self-paces — "until `bd ready` is empty"
+## How `/loop` self-paces — "until `atw-bd ready` is empty"
 
 `/loop` runs **self-paced** (no fixed interval): it works as fast as each
 composite completes and stops on a queue condition, not a clock. Every step below is
 performed by the SESSION — `bd` through Bash, the composite through the Workflow tool.
 None of it is a script in this folder. One tick:
 
-1. **Check the queue.** Run `bd ready`. If it is empty, **stop** — the loop is done.
+1. **Check the queue.** Run `atw-bd ready`. If it is empty, **stop** — the loop is done.
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
-   (`bd update --status` / claim), so a second runner can't grab the same bead.
+   (`atw-bd update --status` / claim), so a second runner can't grab the same bead.
 3. **Route it.** Call `route-build` with `{ bead }` for a Task or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. A Bug can be handed to either — both skip it, naming triage. Neither reads `childCount`.
    - composite is non-null → run that composite on-demand, dispatched by path
      (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
@@ -126,7 +126,7 @@ None of it is a script in this folder. One tick:
 4. **Report the outcome** — composite result, or the skip reason.
 5. **Loop.** Go back to step 1.
 
-The terminating condition is **`bd ready` empty**, not a tick count. Skipped beads
+The terminating condition is **`atw-bd ready` empty**, not a tick count. Skipped beads
 do not block the loop (they're reported and stepped over), and they do not falsely
 empty the queue (their status is untouched, so they remain visible to the
 operator). The loop ends only when no claimable, routable work remains.
@@ -139,7 +139,7 @@ implements it, and adding a `sweep.js` here would not work.
 **The Workflow runtime permits one level of nesting.** A leaf mini calls `agent()`
 and returns an artifact; a composite calls `workflow()` to stitch minis together.
 That is the one level, and it is already spent: `bug-fix` calls `tdd-red`,
-`prd-to-spec` calls `spec-authoring`, and so on. A sweep script that read `bd ready`
+`prd-to-spec` calls `spec-authoring`, and so on. A sweep script that read `atw-bd ready`
 and called `workflow('bug-fix')` per bead would be sweep → composite → mini, which is
 two levels, and the runtime throws. This is not a limitation to work around; it is why
 composites stay flat and why a full run is sequenced from outside rather than by
@@ -161,7 +161,7 @@ supervisor survives a session ending, and it is not part of this plugin.
 
 - **On-demand:** `Workflow({ scriptPath: '.../workflows/bug-fix.js', args: { bead } })`
   (etc.) for a chosen bead — the operator picks the composite.
-- **Unattended:** `/loop` self-paces over `bd ready`, using `route-build` to pick
+- **Unattended:** `/loop` self-paces over `atw-bd ready`, using `route-build` to pick
   the composite per bead. Same composites, same minis — only the selection differs.
 
 ### Dispatch by path, not by name

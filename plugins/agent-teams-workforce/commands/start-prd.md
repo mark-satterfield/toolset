@@ -31,7 +31,7 @@ The PRD names its Epic on a `**Epic:** <id>` line, or an Epic carries the label
 
 ```bash
 grep -m1 '^\*\*Epic:\*\*' "<prd path>"
-bd list --type epic --label "prd:<prd file stem>"
+atw-bd list --type epic --label "prd:<prd file stem>"
 ```
 
 - Found → adopt it, with its `id`.

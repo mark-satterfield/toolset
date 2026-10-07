@@ -54,7 +54,7 @@ for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads
 authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
 field exists because a document said so, and never restate one of its recipes.
 
-- Your Bash access covers the bd CLI for work state. Use `beads-contract.py` rather than raw `bd`
+- Your Bash access covers the bd CLI for work state, run as `atw-bd` (the central database). Use `beads-contract.py` rather than raw `bd`
   plus `jq` whenever you need a bead's contract, its criteria, its parent chain, or its freshness —
   it is the one implementation, and a second one drifts.
 - **A bug is a REPORTING MECHANISM.** Never route one to a build composite and never treat it as

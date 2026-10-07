@@ -84,14 +84,14 @@ run made.
 
 **The Epic's type, status and elaboration state:**
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
            | "type=\(.issue_type//"")\nstatus=\(.status//"")\nstate=\((.metadata//{}).elaboration_state//"")"'
 ```
 
 **The Epic's `prd:` label:**
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
            | (.labels//[])[] | select(startswith("prd:"))'
 ```

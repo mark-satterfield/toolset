@@ -2,7 +2,13 @@
 """beads-contract — reads and writes the pipeline's data on a bead.
 
 Every command reads `bd show --json` (read-only) unless it is a `metadata set`, and prints one
-JSON object on stdout naming where each value came from.
+JSON object on stdout naming where each value came from. `bd` runs every other `bd` command,
+printing what `bd` prints.
+
+Every command runs `bd` against the CENTRAL beads database, the control repository's
+(`$ATW_CONTROL_REPO`), wherever it is run from. A write to a bead filed in a fleet
+repository's own database runs in that database, because the one-way fleet sync copies the
+fleet copy over the central one.
 
 Usage:
   beads-contract.py fingerprint <id> [--explain] [--scope readiness|judging]
@@ -14,9 +20,10 @@ Usage:
   beads-contract.py metadata get <id> [key ...]
   beads-contract.py metadata set <id> key=value [key=value ...]
   beads-contract.py cds-audit <id> '<cdsAudit JSON>'
+  beads-contract.py bd <bd arguments ...>     (the plugin's `atw-bd` command runs this)
 
 Common flags:
-  -C <path>          Run `bd` from this repository (passed through as `bd -C`).
+  -C <path>          The central repository, when it is not `$ATW_CONTROL_REPO`.
   --records <file>   Read records from a JSON array in <file> instead of calling `bd`, or
                      `-` to read that array from stdin.
 """
@@ -26,6 +33,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -100,6 +108,113 @@ def connection_retryable(args: list[str], stderr: str) -> str:
         if pattern.search(stderr) and (safe_for_write or is_read):
             return reason
     return ""
+
+
+#: The environment variable naming the control repository; its beads database is the
+#: central one, where the pipeline files its Epics, Stories and Tasks.
+CONTROL_REPO_ENV = "ATW_CONTROL_REPO"
+
+#: A bead id: a prefix, a hyphen, a hash or number, and any hierarchical suffixes.
+BEAD_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$")
+
+#: `bd` subcommands whose bead operand follows a verb: `dep add <id>`, `label add <id>`.
+VERB_GROUPS = frozenset({"dep", "label", "comment", "comments"})
+
+#: The flags that would point `bd` at another database; `bd` passthrough refuses them,
+#: because choosing the database is what it is for.
+DATABASE_FLAGS = frozenset({"-C", "--directory", "--db", "--database", "--global"})
+
+#: Every bead the one-way fleet sync copied into the central database, with the
+#: repository (relative to the central one) whose database it was filed in.
+FLEET_QUERY = (
+    "SELECT id, source_repo FROM issues WHERE source_repo <> '' AND source_repo <> '.'"
+)
+
+
+def central_repo(explicit: str = "") -> str:
+    """The repository whose beads database is the central one.
+
+    Args:
+        explicit: A repository the caller named with `-C`, or "".
+
+    Returns:
+        `explicit`, else `$ATW_CONTROL_REPO`, else "" (the working directory), with a
+        warning on stderr, since the working directory is central only in the control repo.
+    """
+    if explicit:
+        return explicit
+    control = os.environ.get(CONTROL_REPO_ENV, "").strip()
+    if control:
+        return control
+    print(
+        f"[beads-contract] ${CONTROL_REPO_ENV} is unset: `bd` runs in {os.getcwd()}, "
+        "which holds the central beads database only when it is the control repository",
+        file=sys.stderr,
+    )
+    return ""
+
+
+def is_read(args: list[str]) -> bool:
+    """Whether a `bd` command only reads.
+
+    Args:
+        args: Arguments after `bd`.
+
+    Returns:
+        True for `--readonly` or a subcommand in READ_COMMANDS.
+    """
+    words = [a for a in args if not a.startswith("-")]
+    return "--readonly" in args or (bool(words) and words[0] in READ_COMMANDS)
+
+
+def bead_operand(args: list[str]) -> str:
+    """The bead a `bd` command acts on: the operand after its subcommand (or verb).
+
+    Args:
+        args: Arguments after `bd`.
+
+    Returns:
+        The bead id, or "" when the command names none (`create`, `list`, `dep add --file`).
+    """
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 1
+    if i >= len(args):
+        return ""
+    sub = args[i]
+    i += 1
+    if (
+        sub in VERB_GROUPS
+        and i < len(args)
+        and not args[i].startswith("-")
+        and not BEAD_ID.match(args[i])
+    ):
+        i += 1
+    return args[i] if i < len(args) and BEAD_ID.match(args[i]) else ""
+
+
+def fleet_homes(rows: object, central: str) -> dict[str, str]:
+    """Map each bead filed in a fleet repository's database to that repository.
+
+    The fleet-to-central sync is one-way and copies a fleet bead over the central copy
+    each time it runs, so a fleet bead is written in its own database, never centrally.
+
+    Args:
+        rows: The decoded `bd sql --json` result of FLEET_QUERY.
+        central: The central repository, or "" for the working directory.
+
+    Returns:
+        bead id -> absolute repository path.
+    """
+    base = central or os.getcwd()
+    homes: dict[str, str] = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        source = str(row.get("source_repo") or "").strip()
+        if source and source != ".":
+            homes[str(row["id"])] = os.path.normpath(os.path.join(base, source))
+    return homes
 
 
 #: The record keys the readiness fingerprint is taken over; keys outside
@@ -315,7 +430,7 @@ def _criteria_on(bead_id: str, bead: dict, searched: list[str]) -> dict | None:
     return None
 
 
-def resolve_criteria(bead_id: str, reader: "Reader") -> dict:
+def resolve_criteria(bead_id: str, reader: Reader) -> dict:
     """Find a Task's acceptance criteria.
 
     Searches the Task's metadata, its `--acceptance` field and its description, then each
@@ -574,11 +689,11 @@ def _load_records(records_file: str) -> object:
     Raises:
         BeadsError: If the text is not readable JSON.
     """
-    text = (
-        sys.stdin.read()
-        if records_file == "-"
-        else open(records_file, encoding="utf-8").read()
-    )  # noqa: SIM115
+    if records_file == "-":
+        text = sys.stdin.read()
+    else:
+        with open(records_file, encoding="utf-8") as handle:
+            text = handle.read()
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
@@ -594,14 +709,16 @@ class Reader:
         """Build a reader.
 
         Args:
-            repo: Repository to run `bd` from, or "" for the current directory.
+            repo: The central repository named with `-C`, or "" for `$ATW_CONTROL_REPO`.
             records_file: A JSON array of records to read instead of calling `bd`,
                 or "-" to read that array from stdin.
 
         Raises:
             BeadsError: If the supplied records are not readable JSON.
         """
-        self.repo = repo
+        self.repo = central_repo(repo) if not records_file else repo
+        self.homes: dict[str, str] | None = None
+        self.written: dict[str, str] = {}
         self.cache: dict[str, dict] = {}
         self.supplied: list[str] = []
         self.offline = bool(records_file)
@@ -622,7 +739,58 @@ class Reader:
                 self.supplied.append(bead_id)
             self.cache[bead_id] = rec
 
-    def _bd(self, args: list[str]) -> str:
+    def home_of(self, bead_id: str) -> str:
+        """The repository whose database a bead is written in.
+
+        A bead filed in a fleet repository's database is written there: the one-way sync
+        would copy the fleet copy back over a central edit. Every other bead is written in
+        the central database. One query, on the first write, lists the fleet beads.
+
+        Args:
+            bead_id: The bead.
+
+        Returns:
+            The fleet repository the bead was filed in, or the central repository.
+        """
+        if self.homes is None:
+            try:
+                rows = self._read(
+                    ["--readonly", "sql", "--json", FLEET_QUERY], self.repo
+                )
+            except BeadsError as exc:
+                print(
+                    f"[beads-contract] could not list the fleet beads ({exc}); "
+                    f"{bead_id} is written in the central database",
+                    file=sys.stderr,
+                )
+                rows = []
+            self.homes = fleet_homes(rows, self.repo)
+        return self.homes.get(bead_id, self.repo)
+
+    def route(self, args: list[str]) -> str:
+        """The repository a `bd` command runs in.
+
+        A write runs in the database its bead was filed in (`home_of`); a read runs in the
+        central database, or in the one this process last wrote the bead in.
+
+        Args:
+            args: Arguments after `bd`.
+
+        Returns:
+            The repository, or "" for the working directory.
+        """
+        bead_id = bead_operand(args)
+        if not bead_id:
+            return self.repo
+        if is_read(args):
+            return self.written.get(bead_id, self.repo)
+        home = self.home_of(bead_id)
+        self.written[bead_id] = home
+        return home
+
+    def _bd(
+        self, args: list[str], repo: str | None = None, stdin: str | None = None
+    ) -> str:
         """Run one `bd` command and return its stdout.
 
         A command that could not reach the beads server is run again after each pause in
@@ -631,6 +799,8 @@ class Reader:
 
         Args:
             args: Arguments after `bd`.
+            repo: The repository to run it in; None routes it with `route`.
+            stdin: Text for its standard input, or None.
 
         Returns:
             The stdout text.
@@ -639,12 +809,13 @@ class Reader:
             BeadsError: If `bd` is absent, or exited nonzero with an error that is not
                 retried or on its last attempt.
         """
-        command = ["bd"] + (["-C", self.repo] if self.repo else []) + args
+        where = self.route(args) if repo is None else repo
+        command = ["bd"] + (["-C", where] if where else []) + args
         attempts = len(CONNECTION_BACKOFF) + 1
         for attempt in range(1, attempts + 1):
             try:
                 done = subprocess.run(
-                    command, capture_output=True, text=True, check=False
+                    command, input=stdin, capture_output=True, text=True, check=False
                 )
             except OSError as exc:
                 msg = f"could not run `bd`: {exc}"
@@ -673,7 +844,7 @@ class Reader:
         msg = f"`{' '.join(command)}` was never run"
         raise BeadsError(msg)
 
-    def _read(self, args: list[str]) -> object:
+    def _read(self, args: list[str], repo: str | None = None) -> object:
         """Run one read-only `bd` command live and parse its JSON.
 
         A connection failure is retried with backoff by `_bd`, each attempt printed; any
@@ -681,6 +852,7 @@ class Reader:
 
         Args:
             args: Arguments after `bd`.
+            repo: The repository to run it in; None routes it with `route`.
 
         Returns:
             The parsed stdout.
@@ -688,7 +860,7 @@ class Reader:
         Raises:
             BeadsError: `bd` failed or printed no JSON.
         """
-        out = self._bd(args)
+        out = self._bd(args, repo)
         try:
             return json.loads(out)
         except json.JSONDecodeError as exc:
@@ -1072,7 +1244,7 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
     command = ["update", args.id]
     for key, value in updates:
         command += ["--set-metadata", f"{key}={value}"]
-    reader._bd(command)  # noqa: SLF001
+    reader._bd(command)
     reader.cache.pop(args.id, None)
     written = metadata_of(reader.get(args.id))
     return {
@@ -1131,7 +1303,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="beads-contract.py", description=__doc__.split("\n")[0]
     )
     parser.add_argument(
-        "-C", dest="repo", default="", help="run `bd` from this repository"
+        "-C",
+        dest="repo",
+        default="",
+        help="the central repository, when it is not $ATW_CONTROL_REPO",
     )
     parser.add_argument(
         "--records",
@@ -1207,7 +1382,65 @@ def build_parser() -> argparse.ArgumentParser:
     cds_audit.add_argument("id")
     cds_audit.add_argument("result", help="the run's `cdsAudit` object, as JSON")
     cds_audit.set_defaults(run=cmd_cds_audit)
+
+    sub.add_parser(
+        "bd",
+        help="run any `bd` command against the central database (a fleet-filed bead's "
+        "write against its own); prints what `bd` prints",
+    )
     return parser
+
+
+def passthrough(argv: list[str]) -> tuple[str, list[str]] | None:
+    """Split `[-C <repo>] bd <args>` into the central repository and the `bd` arguments.
+
+    Args:
+        argv: The argument vector.
+
+    Returns:
+        (repo, bd arguments), or None when the command is not `bd`.
+    """
+    repo = ""
+    i = 0
+    while i < len(argv):
+        if argv[i] == "-C" and i + 1 < len(argv):
+            repo = argv[i + 1]
+            i += 2
+        elif argv[i] == "bd":
+            return repo, argv[i + 1 :]
+        else:
+            return None
+    return None
+
+
+def run_passthrough(repo: str, args: list[str]) -> int:
+    """Run one `bd` command against the database it belongs in and print its output.
+
+    Args:
+        repo: The central repository named with `-C`, or "".
+        args: The `bd` arguments.
+
+    Returns:
+        0, or 2 when `bd` failed or the arguments name a database themselves.
+    """
+    named = sorted(DATABASE_FLAGS.intersection(a.split("=", 1)[0] for a in args))
+    if not args or named:
+        why = (
+            f"`bd` passthrough chooses the database itself; drop {', '.join(named)}"
+            if named
+            else "name the `bd` command to run"
+        )
+        print(f"[beads-contract] {why}", file=sys.stderr)
+        return 2
+    reads_stdin = "-" in args or "--stdin" in args
+    stdin = sys.stdin.read() if reads_stdin else None
+    try:
+        out = Reader(repo=repo)._bd(args, stdin=stdin)
+    except BeadsError as exc:
+        print(f"[beads-contract] {exc}", file=sys.stderr)
+        return 2
+    sys.stdout.write(out)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1219,6 +1452,10 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The process exit status.
     """
+    argv = sys.argv[1:] if argv is None else argv
+    split = passthrough(argv)
+    if split is not None:
+        return run_passthrough(*split)
     args = build_parser().parse_args(argv)
     try:
         reader = Reader(repo=args.repo, records_file=args.records)

@@ -47,7 +47,7 @@ Comments posted: [n]
 ```
 
 - **`Ready`** is `TRUE` only when **both** hold: `Pipeline result` is `READY` **and** the
-  tracker reports the issue in a *ready* state — for Beads that is `bd ready` membership
+  tracker reports the issue in a *ready* state — for Beads that is `atw-bd ready` membership
   (status `open`, no active blockers, not deferred/hooked), for GitHub that is state
   `OPEN`. Status `open` alone is not enough; a blocked or closed issue is never `Ready`.
   In all other cases `Ready` is `FALSE`.
@@ -72,7 +72,7 @@ The only exception is an empty invocation: with no argument, ask once, in one li
 ## What gets stored on the issue
 
 The skill persists current-state attributes so a later run can skip work. On **Beads**,
-these are first-class metadata (set with `--set-metadata`, read from `bd show --json`):
+these are first-class metadata (set with `--set-metadata`, read from `atw-bd show --json`):
 
 | Key | Meaning |
 | --- | --- |
@@ -118,10 +118,10 @@ would bump, falsely invalidating the cache). See Recipes for the exact hashing c
 **What the fingerprint ACTUALLY covers: `title`, `description`, `issue_type`, `priority`.**
 That is four fields, and it is narrower than it looks. The hash is taken over a ten-key object,
 but six of those keys — `acceptance`, `design`, `type`, `dependencies`, `deps`, and `labels` —
-carry no value: the first five are not returned by `bd show --json` at all, and `labels` is
+carry no value: the first five are not returned by `atw-bd show --json` at all, and `labels` is
 nulled deliberately (see below). They stay in the object because the digest is over its shape.
 
-**`bd show --json` has no fixed field list.** It OMITS any field the bead does not carry, so a
+**`atw-bd show --json` has no fixed field list.** It OMITS any field the bead does not carry, so a
 record carries anywhere from 13 to 18 keys and the union across a whole tracker is larger still.
 Never assert a field is absent from the SCHEMA when it is merely absent from one bead; the
 `beads-contract` skill documents the census and `beads-contract.py record <id>` reports what a
@@ -168,7 +168,7 @@ different length, never hash a different field set.
 
 ## Algorithm
 
-1. **Resolve the issue.** Beads ID (e.g. `tst-123`) → `bd show <id> --json`. GitHub number
+1. **Resolve the issue.** Beads ID (e.g. `tst-123`) → `atw-bd show <id> --json`. GitHub number
    → `gh issue view <n> --json ...`. Inline text → assess directly, store nothing, post
    nothing (chat-only result). If the lookup returns "not found" → `Pipeline result:
    MISSING`, emit contract, stop. If a `bd`/`gh` call errors → `Pipeline result: ERROR`,
@@ -229,7 +229,7 @@ different length, never hash a different field set.
    - **Stale/missing:** go to step 6.
 6. **Run review** (the `task-review` skill) against the issue. Post the review comment
    (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
-   `review_missing`, `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The keys
+   `review_missing`, `reviewed_at` and `ready_content_hash=$H` in ONE `atw-bd update`. The keys
    land together or the run has failed; a write that sets the status without the hash is the
    defect, not a partial success.
 
@@ -248,7 +248,7 @@ different length, never hash a different field set.
    `READY` with no stored hash has thrown away everything it just paid for and guarantees
    the next run reruns it.
 8. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
-   Tracker-ready-state: Beads → issue appears in `bd ready`; GitHub → issue state `OPEN`.
+   Tracker-ready-state: Beads → issue appears in `atw-bd ready`; GitHub → issue state `OPEN`.
 9. **Emit the contract block.** Stop.
 
 ## Audit Trail
@@ -286,7 +286,7 @@ different length, never hash a different field set.
 
 ## Recipes
 
-Beads commands run read-only where possible (`--readonly`); writes use `bd update`. The
+Beads commands run read-only where possible (`--readonly`); writes use `atw-bd update`. The
 `jq` selectors tolerate both array and `{issue:…}`/flat shapes and missing keys.
 
 **Content hash (Beads)** — capture it into `$H`; this is the only place the hash is
@@ -315,7 +315,7 @@ H=$(gh issue view <n> --json title,body,labels \
 
 **Read stored state (Beads):**
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
            | "review_status=\(.review_status//"")\nreview_missing=\(.review_missing//"")\nreviewed_at=\(.reviewed_at//"")\nready_content_hash=\(.ready_content_hash//"")"'
 ```
@@ -323,11 +323,11 @@ bd show <id> --json --readonly \
 **Hierarchy (Beads)** — the issue's own type and its parent chain. Two reads: the issue,
 then its parent:
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
            | "type=\(.issue_type//"")\nparent=\(.parent//"")"'
 # then, for a non-empty parent:
-bd show <parent> --json --readonly \
+atw-bd show <parent> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
            | "parent_type=\(.issue_type//"")\ngrandparent=\(.parent//"")"'
 # and for a task, one more read of <grandparent> for grandparent_type.
@@ -336,7 +336,7 @@ bd show <parent> --json --readonly \
 The `repoPath:` marker, read from the same records — notes first, then description. It is a
 LINE-ANCHORED marker, so read the line, not the whole field:
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
            | ((.notes // "") + "\n" + (.description // ""))' \
   | grep -iE '^[[:space:]]*[-*>[:space:]]*`?(repoPath|repo|repository)`?[[:space:]]*[:=]' \
@@ -351,16 +351,16 @@ same marker.
 
 **Status / closed check (Beads):**
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | .status'
 ```
 
-**Close date (Beads):** from the same `bd show --json`, read `.closed_at`; if absent, fall
+**Close date (Beads):** from the same `atw-bd show --json`, read `.closed_at`; if absent, fall
 back to `.updated_at`. **GitHub:** `gh issue view <n> --json closedAt`.
 
 **Ready-state membership (Beads):**
 ```
-bd ready --json -n 0 --readonly \
+atw-bd ready --json -n 0 --readonly \
   | jq -e --arg id "<id>" '[.[]?,(.issues[]?)] | any(.id==$id)' >/dev/null && echo ready || echo not-ready
 ```
 
@@ -368,7 +368,7 @@ bd ready --json -n 0 --readonly \
 content-hash recipe. Copy it as written — there is no variant that omits
 `ready_content_hash`:
 ```
-bd update <id> \
+atw-bd update <id> \
   --set-metadata review_status=<COMPLETE|INCOMPLETE> \
   --set-metadata review_missing=<one-line summary of what is missing, or "" when COMPLETE> \
   --set-metadata reviewed_at=<ISO8601> \
@@ -388,13 +388,13 @@ touch. Do not reach for `--metadata`: it replaces the whole object and would dro
 
 **Verify the write (step 7, Beads):**
 ```
-bd show <id> --json --readonly \
+atw-bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
            | "ready_content_hash=\(.ready_content_hash//"MISSING")"'
 ```
 `MISSING`, or anything other than `$H`, means the write did not land — redo it.
 
-**Post a comment:** Beads `bd comment add <id> --body "..."` · GitHub `gh issue comment <n> --body "..."`.
+**Post a comment:** Beads `atw-bd comment add <id> --body "..."` · GitHub `gh issue comment <n> --body "..."`.
 
 **GitHub state read/write:** read the latest `<!-- task-ready:state … -->` marker — or the
 legacy `<!-- issue-ready:state … -->` spelling, whichever is more recent — from
