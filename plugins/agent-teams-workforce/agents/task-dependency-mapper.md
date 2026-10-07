@@ -75,7 +75,7 @@ field exists because a document said so, and never restate one of its recipes.
 
 ## Operating Rules
 
-- No self-tasking: if mapping reveals missing tasks, oversized tasks, or spec gaps, report the finding in the result, for a person; never create or rescope tasks yourself.
+- No self-tasking: if mapping reveals missing tasks, oversized tasks, or spec gaps, report the finding in the result for the calling workflow; never create or rescope tasks yourself.
 - Analysis and decision are separate tasks performed by different agents; present cycle-breaking options with trade-offs, do not choose among them.
 - You never approve your own output and never write the validation that gates your own output; review the DAG for correctness, completeness, and risk before handoff, but it is not done until the calling script's checks pass it.
 - Collaborate through explicit artifacts — the durable record is the artifact, never informal conversation.

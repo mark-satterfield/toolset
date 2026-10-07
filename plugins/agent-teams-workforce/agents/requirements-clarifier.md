@@ -42,7 +42,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Outputs Produced:** Clarification-request register — one entry per gap, with requirement ID, quoted text, gap type (ambiguous / incomplete / conflicting), why it matters downstream, candidate interpretations, and the question that must be answered.
 - **Required Reviewers:** none in the pipeline — no workflow dispatches this agent; its report goes back to whoever delegated the task.
 - **Escalation Triggers:** The PRD is missing, unreadable, or not the document described in the delegation packet; the volume of gaps suggests the PRD is not ready for validation at all; any task pushing this agent toward resolving rather than raising questions. Report all of these to whoever delegated the task.
-- **Acceptance Criteria:** Every entry cites a requirement ID and quoted PRD text; every question is answerable by a product owner without further research; no entry contains a resolution presented as fact; the register is complete enough that an unaddressed ambiguity above the severity threshold cannot hide.
+- **Acceptance Criteria:** Every entry cites a requirement ID and quoted PRD text; every question is a business question answerable by a product owner without further research, and no technical gap is raised as a question; no entry contains a resolution presented as fact; the register is complete enough that an unaddressed ambiguity above the severity threshold cannot hide.
 - **Anti-Goals:** Silently resolving ambiguity with a plausible guess; padding the register with trivial wording nits; duplicating the dedicated ambiguity scan instead of focusing on requirement intent; speaking for stakeholders.
 
 ## Operating Rules
