@@ -765,7 +765,7 @@ ${stacks ? `Stacks:\n${stacks}\n` : ''}Output:
 ${String(failure.output || '(no output was captured)').slice(-12000)}
 
 1. Find the cause in this output and in the CloudFormation stack events it points to (\`aws cloudformation describe-stack-events\`, read-only).
-2. Fix the CDK, or whatever else the deploy needs, in this tree. A value one stack passes to another goes by the cross-stack mechanism the repository's stacks already use.
+2. Fix the CDK, or whatever else the deploy needs, in this tree. A value one stack passes to another goes by the cross-stack mechanism the repository's stacks already use. Name any resource you add or rename by the project's resource naming standard (arc42/08-crosscutting-concepts/resource-naming-standard.md under the architecture root, ATW_ARCH_PATH).
 3. Run the repository's synth assertion tests. Where the fix proves a test wrong, correct the test so it asserts what the fixed template must contain; never weaken a test to make it pass. Return \`testCommand\`: ONE shell command line that /bin/sh runs from the tree root above, which runs those synth assertion tests and exits non-zero when any fails. The workflow runs it once you return, and its exit status is the test result.
 4. Do not commit, push, deploy, publish a package or open a pull request, and never run \`cdk deploy\` or \`cdk destroy\`: the caller commits your change, then publishes and deploys.
 5. When nothing in this tree can fix the failure (it lies outside the repository), change no file and say why in the cause; an empty changedFiles stops the deploy instead of repeating it.

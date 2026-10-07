@@ -14,39 +14,7 @@ This reference provides detailed patterns, anti-patterns, and best practices for
 
 ## Naming Conventions
 
-### Automatic Resource Naming (Recommended)
-
-Let CDK and CloudFormation generate unique resource names automatically:
-
-**Benefits**:
-- Enables multiple deployments in the same region/account
-- Supports parallel environments (dev, staging, prod)
-- Prevents naming conflicts
-- Allows stack cloning and testing
-
-**Example**:
-```typescript
-// ✅ GOOD - Automatic naming
-const bucket = new s3.Bucket(this, 'DataBucket', {
-  // No bucketName specified
-  encryption: s3.BucketEncryption.S3_MANAGED,
-});
-```
-
-### When Explicit Naming is Required
-
-Some scenarios require explicit names:
-- Resources referenced by external systems
-- Resources that must maintain consistent names across deployments
-- Cross-stack references requiring stable names
-
-**Pattern**: Use logical prefixes and environment suffixes
-```typescript
-// Only when absolutely necessary
-const bucket = new s3.Bucket(this, 'DataBucket', {
-  bucketName: `${props.projectName}-data-${props.environment}`,
-});
-```
+Follow the project's resource naming standard when one exists (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`): stack, API, table, bucket, role and SSM parameter names all come from it. Without one, let CDK generate names.
 
 ## Construct Patterns
 
@@ -332,23 +300,9 @@ const bucket = new s3.Bucket(this, 'DataBucket', {
 
 ## Anti-Patterns
 
-### ❌ Hardcoded Values
+### ❌ Ad-hoc Names
 
-```typescript
-// BAD
-new lambda.Function(this, 'Function', {
-  functionName: 'my-function', // Prevents multiple deployments
-  code: lambda.Code.fromAsset('lambda'),
-  handler: 'index.handler',
-  runtime: lambda.Runtime.NODEJS_20_X,
-});
-
-// GOOD
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  // Let CDK generate the name
-});
-```
+A name typed in by hand, outside the project's resource naming standard, is wrong; so is an explicit name in a project that has no standard. Build names from the standard, or let CDK generate them.
 
 ### ❌ Overly Broad IAM Permissions
 
@@ -421,7 +375,7 @@ class MyStack extends Stack {
 
 ## Summary
 
-- **Always** let CDK generate resource names unless explicitly required
+- **Name** resources by the project's resource naming standard when one exists; otherwise let CDK generate them
 - **Use** high-level constructs (L2/L3) over low-level (L1)
 - **Prefer** grant methods for IAM permissions
 - **Leverage** `NodejsFunction` and `PythonFunction` for automatic bundling

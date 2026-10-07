@@ -56,31 +56,7 @@ Use this skill when:
 
 ### Resource Naming
 
-**CRITICAL**: Do NOT explicitly specify resource names when they are optional in CDK constructs.
-
-**Why**: CDK-generated names enable:
-- **Reusable patterns**: Deploy the same construct/pattern multiple times without conflicts
-- **Parallel deployments**: Multiple stacks can deploy simultaneously in the same region
-- **Cleaner shared logic**: Patterns and shared code can be initialized multiple times without name collision
-- **Stack isolation**: Each stack gets uniquely identified resources automatically
-
-**Pattern**: Let CDK generate unique names automatically using CloudFormation's naming mechanism.
-
-```typescript
-// ❌ BAD - Explicit naming prevents reusability and parallel deployments
-new lambda.Function(this, 'MyFunction', {
-  functionName: 'my-lambda',  // Avoid this
-  // ...
-});
-
-// ✅ GOOD - Let CDK generate unique names
-new lambda.Function(this, 'MyFunction', {
-  // No functionName specified - CDK generates: StackName-MyFunctionXXXXXX
-  // ...
-});
-```
-
-**Security Note**: For different environments (dev, staging, prod), follow AWS Security Pillar best practices by using separate AWS accounts rather than relying on resource naming within a single account. Account-level isolation provides stronger security boundaries.
+Follow the project's resource naming standard when one exists (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`): name every resource by it. Without one, let CDK generate names.
 
 ### Lambda Function Development
 

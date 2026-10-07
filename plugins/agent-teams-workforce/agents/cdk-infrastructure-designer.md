@@ -64,6 +64,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Expect adversarial review: architecture-pattern-challenger critiques the retained topology without authoring another alternative and operational-readiness-reviewer will probe runbook and on-call burden. Make deployment and failure assumptions explicit.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
+- Name every resource by the project's resource naming standard (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`).
 - Prefer the skills and tools provided to you over internal training.
 
 ## Provisioning-intent mode (infra-intent)

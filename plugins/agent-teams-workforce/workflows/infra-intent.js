@@ -185,6 +185,7 @@ Deliver CDK-expressible provisioning intent:
 - stacks: the CDK stacks the resources belong to.
 - crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name.
 - affectedStacks: the stacks created or modified by this intent (names).
+Name every stack and resource by the project's resource naming standard (arc42/08-crosscutting-concepts/resource-naming-standard.md under the architecture root, ATW_ARCH_PATH).
 - rationale: why this shape, tied to the change.
 Size every resource for the load the change and the project state; prefer per-request pricing over provisioned always-on capacity unless that load requires it.`,
   {
