@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from archevidence import saved_evidence_current
+from archrevision import record_problem
 from archbaseline import survey_freshness
 
 
@@ -34,9 +35,9 @@ def saved_target(art_dir: Path) -> dict:
         art_dir: The Epic's artifacts directory.
 
     Returns:
-        `{found, ok, subject, targetDir, deltaDir, deltaFiles, integratedFiles,
-        closureSaved}`; `ok` only when the saved target was written and its evidence is
-        current; `closureSaved` when its delta holds the checked prerequisite closure.
+        `{found, ok, revisionProblem, subject, targetDir, deltaDir, deltaFiles,
+        integratedFiles, closureSaved}`; `ok` only when the saved target was written, its
+        evidence is current and arc42 is still the revision it was produced against; `closureSaved` when its delta holds the checked prerequisite closure.
     """
     work = art_dir / "architecture"
     target = work / "target.json"
@@ -48,11 +49,14 @@ def saved_target(art_dir: Path) -> dict:
     baseline_current = (
         survey_freshness(work / "survey.json")["current"] if saved else False
     )
+    revision_problem = record_problem(work) if saved else None
     return {
         "found": saved is not None,
         "ok": summary.get("ok") is True
         and baseline_current
+        and revision_problem is None
         and saved_evidence_current(str(work)),
+        "revisionProblem": revision_problem or "",
         "subject": summary.get("subject"),
         "targetDir": summary.get("targetDir"),
         "deltaDir": summary.get("deltaDir"),

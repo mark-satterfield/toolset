@@ -42,6 +42,8 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from archrevision import arc42_revision
+
 STATE_KEY = "lifecycle_state"
 EFFECTIVE = "effective"
 IN_REVIEW = "in-review"
@@ -640,6 +642,9 @@ def write_target(
     frontmatter. The folder is named by `subject_folder`, so a display name such as
     `Company Intelligence` writes `target/company-intelligence/`. A target already at that path
     is replaced, so a resumed step writes the same target again.
+    With a baseline, `baseline.json` records `arc42Revision`, the revision of the effective
+    version (`archrevision.arc42_revision`) the target was designed against, so a later step
+    can tell an open target that predates later approvals.
 
     Args:
         draft: The draft directory.
@@ -680,6 +685,7 @@ def write_target(
             ]
             manifest = {
                 "version": 1,
+                "arc42Revision": arc42_revision(root),
                 "survey": str(Path(baseline).resolve()),
                 "surveySha256": hashlib.sha256(Path(baseline).read_bytes()).hexdigest(),
                 "designChanged": bool(facts["designWork"]),

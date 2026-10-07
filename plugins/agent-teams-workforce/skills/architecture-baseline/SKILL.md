@@ -42,6 +42,8 @@ Even when the effective views serve a capability, arc42 can hold content they do
 - canonical arc42 views still `in-review`, and other arc42 content not yet effective (for example section 4 strategy or section 8 concepts in review);
 - open targets under `target/` and build records under `built/` that show the capability's elements.
 
+An open target is design input, not approved design. Its `baseline.json` records `arc42Revision`, the revision of the effective version it was designed against. When that revision is missing, or effective views of the same elements were approved after the target was written (their last commit in the vault is later than the target's), the survey and the Check judge the target possibly stale: validate each part against the current effective views before adopting it, and record in the assessment what was found superseded.
+
 A constraint or document that applies to the capability and that its effective views do not represent is a cited gap: name the constraint or document (path and heading) and the effective view that does not represent it. Give that capability `designAction` `modify` when the design must change to honour it, or `documentationAction` `update` when only the documentation lags; either places the capability in design scope. Content that does not apply to the PRD's capabilities is not in scope; mention it in the summary. When nothing is unrepresented, say so for each capability, with the documents checked. This check is part of every assessment and of every independent review of a capability left unchanged, including a review-only Check.
 
 ## Build out from every available input

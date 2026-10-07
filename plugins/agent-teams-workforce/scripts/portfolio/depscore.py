@@ -32,6 +32,11 @@
                          result to FILE and `--against FILE` (repeatable) reports the files
                          created, changed and deleted since that saved fingerprint; with either,
                          the per-file hashes stay on disk and are not printed; no `bd` call
+    arch-revision        bind the architecture step's saved work to the arc42 revision it was
+                         produced against: `check` records the revision, or sets aside saved
+                         work made against another one into a dated stale folder; `mark`
+                         records the step's own integration (integrating, integrated); no
+                         `bd` call
     arch-resume          read the architecture step's saved work in its working directory and
                          print only the facts its control flow needs (finished steps, last
                          round, open findings by id, unreviewed claims per writer, the decision's
@@ -124,6 +129,8 @@ from pathlib import Path
 import beadgraph
 import relay
 from archfiles import files_from, integration_files, review_check
+from archrevision import check as revision_check
+from archrevision import mark as revision_mark
 from archresume import ResumeError, resume_facts
 from archstate import (
     commit_integration,
@@ -891,6 +898,37 @@ def build_parser() -> argparse.ArgumentParser:
         "names stay in the relay file",
     )
 
+    arv = sub.add_parser(
+        "arch-revision",
+        help="bind the architecture step's saved work to the arc42 revision it was produced "
+        "against, setting aside work made against another; no `bd` call",
+        parents=[common],
+    )
+    arv.add_argument(
+        "action",
+        choices=("check", "mark"),
+        help="check the binding, or mark the integration",
+    )
+    arv.add_argument(
+        "--arch-root",
+        required=True,
+        help="the architecture directory holding arc42/",
+    )
+    arv.add_argument(
+        "--work-dir", required=True, help="the architecture step's working directory"
+    )
+    arv.add_argument(
+        "--stale-root",
+        default=None,
+        help="where `check` makes the dated stale folder (the Epic's artifacts directory)",
+    )
+    arv.add_argument(
+        "--state",
+        choices=("integrating", "integrated"),
+        default=None,
+        help="with `mark`: the integration began, or was approved",
+    )
+
     aif = sub.add_parser(
         "arch-integration-files",
         help="measure the files an integration wrote since its saved fingerprint, union them "
@@ -1239,6 +1277,17 @@ def run(args: argparse.Namespace) -> dict:
         if args.counts:
             result["countsOnly"] = True
         return result
+    if command == "arch-revision":
+        if args.action == "mark":
+            if not args.state:
+                why = "arch-revision mark needs --state integrating or integrated"
+                return head | {
+                    "ok": False,
+                    "error": why,
+                    "summary": {"ok": False, "error": why},
+                }
+            return head | revision_mark(args.arch_root, args.work_dir, args.state)
+        return head | revision_check(args.arch_root, args.work_dir, args.stale_root)
     if command == "saved-target":
         return head | saved_target(args.art_dir)
     if command == "saved-span":
