@@ -792,6 +792,158 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
         raise HierarchyError(msg)
 
 
+#: The listing `depscore.py arch-delta --save` writes in the Epic's working directory.
+DELTA_ITEMS_FILE = "delta-items.json"
+
+
+def delta_requires(directory: Path) -> dict[str, list[str]] | None:
+    """Return each delta item's `requires`, from the saved `delta-items.json`.
+
+    Args:
+        directory: The Epic's working directory.
+
+    Returns:
+        Item id -> the ids it needs built first; None when the listing is not saved or no
+        item carries `requires` (a delta with no prerequisite closure).
+    """
+    path = directory / DELTA_ITEMS_FILE
+    if not path.is_file():
+        return None
+    items = _read_json(path).get("items")
+    if not isinstance(items, list) or not any(
+        isinstance(i, dict) and "requires" in i for i in items
+    ):
+        return None
+    return {
+        str(i.get("id")): str_list(i.get("requires"))
+        for i in items
+        if isinstance(i, dict) and i.get("id")
+    }
+
+
+def planned_prerequisites(directory: Path) -> dict[str, str]:
+    """Return the prerequisite items an open bead of another Epic already plans.
+
+    Such an item is placed in no repository: its bead is the plan, and the Tasks that need
+    it are blocked by that bead.
+
+    Args:
+        directory: The Epic's working directory.
+
+    Returns:
+        Item id -> the bead that plans it; empty when `delta-items.json` is not saved.
+    """
+    path = directory / DELTA_ITEMS_FILE
+    items = _read_json(path).get("items") if path.is_file() else None
+    return {
+        str(i["id"]): str(i["plannedBy"]).strip()
+        for i in (items if isinstance(items, list) else [])
+        if isinstance(i, dict)
+        and i.get("id")
+        and i.get("kind") == "prerequisite"
+        and i.get("state") == "planned"
+        and str(i.get("plannedBy") or "").strip()
+    }
+
+
+def detailed_items(directory: Path) -> dict[str, dict[str, str]]:
+    """Return every detailed delta item of the Epic, across its repositories' detailings.
+
+    Args:
+        directory: The Epic's working directory.
+
+    Returns:
+        Item id -> its `status`, its `plannedBy` and the `slug` of the repository whose
+        `recon-<slug>.json` details it.
+    """
+    out: dict[str, dict[str, str]] = {}
+    for path in sorted(directory.glob("recon-*.json")):
+        items = _read_json(path).get("items")
+        slug = path.name[len("recon-") : -len(".json")]
+        for i in items if isinstance(items, list) else []:
+            if isinstance(i, dict) and i.get("id"):
+                out[str(i["id"]).strip()] = {
+                    "status": str(i.get("status") or ""),
+                    "plannedBy": str(i.get("plannedBy") or "").strip(),
+                    "slug": slug,
+                }
+    return out
+
+
+def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[Task]:
+    """Give a Story's Tasks the edges the delta's `requires` relations make, in this Story.
+
+    For every Task that builds item X and every item Y that X requires: Y `done` makes no
+    edge; Y `planned-elsewhere` adds the bead that plans it to the Task's external
+    blockers, whichever repository Y is detailed in, as does a prerequisite Y the closure
+    found planned by an open bead (placed in no repository); Y marked add, modify or remove in this
+    repository adds an edge from every Task of this Story that builds Y. Y detailed in
+    another repository is left to `closure_task_edges`, which joins the Stories. A delta
+    with no prerequisite closure leaves the Tasks as they are.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The Story's repository slug.
+        tasks: The Story's Tasks in build order.
+
+    Returns:
+        The Tasks in build order with the derived edges and blockers.
+
+    Raises:
+        HierarchyError: A required item detailed here has no Task in this Story, or the
+            derived edges close a cycle.
+    """
+    requires = delta_requires(directory)
+    if requires is None:
+        return tasks
+    detailed = detailed_items(directory)
+    planned = planned_prerequisites(directory)
+    builders: dict[str, list[str]] = {}
+    for t in tasks:
+        for item in t.requirement_ids:
+            builders.setdefault(item, []).append(t.key)
+    problems: list[str] = []
+    for t in tasks:
+        for x in t.requirement_ids:
+            own = detailed.get(x, {})
+            if own.get("slug") != slug or own.get("status") not in WORK_STATUSES:
+                continue
+            for y in requires.get(x, []):
+                d = detailed.get(y)
+                if d is None and y in planned:
+                    d = {
+                        "status": "planned-elsewhere",
+                        "plannedBy": planned[y],
+                        "slug": "",
+                    }
+                if d is None or d["status"] == "done" or y in t.requirement_ids:
+                    continue
+                if d["status"] == "planned-elsewhere":
+                    if d["plannedBy"] and d["plannedBy"] not in t.blocked_by_external:
+                        t.blocked_by_external.append(d["plannedBy"])
+                    continue
+                if d["slug"] != slug or d["status"] not in WORK_STATUSES:
+                    continue
+                found = [k for k in builders.get(y, []) if k != t.key]
+                if not found:
+                    problems.append(
+                        f"{t.key} builds {x}, which requires {y}; {y} is marked "
+                        f"{d['status']} in recon-{slug}.json and no Task of this Story builds it"
+                    )
+                t.depends_on.extend(k for k in found if k not in t.depends_on)
+    if problems:
+        msg = f"tasks-{slug}.json: " + "; ".join(problems)
+        raise HierarchyError(msg)
+    by_key = {t.key: t for t in tasks}
+    order = build_order(
+        [t.key for t in tasks], [(d, t.key) for t in tasks for d in t.depends_on]
+    )
+    if order is None:
+        msg = f"tasks-{slug}.json: the Task edges and the delta's `requires` relations form a cycle"
+        raise HierarchyError(msg)
+    return [by_key[k] for k in order]
+
+
 def read_task_deps(directory: Path) -> list[dict]:
     """Return the saved Task edges between Stories.
 

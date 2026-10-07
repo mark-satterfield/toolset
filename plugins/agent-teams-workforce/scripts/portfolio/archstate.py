@@ -892,15 +892,20 @@ def target_names(target_dir: str, names: list[str]) -> dict:
     }
 
 
-def delta_items(delta_dir: str) -> dict:
+def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
     """List the elements a target's delta shows, one item per element.
 
     An item is one element named in the `shows` frontmatter of a delta view, with every
     delta view that shows it. Items are numbered `D1`, `D2` ... in element-name order, so
-    the same delta always yields the same ids. Runs no `bd` command and writes nothing.
+    the same delta always yields the same ids. The baseline's implementation gaps follow,
+    then, when the delta holds a checked `closure.json`, one `prerequisite` item per element
+    the delta's work rests on that is not built and current; every item then carries
+    `requires`, the ids of the items it needs built first. Runs no `bd` command and writes
+    nothing.
 
     Args:
         delta_dir: The `target/<subject>/delta/` directory.
+        with_closure: Merge the delta's `closure.json`; False lists the root items alone.
 
     Returns:
         `ok`, the refusals, the delta views, and the items.
@@ -983,14 +988,22 @@ def delta_items(delta_dir: str) -> dict:
                     "baseline": str(baseline_file),
                 }
             )
+    prerequisites = 0
+    if with_closure and not refusals:
+        from archclosure import merge_closure  # noqa: PLC0415 - archclosure imports this module
+
+        items, closure_refusals, prerequisites = merge_closure(root, items)
+        refusals += closure_refusals
     baseline_validated = manifest is not None and not refusals
     baseline_summary = {
         "baselineValidated": baseline_validated,
-        "implementationWork": len(manifest["implementationWork"])
+        "implementationWork": len(manifest["implementationWork"]) + prerequisites
         if baseline_validated
         else None,
         "implementationComplete": baseline_validated
-        and not manifest["implementationWork"],
+        and not manifest["implementationWork"]
+        and not prerequisites,
+        "prerequisites": prerequisites,
     }
     return {
         "ok": not refusals,

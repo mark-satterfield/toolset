@@ -89,7 +89,10 @@ def integration_files(
     was = _load(before)
     if not isinstance(was, dict):
         return {"error": f"{before}: no saved fingerprint"}
-    absolute = lambda rels: [f"{root}/{r}" for r in rels]
+
+    def absolute(rels: list[str]) -> list[str]:
+        return [f"{root}/{r}" for r in rels]
+
     diff = tree_diff(was, now)
     since_last: list[str] = []
     if last is not None:

@@ -34,8 +34,9 @@ def saved_target(art_dir: Path) -> dict:
         art_dir: The Epic's artifacts directory.
 
     Returns:
-        `{found, ok, subject, targetDir, deltaDir, deltaFiles, integratedFiles}`; `ok` only when
-        the saved target was written and its evidence is current.
+        `{found, ok, subject, targetDir, deltaDir, deltaFiles, integratedFiles,
+        closureSaved}`; `ok` only when the saved target was written and its evidence is
+        current; `closureSaved` when its delta holds the checked prerequisite closure.
     """
     work = art_dir / "architecture"
     target = work / "target.json"
@@ -60,6 +61,8 @@ def saved_target(art_dir: Path) -> dict:
         else int(summary.get("deltaFiles") or 0),
         "integratedFiles": _count(report, "changedFiles")
         + _count(report, "createdFiles"),
+        "closureSaved": bool(summary.get("deltaDir"))
+        and (Path(str(summary.get("deltaDir"))) / "closure.json").is_file(),
     }
 
 

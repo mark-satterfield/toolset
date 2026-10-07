@@ -46,7 +46,14 @@
                          `subject`, the subject as given as `subjectName`; no `bd` call
     arch-delta           list the elements a target's delta shows, one item per element with
                          the delta views that show it, numbered D1, D2 ... in element-name
-                         order; no `bd` call
+                         order, then one `prerequisite` item per entry of the delta's
+                         `closure.json`, every item with the ids it `requires`;
+                         `--roots-only` leaves the closure out, `--save FILE` also writes the
+                         listing to FILE; no `bd` call
+    arch-closure         check the prerequisite closure the architecture step's Closure phase
+                         saved (every element the delta's work rests on that is not built and
+                         current) against the delta's items and the open beads, and write it
+                         to the delta as `closure.json`; reads beads, writes none
     arch-target-names    tell which names an approved target's files mention as whole words;
                          no `bd` call
     arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
@@ -76,6 +83,10 @@
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
+    closure-edges        the Task edges between Stories that the delta's `requires` relations
+                         make (saved delta-items.json, recon-<slug>.json, tasks-<slug>.json),
+                         and the refusals where a required item has no Task, no open bead and
+                         is not done; no `bd` call
     arch-integration-files  measure the files an integration wrote since its saved
                          fingerprint, union them with the maintainer's report, write the lists
                          to a files file and relay their counts; no `bd` call
@@ -130,7 +141,9 @@ from archstate import promote as approve_arch
 from archstate import states as arch_states
 from assesscontext import assess_context, task_context
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
+from archclosure import write_closure
 from beadwrite import (
+    closure_task_edges,
     plan_story_tasks,
     plan_task_edges,
     unpersisted,
@@ -353,6 +366,25 @@ def _dir_entries(
         except (AttributeError, json.JSONDecodeError, OSError) as exc:
             unreadable.append({"file": str(path), "reason": str(exc)})
     return records
+
+
+def bead_status(bead_id: str, repo: Path | None) -> str | None:
+    """Return a bead's status as `bd show` reports it, or None when it cannot be read.
+
+    Args:
+        bead_id: The bead.
+        repo: The repository to run `bd` from, or None for the working directory.
+
+    Returns:
+        The status, or None.
+    """
+    try:
+        shown = beadgraph._bd_json(["show", bead_id, "--json"], repo)  # noqa: SLF001 - the read-only bd reader
+    except GraphError:
+        return None
+    record = shown[0] if isinstance(shown, list) and shown else shown
+    status = record.get("status") if isinstance(record, dict) else None
+    return str(status) if status else None
 
 
 def _dry_run_flag(parser: argparse.ArgumentParser) -> None:
@@ -715,7 +747,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Tasks, as S<i>-<local key>, comma-separated, written even with no saved blocker",
     )
-    for edge_parser in (pte, wte, wae):
+    cle = sub.add_parser(
+        "closure-edges",
+        help="the Task edges between Stories the delta's `requires` relations make, and the "
+        "refusals where a required item has no Task, no open bead and is not done; runs no "
+        "`bd` command",
+        parents=[common],
+    )
+    for edge_parser in (pte, wte, wae, cle):
         edge_parser.add_argument(
             "--dir", required=True, type=Path, help="the Epic's working directory"
         )
@@ -993,6 +1032,31 @@ def build_parser() -> argparse.ArgumentParser:
     adl.add_argument(
         "--delta-dir", required=True, help="the target/<subject>/delta/ directory"
     )
+    adl.add_argument(
+        "--roots-only",
+        action="store_true",
+        help="list the delta's own items, without the prerequisites its closure.json adds",
+    )
+    adl.add_argument(
+        "--save",
+        type=Path,
+        default=None,
+        help="also write the full listing to this file (the Epic's delta-items.json)",
+    )
+
+    acl = sub.add_parser(
+        "arch-closure",
+        help="check a prerequisite closure against the delta and the open beads and write "
+        "it to the delta as closure.json; reads beads, writes no bead",
+        parents=[common],
+    )
+    acl.add_argument(
+        "--closure", required=True, help="the closure the Closure phase saved"
+    )
+    acl.add_argument(
+        "--delta-dir", required=True, help="the target/<subject>/delta/ directory"
+    )
+    _dry_run_flag(acl)
 
     atr = sub.add_parser(
         "arch-target-remove",
@@ -1199,7 +1263,21 @@ def run(args: argparse.Namespace) -> dict:
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)
     if command == "arch-delta":
-        return head | delta_items(args.delta_dir)
+        listing = head | delta_items(args.delta_dir, with_closure=not args.roots_only)
+        if args.save is not None:
+            args.save.parent.mkdir(parents=True, exist_ok=True)
+            args.save.write_text(json.dumps(listing, indent=2) + "\n", encoding="utf-8")
+            listing["saved"] = str(args.save)
+        return listing
+    if command == "arch-closure":
+        return head | write_closure(
+            args.closure,
+            args.delta_dir,
+            status_of=lambda bead: bead_status(bead, args.directory),
+            dry_run=args.dry_run,
+        )
+    if command == "closure-edges":
+        return head | closure_task_edges(args.dir, split_ids(args.repos))
     if command == "arch-target-remove":
         return head | remove_target(
             args.arch_root, args.target_dir, message=args.message

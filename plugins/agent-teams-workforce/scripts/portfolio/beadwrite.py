@@ -20,8 +20,13 @@ from hierarchy import (
     Task,
     build_order,
     check_cds_contract,
+    WORK_STATUSES,
     check_detailed_work,
+    delta_requires,
+    derive_prerequisites,
+    detailed_items,
     elab_slug,
+    planned_prerequisites,
     read_story,
     read_task_deps,
     read_tasks,
@@ -388,12 +393,14 @@ def plan_tasks(
 
     Raises:
         HierarchyError: The file holds no `tasks` list, its edges form a cycle, a Task
-            cites no delta item the repository's detailing marks as work, or a web-ui
-            Task's contract does not match its design source.
+            cites no delta item the repository's detailing marks as work, an item a Task
+            builds requires an item of this repository no Task builds, or a web-ui Task's
+            contract does not match its design source.
     """
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids, packages_dir)
     check_detailed_work(directory, slug, tasks)
+    tasks = derive_prerequisites(directory, slug, tasks)
     check_cds_contract(slug, tasks)
     _assign_keys(tasks, slug)
     return tasks
@@ -819,8 +826,124 @@ def _accept(
     return accepted, rejected, pairs
 
 
+def _no_code(directory: Path) -> set[str]:
+    """Return the delta items the saved span ruling records as having no code here.
+
+    Args:
+        directory: The Epic's working directory.
+
+    Returns:
+        Their ids; empty when `repo-scoping.json` is not saved.
+    """
+    path = directory / "repo-scoping.json"
+    if not path.is_file():
+        return set()
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    rows = saved.get("noCode") if isinstance(saved, dict) else None
+    return {
+        str(r.get("itemId")).strip()
+        for r in rows or []
+        if isinstance(r, dict) and r.get("itemId")
+    }
+
+
+def closure_task_edges(directory: Path, repos: list[str]) -> dict:
+    """Return the Task edges between Stories that the delta's `requires` relations make.
+
+    For every saved Task that builds item X, and every item Y that X requires and that
+    another repository's detailing marks add, modify or remove, every Task of that
+    repository's Story that builds Y is an edge to the Task. A required item that no Task
+    of its Story builds, or that no repository details and the span ruling does not record
+    as having no code, is a refusal: the Task's prerequisite has no Task, no open bead and
+    is not done. Items detailed in the Task's own repository, and `done` or
+    `planned-elsewhere` items, are settled by `derive_prerequisites`. Runs no `bd` command.
+
+    Args:
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+
+    Returns:
+        The edges (`from`, `to`, `kind`, `reason`; ends are `S<i>-<local key>`) and the
+        refusals.
+    """
+    requires = delta_requires(directory)
+    edges: list[dict] = []
+    refusals: list[str] = []
+    if requires is not None:
+        detailed = detailed_items(directory)
+        no_code = _no_code(directory) | set(planned_prerequisites(directory))
+        slug_story: dict[str, str] = {}
+        builds: dict[str, list[str]] = {}
+        task_slug: dict[str, str] = {}
+        for index, (repo, slug) in enumerate(repo_slugs(repos).items()):
+            slug_story[slug] = f"S{index + 1}"
+            if not (directory / f"tasks-{slug}.json").is_file():
+                continue
+            for t in plan_tasks(directory, None, slug, repo):
+                name = f"S{index + 1}-{t.key}"
+                task_slug[name] = slug
+                builds[name] = t.requirement_ids
+        seen: set[tuple[str, str]] = set()
+        for name, items in builds.items():
+            slug = task_slug[name]
+            for x in items:
+                own = detailed.get(x, {})
+                if own.get("slug") != slug or own.get("status") not in WORK_STATUSES:
+                    continue
+                for y in requires.get(x, []):
+                    d = detailed.get(y)
+                    if d is None:
+                        if y not in no_code:
+                            refusals.append(
+                                f"{name} builds {x}, which requires {y}; no repository's "
+                                "detailing holds it"
+                            )
+                        continue
+                    if d["slug"] == slug or d["status"] in (
+                        "done",
+                        "planned-elsewhere",
+                    ):
+                        continue
+                    found = [
+                        n
+                        for n, built in builds.items()
+                        if task_slug[n] == d["slug"] and y in built
+                    ]
+                    if d["status"] not in WORK_STATUSES or not found:
+                        refusals.append(
+                            f"{name} builds {x}, which requires {y}; {y} is marked "
+                            f"{d['status'] or 'nothing'} in recon-{d['slug']}.json and no "
+                            f"Task of {slug_story.get(d['slug'], d['slug'])} builds it"
+                        )
+                        continue
+                    for frm in found:
+                        if (frm, name) in seen:
+                            continue
+                        seen.add((frm, name))
+                        edges.append(
+                            {
+                                "from": frm,
+                                "to": name,
+                                "kind": "infrastructure",
+                                "reason": f"{x} requires {y} (the delta's prerequisite closure)",
+                            }
+                        )
+    return {
+        "ok": not refusals,
+        "edges": edges,
+        "refusals": refusals,
+        "summary": {"ok": not refusals, "edges": len(edges), "refusals": refusals},
+    }
+
+
 def plan_task_edges(directory: Path, repos: list[str]) -> dict:
     """Return the saved Task edges between Stories, checked; runs no `bd` command.
+
+    The edges are those `closure_task_edges` derives from the delta's `requires`
+    relations, then the mapper's saved `task-deps.json` edges.
 
     Args:
         directory: The Epic's working directory.
@@ -830,9 +953,27 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         The accepted edges, the rejected ones, and each blocked Task's blockers by name.
 
     Raises:
-        HierarchyError: The edges close a cycle over the Epic's Task graph.
+        HierarchyError: A Task's required item has no Task, no open bead and is not done,
+            or the edges close a cycle over the Epic's Task graph.
     """
-    saved = read_task_deps(directory)
+    closure = closure_task_edges(directory, repos)
+    if closure["refusals"]:
+        msg = "; ".join(closure["refusals"])
+        raise HierarchyError(msg)
+    standing = {(e["from"], e["to"]) for e in closure["edges"]}
+    mapped = (
+        read_task_deps(directory)
+        if (directory / "task-deps.json").is_file() or not standing
+        else []
+    )
+    saved = [
+        *closure["edges"],
+        *(
+            e
+            for e in mapped
+            if (str(e.get("from") or ""), str(e.get("to") or "")) not in standing
+        ),
+    ]
     slug_of, intra, _elab = _span_tasks(directory, repos)
     accepted, rejected, pairs = _accept(saved, slug_of)
     if build_order(sorted(slug_of), [*intra, *sorted(pairs)]) is None:
@@ -1047,7 +1188,10 @@ def unpersisted(
                 for b in t.blocked_by_external
                 if b not in bead.blockers
             )
-    if not missing and (directory / "task-deps.json").is_file():
+    if not missing and (
+        (directory / "task-deps.json").is_file()
+        or delta_requires(directory) is not None
+    ):
         try:
             blockers = plan_task_edges(directory, repos)["blockers"]
         except HierarchyError as exc:
