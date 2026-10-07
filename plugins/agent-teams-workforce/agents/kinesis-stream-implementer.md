@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming]
 effort: medium
 color: green
 ---
@@ -50,6 +50,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Write the minimum code needed to make the failing data-pipeline-test-writer suites pass. Never modify, weaken, skip, or delete a test — if a test looks wrong, stop and report it to implementation-lead with evidence.
 - The event contracts are upstream law: record shapes, partition strategy, and ordering guarantees are implemented as specified, never redesigned. Disagreement is a formal exception, never a silent override.
 - Streaming components follow a different deployment pattern than Lambda and API code: record every runtime assumption (stream names, consumer configuration, enhanced fan-out expectations, throughput assumptions) in the deployment-requirements note so the Deployment team can provision correctly; never provision infrastructure yourself.
+- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

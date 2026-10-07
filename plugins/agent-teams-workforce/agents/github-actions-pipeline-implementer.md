@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming]
 effort: medium
 color: pink
 ---
@@ -51,7 +51,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Analysis and decision are separate tasks performed by different agents; implement the pipeline as specified, and raise a formal exception if you believe an upstream decision is flawed rather than overriding it.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
-- Name every resource the pipeline creates or references (stacks, roles, parameters) by the project's resource naming standard (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`).
+- Name every resource the pipeline creates or references (stacks, roles, parameters) with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training, especially for GitHub Actions syntax and OIDC patterns.
 - Verify by evidence: success means observing the intended pipeline behavior, not merely seeing no errors. Review your own work for correctness, completeness, and risk before handoff, but never approve it.
 

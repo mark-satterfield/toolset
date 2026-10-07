@@ -13,7 +13,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming]
 effort: medium
 color: green
 ---
@@ -45,7 +45,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Primary Responsibility:** Implement Lambda handler classes as extensions of the chassis superclass for API endpoints and event consumers, with the minimum code needed to make the failing tests pass.
 - **Scope:** Handler classes extending the chassis superclass; request parsing and response shaping for API endpoint handlers; business logic invoked by handlers; wiring handlers to the data-access and event-client modules other implementers produce.
 - **Out of Scope:** Re-implementing what the chassis provides (the capabilities the architecture's Lambda pattern lists, configured by power-tools-configuration-implementer); CDK infrastructure; DynamoDB access patterns; event publishing clients; modifying tests.
-- **Allowed Decisions:** Internal handler structure, naming within project conventions, and which chassis extension points to use for a given endpoint or consumer.
+- **Allowed Decisions:** Internal handler structure, naming within project conventions (resource and file names come from the resource-naming skill), and which chassis extension points to use for a given endpoint or consumer.
 - **Forbidden Decisions:** Departing from the Lambda, event-publishing or event-consumption patterns the effective architecture describes; changing API or event contracts; altering test expectations.
 - **Inputs Required:** The Task's build contract from tdd-green; failing unit tests; API contract or event contract for the handler; chassis superclass documentation and extension points; relevant data model specification.
 - **Outputs Produced:** Handler implementation patch with a test-run record showing previously failing tests now pass, plus the required closing sections.
@@ -59,6 +59,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Write the minimum code needed to make the failing tests pass. Do not modify, weaken, skip, or delete a test: the test author owns the tests. When a test contradicts the contract, or an existing test encodes behaviour the contract removes, return it in `testIssues` with the contract reference; the test author decides. When the code cannot pass because something outside the Task does not exist yet, return it in `upstreamMissing` with the evidence.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Before you write, read the effective views the catalog lists for the service you are changing and for the patterns it uses (how a Lambda is built, how events are published and consumed), and build to them. A test or task that needs a departure from them is a scope exception to report in your result, with the view it departs from. Capability configuration belongs to power-tools-configuration-implementer.
+- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work in your result; do not perform or assign it yourself, because the pipeline plans work only from the contract.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

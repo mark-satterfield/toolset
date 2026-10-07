@@ -14,7 +14,7 @@ mcpServers:
 model: fable
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming]
 effort: medium
 isolation: worktree
 color: cyan
@@ -64,7 +64,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Expect adversarial review: architecture-pattern-challenger critiques the retained topology without authoring another alternative and operational-readiness-reviewer will probe runbook and on-call burden. Make deployment and failure assumptions explicit.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
-- Name every resource by the project's resource naming standard (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`).
+- Name every resource with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training.
 
 ## Provisioning-intent mode (infra-intent)

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# atw-naming <name|check|list|where> ... — generates and checks resource names from the
+# project's .resource-naming.yaml. The resource-naming skill documents it.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$here/../skills/resource-naming/scripts/naming.py" "$@"

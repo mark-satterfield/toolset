@@ -14,7 +14,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming]
 effort: medium
 color: green
 ---
@@ -63,6 +63,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Conditional writes carry the data integrity guarantees; never trade a specified condition expression for a simpler unconditional write that happens to pass.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Read the effective views the catalog lists for the service's tables and for the Lambda pattern before you write. Where that pattern provides idempotency, the data layer builds no deduplication or idempotency bookkeeping of its own.
+- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

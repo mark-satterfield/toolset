@@ -56,7 +56,7 @@ Use this skill when:
 
 ### Resource Naming
 
-Follow the project's resource naming standard when one exists (`arc42/08-crosscutting-concepts/resource-naming-standard.md` under the architecture root, `ATW_ARCH_PATH`): name every resource by it. Without one, let CDK generate names.
+Use the resource-naming skill: `atw-naming name <type> ...` prints every stack and resource name, and `atw-naming check <type> <name>` verifies one. Never compose a name by hand. When the project has no naming config (`atw-naming where` exits 2), let CDK generate names.
 
 ### Lambda Function Development
 
