@@ -85,6 +85,10 @@ conflicting content and the reason.
 - No open item is written into any view: questions, referrals, "pending", "TBD", anything addressed
   to the owner. What is still open goes in the report.
 - Nothing is written as a rule or a decision record. A design outcome is a description of the design.
+- A view names stacks, services and components, never repositories, and never says which repository
+  holds a stack, service or component; the polyrepo-steward is the record of that. A deployed element
+  is named by its stack name from the project's naming standard. A repository name met in a view you
+  touch is replaced with the stack, service or component it stands for.
 
 ## Output of a pass
 

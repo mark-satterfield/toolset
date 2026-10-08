@@ -44,7 +44,7 @@ section 2 finding, or a conflict between business requirements, is for the owner
 |---|---|---|
 | **Layout and naming** | Every section is a folder with a `README.md`; no section 9; views sit in the section the MODEL's view table names; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; target, delta and built use the same layout in their own folders | `references/verification-checklist.md` |
 | **Catalog** | Every view carries `view_type` (a MENU type), `scope`, `subject`, `shows` and `lifecycle_state`, with valid values, and `shows` matches what the view's diagram shows | `references/verification-checklist.md` |
-| **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
+| **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; no repository names; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
 | **View consistency** | No two views contradict each other; applicable subjects have the coverage the MODEL requires; no view conflicts with a section 2 constraint; navigation and links satisfy the MODEL | `references/view-consistency-checks.md` |
 
 ## How to run the verification

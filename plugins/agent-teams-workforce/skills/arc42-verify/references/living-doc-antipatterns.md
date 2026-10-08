@@ -77,6 +77,21 @@ domain or service scope with no diagram; prose referring to "the diagram below" 
 - **Severity:** `WARN`.
 - **Evidence:** give the path and name what is missing.
 
+## 8. Repository names
+
+A view names stacks, services and components. A repository is only a unit of version management
+with no functional boundary, and the polyrepo-steward is the record of which repository holds which
+stack, so a view that names a repository ties the architecture to a layout that can change without
+the design changing.
+
+**Flag:** a repository name used for a stack, service or component (in prose, a diagram label, a
+table cell or `shows`); "repository X", "lives in X", "X's repository", a repository column in a
+table, a statement of which repository holds an element. A file path in a code citation and a
+package id are not findings.
+
+- **Severity:** `FAIL`.
+- **Evidence:** quote the text and give its path.
+
 ```mermaid
 flowchart TD
   scan[Scan every view] --> rule{rule outside section 2?}
@@ -92,6 +107,8 @@ flowchart TD
   scan --> req{requirement or work-item reference?}
   req -->|named for a work item| failQ[FAIL]
   req -->|stray reference| warnQ[WARN]
+  scan --> repo{repository name?}
+  repo -->|yes| failP[FAIL]
 ```
 
 ## Reporting

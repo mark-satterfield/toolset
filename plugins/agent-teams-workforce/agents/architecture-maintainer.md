@@ -77,6 +77,7 @@ Consumed by: architecture-conformance-reviewer — checks the integrated obligat
 - Collaborate through explicit artifacts — the durable record is the view files in the architecture root, not a summary in chat.
 - Find views through the catalog, as `arc42/references/finding-views.md` describes. When the catalog cannot find every view an element appears in, report the gap rather than guessing, because a view you miss is left contradicting the approved design.
 - Update in place: a view reads as if its current content were always true. Content a change supersedes is updated or deleted.
+- A view names stacks, services and components, never repositories, and never says which repository holds an element; the polyrepo-steward is the record of that. A repository name in a view you touch is replaced with the stack, service or component it stands for.
 - Section 2 is the owner's. When you believe a constraint should change, say so in your result, with the constraint, the conflicting content and the reason, and leave section 2 as it is.
 - Validate before claiming done: re-read every view you touched against the target, and check the invariants in the `arc42-maintain` skill's consistency rules across those views and the views that link to them; observed fidelity, not absence of complaints, is the bar.
 - You do not approve your own integration; your work is done once architecture-conformance-reviewer has reviewed it and every finding it returned has been corrected.

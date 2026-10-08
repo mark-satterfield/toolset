@@ -64,7 +64,7 @@ evidence the design is right.
 ## Authoring procedure
 
 1. **Name the subject.** The feature, service, component or layer the views describe, as the glossary
-   and the repositories name it. It names the folder (`target/<subject>/`) and appears in every
+   and the stack names name it. It names the folder (`target/<subject>/`) and appears in every
    view's `subject`. It is never a PRD, an Epic, a bead id or a date.
 2. **Find every scope the change reaches.** An element appears in views at more than one scope.
    Adding a service, for example, changes the system container and integration views and adds the
@@ -83,7 +83,7 @@ evidence the design is right.
    (reasons, limits, details of an element) and where the adjacent views are. A view that is only
    prose, or only a diagram, is the exception.
 6. **Add the catalog frontmatter** to every view: `view_type` (a type from the MENU), `scope`,
-   `subject`, `shows` (every element in the view, by its glossary or repository name), and
+   `subject`, `shows` (every element in the view, by its glossary name or its stack name), and
    `lifecycle_state: in-review`. Keep any classification fields the project uses beside them.
 7. **Follow the established patterns.** A design follows what the effective architecture establishes
    (every API so far is REST, so the next API is REST) unless it states a reason and evidence to
@@ -99,6 +99,11 @@ evidence the design is right.
 - A description of the design, in present tense, as this version holds it.
 - Reasons where a reader needs them, in the prose around the diagram.
 - Claims about AWS that a reviewer can check against the AWS documentation.
+
+A view names stacks, services and components, never repositories. A repository is only a unit of
+version management with no functional boundary, so a view never says which repository holds a stack,
+service or component; the polyrepo-steward is the record of that. A deployed element is named by its
+stack name from the project's naming standard (`atw-naming name stack ...`).
 
 A view does not contain requirements, history, decision records, rules ("services MUST …") or open
 items (`../arc42/references/living-document-rules.md`). A question you cannot answer from the inputs

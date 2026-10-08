@@ -28,8 +28,8 @@ holds no view) carries the catalog frontmatter.
 |---|---|---|
 | `view_type` | Present, and a type the MENU lists | Missing, or a type the MENU does not list |
 | `scope` | One of `system`, `domain`, `service`, `component`, `concept` | Missing or another value |
-| `subject` | Present, and the one thing the view describes, named as the glossary and repositories name it | Missing; names a PRD, Epic, bead or date |
-| `shows` | Names the architectural elements actually shown at the declared abstraction, including a justified prose-only model where the MODEL permits one | Missing or inconsistent with the actual content; name the missing or unsupported element |
+| `subject` | Present, and the one thing the view describes, named as the glossary or its stack name names it, never by a repository name | Missing; names a PRD, Epic, bead or date |
+| `shows` | Names the architectural elements actually shown, by glossary or stack name and never by repository name, at the declared abstraction, including a justified prose-only model where the MODEL permits one | Missing or inconsistent with the actual content; name the missing or unsupported element |
 | `lifecycle_state` | `in-review` or `effective` | Missing or another value; a target or delta file marked `effective` before approval |
 | Scope and place agree | A `scope: service` view sits in that service's subject folder; a `scope: concept` view sits in section 8 | Scope and folder disagree |
 
