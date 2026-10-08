@@ -64,7 +64,14 @@ cur.execute("SHOW DATABASES")
 server = {r[0] for r in cur.fetchall()}
 
 repos = sorted(paths, key=str.lower)
-db_of = lambda r: r.replace("-", "_")
+def db_of(r):
+    # bd finds a database by its project_id and keeps the name it was created under, so a
+    # renamed repo stays on its original database; metadata.json names it.
+    try:
+        named = json.load(open(os.path.join(paths[r], ".beads", "metadata.json"))).get("dolt_database")
+    except (OSError, ValueError):
+        named = None
+    return named or r.replace("-", "_")
 
 hdr = f'{"REPO":<42}{"srv":<4}{"dirty":<6}{"schema":<7}{"prefix":<7}{"iss":<4}{"mode":<8}{"shared":<7}{"id":<5}'
 print(hdr); print("-" * len(hdr))
@@ -78,12 +85,17 @@ for repo in repos:
         print(f"{repo:<42}{'NO':<4}{'-':<6}{'-':<7}{'-':<7}{'-':<4}{'-':<8}{'-':<7}{'-':<5}")
         anomalies.append((repo, f"database {db} missing on server")); continue
 
-    cur.execute(f"USE `{db}`")
-    cur.execute("SELECT * FROM dolt_status"); dirty = bool(cur.fetchall())
-    cur.execute("SELECT MAX(version) FROM schema_migrations"); ver = cur.fetchone()[0]; versions[ver] += 1
-    cur.execute("SELECT value FROM config WHERE `key`='issue_prefix'"); r = cur.fetchone(); pfx = r[0] if r else None
-    cur.execute("SELECT COUNT(*) FROM issues"); iss = cur.fetchone()[0]
-    cur.execute("SELECT value FROM metadata WHERE `key`='_project_id'"); r = cur.fetchone(); dbid = r[0] if r else None
+    try:
+        cur.execute(f"USE `{db}`")
+        cur.execute("SELECT * FROM dolt_status"); dirty = bool(cur.fetchall())
+        cur.execute("SELECT MAX(version) FROM schema_migrations"); ver = cur.fetchone()[0]; versions[ver] += 1
+        cur.execute("SELECT value FROM config WHERE `key`='issue_prefix'"); r = cur.fetchone(); pfx = r[0] if r else None
+        cur.execute("SELECT COUNT(*) FROM issues"); iss = cur.fetchone()[0]
+        cur.execute("SELECT value FROM metadata WHERE `key`='_project_id'"); r = cur.fetchone(); dbid = r[0] if r else None
+    except pymysql.MySQLError as e:
+        # One unreadable database must not hide the rest of the fleet's findings.
+        print(f"{repo:<42}{'yes':<4}{'?':<6}{'?':<7}{'?':<7}{'?':<4}{'-':<8}{'-':<7}{'-':<5}")
+        anomalies.append((repo, f"database {db} unreadable: {e.args[-1] if e.args else e}")); continue
 
     meta_p = os.path.join(paths[repo], ".beads", "metadata.json")
     cfg_p  = os.path.join(paths[repo], ".beads", "config.yaml")
