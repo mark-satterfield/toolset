@@ -2,12 +2,12 @@
 """Generate and check resource names from a project's resource naming config.
 
 The rules live in the project, not here: a YAML file (`.resource-naming.yaml`) names the
-project id, the segment styles, the domain reference table and one pattern per resource
-type. This script only applies them, deterministically.
+projects and their name prefixes, the segment styles, the domain reference table and one
+pattern per resource type. This script only applies them, deterministically.
 
 Usage:
-  naming.py name <resource-type> [--domain X] [--<segment> VALUE ...]
-  naming.py check <resource-type> <name>
+  naming.py name <resource-type> --project P [--team] [--domain X] [--<segment> VALUE ...]
+  naming.py check <resource-type> <name> [--project P]
   naming.py list
   naming.py where
 
@@ -18,8 +18,12 @@ built-in defaults.
 
 Pattern grammar: `{segment}` is a value the caller supplies, `{segment|transform}` applies
 `lower`, `kebab`, `snake` or `upper_snake` to it, `[...]` is optional and is emitted only
-when every segment inside it is supplied, `{project}`, `{projectLower}` and
-`{metricsNamespace}` come from the config, and everything else is literal.
+when every segment inside it is supplied, and everything else is literal. `{project}` is the
+name prefix of the project given with `--project` (required by `name` for every pattern that
+uses it), `{projectLower}` is that prefix lowercased and `{metricsNamespace}` is the project's
+metrics namespace. A segment declared with `flag: <word>` (the `team` qualifier) is a
+value-less CLI flag that inserts that word. `check` accepts any project's prefix unless
+`--project` narrows it. A project may restrict `{type}` to the types of its categories.
 
 Exit codes: 0 ok; 1 a name fails `check`, or `name` was given invalid input; 2 the config
 is missing or invalid, or the resource type is unknown.
@@ -179,6 +183,19 @@ def placeholders(nodes: list[Node], optional: bool = False) -> list[tuple[str, b
     return out
 
 
+def uses_constants(nodes: list[Node]) -> bool:
+    """Tell whether a pattern uses a project constant anywhere.
+
+    Returns:
+        True when `{project}`, `{projectLower}` or `{metricsNamespace}` appears.
+    """
+    return any(
+        (n.kind == "var" and n.text in CONSTANTS)
+        or (n.kind == "opt" and uses_constants(n.children))
+        for n in nodes
+    )
+
+
 def trailing_literal(nodes: list[Node]) -> str:
     """Return the literal text after the pattern's last placeholder or group.
 
@@ -224,20 +241,37 @@ class Rules:
         if not isinstance(data, dict):
             raise ConfigError(f"{source}: top level must be a mapping")
         try:
-            project = data["project"]
-            self.constants = {
-                "project": str(project["id"]),
-                "projectLower": str(project["lowercase_id"]),
-                "metricsNamespace": str(project["metrics_namespace"]),
-            }
+            proj_cfg = data["projects"]
             seg_cfg = data["segments"]
             res_cfg = data["resources"]
         except (KeyError, TypeError) as exc:
             raise ConfigError(f"{source}: missing required key {exc}") from exc
-        if self.constants["projectLower"] != self.constants["project"].lower():
-            raise ConfigError(
-                f"{source}: project.lowercase_id must be project.id lowercased"
-            )
+        if not isinstance(proj_cfg, dict) or not proj_cfg:
+            raise ConfigError(f"{source}: projects must be a non-empty mapping")
+        self.projects: dict[str, dict] = {}
+        for pid, spec in proj_cfg.items():
+            spec = spec or {}
+            prefix = str(spec.get("prefix", ""))
+            if not re.fullmatch(STYLES["camelCase"], prefix):
+                raise ConfigError(
+                    f"{source}: project '{pid}' needs a camelCase one-token prefix"
+                )
+            categories = {
+                str(c): [str(t) for t in types]
+                for c, types in (spec.get("categories") or {}).items()
+            }
+            self.projects[str(pid)] = {
+                "constants": {
+                    "project": prefix,
+                    "projectLower": prefix.lower(),
+                    "metricsNamespace": str(
+                        spec.get("metrics_namespace", prefix[:1].upper() + prefix[1:])
+                    ),
+                },
+                "repo_prefix": str(spec.get("repo_prefix", prefix)),
+                "categories": categories,
+                "types": {t for types in categories.values() for t in types},
+            }
         self.forbidden_substrings = [
             s.lower() for s in data.get("forbidden_substrings", [])
         ]
@@ -247,9 +281,13 @@ class Rules:
         self.segments: dict[str, dict] = {}
         for name, spec in seg_cfg.items():
             spec = spec or {}
-            if "enum" not in spec and spec.get("style") not in STYLES:
+            if (
+                "enum" not in spec
+                and "flag" not in spec
+                and spec.get("style") not in STYLES
+            ):
                 raise ConfigError(
-                    f"{source}: segment '{name}' needs enum or a style in {sorted(STYLES)}"
+                    f"{source}: segment '{name}' needs enum, flag or a style in {sorted(STYLES)}"
                 )
             self.segments[name] = spec
         self.domains: list[dict] = []
@@ -307,6 +345,40 @@ class Rules:
             )
         return self.resources[key]
 
+    def project(self, pid: str | None) -> dict:
+        """Look up a project by id.
+
+        Returns:
+            The project's prefix constants, categories and types.
+
+        Raises:
+            NamingError: If the id is not a configured project.
+        """
+        if pid not in self.projects:
+            raise NamingError(
+                f"--project '{pid}' is not a project; projects: {', '.join(self.projects)}"
+            )
+        return self.projects[pid]
+
+    def project_types(self, prefix: str, seg_values: dict[str, str]) -> list[str]:
+        """Check `{type}` against the categories of the project a prefix belongs to.
+
+        Returns:
+            One reason when the project restricts its types and the type is not one of them.
+        """
+        for pid, proj in self.projects.items():
+            if proj["constants"]["project"].lower() != prefix.lower():
+                continue
+            value = seg_values.get("type")
+            if proj["types"] and value is not None and value not in proj["types"]:
+                cats = "; ".join(
+                    f"{c}: {', '.join(t)}" for c, t in proj["categories"].items()
+                )
+                return [
+                    f"type '{value}' is not a type of project '{pid}' (categories {cats})"
+                ]
+        return []
+
     # -- segments ---------------------------------------------------------------------
 
     def segment_regex(self, seg: str, how: str) -> str:
@@ -316,6 +388,8 @@ class Rules:
             A regex (no anchors).
         """
         spec = self.segments[seg]
+        if "flag" in spec:
+            return re.escape(str(spec["flag"]))
         if "enum" in spec:
             values = [transform(v, how) if how else v for v in spec["enum"]]
             return (
@@ -335,7 +409,10 @@ class Rules:
         """
         spec = self.segments[seg]
         flag = kebab_flag(seg)
-        if "enum" in spec:
+        if "flag" in spec:
+            if value != str(spec["flag"]):
+                raise NamingError(f"{flag} takes no value")
+        elif "enum" in spec:
             if value not in spec["enum"]:
                 raise NamingError(
                     f"{flag} '{value}' must be one of: {', '.join(spec['enum'])}"
@@ -377,15 +454,25 @@ class Rules:
 
     # -- name ---------------------------------------------------------------------------
 
-    def build(self, res: Resource, values: dict[str, str]) -> str:
-        """Generate a name from segment values.
+    def build(self, res: Resource, values: dict[str, str], pid: str | None) -> str:
+        """Generate a name from segment values for one project.
 
         Returns:
             The name.
 
         Raises:
-            NamingError: If a value is missing, extra or invalid, or the result breaks a rule.
+            NamingError: If the project or a value is missing, extra or invalid, or the
+                result breaks a rule.
         """
+        constants: dict[str, str] = {}
+        if uses_constants(res.nodes):
+            if not pid:
+                raise NamingError(
+                    f"'{res.key}' needs --project (one of: {', '.join(self.projects)})"
+                )
+            constants = self.project(pid)["constants"]
+        elif pid:
+            self.project(pid)
         segs = placeholders(res.nodes)
         known = {s for s, _ in segs}
         extra = sorted(set(values) - known)
@@ -408,8 +495,8 @@ class Rules:
                 if n.kind == "lit":
                     out += n.text
                 elif n.kind == "var":
-                    if n.text in self.constants:
-                        v = self.constants[n.text]
+                    if n.text in CONSTANTS:
+                        v = constants[n.text]
                     elif n.text in values:
                         v = values[n.text]
                     else:
@@ -420,7 +507,7 @@ class Rules:
             return out
 
         name = render(res.nodes) or ""
-        reasons = self.violations(res, name)
+        reasons = self.violations(res, name, pid)
         if reasons:
             raise NamingError(
                 f"generated '{name}' breaks the rules: " + "; ".join(reasons)
@@ -429,13 +516,17 @@ class Rules:
 
     # -- check --------------------------------------------------------------------------
 
-    def regex(self, res: Resource) -> str:
+    def regex(self, res: Resource, pid: str | None = None) -> str:
         """Compile a resource pattern into an anchored regex with one group per segment.
+
+        A project constant matches the given project's value, or any project's when no
+        project is given; its group is named `c<n>_<constant>`.
 
         Returns:
             The regex.
         """
         counter = {"n": 0}
+        projects = [self.projects[pid]] if pid else list(self.projects.values())
 
         def emit(nodes: list[Node]) -> str:
             out = ""
@@ -443,10 +534,19 @@ class Rules:
                 if n.kind == "lit":
                     out += re.escape(n.text)
                 elif n.kind == "var":
-                    if n.text in self.constants:
-                        v = self.constants[n.text]
-                        out += re.escape(
+                    if n.text in CONSTANTS:
+                        counter["n"] += 1
+                        alts = {
                             transform(v, n.transform) if n.transform else v
+                            for v in (p["constants"][n.text] for p in projects)
+                        }
+                        out += (
+                            f"(?P<c{counter['n']}_{n.text}>"
+                            + "|".join(
+                                re.escape(a)
+                                for a in sorted(alts, key=len, reverse=True)
+                            )
+                            + ")"
                         )
                     else:
                         counter["n"] += 1
@@ -457,21 +557,31 @@ class Rules:
 
         return "^" + emit(res.nodes) + "$"
 
-    def violations(self, res: Resource, name: str) -> list[str]:
+    def violations(self, res: Resource, name: str, pid: str | None = None) -> list[str]:
         """Check a name against its resource pattern and every global rule.
 
         Returns:
             One reason per violation; empty when the name passes.
         """
         reasons: list[str] = []
-        match = re.fullmatch(self.regex(res), name)
+        if pid:
+            self.project(pid)
+        match = re.fullmatch(self.regex(res, pid), name)
         if not match:
-            reasons.append(f"does not match '{res.pattern}' for {res.key}")
+            scope = f"project '{pid}'" if pid else "any project"
+            reasons.append(f"does not match '{res.pattern}' for {res.key} ({scope})")
         else:
+            seg_values: dict[str, str] = {}
+            prefix = ""
             for group, value in match.groupdict().items():
                 if value is None:
                     continue
-                seg = group.split("_", 1)[1]
+                kind, seg = group.split("_", 1)
+                if kind.startswith("c"):
+                    if seg in ("project", "projectLower"):
+                        prefix = value
+                    continue
+                seg_values[seg] = value
                 rejected = {
                     t.lower() for t in self.segments[seg].get("reject_words", [])
                 }
@@ -480,6 +590,8 @@ class Rules:
                     reasons.append(
                         f"segment {seg} '{value}' contains redundant word(s) {bad}"
                     )
+            if prefix:
+                reasons.extend(self.project_types(prefix, seg_values))
         if len(name) < res.min_length:
             reasons.append(f"shorter than {res.min_length} characters")
         if res.max_length and len(name) > res.max_length:
@@ -573,14 +685,22 @@ def load_rules(explicit: str | None) -> Rules:
 def cmd_list(rules: Rules) -> None:
     """Print every resource type with its pattern and segments."""
     print(f"# config: {rules.source}")
-    print(
-        f"# project: {rules.constants['project']}  lowercase: {rules.constants['projectLower']}"
-    )
+    print("# projects (--project: prefix / repository prefix / categories)")
+    for pid, proj in rules.projects.items():
+        cats = "; ".join(f"{c}: {', '.join(t)}" for c, t in proj["categories"].items())
+        print(
+            f"{pid}: {proj['constants']['project']} / {proj['repo_prefix']}"
+            + (f" / {cats}" if cats else "")
+        )
+    print()
     width = max(len(k) for k in rules.resources)
     for key, res in rules.resources.items():
         flags = " ".join(
-            (f"[{kebab_flag(s)}]" if opt else kebab_flag(s))
-            for s, opt in placeholders(res.nodes)
+            (["--project"] if uses_constants(res.nodes) else [])
+            + [
+                (f"[{kebab_flag(s)}]" if opt else kebab_flag(s))
+                for s, opt in placeholders(res.nodes)
+            ]
         )
         print(f"{key:<{width}}  {res.pattern:<55}  {flags}")
     if rules.domains:
@@ -610,6 +730,13 @@ def parse_segments(rules: Rules, argv: list[str]) -> dict[str, str]:
             raise NamingError(
                 f"unknown option '{flag}'; segments: {', '.join(sorted(by_flag))}"
             )
+        spec = rules.segments[by_flag[flag]]
+        if "flag" in spec:
+            if eq:
+                raise NamingError(f"{flag} takes no value")
+            values[by_flag[flag]] = str(spec["flag"])
+            i += 1
+            continue
         if eq:
             value = inline
         else:
@@ -635,9 +762,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p_name = sub.add_parser("name", help="print the name for a resource type")
     p_name.add_argument("kind", metavar="resource-type")
+    p_name.add_argument("--project", help="the project the resource belongs to")
     p_check = sub.add_parser("check", help="exit 0 when the name follows the rules")
     p_check.add_argument("kind", metavar="resource-type")
     p_check.add_argument("name")
+    p_check.add_argument("--project", help="accept only this project's prefix")
     sub.add_parser("list", help="print resource types and patterns")
     sub.add_parser("where", help="print the config path in use")
     args, rest = parser.parse_known_args(argv)
@@ -651,10 +780,10 @@ def main(argv: list[str] | None = None) -> int:
             print(rules.source)
         elif args.command == "name":
             res = rules.resource(args.kind)
-            print(rules.build(res, parse_segments(rules, rest)))
+            print(rules.build(res, parse_segments(rules, rest), args.project))
         else:
             res = rules.resource(args.kind)
-            reasons = rules.violations(res, args.name)
+            reasons = rules.violations(res, args.name, args.project)
             if reasons:
                 print(f"FAIL {args.kind} '{args.name}':", file=sys.stderr)
                 for r in reasons:
