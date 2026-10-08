@@ -1863,7 +1863,7 @@ def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
         if branch != b:
             msg = f"{root} is on {branch}, not {b}"
             raise GitFailedError(msg)
-        _commit_paths(root, files, f"chore(polyrepo): {subject}")
+        _commit_paths(root, files, f"chore(polyrepo): {subject}", force=True)
         must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
         must(git(root, "push", "origin", b, timeout=120))
     except GitFailedError as exc:
@@ -3130,16 +3130,22 @@ def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
     return text
 
 
-def _commit_paths(repo: Path, paths: list[str], message: str) -> None:
+def _commit_paths(
+    repo: Path, paths: list[str], message: str, force: bool = False
+) -> None:
     """Commit only these paths, re-staging once when a pre-commit hook rewrote them.
+
+    With force, the paths are staged even inside an ignored folder (the beads fleet list
+    is a tracked file under the gitignored `.beads/`).
 
     Raises:
         GitFailedError: when the commit still fails.
     """
-    must(git(repo, "add", "--", *paths))
+    add = ["add", "-f", "--"] if force else ["add", "--"]
+    must(git(repo, *add, *paths))
     cp = git(repo, "commit", "-m", message, "--", *paths, timeout=300)
     if cp.returncode != 0:
-        must(git(repo, "add", "--", *paths))
+        must(git(repo, *add, *paths))
         must(git(repo, "commit", "-m", message, "--", *paths, timeout=300))
 
 
