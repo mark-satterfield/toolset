@@ -52,6 +52,10 @@ What the loop does, every iteration, deciding only from GitHub's own state:
 | a failing or cancelled check, an unresolved review thread, a `CHANGES_REQUESTED` review, a reviewer question or comment newer than the last pass, a merge conflict (`DIRTY`) or a branch behind its base (`BEHIND`) | starts ONE headless pass session (Mode B) |
 | checks still pending, or nothing to fix and auto-merge armed | waits and polls again — no session is spent |
 | nothing to fix, every check passing, and auto-merge NOT armed | exits 2 (waiting cannot help) |
+| every other check passed, the `CodeRabbit` status missing or pending, and CodeRabbit's latest comment a "Rate Limit Exceeded" reply | waits the wait it states plus `SHEPHERD_CR_MARGIN_SECONDS` (default 60), then posts `@coderabbitai review` — CodeRabbit never retries by itself |
+| every other check passed, no `CodeRabbit` status, and no CodeRabbit comment since the last push (or no answer to the last request) for `SHEPHERD_CR_SILENCE_SECONDS` (default 900) | posts `@coderabbitai review` |
+| a CodeRabbit review in progress (status pending, latest comment not a rate-limit reply) | never posts a request; waits |
+| a further request needed after `SHEPHERD_CR_MAX_REQUESTS` (default 3) requests | exits 1, reporting the PR stuck on CodeRabbit |
 | `SHEPHERD_MAX_STALLED_PASSES` (default 3) passes in a row that changed nothing on the PR | exits 1 for human action |
 
 The loop never merges: it runs no `gh pr merge` and no `--admin`, and every pass session runs with a deny rule on `Bash(gh pr merge:*)`. GitHub auto-merge merges.
