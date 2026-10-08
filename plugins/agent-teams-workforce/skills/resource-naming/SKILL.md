@@ -51,9 +51,9 @@ to see the project's resource types, patterns and domain table.
 ```bash
 atw-naming list                                   # projects, resource types, patterns, flags, domains
 atw-naming name stack --project <project> --domain careerProfile --type service
-atw-naming name stack --project <project> --team --domain web --type infra
+atw-naming name stack --project <project> --team --domain support --type service
 atw-naming name lambda --project <project> --domain careerProfile --action scoreMatch
-atw-naming name ssm --project <project> --namespace careerProfile --resource-type dynamodb --resource-name table
+atw-naming name ssm --project <project> --namespace careerProfile --resource-type dynamodb --resource-name arn
 atw-naming check stack <name>                     # exit 0, or non-zero with reasons
 atw-naming check stack <name> --project <project> # also require that project's prefix
 atw-naming where                                  # which config file is in use

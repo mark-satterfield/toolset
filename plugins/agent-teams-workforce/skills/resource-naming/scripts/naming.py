@@ -205,6 +205,15 @@ def trailing_literal(nodes: list[Node]) -> str:
     return nodes[-1].text if nodes and nodes[-1].kind == "lit" else ""
 
 
+def leading_literal(nodes: list[Node]) -> str:
+    """Return the literal text before the pattern's first placeholder or group.
+
+    Returns:
+        The leading literal, or "" when the pattern starts with a placeholder.
+    """
+    return nodes[0].text if nodes and nodes[0].kind == "lit" else ""
+
+
 def kebab_flag(segment: str) -> str:
     """Return the CLI flag for a segment name (`resourceType` -> `--resource-type`).
 
@@ -606,8 +615,10 @@ class Rules:
         """Reject a cloud resource name containing a word for its kind of resource.
 
         The global `type_words` and the resource's own `type_words` are matched as whole
-        tokens (camelCase, hyphen, underscore, dot or slash boundaries); a permitted suffix
-        at the end of the name is removed first, so it is never a violation.
+        tokens (camelCase, hyphen, underscore, dot or slash boundaries). The pattern's own
+        leading literal (such as the `alias/` AWS requires of a KMS alias) and a permitted
+        suffix at the end of the name are removed first: the pattern, not the caller, put
+        them there, so they are never a violation.
 
         Returns:
             One reason per violating word; empty when the name passes.
@@ -615,6 +626,9 @@ class Rules:
         if res.category != "aws":
             return []
         stem = name
+        head = leading_literal(res.nodes)
+        if head and stem.startswith(head):
+            stem = stem[len(head) :]
         for suffix in sorted(self.permitted_suffixes, key=len, reverse=True):
             if stem.endswith(suffix):
                 stem = stem[: -len(suffix)]
