@@ -52,7 +52,7 @@ in `references/canonical-repo-state.md`):
 |---|---|
 | Connection mode | **Shared server** — `dolt.shared-server: true`, all repos on one port |
 | `.beads/metadata.json` | `dolt_mode: server`, `dolt_server_port: <shared port>`, `dolt_database: <db name>`, `project_id` **equal to the database's own `_project_id`** |
-| Database name | Deterministic from the repo name (e.g. `acme-web` → `acme_web`) |
+| Database name | Deterministic from the repo name at creation (e.g. `acme-web` → `acme_web`); a renamed repo keeps its database, which `metadata.json` names |
 | Issue prefix | The project prefix (the root repo's `issue_prefix`) — never the directory name |
 | Schema version | Current for the installed `bd` (all repos on the **same** version) |
 | Working set | **Clean** (no uncommitted Dolt changes) |

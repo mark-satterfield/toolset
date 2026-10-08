@@ -90,6 +90,11 @@ requires the store to open — see the migration gate in `troubleshooting.md`).
 preserved (`acme-careerPath-mcp-server` → `acme_careerPath_mcp_server`). The
 database with that name must exist on the shared server.
 
+A repo renamed after its database was created keeps that database: `bd` finds a database by
+its `project_id`, and `bd bootstrap` sets `metadata.json` back to the existing database's
+name. `metadata.json`'s `dolt_database` is then the name to check, and `audit-fleet.sh`
+reads it.
+
 ### 4. Issue prefix
 
 The prefix is `<prefix>`, stored authoritatively in the database's `config` table
