@@ -29,7 +29,7 @@ Every command takes `--json` (one JSON object on stdout), `--config`, and `--no-
 facts are always read live. Exit status: 0 clean, 1 findings remain, 2 usage or
 environment error; `grep` follows `rg` (0 match, 1 no match, 2 error).
 
-A command that changes the steward's files (manifest, changelog, knowledge store) commits
+A command that changes the steward's files (manifest, changelog, knowledge store, beads fleet list) commits
 and pushes them itself, on `main` of the repo that holds them, and reports it under
 `records`.
 
@@ -43,12 +43,13 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `purpose <repo> [--text T]` | Record (`--text`) or confirm the repo's purpose at its current `main`; clears `purpose-recheck`. |
 | `grep <pattern> [--space S] [--repo R …] [-i] [-l] [-F] [-w] [--glob G …]` | `rg` across every in-scope repo on disk. |
 | `rebase <repo …\|--all>` | Fetch and rebase `main` on `origin/main`; stops and reports on a conflict or a dirty tree. |
-| `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry. |
-| `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry. Refuses an invalid or taken name, or a `main` not known to be pushed. |
-| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on`. |
+| `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry, and add the repo to the beads fleet list when it has a `.beads` folder. |
+| `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry, and replace the old path in the beads fleet list with the new one. Refuses an invalid or taken name, or a `main` not known to be pushed. |
+| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list. |
+| `beads-fleet [--fix]` | Check the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`, config `beads.fleet_config`): every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed. `--fix` corrects the list. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix` and `agents-sync`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-fleet`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync` and `beads-fleet --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
@@ -97,6 +98,12 @@ judgment, and each has an obvious next step:
   The rename happens on GitHub and locally together, and the folder stays in its app space.
   `reconcile --fix` archives the repo on GitHub `deprecation.archive_after_days` (60) after
   `deprecated_on`. Deprecated and archived are separate lifecycle states.
+- **beads fleet list** — `repos.additional` in the control repo's `.beads/config.yaml` is
+  what `com.skillspoke.beads-fleet-watch` watches; a stale path silently stops that repo's
+  beads syncing. `create`, `rename`, `deprecate` and the `archive-due` repair keep it true
+  deterministically (add, replace, remove), re-reading the file immediately before each
+  write and touching only the one entry. Never edit it by hand for a repository change;
+  `beads-fleet --fix` repairs drift.
 - **list** — `list` or `inventory`: "how many repos", "which repos are deprecated".
 - **search** — `search` for record attributes; `grep` for content. For facts neither holds
   (which repos contain a DynamoDB table), hand off to **polyrepo-info**.

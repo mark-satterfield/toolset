@@ -135,7 +135,9 @@ repos:
         # ... one line per active child
 ```
 
-A newly onboarded repo must be added here; a deprecated repo must be removed.
+A newly onboarded repo must be added here; a deprecated repo must be removed. The `polyrepo`
+tool does both: `create`, `rename`, `deprecate` and the archive repair update the list, and
+its `beads-fleet` check (run by `doctor`; `--fix` repairs) finds any drift.
 
 ## What does NOT belong in a repo
 

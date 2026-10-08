@@ -30,6 +30,7 @@ Usage:
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
+  polyrepo.py beads-fleet [--fix]
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
 
@@ -59,11 +60,11 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+import tomllib
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
@@ -228,7 +229,9 @@ def consumed_names(repo: Path) -> set[str]:
     src = repo / "src"
     if src.is_dir():
         # A one-word package (`event`, `chat`) would match ordinary prose in any repo.
-        out |= {p.parent.name for p in src.glob("*/__init__.py") if "_" in p.parent.name}
+        out |= {
+            p.parent.name for p in src.glob("*/__init__.py") if "_" in p.parent.name
+        }
     stacks = repo / "cdk" / "stacks"
     if stacks.is_dir():
         for f in stacks.glob("*.py"):
@@ -760,7 +763,7 @@ class Manifest:
             del self.doc[key]
             self.dirty = True
 
-    def set_field(self, name: str, key: str, value: Any) -> None:  # noqa: ANN401
+    def set_field(self, name: str, key: str, value: Any) -> None:
         """Set one field on an entry; None removes the field."""
         e = self.entries()[name]
         if value is None:
@@ -1127,7 +1130,15 @@ def create_on_github(cfg: Config, name: str, repo: Path) -> None:
     must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
     must(
         run(
-            ["gh", "api", "-X", "PATCH", f"repos/{cfg.owner}/{name}", "-F", "allow_auto_merge=true"],
+            [
+                "gh",
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{cfg.owner}/{name}",
+                "-F",
+                "allow_auto_merge=true",
+            ],
             timeout=120,
         )
     )
@@ -1741,13 +1752,16 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
             run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120)
         )
         man.set_field(name, "lifecycle", "archived")
+        r = st.local.get(name)
+        if r:
+            fleet_edit(cfg, remove=[r.path])
 
     return [
         Finding(
             "archive-due",
             name,
             f"deprecated {age} days ago ({start}); repos are archived {days} days after deprecation",
-            fix=f"archive {cfg.owner}/{name} on GitHub and set lifecycle archived",
+            fix=f"archive {cfg.owner}/{name} on GitHub, set lifecycle archived, and drop it from the beads fleet list",
             action=act,
         )
     ]
@@ -1836,8 +1850,8 @@ def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
     root = Path(top)
     rels = [
         p.resolve().relative_to(root.resolve()).as_posix()
-        for p in (cfg.manifest, cfg.changelog, cfg.knowledge)
-        if p.exists()
+        for p in (cfg.manifest, cfg.changelog, cfg.knowledge, fleet_file(cfg))
+        if p.exists() and p.resolve().is_relative_to(root.resolve())
     ]
     changed = git(root, "status", "--porcelain=v1", "--", *rels).stdout
     files = [ln[3:] for ln in changed.splitlines() if ln.strip()]
@@ -1861,6 +1875,192 @@ def finish_records(cfg: Config, data: dict[str, Any]) -> None:
     """Commit and push the steward's files when this run changed them, reporting it in data."""
     if cfg.changes:
         data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)))
+
+
+# --------------------------------------------------------------------------------------------
+# beads fleet list: `repos.additional` in the control repo's beads config. The beads
+# fleet watcher watches the `.beads` folder of every path listed there, so the list must
+# name every active repo that has one, and nothing else.
+
+_FLEET_ITEM = re.compile(
+    r"""^(?P<indent>\s*)-\s*(?P<q>["']?)(?P<path>[^"'#\s][^"'#]*?)(?P=q)\s*(?:#.*)?$"""
+)
+
+
+def fleet_file(cfg: Config) -> Path:
+    """Return the beads config that holds the fleet list (config `beads.fleet_config`).
+
+    Returns:
+        The path; by default `.beads/config.yaml` beside the steward's folder.
+    """
+    return cfg.setting_path("beads", "fleet_config", "../.beads/config.yaml")
+
+
+def _fleet_norm(base: Path, raw: str) -> str:
+    return os.path.normpath(base / Path(raw).expanduser())
+
+
+def _fleet_block(lines: list[str]) -> tuple[int, int] | None:
+    """Find the item lines of `repos.additional`.
+
+    Returns:
+        (first line after `additional:`, one past its last item), or None when absent.
+    """
+    top = next(
+        (i for i, ln in enumerate(lines) if re.match(r"^repos:\s*(#.*)?$", ln)), None
+    )
+    if top is None:
+        return None
+    head = None
+    for i in range(top + 1, len(lines)):
+        if lines[i].strip() and not lines[i][0].isspace():
+            break
+        if re.match(r"^\s+additional:\s*(#.*)?$", lines[i]):
+            head = i
+            break
+    if head is None:
+        return None
+    indent = len(lines[head]) - len(lines[head].lstrip())
+    end = head + 1
+    for i in range(head + 1, len(lines)):
+        s = lines[i].strip()
+        if not s or s.startswith("#"):
+            continue
+        cur = len(lines[i]) - len(lines[i].lstrip())
+        if cur < indent or (cur == indent and not s.startswith("-")):
+            break
+        end = i + 1
+    return head + 1, end
+
+
+def fleet_paths(cfg: Config) -> dict[str, str]:
+    """Read the fleet list.
+
+    Returns:
+        Each listed path, normalized and absolute, mapped to the entry as written.
+    """
+    f = fleet_file(cfg)
+    if not f.is_file():
+        return {}
+    lines = f.read_text().splitlines()
+    blk = _fleet_block(lines)
+    if blk is None:
+        return {}
+    out = {}
+    for ln in lines[blk[0] : blk[1]]:
+        m = _FLEET_ITEM.match(ln)
+        if m:
+            out[_fleet_norm(f.parent.parent, m.group("path"))] = m.group("path")
+    return out
+
+
+def fleet_edit(
+    cfg: Config,
+    remove: Iterable[Path] = (),
+    add: Iterable[Path] = (),
+    replace: dict[Path, Path] | None = None,
+) -> list[str]:
+    """Remove, add or replace fleet list entries, editing the file's lines in place.
+
+    The file is read immediately before it is written, so a concurrent edit to another
+    entry is kept; comments and every other line are left as they are. A new entry goes
+    beside the entries in the same folder, in name order.
+
+    Returns:
+        One line per change made (none when the list already says it).
+
+    Raises:
+        PolyrepoError: when an entry must be added and the file has no `repos.additional`.
+    """
+    f = fleet_file(cfg)
+    if not f.is_file():
+        return []
+    base = f.parent.parent
+    lines = f.read_text().splitlines(keepends=True)
+    blk = _fleet_block([ln.rstrip("\n") for ln in lines])
+    items: list[tuple[int, str, str, re.Match[str]]] = []
+    if blk:
+        for i in range(*blk):
+            m = _FLEET_ITEM.match(lines[i].rstrip("\n"))
+            if m:
+                items.append(
+                    (i, _fleet_norm(base, m.group("path")), m.group("path"), m)
+                )
+    listed = {n for _, n, _, _ in items}
+
+    def entry(p: Path) -> str:
+        return os.path.relpath(p, base).replace(os.sep, "/").rstrip("/") + "/"
+
+    def norm(p: Path) -> str:
+        return os.path.normpath(p)
+
+    changes: list[str] = []
+    drop = {norm(p) for p in remove}
+    swap = {norm(o): n for o, n in (replace or {}).items()}
+    out = {i: lines[i] for i, *_ in items}
+    for i, n, raw, m in items:
+        if n in drop:
+            out[i] = ""
+            changes.append(f"removed {raw}")
+        elif n in swap and norm(swap[n]) in listed:
+            out[i] = ""
+            changes.append(f"removed {raw} ({entry(swap[n])} is already listed)")
+        elif n in swap:
+            out[i] = (
+                f"{m.group('indent')}- {m.group('q')}{entry(swap[n])}{m.group('q')}\n"
+            )
+            changes.append(f"replaced {raw} with {entry(swap[n])}")
+    kept = [(i, n, raw, m) for i, n, raw, m in items if out[i]]
+    before: dict[int, list[str]] = {}
+    for p in add:
+        new, want = entry(p), norm(p)
+        if want in listed or want in {norm(v) for v in swap.values()}:
+            continue
+        if blk is None:
+            msg = f"{f} has no repos.additional list to add {new} to"
+            raise PolyrepoError(msg)
+        tmpl = kept[0][3] if kept else None
+        line = (
+            f"{tmpl.group('indent')}- {tmpl.group('q')}{new}{tmpl.group('q')}\n"
+            if tmpl
+            else f'        - "{new}"\n'
+        )
+        same = [k for k in kept if Path(k[1]).parent == Path(want).parent]
+        later = [k for k in same if k[2].lower() > new.lower()]
+        if later:
+            at = later[0][0]
+        elif same:
+            at = same[-1][0] + 1
+        else:
+            at = kept[-1][0] + 1 if kept else blk[1]
+        before.setdefault(at, []).append(line)
+        listed.add(want)
+        changes.append(f"added {new}")
+    if not changes:
+        return []
+    text = []
+    for i, ln in enumerate(lines):
+        text.extend(before.get(i, []))
+        text.append(out.get(i, ln))
+    text.extend(before.get(len(lines), []))
+    f.write_text("".join(text))
+    return changes
+
+
+def fleet_after_rename(cfg: Config, old: Path, new: Path, active: bool) -> list[str]:
+    """Keep the fleet list true after a repo folder moved from old to new.
+
+    An active repo's entry is replaced in place (or added when it was missing and the repo
+    has a `.beads` folder); a deprecated repo's entry is removed.
+
+    Returns:
+        One line per change made.
+    """
+    if not active:
+        return fleet_edit(cfg, remove=[old, new])
+    if old != new and os.path.normpath(old) in fleet_paths(cfg):
+        return fleet_edit(cfg, replace={old: new})
+    return fleet_edit(cfg, add=[new]) if (new / ".beads").is_dir() else []
 
 
 # --------------------------------------------------------------------------------------------
@@ -1972,8 +2172,10 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
 
     def text() -> str:
         lines = [
-            f"{len(st.local)} repos on disk, {len(st.manifest.entries())} manifest entries, "
-            f"{len(findings)} findings ({data['fixed']} fixed) in {data['elapsed_s']}s"
+            (
+                f"{len(st.local)} repos on disk, {len(st.manifest.entries())} manifest entries, "
+                f"{len(findings)} findings ({data['fixed']} fixed) in {data['elapsed_s']}s"
+            )
         ]
         for f in findings:
             tag = (
@@ -2079,7 +2281,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-def _lookup(rec: dict[str, Any], attr: str) -> Any:  # noqa: ANN401
+def _lookup(rec: dict[str, Any], attr: str) -> Any:
     cur: Any = rec
     for part in attr.split("."):
         if not isinstance(cur, dict) or part not in cur:
@@ -2088,7 +2290,7 @@ def _lookup(rec: dict[str, Any], attr: str) -> Any:  # noqa: ANN401
     return cur
 
 
-def _matches(value: Any, op: str, want: str) -> bool:  # noqa: ANN401
+def _matches(value: Any, op: str, want: str) -> bool:
     if isinstance(value, list):
         return any(_matches(v, op, want) for v in value)
     if isinstance(value, dict):
@@ -2496,6 +2698,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"git init on {b} and commit",
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
+            "add it to the beads fleet list (repos.additional) when it has a .beads folder",
         ],
     }
     if args.dry_run:
@@ -2564,13 +2767,16 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         ),
     )
     man.save()
-    append_changelog(
-        cfg,
-        "polyrepo create",
-        [
-            f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
-        ],
-    )
+    log = [
+        f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
+    ]
+    if args.lifecycle not in LIFECYCLES_INACTIVE and (dest / ".beads").is_dir():
+        try:
+            log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[dest]))
+        except (OSError, PolyrepoError) as exc:
+            res["fleet_error"] = str(exc)
+            log.append(f"beads fleet list NOT updated: {exc}")
+    append_changelog(cfg, "polyrepo create", log)
     GitHub(cfg, use_cache=True).invalidate()
     finish_records(cfg, res)
     emit(
@@ -2665,6 +2871,16 @@ def rename(
     steps.append(
         f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items())
     )
+    active = lc not in LIFECYCLES_INACTIVE
+    if r and new_path:
+        steps.append(
+            "beads fleet list (repos.additional): "
+            + (
+                f"point the entry at {new_path}, or add it when it has a .beads folder"
+                if active
+                else f"remove {r.path}"
+            )
+        )
     if dry_run:
         return steps
 
@@ -2698,6 +2914,14 @@ def rename(
         man.set_field(new, k, v)
     man.set_field(new, "local_path", None)
     man.save()
+    if r and new_path:
+        try:
+            done.extend(
+                f"beads fleet list: {c}"
+                for c in fleet_after_rename(cfg, r.path, new_path, active)
+            )
+        except (OSError, PolyrepoError) as exc:
+            done.append(f"beads fleet list NOT updated: {exc}")
     append_changelog(
         cfg, f"polyrepo rename {old} to {new}", [*done, f"manifest entry is now {new}"]
     )
@@ -2739,9 +2963,10 @@ def _run_rename(
 def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     """Rename a repo: on GitHub and on disk together, repointing origin and the manifest.
 
-    The new name must match a naming pattern. Anything outside git, GitHub and the
-    steward's records that names the repo by its old name (beads, docs, workflow
-    artifacts) is the caller's to update.
+    The new name must match a naming pattern. The beads fleet list (`repos.additional`)
+    is updated with the folder. Anything else outside git, GitHub and the steward's
+    records that names the repo by its old name (docs, workflow artifacts) is the
+    caller's to update.
 
     Returns:
         0 on success, 1 when a step failed part way.
@@ -2772,7 +2997,7 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
 
 
 PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}"
-PLUGIN_IMPORT = re.compile(r"^@\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)`?\s*$", re.M)
+PLUGIN_IMPORT = re.compile(r"^@\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)`?\s*$", re.MULTILINE)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -2790,7 +3015,7 @@ class AgentsBlock:
             The compiled pattern.
         """
         m = re.escape(self.marker)
-        return re.compile(rf"<!-- BEGIN {m}\b.*?<!-- END {m} -->", re.S)
+        return re.compile(rf"<!-- BEGIN {m}\b.*?<!-- END {m} -->", re.DOTALL)
 
 
 def _plugin_block_body(f: Path) -> str:
@@ -3082,7 +3307,11 @@ def _commit_time(repo: Path, rel: str) -> int | None:
 
 
 def _compare_to_template(
-    cfg: Config, r: LocalRepo, tdir: Path, files: dict[str, str], answers: dict[str, Any]
+    cfg: Config,
+    r: LocalRepo,
+    tdir: Path,
+    files: dict[str, str],
+    answers: dict[str, Any],
 ) -> dict[str, Any]:
     """Render the template as this repo would have been rendered and compare file by file.
 
@@ -3123,7 +3352,9 @@ def _check_template(
     tdates = {rel: _commit_time(tdir, src) or now for rel, src in files.items()}
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         compared = list(
-            ex.map(lambda m: _compare_to_template(cfg, m[0], tdir, files, m[2]), members)
+            ex.map(
+                lambda m: _compare_to_template(cfg, m[0], tdir, files, m[2]), members
+            )
         )
     rows = []
     for rel in files:
@@ -3239,16 +3470,124 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["lagging_templates"] or no_template else 0
 
 
+def fleet_findings(st: State) -> tuple[list[Finding], set[Path], list[Path]]:
+    """Check the beads fleet list against the repos on disk.
+
+    Every listed path must exist and be an active repo of the fleet; every active repo on
+    disk with a `.beads` folder (other than the control repo itself) must be listed.
+
+    Returns:
+        The findings, the paths to remove and the paths to add.
+    """
+    cfg = st.cfg
+    f = fleet_file(cfg)
+    if not f.is_file():
+        return [Finding("fleet-config-missing", "-", f"{f} not found")], set(), []
+    control = os.path.normpath(f.parent.parent)
+    lc = {
+        os.path.normpath(r.path): (r.name, st.lifecycle(r.name))
+        for r in st.local.values()
+    }
+    active = {
+        p: n
+        for p, (n, life) in lc.items()
+        if life not in LIFECYCLES_INACTIVE and p != control
+    }
+    listed = fleet_paths(cfg)
+    out: list[Finding] = []
+    remove: set[Path] = set()
+    add: list[Path] = []
+    for p, raw in sorted(listed.items()):
+        if p in active:
+            continue
+        name, life = lc.get(p, (Path(p).name, None))
+        if not Path(p).is_dir():
+            detail = f"{raw} does not exist"
+        elif life is None:
+            detail = f"{raw} is not a repo of the fleet on disk"
+        else:
+            detail = f"{raw} is {life}"
+        out.append(
+            Finding(
+                "fleet-path-missing" if not Path(p).is_dir() else "fleet-path-inactive",
+                name,
+                detail,
+                fix=f"remove {raw} from repos.additional",
+            )
+        )
+        remove.add(Path(p))
+    for p, name in sorted(active.items(), key=lambda kv: kv[1].lower()):
+        if p not in listed and (Path(p) / ".beads").is_dir():
+            out.append(
+                Finding(
+                    "fleet-repo-unlisted",
+                    name,
+                    f"active repo with a .beads folder, not in repos.additional ({p})",
+                    fix=f"add {os.path.relpath(p, control)}/ to repos.additional",
+                )
+            )
+            add.append(Path(p))
+    return out, remove, add
+
+
+def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
+    """Check the beads fleet list (`repos.additional`); with --fix, correct it.
+
+    Returns:
+        0 when the list is correct (or was corrected), else 1.
+    """
+    st = gather(cfg, fetch=False, use_cache=not args.no_cache)
+    findings, remove, add = fleet_findings(st)
+    changes: list[str] = []
+    if args.fix and (remove or add):
+        try:
+            changes = fleet_edit(cfg, remove=remove, add=add)
+            for f in findings:
+                f.status = "fixed" if f.fix else f.status
+        except (OSError, PolyrepoError) as exc:
+            for f in findings:
+                f.status, f.error = ("failed", str(exc)) if f.fix else (f.status, None)
+        if changes:
+            append_changelog(
+                cfg,
+                "polyrepo beads-fleet --fix",
+                [f"beads fleet list (repos.additional): {c}" for c in changes],
+            )
+    data: dict[str, Any] = {
+        "file": str(fleet_file(cfg)),
+        "listed": len(fleet_paths(cfg)),
+        "findings": [f.as_dict() for f in findings],
+        "changes": changes,
+        "open": sum(f.status in {"open", "failed"} for f in findings),
+        "fixed": sum(f.status == "fixed" for f in findings),
+    }
+    finish_records(cfg, data)
+
+    def text() -> str:
+        lines = [
+            f"{data['listed']} listed in {data['file']}, {len(findings)} findings ({data['fixed']} fixed)"
+        ]
+        lines.extend(
+            f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" for f in findings
+        )
+        return "\n".join([*lines, *_records_line(data)])
+
+    emit(args, data, text)
+    return 1 if data["open"] else 0
+
+
 BEADS_AUDIT = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts" / "audit-fleet.sh"
 SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
+    "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
+    "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
 }
 
 
@@ -3269,7 +3608,7 @@ def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
         data = {"error": f"unreadable output: {cp.stdout[:200]}"}
     if not isinstance(data, dict):
         data = {"error": f"unexpected output: {cp.stdout[:200]}"}
-    if cp.returncode == 2 and "error" not in data:  # noqa: PLR2004
+    if cp.returncode == 2 and "error" not in data:
         data["error"] = _last_line(cp) or "exited 2"
     return cp.returncode, data
 
@@ -3282,7 +3621,7 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     if "error" in data:
         return [_finding(check, "-", "error", str(data["error"]))]
-    if check == "reconcile":
+    if check in {"reconcile", "beads-fleet"}:
         return [
             _finding(check, f["repo"], f["kind"], f["detail"])
             for f in data.get("findings") or []
@@ -3482,9 +3821,10 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
 def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
-    With --fix, first run the repairs (`reconcile --fix`, then `agents-sync`), each of
-    which commits and pushes its own changes. The checks are reconcile, agents-sync
-    --check and the beads fleet audit (in parallel, each its own process), the governance
+    With --fix, first run the repairs (`reconcile --fix`, `agents-sync`, then
+    `beads-fleet --fix`), each of which commits and pushes its own changes. The checks are
+    reconcile, agents-sync --check, the beads fleet audit and the beads fleet list (in
+    parallel, each its own process), the governance
     entries, the knowledge-store pointers and the repository-naming document.
 
     Returns:
@@ -3718,6 +4058,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_templates_check)
 
     s = sub.add_parser(
+        "beads-fleet",
+        parents=[common],
+        help="check the beads fleet list (repos.additional) against the repos",
+    )
+    s.add_argument("--fix", action="store_true", help="correct the list")
+    s.set_defaults(func=cmd_beads_fleet)
+
+    s = sub.add_parser(
         "doctor",
         parents=[common],
         help="every health check as one report; --fix runs the repairs first",
@@ -3725,7 +4073,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--fix",
         action="store_true",
-        help="run reconcile --fix and agents-sync before the checks",
+        help="run reconcile --fix, agents-sync and beads-fleet --fix before the checks",
     )
     s.set_defaults(func=cmd_doctor)
 

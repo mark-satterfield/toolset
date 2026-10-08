@@ -126,7 +126,18 @@ hand the facts back for the caller to act on.
 | Search across repos | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` blocks | `agents-sync` (`--check` to report only) |
+| Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Health check and every safe repair | `doctor --fix` |
+
+The beads fleet list is `repos.additional` in the control repo's `.beads/config.yaml`. The
+launchd agent `com.skillspoke.beads-fleet-watch` watches the `.beads` folder of every path
+in it and runs `bd repo sync`, so a stale path silently stops that repo's beads syncing.
+The tool keeps it true whenever a repository changes: `create` adds the new repo when it
+has a `.beads` folder, `rename` replaces the old path with the new one, and `deprecate` and
+the archive repair remove the entry. Every write re-reads the file first and touches only
+the one entry, so a concurrent edit to another entry is kept. The doctor's `beads-fleet`
+check reports any listed path that is missing or not an active fleet repo, and any active
+repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 A repository is never deleted. "Delete" means deprecate: the repo is renamed with a
 `deprecated-` prefix and the whole name lowercased
@@ -165,7 +176,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, beads, governance, knowledge store, naming document | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, beads, the beads fleet list, governance, knowledge store, naming document | `polyrepo-doctor` |
 | Facts outside the manifest ("which repos contain a DynamoDB table?"), and the knowledge store | `polyrepo-info` |
 | Sweep repos and docs for durable "where things live" facts | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
