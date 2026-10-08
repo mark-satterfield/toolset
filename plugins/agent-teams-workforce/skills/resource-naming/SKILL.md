@@ -72,13 +72,14 @@ project: {id: <camelCase id>, lowercase_id: <id lowercased>, metrics_namespace: 
 forbidden_substrings: [...]   # spellings never valid anywhere (case-insensitive)
 forbidden_tokens: [...]       # words no name may contain (e.g. environment names)
 permitted_suffixes: [...]     # the only literal endings an AWS resource pattern may have
+type_words: [...]             # words for a kind of resource; no aws name may contain one (permitted suffixes exempt)
 segments:                     # style: camelCase|PascalCase|lowercase|kebab|region|az|accountId, or enum
   domain: {style: camelCase}
   action: {style: camelCase, reject_words: [handler]}
 domains:                      # reference table; a name containing an `avoid` term fails
   - {name: <Label>, external: <kebab>, internal: <camelCase>, avoid: [...]}
 resources:
-  <type>: {description: ..., pattern: "...", category: aws|code, min_length: N, max_length: N}
+  <type>: {description: ..., pattern: "...", category: aws|code, min_length: N, max_length: N, type_words: [...]}
 ```
 
 Pattern grammar: `{segment}` is caller-supplied; `{segment|lower|kebab|snake|upper_snake}`

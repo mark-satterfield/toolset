@@ -208,6 +208,7 @@ class Resource:
     category: str
     min_length: int
     max_length: int
+    type_words: set[str] = field(default_factory=set)
 
 
 class Rules:
@@ -242,6 +243,7 @@ class Rules:
         ]
         self.forbidden_tokens = {t.lower() for t in data.get("forbidden_tokens", [])}
         self.permitted_suffixes = set(data.get("permitted_suffixes", []))
+        self.type_words = {t.lower() for t in data.get("type_words", [])}
         self.segments: dict[str, dict] = {}
         for name, spec in seg_cfg.items():
             spec = spec or {}
@@ -287,6 +289,7 @@ class Rules:
                 category,
                 int(spec.get("min_length", 1)),
                 int(spec.get("max_length", 0)),
+                {t.lower() for t in spec.get("type_words", [])},
             )
 
     def resource(self, key: str) -> Resource:
@@ -484,7 +487,32 @@ class Rules:
                 f"{len(name)} characters, over the {res.key} limit of {res.max_length}"
             )
         reasons.extend(self.global_violations(name))
+        reasons.extend(self.type_word_violations(res, name))
         return reasons
+
+    def type_word_violations(self, res: Resource, name: str) -> list[str]:
+        """Reject a cloud resource name containing a word for its kind of resource.
+
+        The global `type_words` and the resource's own `type_words` are matched as whole
+        tokens (camelCase, hyphen, underscore, dot or slash boundaries); a permitted suffix
+        at the end of the name is removed first, so it is never a violation.
+
+        Returns:
+            One reason per violating word; empty when the name passes.
+        """
+        if res.category != "aws":
+            return []
+        stem = name
+        for suffix in sorted(self.permitted_suffixes, key=len, reverse=True):
+            if stem.endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+        forbidden = self.type_words | res.type_words
+        return [
+            f"contains '{w}', a word for the kind of resource; drop it"
+            for w in dict.fromkeys(words(stem))
+            if w in forbidden
+        ]
 
 
 def find_config(explicit: str | None) -> tuple[Path, list[str]]:
