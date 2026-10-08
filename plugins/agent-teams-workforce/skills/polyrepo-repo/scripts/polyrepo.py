@@ -2398,9 +2398,21 @@ def _templates(cfg: Config) -> tuple[Path, dict[str, Any]]:
     )
 
 
-def _service_name(name: str) -> str:
-    n = name.lower()
-    return n[len("skillspoke-") :] if n.startswith("skillspoke-") else n
+def _service_name(cfg: Config, name: str) -> str:
+    """Return the template's service_name: the repo name without its project prefix.
+
+    The prefix is the first token of a name an application naming pattern matches, so every
+    project (SkillSpoke-, shared-, marketing-, employer-) is stripped the same way, and the
+    camelCase domain keeps its case because the templates' validators require it.
+
+    Returns:
+        The name after the project prefix, or the name unchanged when no application
+        pattern matches it.
+    """
+    pattern = cfg.classify(name)
+    if pattern and pattern.get("kind") == "application" and "-" in name:
+        return name.split("-", 1)[1]
+    return name
 
 
 def _copier_render(
@@ -2471,7 +2483,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     """
     name, b = args.name, cfg.default_branch
     tdir, dest = _create_checks(args, cfg)
-    data = {"service_name": _service_name(name), "repo_name": name}
+    data = {"service_name": _service_name(cfg, name), "repo_name": name}
     res: dict[str, Any] = {
         "repo": name,
         "space": args.space,
@@ -3070,7 +3082,7 @@ def _commit_time(repo: Path, rel: str) -> int | None:
 
 
 def _compare_to_template(
-    r: LocalRepo, tdir: Path, files: dict[str, str], answers: dict[str, Any]
+    cfg: Config, r: LocalRepo, tdir: Path, files: dict[str, str], answers: dict[str, Any]
 ) -> dict[str, Any]:
     """Render the template as this repo would have been rendered and compare file by file.
 
@@ -3078,7 +3090,7 @@ def _compare_to_template(
         {repo, files: {path: (state, repo commit time)}} or {repo, error}.
     """
     data = {k: str(v) for k, v in answers.items() if not k.startswith("_")} or {
-        "service_name": _service_name(r.name),
+        "service_name": _service_name(cfg, r.name),
         "repo_name": r.name,
     }
     out: dict[str, tuple[str, int | None]] = {}
@@ -3101,14 +3113,17 @@ def _compare_to_template(
 
 
 def _check_template(
-    tdir: Path, members: list[tuple[LocalRepo, str, dict[str, Any]]], ignore: list[str]
+    cfg: Config,
+    tdir: Path,
+    members: list[tuple[LocalRepo, str, dict[str, Any]]],
+    ignore: list[str],
 ) -> dict[str, Any]:
     files = _template_files(tdir, ignore)
     now = int(time.time())
     tdates = {rel: _commit_time(tdir, src) or now for rel, src in files.items()}
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         compared = list(
-            ex.map(lambda m: _compare_to_template(m[0], tdir, files, m[2]), members)
+            ex.map(lambda m: _compare_to_template(cfg, m[0], tdir, files, m[2]), members)
         )
     rows = []
     for rel in files:
@@ -3177,7 +3192,7 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
         if d.is_dir() and (d / "copier.yml").is_file() and d.name not in kinds:
             by_template[d.name] = []
     results = [
-        _check_template(troot / t, members, ignore)
+        _check_template(cfg, troot / t, members, ignore)
         for t, members in sorted(by_template.items())
     ]
     no_template = [
