@@ -1,7 +1,7 @@
 export const meta = {
   name: 'settle',
   description:
-    "Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. The git facts it branches on (branch, head, uncommitted changes, commits ahead of the base) come from gitfacts.py through relayrun.py, read before and after the one session that writes the commit message and runs the PR command; a tree with nothing to land dispatches no session. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed or a git fact could not be read), or reported (treeClean, hasWork, branch, prUrl, commit, blocked).",
+    "Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. The git facts it branches on (branch, head, uncommitted changes, commits ahead of the base) come from gitfacts.py through relayrun.py, read before and after the one session that writes the commit message and runs the PR command; a tree with nothing to land dispatches no session. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed or a git fact could not be read), or reported (treeClean, hasWork, branch, prUrl, commit, blocked, autoMergeNotArmed: GitHub's reason when the PR opened but auto-merge could not be armed).",
   phases: [{ title: 'Settle', detail: 'commit, push and open the pull request' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -861,6 +861,7 @@ const LAND_SCHEMA = {
   properties: {
     prUrl: { type: 'string' },
     blocked: { type: 'array', items: { type: 'string' } },
+    autoMergeNotArmed: { type: 'string' },
   },
 }
 
@@ -888,15 +889,17 @@ async function settleRun() {
 
 Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command.
 1. ${before.dirty === true ? `The tree has uncommitted changes. ${commitSteps}` : 'The tree has no uncommitted changes; commit nothing.'}
-2. \`cd "${wt}" && ${prCommand} --title "<type(scope): description>" --body "<what changed>"\`. It pushes the branch and opens the pull request. Never push to ${baseRef}, never open the PR another way and never merge it. A PR that already exists for this head is success; report its URL.
-3. Report the PR URL as \`prUrl\`, and in \`blocked\` one short sentence for each thing that stopped you (empty when the PR is open).`,
+2. \`cd "${wt}" && ${prCommand} --title "<type(scope): description>" --body "<what changed>"\`. It pushes the branch and opens the pull request. Never push to ${baseRef}, never open the PR another way and never merge it. A PR that already exists for this head is success; report its URL. Exit status 0 means the PR is open and GitHub auto-merge is armed. Exit status 3 means the PR IS open (its URL is on stdout) but auto-merge could not be armed: that is not a failure to open the PR and not a reason to retry or open it another way — report the URL as \`prUrl\` and GitHub's reason from stderr as \`autoMergeNotArmed\`. Any other non-zero exit status means no PR was opened.
+3. Report the PR URL as \`prUrl\`, and in \`blocked\` one short sentence for each thing that stopped you (empty when the PR is open). Leave \`autoMergeNotArmed\` empty unless the PR command exited 3.`,
       { label: 'settle:land-work', rethrow: true, phase: 'Settle', agentType: 'agent-teams-workforce:github-actions-pipeline-implementer', schema: LAND_SCHEMA }
     )
     if (!reported) return { status: 'error', error: 'the settle agent returned no result' }
     const after = await treeFacts('settle-after', [])
     const blocked = (Array.isArray(reported.blocked) ? reported.blocked : []).map(String).filter(Boolean)
     if (after.branch !== before.branch) blocked.push(`the tree moved from ${before.branch} to ${after.branch}`)
-    return { status: 'reported', treeClean: after.dirty !== true, hasWork: true, branch: String(after.branch || ''), prUrl: String(reported.prUrl || ''), commit: after.head || '', blocked }
+    const autoMergeNotArmed = String(reported.autoMergeNotArmed || '').trim()
+    if (autoMergeNotArmed) log(`settle: PR ${reported.prUrl || ''} is open but auto-merge is NOT armed: ${autoMergeNotArmed}`)
+    return { status: 'reported', treeClean: after.dirty !== true, hasWork: true, branch: String(after.branch || ''), prUrl: String(reported.prUrl || ''), commit: after.head || '', blocked, autoMergeNotArmed }
   } catch (e) {
     const error = e && e.message ? e.message : String(e)
     log(`settle failed: ${error}`)

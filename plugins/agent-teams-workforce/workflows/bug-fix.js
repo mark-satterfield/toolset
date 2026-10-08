@@ -1139,6 +1139,10 @@ function applySettle(res, settle) {
   res.landingStage = landed ? 'landed' : 'unlanded'
   res.prUrl = prUrl
   res.settled = 'reported'
+  if (settle.autoMergeNotArmed) {
+    res.autoMergeNotArmed = String(settle.autoMergeNotArmed)
+    log(`Settle: PR ${prUrl || ''} is open but auto-merge is NOT armed — ${res.autoMergeNotArmed}`)
+  }
   if (!landed) {
     res.ok = false
     res.orphaned = {
