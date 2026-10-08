@@ -211,6 +211,34 @@ def package_names(repo: Path) -> set[str]:
     return out
 
 
+_PUBLISHED_PARAMETER = re.compile(
+    r"""(?:parameter_name\s*=\s*|\b[A-Z_]*(?:PARAM|SSM)[A-Z_]*\s*=\s*)f?["'](/[A-Za-z0-9]+/[A-Za-z0-9]+/)"""
+)
+
+
+def consumed_names(repo: Path) -> set[str]:
+    """Read the names a dependent uses to reach a repo without naming it: the Python import
+    packages under `src/`, and the SSM Parameter Store namespaces (`/{project}/{domain}/`)
+    of the parameters its CDK stacks publish, which a consumer reads instead of a stack export.
+
+    Returns:
+        The import package names and parameter namespaces found (possibly none).
+    """
+    out: set[str] = set()
+    src = repo / "src"
+    if src.is_dir():
+        # A one-word package (`event`, `chat`) would match ordinary prose in any repo.
+        out |= {p.parent.name for p in src.glob("*/__init__.py") if "_" in p.parent.name}
+    stacks = repo / "cdk" / "stacks"
+    if stacks.is_dir():
+        for f in stacks.glob("*.py"):
+            try:
+                out |= set(_PUBLISHED_PARAMETER.findall(f.read_text()))
+            except OSError:
+                continue
+    return out
+
+
 def mentions(repo: Path, target: str, aliases: Iterable[str] = ()) -> bool:
     """Tell whether a repo's tracked files name another repo or an item it claims to own.
 
@@ -835,7 +863,7 @@ class State:
         key = (src, target)
         if key not in self.confirmed:
             t = self.local.get(target)
-            aliases = package_names(t.path) if t else set()
+            aliases = (package_names(t.path) | consumed_names(t.path)) if t else set()
             self.confirmed[key] = mentions(r.path, target, aliases)
         return self.confirmed[key]
 
@@ -1091,12 +1119,18 @@ def point_origin(repo: Path, url: str) -> None:
 
 
 def create_on_github(cfg: Config, name: str, repo: Path) -> None:
-    """Create the private GitHub repo, point origin at it, and push the default branch.
+    """Create the private GitHub repo with auto-merge allowed, point origin at it, and push.
 
     Raises:
         GitFailedError: when gh or git fails.
     """
     must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
+    must(
+        run(
+            ["gh", "api", "-X", "PATCH", f"repos/{cfg.owner}/{name}", "-F", "allow_auto_merge=true"],
+            timeout=120,
+        )
+    )
     point_origin(repo, cfg.github_url(name))
     b = cfg.default_branch
     if git_out(repo, "rev-parse", "--verify", "-q", f"refs/heads/{b}"):

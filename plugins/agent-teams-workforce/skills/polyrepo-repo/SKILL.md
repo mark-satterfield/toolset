@@ -85,6 +85,8 @@ judgment, and each has an obvious next step:
   caller supplies the purpose; if none is given, write one line from what the caller said
   the repo is for. Pick the template whose kind matches the repo (`templates-check` lists
   the kinds).
+  Every new repository is created private and with `allow_auto_merge=true` (the tool sets
+  both); the owner is the only human, so every fleet repo allows auto-merge.
 - **update** — Mechanical fields (`remote_url`, `lifecycle`, archived state) are kept true
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
   dependencies, `role`, `owner`: edit the manifest (below).
