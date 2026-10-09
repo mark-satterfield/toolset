@@ -75,7 +75,7 @@ git -C /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke status
 grep -A8 "agent-teams-workforce@mark-satterfield" ~/.claude-skillspoke/plugins/installed_plugins.json
 python3 <driver>/runcost.py summary
 python3 <driver>/runcost.py profile 2026-10-09
-python3 <scratchpad>/s00_baseline.py 20261009
+python3 /Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-workforce/orchestrator/measurements/s00_baseline.py 20261009
 ```
 
 - `runcost.py summary` gives `byDay` for 2026-10-09: 29 runs, 438 sessions, 68,973,529 weighted.
@@ -83,6 +83,6 @@ python3 <scratchpad>/s00_baseline.py 20261009
 - The role numbers come from the `roles` object in each `<driver>/state/runs/*-prd-to-spec-20261009T*.cost.json`,
   summed by `s00_baseline.py` (a read-only script: it sums `weighted` and `sessions` per role over those files, takes the
   median of the per-run `weighted`, and reads the first assistant turn's `usage` from the agent transcripts under
-  `~/.claude-skillspoke/projects/<project>/<sessionId>/` for the startup tokens). The script is a scratchpad file and is not committed.
+  `~/.claude-skillspoke/projects/<project>/<sessionId>/` for the startup tokens). The script is committed beside this file.
 - The survey-redo split compares each Epic's first run of the day (ordered by `startedAt`) with its later runs.
 - Targets to compare against after the owner's runs (`CONTEXT.md` section 5): zero command-runner sessions; restart cost near zero tokens.
