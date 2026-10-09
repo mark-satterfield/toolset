@@ -15,16 +15,12 @@
         "additionalProperties": false,
         "required": [
           "repairId",
-          "revision",
           "verdict",
           "evidence",
           "files"
         ],
         "properties": {
           "repairId": {
-            "type": "string"
-          },
-          "revision": {
             "type": "string"
           },
           "files": {
@@ -53,15 +49,11 @@
         "additionalProperties": false,
         "required": [
           "id",
-          "revision",
           "verdict",
           "evidence"
         ],
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "revision": {
             "type": "string"
           },
           "verdict": {
@@ -85,14 +77,10 @@
         "additionalProperties": false,
         "required": [
           "findingId",
-          "revision",
           "verdict",
           "evidence"
         ],
         "properties": {
-          "revision": {
-            "type": "string"
-          },
           "findingId": {
             "type": "string"
           },
@@ -116,7 +104,6 @@
         "additionalProperties": false,
         "required": [
           "claimId",
-          "claimRevision",
           "claim",
           "file",
           "verdict",
@@ -125,9 +112,6 @@
         ],
         "properties": {
           "claimId": {
-            "type": "string"
-          },
-          "claimRevision": {
             "type": "string"
           },
           "claim": {

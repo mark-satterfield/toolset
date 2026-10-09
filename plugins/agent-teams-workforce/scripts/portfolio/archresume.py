@@ -9,8 +9,9 @@ compact facts the workflow branches on: which steps finished, the last round, th
 findings by id, the number of unreviewed claims of each writer, the decision's verdict, and the integration's file lists.
 No saved content travels back to the workflow: sessions read the files by path.
 
-A saved file that cannot be read or parsed is an error naming the file, never an empty result,
-so a resumed step stops instead of starting the work again.
+A saved file that cannot be read or parsed, or is not a JSON object, is set aside
+(`<name>.unreadable-<timestamp>`) and named in `warnings`; only the step that wrote it runs
+again. A sealed file whose receipt no longer matches its bytes is read as it is on disk.
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ import re
 from pathlib import Path
 
 from archbaseline import baseline_facts
-from archcoverage import coverage_facts, integration_revision
+from archcoverage import coverage_facts
 from archevidence import digest, evidence_state, view_bindings, view_content
 from archrepairs import repair_facts
-from archrounds import compact_plan, round_facts, save_ledger
-from jsonartifact import read_artifact
+from archrounds import compact_plan, round_facts, save_ledger, set_aside
+from jsonartifact import LENIENT_READS, read_artifact
 
 ROUND_FILE = re.compile(
     r"^r(\d+)-(\d+)-(proposer|diagram|reviewer|cost)-([a-z0-9-]+)\.json$"
@@ -65,9 +66,66 @@ def _load(path: Path) -> object:
         ResumeError: The file cannot be read or is not JSON.
     """
     try:
-        return read_artifact(path)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return read_artifact(path, strict=False)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise ResumeError(f"{path}: {exc}") from exc
+
+
+def _saved_files(work: Path) -> list[Path]:
+    """Every saved JSON file arch-resume reads.
+
+    Args:
+        work: The architecture working directory.
+
+    Returns:
+        The files that exist.
+    """
+    fixed = [
+        work / name
+        for name in (
+            "survey.json",
+            LEDGER_NAME,
+            "decision.json",
+            "architecture-update.json",
+            "integrate-before.json",
+        )
+    ]
+    reviews = (
+        [p for p in work.iterdir() if REVIEW_FILE.match(p.name)]
+        if work.is_dir()
+        else []
+    )
+    folder = work / "rounds"
+    rounds = (
+        [p for p in folder.iterdir() if ROUND_FILE.match(p.name)]
+        if folder.is_dir()
+        else []
+    )
+    return [p for p in [*fixed, *sorted(reviews), *sorted(rounds)] if p.is_file()]
+
+
+def sweep_unreadable(work: Path) -> list[str]:
+    """Set aside every saved file that cannot be read as a JSON object.
+
+    Args:
+        work: The architecture working directory.
+
+    Returns:
+        One warning per file set aside.
+    """
+    notes = []
+    for path in _saved_files(work):
+        try:
+            value = read_artifact(path, strict=False)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            value = exc
+        if isinstance(value, dict):
+            continue
+        why = value if isinstance(value, Exception) else "not a JSON object"
+        notes.append(
+            f"{path} could not be used ({why}); set aside as {set_aside(path)}"
+        )
+    return notes
 
 
 def _paths(value: object) -> list[str]:
@@ -120,16 +178,13 @@ def parse_assign(spec: str) -> dict[str, str]:
 class Ledger:
     """The claims and findings of the rounds, folded in round order."""
 
-    def __init__(self, assign: dict[str, str], historical_author: str = "") -> None:
+    def __init__(self, assign: dict[str, str]) -> None:
         """Start an empty ledger.
 
         Args:
             assign: Owners the coordinator assigned to findings that had none.
         """
         self.assign = assign
-        self.historical_author = historical_author
-        self.authorized_files: set[str] = set()
-        self.authorized_claims: set[str] = set()
         self.claims: list[dict] = []
         self.findings: list[dict] = []
         self.writers: list[str] = []
@@ -150,14 +205,11 @@ class Ledger:
             seq: The dispatch's place in the round.
             role: proposer, diagram, reviewer or cost.
             agent: The agent that wrote the result.
-            result: The parsed result.
+            result: The parsed result; one that is not a JSON object is left out.
             file: The result file.
-
-        Raises:
-            ResumeError: The result is not a JSON object.
         """
         if not isinstance(result, dict):
-            raise ResumeError(f"{file}: not a JSON object")
+            return
         self.files.append(file)
         self.saved.append(f"r{n}-{seq}")
         self.last = max(self.last, n)
@@ -181,13 +233,7 @@ class Ledger:
                 if claim_id
                 else None
             )
-            revision = _text(x.get("claimRevision"))
-            if (
-                claim
-                and agent != claim["by"]
-                and _text(x.get("evidence"))
-                and (revision == claim["revision"])
-            ):
+            if claim and agent != claim["by"] and _text(x.get("evidence")):
                 claim["verdicts"].append(
                     {
                         "by": agent,
@@ -205,7 +251,7 @@ class Ledger:
                     "round": n,
                     "by": agent,
                     "claimId": claim["id"] if claim else "",
-                    "claimRevision": revision or (claim["revision"] if claim else ""),
+                    "claimRevision": claim["revision"] if claim else "",
                     "claim": x.get("claim") or "",
                     "file": x.get("file") or "",
                     "verdict": _text(x.get("verdict")),
@@ -237,17 +283,8 @@ class Ledger:
                 cid = _text(c.get("claimId")) or f"C{n}.{seq}.{k + 1}"
                 old = next((x for x in self.claims if x["id"] == cid), None)
                 if c.get("claimId") and not old:
-                    raise ResumeError(f"unknown revised claim {cid}")
-                if (
-                    old
-                    and old["by"] != agent
-                    and agent != self.historical_author
-                    and old.get("file") not in self.authorized_files
-                    and cid not in self.authorized_claims
-                ):
-                    raise ResumeError(
-                        f"claim {cid} belongs to {old['by']}; do not silently transfer ownership"
-                    )
+                    cid = f"C{n}.{seq}.{k + 1}"
+                    old = next((x for x in self.claims if x["id"] == cid), None)
                 refs = c.get("evidenceRefs", [])
                 evidence, errors = evidence_state(refs)
                 file = c.get("file") or ""
@@ -288,7 +325,7 @@ class Ledger:
                     fresh["history"] = old["history"] + [
                         {k: v for k, v in old.items() if k != "history"}
                     ]
-                    if old["revision"] == revision:
+                    if old.get("claim") == c.get("claim"):
                         fresh["verdicts"] = old["verdicts"]
                     self.claims[self.claims.index(old)] = fresh
                 else:
@@ -297,17 +334,8 @@ class Ledger:
                     target = next(
                         (x for x in self.claims if x["id"] == superseded), None
                     )
-                    if (
-                        not target
-                        or (
-                            target["by"] != agent
-                            and agent != self.historical_author
-                            and target.get("file") not in self.authorized_files
-                            and target["id"] not in self.authorized_claims
-                        )
-                        or target["id"] == cid
-                    ):
-                        raise ResumeError(f"invalid superseded claim {superseded}")
+                    if not target or target["id"] == cid:
+                        continue
                     target["active"] = False
                     target["supersededBy"] = cid
 
@@ -330,13 +358,7 @@ class Ledger:
             }
 
 
-def _rounds(
-    work: Path,
-    roles: dict[str, str],
-    assign: dict[str, str],
-    historical: dict | None = None,
-    plans: list | None = None,
-) -> Ledger:
+def _rounds(work: Path, roles: dict[str, str], assign: dict[str, str]) -> Ledger:
     """Fold every saved round result, in round order.
 
     Args:
@@ -348,7 +370,6 @@ def _rounds(
         The ledger.
     """
     ledger = Ledger(assign)
-    historical = historical or {}
     folder = work / "rounds"
     found = []
     for p in folder.iterdir() if folder.is_dir() else []:
@@ -356,25 +377,6 @@ def _rounds(
         if p.is_file() and m and roles.get(m.group(4)) == m.group(3):
             found.append((int(m.group(1)), int(m.group(2)), m.group(3), m.group(4), p))
     for n, seq, role, agent, p in sorted(found):
-        ledger.historical_author = (
-            historical.get("author", "")
-            if str(p) in historical.get("results", [])
-            else ""
-        )
-        dispatch = next(
-            (
-                d
-                for plan in (plans or [])
-                if plan.get("round") == n
-                for d in plan.get("dispatches", [])
-                if d.get("seq") == seq
-                and d.get("agentType") == agent
-                and d.get("role") == role
-            ),
-            {},
-        )
-        ledger.authorized_files = set(dispatch.get("files") or [])
-        ledger.authorized_claims = set(dispatch.get("claimIds") or [])
         ledger.absorb(n, seq, role, agent, _load(p), str(p))
     return ledger
 
@@ -417,7 +419,6 @@ def _decision(work: Path, roles: dict[str, str]) -> dict | None:
     kinds = [_text(c.get("kind")) for c in concerns]
     return {
         "verdict": _text(dec.get("verdict")),
-        "coverageRevision": _text(dec.get("coverageRevision")),
         "round": dec.get("round") if isinstance(dec.get("round"), int) else 0,
         "returnTo": returned,
         "ownerConcerns": len(concerns),
@@ -473,9 +474,10 @@ def _integration(work: Path) -> dict:
             "n": n,
             "path": str(p),
             "conforms": r.get("conforms") is True,
-            "coverageRevision": _text(r.get("coverageRevision")),
-            "coverageChecks": r.get("coverageChecks", []),
-            "reviewedFiles": _paths(r.get("reviewedFiles")),
+            "coverageChecks": len(r.get("coverageChecks"))
+            if isinstance(r.get("coverageChecks"), list)
+            else 0,
+            "reviewedFiles": len(_paths(r.get("reviewedFiles"))),
             "findings": len(r.get("findings"))
             if isinstance(r.get("findings"), list)
             else 0,
@@ -485,6 +487,40 @@ def _integration(work: Path) -> dict:
         "beforeSaved": saved_before,
         "reviews": len(reviews),
         "lastReview": last,
+    }
+
+
+def _baseline_out(baseline: dict) -> dict:
+    """The survey's assessment as the workflow branches on it.
+
+    The entries stay in `survey.json`, which the sessions read; the workflow gets their
+    count, and for each capability with design, documentation or unresolved work the
+    requirement ids it serves (the text before the first colon of each requirement) and the
+    kind of obligation it is.
+
+    Args:
+        baseline: `archbaseline.baseline_facts` of the survey.
+
+    Returns:
+        The facts.
+    """
+    scope = (
+        set(baseline["designWork"])
+        | set(baseline["docWork"])
+        | set(baseline["unknowns"])
+    )
+    entries = [e for e in baseline["entries"] if e["id"] in scope]
+    return {k: v for k, v in baseline.items() if k != "entries"} | {
+        "entries": len(baseline["entries"]),
+        "requirementsOf": {
+            e["id"]: [
+                str(r).split(":", 1)[0].strip()
+                for r in e["requirements"]
+                if str(r).split(":", 1)[0].strip()
+            ]
+            for e in entries
+        },
+        "kindOf": {e["id"]: e["kind"] for e in entries},
     }
 
 
@@ -502,13 +538,16 @@ def resume_facts(
         assign: Owners the coordinator assigned to findings, as `F1.2.3=agent,...`.
 
     Returns:
-        The compact facts: survey, rounds, decision and integration.
+        The compact facts: survey, rounds, decision and integration, and `warnings` naming every
+        saved file set aside or read past a receipt that no longer matched.
 
     Raises:
-        ResumeError: A saved file cannot be read or parsed.
+        ResumeError: A saved file that was readable at the start cannot be read later.
     """
     work = Path(work_dir)
     roles = parse_roster(roster)
+    LENIENT_READS.clear()
+    warnings = sweep_unreadable(work)
     survey = None
     s = {}
     sj = work / "survey.json"
@@ -518,7 +557,8 @@ def resume_facts(
             raise ResumeError(f"{sj}: not a JSON object")
         caps = s.get("capabilities")
         survey = {
-            "saved": (work / "survey.md").is_file() and bool(_text(s.get("subject"))),
+            "saved": bool(_text(s.get("subject"))),
+            "readable": (work / "survey.md").is_file(),
             "subject": _text(s.get("subject")),
             "capabilities": len(caps) if isinstance(caps, list) else 0,
             "coverageSaved": bool(s.get("coverage")),
@@ -535,23 +575,8 @@ def resume_facts(
         }
     assignments = dict(previous.get("assignments", {}))
     assignments.update(parse_assign(assign))
-    ledger = _rounds(
-        work, roles, assignments, historical, previous.get("roundPlans", [])
-    )
-    coverage, coverage_summary = coverage_facts(work, s, ledger.files)
-    old_claims = {c["id"]: c for c in previous.get("claims", [])}
-    for claim in ledger.claims:
-        old = old_claims.get(claim["id"])
-        claim["legacyRevision"] = (old or {}).get(
-            "legacyRevision", (old or {}).get("revision", claim["revision"])
-        )
-        if claim["legacy"] and claim["legacyRevision"] != claim["revision"]:
-            claim["verdicts"] = []
-        if claim["evidenceErrors"] or any(
-            v.startswith(("unreadable:", "invalid:"))
-            for v in claim["viewState"].values()
-        ):
-            claim["verdicts"] = []
+    ledger = _rounds(work, roles, assignments)
+    coverage, coverage_summary = coverage_facts(s, ledger.files)
     rounds = round_facts(
         work,
         previous.get("roundPlans", []),
@@ -582,7 +607,6 @@ def resume_facts(
                 and r["by"] != finding["owner"]
                 and finding["answer"]
                 and r["round"] >= finding["answer"]["round"]
-                and r.get("revision") == current_revision
                 and (
                     finding["answer"].get("response") == "disputed"
                     or current_revision != finding["initialRevision"]
@@ -656,16 +680,13 @@ def resume_facts(
             {r["agentType"] for r in repairs if r["status"] == "open"}
         )
         decision["repairChecksNeeded"] = repair_summary["checksNeeded"]
-    integration["coverageRevision"] = integration_revision(
-        coverage_summary["revision"], integration["update"], work
-    )
     return {
         "contractVersion": previous.get("contractVersion", 1),
         "dir": str(work),
         "exists": work.is_dir(),
         "ledger": str(ledger_path) if work.is_dir() else None,
         "survey": survey,
-        "baseline": baseline,
+        "baseline": _baseline_out(baseline),
         "coverage": coverage_summary,
         "historicalAuthoring": historical,
         "rounds": {
@@ -707,6 +728,9 @@ def resume_facts(
         "decision": decision,
         "repairs": repair_summary,
         "integration": integration,
+        "warnings": warnings
+        + rounds["warnings"]
+        + [f"read as saved, receipt not matching: {w}" for w in LENIENT_READS],
         "summary": {
             "survey": bool(survey and survey["saved"]),
             "lastRound": ledger.last,

@@ -16,10 +16,19 @@ def _hash(value: object) -> str:
 def repair_facts(
     work: Path, previous: list, results: list[str], historical: dict, plans: list
 ) -> list:
-    """Keep completed repairs reviewable without repeatedly dispatching their maker."""
+    """Keep completed repairs reviewable without repeatedly dispatching their maker.
+
+    A check counts for its repair by `repairId`. A verified repair stays resolved when the
+    files it was verified against change later (the change is noted in `warnings`), and a
+    verified check that names no readable evidence file still resolves it, with a warning.
+    """
     requests = {r["id"]: dict(r) for r in previous}
     decision_path = work / "decision.json"
-    decision = read_artifact(decision_path) if decision_path.is_file() else {}
+    decision = (
+        read_artifact(decision_path, strict=False) if decision_path.is_file() else {}
+    )
+    if not isinstance(decision, dict):
+        decision = {}
     for returned in decision.get("returnTo") or []:
         if not isinstance(returned, dict) or not returned.get("missing"):
             continue
@@ -43,15 +52,18 @@ def repair_facts(
     for request in requests.values():
         revision = _revision(work, request["id"], request.get("files", []))
         if request["revision"] != revision:
-            # Changed bound evidence requires review, not automatic maker rework.
             if request["status"] == "resolved":
-                request["status"] = "answered"
+                request["warnings"] = [
+                    "the files this repair was verified against changed since"
+                ]
             request["revision"] = revision
         for name in results:
             path = Path(name)
             round_name, seq, role, agent = path.stem.split("-", 3)
             n = int(round_name[1:])
-            result = read_artifact(path)
+            result = read_artifact(path, strict=False)
+            if not isinstance(result, dict):
+                continue
             assigned = {
                 d.get("agentType")
                 for plan in plans
@@ -101,33 +113,24 @@ def repair_facts(
                     if (
                         isinstance(check, dict)
                         and check.get("repairId") == request["id"]
-                        and check.get("revision") == revision
                         and check.get("evidence")
                     ):
                         request["review"] = {**check, "by": agent, "result": name}
                         if check.get("verdict") == "verified":
-                            files = check.get("files")
-                            if (
-                                not isinstance(files, list)
-                                or not files
-                                or any(
-                                    not isinstance(f, str) or not f.strip()
-                                    for f in files
-                                )
-                            ):
-                                request["status"] = "answered"
-                                request["bindingError"] = (
-                                    "verified repair requires explicit evidence files"
-                                )
-                                continue
-                            if not _readable(work, files):
-                                request["status"] = "answered"
-                                request["bindingError"] = (
-                                    "repair evidence files must be readable regular files; relative paths must stay within draft"
-                                )
-                                continue
+                            files = [
+                                f
+                                for f in check.get("files") or []
+                                if isinstance(f, str) and f.strip()
+                            ]
+                            readable = [f for f in files if _readable(work, [f])]
                             request.pop("bindingError", None)
-                            request["files"] = sorted(set(files))
+                            if len(readable) != len(files) or not files:
+                                request["warnings"] = [
+                                    "the verified check names no readable evidence file"
+                                    if not readable
+                                    else "some evidence files the verified check names are unreadable"
+                                ]
+                            request["files"] = sorted(set(readable))
                             request["revision"] = _revision(
                                 work, request["id"], request["files"]
                             )

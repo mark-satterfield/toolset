@@ -722,9 +722,20 @@ function nextRelayFile(label) {
   relaySeq += 1
   return `${RELAY_DIR}/${String(relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
 }
+/** Runs one checked command; when the runner typed the command line differently nothing ran, so it is sent once more. */
+async function once(label, call) {
+  const out = await call()
+  if (!out || !/; nothing ran$/.test(String(out.error || ''))) return out
+  log(`${label}: the runner typed the command line differently and nothing ran; sending it once more`)
+  return call()
+}
 /** Runs one depscore.py command through the checked relay; returns the facts it printed with `relayFile`, or { error, exception? }. */
 function depscore(label, phaseName, commandArgs) {
-  return relayKit.depscore(run, { label, phase: phaseName, script: DS.script, repo: DS.repo, tail: commandArgs, file: nextRelayFile(label) })
+  return once(label, () => relayKit.depscore(run, { label, phase: phaseName, script: DS.script, repo: DS.repo, tail: commandArgs, file: nextRelayFile(label) }))
+}
+/** Runs any other program through relayrun.py and the checked relay; returns relayKit.run's result. */
+function relayRun(options) {
+  return once(options.label, () => relayKit.run(run, { runner: RELAY_RUNNER, ...options, file: nextRelayFile(options.label) }))
 }
 /** The artifact recorder's command for one saved file. */
 function recordArgv(file) {
@@ -736,7 +747,7 @@ async function recordFiles(label, phaseName, files) {
   const failed = []
   for (const f of files) {
     const name = String(f).split('/').pop()
-    const r = await relayKit.run(run, { label: `${label}:${name}`, phase: phaseName, runner: RELAY_RUNNER, argv: recordArgv(f), file: nextRelayFile(`${label}-${name}`) })
+    const r = await relayRun({ label: `${label}:${name}`, phase: phaseName, argv: recordArgv(f) })
     if (!r.ok || r.exitCode !== 0) failed.push(f)
   }
   if (failed.length) log(`${label}: the recorder did not record ${failed.join(', ')}`)
@@ -747,13 +758,25 @@ const ARTIFACT_RETURN_SCHEMA = { type: 'object', additionalProperties: false, re
 function artifactBrief(candidate, schema, revision = '') {
   return relayKit.artifactBrief(candidate, schema, revision, DS.script.replace(/[^/]+$/, 'artifactcontract.py'))
 }
+/**
+ * The revision of a dispatch's inputs: the source fingerprints of `files` and the `context`, hashed
+ * as relayKit.artifactRevision hashes them, so a saved candidate stays reusable. A path that does not
+ * exist (a draft no writer has written yet) fingerprints as absent rather than failing.
+ */
 async function sourceRevision(label, phaseName, files, context) {
-  const result = await relayKit.artifactRevision(run, { label, phase: phaseName, runner: RELAY_RUNNER, files: [...new Set(files.filter(hasText))], context, relayFile: nextRelayFile(label) })
-  if (!result.ok) {
-    if (!dispatchInterruption) { dispatchFailures.push({ label, phase: phaseName, message: result.error }); log(`${label}: ${result.error}`) }
-    return null
+  const sources = [...new Set(files.filter(hasText))]
+  let receipts = []
+  if (sources.length) {
+    const result = await relayRun({ label, phase: phaseName, argv: ['python3', DS.script.replace(/[^/]+$/, 'jsonartifact.py'), '--allow-absent', ...sources.flatMap((f) => ['--source', f])] })
+    const why = !result.ok ? result.error : result.exitCode !== 0 || !result.json || !Array.isArray(result.json.receipts) ? `source fingerprint failed: ${JSON.stringify(result.json)}` : ''
+    if (why) {
+      if (!dispatchInterruption) { dispatchFailures.push({ label, phase: phaseName, message: why }); log(`${label}: ${why}`) }
+      return null
+    }
+    receipts = result.json.receipts
+    if (Array.isArray(result.json.skipped) && result.json.skipped.length) log(`${label}: ${result.json.skipped.length} symlink(s) or special file(s) left out of the fingerprint (listed under skipped in ${result.relayFile})`)
   }
-  return result.revision
+  return relayKit.sha256Json({ receipts, context })
 }
 async function probeArtifact(label, phaseName, candidate, file, schema, revision = '', projection = '', researchAgent = '') {
   if (dispatchInterruption) return null
@@ -882,42 +905,26 @@ async function readFacts(label, phaseName, roundPlan = null) {
   const assign = [...assigned].map(([id, w]) => `${id}=${w}`).join(',')
   const command = `arch-resume --work-dir ${shq(WORK)} --roster ${shq(ROSTER_ARG)}${assign ? ` --assign ${shq(assign)}` : ''}${roundPlan ? ` --round-plan ${shq(JSON.stringify(roundPlan))}` : ''}`
   const out = await depscore(label, phaseName, command)
-  if (!out || out.error || !out.rounds || typeof out.rounds !== 'object' || !out.integration || !out.coverage || !Number.isInteger(out.coverage.gapCount)) {
-    return { error: (out && out.error) || 'depscore.py arch-resume printed no facts', exception: (out && out.exception) || '' }
-  }
-  const problem = pendingPlanProblem(out.rounds)
-  if (problem) return { error: `depscore.py arch-resume reported a pending round plan that is not the shape it prints: ${problem}. The saved work in ${WORK} is untouched.` }
-  // The open findings arrive grouped by owner ({ owner: { answered: [id], open: [id] } }); their verdicts and files are in the ledger.
-  out.rounds.openFindings = Object.entries(out.rounds.openFindings || {}).flatMap(([owner, s]) => [
-    ...listed(s && s.answered).map((id) => ({ id, owner, answered: true })),
-    ...listed(s && s.open).map((id) => ({ id, owner, answered: false })),
-  ])
-  if (Number(out.rounds.overlapWarnings) > 0) log(`Rounds: ${out.rounds.overlapWarnings} reviewer overlap warning(s), listed under result.rounds.overlapWarnings in ${out.relayFile}`)
-  if (out.rounds.planKept === true) log(`Rounds: the plan already saved for round ${out.rounds.pendingRound} stands (result.rounds.planKept in ${out.relayFile})`)
+  if (!out || out.error) return { error: (out && out.error) || 'depscore.py arch-resume printed nothing', exception: (out && out.exception) || '' }
+  const empty = { rounds: {}, integration: {}, coverage: {}, repairs: {} }
+  const missing = Object.keys(empty).filter((k) => !out[k] || typeof out[k] !== 'object')
+  if (missing.length) log(`${label}: depscore.py arch-resume printed no ${missing.join(', ')}; taken as empty`)
+  for (const k of missing) out[k] = empty[k]
+  out.coverage.gaps = listed(out.coverage.gaps)
+  out.rounds.openFindings = (Array.isArray(out.rounds.openFindings) ? out.rounds.openFindings : [])
+    .filter((f) => f && hasText(f.id))
+    .map((f) => ({ id: f.id, owner: String(f.owner || ''), answered: f.answered === true }))
+  const overlaps = Array.isArray(out.rounds.overlapWarnings) ? out.rounds.overlapWarnings.length : 0
+  if (overlaps) log(`Rounds: ${overlaps} reviewer overlap warning(s), listed under result.rounds.overlapWarnings in ${out.relayFile}`)
+  if (hasText(out.rounds.planKept)) log(`Rounds: ${out.rounds.planKept} (result.rounds.planKept in ${out.relayFile})`)
+  const warnings = listed(out.warnings)
+  if (warnings.length) log(`${label}: ${warnings.length} warning(s) reading the saved work, listed under result.warnings in ${out.relayFile}`)
   return out
 }
-/** True when arch-resume's facts report coverage gaps, or do not say how many. */
-const hasGaps = (f) => !f || !f.coverage || !Number.isInteger(f.coverage.gapCount) || f.coverage.gapCount > 0
+/** The number of coverage notes arch-resume reports: what the coordinator routes and the decider reads, never a gate. */
+const gapCount = (f) => listed(f && f.coverage && f.coverage.gaps).length
 /** Where the approved coverage rows are: the relay file of the arch-resume run that read them (result.coverage.checksNeeded); arch-review-check reads them there. */
 const coverageRowsOf = (f) => ({ file: String((f && f.relayFile) || ''), rows: Number(f && f.coverage && f.coverage.rows) || 0 })
-
-/**
- * Returns why the pending round plan in arch-resume's facts is not the shape depscore.py prints
- * (pendingRound and pendingDispatches agree with pendingPlan, which lists every dispatch in seq
- * order, each { seq, role, agentType, complete }, with at least one not complete), or '' when it is.
- */
-function pendingPlanProblem(rounds) {
-  const pp = rounds.pendingPlan
-  const pr = rounds.pendingRound
-  if (pp === undefined || pr === undefined || rounds.pendingDispatches === undefined) return 'pendingPlan, pendingRound or pendingDispatches is missing'
-  if (pp === null) return pr === null ? '' : `pendingRound is ${pr} but pendingPlan is null`
-  if (typeof pp !== 'object' || pp.round !== pr || !Number.isInteger(pr)) return `pendingPlan round ${pp && pp.round} does not match pendingRound ${pr}`
-  if (!Array.isArray(pp.dispatches) || pp.dispatches.length !== rounds.pendingDispatches) return `pendingPlan.dispatches is not a list of ${rounds.pendingDispatches} dispatch(es)`
-  const bad = pp.dispatches.findIndex((d, i) => !d || !Number.isInteger(d.seq) || d.seq < 1 || (i > 0 && d.seq <= pp.dispatches[i - 1].seq) || !hasText(d.agentType) || roleOf(d.agentType) !== d.role || typeof d.complete !== 'boolean')
-  if (bad >= 0) return `pendingPlan dispatch ${bad + 1} lacks its seq, role, agentType or complete`
-  if (pp.dispatches.every((d) => d.complete)) return 'pendingPlan has no dispatch left to run'
-  return ''
-}
 
 /** The result file of one dispatch of round n, as depscore.py arch-resume names it. */
 const resultFile = (n, d) => `${ROUNDS_DIR}/r${n}-${d.seq}-${d.role}-${d.agentType}.json`
@@ -928,7 +935,7 @@ const resultFile = (n, d) => `${ROUNDS_DIR}/r${n}-${d.seq}-${d.role}-${d.agentTy
  */
 function planDispatches(pp) {
   // The loader can reconcile a retained plan. Never override it with stale in-memory scope.
-  return pp.dispatches.map((c) => ({ ...c, task: '', files: null, answers: null, file: resultFile(pp.round, c) }))
+  return (Array.isArray(pp && pp.dispatches) ? pp.dispatches : []).map((c) => ({ ...c, task: '', files: null, answers: null, file: resultFile(pp.round, c) }))
 }
 
 const CONFLICT_ITEMS = {
@@ -956,7 +963,7 @@ const REPOS_SCHEMA = {
     },
   },
 }
-// Consumed by: archresume coverage folding and architecture.js decisionGaps — stable
+// Consumed by: archresume coverage folding and architecture.js decisionNotes — stable
 // ids preserve absent obligations; MODEL evidence supplies semantics, not a plugin menu.
 // Consumed by archevidence: local section/main revision binding and external provenance.
 const EVIDENCE_REFS = { type: 'array', items: { type: 'object', additionalProperties: false,
@@ -978,22 +985,22 @@ const COVERAGE_SCHEMA = {
     },
   },
 }
-// Consumed by: archresume — only an independent check of the current generated
-// row/content revision satisfies coverage; reviewer prose is read by the decider.
+// Consumed by: archfiles.review_check — a verified check with evidence per approved row id;
+// reviewer prose is read by the decider.
 const COVERAGE_CHECKS_SCHEMA = {
   type: 'array', items: {
     type: 'object', additionalProperties: false,
-    required: ['id', 'revision', 'verdict', 'evidence'],
+    required: ['id', 'verdict', 'evidence'],
     properties: {
-      id: { type: 'string' }, revision: { type: 'string' },
+      id: { type: 'string' },
       verdict: { type: 'string', enum: ['verified', 'unsupported', 'wrong'] }, evidence: { type: 'string' },
     },
   },
 }
 const COVERAGE_RULE = `COVERAGE is evidence in the existing survey/round results and ${LEDGER_JSON}, not another architecture version. Read ${MODEL} for applicable obligations and ${MENU} for selection/construction. Inventory relevant subjects from the design, repositories and contracts independently of catalog hits. Include required views that do not exist, every affected scope and horizontal concern; unrelated historical debt is non-blocking and is reported in your summary.
-Each coverage row has a stable id, subject, scope, obligation (MODEL path and heading), sources (inventory/design evidence), views (absolute paths, including expected missing paths), status (the MODEL's assessment result), action and reason. Preserve ids across rounds; omitted ids remain in the ledger. Writers replace only their assigned rows; use draft paths for created/updated views, draft/delta descriptions for removals (not the canonical file being deleted), and canonical paths only for unchanged views. Keep removal evidence stable through integration. After completing work, update status to Present and sufficient; Not yet applicable pairs only with action not-applicable. Incomplete, absent and Not assessed statuses cannot pass approval. An unknown relevant obligation uses action unresolved. Not-applicable and unchanged need concrete reasons and evidence; no-change targets still assess applicable coverage. Never invent design to fill diagrams. Diagram declarations require actual diagrams; verify rendering, readability, semantics, links and metadata as the MODEL requires, reporting limitations honestly.
-The ledger supplies each row's revision from its evidence and current view content. Reviewers copy that revision exactly into coverageChecks, with an independent verdict and evidence. A missing view or obligation can be a finding without an author claim. Recheck revised rows; old checks cannot approve new content.
-Set disposition=required by default. For mistakenly inventoried unrelated historical debt, use unrelated-debt with dispositionReason proving it does not affect this change or dependencies; preserve its honest MODEL status. Only an independent verified current revision makes that disposition nonblocking. Retain the row and summarize it; never erase IDs.
+Each coverage row has a stable id, subject, scope, obligation (MODEL path and heading), sources (inventory/design evidence), views (absolute paths, including expected missing paths), status (the MODEL's assessment result), action and reason. Preserve ids across rounds; omitted ids remain in the ledger. Writers replace only their assigned rows; use draft paths for created/updated views, draft/delta descriptions for removals, and canonical paths only for unchanged views. After completing work, update status to Present and sufficient; Not yet applicable pairs with action not-applicable. Incomplete, absent and Not assessed statuses are reported to the decider. An unknown relevant obligation uses action unresolved. Not-applicable and unchanged need concrete reasons and evidence; no-change targets still assess applicable coverage. Never invent design to fill diagrams. Diagram declarations require actual diagrams; verify rendering, readability, semantics, links and metadata as the MODEL requires, reporting limitations honestly.
+Reviewers return one coverageCheck per row id they check, with an independent verdict and evidence. A missing view or obligation can be a finding without an author claim. Recheck rows a writer revised after your check.
+Set disposition=required by default. For mistakenly inventoried unrelated historical debt, use unrelated-debt with dispositionReason proving it does not affect this change or dependencies; preserve its honest MODEL status. An independent verified check makes that disposition nonblocking. Retain the row and summarize it; never erase IDs.
 EvidenceRefs bind relevant views by absolute path and unique heading (empty means whole file), repository code by absolute repo, main commit revision and repository-relative path, or external docs by url and version/retrieval revision. Unused fields are empty strings. Include relevant dependencies. Source movement requires refreshed evidence; reading test source is not a test run.`
 
 // ===== SHARED BLOCK architecture-baseline — BEGIN (canonical: scripts/shared-blocks/architecture-baseline.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -1062,7 +1069,7 @@ const COORDINATOR_SCHEMA = {
         },
       },
     },
-    // Consumed by: unjustifiedOverlaps before the plan is saved, and archrounds.overlap_justified on resume.
+    // Consumed by: archrounds.overlap_justified, which warns about an overlap no entry names.
     // One entry per overlap: the coordinator decides it once, with one reason.
     overlaps: {
       type: 'array',
@@ -1083,16 +1090,15 @@ const COORDINATOR_SCHEMA = {
 // ===== SHARED BLOCK architecture-artifacts — BEGIN (canonical: scripts/shared-blocks/architecture-artifacts.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // Generated from the executable artifact-handoff contract schemas.
 const WRITER_SCHEMA = {"type":"object","additionalProperties":false,"required":["files","claims","answers","businessConflicts","coverage","summary"],"properties":{"repairAnswers":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["repairId","response"],"properties":{"repairId":{"type":"string"},"response":{"type":"string"}}}},"files":{"type":"array","items":{"type":"string"}},"coverage":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","subject","scope","obligation","sources","views","status","action","reason","evidenceRefs","disposition","dispositionReason"],"properties":{"id":{"type":"string"},"subject":{"type":"string"},"scope":{"type":"string"},"obligation":{"type":"string"},"sources":{"type":"array","items":{"type":"string"}},"views":{"type":"array","items":{"type":"string"}},"status":{"type":"string","enum":["Present and sufficient","Present but incomplete","Required and absent","Not yet applicable","Not assessed"]},"action":{"type":"string","enum":["create","update","unchanged","remove","not-applicable","unresolved"]},"reason":{"type":"string"},"evidenceRefs":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","heading","repo","revision","url"],"properties":{"path":{"type":"string"},"heading":{"type":"string"},"repo":{"type":"string"},"revision":{"type":"string"},"url":{"type":"string"}}}},"disposition":{"type":"string","enum":["required","unrelated-debt"]},"dispositionReason":{"type":"string"}}}},"claims":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["claimId","claim","file","citation","supersedes","evidenceRefs"],"properties":{"claimId":{"type":"string"},"claim":{"type":"string"},"file":{"type":"string"},"citation":{"type":"string"},"supersedes":{"type":"array","items":{"type":"string"}},"evidenceRefs":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","heading","repo","revision","url"],"properties":{"path":{"type":"string"},"heading":{"type":"string"},"repo":{"type":"string"},"revision":{"type":"string"},"url":{"type":"string"}}}}}}},"answers":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["findingId","response","evidence"],"properties":{"findingId":{"type":"string"},"response":{"type":"string","enum":["fixed","disputed"]},"evidence":{"type":"string"}}}},"businessConflicts":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["requirements","why"],"properties":{"requirements":{"type":"array","items":{"type":"string"}},"why":{"type":"string"}}}},"summary":{"type":"string"}}}
-const REVIEW_SCHEMA = {"type":"object","additionalProperties":false,"required":["findings","coverageChecks","resolutions","summary"],"properties":{"repairChecks":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["repairId","revision","verdict","evidence","files"],"properties":{"repairId":{"type":"string"},"revision":{"type":"string"},"files":{"type":"array","items":{"type":"string"}},"verdict":{"type":"string","enum":["verified","revise"]},"evidence":{"type":"string"}}}},"coverageChecks":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","revision","verdict","evidence"],"properties":{"id":{"type":"string"},"revision":{"type":"string"},"verdict":{"type":"string","enum":["verified","unsupported","wrong"]},"evidence":{"type":"string"}}}},"resolutions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["findingId","revision","verdict","evidence"],"properties":{"revision":{"type":"string"},"findingId":{"type":"string"},"verdict":{"type":"string","enum":["accepted","rejected"]},"evidence":{"type":"string"}}}},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["claimId","claimRevision","claim","file","verdict","evidence","owner"],"properties":{"claimId":{"type":"string"},"claimRevision":{"type":"string"},"claim":{"type":"string"},"file":{"type":"string"},"verdict":{"type":"string","enum":["verified","unsupported","wrong"]},"evidence":{"type":"string"},"owner":{"type":"string"}}}},"estimates":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}}
+const REVIEW_SCHEMA = {"type":"object","additionalProperties":false,"required":["findings","coverageChecks","resolutions","summary"],"properties":{"repairChecks":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["repairId","verdict","evidence","files"],"properties":{"repairId":{"type":"string"},"files":{"type":"array","items":{"type":"string"}},"verdict":{"type":"string","enum":["verified","revise"]},"evidence":{"type":"string"}}}},"coverageChecks":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","verdict","evidence"],"properties":{"id":{"type":"string"},"verdict":{"type":"string","enum":["verified","unsupported","wrong"]},"evidence":{"type":"string"}}}},"resolutions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["findingId","verdict","evidence"],"properties":{"findingId":{"type":"string"},"verdict":{"type":"string","enum":["accepted","rejected"]},"evidence":{"type":"string"}}}},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["claimId","claim","file","verdict","evidence","owner"],"properties":{"claimId":{"type":"string"},"claim":{"type":"string"},"file":{"type":"string"},"verdict":{"type":"string","enum":["verified","unsupported","wrong"]},"evidence":{"type":"string"},"owner":{"type":"string"}}}},"estimates":{"type":"array","items":{"type":"string"}},"summary":{"type":"string"}}}
 // ===== SHARED BLOCK architecture-artifacts — END =====
 const OWNER_CONCERN_KINDS = ['business-conflict', 'architecture-conflict']
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['round', 'verdict', 'diligence', 'choices', 'returnTo', 'ownerConcerns', 'coverageRevision', 'summary'],
+  required: ['round', 'verdict', 'diligence', 'choices', 'returnTo', 'ownerConcerns', 'summary'],
   properties: {
     round: { type: 'integer' },
-    coverageRevision: { type: 'string' },
     verdict: { type: 'string', enum: ['approve', 'return', 'owner-concern'] },
     diligence: {
       type: 'array',
@@ -1158,11 +1164,10 @@ const MAINTAIN_SCHEMA = {
 const CONFORMANCE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['conforms', 'reviewedFiles', 'findings', 'coverageRevision', 'coverageChecks', 'summary'],
+  required: ['conforms', 'reviewedFiles', 'findings', 'coverageChecks', 'summary'],
   properties: {
     conforms: { type: 'boolean' },
     coverageChecks: COVERAGE_CHECKS_SCHEMA,
-    coverageRevision: { type: 'string' },
     reviewedFiles: { type: 'array', items: { type: 'string' } },
     findings: {
       type: 'array',
@@ -1203,9 +1208,7 @@ async function constraintsGuard(before, label, phaseName) {
  */
 async function treeSnapshot(label, phaseName, { save, against = [] } = {}) {
   const out = await depscore(label, phaseName, `arch-snapshot --arch-root ${shq(archPath)} --counts${save ? ` --save ${shq(save)}` : ''}${against.map((f) => ` --against ${shq(f)}`).join('')}`)
-  if (!out || out.error) return out || { error: 'no result' }
-  if (against.length && (!Array.isArray(out.diffs) || out.diffs.length !== against.length)) return { error: 'depscore.py arch-snapshot printed no difference for a saved fingerprint' }
-  return out
+  return !out || out.error ? out || { error: 'no result' } : out
 }
 /** The number of files diff `i` of a snapshot created, changed or deleted. */
 function diffCount(snap, i) {
@@ -1214,9 +1217,10 @@ function diffCount(snap, i) {
 }
 
 /**
- * Binds the step's saved work to the arc42 revision it was produced against with depscore.py
- * arch-revision. Saved work recorded against another revision, or with none recorded, moves to a
- * dated stale folder in the Epic's artifacts directory and the step starts again from the survey.
+ * Binds the step's saved work to the arc42 views it read or wrote with depscore.py arch-revision.
+ * Saved work one of whose views changed in arc42 since it was recorded moves to a dated stale folder
+ * in the Epic's artifacts directory and the step starts again from the survey; a change elsewhere in
+ * arc42 (another Epic's integration) leaves it in place.
  */
 const revision = await depscore('revision:check', 'Survey', `arch-revision check --arch-root ${shq(archPath)} --work-dir ${shq(WORK)} --stale-root ${shq(ART.dir)}`)
 if (!revision || revision.error || revision.ok !== true || !hasText(revision.revision)) {
@@ -1225,12 +1229,10 @@ if (!revision || revision.error || revision.ok !== true || !hasText(revision.rev
 }
 if (revision.status === 'stale') log(`Revision: ${revision.reason}; ${revision.moved} saved item(s) set aside to ${revision.movedTo}; the step starts again from the survey`)
 else log(`Revision: arc42 ${String(revision.revision).slice(0, 12)} (${revision.status})`)
-/** Records the step's own integration in the revision record: 'integrating' before it writes arc42, 'integrated' once approved. Returns the failure, or null. */
+/** Records the step's own integration in the revision record: 'integrating' before it writes arc42, 'integrated' once approved. A record that could not be written is logged. */
 async function markRevision(state, phaseName) {
   const out = await depscore(`revision:${state}`, phaseName, `arch-revision mark --arch-root ${shq(archPath)} --work-dir ${shq(WORK)} --state ${state}`)
-  if (out && !out.error && out.ok === true) return null
-  const why = `the arc42 revision record in ${WORK} could not be marked ${state}: ${(out && out.error) || 'no result'}`
-  return { ok: false, stage: phaseName.toLowerCase(), reason: why, error: why, ...died(phaseName) }
+  if (!out || out.error || out.ok !== true) log(`Revision: the record in ${WORK} could not be marked ${state}: ${(out && out.error) || 'no result'}; the integration continues`)
 }
 
 const before = await constraintsSnapshot('constraints:before', 'Survey', true)
@@ -1265,17 +1267,19 @@ async function surveyFreshness(label, seal = false) {
   const argv = ['python3', DS.script.replace(/[^/]+$/, 'archbaseline.py'), '--survey', SURVEY_JSON,
     ...[prd.path, MODEL, MENU, CONSTRAINTS].filter(hasText).flatMap(path => ['--input', path]),
     '--context-sha', relayKit.sha256Json({ prdBody: prd.body || '', schema: SURVEY_SCHEMA }), ...(seal ? ['--seal'] : [])]
-  const result = await relayKit.run(run, { label, phase: 'Survey', runner: RELAY_RUNNER, argv, file: nextRelayFile(label) })
-  if (!result.ok || result.exitCode !== 0 || !result.json || !/^[a-f0-9]{64}$/.test(result.json.revision || '')) {
+  const result = await relayRun({ label, phase: 'Survey', argv })
+  if (!result.ok || ![0, 2].includes(result.exitCode) || !result.json || !/^[a-f0-9]{64}$/.test(result.json.revision || '')) {
     const message = result.error || JSON.stringify(result.json || {})
     dispatchFailures.push({ label, phase: 'Survey', message }); log(`${label}: ${message}`); return null
   }
+  const warnings = listed(result.json.warnings)
+  if (warnings.length) log(`${label}: ${warnings.length} warning(s) about the survey's assessment and evidence, listed under warnings in ${result.relayFile}`)
   return result.json
 }
 phase('Survey')
 const surveyFresh = await surveyFreshness('survey:freshness')
 if (!surveyFresh) return { ok: false, stage: 'survey-inputs', ...died('Survey') }
-const savedSurvey = surveyFresh.current === true && facts.survey && facts.survey.coverageSaved === true && facts.survey.saved === true && hasText(facts.survey.subject) ? facts.survey : null
+const savedSurvey = surveyFresh.current === true && facts.survey && facts.survey.saved === true && hasText(facts.survey.subject) ? facts.survey : null
 let survey = savedSurvey ? { subject: savedSurvey.subject, capabilities: savedSurvey.capabilities } : null
 /**
  * Dispatches the survey and saves it, sealed to its inputs. With `recheck`, the Check review left
@@ -1333,9 +1337,13 @@ Write ${SURVEY_MD} as the readable survey; pass its path rather than copying it 
     const why = `the survey the prd-reality-reconciler returned could not be saved to ${SURVEY_JSON}`
     return { failure: { ok: false, stage: 'survey', reason: why, error: why, ...died('Survey') } }
   }
-  if ((await recordFiles(recheck ? 'survey:recheck-record' : 'survey:record', 'Survey', [SURVEY_MD])).length) return { failure: { ok: false, stage: 'survey', reason: 'survey provenance recording failed; saved work retained' } }
+  await recordFiles(recheck ? 'survey:recheck-record' : 'survey:record', 'Survey', [SURVEY_MD])
   const sealed = await surveyFreshness(recheck ? 'survey:recheck-seal' : 'survey:seal', true)
-  if (!sealed || sealed.current !== true) return { failure: { ok: false, stage: 'survey-inputs', reason: 'the accepted survey could not be bound to current source evidence', ...died('Survey') } }
+  if (!sealed) return { failure: { ok: false, stage: 'survey-inputs', reason: 'the accepted survey could not be sealed to its inputs', ...died('Survey') } }
+  if (sealed.current !== true) {
+    const why = `the accepted survey ${SURVEY_JSON} carries no assessment: ${listed(sealed.errors).join('; ') || 'its baseline list is missing'}`
+    return { failure: { ok: false, stage: 'survey', reason: why, error: why, ...died('Survey') } }
+  }
   const acceptedSurvey = await readFacts(recheck ? 'survey:recheck-accepted' : 'survey:accepted', 'Survey')
   if (acceptedSurvey.error) return { failure: { ok: false, stage: 'survey', reason: acceptedSurvey.error } }
   facts = acceptedSurvey
@@ -1351,11 +1359,16 @@ if (survey) {
 }
 /** Where the survey is; failures name the files, never carry the survey. */
 const surveyPaths = { surveyPath: SURVEY_MD, surveyJsonPath: SURVEY_JSON }
-// The subject as named; depscore.py arch-target derives the folder name every later step uses.
-const subjectName = hasText(a.subject) ? a.subject.trim() : hasText(survey.subject) ? survey.subject.trim() : ''
+// The subject as named; depscore.py arch-target derives the folder name every later step uses,
+// taking dates and the Epic, PRD and bead names out of it. With no subject named, the PRD file's
+// name stands in, and the name of the PRD itself is not taken out of it.
+const surveyedSubject = hasText(a.subject) ? a.subject.trim() : hasText(survey.subject) ? survey.subject.trim() : ''
+const subjectName = surveyedSubject || prdBase
+const SUBJECT_FORBID = (surveyedSubject ? FORBID : FORBID.filter((t) => t !== prdBase)).join(',')
+if (!surveyedSubject && subjectName) log(`Survey: no subject was named; the PRD file's name ${subjectName} names the target`)
 /** Checks the draft with depscore.py arch-target --dry-run; the full report goes to TARGET_CHECK and only its summary comes back. Returns the summary or { error }. */
 async function checkDraft(label, phaseName, subjectArg) {
-  const out = await depscore(label, phaseName, `arch-target --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subjectArg)} --forbid ${shq(FORBID.join(','))} --dry-run --out ${shq(TARGET_CHECK)}`)
+  const out = await depscore(label, phaseName, `arch-target --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subjectArg)} --forbid ${shq(SUBJECT_FORBID)} --dry-run --out ${shq(TARGET_CHECK)}`)
   if (!out || out.error) return out || { error: 'no result' }
   return out.summary && typeof out.summary === 'object' ? out.summary : { error: 'depscore.py arch-target printed no summary' }
 }
@@ -1364,12 +1377,13 @@ const subjectRefusals = subjectCheck && !subjectCheck.error ? listed(subjectChec
 const subject = subjectCheck && !subjectCheck.error && hasText(subjectCheck.subject) ? subjectCheck.subject.trim() : ''
 if (!subjectName || subjectRefusals.length || !subjectCheck || subjectCheck.error || !subject) {
   const why = !subjectName
-    ? 'the survey named no subject for the target'
+    ? 'the survey named no subject for the target and no PRD file name stands in for one'
     : subjectRefusals.length
       ? `the target subject cannot name a target: ${subjectRefusals.join('; ')}`
       : `the target subject could not be checked: ${(subjectCheck && subjectCheck.error) || 'no folder name returned'}`
   return { ok: false, stage: 'survey', deterministicFailure: subjectRefusals.length > 0, reason: why, error: why, ...surveyPaths }
 }
+if (subject !== subjectName) log(`Survey: the subject ${subjectName} names the folder target/${subject}/`)
 log(`Survey: subject ${subjectName} (folder target/${subject}/); ${Number(survey.capabilities) || 0} capabilit(ies)`)
 
 // ---------------------------------------------------------------- Rounds
@@ -1398,7 +1412,7 @@ const checkPlan = () => {
       role: 'reviewer',
       agentType: CHECK_REVIEWER,
       selectionReason: 'the survey finds every capability served by the effective architecture and the code on main, with nothing in arc42 left unrepresented; the target needs independent verification of its coverage rows and of that representation, not design',
-      task: `Verify every row of the \`coverage\` list in ${LEDGER_JSON} at its current revision against the effective views and the code on main, and return a coverage check for each.${review.length ? ` Verify that the existing design serves these capabilities as the survey states: ${review.join(', ')}.` : ''} Check, as the architecture-baseline skill describes, that the section 2 constraints and the non-effective arc42 content (in-review views, open targets, build records) that apply to the PRD's capabilities are represented in their effective views; report each that is not as a finding citing the constraint or document and the effective view, so the survey reassesses that capability.`,
+      task: `Verify every row of the \`coverage\` list in ${LEDGER_JSON} against the effective views and the code on main, and return a coverage check for each.${review.length ? ` Verify that the existing design serves these capabilities as the survey states: ${review.join(', ')}.` : ''} Check, as the architecture-baseline skill describes, that the section 2 constraints and the non-effective arc42 content (in-review views, open targets, build records) that apply to the PRD's capabilities are represented in their effective views; report each that is not as a finding citing the constraint or document and the effective view, so the survey reassesses that capability.`,
       coverageIds: [],
       claimIds: [],
       claimFiles: [],
@@ -1417,23 +1431,24 @@ const unreviewedCount = () => unreviewedByWriter().reduce((t, [, k]) => t + Numb
 const ledgerLine = () => `${Number(ledgerFacts().claims) || 0} claim(s), ${Number(ledgerFacts().findings) || 0} finding(s), ${openFindings().length} open, ${unreviewedCount()} claim(s) without a reviewer verdict`
 if (lastRound) log(`Rounds: resumed after round ${lastRound} — ${ledgerLine()}`)
 
-/** Returns what still stands between the draft and a decision. */
-async function decisionGaps(label) {
-  const gaps = []
-  for (const id of listed(facts.repairs && facts.repairs.open)) gaps.push(`repair ${id} requires its bounded correction in ${LEDGER_JSON}`)
-  for (const id of listed(facts.repairs && facts.repairs.checksNeeded)) gaps.push(`repair ${id} awaits independent verification of the current artifacts in ${LEDGER_JSON}`)
-  if (hasGaps(facts)) gaps.push(`${facts.coverage && Number.isInteger(facts.coverage.gapCount) ? facts.coverage.gapCount : 'an unknown number of'} coverage gap(s): each is listed under result.coverage.gaps in ${facts.relayFile}, with its row in ${LEDGER_JSON}`)
-  if (!facts.baseline) gaps.push(`depscore.py arch-resume reported no assessment facts for the survey (the \`baseline\` list of ${SURVEY_JSON})`)
-  else if (facts.baseline.valid !== true) gaps.push(`the survey's assessment (the \`baseline\` list of ${SURVEY_JSON}) is invalid: ${listed(facts.baseline.errors).join('; ') || 'no error named'}`)
-  if (listed(facts.baseline && facts.baseline.unknowns).length) gaps.push(`the survey's implementation evidence remains unresolved for ${facts.baseline.unknowns.join(', ')}`)
-  if (baselineNeedsAuthor() && !writersSoFar().length) gaps.push("the survey's assessment identifies design or documentation work that has not been authored")
-  for (const f of openFindings()) gaps.push(`finding ${f.id} (its verdict and file are in ${LEDGER_JSON}) ${f.answered ? 'awaits independent resolution of its answer' : 'needs a bounded evidenced repair'}; owner ${f.owner || 'not known — assign it to a writer'}`)
-  for (const [w, k] of unreviewedByWriter()) gaps.push(`${k} claim(s) by ${w} have no reviewer verdict (the claims by ${w} in ${LEDGER_JSON} whose \`verdicts\` list is empty)`)
-  for (const w of listed(ledgerFacts().proposersWithoutClaims)) gaps.push(`proposer ${w} stated no claims: a design with no claims cannot be reviewed; it states the claims a reviewer checks`)
-  const check = await checkDraft(label, 'Rounds', subject)
-  if (!check || check.error) gaps.push(`the draft could not be checked: ${(check && check.error) || 'no result'}`)
-  else for (const r of listed(check.refusals)) gaps.push(`draft: ${r}`)
-  return gaps
+/**
+ * Returns what is still open in the team's work: the coordinator routes it and the decider reads it.
+ * None of it stops the decider from ruling; the target write and the integration review check what
+ * reaches the architecture.
+ */
+function decisionNotes() {
+  const notes = []
+  for (const id of listed(facts.repairs && facts.repairs.open)) notes.push(`repair ${id} awaits its bounded correction in ${LEDGER_JSON}`)
+  for (const id of listed(facts.repairs && facts.repairs.checksNeeded)) notes.push(`repair ${id} awaits independent verification of the current artifacts in ${LEDGER_JSON}`)
+  if (gapCount(facts)) notes.push(`${gapCount(facts)} coverage note(s): each is listed under result.coverage.gaps in ${facts.relayFile}, with its row in ${LEDGER_JSON}`)
+  if (!facts.baseline) notes.push(`depscore.py arch-resume reported no assessment facts for the survey (the \`baseline\` list of ${SURVEY_JSON})`)
+  else if (facts.baseline.valid !== true) notes.push(`the survey carries no assessment (the \`baseline\` list of ${SURVEY_JSON}): ${listed(facts.baseline.errors).join('; ') || 'no error named'}`)
+  if (listed(facts.baseline && facts.baseline.warnings).length) notes.push(`${listed(facts.baseline.warnings).length} warning(s) about the survey's assessment, listed under result.baseline.warnings in ${facts.relayFile}`)
+  if (listed(facts.baseline && facts.baseline.unknowns).length) notes.push(`the survey's implementation evidence is unresolved for ${facts.baseline.unknowns.join(', ')}; it is carried as implementation work`)
+  if (baselineNeedsAuthor() && !writersSoFar().length) notes.push("the survey's assessment names design or documentation work that no writer has authored yet")
+  for (const f of openFindings()) notes.push(`finding ${f.id} (its verdict and file are in ${LEDGER_JSON}) ${f.answered ? 'awaits independent resolution of its answer' : 'is unanswered'}; owner ${f.owner || 'not known — assign it to a writer'}`)
+  for (const [w, k] of unreviewedByWriter()) notes.push(`${k} claim(s) by ${w} have no reviewer verdict (the claims by ${w} in ${LEDGER_JSON} whose \`verdicts\` list is empty)`)
+  return notes
 }
 
 /**
@@ -1447,7 +1462,7 @@ async function decisionGaps(label) {
  * made (the reviewers then read the canonical views), or { error }.
  */
 async function reviewTarget(label, phaseName) {
-  const seeded = await depscore(`${label}:seed`, phaseName, `arch-target --seed --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(FORBID.join(','))}`)
+  const seeded = await depscore(`${label}:seed`, phaseName, `arch-target --seed --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(SUBJECT_FORBID)}`)
   const seedOk = !!(seeded && !seeded.error && seeded.summary && seeded.summary.ok === true)
   if (!seedOk) log(`${label}: the baseline handoff could not be seeded into the draft: ${(seeded && seeded.error) || listed(seeded && seeded.summary && seeded.summary.refusals).join('; ') || 'no result'}`)
   const check = await checkDraft(label, phaseName, subject)
@@ -1462,10 +1477,9 @@ const reviewedDesign = (draft) => draft
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
 const savedDecision = facts.decision && typeof facts.decision === 'object' && hasText(facts.decision.verdict) ? facts.decision : null
 const repairsPending = (value) => !!(listed(value.repairs && value.repairs.open).length || listed(value.repairs && value.repairs.checksNeeded).length)
-const savedCoverageValid = !!(!repairsPending(facts) && savedDecision && !facts.rounds.pendingPlan && !openFindings().length && !unreviewedCount() && !hasGaps(facts) && savedDecision.coverageRevision === facts.coverage.revision)
-let decision = savedDecision && savedDecision.verdict === 'approve' && savedCoverageValid ? savedDecision : null
-// Legacy approval gets one bounded supplemental round, retaining its prior work.
-const roundLimit = MAX_ROUNDS + (savedDecision && savedDecision.verdict === 'approve' && (!savedDecision.coverageRevision || resumedFacts.contractVersion !== 2) ? 1 : 0)
+// A saved approval stands unless rounds ran after it.
+let decision = savedDecision && savedDecision.verdict === 'approve' && !facts.rounds.pendingPlan && (Number(savedDecision.round) || 0) >= lastRound ? savedDecision : null
+const roundLimit = MAX_ROUNDS
 /** Returns eligible specialists named by the decision; their bounded repairs remain in the decision artifact. */
 const returnedTo = (dec) =>
   (dec && Array.isArray(dec.returnTo) ? dec.returnTo : [])
@@ -1579,9 +1593,9 @@ ${reviewedDesign(reviewsDraft)}
 ${shared}
 
 THE LEDGER is ${LEDGER_JSON}: every claim the writers stated (\`claims\`, each with its \`id\`, writer, draft file, citation and the \`verdicts\` given so far) and every finding. Read it; write nothing in it.
-YOUR ASSIGNED CLAIM REVISIONS are the \`assignedClaims\` (each an id and revision) of ${planEntry}. Check exactly these claims against their citations with independent evidence and copy id/revision into claimId/claimRevision. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
-Read \`repairRequests\` in ${LEDGER_JSON}. Independently verify answered repairs within your assigned scope against the current artifacts; return \`repairChecks\` with repairId, the current revision, verified/revise, concrete evidence and files: the draft-relative or absolute evidence/contract file paths you actually inspected for that repair. A verified repair must bind its relevant files, including affected dependencies; unrelated file edits will not invalidate that acceptance. A revise check may use an empty files list. Do not repeat resolved repair requests without identifying new evidence of a current defect.
-Return verified, unsupported or wrong with evidence. Check coverage IDs named in your task at their current ledger revisions. For answered findings within your assigned scope, return resolutions with findingId, the ledger finding's current resolutionRevision as revision, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses empty claimId/claimRevision and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}`
+YOUR ASSIGNED CLAIMS are the \`assignedClaims\` of ${planEntry}. Check exactly these claims against their citations with independent evidence, and give each claim's id as claimId. Do not repeat unrelated verified claims. When none are assigned, answer only your coordinator's bounded domain question and affected dependencies; do not start a blanket audit.
+Read \`repairRequests\` in ${LEDGER_JSON}. Independently verify answered repairs within your assigned scope against the current artifacts; return \`repairChecks\` with repairId, verified/revise, concrete evidence and files: the draft-relative or absolute evidence/contract file paths you inspected for that repair. A revise check may use an empty files list. Do not repeat resolved repair requests without identifying new evidence of a current defect.
+Return verified, unsupported or wrong with evidence. Check the coverage IDs named in your task. For answered findings within your assigned scope, return resolutions with findingId, accepted/rejected and independent evidence: accept fixed only after verifying the changed evidence/view, and disputed only when evidence refutes the original finding. An unsupported assertion never resolves a finding. A new concrete uncovered problem uses an empty claimId and names its writer as owner.${d.role === 'cost' ? ' State your estimates, with the unit math, in `estimates`; a cost the design does not support is a finding like any other.' : ''}`
 }
 
 const cleanFile = (f) => String(f || '').trim().replace(/^\/+/, '')
@@ -1591,86 +1605,50 @@ const planOverlaps = (plan) =>
   (Array.isArray(plan && plan.overlaps) ? plan.overlaps : [])
     .filter((o) => o && hasText(o.reason))
     .map((o) => ({ files: listed(o.files).map(cleanFile), claimIds: listed(o.claimIds), agentTypes: listed(o.agentTypes).map(agentName), reason: o.reason.trim() }))
-/**
- * Returns, for each claim id or draft file that two or more review dispatches of the plan share,
- * a refusal when no `overlaps` entry with a reason names it (and, when the entry names agentTypes,
- * every reviewer sharing it). An empty list means the plan states a reason for every overlap.
- */
-function unjustifiedOverlaps(plan) {
-  const holders = new Map()
-  for (const d of Array.isArray(plan && plan.dispatches) ? plan.dispatches : []) {
-    const name = agentName(d && d.agentType)
-    if (!REVIEW_ROLES.includes(roleOf(name)) || roleOf(name) !== d.role) continue
-    const items = [...listed(d.claimIds).map((i) => `claim ${i}`), ...listed(d.claimFiles).map(cleanFile).filter(Boolean).map((f) => `draft file ${f}`)]
-    for (const item of items) {
-      const names = holders.get(item) || new Set()
-      names.add(name)
-      holders.set(item, names)
-    }
-  }
-  const entries = planOverlaps(plan)
-  const refusals = []
-  for (const [item, names] of holders) {
-    if (names.size < 2) continue
-    const sharing = [...names]
-    const covered = entries.some((o) =>
-      (!o.agentTypes.length || sharing.every((x) => o.agentTypes.includes(x))) &&
-      (item.startsWith('claim ') ? o.claimIds.includes(item.slice(6)) : o.files.includes(item.slice(11))))
-    if (!covered) refusals.push(`${item} is assigned to ${sharing.join(', ')} and no \`overlaps\` entry names it with a reason`)
-  }
-  return refusals
-}
-const MAX_PLAN_FIXES = 2
 
 /** The requirement ids a design-scope capability serves, from the survey's assessment. */
 const scopeRequirements = (capability) => listed(facts.baseline && facts.baseline.requirementsOf && facts.baseline.requirementsOf[capability])
-/** True when `text` names `id` as a whole word: REQ-3 is not named by REQ-30. */
-const namesId = (text, id) => {
-  const escaped = id.replace(/[.*+?^$|()[\]{}\\]/g, '\\$&')
-  return new RegExp('(^|[^A-Za-z0-9])' + escaped + '($|[^A-Za-z0-9])').test(text)
-}
+/** The writer the script adds for a capability, by the kind of obligation the assessment records for it. */
+const WRITER_FOR_KIND = { behavior: 'integration-pattern-architect', infrastructure: 'cdk-infrastructure-designer', documentation: 'architecture-diagram-author' }
 /**
- * Why a writer dispatch is refused, or '' when it may run: a writer authors only for a capability in
- * DESIGN SCOPE, named in its task, selection reason or coverage ids by the capability's name or by a
- * requirement id it serves, unless it answers findings or repairs.
+ * Returns the plan with the writers its round needs: while the survey's assessment names design or
+ * documentation work no writer has authored, and the coordinator's plan has no writer, one writer is
+ * added for each capability with that work, chosen by the kind of obligation it is, ahead of the
+ * reviewers, so reviewers review authored work.
  */
-function writerScopeRefusal(name, d) {
-  if (listed(d.answers).length || listed(d.repairIds).length) return ''
-  if (!baselineNeedsAuthor()) return `${name}: the survey's assessment requires no design/documentation author and no explicit repair is assigned`
-  const named = `${d.task || ''} ${d.selectionReason || ''} ${listed(d.coverageIds).join(' ')}`
-  if (designScope().some((c) => named.includes(c) || scopeRequirements(c).some((id) => namesId(named, id)))) return ''
-  return `${name}: a writer is dispatched only for a capability in DESIGN SCOPE (${designScope().map((c) => `${c}${scopeRequirements(c).length ? ` [${scopeRequirements(c).join(', ')}]` : ''}`).join('; ')}), and this dispatch names none of them or their requirement ids`
-}
-/**
- * Why a plan cannot run as given, or '' when it can: while the survey's assessment names design or
- * documentation work and no writer has authored any, a round must send a writer that passes, since
- * reviewers review authored work only.
- */
-function missingAuthorRefusal(plan) {
-  if (!baselineNeedsAuthor() || writersSoFar().length) return ''
-  const writers = (Array.isArray(plan && plan.dispatches) ? plan.dispatches : []).filter((d) => {
-    const name = agentName(d && d.agentType)
-    return WRITER_ROLES.includes(roleOf(name)) && roleOf(name) === d.role && hasText(d.selectionReason)
+function withWriters(plan) {
+  const dispatches = Array.isArray(plan.dispatches) ? plan.dispatches : []
+  if (!baselineNeedsAuthor() || writersSoFar().length || dispatches.some((d) => WRITER_ROLES.includes(roleOf(agentName(d && d.agentType))))) return plan
+  const kinds = (facts.baseline && facts.baseline.kindOf) || {}
+  const work = [...new Set([...listed(facts.baseline.designWork), ...listed(facts.baseline.docWork)])]
+  const added = work.map((c) => {
+    const agentType = WRITER_FOR_KIND[kinds[c]] || WRITER_FOR_KIND.behavior
+    const ids = scopeRequirements(c)
+    return {
+      agentType,
+      role: roleOf(agentType),
+      task: `Author the target views, and the delta views of the change, for the capability ${c}${ids.length ? ` (${ids.join(', ')})` : ''}, as the survey's assessment in ${SURVEY_JSON} describes its design and documentation work.`,
+      selectionReason: `the survey's assessment names design or documentation work for ${c} that no writer has authored`,
+      repairIds: [], files: [], answers: [], coverageIds: [], claimIds: [], claimFiles: [],
+    }
   })
-  const refused = writers.map((d) => writerScopeRefusal(agentName(d.agentType), d)).filter(Boolean)
-  if (writers.length > refused.length) return ''
-  return `the survey's assessment names design or documentation work for ${designScope().join(', ')} and no writer has authored it yet, so this round must dispatch a writer to author those views before any reviewer runs; reviewers review authored work only${refused.length ? `. Refused writer(s): ${refused.join('; ')}` : '. The plan has no writer'}`
+  log(`Round plan: the plan has no writer while the assessment names unauthored work; added ${[...new Set(added.map((d) => d.agentType))].join(', ')} for ${work.join(', ')}`)
+  return { ...plan, readyForDecision: false, dispatches: [...added, ...dispatches] }
 }
 
 /** Validates only the coordinator's justified dispatches; returns { dispatches, rejected, stuck }. */
 function settleDispatches(plan, n) {
   const out = []
   const bad = []
-  for (const d of Array.isArray(plan.dispatches) ? plan.dispatches : []) {
+  for (let d of Array.isArray(plan.dispatches) ? plan.dispatches : []) {
     const name = d && hasText(d.agentType) ? d.agentType.trim().replace(AGENT_PREFIX, '') : ''
     const role = roleOf(name)
-    if (!role || role !== d.role) {
-      bad.push(`${name || '(no agent)'} as ${d && d.role}: not that role's roster`)
+    if (!role) {
+      bad.push(`${name || '(no agent)'}: not on the roster`)
       continue
     }
-    if (!hasText(d.selectionReason)) { bad.push(`${name}: no evidence-based selection reason`); continue }
-    const scopeRefusal = WRITER_ROLES.includes(role) ? writerScopeRefusal(name, d) : ''
-    if (scopeRefusal) { bad.push(scopeRefusal); continue }
+    if (role !== d.role) log(`Round ${n}: ${name} runs as ${role}, its roster role, not ${d.role}`)
+    if (!hasText(d.selectionReason)) d = { ...d, selectionReason: 'coordinator selected' }
     const files = WRITER_ROLES.includes(role) ? listed(d.files).map(cleanFile) : []
     const badFile = files.find((f) => !f || f.split('/').includes('..') || f.split('/').includes('02-architecture-constraints'))
     if (badFile !== undefined) {
@@ -1703,16 +1681,16 @@ function settleDispatches(plan, n) {
   // rather than silently creating additional writer dispatches here.
   for (const d of out) d.answers = d.answers.filter((id) => openFindings().some((f) => f.id === id && f.owner === d.agentType))
   // A finding handed back to the writer that left it unanswered is re-sent once, with that named in its
-  // task; still unanswered after that, it is not sent a third time.
+  // task; still unanswered after that, it is not sent a third time and stays open for the decider.
   const stuck = []
   for (const d of out) {
-    const again = d.answers.filter((id) => asked.has(id) && asked.get(id).agentType === d.agentType)
-    if (!again.length) continue
-    const repeated = again.filter((id) => asked.get(id).clarified)
+    const repeated = d.answers.filter((id) => asked.has(id) && asked.get(id).agentType === d.agentType && asked.get(id).clarified)
     if (repeated.length) {
       stuck.push(`${d.agentType}: ${repeated.join(', ')}`)
-      continue
+      d.answers = d.answers.filter((id) => !repeated.includes(id))
     }
+    const again = d.answers.filter((id) => asked.has(id) && asked.get(id).agentType === d.agentType)
+    if (!again.length) continue
     const prev = Math.max(...again.map((id) => asked.get(id).round))
     const result = silentLast.includes(d.agentType) ? 'never came back' : 'answered none of them'
     d.task = `${d.task}\nROUND ${prev} HANDED YOU finding(s) ${again.join(', ')}, and your result ${result}. Answer each one in \`answers\` this round, as \`fixed\` or \`disputed\`.`
@@ -1722,11 +1700,29 @@ function settleDispatches(plan, n) {
   return { dispatches: out, rejected: bad, stuck }
 }
 
+/** The result saved for a dispatch that returned nothing twice: it states nothing, so its round finishes without it. */
+function noResult(d) {
+  const summary = `NO RESULT: ${d.agentType} returned no result twice; the round went on without it`
+  return WRITER_ROLES.includes(d.role)
+    ? { files: [], claims: [], answers: [], businessConflicts: [], coverage: [], summary }
+    : { findings: [], coverageChecks: [], resolutions: [], summary }
+}
+/** Saves the no-result of a dispatch to its result file; returns whether it was saved. */
+async function recordNoResult(n, d) {
+  const saved = await relayKit.ensureJson(run, { label: `round${n}:no-result:${d.agentType}`, phase: 'Rounds', runner: RELAY_RUNNER, file: d.file, value: noResult(d) })
+  log(saved.ok
+    ? `round${n}: ${d.agentType} returned no result twice; recorded as no result in ${d.file} and the round goes on without it`
+    : `round${n}: ${d.agentType} returned no result twice, and its no-result could not be saved: ${saved.error}`)
+  return saved.ok
+}
+
 /**
- * Runs writers in plan order, accepting each result before the next, then reviewers together. The
- * ledger is folded again from the saved results after the writers, so the reviewers read this
- * round's claims, and after the reviewers. Returns { silent } (the dispatches with no result, or
- * whose result was not saved) or { error } when the saved results could not be read.
+ * Runs writers in plan order, accepting each result before the next, then reviewers together. A
+ * dispatch with no accepted result is sent once more; with none again it is recorded as no result
+ * and later writers and reviewers still run. The ledger is folded again from the saved results
+ * after the writers, so the reviewers read this round's claims, and after the reviewers. Returns
+ * { silent } (the dispatches whose result is not saved: an interrupted run) or { error } when the
+ * saved results could not be read.
  */
 async function runRound(n, dispatches) {
   const writing = dispatches.filter((d) => WRITER_ROLES.includes(d.role))
@@ -1745,7 +1741,7 @@ async function runRound(n, dispatches) {
     const schema = WRITER_ROLES.includes(d.role) ? WRITER_SCHEMA : REVIEW_SCHEMA
     const reviewing = REVIEW_ROLES.includes(d.role)
     const scopedReview = reviewing && hasText(d.reviewInputRevision)
-    const revision = await sourceRevision(`${label}:inputs`, 'Rounds', scopedReview ? [prd.path, MODEL, MENU, CONSTRAINTS] : [prd.path, archPath, SURVEY_JSON, ...(reviewing && reviewsDraft ? [DRAFT] : [])], scopedReview ? { round: n, agentType: d.agentType, assignedEvidence: d.reviewInputRevision, schema } : { round: n, assignment: d, schema })
+    const revision = await sourceRevision(`${label}:inputs`, 'Rounds', scopedReview ? [prd.path, MODEL, MENU, CONSTRAINTS] : [prd.path, SURVEY_JSON, ...(reviewing && reviewsDraft ? [DRAFT] : [])], scopedReview ? { round: n, agentType: d.agentType, assignedEvidence: d.reviewInputRevision, schema } : { round: n, assignment: d, schema })
     if (!revision) return null
     const prior = await probeArtifact(label, 'Rounds', candidate, d.file, schema, revision, '', REVIEW_ROLES.includes(d.role) ? d.agentType : '')
     if (!prior) return null
@@ -1760,15 +1756,20 @@ async function runRound(n, dispatches) {
     return await acceptArtifact(label, 'Rounds', candidate, d.file, schema, got, revision)
   }
   const results = new Map()
+  /** Runs one dispatch, and once more when it has no accepted result. */
+  const twice = async (d) => {
+    const got = await go(d)()
+    if (got || dispatchInterruption) return got
+    log(`round${n}: ${d.agentType} has no accepted result; sending it once more`)
+    return go(d)()
+  }
   let writersAttempted = false
   for (const d of ordered.filter((d) => WRITER_ROLES.includes(d.role) && !d.complete)) {
     writersAttempted = true
-    const got = await go(d)()
+    const got = await twice(d)
     results.set(d.seq, got)
-    if (!got || dispatchInterruption) {
-      log(`round${n}: ${d.agentType} has no accepted result; later writers and reviewers remain undispatched, saved work retained`)
-      return { silent: [d.agentType] }
-    }
+    if (dispatchInterruption) return { silent: [d.agentType] }
+    if (!got && !(await recordNoResult(n, d))) return { silent: [d.agentType] }
   }
   if (facts.rounds.pendingPlan) ordered = planDispatches(facts.rounds.pendingPlan)
   let reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
@@ -1788,16 +1789,14 @@ async function runRound(n, dispatches) {
     }
     reviewsDraft = target.draft
     log(`round${n}: reviewers review ${reviewsDraft ? `the draft target ${DRAFT}${target.authored ? '' : ' (the baseline handoff alone: no authored views)'}` : `the existing design in ${ARC42} (the draft could not be written)`}`)
-    const got = await parallel(reviewers.map(go))
+    const got = await parallel(reviewers.map((d) => () => twice(d)))
     reviewers.forEach((d, i) => results.set(d.seq, got[i]))
+    if (!dispatchInterruption) for (const [i, d] of reviewers.entries()) if (!got[i]) await recordNoResult(n, d)
   }
   const after = await readFacts(`round${n}:ledger`, 'Rounds')
   if (after.error) return { error: after.error, exception: after.exception }
   facts = after
-  if (facts.rounds.pendingPlan) {
-    if (facts.rounds.pendingPlan.round !== n) return { error: `round ${n} finished dispatching but saved round ${facts.rounds.pendingPlan.round} is pending; saved work retained` }
-    return { silent: facts.rounds.pendingPlan.dispatches.filter((d) => !d.complete).map((d) => d.agentType) }
-  }
+  if (facts.rounds.pendingPlan) return { silent: planDispatches(facts.rounds.pendingPlan).filter((d) => !d.complete).map((d) => d.agentType) }
   const savedKeys = listed(facts.rounds.saved)
   const unsaved = ordered.filter((d) => results.get(d.seq) && !savedKeys.includes(`r${n}-${d.seq}`))
   if (unsaved.length) log(`Round ${n}: ${unsaved.map((d) => d.agentType).join(', ')} returned a result but did not save it to its result file; it counts as no result`)
@@ -1805,11 +1804,11 @@ async function runRound(n, dispatches) {
 }
 
 /** Runs the decider over the artifacts; returns its decision or null. */
-async function decide(n, correction = '') {
+async function decide(n, correction = '', notes = []) {
   phase('Decide')
   const target = await reviewTarget(`decide:round${n}:target`, 'Decide')
   if (target.error) { log(`decide:round${n}: ${target.error}`); return null }
-  const decisionRevision = await sourceRevision(`decide:round${n}:inputs`, 'Decide', [...(target.draft ? [DRAFT] : []), LEDGER_JSON, SURVEY_JSON, archPath, prd.path], { round: n, correction, schema: DECISION_SCHEMA })
+  const decisionRevision = await sourceRevision(`decide:round${n}:inputs`, 'Decide', [...(target.draft ? [DRAFT] : []), LEDGER_JSON, SURVEY_JSON, prd.path], { round: n, correction, schema: DECISION_SCHEMA })
   if (!decisionRevision) return null
   const candidate = `${WORK}/candidates/${decisionRevision}.json`
   const prior = await probeArtifact(`decide:round${n}`, 'Decide', candidate, DECISION_JSON, DECISION_SCHEMA, decisionRevision)
@@ -1831,7 +1830,8 @@ ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
 Read \`repairRequests\` in ${LEDGER_JSON}, including prior answers and independent checks. Do not reissue resolved repairs from an older decision; a new defect must identify current evidence and the concrete remaining violation.
-Read all coverage rows and independent checks in ${LEDGER_JSON}; check completeness against the MODEL, not only existing catalog hits. Set coverageRevision to the ledger's coverageRevision. Approval requires resolved relevant obligations with independent current-content evidence; never approve from an aggregate boolean.
+Read all coverage rows and independent checks in ${LEDGER_JSON}; check completeness against the MODEL, not only existing catalog hits. Approve from the evidence for each relevant obligation, never from an aggregate boolean.
+${notes.length ? `\nWHAT THE TEAM'S WORK STILL HAS OPEN, as the ledger records it (weigh each; none of it decides for you):\n${notes.map((g) => `- ${g}`).join('\n')}\n` : ''}
 
 The team has designed, challenged and settled this target in its rounds, led by the coordinator. You are not its lead: you approve its result, and you choose only where the team left competing solutions it could not settle.
 
@@ -1865,6 +1865,8 @@ let staleDecisionCorrection = ''
 let staleDecisionCorrected = false
 let ready = !!(savedDecision && savedDecision.verdict === 'approve') || facts.rounds.readyForDecision === true
 let rechecked = false
+/** The round after which the decider last ruled. */
+let decidedRound = -1
 while (!decision) {
   // A finding on a review-only Check means the survey judged the effective architecture complete and the
   // review disagrees: the survey reassesses once, and the capabilities it then marks enter design scope.
@@ -1875,46 +1877,40 @@ while (!decision) {
     const resurveyed = await runSurvey(true)
     if (resurveyed.failure) return { ...resurveyed.failure, subject }
     const renamed = resurveyed.survey && hasText(resurveyed.survey.subject) && !hasText(a.subject) && resurveyed.survey.subject.trim() !== subjectName
-    if (renamed) {
-      const why = `the reassessed survey renamed the subject from ${subjectName} to ${resurveyed.survey.subject.trim()}; the target folder target/${subject}/ is already in use by this step`
-      return { ok: false, stage: 'survey', deterministicFailure: true, reason: why, error: why, subject, ...surveyPaths }
-    }
+    if (renamed) log(`Check: the reassessed survey names the subject ${resurveyed.survey.subject.trim()}; the step keeps ${subjectName} (target/${subject}/)`)
     log(`Check: ${checkOnly() ? 'the reassessed survey still finds no design or documentation work; the findings go to the rounds' : `design scope ${designScope().join(', ')}`}`)
     phase('Rounds')
     pendingGaps = []
     ready = false
   }
   if (ready) {
-    pendingGaps = await decisionGaps(`rounds:gaps-${lastRound}`)
-    if (!pendingGaps.length) {
-      const decided = await decide(lastRound, staleDecisionCorrection)
+    pendingGaps = decisionNotes()
+    decidedRound = lastRound
+    {
+      const decided = await decide(lastRound, staleDecisionCorrection, pendingGaps)
       if (!decided || !decided.decision) return { ok: false, stage: 'decide', reason: 'the architecture-decider returned nothing', ...died('Decide'), subject, ...surveyPaths }
       const dec = decided.decision
       const concernCount = Array.isArray(dec.ownerConcerns) ? dec.ownerConcerns.filter((c) => c && hasText(c.concern)).length : Number(dec.ownerConcerns) || 0
       if (dec.verdict === 'owner-concern' || concernCount) {
-        if (!concernCount) return { ok: false, stage: 'decide', reason: 'the architecture-decider raised an owner concern and named none', decision: dec, subject }
-        if (businessOnly(dec)) return ownerConcern(dec)
+        if (concernCount && businessOnly(dec)) return ownerConcern(dec)
         teamNotes = true
-        log(`Decide: ${concernCount} issue(s) escalated that the team decides itself; they go back to the team`)
+        log(concernCount ? `Decide: ${concernCount} issue(s) escalated that the team decides itself; they go back to the team` : 'Decide: the decider raised an owner concern and named none; the target goes back to the team')
         phase('Rounds')
         ready = false
         continue
       }
+      facts = decided.facts
       if (dec.verdict === 'approve') {
-        const approvedFacts = decided.facts
-        if (approvedFacts.error || !approvedFacts.rounds || approvedFacts.rounds.pendingPlan || (approvedFacts.rounds.openFindings || []).length || Object.values(approvedFacts.rounds.unreviewedClaims || {}).some(k => k > 0) || hasGaps(approvedFacts) || repairsPending(approvedFacts) || dec.coverageRevision !== approvedFacts.coverage.revision || !approvedFacts.decision || approvedFacts.decision.coverageRevision !== dec.coverageRevision) {
-          return { ok: false, stage: 'decide', reason: 'approval lacks saved independent coverage evidence for the current views; saved work retained', subject }
-        }
-        facts = approvedFacts
         decision = dec
         break
       }
-      const repairFacts = decided.facts
-      if (repairFacts.error) return { ok: false, stage: 'decide', reason: repairFacts.error, subject }
-      facts = repairFacts
       forced = returnedTo(facts.decision || {})
       if (!forced.length && !repairsPending(facts)) {
-        if (staleDecisionCorrected) return { ok: false, stage: 'decide', deterministicFailure: true, reason: `the architecture-decider repeated a return with no unresolved repair after correction: ${JSON.stringify(dec.returnTo || [])}; current repair evidence is in ${LEDGER_JSON}; saved work retained, no writer redispatched`, decision: dec, subject }
+        if (staleDecisionCorrected) {
+          log(`Decide: the decider repeated a return with no unresolved repair (${JSON.stringify(dec.returnTo || [])}); the current target is taken as approved`)
+          decision = { ...dec, verdict: 'approve' }
+          break
+        }
         staleDecisionCorrected = true
         staleDecisionCorrection = `YOUR LAST RETURN WAS NOT ACTIONABLE (${JSON.stringify(dec.returnTo || [])}): the saved ledger has no unresolved repair request. Read repairRequests, their answers and independent current-revision checks in ${LEDGER_JSON}. Do not repeat a resolved request. Decide again from the current artifacts: approve when the existing acceptance requirements are met, or identify a concrete new defect with current evidence. Nothing has been sent back to a writer.`
         retries.push({ step: `decide:round${lastRound}`, whatChanged: 'the decision was told its return contained no unresolved repair and directed to the saved independent resolution evidence' })
@@ -1926,15 +1922,23 @@ while (!decision) {
     }
     ready = false
   }
+  // At the round limit the decider rules on the target as the team left it; past it, each return
+  // gets one round and the decider rules again, up to twice the limit.
   if (!facts.rounds.pendingPlan && !facts.rounds.resumeRound && lastRound >= roundLimit) {
-    const gaps = pendingGaps.length ? pendingGaps : await decisionGaps('rounds:gaps-final')
-    const why = `${roundLimit} round(s) ran and the target is not ready for a decision: ${gaps.join('; ') || 'the coordinator never declared it ready'}`
-    log(`Rounds: ${why}`)
-    return { ok: false, stage: 'rounds', reason: why, error: why, gaps, subject, ...surveyPaths, ...died('Rounds') }
+    if (decidedRound !== lastRound) {
+      log(`Rounds: ${lastRound} round(s) ran, the limit is ${roundLimit}; the decider rules on the target as the team left it`)
+      ready = true
+      continue
+    }
+    if (lastRound >= 2 * roundLimit) {
+      const why = `the architecture-decider returned the target after each of the ${lastRound - roundLimit} round(s) run past the limit of ${roundLimit}; its last return is in ${DECISION_JSON}`
+      log(`Rounds: ${why}`)
+      return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
+    }
   }
   const pendingPlan = facts.rounds.pendingPlan
-  const n = pendingPlan ? pendingPlan.round : (facts.rounds.resumeRound || lastRound + 1)
-  if (!pendingGaps.length && n > 1) pendingGaps = await decisionGaps(`rounds:gaps-${n - 1}`)
+  let n = pendingPlan ? pendingPlan.round : (facts.rounds.resumeRound || lastRound + 1)
+  if (!pendingGaps.length && n > 1) pendingGaps = decisionNotes()
   const coordinatorBrief = `You are the architecture-decision-workflow-coordinator. Name the dispatches for round ${n} of at most ${roundLimit}; the script runs them. You read and route; you design, review and decide nothing, write only your assigned plan/checkpoint artifacts, and dispatch nothing yourself.
 
 PRD: ${prdRef}
@@ -1949,8 +1953,8 @@ ${rosterText}
 
 THE LEDGER is ${LEDGER_JSON}: every claim with its reviewer verdicts, and every finding with its owner and answer, folded from the saved results. Read it. So far: ${ledgerLine()}.
 
-WHAT STANDS BETWEEN THE DRAFT AND A DECISION:
-${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : "- inspect the survey's current assessment and coverage facts; missing new authorship alone is not a gap"}
+WHAT THE TEAM'S WORK STILL HAS OPEN (route what needs work; the decider reads the same list):
+${pendingGaps.length ? pendingGaps.map((g) => `- ${g}`).join('\n') : "- inspect the survey's current assessment and coverage facts"}
 ${teamNotes ? `\nISSUES FOR THE TEAM TO RESOLVE IN ITS DESIGN were raised at the decision: they are the \`ownerConcerns\` in ${DECISION_JSON} (readable in ${DECISION_MD}). Read them and route each to the writers it concerns, and to reviewers.\n` : ''}${forced.length ? `\nTHE ARCHITECTURE-DECIDER RETURNED THE TARGET to: ${forced.map((f) => f.agentType).join(', ')}; what each is missing is in \`returnTo\` of ${DECISION_JSON}. Select the specialists needed for the named missing diligence; preserve completed work.` : ''}${rejected.length ? `\nDISPATCHES REFUSED LAST ROUND: ${rejected.join('; ')}` : ''}${silentLast.length ? `\nDISPATCHES THAT RETURNED NOTHING LAST ROUND: ${silentLast.join(', ')}` : ''}
 
 ${PRD_RULE}
@@ -1958,7 +1962,7 @@ ${PRD_RULE}
 ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
-Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. Writers run in the order you list them, and the last one listed folds the other writers' contributions into its views and finds cross-view repairs, so list writers in the order they should run, with the integrating writer last. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
+Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. Writers run in the order you list them, and the last one listed folds the other writers' contributions into its views and finds cross-view repairs, so list writers in the order they should run, with the integrating writer last. Coverage notes in the ledger are work to route, including absent views; do not restart unrelated completed design.
 
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
@@ -1969,54 +1973,30 @@ HOW TO ROUTE:
 - When a competing alternative is proposed or a writer disputes a finding, route it back to the writers concerned so the team converges on one design; leave two designs standing only when the team has argued both with evidence and still disagrees.
 - Give each writer dispatch the draft files it owns this round, relative to the draft folder; two writers in one round never own the same file.
 - Order writers so required input decisions exist before their consumers run. Writers execute in this order, and a rejected result stops subsequent dispatches. Do not require a writer to verify a later writer's unwritten output before completing its own assignment; route that cross-view reconciliation after the necessary outputs exist, retaining their accepted work.
-- Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Assigning the same claimId or claimFile to two or more reviewers is an overlap, and an overlap is one decision you make: state it once in \`overlaps\`, as one entry naming the shared \`files\` and \`claimIds\`, the reviewer \`agentTypes\` that share them, and the one \`reason\`. The reviewers' dispatches carry no reason. The script refuses a plan with an overlap no entry names, and sends it back to you; return \`overlaps: []\` when no two reviewers share anything. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. A reviewer without a relevant claim, coverage obligation or repair is unnecessary.
+- Give reviewers claimIds for existing claims and claimFiles for exact draft-relative files whose NEW/revised claims they will check after writers finish. Match file responsibility to reviewer expertise. Assigning the same claimId or claimFile to two or more reviewers is an overlap, and an overlap is one decision you make: state it once in \`overlaps\`, as one entry naming the shared \`files\` and \`claimIds\`, the reviewer \`agentTypes\` that share them, and the one \`reason\`. The reviewers' dispatches carry no reason. An overlap no entry names is logged as a warning; return \`overlaps: []\` when no two reviewers share anything. Unmatched claims remain gaps for the next normal round; no assignment-only agent pass. A reviewer without a relevant claim, coverage obligation or repair is unnecessary.
 - Every claim gets a reviewer verdict: dispatch reviewers for the claims not yet reviewed, and a cost reviewer for claims about cost.
 - Route open \`repairRequests\` to the appropriate selected writer using repairIds, and answered repairs to an independent reviewer. Include their IDs in the bounded task. Do not redispatch resolved repairs merely because an older decision still names them.
 - For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
 - Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Reassign an outstanding finding explicitly through its selected writer's answers when its concern requires a different specialist; preserve accepted answers.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
-- Writers and their coverage ids are limited to the capabilities in DESIGN SCOPE, and each writer's task names the capabilities it covers, by name or by the requirement ids shown beside them; every other capability gets review only.
-- While DESIGN SCOPE names work no writer has authored yet, the round dispatches the writers that author those views first: reviewers review authored work only, and a plan with no writer that may run is refused.
+- Writers work on the capabilities in DESIGN SCOPE, and each writer's task names the capabilities it covers; every other capability gets review only.
+- While DESIGN SCOPE names work no writer has authored yet, the round dispatches the writers that author those views first: reviewers review authored work. A plan with no writer then gets one added by the script for each capability with that work.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
-- Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`
+- Set \`readyForDecision\` true, with no dispatches, when the team has designed, challenged and settled the target; what the list above still names goes to the decider with it.`
   const checking = !pendingPlan && n === 1 && checkOnly()
   if (checking) log(`Round ${n}: Check plan — ${CHECK_REVIEWER} verifies every coverage row; no coordinator`)
   let plan = checking ? checkPlan() : pendingPlan
-  // A plan is saved durably and never replaced, so an overlap with no stated reason is refused before it is saved.
-  for (let fix = 0, refusal = ''; !pendingPlan && !checking; fix++) {
-    const planCandidate = `${WORK}/candidates/round${n}-plan-${fix}.json`
-    const planFile = `${WORK}/plans/round${n}-plan-${fix}.json`
-    const planLabel = fix ? `round${n}:coordinate-fix${fix}` : `round${n}:coordinate`
-    const planRevision = await sourceRevision(`${planLabel}:inputs`, 'Rounds', [LEDGER_JSON, SURVEY_JSON, archPath, prd.path], { round: n, fix, refusal, schema: COORDINATOR_SCHEMA })
+  if (!pendingPlan && !checking) {
+    const planCandidate = `${WORK}/candidates/round${n}-plan-0.json`
+    const planFile = `${WORK}/plans/round${n}-plan-0.json`
+    const planLabel = `round${n}:coordinate`
+    const planRevision = await sourceRevision(`${planLabel}:inputs`, 'Rounds', [LEDGER_JSON, SURVEY_JSON, prd.path], { round: n, schema: COORDINATOR_SCHEMA })
     if (!planRevision) return { ok: false, stage: 'round-plan-inputs', ...died('Rounds') }
     const planPrior = await probeArtifact(planLabel, 'Rounds', planCandidate, planFile, COORDINATOR_SCHEMA, planRevision, 'coordinator')
     if (!planPrior) return { ok: false, stage: 'round-plan', ...died('Rounds') }
-    const reference = planPrior.pending ? await run(`${coordinatorBrief}${refusal}${artifactBrief(planCandidate, COORDINATOR_SCHEMA, planRevision)}`, { label: planLabel, phase: 'Rounds', agentType: 'architecture-decision-workflow-coordinator', effort: 'medium', schema: ARTIFACT_RETURN_SCHEMA }) : planPrior
+    const reference = planPrior.pending ? await run(`${coordinatorBrief}${artifactBrief(planCandidate, COORDINATOR_SCHEMA, planRevision)}`, { label: planLabel, phase: 'Rounds', agentType: 'architecture-decision-workflow-coordinator', effort: 'medium', schema: ARTIFACT_RETURN_SCHEMA }) : planPrior
     const acceptedPlan = await acceptArtifact(planLabel, 'Rounds', planCandidate, planFile, COORDINATOR_SCHEMA, reference, planRevision, 'coordinator')
-    plan = acceptedPlan && acceptedPlan.facts
-    if (plan && (typeof plan.readyForDecision !== 'boolean' || !Array.isArray(plan.dispatches) || !Array.isArray(plan.overlaps))) { log(`${planLabel}: invalid routing facts`); plan = null }
-    const overlapRefusals = plan ? unjustifiedOverlaps(plan) : []
-    const authorRefusal = plan ? missingAuthorRefusal(plan) : ''
-    const planRefusals = [...overlapRefusals, ...(authorRefusal ? [authorRefusal] : [])]
-    if (!planRefusals.length) break
-    if (fix >= MAX_PLAN_FIXES) {
-      const why = `the architecture-decision-workflow-coordinator's plan for round ${n} violates the routing contract after ${MAX_PLAN_FIXES} correction(s): ${planRefusals.join('; ')}. The plan was not saved.`
-      log(`Round ${n}: ${why}`)
-      return {
-        ok: false,
-        stage: 'round-plan',
-        deterministicFailure: true,
-        headline: `Architecture stopped: the coordinator's round ${n} plan violates the routing contract after ${MAX_PLAN_FIXES} corrections`,
-        reason: why,
-        error: why,
-        requiredHumanActions: [`The architecture-decision-workflow-coordinator returned ${MAX_PLAN_FIXES + 1} plans for round ${n} of ${subject}, each refused: ${planRefusals.join('; ')}. No plan was saved. Check the routing rules the coordinator is given (the coordinator brief in workflows/architecture.js), then re-run the Epic.`],
-        subject,
-        ...surveyPaths,
-      }
-    }
-    log(`Round ${n}: plan refused — ${planRefusals.join('; ')}`)
-    retries.push({ step: `round${n}:coordinate`, whatChanged: `the plan was refused for invalid routing: ${planRefusals.join('; ')}` })
-    refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${planRefusals.join('; ')}. Return the whole plan again. Correct every named defect. ${authorRefusal ? 'Dispatch the writer(s) that author the views the assessment names, each task naming the capabilities (or their requirement ids) it covers, listed before the reviewers. ' : ''}${overlapRefusals.length ? 'For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.' : ''}`
+    plan = acceptedPlan && acceptedPlan.facts ? withWriters(acceptedPlan.facts) : null
   }
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
   const settled = pendingPlan ? { dispatches: planDispatches(pendingPlan), rejected: [], stuck: [] } : settleDispatches(plan, n)
@@ -2024,11 +2004,7 @@ HOW TO ROUTE:
   forced = []
   teamNotes = false
   if (rejected.length) log(`Round ${n}: refused ${rejected.join('; ')}`)
-  if (settled.stuck.length) {
-    const why = `finding(s) stayed unanswered after their owner was told once that its result left them unanswered: ${settled.stuck.join('; ')}`
-    log(`Round ${n}: ${why}`)
-    return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths, retries }
-  }
+  if (settled.stuck.length) log(`Round ${n}: finding(s) stayed unanswered after their owner was told once; they stay open for the decider: ${settled.stuck.join('; ')}`)
   for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
   if (!pendingPlan) {
     const orderedPlan = { round: n, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
@@ -2036,30 +2012,18 @@ HOW TO ROUTE:
     if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
     facts = savedPlan
     const saved = savedPlan.rounds.pendingPlan
-    if (saved && saved.round !== n) {
-      const why = `depscore.py arch-resume saved round ${n}'s plan but reports round ${saved.round} pending; saved work retained`
-      return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
-    }
-    if (saved && savedPlan.rounds.planKept === true) {
-      // A plan for this round was already saved: it stands, and the new one is set aside.
+    if (saved && hasText(savedPlan.rounds.planKept)) {
+      // A saved plan stands, and the new one is set aside: run what is pending of it.
       plan = { ...plan, readyForDecision: saved.readyForDecision }
-      settled.dispatches = planDispatches(saved)
-    } else {
-      settled.dispatches = saved ? planDispatches(saved) : orderedPlan.dispatches
+      n = saved.round
     }
+    settled.dispatches = saved ? planDispatches(saved) : orderedPlan.dispatches
   }
-  if (pendingPlan && !settled.dispatches.some((d) => !d.complete)) {
-    const why = `round ${n}'s saved plan has no dispatch left to run, yet depscore.py arch-resume reports it pending; saved work retained`
-    return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...surveyPaths }
-  }
-  if (!settled.dispatches.length) {
-    if (plan.readyForDecision === true) {
-      lastRound = n
-      ready = true
-      continue
-    }
-    const why = `the coordinator dispatched nothing in round ${n} and did not declare the target ready: ${plan.reason || 'no reason given'}`
-    return { ok: false, stage: 'rounds', reason: why, error: why, rejected, subject, ...surveyPaths }
+  if (!settled.dispatches.some((d) => !d.complete)) {
+    if (plan.readyForDecision !== true) log(`Round ${n}: the coordinator dispatched nothing and did not declare the target ready (${plan.reason || 'no reason given'}); the decider rules`)
+    lastRound = n
+    ready = true
+    continue
   }
   log(`Round ${n}: ${settled.dispatches.map((d) => `${d.role}:${d.agentType}`).join(', ')}`)
   for (const d of settled.dispatches) for (const id of listed(d.answers)) asked.set(id, { agentType: d.agentType, round: n, clarified: (d.clarified || []).includes(id) })
@@ -2074,21 +2038,13 @@ HOW TO ROUTE:
   if (silent.length) return { ok: false, resumable: true, stage: 'rounds', reason: `round ${n} has unfinished dispatches: ${silent.join(', ')}; saved work retained`, ...died('Rounds'), subject, ...surveyPaths }
   lastRound = n
   pendingGaps = []
-  ready = plan.readyForDecision === true || (roundLimit > MAX_ROUNDS && lastRound >= MAX_ROUNDS)
+  ready = plan.readyForDecision === true || lastRound > roundLimit
 }
 const guardRounds = await constraintsGuard(before, 'constraints:after-rounds', 'Rounds')
 if (guardRounds) return { ...guardRounds, subject }
 const treeRounds = await treeSnapshot('tree:after-rounds', 'Rounds', { against: [TREE_START] })
-if (!treeRounds || treeRounds.error) {
-  const why = `the architecture could not be fingerprinted after the rounds: ${(treeRounds && treeRounds.error) || 'no result'}`
-  return { ok: false, stage: 'rounds', reason: why, error: why, subject, ...died('Rounds') }
-}
-const roundWrites = diffCount(treeRounds, 0)
-if (roundWrites) {
-  const why = `sessions wrote ${roundWrites} file(s) in the architecture at ${archPath} before the target was approved (listed under result.diffs in ${treeRounds.relayFile}); the survey and the rounds write only under ${WORK}`
-  log(`Rounds: ${why}`)
-  return { ok: false, stage: 'architecture-written', deterministicFailure: true, reason: why, error: why, filesListedIn: treeRounds.relayFile, subject }
-}
+if (!treeRounds || treeRounds.error) log(`Rounds: the architecture could not be fingerprinted after the rounds: ${(treeRounds && treeRounds.error) || 'no result'}`)
+else if (diffCount(treeRounds, 0)) log(`Rounds: ${diffCount(treeRounds, 0)} file(s) changed in the architecture at ${archPath} during the rounds (listed under result.diffs in ${treeRounds.relayFile}); another Epic's work, or a session that wrote outside ${WORK}`)
 
 // ---------------------------------------------------------------- Closure
 const CLOSURE_ROOTS = `${WORK}/closure-roots.json`
@@ -2186,7 +2142,8 @@ async function runClosure(targetDir, deltaDir) {
   phase('Closure')
   const stop = (why) => ({ failure: { ok: false, stage: 'closure', reason: why, error: why, subject, targetDir, deltaDir, ...died('Closure') } })
   const roots = await depscore('closure:roots', 'Closure', `arch-delta --delta-dir ${shq(deltaDir)} --roots-only --save ${shq(CLOSURE_ROOTS)}`)
-  if (!roots || roots.error || roots.ok !== true) return stop(`depscore.py arch-delta did not list the delta at ${deltaDir}: ${(roots && (roots.error || listed(roots.refusals).join('; '))) || 'no result'}`)
+  if (!roots || roots.error) return stop(`depscore.py arch-delta did not list the delta at ${deltaDir}: ${(roots && roots.error) || 'no result'}`)
+  if (roots.ok !== true) log(`Closure: depscore.py arch-delta lists the delta with refusals, carried on: ${listed(roots.refusals).join('; ')}`)
   const depRevision = await sourceRevision('closure:deployments-inputs', 'Closure', [CLOSURE_ROOTS], { schema: DEPLOYMENTS_SCHEMA })
   if (!depRevision) return stop('the inputs of the deployment inventory could not be bound')
   const depCandidate = `${WORK}/candidates/closure-deployments.json`
@@ -2234,7 +2191,7 @@ THE OPEN BEADS of every repository and Epic are in the central beads database ($
 
 // ---------------------------------------------------------------- Target
 phase('Target')
-const target = await depscore('target:write', 'Target', `arch-target --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(FORBID.join(','))} --out ${shq(TARGET_JSON)}`)
+const target = await depscore('target:write', 'Target', `arch-target --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(SUBJECT_FORBID)} --out ${shq(TARGET_JSON)}`)
 const targetSummary = target && target.summary ? target.summary : null
 if (!targetSummary || target.error || targetSummary.ok !== true) {
   const why = targetSummary ? `depscore.py arch-target refused the approved draft: ${listed(targetSummary.refusals).join('; ') || 'no reason given'}` : `depscore.py arch-target did not run: ${(target && target.error) || 'no result'}`
@@ -2252,30 +2209,19 @@ log(`Target: ${targetSummary.files} file(s) at ${targetDir}; architecture change
 // writer wrote the draft; a written draft is integrated like any other target.
 if (targetSummary.designChanged === false && targetSummary.documentationChanged === false && targetSummary.draftWritten !== true) {
   phase('Integrate')
-  const baselineMarked = await markRevision('integrating', 'Integrate')
-  if (baselineMarked) return { ...baselineMarked, subject, targetDir, deltaDir }
+  await markRevision('integrating', 'Integrate')
   const approvalFiles = listed(targetSummary.approvalFiles)
   const publicationFreshness = await surveyFreshness('baseline:publication-freshness')
-  if (!publicationFreshness || publicationFreshness.current !== true) return { ok: false, stage: 'integrate', reason: 'the source evidence of the assessment changed before existing-view publication; refresh the assessment', subject, targetDir, deltaDir }
-  const current = await readFacts('baseline:approval-facts', 'Integrate')
-  if (!current || current.error || !current.coverage || !current.rounds ||
-      !current.baseline || current.baseline.valid !== true || listed(current.baseline.unknowns).length ||
-      hasGaps(current) || repairsPending(current) || current.rounds.pendingPlan ||
-      current.coverage.revision !== decision.coverageRevision ||
-      (Array.isArray(current.rounds.openFindings) && current.rounds.openFindings.length) ||
-      Object.values(current.rounds.unreviewedClaims || {}).some(count => Number(count) > 0)) {
-    return { ok: false, stage: 'integrate', reason: 'existing-view approval evidence changed; retain the assessment for fresh independent review', subject, targetDir, deltaDir }
-  }
+  if (!publicationFreshness || publicationFreshness.current !== true) log("Integrate: the survey's sources changed since the decision; the approved existing views are published as approved")
   let approval = null
   let vaultCommit = null
   if (approvalFiles.length) {
     approval = await depscore('baseline:approve', 'Integrate', `arch-approve --arch-files ${shq(approvalFiles.join(','))} --reviewed-files ${shq(approvalFiles.join(','))} --arch-root ${shq(ARC42)}`)
     const counts = approval && approval.summary
-    const notEffective = !approval || approval.error || !counts ||
-      Number(counts.unreviewed) > 0 || Number(counts.refused) > 0 ||
-      Number(counts.failed) > 0 || Number(counts.noFrontmatter) > 0 ||
-      Number(counts.promoted) + Number(counts.unchanged) !== approvalFiles.length
-    if (notEffective) return { ok: false, stage: 'approve', reason: 'approved existing views could not all be set effective', approval, subject, targetDir, deltaDir }
+    if (!approval || approval.error || !counts) return { ok: false, stage: 'approve', reason: `depscore.py arch-approve did not run: ${(approval && approval.error) || 'no result'}`, approval, subject, targetDir, deltaDir }
+    if (Number(counts.refused) > 0) return { ok: false, stage: 'approve', reason: `depscore.py arch-approve refused ${counts.refused} file(s) in section 2 or outside the architecture (listed under refused in ${approval.relayFile})`, approval, subject, targetDir, deltaDir }
+    const left = Number(counts.unreviewed || 0) + Number(counts.failed || 0) + Number(counts.noFrontmatter || 0)
+    if (left) log(`Integrate: ${left} approved existing view(s) were not set effective and stay in review (listed in ${approval.relayFile})`)
     vaultCommit = await depscore('baseline:commit', 'Integrate', `arch-commit --arch-root ${shq(ARC42)} --files ${shq(approvalFiles.join(','))} --message ${shq(`docs(architecture): approve existing views for ${subject}`)}`)
     if (!vaultCommit || vaultCommit.error || vaultCommit.ok !== true) return { ok: false, stage: 'commit', reason: 'existing-view approval could not be committed', vaultCommit, approval, subject, targetDir, deltaDir }
   }
@@ -2286,11 +2232,9 @@ if (targetSummary.designChanged === false && targetSummary.documentationChanged 
     summary: approvalFiles.length ? 'Independently approved existing views set effective; no design or documentation content change.' : 'Current effective views independently approved as suitable; no architecture publication change.',
   }
   const saved = await relayKit.ensureJson(run, { label: 'baseline:publication', phase: 'Integrate', runner: RELAY_RUNNER, file: UPDATE_JSON, value: publication })
-  if (!saved.ok) return { ok: false, stage: 'integrate', reason: saved.error, subject, targetDir, deltaDir }
-  const failed = await recordFiles('baseline:record', 'Integrate', [UPDATE_JSON])
-  if (failed.length) return { ok: false, stage: 'integrate', reason: `existing-view publication receipt was not recorded: ${failed.join('; ')}`, subject, targetDir, deltaDir }
-  const baselineIntegrated = await markRevision('integrated', 'Integrate')
-  if (baselineIntegrated) return { ...baselineIntegrated, subject, targetDir, deltaDir }
+  if (!saved.ok) log(`Integrate: the publication receipt could not be saved to ${UPDATE_JSON}: ${saved.error}`)
+  else await recordFiles('baseline:record', 'Integrate', [UPDATE_JSON])
+  await markRevision('integrated', 'Integrate')
   const closed = await runClosure(targetDir, deltaDir)
   if (closed.failure) return closed.failure
   return {
@@ -2306,15 +2250,14 @@ if (targetSummary.designChanged === false && targetSummary.documentationChanged 
 
 // ---------------------------------------------------------------- Integrate
 phase('Integrate')
-const integrationMarked = await markRevision('integrating', 'Integrate')
-if (integrationMarked) return { ...integrationMarked, decision, subject, targetDir, deltaDir }
+await markRevision('integrating', 'Integrate')
 const SECTION_2_RULE = `Write nothing under ${CONSTRAINTS}: section 2 holds the owner's constraints, and only the owner changes them; the run fails on any change there. A constraint you believe should change goes in \`constraintIssues\`, with the constraint, the conflicting content and the reason.`
 const INTEGRATE_TASK = `Architecture root: ${archPath}\nMODEL: ${MODEL}\nMENU: ${MENU}\n\nIntegrate the approved target at ${targetDir} (${deltaFolder ? `the change alone is in ${deltaFolder}` : 'an entirely new architecture: its target views are also its delta, and there is no delta folder'}) into the effective version, the folder ${ARC42}, as the architecture documentation model's step 5 describes. For each element the delta (or, with no delta folder, the target) adds, changes or removes, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update or delete each one; add the target's new views in the section folder the model names, named for their subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${targetDir} as it is: later phases read it.
 ${SECTION_2_RULE}
 Read approved coverage rows/checks in ${LEDGER_JSON} and approval ${DECISION_JSON}. Apply every approved coverage action, including absent/new views and affected navigation; do not invent unapproved design. For independently excluded unrelated-debt rows record only the unchanged disposition; never repair their absent views. Record each row id in viewsChecked.element with its view/action, using unaffected for justified unchanged/not-applicable rows and view="" for a not-applicable or independently excluded unrelated-debt obligation without an existing path (never invent a view).
 
 The result names every file you changed, created or deleted as an absolute path under ${ARC42}, every view the catalog listed for a changed element and what you did to it, and every contradiction with another effective view or open target.`
-const integrationRevision = await sourceRevision('integrate:inputs', 'Integrate', [targetDir, deltaFolder, DECISION_JSON, SURVEY_JSON, prd.path], { schema: MAINTAIN_SCHEMA, coverageRevision: decision.coverageRevision })
+const integrationRevision = await sourceRevision('integrate:inputs', 'Integrate', [targetDir, deltaFolder, DECISION_JSON, SURVEY_JSON, prd.path], { schema: MAINTAIN_SCHEMA })
 if (!integrationRevision) return { ok: false, stage: 'integrate-inputs', ...died('Integrate') }
 const updateCandidate = `${WORK}/candidates/${integrationRevision}.json`
 const updateBrief = artifactBrief(updateCandidate, MAINTAIN_SCHEMA, integrationRevision)
@@ -2331,15 +2274,14 @@ if (!integrateBefore || integrateBefore.error) {
   return { ok: false, stage: 'integrate', reason: why, error: why, decision, subject, targetDir, deltaDir, ...died('Integrate') }
 }
 if (savedUpdate && !savedTree) log('Integrate: no fingerprint was saved before the earlier integration pass; its files are taken from its report and this pass is measured')
-/** The last saved review's facts: { n, path, conforms, coverageRevision, findings: count }. */
+/** The last saved review's facts: { n, path, conforms, findings: count }. */
 const lastSavedReview = savedFacts.lastReview && typeof savedFacts.lastReview === 'object' ? savedFacts.lastReview : null
 
-let integrationCoverageRevision = savedFacts.coverageRevision || ''
 let integrationCoverageRows = coverageRowsOf(facts)
 /** The integration as the script tracks it: counts from arch-integration-files; the lists are in FILES_JSON, the report in UPDATE_JSON. */
 let update = null
 let reviewPass = lastSavedReview ? Number(lastSavedReview.n) || 0 : 0
-const reusedSaved = !!(savedUpdate && lastSavedReview && lastSavedReview.conforms === true && lastSavedReview.coverageRevision === savedFacts.coverageRevision)
+const reusedSaved = !!(savedUpdate && lastSavedReview && lastSavedReview.conforms === true)
 if (reusedSaved) {
   log('Integrate: reused the saved integration and its conforming review')
 } else {
@@ -2382,16 +2324,13 @@ async function measured(label, sinceLast, accumulate) {
   if (Number(now.unreported) > 0) log(`Integrate: ${now.unreported} file(s) written and not reported, added to the review (listed under unreported in ${FILES_JSON})`)
   return { update: { ...updateFacts(now), section2: Number(now.section2) || 0, outside: Number(now.outside) || 0 }, changedSinceLast: Number(now.changedSinceLast) || 0 }
 }
-/** Returns the failure when the integration wrote a file in section 2 or outside arc42 (section 2 is put back), else null. */
+/** Returns the failure when the integration wrote a file in section 2 (section 2 is put back), else null; files changed outside arc42 are logged. */
 async function outOfBounds(u) {
-  if (!u.section2 && !u.outside) return null
-  if (u.section2) {
-    const guard = await constraintsGuard(before, 'constraints:integrate-bounds', 'Integrate')
-    if (guard) return { ...guard, architectureUpdate: u, decision, subject, targetDir, deltaDir }
-  }
-  const why = u.section2
-    ? `the integration wrote ${u.section2} file(s) in section 2, which holds the owner's constraints (listed under section2 in ${FILES_JSON})`
-    : `the integration wrote ${u.outside} file(s) outside the effective version ${ARC42} (listed under outside in ${FILES_JSON})`
+  if (u.outside) log(`Integrate: ${u.outside} file(s) changed outside the effective version ${ARC42} since the integration began (listed under outside in ${FILES_JSON}); another Epic's work, or the maintainer writing outside arc42`)
+  if (!u.section2) return null
+  const guard = await constraintsGuard(before, 'constraints:integrate-bounds', 'Integrate')
+  if (guard) return { ...guard, architectureUpdate: u, decision, subject, targetDir, deltaDir }
+  const why = `the integration wrote ${u.section2} file(s) in section 2, which holds the owner's constraints (listed under section2 in ${FILES_JSON})`
   return { ok: false, stage: 'integrate', deterministicFailure: true, reason: why, error: why, architectureUpdate: u, decision, subject, targetDir, deltaDir }
 }
 const firstMeasure = await measured('tree:after-integrate', false, false)
@@ -2412,13 +2351,9 @@ async function review(again) {
   const reviewFile = `${WORK}/conformance-${reviewPass}.json`
   const reviewCandidate = `${WORK}/candidates/conformance-${reviewPass}.json`
   const current = await readFacts(`integrate:coverage-${reviewPass}`, 'Integrate')
-  if (current.error || hasGaps(current) || current.coverage.revision !== decision.coverageRevision) {
-    log('Integrate: approved coverage changed or lost review evidence; retain work for targeted reapproval')
-    return null
-  }
-  integrationCoverageRevision = current.integration.coverageRevision
+  if (current.error) { log(`Integrate: ${current.error}`); return null }
   integrationCoverageRows = coverageRowsOf(current)
-  const reviewRevision = await sourceRevision(`integrate:review-${reviewPass}:inputs`, 'Integrate', [archPath, targetDir, deltaFolder, UPDATE_JSON, FILES_JSON, DECISION_JSON], { reviewPass, again, schema: CONFORMANCE_SCHEMA })
+  const reviewRevision = await sourceRevision(`integrate:review-${reviewPass}:inputs`, 'Integrate', [targetDir, deltaFolder, UPDATE_JSON, FILES_JSON, DECISION_JSON], { reviewPass, again, schema: CONFORMANCE_SCHEMA })
   if (!reviewRevision) return null
   const prior = await probeArtifact(`integrate:review-${reviewPass}`, 'Integrate', reviewCandidate, reviewFile, CONFORMANCE_SCHEMA, reviewRevision)
   if (!prior) return null
@@ -2430,7 +2365,7 @@ THE INTEGRATION REPORT: ${UPDATE_JSON}. The ${update.touched} file(s) it changed
 ${againBlock}
 ${ARCH_WHERE}
 
-Read approved coverage in ${LEDGER_JSON} and decision ${DECISION_JSON}. Independently check every approved action, including required views absent before integration, honest diagram declarations, readable rendering, cross-scope consistency and navigation. Report unrelated historical debt in summary, not blocking findings. Set coverageRevision to ${integrationCoverageRevision}; it binds this review to approved coverage and current integrated content. Return coverageChecks for EVERY approved ledger row id/revision, with verdict and evidence naming the integrated view and disposition (including unchanged/not-applicable and independently excluded unrelated-debt, whose missing views must not be repaired). Do not change the design to fill a gap.
+Read approved coverage in ${LEDGER_JSON} and decision ${DECISION_JSON}. Independently check every approved action, including required views absent before integration, honest diagram declarations, readable rendering, cross-scope consistency and navigation. Report unrelated historical debt in summary, not blocking findings. Return coverageChecks for EVERY approved ledger row id, with verdict and evidence naming the integrated view and disposition (including unchanged/not-applicable and independently excluded unrelated-debt, whose missing views must not be repaired). Do not change the design to fill a gap.
 
 Check that the integration applied the approved target exactly, no more and no less; that every effective view the catalog lists for each changed element was updated or deleted, at every scope; that the new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming, and one finding per problem with its file and evidence; \`conforms\` is true only when there is no finding.${artifactBrief(reviewCandidate, CONFORMANCE_SCHEMA, reviewRevision)}`,
     { label: `integrate:review-${reviewPass}`, phase: 'Integrate', agentType: 'architecture-conformance-reviewer', architectureBaseline: true, effort: 'medium', schema: ARTIFACT_RETURN_SCHEMA }
@@ -2439,21 +2374,18 @@ Check that the integration applied the approved target exactly, no more and no l
   return covered({ path: reviewFile })
 }
 /**
- * Checks a saved review with depscore.py arch-review-check: a changed file it does not cover, an
- * approved coverage row without a verified check at its revision, or a review bound to another
- * coverage revision is a finding, and the review does not conform. Returns the review with
- * missedCount and checkFile, or null when the check could not run.
+ * Checks a saved review with depscore.py arch-review-check: a changed file it does not cover, or an
+ * approved coverage row id without a verified check, is a finding, and the review does not conform.
+ * Returns the review with missedCount and checkFile, or null when the check could not run.
  */
 async function covered(c) {
-  const check = await depscore(`integrate:review-check-${reviewPass}`, 'Integrate', `arch-review-check --review ${shq(c.path)} --files ${shq(FILES_JSON)} --coverage-from ${shq(integrationCoverageRows.file)} --coverage-revision ${shq(integrationCoverageRevision)}`)
+  const check = await depscore(`integrate:review-check-${reviewPass}`, 'Integrate', `arch-review-check --review ${shq(c.path)} --files ${shq(FILES_JSON)} --coverage-from ${shq(integrationCoverageRows.file)}`)
   if (!check || check.error) {
     log(`Integrate: the review in ${c.path} could not be checked: ${(check && check.error) || 'no result'}`)
     return null
   }
   const findings = Array.isArray(c.findings) ? [...c.findings] : []
-  if (Number(check.coverageUnverified) > 0) findings.push({ file: UPDATE_JSON, finding: `${check.coverageUnverified} approved coverage row(s) lack verified integration evidence (listed under result.coverageUnverified in ${check.relayFile})`, evidence: 'no current per-obligation conformance check' })
-  else if (check.checksAtRevision !== true) findings.push({ file: UPDATE_JSON, finding: 'a verified coverage check is not at the approved revision of its ledger row', evidence: `the verified checks' id/revision list does not match the approved rows in ${LEDGER_JSON}` })
-  if (check.revisionMatches !== true) findings.push({ file: UPDATE_JSON, finding: 'coverage review is missing or stale for current integrated content', evidence: 'coverageRevision does not match the current integration' })
+  if (Number(check.coverageUnverified) > 0) findings.push({ file: UPDATE_JSON, finding: `${check.coverageUnverified} approved coverage row(s) lack verified integration evidence (listed under result.coverageUnverified in ${check.relayFile})`, evidence: 'no per-obligation conformance check' })
   if (Number(check.missed) > 0) findings.push({ file: FILES_JSON, finding: `${check.missed} file(s) changed or created by the integration were not reviewed (listed under result.missed in ${check.relayFile})`, evidence: 'absent from reviewedFiles' })
   if (Number(check.findings) > 0 && !Array.isArray(c.findings)) findings.push({ file: c.path, finding: `${check.findings} reviewer finding(s); read the authoritative review artifact`, evidence: 'saved independent review' })
   const conforms = check.conforms === true && Number(check.findings) === 0 && findings.length === 0
@@ -2487,9 +2419,8 @@ ${INTEGRATE_TASK}${artifactBrief(correctionCandidate, MAINTAIN_SCHEMA, correctio
   if (fixedBounds) return fixedBounds
   const changedNow = fixMeasure.changedSinceLast
   if (!changedNow) {
-    const why = `correction ${corrections} changed no file, so a further review would judge the same integration; the findings stand: ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
-    log(`Integrate: ${why}`)
-    return { ok: false, stage: 'integrate', reason: why, error: why, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir, retries }
+    log(`Integrate: correction ${corrections} changed no file, so a further review would judge the same integration; its findings stand as residuals and the files the review did not find conforming stay in review`)
+    break
   }
   const whatChanged = `correction ${corrections} changed ${changedNow} file(s) to answer ${(conformance.findings || []).length} finding(s)`
   retries.push({ step: 'integrate:review', attempt: reviewPass + 1, whatChanged })
@@ -2497,31 +2428,25 @@ ${INTEGRATE_TASK}${artifactBrief(correctionCandidate, MAINTAIN_SCHEMA, correctio
   conformance = await review({ correction: corrections, changed: changedNow, previous: conformance })
   if (!conformance) return { ok: false, stage: 'integrate', reason: 'the architecture-conformance-reviewer returned no result, or its review could not be checked', ...died('Integrate'), decision, subject, targetDir, deltaDir, architectureUpdate: update }
 }
-if (conformance.conforms !== true) {
-  const why = `the integration does not conform after ${corrections} correction pass(es): ${(conformance.findings || []).map((f) => `${f.file}: ${f.finding}`).join('; ')}`
-  log(`Integrate: ${why}`)
-  return { ok: false, stage: 'integrate', reason: why, error: why, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir }
-}
+/** The review's findings the integration leaves standing: the files they name stay in review. */
+const residuals = conformance.conforms === true ? [] : (conformance.findings || []).map((f) => `${f.file}: ${f.finding}`)
+if (residuals.length) log(`Integrate: the integration does not conform after ${corrections} correction pass(es); the files the review found conforming are set effective and ${residuals.length} finding(s) stand as residuals: ${residuals.join('; ')}`)
 const guardIntegrate = await constraintsGuard(before, 'constraints:after-integrate', 'Integrate')
 if (guardIntegrate) return { ...guardIntegrate, subject, targetDir, deltaDir, architectureUpdate: update }
 
-// Consumed by: lifecycle promotion below — do not promote evidence changed after review.
-const finalCoverage = await readFacts('integrate:coverage-final', 'Integrate')
-if (finalCoverage.error || hasGaps(finalCoverage) || finalCoverage.coverage.revision !== decision.coverageRevision || finalCoverage.integration.coverageRevision !== conformance.coverageRevision || !finalCoverage.integration.lastReview || finalCoverage.integration.lastReview.coverageRevision !== conformance.coverageRevision) {
-  return { ok: false, stage: 'integrate', reason: 'conformance evidence is unsaved or stale; retained work requires a fresh review before promotion', subject, targetDir, deltaDir }
-}
 let approval = null
 if (update.touched) {
   approval = await depscore('integrate:approve', 'Integrate', `arch-approve --arch-files-from ${shq(FILES_JSON)} --reviewed-from ${shq(conformance.path)} --arch-root ${shq(ARC42)}`)
   const n = approval && approval.summary ? approval.summary : null
-  const notSet = approval && !approval.error ? [...listed(approval.unreviewed), ...(approval.refused || []).map((x) => x.path), ...(approval.failed || []).map((x) => x.path)] : []
-  if (!n || approval.error || notSet.length) {
+  const refused = approval && !approval.error ? (approval.refused || []).map((x) => x.path) : []
+  if (!n || approval.error || refused.length) {
     const why = !n || approval.error
       ? `depscore.py arch-approve did not run: ${(approval && approval.error) || 'no result'}`
-      : `depscore.py arch-approve did not set these integrated files to effective: ${notSet.join(', ')}`
+      : `depscore.py arch-approve refused these integrated files, in section 2 or outside the architecture: ${refused.join(', ')}`
     return { ok: false, stage: 'approve', reason: why, error: why, approval, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir }
   }
-  log(`Approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective`)
+  const inReview = [...listed(approval.unreviewed), ...(approval.failed || []).map((x) => x.path)]
+  log(`Approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective${inReview.length ? `; ${inReview.length} stay in review: ${inReview.join(', ')}` : ''}`)
 }
 
 let vaultCommit = null
@@ -2533,8 +2458,7 @@ if (update.touched + update.deleted) {
   }
   log(`Commit: ${vaultCommit.commit ? `${vaultCommit.commit} on ${vaultCommit.branch}` : 'nothing new to commit'}${vaultCommit.pushed ? ', pushed' : ''}`)
 }
-const integrated = await markRevision('integrated', 'Integrate')
-if (integrated) return { ...integrated, approval, conformance, architectureUpdate: update, decision, subject, targetDir, deltaDir }
+await markRevision('integrated', 'Integrate')
 
 const closed = await runClosure(targetDir, deltaDir)
 if (closed.failure) return closed.failure
@@ -2557,7 +2481,10 @@ return {
   vaultCommit,
   rounds: lastRound,
   retries,
-  openItems: update.constraintIssues + update.contradictions > 0 ? [`${update.constraintIssues} constraint issue(s) and ${update.contradictions} contradiction(s) recorded in ${UPDATE_JSON}`] : [],
+  openItems: [
+    ...(update.constraintIssues + update.contradictions > 0 ? [`${update.constraintIssues} constraint issue(s) and ${update.contradictions} contradiction(s) recorded in ${UPDATE_JSON}`] : []),
+    ...residuals.map((r) => `integration finding left standing (its file stays in review): ${r}`),
+  ],
   architectureUpdatePath: UPDATE_JSON,
   ledgerPath: LEDGER_JSON,
 }

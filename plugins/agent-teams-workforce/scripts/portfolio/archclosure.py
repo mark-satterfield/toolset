@@ -78,26 +78,39 @@ def _cyclic(requires: dict[str, list[str]]) -> list[str]:
     )
 
 
-def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PLR0912, PLR0915 - one validator, read top to bottom
-    """Check a prerequisite closure against the delta's root items.
+def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bottom
+    closure: object,
+    roots: list[dict],
+    *,
+    is_open: Callable[[str], bool] | None = None,
+) -> dict:
+    """Read a prerequisite closure against the delta's root items.
 
     Every prerequisite names an element no root item shows, a state (`absent`, `stale` or
     `planned`), the effective views that show it, and `requiredBy`: the root items (by id or
     element) or other prerequisites (by element) that need it. `requires` names what it needs
-    in turn. `absent` and `stale` cite evidence; `stale` names the repository that deploys
-    it; `planned` names the bead that plans it; `absent` with no deploying repository names
-    the repository to create. `rootEdges` record that one root item needs another. The graph
-    of `requires` must be acyclic.
+    in turn. `rootEdges` record that one root item needs another. The only refusals are a
+    closure that is not an object with a `prerequisites` list and a `requires` graph with a
+    cycle. Everything else is normalized and named in `warnings`: an entry with no element,
+    one a root item already is, or a second entry for one element is dropped; a reference to
+    no known item, or to itself, is dropped; an empty `requiredBy` means every root item; a
+    state that is not one of STATES is `absent`; a `planned` prerequisite whose bead is not
+    open (with `is_open`) is `absent`; missing views, evidence and repositories are noted for
+    repo scoping to place.
 
     Args:
         closure: The parsed closure.
         roots: The delta's root items, each with `id` and `element`.
+        is_open: Whether a bead is open; when given, a `planned` prerequisite whose bead is not
+            open becomes `absent`.
 
     Returns:
-        `valid`, the refusals, the prerequisites with `requiredBy` and `requires` resolved to
-        node names (a root's id, or a prerequisite's element), and each root's requirements.
+        `valid`, the refusals, the warnings, the prerequisites with `requiredBy` and
+        `requires` resolved to node names (a root's id, or a prerequisite's element), and each
+        root's requirements.
     """
     refusals: list[str] = []
+    warnings: list[str] = []
     if not isinstance(closure, dict):
         return {"valid": False, "refusals": ["the closure is not a JSON object"]}
     root_of: dict[str, str] = {}
@@ -113,15 +126,17 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
     prereqs: dict[str, dict] = {}
     for n, raw in enumerate(entries, start=1):
         if not isinstance(raw, dict) or not _text(raw.get("element")):
-            refusals.append(f"prerequisite {n} names no element")
+            warnings.append(f"prerequisite {n} names no element and was dropped")
             continue
         element = _text(raw["element"])
         key = element.casefold()
         if key in root_of:
-            refusals.append(f"{element} is already delta item {root_of[key]}")
+            warnings.append(
+                f"{element} is already delta item {root_of[key]}; its prerequisite entry was dropped"
+            )
             continue
         if key in prereqs:
-            refusals.append(f"{element} is listed twice")
+            warnings.append(f"{element} is listed twice; the first entry is kept")
             continue
         prereqs[key] = {"element": element, **raw}
     name_of = {k: p["element"] for k, p in prereqs.items()}
@@ -132,8 +147,8 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
             return root_of[key]
         if key in name_of:
             return name_of[key]
-        refusals.append(
-            f"{owner}: `{field}` names {ref}, which is no delta item or prerequisite"
+        warnings.append(
+            f"{owner}: `{field}` names {ref}, which is no delta item or prerequisite; dropped"
         )
         return None
 
@@ -151,41 +166,52 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
             p.get("repository") if isinstance(p.get("repository"), dict) else None
         )
         if state not in STATES:
-            refusals.append(
-                f"{element}: state {state or 'none'} is not one of {', '.join(STATES)}"
+            warnings.append(f"{element}: state {state or 'none'} is taken as absent")
+            state = "absent"
+        if (
+            state == "planned"
+            and planned_by
+            and is_open is not None
+            and not is_open(planned_by)
+        ):
+            warnings.append(
+                f"{element} is planned by {planned_by}, which is not an open bead; it is absent"
             )
+            state = "absent"
+            planned_by = None
         if not views:
-            refusals.append(f"{element} names no effective view that shows it")
-        refusals.extend(
+            warnings.append(f"{element} names no effective view that shows it")
+        warnings.extend(
             f"{element}: view {v} does not exist"
             for v in views
             if not Path(v).is_file()
         )
         if state in ("absent", "stale") and not evidence:
-            refusals.append(f"{element} is {state} and cites no evidence")
+            warnings.append(f"{element} is {state} and cites no evidence")
         if state == "stale" and not deployed_by:
-            refusals.append(
+            warnings.append(
                 f"{element} is stale and names no repository that deploys it"
             )
         if state == "planned" and not planned_by:
-            refusals.append(f"{element} is planned and names no bead that plans it")
+            warnings.append(f"{element} is planned and names no bead that plans it")
         if (
             state == "absent"
             and not deployed_by
             and not (repository and _text(repository.get("name")))
         ):
-            refusals.append(
-                f"{element} is absent, no repository deploys it, and it names no repository to create"
+            warnings.append(
+                f"{element} is absent and names no repository that deploys it or is to be created; repo scoping places it"
             )
+        named_by = _texts(p.get("requiredBy"))
         required_by = [
-            r
-            for r in (
-                resolve(x, element, "requiredBy") for x in _texts(p.get("requiredBy"))
-            )
-            if r
+            r for r in (resolve(x, element, "requiredBy") for x in named_by) if r
         ]
-        if not _texts(p.get("requiredBy")):
-            refusals.append(f"{element} names nothing in `requiredBy`")
+        if not required_by:
+            if not named_by:
+                warnings.append(
+                    f"{element} names nothing in `requiredBy`; every root item requires it"
+                )
+            required_by = [item["id"] for item in roots]
         needs = [
             r
             for r in (
@@ -194,11 +220,12 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
             if r
         ]
         if element in required_by or element in needs:
-            refusals.append(f"{element} names itself")
+            warnings.append(f"{element} names itself; that reference was dropped")
+            required_by = [r for r in required_by if r != element]
+            needs = [r for r in needs if r != element]
         for r in required_by:
-            if r != element:
-                requires.setdefault(r, []).append(element)
-        requires[element].extend(n for n in needs if n != element)
+            requires.setdefault(r, []).append(element)
+        requires[element].extend(needs)
         out.append(
             {
                 "element": element,
@@ -220,7 +247,7 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
         )
     edges = closure.get("rootEdges", [])
     if not isinstance(edges, list):
-        refusals.append("`rootEdges` is not a list")
+        warnings.append("`rootEdges` is not a list and was ignored")
         edges = []
     for n, edge in enumerate(edges, start=1):
         item = (
@@ -229,7 +256,7 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
             else None
         )
         if item is None:
-            refusals.append(f"root edge {n} names no delta item in `item`")
+            warnings.append(f"root edge {n} names no delta item in `item`; dropped")
             continue
         for ref in _texts(edge.get("requires")):
             target = resolve(ref, item, "rootEdges.requires")
@@ -237,17 +264,13 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
                 requires[item].append(target)
     satisfied = closure.get("satisfied", [])
     if not isinstance(satisfied, list):
-        refusals.append("`satisfied` is not a list")
+        warnings.append("`satisfied` is not a list and was ignored")
         satisfied = []
-    for n, s in enumerate(satisfied, start=1):
-        if (
-            not isinstance(s, dict)
-            or not _text(s.get("element"))
-            or not _texts(s.get("evidence"))
-        ):
-            refusals.append(
-                f"satisfied element {n} names no element or cites no evidence"
-            )
+    satisfied = [
+        s
+        for s in satisfied
+        if isinstance(s, dict) and _text(s.get("element")) and _texts(s.get("evidence"))
+    ]
     requires = {k: sorted(set(v)) for k, v in requires.items()}
     cycle = _cyclic(requires)
     if cycle:
@@ -259,6 +282,7 @@ def closure_facts(closure: object, roots: list[dict]) -> dict:  # noqa: C901, PL
     return {
         "valid": not refusals,
         "refusals": refusals,
+        "warnings": warnings,
         "prerequisites": sorted(out, key=lambda p: p["element"].casefold()),
         "rootRequires": {item["id"]: requires[item["id"]] for item in roots},
         "satisfied": len(satisfied),
@@ -312,17 +336,24 @@ def write_closure(
         closure = None
         refusals.append(f"{closure_path} could not be read: {exc}")
     roots = [{"id": i["id"], "element": i["element"]} for i in listed.get("items", [])]
-    facts = closure_facts(closure, roots) if closure is not None else {"refusals": []}
+    facts = (
+        closure_facts(closure, roots, is_open=lambda bead: bead_open(status_of, bead))
+        if closure is not None
+        else {"refusals": []}
+    )
     refusals += facts["refusals"]
-    for p in facts.get("prerequisites", []):
-        if (
-            p["state"] == "planned"
-            and p["plannedBy"]
-            and not bead_open(status_of, p["plannedBy"])
-        ):
-            refusals.append(
-                f"{p['element']} is planned by {p['plannedBy']}, which is not an open bead"
-            )
+    warnings = list(listed.get("warnings", [])) + list(facts.get("warnings", []))
+    # The written closure carries the prerequisites as read, so a later reader sees the same
+    # states and references without asking beads again.
+    if facts.get("prerequisites") is not None and isinstance(closure, dict):
+        closure = {
+            **closure,
+            "prerequisites": [
+                {k: v for k, v in p.items() if k != "requires"}
+                | {"requires": [r for r in p["requires"] if r != p["element"]]}
+                for p in facts["prerequisites"]
+            ],
+        }
     # The closure is build work, not architecture change: it sits with the future set, beside
     # its baseline handoff, so a target with no delta has one too.
     target = Path(delta_dir).parent / CLOSURE_FILE
@@ -339,11 +370,13 @@ def write_closure(
     return {
         "ok": ok,
         "refusals": refusals,
+        "warnings": warnings,
         "closurePath": str(target) if ok and not dry_run else None,
         "prerequisites": prereqs,
         "summary": {
             "ok": ok,
             "refusals": refusals,
+            "warnings": len(warnings),
             "prerequisites": len(prereqs),
             "satisfied": facts.get("satisfied", 0),
             "closurePath": str(target) if ok and not dry_run else None,

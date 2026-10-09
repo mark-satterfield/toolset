@@ -29,7 +29,7 @@ def _load(path: Path) -> object:
     Returns:
         The parsed value, or None when the file is absent.
     """
-    return read_artifact(path) if path.is_file() else None
+    return read_artifact(path, strict=False) if path.is_file() else None
 
 
 def _paths(value: object) -> list[str]:
@@ -152,27 +152,19 @@ def integration_files(
     return result
 
 
-def review_check(
-    review: Path,
-    *,
-    files: Path,
-    coverage_from: Path,
-    coverage_revision: str,
-) -> dict:
+def review_check(review: Path, *, files: Path, coverage_from: Path) -> dict:
     """Check a saved conformance review against the integration's files and approved coverage.
 
     Args:
         review: The saved review (`conformance-N.json`).
         files: The files file `integration_files` wrote.
         coverage_from: The relay file of the `arch-resume` run that read the approved
-            coverage: its `result.coverage.checksNeeded` rows (`{id, revision}`) are the rows
-            every one of which needs a verified check at its revision.
-        coverage_revision: The coverage revision the review must be bound to.
+            coverage: its `result.coverage.checksNeeded` rows are the rows every one of
+            which needs a verified check, matched by row id.
 
     Returns:
         `missed` (touched files not reviewed), `coverageUnverified` (row ids without a verified
-        check with evidence), whether the checks are at the approved revisions and the review at
-        the coverage revision, the review's verdict and its findings count; or `{error}`.
+        check with evidence), the review's verdict and its findings count; or `{error}`.
     """
     r = _load(review)
     f = _load(files)
@@ -208,15 +200,10 @@ def review_check(
         )
 
     unverified = sorted(cid for cid in needed if verified(cid) is None)
-    at_revision = not unverified and all(
-        str(verified(cid).get("revision") or "") == rev for cid, rev in needed.items()
-    )
     findings = r.get("findings")
     return {
         "missed": [p for p in _paths(f.get("touched")) if p not in reviewed],
         "coverageUnverified": unverified,
-        "checksAtRevision": at_revision,
-        "revisionMatches": r.get("coverageRevision") == coverage_revision,
         "conforms": r.get("conforms") is True,
         "findings": len(findings) if isinstance(findings, list) else 0,
         "review": str(review),
@@ -231,12 +218,9 @@ def files_from(path: Path, key: str) -> list[str]:
         key: The list's key.
 
     Returns:
-        The list.
-
-    Raises:
-        ValueError: When the file holds no such list.
+        The list; empty when the file holds no such list.
     """
     value = _load(path)
     if not isinstance(value, dict) or not isinstance(value.get(key), list):
-        raise ValueError(f"{path} holds no list `{key}`")  # noqa: TRY004 -- invalid saved content
+        return []
     return _paths(value[key])

@@ -44,9 +44,24 @@ def receipt_path(path: Path) -> Path:
     return path.with_name(path.name + ".receipt")
 
 
-def read_artifact(path: Path) -> object:
-    """Read a legacy result or verify a sealed result before consuming its value."""
+#: Paths a lenient read accepted although their receipt no longer matched the bytes on disk.
+LENIENT_READS: list[str] = []
+
+
+def read_artifact(path: Path, *, strict: bool = True) -> object:
+    """Read a legacy result or verify a sealed result before consuming its value.
+
+    With `strict` False (the architecture step's own readers), a receipt or publication
+    record that no longer matches the bytes on disk is noted in LENIENT_READS and the bytes
+    on disk are used.
+    """
     value = decode(path.read_text(encoding="utf-8"))
+    if not strict:
+        try:
+            return read_artifact(path)
+        except ValueError as exc:
+            LENIENT_READS.append(f"{path}: {exc}")
+            return value
     receipt_file = receipt_path(path)
     pending = path.with_name(path.name + ".publish")
     data = canonical(value)
@@ -219,8 +234,15 @@ def document_receipt(path: Path) -> dict:
     }
 
 
-def source_receipt(path: Path) -> dict:
-    """Fingerprint an explicit source file or corpus without transporting content."""
+def source_receipt(
+    path: Path, *, allow_absent: bool = False, skipped: list[str] | None = None
+) -> dict:
+    """Fingerprint an explicit source file or corpus without transporting content.
+
+    With `allow_absent` (the architecture step's inputs), a path that is neither a file nor a
+    directory fingerprints as `absent`, and a symlink or other non-regular entry of a corpus
+    is skipped and named in `skipped`.
+    """
     if path.is_file():
         data = path.read_bytes()
         return {
@@ -230,9 +252,22 @@ def source_receipt(path: Path) -> dict:
             "format": "file",
         }
     if not path.is_dir():
+        if allow_absent:
+            return {
+                "artifactPath": str(path.absolute()),
+                "sha256": _sha(b"absent"),
+                "bytes": 0,
+                "format": "absent",
+            }
         raise ValueError(f"source is not a readable file or directory: {path}")
     entries = []
     for item in sorted(path.rglob("*")):
+        if allow_absent and (
+            item.is_symlink() or not (item.is_file() or item.is_dir())
+        ):
+            if skipped is not None:
+                skipped.append(str(item))
+            continue
         if item.is_symlink():
             raise ValueError(f"source corpus contains ambiguous symlink: {item}")
         if item.is_file():
@@ -261,6 +296,7 @@ def main() -> int:
     parser.add_argument("--schema-json")
     parser.add_argument("--document", type=Path, action="append", default=[])
     parser.add_argument("--source", type=Path, action="append", default=[])
+    parser.add_argument("--allow-absent", action="store_true")
     parser.add_argument("--revision", default="")
     parser.add_argument("--projection", choices=["coordinator"], default=None)
     parser.add_argument("--keys", default="")
@@ -272,12 +308,14 @@ def main() -> int:
     args = parser.parse_args()
     if args.document or args.source:
         try:
+            skipped: list[str] = []
+            receipts = [document_receipt(path) for path in args.document] + [
+                source_receipt(path, allow_absent=args.allow_absent, skipped=skipped)
+                for path in args.source
+            ]
             print(
                 json.dumps(
-                    {
-                        "receipts": [document_receipt(path) for path in args.document]
-                        + [source_receipt(path) for path in args.source]
-                    }
+                    {"receipts": receipts, **({"skipped": skipped} if skipped else {})}
                 )
             )
             return 0

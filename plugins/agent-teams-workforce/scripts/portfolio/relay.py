@@ -141,155 +141,6 @@ def canonical(value: object) -> str:
     raise RelayError(f"a {type(value).__name__} has no JSON spelling")
 
 
-def _integration_view(integration: object) -> object:
-    """arch-resume's integration facts with the report's file lists and the last review's
-    checks as counts; arch-integration-files and arch-review-check read them from disk.
-
-    Args:
-        integration: The `integration` facts.
-
-    Returns:
-        The reduced facts.
-    """
-    if not isinstance(integration, dict):
-        return integration
-    out = dict(integration)
-    if isinstance(out.get("update"), dict):
-        out["update"] = _counted(
-            out["update"], ("changedFiles", "createdFiles", "deletedFiles")
-        )
-    if isinstance(out.get("lastReview"), dict):
-        out["lastReview"] = _counted(
-            out["lastReview"], ("coverageChecks", "reviewedFiles")
-        )
-    return out
-
-
-def _baseline_view(baseline: object) -> dict | None:
-    """The survey's assessment as the architecture workflow branches on it.
-
-    The capability names in each work list, the validity and its errors, and, for each
-    capability with design or documentation work, the requirement ids it serves (the text
-    before the first colon of each requirement reference), so a writer dispatch can be
-    matched to its capability by either. The entries stay in the relay file and in
-    `survey.json`, which the sessions read.
-
-    Args:
-        baseline: The `baseline` facts of `arch-resume` (`archbaseline.baseline_facts`).
-
-    Returns:
-        The reduced facts, or None when arch-resume printed none.
-    """
-    if not isinstance(baseline, dict):
-        return None
-    lists = ("errors", "designWork", "designReview", "docWork", "implementationWork")
-    out: dict = {
-        "valid": baseline.get("valid") is True,
-        "revision": baseline.get("revision"),
-    }
-    for key in (*lists, "unknowns"):
-        value = baseline.get(key)
-        out[key] = [str(v) for v in value] if isinstance(value, list) else []
-    scope = set(out["designWork"]) | set(out["docWork"]) | set(out["unknowns"])
-    requirements: dict[str, list[str]] = {}
-    for entry in baseline.get("entries") or []:
-        if not isinstance(entry, dict) or entry.get("id") not in scope:
-            continue
-        ids = [
-            str(r).split(":", 1)[0].strip()
-            for r in entry.get("requirements") or []
-            if str(r).split(":", 1)[0].strip()
-        ]
-        requirements[str(entry["id"])] = ids
-    out["requirementsOf"] = requirements
-    out["entries"] = len(baseline.get("entries") or [])
-    return out
-
-
-def _arch_resume_view(result: dict) -> dict:
-    """The facts of `arch-resume` the architecture workflow branches on, and nothing else.
-
-    Prose (coverage gap texts, overlap warnings), finding verdicts and files, the dispatch
-    files, answers and claim assignments of a pending plan, and the hash rows of the coverage
-    checks stay in the relay file and in `ledger.json`, which the sessions read. The checks
-    are reduced to their count; `arch-review-check --coverage-from` reads the rows from the
-    relay file.
-
-    Args:
-        result: The full `arch-resume` result.
-
-    Returns:
-        The view.
-    """
-    rounds = result.get("rounds") or {}
-    cov = result.get("coverage") or {}
-    survey = result.get("survey") or {}
-    open_by_owner: dict[str, dict[str, list[str]]] = {}
-    for f in rounds.get("openFindings") or []:
-        if not isinstance(f, dict) or not f.get("id"):
-            continue
-        slot = open_by_owner.setdefault(
-            str(f.get("owner") or ""), {"answered": [], "open": []}
-        )
-        slot["answered" if f.get("answered") else "open"].append(str(f["id"]))
-    plan = rounds.get("pendingPlan")
-    if isinstance(plan, dict):
-        plan = {
-            "round": plan.get("round"),
-            "readyForDecision": plan.get("readyForDecision"),
-            "dispatches": [
-                {k: d.get(k) for k in ("seq", "role", "agentType", "complete")}
-                for d in plan.get("dispatches") or []
-                if isinstance(d, dict)
-            ],
-        }
-    rows = sorted(
-        (
-            {"id": r.get("id"), "revision": r.get("revision")}
-            for r in cov.get("checksNeeded") or []
-            if isinstance(r, dict)
-        ),
-        key=lambda r: str(r["id"]),
-    )
-    gaps = cov.get("gaps")
-    return {
-        "contractVersion": result.get("contractVersion"),
-        "survey": {
-            k: survey.get(k)
-            for k in ("saved", "coverageSaved", "subject", "capabilities")
-        },
-        "baseline": _baseline_view(result.get("baseline")),
-        "decision": result.get("decision"),
-        "repairs": result.get("repairs"),
-        "integration": _integration_view(result.get("integration")),
-        "coverage": {
-            "revision": cov.get("revision"),
-            "gapCount": len(gaps) if isinstance(gaps, list) else 0,
-            "rows": len(rows),
-        },
-        "rounds": {
-            "last": rounds.get("last"),
-            "resumeRound": rounds.get("resumeRound"),
-            "pendingRound": rounds.get("pendingRound"),
-            "pendingDispatches": rounds.get("pendingDispatches"),
-            "pendingPlan": plan,
-            "planKept": bool(rounds.get("planKept")),
-            "readyForDecision": rounds.get("readyForDecision"),
-            "saved": rounds.get("saved") or [],
-            "writers": rounds.get("writers") or [],
-            "reviewers": rounds.get("reviewers") or [],
-            "legacyProposersWithoutClaims": rounds.get("legacyProposersWithoutClaims")
-            or [],
-            "proposersWithoutClaims": rounds.get("proposersWithoutClaims") or [],
-            "claims": rounds.get("claims"),
-            "findings": rounds.get("findings"),
-            "openFindings": open_by_owner,
-            "unreviewedClaims": rounds.get("unreviewedClaims") or {},
-            "overlapWarnings": len(rounds.get("overlapWarnings") or []),
-        },
-    }
-
-
 def _counted(result: dict, keys: tuple[str, ...]) -> dict:
     """A result with the named lists replaced by their lengths.
 
@@ -343,13 +194,15 @@ def view(command: str, result: dict) -> dict:
         result: Its full result.
 
     Returns:
-        For `arch-resume`, `_arch_resume_view`; for a command in COUNTED, its lists as counts;
+        For `arch-resume`, the whole result; for a command in COUNTED, its lists as counts;
         for `arch-snapshot --counts`, each diff's lists as counts; otherwise the result.
     """
     if result.get("error"):
         return {"error": result["error"]}
     if command == "arch-resume":
-        return _arch_resume_view(result)
+        # Everything arch-resume prints reaches the workflow: arch-resume decides what it
+        # prints, so no list of its keys is kept here to fall out of step with it.
+        return result
     if command in WHITELIST:
         return {k: result[k] for k in WHITELIST[command] if k in result}
     out = {k: v for k, v in result.items() if k not in ECHOED}

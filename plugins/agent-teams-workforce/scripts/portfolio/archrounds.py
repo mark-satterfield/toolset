@@ -4,10 +4,33 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from archevidence import digest
 from jsonartifact import read_artifact
+
+
+def set_aside(path: Path) -> str:
+    """Move a saved file that cannot be used out of the way, with its receipt sidecars.
+
+    The file is renamed `<name>.unreadable-<timestamp>`, a name no reader of the working
+    directory matches, so the step it belongs to runs again.
+
+    Args:
+        path: The file.
+
+    Returns:
+        The new path.
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    moved = path.with_name(f"{path.name}.unreadable-{stamp}")
+    path.rename(moved)
+    for suffix in (".receipt", ".publish"):
+        sidecar = path.with_name(path.name + suffix)
+        if sidecar.is_file():
+            sidecar.rename(moved.with_name(moved.name + suffix))
+    return str(moved)
 
 
 def save_ledger(path: Path, payload: dict) -> None:
@@ -48,12 +71,25 @@ def round_facts(
     team: dict,
     coverage: list | None = None,
 ) -> dict:
-    """Settle existing plan identities and bind post-writer review without another agent."""
+    """Settle existing plan identities and bind post-writer review without another agent.
+
+    A saved plan stands: an incoming plan for a round that already has one, or for a new
+    round while an earlier one is unfinished, is not saved and `planKept` says so. A plan
+    entry that is not a plan is dropped, a dispatch's role is the roster's, a dispatch whose
+    agent the roster does not name is dropped, a review assignment keeps only the claims the
+    ledger holds, and a saved result missing a list it must carry is set aside so its
+    dispatch runs again. Each of these is named in `warnings`.
+    """
     plans = json.loads(json.dumps(plans))
     kept = ""
+    notes: list[str] = []
     legacy_round = ledger.last if not plans else 0
     decision_path = work / "decision.json"
-    decision = read_artifact(decision_path) if decision_path.is_file() else {}
+    decision = (
+        read_artifact(decision_path, strict=False) if decision_path.is_file() else {}
+    )
+    if not isinstance(decision, dict):
+        decision = {}
     newer_results = decision_path.is_file() and any(
         Path(name).name.startswith(f"r{legacy_round}-")
         and Path(name).stat().st_mtime > decision_path.stat().st_mtime
@@ -73,9 +109,15 @@ def round_facts(
                 "the saved plan is kept and the new plan was not saved"
             )
         elif same is not None:
-            raise ValueError("cannot replace a durable round plan")
+            kept = (
+                f"round {same['round']} already has a saved plan; "
+                "the saved plan is kept and the new plan was not saved"
+            )
         elif plans and not _done(work, plans[-1]):
-            raise ValueError("finish pending round before selecting another")
+            kept = (
+                f"round {plans[-1]['round']} is unfinished; its saved plan is kept "
+                "and the new plan was not saved"
+            )
         else:
             if resume_round:
                 incoming = json.loads(json.dumps(incoming))
@@ -104,17 +146,41 @@ def round_facts(
 
     gaps = []
     warnings = []
+    usable = []
+    for plan in plans:
+        n = plan.get("round") if isinstance(plan, dict) else None
+        if (
+            not isinstance(n, int)
+            or n < 1
+            or not isinstance(plan.get("dispatches"), list)
+        ):
+            notes.append(f"a saved round plan that is not a plan was dropped: {n!r}")
+            continue
+        usable.append(plan)
+        kept_dispatches = []
+        for d in plan["dispatches"]:
+            role = roles.get(d.get("agentType")) if isinstance(d, dict) else None
+            if role is None:
+                notes.append(
+                    f"round {n}: dispatch {d.get('agentType') if isinstance(d, dict) else d!r} "
+                    "is not on the roster and was dropped"
+                )
+                continue
+            if d.get("role") != role:
+                notes.append(
+                    f"round {n}: {d['agentType']} runs as {role}, its roster role"
+                )
+                d["role"] = role
+            kept_dispatches.append(d)
+        plan["dispatches"] = kept_dispatches
+    plans = usable
     for plan in plans:
         n = plan.get("round")
-        dispatches = plan.get("dispatches")
-        if not isinstance(n, int) or n < 1 or not isinstance(dispatches, list):
-            raise ValueError("invalid durable round plan")
+        dispatches = plan["dispatches"]
         writers = [d for d in dispatches if d.get("role") in ("proposer", "diagram")]
         # A plan saved before the last writer was chosen by position may carry this field.
         plan.pop("designOwner", None)
         for seq, d in enumerate(dispatches, 1):
-            if roles.get(d.get("agentType")) != d.get("role"):
-                raise ValueError("durable plan names invalid role")
             seq = (
                 d.get("seq", seq)
                 if d.get("legacySaved")
@@ -126,7 +192,10 @@ def round_facts(
             d["file"] = str(file)
             d["complete"] = file.is_file()
             if file.is_file():
-                result = read_artifact(file)
+                try:
+                    result = read_artifact(file, strict=False)
+                except (OSError, UnicodeDecodeError, ValueError):
+                    result = None
                 required = (
                     ("files", "claims", "answers") if d in writers else ("findings",)
                 )
@@ -135,14 +204,24 @@ def round_facts(
                 if not isinstance(result, dict) or any(
                     not isinstance(result.get(k), list) for k in required
                 ):
-                    raise ValueError(f"malformed saved dispatch result: {file}")
+                    notes.append(
+                        f"malformed saved dispatch result set aside: {set_aside(file)}"
+                    )
+                    d["complete"] = False
         if all(d["complete"] for d in writers):
             for d in dispatches:
                 if d in writers or "assignedClaims" in d:
                     continue
                 ids, files = d.get("claimIds", []), d.get("claimFiles", [])
-                if any(i not in {c["id"] for c in ledger.claims} for i in ids):
-                    raise ValueError("review assignment names unknown claim")
+                known = {c["id"] for c in ledger.claims}
+                unknown = [i for i in ids if i not in known]
+                if unknown:
+                    notes.append(
+                        f"round {n}: {d.get('agentType')} was assigned unknown claim(s) "
+                        f"{', '.join(unknown)}; they were dropped"
+                    )
+                    ids = [i for i in ids if i in known]
+                    d["claimIds"] = ids
                 d["assignedClaims"] = [
                     {"id": c["id"], "revision": c["revision"]}
                     for c in ledger.claims
@@ -163,15 +242,12 @@ def round_facts(
                     )
                     if warning not in warnings:
                         warnings.append(warning)
-                if not claim["active"] or claim["revision"] != revision:
+                if not claim["active"]:
                     continue
                 for d in reviewers:
-                    if not any(
-                        v["by"] == d["agentType"] and v.get("revision") == revision
-                        for v in claim["verdicts"]
-                    ):
+                    if not any(v["by"] == d["agentType"] for v in claim["verdicts"]):
                         gaps.append(
-                            f"claim {cid} revision {revision} lacks assigned review by {d['agentType']}"
+                            f"claim {cid} lacks assigned review by {d['agentType']}"
                         )
         for d in dispatches:
             if d in writers:
@@ -215,6 +291,7 @@ def round_facts(
         "reviewGaps": gaps,
         "overlapWarnings": warnings,
         "planKept": kept,
+        "warnings": notes,
     }
 
 

@@ -54,7 +54,13 @@ def view_content(path: str, heading: str = "") -> str:
 
 
 def evidence_state(refs: object) -> tuple[list, list[str]]:
-    """Bind cited source bytes; unrelated main commits do not invalidate evidence."""
+    """Bind cited source bytes; unrelated main commits do not invalidate evidence.
+
+    The second list holds warnings about the references, never reasons to refuse them: a
+    repository reference with no commit is bound to the file's content on `main`, a reference
+    with an absolute path is bound as a file whatever `repo` says, and a cited file whose
+    content moved on `main` is bound to the new content.
+    """
     states, errors = [], []
     if not isinstance(refs, list):
         return [], ["evidenceRefs must be a list"]
@@ -63,16 +69,29 @@ def evidence_state(refs: object) -> tuple[list, list[str]]:
             errors.append("invalid evidence reference")
             continue
         path, repo = ref.get("path", ""), ref.get("repo", "")
+        if repo and path and Path(path).is_absolute():
+            content = view_content(path, ref.get("heading", ""))
+            states.append({"ref": ref, "content": content})
+            if content.startswith(("invalid:", "unreadable:")):
+                errors.append(content)
+            continue
         if repo:
             try:
                 revision = ref.get("revision")
                 if not isinstance(revision, str) or not re.fullmatch(
                     r"[0-9a-fA-F]{7,40}", revision
                 ):
-                    errors.append(
-                        f"source revision missing or not a commit: {repo}:{path}"
+                    # No commit cited: bound to the file's content on main, which a commit
+                    # elsewhere on main does not move.
+                    content = subprocess.run(
+                        ["git", "-C", repo, "show", f"main:{path}"],
+                        capture_output=True,
+                        timeout=10,
+                        check=True,
+                    ).stdout
+                    states.append(
+                        {"ref": ref, "content": hashlib.sha256(content).hexdigest()}
                     )
-                    states.append({"ref": ref, "error": "missing commit provenance"})
                     continue
                 commit = subprocess.run(
                     [
@@ -106,8 +125,9 @@ def evidence_state(refs: object) -> tuple[list, list[str]]:
                     "content": hashlib.sha256(content).hexdigest(),
                 }
                 if cited != content:
+                    state["moved"] = True
                     errors.append(
-                        f"cited source content changed on main: {repo}:{path}"
+                        f"cited source content moved on main since {commit[:12]}: {repo}:{path}"
                     )
             except (OSError, subprocess.SubprocessError) as exc:
                 state = {"ref": ref, "error": str(exc)}

@@ -32,22 +32,22 @@
                          result to FILE and `--against FILE` (repeatable) reports the files
                          created, changed and deleted since that saved fingerprint; with either,
                          the per-file hashes stay on disk and are not printed; no `bd` call
-    arch-revision        bind the architecture step's saved work to the arc42 revision it was
-                         produced against: `check` records the revision, or sets aside saved
-                         work made against another one into a dated stale folder; `mark`
-                         records the step's own integration (integrating, integrated); no
-                         `bd` call
+    arch-revision        bind the architecture step's saved work to the arc42 views it read or
+                         wrote: `check` records them, or sets aside saved work one of whose
+                         views changed into a dated stale folder; `mark` records the step's own
+                         integration (integrating, integrated); no `bd` call
     arch-resume          read the architecture step's saved work in its working directory and
                          print only the facts its control flow needs (finished steps, last
                          round, open findings by id, unreviewed claims per writer, the decision's
                          verdict, the integration's files); writes the full claim and finding
                          ledger to `ledger.json` there; a saved file that cannot be parsed is
-                         an error; no `bd` call
+                         set aside and named in `warnings`; no `bd` call
     arch-target          check an approved draft and write it to `target/<subject>/`, every view
-                         `in-review`; refuses a draft with no delta, a file in section 2, a view
-                         without catalog frontmatter, or a subject named for the Epic or PRD;
-                         the folder name is derived from the subject (lower-case, hyphens:
-                         `Company Intelligence` is `company-intelligence`) and returned as
+                         `in-review`; refuses a draft with no view while design work is named,
+                         a file in section 2, a survey with no assessment, or a subject with no
+                         name left; the folder name is derived from the subject (lower-case,
+                         hyphens, dates and the Epic, PRD and bead names taken out: `Company
+                         Intelligence` is `company-intelligence`) and returned as
                          `subject`, the subject as given as `subjectName`; no `bd` call
     arch-delta           list a written target's build items: the elements its delta shows
                          (an entirely new target's views are its delta; no architecture
@@ -904,8 +904,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     arv = sub.add_parser(
         "arch-revision",
-        help="bind the architecture step's saved work to the arc42 revision it was produced "
-        "against, setting aside work made against another; no `bd` call",
+        help="bind the architecture step's saved work to the arc42 views it read or wrote, "
+        "setting it aside when one of them changed; no `bd` call",
         parents=[common],
     )
     arv.add_argument(
@@ -983,9 +983,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="the relay file of the arch-resume run holding the approved coverage rows",
-    )
-    arc.add_argument(
-        "--coverage-revision", default="", help="the revision the review must bind to"
     )
 
     arz = sub.add_parser(
@@ -1369,7 +1366,6 @@ def run(args: argparse.Namespace) -> dict:
             args.review,
             files=args.files,
             coverage_from=args.coverage_from,
-            coverage_revision=args.coverage_revision,
         )
     if command == "prd-parse":
         return head | prd_parse(args.prd)

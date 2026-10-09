@@ -553,28 +553,41 @@ def subject_folder(subject: str) -> str:
     return SUBJECT_SEPARATOR.sub("-", ascii_only.lower()).strip("-")
 
 
-def _subject_refusals(subject: str, folder: str, forbid: list[str]) -> list[str]:
-    """Name every reason a target subject is not a subject.
+def subject_name(folder: str, forbid: list[str]) -> str:
+    """The folder name with every date and every name a subject never carries taken out.
 
     Args:
-        subject: The subject as given.
-        folder: Its `<subject>` folder name, from `subject_folder`.
+        folder: A folder name, from `subject_folder`.
         forbid: Names a subject never carries (the Epic, the PRD, the bead prefix).
 
     Returns:
-        The reasons; empty when the subject is a subject.
+        The folder name; empty when nothing is left.
+    """
+    name = DATE_IN_NAME.sub("-", folder)
+    for token in sorted((subject_folder(t) for t in forbid), key=len, reverse=True):
+        if token:
+            name = name.replace(token, "-")
+    return SUBJECT_SEPARATOR.sub("-", name).strip("-")
+
+
+def _subject_refusals(subject: str, folder: str) -> list[str]:
+    """Name the reason a target subject cannot name a folder.
+
+    Args:
+        subject: The subject as given.
+        folder: Its folder name, from `subject_name`.
+
+    Returns:
+        The reason; empty when the folder name is not empty.
     """
     if not folder:
-        return [f"subject {subject!r} has no letter or digit to name a folder with"]
-    reasons = []
-    if DATE_IN_NAME.search(folder):
-        reasons.append(f"subject {subject!r} carries a date")
-    reasons.extend(
-        f"subject {subject!r} carries {token!r}, which names the Epic, PRD or bead, not a subject"
-        for token in (subject_folder(t) for t in forbid)
-        if token and token in folder
-    )
-    return reasons
+        return [
+            (
+                f"subject {subject!r} has no letter or digit left to name a folder with, "
+                "once dates and the Epic, PRD and bead names are taken out"
+            )
+        ]
+    return []
 
 
 def _draft_files(draft: Path) -> list[Path]:
@@ -678,59 +691,71 @@ def _change_kind(draft: Path, files: list[Path]) -> str:
     return "new"
 
 
-def _draft_refusals(draft: Path, files: list[Path], current: set[str]) -> list[str]:
+def _draft_refusals(draft: Path, files: list[Path]) -> list[str]:
     """Name every reason a draft cannot become a target.
-
-    A draft with no `delta/` view is an entirely new architecture, whose target views are
-    also its delta; it is refused when a view shows an element the current set shows, since a
-    change to an existing element needs a delta of the change alone.
 
     Args:
         draft: The draft directory.
         files: Its files.
-        current: The elements the effective views show, case-folded.
 
     Returns:
-        The reasons; empty when the draft can be written.
+        The reasons: no authored view, or a file in section 2; empty when the draft can be
+        written.
     """
     reasons = []
     rels = [p.relative_to(draft) for p in files]
-    kind = _change_kind(draft, files)
-    if kind == "none":
+    if _change_kind(draft, files) == "none":
         reasons.append(
             "the draft has no views: the design or documentation work the assessment "
             "names has not been authored"
         )
-    elif kind == "new":
-        existing = sorted(
-            {
-                element
-                for path in files
-                if path.suffix == ".md"
-                for element in _catalog(path)["shows"]
-                if element.casefold() in current
-            }
-        )
-        if existing:
-            reasons.append(
-                f"the draft has no {DELTA_FOLDER}/ views, yet it shows elements the "
-                f"effective version already shows ({', '.join(existing)}): a change to an "
-                f"existing element needs a {DELTA_FOLDER}/ of the change alone"
-            )
     reasons.extend(
         f"{r.as_posix()} is in section 2, which holds the owner's constraints"
         for r in rels
         if CONSTRAINTS_FOLDER in r.parts
     )
-    for path, rel in zip(files, rels, strict=True):
+    return reasons
+
+
+def _draft_warnings(draft: Path, files: list[Path]) -> list[str]:
+    """Name the catalog frontmatter keys each authored view lacks.
+
+    Args:
+        draft: The draft directory.
+        files: Its files.
+
+    Returns:
+        One warning per view missing a key; the integration and its review complete them.
+    """
+    warnings = []
+    for path in files:
         if path.suffix != ".md":
             continue
         gaps = _catalog_gaps(path)
         if gaps:
-            reasons.append(
-                f"{rel.as_posix()} lacks catalog frontmatter: {', '.join(gaps)}"
+            warnings.append(
+                f"{path.relative_to(draft).as_posix()} lacks catalog frontmatter: "
+                f"{', '.join(gaps)}"
             )
-    return reasons
+    return warnings
+
+
+def _existing_views(files: list[Path], current: set[str]) -> list[Path]:
+    """The authored views that show an element the effective version already shows.
+
+    Args:
+        files: The authored files.
+        current: The elements the effective views show, case-folded.
+
+    Returns:
+        The views.
+    """
+    return [
+        path
+        for path in files
+        if path.suffix == ".md"
+        and any(e.casefold() in current for e in _catalog(path)["shows"])
+    ]
 
 
 def write_target(
@@ -746,11 +771,15 @@ def write_target(
     """Check an approved draft and write it to `target/<subject>/`, every view `in-review`.
 
     The draft has the arc42 section layout and a `delta/` folder. It is refused, and nothing
-    is written, when the subject has no letter or digit or names the Epic, PRD, bead or a date,
-    the draft has no delta, a file sits in section 2, or a Markdown view lacks its catalog
-    frontmatter. The folder is named by `subject_folder`, so a display name such as
-    `Company Intelligence` writes `target/company-intelligence/`. A target already at that path
-    is replaced, so a resumed step writes the same target again.
+    is written, when no folder name is left of the subject, the assessment names design or
+    documentation work and no view is authored, a file sits in section 2, or the survey carries
+    no assessment. The folder is named by `subject_folder` with dates and the Epic, PRD and
+    bead names taken out (`subject_name`), so a display name such as `Company Intelligence`
+    writes `target/company-intelligence/`. A draft with no `delta/` whose views show elements
+    the effective version shows is a partial change, and those views are written to `delta/`
+    as well. A view's missing catalog keys and the assessment's problems are `warnings`; a
+    view with no frontmatter is written with `lifecycle_state: in-review`. A target already at
+    that path is replaced, so a resumed step writes the same target again.
     With a baseline, `baseline.json` records `arc42Revision`, the revision of the effective
     version (`archrevision.arc42_revision`) the target was designed against, so a later step
     can tell an open target that predates later approvals.
@@ -782,19 +811,23 @@ def write_target(
             "subjectName": subject.strip(),
             "summary": {"ok": False, "refusals": none},
         }
-    folder = subject_folder(subject)
-    subject_refusals = _subject_refusals(subject, folder, forbid)
+    folder = subject_name(subject_folder(subject), forbid)
+    subject_refusals = _subject_refusals(subject, folder)
     manifest = None
     baseline_refusals = []
+    warnings: list[str] = []
     if baseline:
         from archbaseline import baseline_facts
 
         try:
             survey = json.loads(Path(baseline).read_text(encoding="utf-8"))
             facts = baseline_facts(survey)
-            baseline_refusals = facts["errors"] + [
-                f"unresolved baseline: {item}" for item in facts["unknowns"]
-            ]
+            baseline_refusals = facts["errors"]
+            warnings.extend(facts["warnings"])
+            warnings.extend(
+                f"unresolved baseline, carried as implementation work: {item}"
+                for item in facts["unknowns"]
+            )
             manifest = {
                 "version": 1,
                 "arc42Revision": arc42_revision(root),
@@ -877,12 +910,25 @@ def write_target(
     files = [] if no_author else authored
     change = _change_case(source, files, manifest)
     draft_refusals = (
-        _draft_refusals(source, files, _effective_elements(root))
+        _draft_refusals(source, files)
         if source.is_dir()
         else [f"the draft {source} is not a directory"]
     )
     if no_author:
         draft_refusals = []
+    warnings.extend(_draft_warnings(source, files) if source.is_dir() else [])
+    # A new-looking draft whose views show elements the effective version shows is a
+    # partial change: those views are its delta.
+    as_delta = (
+        _existing_views(files, _effective_elements(root)) if change == "new" else []
+    )
+    if as_delta:
+        change = "partial"
+        warnings.append(
+            f"the draft has no {DELTA_FOLDER}/ views and shows elements the effective "
+            f"version shows: {', '.join(p.relative_to(source).as_posix() for p in as_delta)} "
+            f"are written to {DELTA_FOLDER}/ as the change"
+        )
     refusals = subject_refusals + draft_refusals + baseline_refusals
     dest = root / TARGET_FOLDER / folder
     if not subject_refusals and not dest.resolve().is_relative_to(
@@ -891,6 +937,9 @@ def write_target(
         subject_refusals = [f"{dest} is outside {root / TARGET_FOLDER}"]
         refusals = subject_refusals + refusals
     delta = [p for p in files if p.relative_to(source).parts[0] == DELTA_FOLDER]
+    delta_out = [dest / p.relative_to(source) for p in delta] + [
+        dest / DELTA_FOLDER / p.relative_to(source) for p in as_delta
+    ]
     report: dict = {
         "ok": not refusals,
         "refusals": refusals,
@@ -900,7 +949,8 @@ def write_target(
         "targetDir": str(dest),
         "deltaDir": str(dest / DELTA_FOLDER),
         "files": [str(dest / p.relative_to(source)) for p in files],
-        "deltaFiles": [str(dest / p.relative_to(source)) for p in delta],
+        "deltaFiles": [str(p) for p in delta_out],
+        "warnings": warnings,
         "dryRun": dry_run,
         "draftWritten": draft_written,
         "architectureChange": change,
@@ -931,7 +981,11 @@ def write_target(
             "draftWritten",
             "architectureChange",
         )
-    } | {"files": len(report["files"]), "deltaFiles": len(report["deltaFiles"])}
+    } | {
+        "files": len(report["files"]),
+        "deltaFiles": len(report["deltaFiles"]),
+        "warnings": len(warnings),
+    }
     if manifest:
         report["summary"].update(
             {
@@ -948,11 +1002,15 @@ def write_target(
         return report
     if dest.exists():
         shutil.rmtree(dest)
-    for path in files:
-        out = dest / path.relative_to(source)
+    copies = [(p, dest / p.relative_to(source)) for p in files] + [
+        (p, dest / DELTA_FOLDER / p.relative_to(source)) for p in as_delta
+    ]
+    for path, out in copies:
         out.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix == ".md":
-            text, _ = _set_state(path.read_text(encoding="utf-8"), IN_REVIEW)
+            text, outcome = _set_state(path.read_text(encoding="utf-8"), IN_REVIEW)
+            if outcome == "no-frontmatter":
+                text = f"{FENCE}\n{STATE_KEY}: {IN_REVIEW}\n{FENCE}\n{text}"
             out.write_text(text, encoding="utf-8")
         else:
             shutil.copyfile(path, out)
@@ -1130,44 +1188,48 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
     shown: dict[str, list[str]] = {}
     listed = []
     refusals = []
+    warnings = []
     for view in views:
         cat = _catalog(view)
         listed.append({"path": str(view), **cat})
+        elements = cat["shows"] or ([cat["subject"]] if cat["subject"] else [])
         if not cat["shows"]:
-            refusals.append(f"{view} names no element in `shows`")
-        for element in cat["shows"]:
+            warnings.append(
+                f"{view} names no element in `shows`"
+                + (f"; its subject {cat['subject']} is the element" if elements else "")
+            )
+        for element in elements:
             shown.setdefault(element, []).append(str(view))
+    # The handoff written with the target is the record of the assessment the target was
+    # approved on; a survey changed since then is noted, not re-validated.
     manifest = None
     if baseline_file.is_file():
         try:
             manifest = json.loads(baseline_file.read_text(encoding="utf-8"))
-            survey_path = Path(manifest["survey"])
-            if (
-                hashlib.sha256(survey_path.read_bytes()).hexdigest()
-                != manifest["surveySha256"]
+            if not isinstance(manifest, dict) or not isinstance(
+                manifest.get("entries"), list
             ):
-                raise ValueError("survey changed since target was accepted")
-            from archbaseline import baseline_facts
-
-            facts = baseline_facts(json.loads(survey_path.read_text(encoding="utf-8")))
-            if (
-                manifest.get("version") != 1
-                or not facts["valid"]
-                or facts["unknowns"]
-                or facts["entries"] != manifest["entries"]
-                or facts["implementationWork"] != manifest.get("implementationWork")
-                or bool(facts["designWork"]) != manifest.get("designChanged")
-                or bool(facts["docWork"]) != manifest.get("documentationChanged")
-            ):
-                raise ValueError("baseline evidence is invalid or changed")
-        except (OSError, ValueError, TypeError, KeyError) as exc:
+                raise TypeError("it holds no assessment entries")
+            manifest.setdefault("implementationWork", [])
+            manifest.setdefault("designChanged", False)
+            manifest.setdefault("documentationChanged", False)
+            survey_path = Path(str(manifest.get("survey") or ""))
+            if survey_path.is_file() and hashlib.sha256(
+                survey_path.read_bytes()
+            ).hexdigest() != manifest.get("surveySha256"):
+                warnings.append(
+                    f"the survey {survey_path} changed since the target was written; "
+                    "the assessment recorded with the target is used"
+                )
+        except (OSError, ValueError, TypeError) as exc:
             refusals.append(f"invalid baseline handoff: {exc}")
             manifest = None
     if not views and (
         not manifest or manifest["designChanged"] or manifest["documentationChanged"]
     ):
-        refusals.append(
-            f"{target} holds no required view or validated unchanged baseline handoff"
+        warnings.append(
+            f"{target} holds no view, and its baseline handoff "
+            + ("is missing" if not manifest else "names design or documentation work")
         )
     items = [
         {"id": f"D{n}", "element": element, "views": shown[element]}
@@ -1215,6 +1277,7 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
     return {
         "ok": not refusals,
         "refusals": refusals,
+        "warnings": warnings,
         "deltaDir": str(root),
         "deltaExists": root.is_dir(),
         "targetDir": str(target),
@@ -1226,6 +1289,7 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
         "summary": {
             "ok": not refusals,
             "refusals": refusals,
+            "warnings": len(warnings),
             "views": len(listed),
             "items": len(items),
             "architectureChange": change,
