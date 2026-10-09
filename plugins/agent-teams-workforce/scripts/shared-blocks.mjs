@@ -27,7 +27,6 @@ const WORKFLOWS = join(HERE, '..', 'workflows')
 export const SHARED_BLOCKS = Object.freeze([
   { name: 'architecture-baseline', requiredIn: ['architecture.js'] },
   { name: 'architecture-artifacts', requiredIn: ['architecture.js'] },
-  { name: 'trd-artifact', requiredIn: ['trd-authoring.js'] },
   {
     name: 'fable',
     requiredIn: [
@@ -103,7 +102,6 @@ export const canonicalBlock = (name) => {
     return text.replace('/* ARCHITECTURE_WRITER_SCHEMA */ {}', () => schema('writer'))
       .replace('/* ARCHITECTURE_REVIEW_SCHEMA */ {}', () => schema('review'))
   }
-  if (name === 'trd-artifact') return text.replace('/* TRD_ARTIFACT_SCHEMA */ {}', () => JSON.stringify(JSON.parse(readFileSync(join(HERE, '..', 'skills', 'artifact-handoff', 'schemas', 'trd.schema.json'), 'utf8'))))
   // Registry data is generated from owned definitions; no manually maintained allowlist.
   if (name !== 'fable') return text
   const core = ['subagent-contract'].map(skill =>

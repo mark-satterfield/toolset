@@ -1,24 +1,23 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, reads what it takes from the PRD file with depscore.py prd-parse, which assumes the PRD was validated before its Epic was made ready and holds the Epic for a person only when the file cannot be read, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; then a polyrepo-steward session rules, from its records, whether each span repository is a buildable, active repository whose stacks can reach what its items require, and a placement in the control repository, in the repository holding the architecture, in a repository the steward refuses or in one it gives no verdict for holds the Epic for a person before any Spec, naming the delta items placed there and the reason; a repository the steward created that neither the approved target nor a prerequisite names, checked with depscore.py arch-target-names, holds the Epic too), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which refuse a Task whose required item has no Task, no open bead and is not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once any Story has Tasks written, or the work needs no implementation, reporting the repositories and Stories that produced nothing; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
-    { title: 'PRD Parse', detail: 'depscore.py prd-parse reads what elaboration takes from the PRD, assuming it was validated before its Epic was made ready; only a file that cannot be read holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'the architecture mini writes the target and delta for the Epic and integrates the approved target into the effective version; only two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, hold the Epic for the owner' },
-    { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes; the polyrepo-steward rules each span repository buildable and active, and a placement in the control repository or a refused repository holds the Epic' },
+    { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes; a placement in the control repository or the architecture repository goes back to the steward once' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD from the target and delta views' },
     { title: 'Spec Authoring', detail: 'per repo: detail each placed delta item against the code on main, then author the Spec for its add, modify and remove items and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose its add, modify and remove items into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
-    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when beads holds every Story, Task and edge the saved documents name; then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
+    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done once any Story has Tasks written, or no implementation is needed; then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
 const ownedCoreContracts = "---\nname: subagent-contract\ndescription: >-\n  Shared contract for bounded specialist assignments: preserve role and scope, follow\n  the caller's response format, retain verifiable artifacts, and report incomplete work explicitly.\nuser-invocable: false\n---\n\n# Subagent Contract\n\n## Caller contract comes first\n\nFollow the caller's exact response schema and artifact protocol. Do not prepend `STATUS`, restate the task, add report fields, or append commentary to a machine-consumed response. Put evidence, findings, progress and blockers only in the artifacts or fields the caller provides. An artifact's on-disk schema and the response-reference schema serve different purposes; do not return the artifact body when the caller requests only its path.\n\nWhen the caller supplies a response schema, your only reply is the StructuredOutput call that carries it; in artifact mode that call carries the `{artifactPath}` the submission tool emits. A prose report never substitutes for that call. Reserve your last turns for submission: when the turn budget runs low, stop working, put the remaining work in the schema's fields and submit.\n\nWhen an executable submission/checkpoint tool is supplied, use it to validate the authored result, compute bindings and construct the response. Return its successful response unchanged through the requested channel. Do not manually manufacture completion flags or hashes. Structural validation proves neither semantic correctness nor review approval. On failure preserve work and report the exact remaining work or blocker through the caller's supported mechanism; never send a success reference for an incomplete assignment. If the supplied protocol has no failure channel, report that incompatibility to the caller rather than inventing a successful response.\n\nOnly when the caller supplies no response format, use `STATUS: DONE` or `STATUS: BLOCKED` with a concise description of deliverables and verification, or the blocker and what is needed. Claim DONE only when the assigned work is complete and verified. No separate preliminary restatement or generic final report is required.\n\n## Role and scope\n\n- Perform only the role assigned in the agent definition and task. Do not invent requirements, select downstream work or enlarge your authority.\n- Identify the minimal relevant files, artifacts and decisions. Use only allowed tools and preserve file ownership. Read-only reviewers may write caller-authorized result/checkpoint artifacts, never source artifacts.\n- An explicit assignment to repair all baseline failures in an affected repository includes pre-existing failures there. Preserve test-author ownership and required checks; this does not authorize unrelated cleanup, other repositories or invented external resources.\n- Prefer small, reversible changes unless the assignment requires broader change. Report material actions and their outcomes in the existing evidence channel, without adding fields to a fixed schema.\n- Pipeline beads are always read and written in the central beads database, wherever you run: run every `bd` command as `atw-bd` with `bd`'s own arguments, never a plain `bd` (the `beads-contract` skill).\n- Missing required context is a named dependency, not permission to guess. Distinguish facts, justified assumptions and unresolved questions; do not silently complete only the easy portion.\n\n## Skills and authoritative artifacts\n\nRead canonical skill content already delivered in the prompt; do not reload it solely because its name also appears in frontmatter. Assess which other declared skills apply and load those through the Skill tool using their exact names. A name alone is not delivered content. A missing required skill is an explicit dependency; do not substitute recollection. Note material applicability decisions only in existing progress/evidence channels that permit them, never by expanding the return schema.\n\nRead the actual relevant source sections and connected contracts. Shared Markdown, vault notes, diagrams, schemas and JSON stay authoritative at their paths; summaries guide navigation and do not replace source verification. Observe assigned read/edit/create ownership. Preserve content unless its change is assigned. Pass references rather than copying whole documents between agents. When exact copying is required, use deterministic file tools rather than model transcription. Use version/provenance where relevant; do not require hashes merely for semantic editing.\n\nFor durable authoring, checkpoint meaningful progress using the caller's location and executable mechanism where supplied. Record completed work, remaining work and artifact references; blocked progress names the dependency and reason. Checkpoints are progress, not accepted results. On resume verify the checkpoint against actual artifacts and finish missing work without regenerating valid completed documents.\n\n## Resource use and incremental review\n\n- Use tokens conscientiously without compromising required correctness, completeness, safety or evidence. Before a material optional expansion, identify its unresolved need and expected benefit in existing progress. Routine tools need no justification. Do not add a report, review pass, token quota or human approval gate for this rule; omit optional work with no concrete benefit.\n- Makers and reviewers use the same applicable requirements, constraints and completion criteria. Review determines actual correctness, including passing sound work; finding more failures is not success. Do not invent requirements or turn stylistic preferences into blocking defects. Preserve necessary safety and regression checks.\n- Use the caller's finding format to identify the affected location, requirement/dependency at risk, observed evidence and actionable correction with a verifiable pass condition. Distinguish defects, missing evidence and proposed new requirements. Never claim unperformed checks passed.\n- Revise original artifacts incrementally. Retain valid work and applicable evidence. Rereview changed scope and affected dependencies; reopen accepted work only when new evidence or demonstrated impact invalidates its earlier evidence, and state why. Preserve required independent review.\n\n## Technical gaps are decided, not escalated\n\nWhere the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item.\n\nTwo things go to the owner, through the channel the caller provides for them: two of the owner's business requirements that no design can satisfy together, and a conflict in arc42 section 2, which only the owner writes (constraints that contradict each other, or that no design can meet together with the business requirements). Nothing else does. Never put a technical question to the owner or any person, and never hold work waiting for a technical answer.\n\n## The approved architecture is authoritative\n\nThe approved (effective) architecture and the owner's answers are authoritative. Older documents, repository READMEs and existing code are evidence of the current state: they show what exists and what still has to change, never that the approved architecture or an owner answer is wrong. Where they disagree with the approved architecture, the approved architecture holds and the difference is work to plan, not a conflict to raise. The approved architecture changes only through a reviewed target backed by requirements and evidence, or a reviewed correction from what a Story built.\n\n## AWS evidence authority\n\nBefore any AWS claim, design choice or question, check the AWS MCP Server documentation tools (`search_documentation`, `read_documentation`, `retrieve_skill`) and the relevant AWS plugin skills (`aws-core:*`, for example `aws-core:aws-cdk`, `aws-core:aws-serverless`, `aws-core:aws-iam`, `aws-core:aws-networking`, `aws-core:aws-well-architected-review`), including the applicable Well-Architected principles. A question AWS documentation can answer is answered from it and never reaches the owner. Retain source references and the concrete tradeoffs. Existing generated architecture and model recollection do not establish correctness. Makers and reviewers use this same evidence criterion.\n\nApply guidance to stated requirements, deployment, usage and cost constraints rather than hypothetical scale. Where AWS guidance conflicts with a business requirement or a section 2 constraint, the requirement or constraint holds: record the conflict and the design that honours it, and do not silently substitute a preferred AWS pattern. Missing required MCP/skill access is a named blocker or uncertainty, never a passed check. Coordinators may research and route AWS questions, but cannot author or approve designs.\n"
-const ownedArtifactContract = "---\nname: artifact-handoff\ndescription: Share authoritative documents, diagrams and JSON by artifact path, with format-specific validation and resumable checkpoints; never retype full payloads between agents.\n---\n\n## Executable output mode\n\nThe dispatcher selects `OUTPUT_MODE` from its response schema and validates an explicit mode against that schema before dispatch. `artifact` means a single `artifactPath` reference to a caller-specified candidate; the JSON candidate, progress and submission rules below apply. `inline` means a small caller-defined status, routing or control response: return that exact schema directly and do not invent candidate files or checkpoints. `machine` is the deterministic command runner protocol; its executable hook supplies the response and no model-authored payload is permitted. Merely loading this skill does not change the selected mode or grant write access. In standalone use without an explicit mode, apply artifact rules only when the caller supplies a candidate path and artifact schema; otherwise honor its inline response contract.\n\nShared documents, Markdown, diagrams and other artifacts stay in their authoritative files. Pass paths and brief task context; recipients read the actual files. A summary is navigation, never a substitute source. Edit only explicitly assigned files; preserve accepted work. Do not retype an entire document into another agent's prompt or machine response. Use existing deterministic file operations for exact copies when a copy is explicitly required.\n\nKeep the caller-specified checkpoint current after meaningful work: status, task, completed work, remaining work and artifact paths. On resume read the checkpoint and referenced artifacts, verify current state and complete remaining work. A checkpoint is progress evidence, never acceptance or permission to omit validation.\n\nFor JSON, write the caller's requested JSON object once to its exact candidate path. Use the supplied artifact schema; do not confuse it with the small return schema. Preserve existing completed work and inspect an existing candidate before continuing interrupted work. Return only the candidate path using the caller's structured return schema. Never copy the full artifact into StructuredOutput or prose.\n\nThe producer directly reads its inputs, authors its outputs and runs its own submission/checkpoint helper. The workflow's named command runner performs only coordinator acceptance and provenance operations: it invokes `scripts/portfolio/jsonartifact.py` with the expected candidate, final path and schema. The script rejects duplicate keys, invalid JSON, schema violations and changes to already accepted results. It writes canonical JSON and an integrity receipt; downstream scripts verify the receipt. Candidates stay outside the accepted result directory. A failed candidate is never treated as a completed step.\n\nThe command runner runs only the exact checked command supplied by the workflow. Validation failure is reported explicitly; it does not authorize rewriting another producer's content or repeating a successful administrative command. Existing legacy artifacts are preserved.\n\nFor Markdown and diagrams, `jsonartifact.py --document PATH` verifies the actual nonempty UTF-8 file and returns its path, raw-byte SHA-256, length and format. It never copies or rewrites the document. This receipt identifies the reviewed version; it is not a semantic quality verdict and does not prohibit later authorized edits. Keep structured metadata separate and refer to the document path instead of embedding its contents.\n\nCandidate completion checkpoints bind the exact candidate path, expected schema hash and caller revision. The workflow derives that revision from actual source-file/corpus byte fingerprints and assignment context; a path alone is not freshness evidence. Changed inputs require a new candidate revision. A saved complete result for the same revision is reused; it is never silently replaced. Fingerprints exclude the producer’s assigned output files to preserve interruption recovery.\n\n## Executable producer contract\n\nUse the caller's canonical schema for both production and review; architecture uses [writer](schemas/architecture-writer.schema.json) and [reviewer](schemas/architecture-review.schema.json). Never maintain a second schema in prose. The [checkpoint schema](schemas/checkpoint.schema.json) is shared by producer status commands.\n\nResolve `scripts/portfolio/artifactcontract.py` from this plugin's root (two directories above this skill). The workflow supplies the candidate path, canonical schema and input revision. Pass exactly one of `--schema-file PATH` or `--schema-json JSON`; both use identical strict parsing, validation and canonical hashing. Prefer the schema file when the caller supplies one. Author a small progress JSON file with `task`, `completed`, `remaining`, and `artifacts`; add `reason` when blocked. Do not put binding hashes or completion flags in that file: the helper computes them.\n\n```bash\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" checkpoint --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\" --progress-file \"$PROGRESS\" --status in-progress\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" complete --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\" --progress-file \"$PROGRESS\"\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" status --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\"\n```\n\nFor a dependency you cannot satisfy, checkpoint with `--status blocked` and its exact `reason` and remaining work. Do not mark incomplete reasoning complete merely to satisfy the schema. `complete` requires no remaining work, validates strict JSON against the canonical schema, canonicalizes the candidate and writes its bound checkpoint. Return only the candidate reference after that command succeeds. `validate` performs schema validation without mutation. Invalid commands return exit 2 with an explicit error.\n\n`complete-unaccepted` means structurally ready for the workflow's existing acceptance operation, not technically correct, approved, or shipped. Reviewers read the authoritative artifacts and independently judge evidence; mechanically valid metadata cannot establish their correctness. Status detects changed candidate bytes and changed input/schema bindings. Resume `in-progress`/`blocked` work from its actual artifacts; do not restart completed reasoning or silently retry an unchanged blocker.\n\nThe coordinator may use `scripts/portfolio/artifactpublish.py --record-argv-json JSON -- <jsonartifact acceptance arguments>` to validate/publish and record provenance in one deterministic invocation. The recorder receives argv, not shell text, and must name the accepted artifact. Pending or rejected candidates are never recorded; recorder failure reports failure and retains the accepted artifact for recovery. This replaces separate administrative agent calls without replacing specialist reasoning or independent review.\n\nFor the actual handoff use `submit` with the same arguments as `complete`: it validates and writes the checkpoint, then emits exactly the response object `{\"artifactPath\":\"...\"}`. Return that object unchanged. The schema describes the on-disk candidate; the response contains only its reference. A failed submission emits an error and never writes a new completion checkpoint. When the caller supplies `--files-root ROOT --files-field FIELD`, submission also verifies every path in that candidate field is relative to ROOT, stays inside it after symlink resolution, and names a nonempty regular file. These are declared authored outputs, not all assigned or future files. `--progress-artifacts-root ROOT` additionally checks explicitly declared progress artifact paths inside that root; use it only when the caller establishes that scope. These checks establish file existence and structure, not whether the reasoning is correct.\n"
+const ownedArtifactContract = "---\nname: artifact-handoff\ndescription: Share authoritative documents, diagrams and JSON by artifact path, with format-specific validation and resumable checkpoints; never retype full payloads between agents.\n---\n\n## Executable output mode\n\nThe dispatcher selects `OUTPUT_MODE` from its response schema and validates an explicit mode against that schema before dispatch. `artifact` means a single `artifactPath` reference to a caller-specified candidate; the JSON candidate, progress and submission rules below apply. `inline` means a small caller-defined status, routing or control response: return that exact schema directly and do not invent candidate files or checkpoints. `machine` is the deterministic command runner protocol; its executable hook supplies the response and no model-authored payload is permitted. Merely loading this skill does not change the selected mode or grant write access. In standalone use without an explicit mode, apply artifact rules only when the caller supplies a candidate path and artifact schema; otherwise honor its inline response contract.\n\nShared documents, Markdown, diagrams and other artifacts stay in their authoritative files. Pass paths and brief task context; recipients read the actual files. A summary is navigation, never a substitute source. Edit only explicitly assigned files; preserve accepted work. Do not retype an entire document into another agent's prompt or machine response. Use existing deterministic file operations for exact copies when a copy is explicitly required.\n\nKeep the caller-specified checkpoint current after meaningful work: status, task, completed work, remaining work and artifact paths. On resume read the checkpoint and referenced artifacts, verify current state and complete remaining work. A checkpoint is progress evidence, never acceptance or permission to omit validation.\n\nFor JSON, write the caller's requested JSON object once to its exact candidate path. Use the supplied artifact schema; do not confuse it with the small return schema. Preserve existing completed work and inspect an existing candidate before continuing interrupted work. Return only the candidate path using the caller's structured return schema. Never copy the full artifact into StructuredOutput or prose.\n\nThe producer directly reads its inputs, authors its outputs and runs its own submission/checkpoint helper. The workflow's named command runner performs only coordinator acceptance and provenance operations: it invokes `scripts/portfolio/jsonartifact.py` with the expected candidate, final path and schema. The script rejects duplicate keys, invalid JSON and schema violations; a changed result replaces the accepted one, whose bytes are kept as `<name>.prev`. It writes canonical JSON and an integrity receipt; downstream scripts verify the receipt. Candidates stay outside the accepted result directory. A failed candidate is never treated as a completed step.\n\nThe command runner runs only the exact checked command supplied by the workflow. Validation failure is reported explicitly; it does not authorize rewriting another producer's content or repeating a successful administrative command. Existing legacy artifacts are preserved.\n\nFor Markdown and diagrams, `jsonartifact.py --document PATH` verifies the actual nonempty UTF-8 file and returns its path, raw-byte SHA-256, length and format. It never copies or rewrites the document. This receipt identifies the reviewed version; it is not a semantic quality verdict and does not prohibit later authorized edits. Keep structured metadata separate and refer to the document path instead of embedding its contents.\n\nCandidate completion checkpoints bind the exact candidate path, expected schema hash and caller revision. The workflow derives that revision from actual source-file/corpus byte fingerprints and assignment context; a path alone is not freshness evidence. Changed inputs require a new candidate revision. A saved complete result for the same revision is reused. Fingerprints exclude the producer’s assigned output files to preserve interruption recovery.\n\n## Executable producer contract\n\nUse the caller's canonical schema for both production and review; architecture uses [writer](schemas/architecture-writer.schema.json) and [reviewer](schemas/architecture-review.schema.json). Never maintain a second schema in prose. The [checkpoint schema](schemas/checkpoint.schema.json) is shared by producer status commands.\n\nResolve `scripts/portfolio/artifactcontract.py` from this plugin's root (two directories above this skill). The workflow supplies the candidate path, canonical schema and input revision. Pass exactly one of `--schema-file PATH` or `--schema-json JSON`; both use identical strict parsing, validation and canonical hashing. Prefer the schema file when the caller supplies one. Author a small progress JSON file with `task`, `completed`, `remaining`, and `artifacts`; add `reason` when blocked. Do not put binding hashes or completion flags in that file: the helper computes them.\n\n```bash\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" checkpoint --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\" --progress-file \"$PROGRESS\" --status in-progress\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" complete --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\" --progress-file \"$PROGRESS\"\npython3 \"$PLUGIN_ROOT/scripts/portfolio/artifactcontract.py\" status --candidate \"$CANDIDATE\" --schema-file \"$SCHEMA\" --revision \"$REVISION\"\n```\n\nFor a dependency you cannot satisfy, checkpoint with `--status blocked` and its exact `reason` and remaining work. Do not mark incomplete reasoning complete merely to satisfy the schema. `complete` validates strict JSON against the canonical schema, canonicalizes the candidate and writes its bound checkpoint. Return only the candidate reference after that command succeeds. `validate` performs schema validation without mutation. Invalid commands return exit 2 with an explicit error.\n\n`complete-unaccepted` means structurally ready for the workflow's existing acceptance operation, not technically correct, approved, or shipped. Reviewers read the authoritative artifacts and independently judge evidence; mechanically valid metadata cannot establish their correctness. Status detects changed candidate bytes and changed input/schema bindings. Resume `in-progress`/`blocked` work from its actual artifacts; do not restart completed reasoning or silently retry an unchanged blocker.\n\nThe coordinator may use `scripts/portfolio/artifactpublish.py --record-argv-json JSON -- <jsonartifact acceptance arguments>` to validate/publish and record provenance in one deterministic invocation. The recorder receives argv, not shell text, and must name the accepted artifact. Pending or rejected candidates are never recorded; a recorder failure is reported in the receipt (`recorded: false`, with the reason) and the accepted artifact stands. This replaces separate administrative agent calls without replacing specialist reasoning or independent review.\n\nFor the actual handoff use `submit` with the same arguments as `complete`: it validates and writes the checkpoint, then emits exactly the response object `{\"artifactPath\":\"...\"}`. Return that object unchanged. The schema describes the on-disk candidate; the response contains only its reference. A failed submission emits an error and never writes a new completion checkpoint. When the caller supplies `--files-root ROOT --files-field FIELD`, submission also verifies every path in that candidate field is relative to ROOT, stays inside it after symlink resolution, and names a nonempty regular file. These are declared authored outputs, not all assigned or future files. `--progress-artifacts-root ROOT` additionally checks explicitly declared progress artifact paths inside that root; use it only when the caller establishes that scope. These checks establish file existence and structure, not whether the reasoning is correct.\n"
 const ownedBaselineContract = "---\nname: architecture-baseline\ndescription: Assess the effective architecture in arc42 against one PRD, find what it does not yet serve or represent, build out the architecture from non-effective documents, existing repository code and the AWS MCP Server where it falls short, and keep arc42 updated with a delta for every change. Selects justified retention, change, replacement, addition or retirement without assuming a new design is required.\nuser-invocable: false\n---\n\n# Assessing the effective architecture for a PRD\n\n## The architecture phase\n\nThe architecture is the current effective architecture in arc42: the canonical views whose `lifecycle_state` is `effective`. There is no separate baseline architecture. Every PRD builds on the effective architecture and leaves it updated, so it stays current as PRDs are processed. The architecture phase runs for every PRD and is never skipped; it is not architecture creation. It has three steps:\n\n1. **Assess.** Using the PRD as the guide, find and analyze the effective architecture to judge whether it meets the PRD's needs, capability by capability.\n2. **Build out.** Where the effective architecture does not completely serve the PRD, build it out from the non-effective architecture documents, with the code in the existing repositories on `main` as guidance and the AWS MCP Server as the authority on best practice (see below). Building out includes independent review and approval of the proposal.\n3. **Update arc42.** Integrate the approved result into arc42 as the new effective architecture, with a delta that records the change.\n\n## Authority and evidence\n\nRead the caller's architecture MODEL, specifically `reference/architecture-documentation-model.md#Assessing existing architecture and implementation` beneath the supplied architecture root when that is the project's model layout. The project model owns its document versions, review states and maintenance obligations; this skill applies them to bounded workflow assignments without inventing a second authority policy.\n\nThe owner's explicit instructions and applicable requirements and constraints establish what the work must accomplish. Apply their stated scope. Existing code, CDK, tests, drafts and incidental implementation choices are evidence of the current state; their existence does not make them binding decisions or make retention the goal. The effective architecture is a reviewed starting point, not an immutable prohibition on better justified changes. Read an actual decision and its applicability before treating it as authoritative; do not infer an owner decision from a file, an old implementation or an agent-authored statement.\n\nCompare the current system with the required target. Retain what is suitable; change, replace, add or retire what the evidence and requirements justify. Do not preserve stale design merely because it exists, and do not replace suitable work merely because a different design is possible. Explain the relevant requirement, defect, constraint or AWS guidance and the tradeoff behind a proposed change. A recommendation is evidence to assess in context, not an automatic requirement to redesign. Iteration is expected: preserve provenance and useful findings, revise the affected architecture and implementation work, and use normal Git history to make changes reviewable and reversible.\n\n## Evolve the architecture one PRD at a time\n\nAn effective document is the approved architecture under the knowledge and requirements available when it was approved, not a permanent constraint on future work. Assess the current PRD against the relevant effective views, repository behavior and connected contracts. Expand that scope only where the impact evidence requires it; do not load or redesign all PRDs to approve one. A later PRD may justify superseding a previously sound decision. Explain the new requirement or evidence, update the affected canonical views and implementation handoff, and retain unrelated valid decisions and review evidence. Unknown future requirements are not present constraints or reasons to block approval.\n\n## Assess the effective architecture before selecting work\n\nUse the caller's authoritative PRD, repository code on `main`, CDK, interfaces, data and event schemas, tests, existing arc42 views, open targets and relevant AWS documentation. Repository code and CDK represent the intended deployed system; no separate live-account inventory or deployment-access gate is required by this contract.\n\nArchitecture includes responsibilities, business behavior, interfaces, data, interactions and runtime flows as well as infrastructure. A Lambda or table declaration in CDK does not establish what the application does. For a behavioral capability, inspect the relevant implementation, entrypoints, wiring, contracts and tests. Keep behavioral evidence separate from infrastructure evidence. A test file is evidence of a test, not evidence that it passed. Cite precise sources and distinguish established behavior, inference and uncertainty. Only a genuinely infrastructure-only or documentation-only obligation may use that narrower scope; explain its applicability.\n\nRead each relevant document's actual `lifecycle_state`. `effective` and `in-review` are the existing review states; versions (`effective`, `target`, `delta`, `built`) describe the document's place in the architecture model. These dimensions are not interchangeable. An approved design need not have been implemented. Unreviewed documentation and existing code may be useful and correct, but still need validation. Missing documentation is not proof that code is absent; existing code is not proof that the required behavior is complete or suitable.\n\n## Check what the effective architecture does not yet represent\n\nEven when the effective views serve a capability, arc42 can hold content they do not yet reflect. For every capability the PRD needs, check it against:\n\n- the owner's constraints in section 2 (`02-architecture-constraints/`), including constraints added or changed since the effective views were approved;\n- canonical arc42 views still `in-review`, and other arc42 content not yet effective (for example section 4 strategy or section 8 concepts in review);\n- open targets under `target/` and build records under `built/` that show the capability's elements.\n\nAn open target is design input, not approved design. Its `baseline.json` records `arc42Revision`, the revision of the effective version it was designed against. When that revision is missing, or effective views of the same elements were approved after the target was written (their last commit in the vault is later than the target's), the survey and the Check judge the target possibly stale: validate each part against the current effective views before adopting it, and record in the assessment what was found superseded.\n\nA constraint or document that applies to the capability and that its effective views do not represent is a cited gap: name the constraint or document (path and heading) and the effective view that does not represent it. Give that capability `designAction` `modify` when the design must change to honour it, or `documentationAction` `update` when only the documentation lags; either places the capability in design scope. Content that does not apply to the PRD's capabilities is not in scope; mention it in the summary. When nothing is unrepresented, say so for each capability, with the documents checked. This check is part of every assessment and of every independent review of a capability left unchanged, including a review-only Check.\n\n## Build out from every available input\n\nWhen the effective architecture does not completely serve the PRD, authors build the target from:\n\n- the effective views, as the reviewed starting point;\n- the non-effective architecture documents named above, as design input: validate them and adopt what suits this PRD, rather than only avoiding contradiction with them;\n- the code in the existing repositories on `main`, as guidance: it may already be exactly the design the PRD needs, so reuse it when it is; it may also be stale and far out of date, so judge it against the PRD, the effective views and AWS best practice before following it, and never treat its existence as a reason to keep it;\n- the AWS MCP Server's documentation and skills (with the `aws-core` skills and AWS Well-Architected guidance), as the authority on best practice: every AWS design choice follows them, and where code or an older document disagrees with them, the best practice wins unless a business requirement or a section 2 constraint says otherwise.\n\n## Close over what the work rests on\n\nA PRD names the capabilities it needs, not the foundations they run on. The work of the approved delta rests on other elements the effective architecture shows: a table on its database cluster, the cluster on its network, a handler on its event bus or user pool, a service on a shared library or on a repository that does not exist yet. The handoff to implementation is complete only when every element the delta's work transitively rests on is built and current on `main`, is planned by an open bead of any Epic, or is itself carried as implementation work. After integration, the architecture step's Closure phase walks the effective views from every delta item and records each element that is absent, stale against the effective views, or planned elsewhere, with the repository that deploys it or the repository to create. These become prerequisite items: placed in their own repository, detailed and specified like any delta item, built by their own Tasks, and ordered before the Tasks that need them. A prerequisite an open bead already plans gets no new Task; the Tasks that need it are blocked by that bead. Existing code is evidence of the built state and may be stale; AWS best practice decides what the element must be.\n\n## Produce the canonical assessment\n\nThe caller supplies [the assessment schema](../artifact-handoff/schemas/architecture-baseline.schema.json) as `survey.baseline`. Each entry's `id` is exactly its surveyed capability name and its `requirements` match that capability's requirement references. Record the current state, required target, suitability evidence, rationale and unresolved conflicts. Do not use structural validity as a substitute for judging the evidence.\n\nKeep design, documentation and implementation actions separate:\n\n- A suitable approved design with missing implementation needs implementation work, not another design proposal.\n- Suitable existing behavior with missing or incomplete architecture documentation needs documentation and its review, without invented replacement code.\n- An existing unreviewed design may need validation and approval, or a bounded correction; it does not automatically need a competing proposal.\n- An unsuitable existing implementation may need change, replacement or retirement, including when its older documentation was approved.\n- A fully suitable, evidenced current capability can retain its design and implementation. Record that conclusion and evidence explicitly.\n- Different capabilities and repositories in one PRD may take different actions. Preserve those distinctions in the target and implementation handoff.\n\n`disposition` describes the implementation intent: retain, change, replace, add, retire or undetermined. It is not a document lifecycle state. Unknown evidence remains unknown; never convert it to absence, completion or permission to rebuild. The deterministic helper checks capability coverage, action consistency, required evidence categories and source freshness. It cannot establish that a cited handler implements the requirement: the appropriate independent reviewer must examine that meaning.\n\n## Bounded authoring, review and maintenance\n\nThe default is check and approve: a PRD the effective architecture and the code already serve, with nothing in arc42 left unrepresented, is independently verified and approved without design authoring. A finding in that review that the effective architecture lacks design or documentation sends the assessment back for reassessment of the affected capabilities, which then enter design scope. Select only the authors and reviewers needed for the assessed obligations and remaining gaps. No PRD automatically requires a database, API, integration, competing design or every specialty. Review relevant current claims and their affected dependencies; retain still-valid evidence when unrelated files change. Changes to cited behavior or connected contracts require targeted reassessment.\n\nWhen design authoring is needed, the workflow makes the last selected author accountable for the combined target's coherence. This is an assignment within the chosen work, not a new agent, a fixed lead specialty or an extra dispatch. The coordinator lists that author last and assigns it the integration views, so its final reconciliation runs after the contributing outputs it needs exist. Other authors own their bounded subject views; no author must certify a later author's unwritten output. A review-only or unchanged assessment has no design owner because it has no design-authoring assignment.\n\nKeep maker, reviewer and approval responsibilities separate. An assessment does not approve a design, and a machine-generated unchanged handoff does not replace independent review. After approval, update every affected architecture view and its connected documentation at the appropriate scopes. Carry implementation additions, modifications, replacements and retirements into the TRD, specifications and tasks even when no new architecture authoring is needed. A durable unchanged target may carry zero design changes while still carrying implementation work.\n\nEvery change to the effective architecture has a delta: authored design or documentation changes are delta views beside the target, and approving existing in-review views is recorded in the target's delta handoff. A PRD the effective architecture already serves still gets a delta handoff that says so, with its implementation work.\n\nApproval leaves the covered canonical arc42 documentation correct and approved (`lifecycle_state: effective`); it does not claim implementation. Integrate reviewed target changes into the canonical views, correcting or removing superseded content at every affected scope. A target, delta or built document alone cannot satisfy canonical publication. Existing in-review canonical views may be approved in place after review; already correct and approved views need no gratuitous rewrite. Record the exact affected files so publication can be verified before completion.\n\nUse the caller's executable artifact submission and checkpoint commands. Preserve accepted work and provenance; update the assessment when its relevant inputs change. Do not add private copies of this policy to workflow prompts: workflows supply paths, schemas, task scope and executable gates, while this skill owns the assessment principles.\n"
 const ownedAgentContracts = {"acceptance-criteria-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:acceptance-criteria-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"acceptance-criteria-writer":{"artifactCapable":true,"agentType":"acceptance-criteria-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"accessibility-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:accessibility-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-frontend"]},"advantage-evaluator":{"artifactCapable":false,"agentType":"agent-teams-workforce:advantage-evaluator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"adversarial-critique-adjudicator":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-critique-adjudicator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security"]},"adversarial-review-loop-supervisor":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-review-loop-supervisor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ambiguity-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:ambiguity-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"android-compose-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:android-compose-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"api-contract-designer":{"artifactCapable":true,"agentType":"api-contract-designer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"api-documentation-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:api-documentation-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"api-gateway-cdk-implementer":{"artifactCapable":true,"agentType":"api-gateway-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-gateway","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"api-specification-author":{"artifactCapable":true,"agentType":"api-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"appsync-cdk-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"appsync-client-subscription-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-client-subscription-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"architecture-boundary-guardian":{"artifactCapable":true,"agentType":"architecture-boundary-guardian","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-conformance-reviewer":{"artifactCapable":true,"agentType":"architecture-conformance-reviewer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:arc42","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-decider":{"artifactCapable":true,"agentType":"architecture-decider","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect"]},"architecture-decision-workflow-coordinator":{"artifactCapable":true,"agentType":"architecture-decision-workflow-coordinator","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-diagram-author","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-fitness-function-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-fitness-function-author","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"architecture-impact-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:architecture-impact-analyst","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-maintainer":{"artifactCapable":true,"agentType":"architecture-maintainer","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:arc42","agent-teams-workforce:arc42-maintain","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-pattern-challenger":{"artifactCapable":true,"agentType":"architecture-pattern-challenger","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-tradeoff-skeptic":{"artifactCapable":true,"agentType":"architecture-tradeoff-skeptic","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"athena-redshift-analytics-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:athena-redshift-analytics-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"auth-bypass-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:auth-bypass-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:cognito"]},"aws-integration-test-runner":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:cumulative-regression"]},"aws-integration-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:cumulative-regression"]},"beads-format-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:beads-format-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract"]},"bedrock-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:bedrock-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:bedrock","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"behavioral-signals-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:behavioral-signals-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:product-analytics","agent-teams-workforce:graphrag-lookup"]},"bounded-context-mapper":{"artifactCapable":true,"agentType":"bounded-context-mapper","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"brd-traceability-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:brd-traceability-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"c4-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:c4-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"cdk-infrastructure-designer":{"artifactCapable":true,"agentType":"cdk-infrastructure-designer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"cdk-infrastructure-drift-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:cdk-infrastructure-drift-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation"]},"cdk-stack-author":{"artifactCapable":true,"agentType":"cdk-stack-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation","agent-teams-workforce:resource-naming"]},"cds-finding-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:cds-finding-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","cds:apply-design-system","cds:audit-against-system"]},"cds-ui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cds-ui-implementer","skills":["agent-teams-workforce:subagent-contract","cds:apply-design-system","cds:audit-against-system","cds:compose-page","agent-teams-workforce:graphrag-lookup"]},"changelog-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:changelog-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:changelog-generator"]},"chassis-extension-implementer":{"artifactCapable":true,"agentType":"chassis-extension-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"code-correctness-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-correctness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"code-quality-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:code-quality-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"code-refactoring-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-refactoring-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer","agent-teams-workforce:graphrag-lookup"]},"code-style-and-linting-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-style-and-linting-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"cognito-lambda-trigger-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cognito-lambda-trigger-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cognito","agent-teams-workforce:lambda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"completeness-checker":{"artifactCapable":false,"agentType":"agent-teams-workforce:completeness-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"complexity-analyzer":{"artifactCapable":false,"agentType":"agent-teams-workforce:complexity-analyzer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:tech-debt-tracker"]},"constitutional-agent":{"artifactCapable":false,"agentType":"agent-teams-workforce:constitutional-agent","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"constraint-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:constraint-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"consumer-driven-contract-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:consumer-driven-contract-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder","agent-teams-workforce:cumulative-regression"]},"context-curator":{"artifactCapable":false,"agentType":"agent-teams-workforce:context-curator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"contract-violation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:contract-violation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"cost-architecture-reviewer":{"artifactCapable":true,"agentType":"cost-architecture-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"cost-impact-reviewer":{"artifactCapable":true,"agentType":"cost-impact-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"cross-repo-integration-test-coordinator":{"artifactCapable":false,"agentType":"agent-teams-workforce:cross-repo-integration-test-coordinator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"cross-service-contract-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:cross-service-contract-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"data-consistency-checker":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-consistency-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"data-exposure-scanner":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-exposure-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"data-model-specification-author":{"artifactCapable":true,"agentType":"data-model-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer"]},"data-pipeline-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-pipeline-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:cumulative-regression"]},"definition-of-done-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:definition-of-done-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"dependency-change-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-change-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-cve-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-cve-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-graph-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-graph-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"deployment-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"deployment-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:cove-prompt-design"]},"documentation-accuracy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-accuracy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-currency-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-currency-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:documentation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"domain-boundary-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:domain-boundary-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"domain-event-modeler":{"artifactCapable":true,"agentType":"domain-event-modeler","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"dos-resilience-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:dos-resilience-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"dynamodb-access-layer-implementer":{"artifactCapable":true,"agentType":"dynamodb-access-layer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"dynamodb-cost-optimizer":{"artifactCapable":true,"agentType":"dynamodb-cost-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:aws-cost-operations"]},"dynamodb-schema-access-pattern-reviewer":{"artifactCapable":true,"agentType":"dynamodb-schema-access-pattern-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"dynamodb-streams-cdc-implementer":{"artifactCapable":true,"agentType":"dynamodb-streams-cdc-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup"]},"email-notification-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:email-notification-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:email-template-builder","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup"]},"epic-sequencer":{"artifactCapable":true,"agentType":"agent-teams-workforce:epic-sequencer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:epic-sequencing"]},"espresso-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:espresso-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"event-api-client-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-api-client-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"event-driven-consumer-implementer":{"artifactCapable":true,"agentType":"event-driven-consumer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:sqs","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"event-flow-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-flow-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda"]},"event-schema-designer":{"artifactCapable":true,"agentType":"event-schema-designer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:eventbridge","agent-teams-workforce:sns","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"event-schema-reviewer":{"artifactCapable":true,"agentType":"event-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda"]},"failure-mode-analyst":{"artifactCapable":true,"agentType":"failure-mode-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:observability-designer","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"filing-clerk":{"artifactCapable":true,"agentType":"filing-clerk","skills":["agent-teams-workforce:subagent-contract","obsidian:obsidian-cli","obsidian:obsidian-markdown","agent-teams-workforce:arc42","notebooklm","document-classification"]},"finops-analyst":{"artifactCapable":false,"agentType":"finops-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations"]},"flaky-test-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:flaky-test-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:find-cause"]},"frontend-performance-optimizer":{"artifactCapable":true,"agentType":"agent-teams-workforce:frontend-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend"]},"github-actions-pipeline-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:github-actions-pipeline-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"glue-etl-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:glue-etl-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"graphql-schema-designer":{"artifactCapable":true,"agentType":"graphql-schema-designer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"graphql-schema-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:graphql-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"implementation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:implementation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:graphrag-lookup"]},"incident-responder":{"artifactCapable":true,"agentType":"agent-teams-workforce:incident-responder","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:find-cause","agent-teams-workforce:validation-protocol"]},"incident-response-runbook-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:incident-response-runbook-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:observability-designer"]},"infrastructure-security-scanner":{"artifactCapable":true,"agentType":"infrastructure-security-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:aws-cdk-development"]},"injection-attack-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:injection-attack-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"integration-pattern-architect":{"artifactCapable":true,"agentType":"integration-pattern-architect","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"integration-testing-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:integration-testing-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ios-swiftui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ios-swiftui-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"kinesis-stream-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:kinesis-stream-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"lambda-performance-optimizer":{"artifactCapable":true,"agentType":"lambda-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda"]},"llm-observability-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:llm-observability-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:observability-designer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"matching-algorithm-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:matching-algorithm-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"mcp-server-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mcp-server-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:mcp-server-builder","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:aws-mcp-setup","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"ml-evaluation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:ml-evaluation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:cumulative-regression"]},"mobile-e2e-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mobile-e2e-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"nextjs-component-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:nextjs-component-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-fullstack","agent-teams-workforce:graphrag-lookup"]},"nfr-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:nfr-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"okr-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:okr-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:product-analytics"]},"openapi-contract-reviewer":{"artifactCapable":false,"agentType":"openapi-contract-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"operational-readiness-reviewer":{"artifactCapable":true,"agentType":"operational-readiness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:observability-designer","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"payments-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:payments-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:stripe-integration-expert","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup"]},"performance-benchmark-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:performance-benchmark-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"permission-escalation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:permission-escalation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:iam"]},"persistence-architecture-specialist":{"artifactCapable":true,"agentType":"persistence-architecture-specialist","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer","agent-teams-workforce:rds","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"persona-profile-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:persona-profile-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:product-analytics"]},"phase-gate-enforcer":{"artifactCapable":false,"agentType":"agent-teams-workforce:phase-gate-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cumulative-regression"]},"playwright-e2e-web-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:playwright-e2e-web-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:a11y-audit","agent-teams-workforce:cumulative-regression"]},"polyrepo-steward":{"artifactCapable":true,"agentType":"agent-teams-workforce:polyrepo-steward","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:graphrag-lookup"]},"power-tools-configuration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:power-tools-configuration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"prd-alignment-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-alignment-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-creation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-creation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"prd-reality-reconciler":{"artifactCapable":true,"agentType":"prd-reality-reconciler","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"prd-trd-traceability-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-trd-traceability-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-analyst":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-validation-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-validation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"production-readiness-review-facilitator":{"artifactCapable":false,"agentType":"agent-teams-workforce:production-readiness-review-facilitator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"race-condition-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:race-condition-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"react-native-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:react-native-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"readme-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:readme-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"recommendation-engine-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:recommendation-engine-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"regression-coverage-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-coverage-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"regression-impact-assessor":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-impact-assessor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"requirements-clarifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:requirements-clarifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"requirements-conflict-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:requirements-conflict-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"root-cause-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:root-cause-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:find-cause","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:graphrag-lookup"]},"run-ledger-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:run-ledger-writer","skills":["agent-teams-workforce:subagent-contract"]},"s3-data-lake-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:s3-data-lake-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:s3","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"sdlc-pipeline-orchestrator":{"artifactCapable":false,"agentType":"agent-teams-workforce:sdlc-pipeline-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract"]},"security-architecture-designer":{"artifactCapable":true,"agentType":"security-architecture-designer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-security","agent-teams-workforce:iam","agent-teams-workforce:secrets-manager","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup"]},"security-test-case-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:security-test-case-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security","agent-teams-workforce:cumulative-regression"]},"slo-error-budget-designer":{"artifactCapable":false,"agentType":"slo-error-budget-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:observability-designer","agent-teams-workforce:cloudwatch"]},"smoke-test-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:smoke-test-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"spec-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"spec-currency-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:spec-currency-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"spec-decider":{"artifactCapable":false,"agentType":"spec-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:cove-prompt-design"]},"spec-freshness-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-freshness-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"stakeholder-request-intake-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:stakeholder-request-intake-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"task-decomposer":{"artifactCapable":true,"agentType":"task-decomposer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup"]},"task-decomposition-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-decomposition-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup"]},"task-dependency-mapper":{"artifactCapable":true,"agentType":"task-dependency-mapper","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract"]},"task-readiness-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-readiness-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract"]},"tdd-unit-test-generator":{"artifactCapable":true,"agentType":"agent-teams-workforce:tdd-unit-test-generator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"test-command-resolver":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-command-resolver","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-coverage-gap-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-coverage-gap-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-design-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-design-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"test-environment-orchestrator":{"artifactCapable":true,"agentType":"test-environment-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:aws-mcp-setup"]},"test-failure-parser":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-failure-parser","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-isolation-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-isolation-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:test-failure-mindset"]},"test-plan-strategy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-plan-strategy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cove-prompt-design"]},"trd-author":{"artifactCapable":true,"agentType":"trd-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"trd-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"trd-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"trd-validator":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"ubiquitous-language-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ubiquitous-language-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"uml-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:uml-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"user-guide-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-guide-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:roadmap-communicator"]},"user-story-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:beads-contract"]},"user-story-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"vector-search-embeddings-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:vector-search-embeddings-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:rag-architect","agent-teams-workforce:graphrag-lookup"]},"webauthn-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:webauthn-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:cognito","agent-teams-workforce:graphrag-lookup"]},"workflow-command-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:workflow-command-runner","skills":[]},"worktree-independent-verifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:worktree-independent-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"wsjf-scorer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scorer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf","agent-teams-workforce:beads-contract"]},"wsjf-scoring-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scoring-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf"]},"xcuitest-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:xcuitest-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]}}
 // Runtime replay identifies calls by their unchanged prompt/options and start order.
@@ -36,15 +35,12 @@ async function fableAgent(prompt, options) {
   const suppliedType = String((options && options.agentType) || '')
   const key = suppliedType.replace(/^agent-teams-workforce:/, '')
   const contract = Object.keys(ownedAgentContracts).includes(key) ? ownedAgentContracts[key] : null
-  if (!contract) throw new Error(`NAMED_AGENT_REQUIRED: ${suppliedType || '(missing agentType)'} is not a plugin-owned specialist`)
   const schema = options && options.schema
   const artifactSchema = schema && schema.type === 'object' && Array.isArray(schema.required) && schema.required.length === 1 && schema.required[0] === 'artifactPath' && schema.properties && schema.properties.artifactPath && schema.properties.artifactPath.type === 'string'
-  const outputMode = (options && options.outputMode) || (artifactSchema ? 'artifact' : 'inline')
-  if (!['artifact', 'inline', 'machine'].includes(outputMode) || (outputMode === 'artifact') !== !!artifactSchema || (outputMode === 'machine' && (key !== 'workflow-command-runner' || !schema || !schema.properties || !schema.properties.bridge))) throw new Error(`OUTPUT_CONTRACT_MISMATCH: ${suppliedType}: ${outputMode}`)
-  if (outputMode === 'artifact' && contract && !contract.artifactCapable) throw new Error(`ARTIFACT_CAPABILITY_MISMATCH: ${suppliedType} requires Write and Bash for its declared artifact contract`)
+  const outputMode = ['artifact', 'inline', 'machine'].includes(options && options.outputMode) ? options.outputMode : artifactSchema ? 'artifact' : 'inline'
   const { outputMode: _mode, architectureBaseline = false, ...runtimeOptions } = options || {}
-  options = { ...runtimeOptions, agentType: contract.agentType }
-  const domainSkills = contract.skills.filter(name => !['agent-teams-workforce:subagent-contract', 'agent-teams-workforce:artifact-handoff'].includes(name))
+  options = { ...runtimeOptions, agentType: contract ? contract.agentType : suppliedType }
+  const domainSkills = (contract ? contract.skills : []).filter(name => !['agent-teams-workforce:subagent-contract', 'agent-teams-workforce:artifact-handoff'].includes(name))
   const contracts = outputMode === 'machine' ? '' : ownedCoreContracts + (outputMode === 'artifact' ? '\n\n' + ownedArtifactContract : '')
   const baselineContract = outputMode !== 'machine' && (architectureBaseline === true || domainSkills.includes('agent-teams-workforce:architecture-baseline')) ? ownedBaselineContract + '\n\n' : ''
   const skillData = outputMode !== 'machine' && domainSkills.length ? `Declared domain skills: ${domainSkills.join(', ')}\n\n` : ''
@@ -323,8 +319,9 @@ emit({"pluginRoot": None, "problem": f"{reg} lists no agent-teams-workforce inst
 //   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
 //   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
 //   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
-//   copy, then rebuilds the view. A damaged copy can retry only reading the exact saved
-//   receipt twice; the original command never repeats. Exhaustion pauses this item visibly.
+//   copy, then rebuilds the view. A copy that fails (damaged, missing, or handed back without
+//   the hook) is recovered by reading the relay file the command wrote, bound to the command
+//   line that wrote it; the original command never repeats.
 // depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
 // other program, and checks or writes a saved JSON file against the hash of the value this
 // script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
@@ -536,8 +533,6 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   let captureOrdinal = 0
   const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
   const CAPTURE_SCHEMA = { type: 'object', additionalProperties: false, required: ['exitCode', 'stdout', 'receipt'], properties: { ...SCHEMA.properties, receipt: RECEIPT_SCHEMA } }
-  const MANIFEST_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt'], properties: { receipt: RECEIPT_SCHEMA } }
-  const CHUNK_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt', 'index', 'chunk', 'sha256'], properties: { receipt: RECEIPT_SCHEMA, index: { type: 'integer' }, chunk: { type: 'string' }, sha256: { type: 'string' } } }
   const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
   const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
@@ -560,15 +555,19 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
         operation = 'registered-result'
         continue
       }
-      if (out.bridge !== true) return { captureError: 'deterministic StructuredOutput handoff hook did not run; captured output is retained and no model-copy fallback is permitted' }
+      const settle = (result) => {
+        if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
+        return result
+      }
       if (out.state === 'not-started') { operation = 'registered'; continue }
-      if (out.state !== 'completed') return { captureError: out.error || 'registered command outcome unknown; original command will not repeat' }
+      // Without the hand-off hook the result is the runner's own copy: exec checks it, and reads the relay file when it fails.
+      if (out.bridge !== true) return settle({ exitCode: out.exitCode, stdout: String(out.stdout || '') })
+      if (out.state !== 'completed') return settle({ captureError: out.error || 'registered command outcome unknown' })
       const receipt = out.receipt
       let exact = false
       try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && receipt.exitCode === out.exitCode && Number.isInteger(out.exitCode) && Number.isSafeInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && HEX.test(String(receipt.sha256)) && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
-      if (!exact) return { captureError: 'machine handoff failed current request/command/exit/byte verification' }
-      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
-      return { exitCode: out.exitCode, stdout: out.stdout, receipt, machine: true }
+      if (!exact) return settle({ captureError: 'machine handoff failed request/command/exit/byte verification' })
+      return settle({ exitCode: out.exitCode, stdout: out.stdout, receipt, machine: true })
     }
     return { captureError: 'registered command could not hand back its result after three bounded machine attempts' }
   }
@@ -578,98 +577,67 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     const request = sha256Json({ execution: fableInput.relayExecutionId, invocation: fablePath, ordinal, commandSha256 })
     const runner = readRunner.replace(/[^/]+$/, 'relaycapture.py')
     const common = ['--directory', `${file}.captures`, '--request', request, '--command-sha256', commandSha256]
-    const options = { phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
-    const recovered = new Set()
-    const send = async (command, opts) => {
-      const before = new Set(typeof dispatchFailures === 'undefined' ? [] : dispatchFailures)
-      const result = await dispatch(capturePrompt(command), opts)
-      if (typeof dispatchFailures !== 'undefined') for (const entry of dispatchFailures) if (!before.has(entry) && entry.label === opts.label && entry.phase === opts.phase) recovered.add(entry)
-      return result
-    }
-    const finish = result => {
-      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const index = dispatchFailures.indexOf(entry); if (index >= 0) dispatchFailures.splice(index, 1) }
-      if (recovered.size) log(`RELAY_CAPTURE_RECOVERED ${JSON.stringify({ label, request, recoveredDispatches: recovered.size })}`)
-      return result
-    }
-    const valid = receipt => receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && Number.isInteger(receipt.exitCode)
-    const same = (a, b) => valid(a) && canonicalJson(a) === canonicalJson(b)
-    const matches = (text, digest) => { try { return sha256Ascii(text) === digest } catch (_) { return false } }
-    const out = await send(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)]), { ...options, label, schema: CAPTURE_SCHEMA })
+    const out = await dispatch(capturePrompt(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)])), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: CAPTURE_SCHEMA })
     if (!out && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-    let receipt = out && out.receipt
-    if (out && valid(receipt) && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && matches(out.stdout, receipt.sha256) && out.exitCode === receipt.exitCode) return finish(out)
-    log(`RELAY_CAPTURE_RECOVERY ${JSON.stringify({ label, request, reason: 'capture copy failed byte or invocation validation; reading saved output only' })}`)
-    // Recover even when the model damaged the independent receipt: the file is bound to
-    // the nonce + invocation + command we hold, not to any value the model copied.
-    receipt = null
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const manifest = await send(pythonLine(runner, ['manifest', ...common]), { ...options, label: `${label}:receipt${attempt + 1}`, schema: MANIFEST_SCHEMA })
-      if (!manifest && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-      if (manifest && valid(manifest.receipt)) { receipt = manifest.receipt; break }
-    }
-    if (!valid(receipt)) return { captureError: 'the exact invocation has no valid saved capture receipt' }
-    if (receipt.bytes > 65536) return { captureError: `saved output is ${receipt.bytes} bytes, exceeding the 65536-byte bounded copy recovery limit; original command was not rerun` }
-    let stdout = ''
-    const count = Math.ceil(receipt.bytes / 1024)
-    for (let index = 0; index < count; index++) {
-      let accepted = null
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const chunk = await send(pythonLine(runner, ['chunk', ...common, '--sha256', receipt.sha256, '--index', String(index)]), { ...options, label: `${label}:chunk${index + 1}:${attempt + 1}`, schema: CHUNK_SCHEMA })
-        if (!chunk && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-        if (chunk && same(chunk.receipt, receipt) && chunk.index === index && typeof chunk.chunk === 'string' && chunk.chunk.length === Math.min(1024, receipt.bytes - index * 1024) && HEX.test(String(chunk.sha256)) && matches(chunk.chunk, chunk.sha256)) { accepted = chunk.chunk; break }
-      }
-      if (accepted === null) return { captureError: `saved capture chunk ${index + 1}/${count} failed validation after two reads` }
-      stdout += accepted
-    }
-    if (sha256Ascii(stdout) !== receipt.sha256) return { captureError: 'reconstructed capture does not match the original saved byte digest' }
-    return finish({ exitCode: receipt.exitCode, stdout, receipt })
+    const receipt = out && out.receipt
+    let exact = false
+    try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.exitCode) && out.exitCode === receipt.exitCode && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
+    return exact ? out : { captureError: 'the capture copy failed byte or invocation validation' }
   }
-  /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
-  async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
+  /** The `--argv-sha256` value a checked command line carries, or ''. */
+  function argvShaOf(command) {
+    try {
+      const words = shellWords(command)
+      const at = words.indexOf('--argv-sha256')
+      return at >= 0 && HEX.test(String(words[at + 1])) ? words[at + 1] : ''
+    } catch (_) {
+      return ''
+    }
+  }
+  /**
+   * Runs a command once. When its result does not come back as an exact copy (a damaged copy, a
+   * hand-back without the hook, an unknown outcome), the relay file the command wrote is read
+   * instead, bound to the command line that wrote it; the command itself never runs twice. A
+   * command line the runner typed differently ran nothing and is sent once more.
+   */
+  async function exec(dispatch, { label, phase, command, file = null, readRunner = null }, typedAgain = false) {
     const ordinal = captureOrdinal++
+    const runner = { agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
     const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
     const out = registered
       ? await registeredCommand(dispatch, { label, phase, command }, ordinal)
-      : fableRecovery
-        ? file && readRunner && fableInput.relayExecutionId
-          ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
-          : await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
-        : { captureError: 'deterministic relay registry is unavailable: launch with the updated host relayExecutionId, relayRequestDir and relayCaptureScript contract' }
-    if (out && out.captureError) {
-      const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 2, reason: out.captureError })}`
-      log(error)
-      return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
-    }
+      : fableRecovery && file && readRunner && fableInput.relayExecutionId
+        ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
+        : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
-    let got = parse(out.stdout, file)
-    if (got.why && out.machine) return { ok: false, error: `${label}: exact saved command output is invalid: ${got.why}` }
+    let got = out.captureError ? { why: out.captureError } : parse(out.stdout, file)
     if (got.why) {
-      const receipt = got.env
-      const bound = out.exitCode === 0 && receipt && receipt['~exit'] === 0 && file && readRunner && HEX.test(String(receipt['~sha256'])) && Number.isInteger(receipt['~bytes']) && receipt['~bytes'] >= 0
-      let attempts = 1
-      let reason = got.why
-      if (bound) {
-        const readCommand = pythonLine(readRunner, ['read', '--relay', file, '--sha256', receipt['~sha256'], '--bytes', String(receipt['~bytes'])])
-        for (let retry = 1; retry <= 2; retry++) {
-          attempts++
-          log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt: retry, reason })}`)
-          const copied = await dispatch(`The previous response failed validation: ${reason}. The original command has already completed. Do not execute it again. This corrective attempt only reads the saved result whose bytes must match the original receipt.
-
-${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
-          // The dispatch wrapper owns quota/API interruptions; do not turn one into a copy hold.
-          if (!copied) return { ok: false, noResult: true, error: `${label}: the corrective reader returned no result` }
-          got = parse(copied.stdout, file)
-          if (!got.why && (copied.exitCode !== 0 || got.env['~sha256'] !== receipt['~sha256'] || got.env['~bytes'] !== receipt['~bytes'] || got.env['~exit'] !== 0)) got = { why: 'the corrective read did not return the successful original receipt' }
-          if (!got.why) break
-          reason = got.why
-        }
-      }
-      if (got.why) {
-        const detail = { label, relayFile: file, attempts, reason: `${reason}${bound ? '' : '; no successful saved receipt is available for safe read-only recovery'}` }
-        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify(detail)}`
+      if (!file || !readRunner) {
+        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 1, reason: `${got.why}; the command saves no relay file to read` })}`
         log(error)
         return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
       }
+      const sha = got.env && HEX.test(String(got.env['~sha256'])) ? got.env['~sha256'] : ''
+      const argvSha = argvShaOf(command)
+      let reason = got.why
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt, reason })}`)
+        const readCommand = pythonLine(readRunner, ['read', '--relay', file, ...(attempt === 1 && sha ? ['--sha256', sha] : []), ...(argvSha ? ['--for-argv', argvSha] : [])])
+        const copied = registered
+          ? await registeredCommand(dispatch, { label: `${label}:read${attempt}`, phase, command: readCommand }, captureOrdinal++)
+          : await dispatch(`The command below only reads the result an earlier command already saved; it runs nothing else.\n\n${prompt(readCommand)}`, { label: `${label}:read${attempt}`, phase, ...runner, schema: SCHEMA })
+        if (!copied) return { ok: false, noResult: true, error: `${label}: the relay file reader returned no result` }
+        const read = copied.captureError ? { why: copied.captureError } : parse(copied.stdout, file)
+        if (!read.why && read.env['~exit'] === 4) return { ok: false, error: `${label}: the command saved no result in ${file}` }
+        if (!read.why) { got = read; break }
+        reason = read.why
+      }
+      if (got.why) {
+        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 3, reason })}`
+        log(error)
+        return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
+      }
+      log(`RELAY_COPY_RECOVERED ${JSON.stringify({ label, relayFile: file })}`)
     }
     const exit = got.env['~exit']
     let view
@@ -678,7 +646,13 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agent
     } catch (err) {
       return { ok: false, error: `${label}: the printed view could not be rebuilt: ${String((err && err.message) || err)}` }
     }
-    if (exit === 3) return { ok: false, error: `${label}: ${String(view.error || 'the runner typed the command line differently from the one built')}; nothing ran` }
+    if (exit === 3) {
+      if (!typedAgain) {
+        log(`${label}: the runner typed the command line differently and nothing ran; sending it once more`)
+        return exec(dispatch, { label, phase, command, file, readRunner }, true)
+      }
+      return { ok: false, error: `${label}: ${String(view.error || 'the runner typed the command line differently from the one built')}; nothing ran` }
+    }
     return { ok: true, exit, view }
   }
   /** The exception line a Python traceback in `text` ends with, or ''. */
@@ -808,7 +782,6 @@ Checkpoint command: ${command('checkpoint', ['--progress-file', progress])}
 Status command: ${command('status')}`
   }
   async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
     const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
@@ -821,8 +794,8 @@ Status command: ${command('status')}`
       return { ok: false, blocked: true, resumable: true, error: `ARTIFACT_BLOCKED ${JSON.stringify(detail)}`, ...detail }
     }
     if (probe && receipt && receipt.pending === true) return { ok: true, pending: true, ...(receipt.research ? { research: receipt.research } : {}) }
-    if (recordArgv.length && (!receipt || receipt.recorded !== true)) return { ok: false, error: 'artifact provenance recording not confirmed', relayFile }
-    if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
+    if (!receipt || typeof receipt !== 'object') return { ok: false, error: 'artifact validation printed no receipt', relayFile }
+    if (recordArgv.length && receipt.recorded !== true) log(`${label}: provenance of ${file} was not recorded (${receipt.recordError || 'no reason given'}); the accepted result is used`)
     return { ok: true, receipt, facts: receipt.facts || {}, counts: receipt.counts || {} }
   }
   async function authorArtifact(dispatch, options, produce, interrupted = () => false) {
@@ -840,10 +813,15 @@ Status command: ${command('status')}`
     let receipts = []
     if (files.length) {
       const result = await run(dispatch, { label, phase, runner, argv: ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), ...files.flatMap(file => ['--source', file])], file: relayFile })
-      if (!result.ok) return result
-      if (result.exitCode !== 0 || !result.json || !Array.isArray(result.json.receipts)) return { ok: false, error: `source fingerprint failed: ${JSON.stringify(result.json)}` }
-      receipts = result.json.receipts
-      if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 0 || !['file', 'directory'].includes(r.format))) return { ok: false, error: 'invalid source receipt' }
+      if (!result.ok && (result.noResult || result.paused)) return result
+      if (result.ok && result.exitCode === 0 && result.json && Array.isArray(result.json.receipts)) {
+        receipts = result.json.receipts
+        if (Array.isArray(result.json.skipped) && result.json.skipped.length) log(`${label}: ${result.json.skipped.length} symlink(s) or special file(s) left out of the source fingerprint (listed in ${relayFile})`)
+      } else {
+        // The fingerprint only decides whether saved work is reused: without it, the paths alone bind the revision.
+        log(`${label}: the source fingerprint failed (${result.error || JSON.stringify(result.json)}); the revision binds the paths alone`)
+        receipts = files.map((artifactPath) => ({ artifactPath, format: 'unfingerprinted' }))
+      }
     }
     return { ok: true, revision: sha256Json({ receipts, context }) }
   }
@@ -922,24 +900,24 @@ const startArgs = `elaboration-start --epic ${shellq(epicBeadId)}${hasText(a.own
 // $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the beads repository or
 // $ATW_CONTROL_REPO first, else the user-scope one); with neither, the run refuses before any other agent.
 let pluginRootProblem = ''
+const captureScript = String(fableInput.relayCaptureScript || '')
 if (hasText(a.pluginRoot) && a.pluginRoot.trim().startsWith('/')) {
   lifecycle.pluginRoot = a.pluginRoot.trim().replace(/\/+$/, '')
+} else if (/^\/.+\/scripts\/portfolio\/relaycapture\.py$/.test(captureScript)) {
+  lifecycle.pluginRoot = captureScript.replace(/\/scripts\/portfolio\/relaycapture\.py$/, '')
+  log(`pluginRoot was not passed; the relay capture script gives ${lifecycle.pluginRoot}`)
 } else {
-  const found = await relayKit.inline(settleAgent, { label: 'resolve-plugin-root', phase: 'Epic Lifecycle', code: RESOLVE_PLUGIN_ROOT_PY, args: [emitTarget] })
-  if (found.noResult) {
-    return {
-      ...handback(false, 'epic-lifecycle', `the plugin-root resolver for ${epicBeadId} returned no result`),
-      stage: DISPATCH_FAILED_STAGE,
-      dispatchFailed: true,
-      dispatchFailures: dispatchDeaths('Epic Lifecycle'),
+  for (let attempt = 1; attempt <= 3 && !lifecycle.pluginRoot; attempt++) {
+    const found = await relayKit.inline(settleAgent, { label: `resolve-plugin-root-${attempt}`, phase: 'Epic Lifecycle', code: RESOLVE_PLUGIN_ROOT_PY, args: [emitTarget] })
+    const o = found.ok ? found.view : { error: found.error }
+    if (hasText(o.pluginRoot) && o.pluginRoot.trim().startsWith('/')) {
+      lifecycle.pluginRoot = o.pluginRoot.trim().replace(/\/+$/, '')
+      log(`pluginRoot was not passed; the plugin registry gives ${lifecycle.pluginRoot}`)
+    } else {
+      pluginRootProblem = String(o.problem || o.error || 'the resolver printed no pluginRoot').slice(0, 500)
+      if (dispatchInterruption) break
+      log(`resolve-plugin-root attempt ${attempt}: ${pluginRootProblem}`)
     }
-  }
-  const o = found.ok ? found.view : { error: found.error }
-  if (hasText(o.pluginRoot) && o.pluginRoot.trim().startsWith('/')) {
-    lifecycle.pluginRoot = o.pluginRoot.trim().replace(/\/+$/, '')
-    log(`pluginRoot was not passed; the plugin registry gives ${lifecycle.pluginRoot}`)
-  } else {
-    pluginRootProblem = String(o.problem || o.error || 'the resolver printed no pluginRoot').slice(0, 500)
   }
 }
 if (!lifecycle.pluginRoot) {
@@ -1035,7 +1013,6 @@ const ARC42_REVISION_INPUTS = ART_ON && hasText(a.archPath)
 const specFiles = (slug) => [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`]
 const TASK_DEPS_PHASE = 'task-deps'
 const beadsArgs = { script: `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`, repo: emitTarget, epicId: epicBeadId, ...(SS_ROOT ? { projectRoot: SS_ROOT } : {}) }
-const UNPERSISTED_STAGE = 'hierarchy-not-persisted'
 artReport.dir = ART_ON ? ART_REL || ART_DIR : null
 if (ART_ON) relayDir = `${ART_DIR}/relay`
 artReport.epicId = ART_EPIC
@@ -1075,13 +1052,26 @@ function stepUpstream(phaseId) {
   if (m[1] === 'spec') return ['trd', 'repo-scoping', `recon:${m[2]}`]
   return [`spec:${m[2]}`]
 }
-/** Returns the saved step to reuse, or null: a step is reused only when the resume ruled it fresh and every step it was built from was reused in this run. */
-function resumeFresh(phaseId) {
+/**
+ * Returns the saved step to reuse, or null. A step the resume ruled fresh is reused while every
+ * step it was built from was reused in this run; when one of them ran again, the step is reused only
+ * while the inputs recorded for its files still match (artifactio.py plan, read now), so an
+ * upstream rerun that produced the same files costs no rework downstream.
+ */
+async function resumeFresh(phaseId) {
   const hit = (RESUME && RESUME.phases[phaseId]) || null
   if (!hit) return null
   const redone = stepUpstream(phaseId).filter((up) => artPhases[up] !== 'reused')
   if (!redone.length) return hit
-  const reason = `built from ${redone.map((up) => `${up} (${artPhases[up] || 'not reached'})`).join(', ')}, which this run did not reuse`
+  if (ART_ON) {
+    const plan = await runProgram(`resume:recheck-${phaseId}`, currentPhase || 'PRD', ['python3', ART_SCRIPT, 'plan', ART_EPIC], { keys: ['phases'] })
+    const status = plan && plan.ok && plan.json && plan.json.phases && plan.json.phases[phaseId] ? plan.json.phases[phaseId].status : null
+    if (status === 'fresh') {
+      log(`Phase '${phaseId}': ${redone.join(', ')} ran again, and the inputs recorded for its saved files still match; reused`)
+      return hit
+    }
+  }
+  const reason = `built from ${redone.map((up) => `${up} (${artPhases[up] || 'not reached'})`).join(', ')}, which this run did not reuse, and its recorded inputs changed`
   log(`STALE ${phaseId} (${hit.names.join(', ') || 'no file named'}): ${reason} — recreated, not reused`)
   runLedger.push({ phase: 'artifacts', event: 'stale', phaseId, artifacts: hit.names, reason })
   return null
@@ -1106,8 +1096,8 @@ async function readSavedSpan() {
   const placed = new Set([...r.placements.flatMap((p) => (p && Array.isArray(p.itemIds) ? p.itemIds : [])), ...(Array.isArray(r.noCode) ? r.noCode : []).map((n) => n && n.itemId)])
   const unplaced = deltaItems.filter((i) => !placed.has(i.id)).map((i) => i.id)
   if (unplaced.length) {
-    log(`Repo Scoping: the saved placement does not place ${unplaced.join(', ')} of the delta; the span is ruled again`)
-    return null
+    log(`Repo Scoping: the saved placement does not place ${unplaced.join(', ')} of the delta; they are recorded as no code here`)
+    r.noCode = [...(Array.isArray(r.noCode) ? r.noCode : []), ...unplaced.map((itemId) => ({ itemId, reason: 'the saved placement does not place it' }))]
   }
   if (CONTROL_REPO && r.placements.some((p) => p && normRepo(p.repoPath) === CONTROL_REPO)) {
     log(`Repo Scoping: the saved placement places delta items in the control repository ${CONTROL_REPO}; the span is ruled again`)
@@ -1116,100 +1106,21 @@ async function readSavedSpan() {
   return r
 }
 
-const PLACEMENT_CHECK_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['verdicts'],
-  properties: {
-    verdicts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['repoPath', 'buildable', 'active', 'controlRepository', 'unreachable', 'reason'],
-        properties: {
-          repoPath: { type: 'string' },
-          buildable: { type: 'boolean' },
-          active: { type: 'boolean' },
-          controlRepository: { type: 'boolean' },
-          unreachable: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['itemId', 'requires', 'reason'],
-              properties: { itemId: { type: 'string' }, requires: { type: 'string' }, reason: { type: 'string' } },
-            },
-          },
-          reason: { type: 'string' },
-        },
-      },
-    },
-  },
-}
 /**
- * Asks the polyrepo-steward whether each span repository may hold placed work, and returns
- * { refusals, verdicts } or { error }. A placement in the control repository is refused without
- * asking; a repository the steward rules not buildable, not active or the control repository, or
- * gives no verdict for, is refused.
+ * The placements in a repository that never holds placed work: the control repository, which holds
+ * the pipeline and its tracker, and the repository holding the architecture documentation.
  */
-async function checkPlacements(placements) {
-  const byRepo = new Map()
-  for (const p of placements) {
+function misplaced(placements) {
+  const archRoot = normRepo(a.archPath)
+  const out = []
+  for (const p of Array.isArray(placements) ? placements : []) {
     const repo = normRepo(p && p.repoPath)
     if (!repo) continue
     const ids = Array.isArray(p.itemIds) ? p.itemIds.filter(hasText) : []
-    byRepo.set(repo, [...(byRepo.get(repo) || []), ...ids])
+    if (CONTROL_REPO && repo === CONTROL_REPO) out.push({ repoPath: repo, itemIds: ids, reason: 'it is the control repository, which holds the pipeline and its tracker and is never a placement target' })
+    else if (archRoot && (archRoot === repo || archRoot.startsWith(`${repo}/`))) out.push({ repoPath: repo, itemIds: ids, reason: `it holds the architecture documentation (${archRoot}), which the pipeline never builds or deploys` })
   }
-  const itemText = (ids) => {
-    const known = new Map(deltaItems.map((i) => [i.id, i.element]))
-    return ids.map((id) => (known.has(id) ? `${id} ${known.get(id)}` : id)).join('; ') || 'no item named'
-  }
-  const refusals = []
-  const archRoot = normRepo(a.archPath)
-  for (const [repo, ids] of byRepo) {
-    if (CONTROL_REPO && repo === CONTROL_REPO) {
-      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: 'it is the control repository, which holds the pipeline and its tracker and is never a placement target' })
-    } else if (archRoot && (archRoot === repo || archRoot.startsWith(`${repo}/`))) {
-      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: `it holds the architecture documentation (${archRoot}), which the pipeline never builds or deploys` })
-    }
-  }
-  const asked = [...byRepo.keys()].filter((repo) => !refusals.some((r) => r.repoPath === repo))
-  if (!asked.length) return { refusals, verdicts: [] }
-  const where = new Map()
-  for (const [repo, ids] of byRepo) for (const id of ids) where.set(id, repo)
-  const byId = new Map(deltaItems.map((i) => [i.id, i]))
-  const needs = (repo) => (byRepo.get(repo) || [])
-    .map((id) => byId.get(id))
-    .filter((i) => i && Array.isArray(i.requires) && i.requires.length)
-    .map((i) => `    ${i.id} ${i.element} requires ${i.requires.map((r) => `${r} ${(byId.get(r) || {}).element || ''} (${where.has(r) ? `placed in ${where.get(r)}` : 'no code in this project'})`).join('; ')}`)
-  const got = await settleAgent(
-    `Rule, from your records of this project's repositories and the live repositories, whether each repository below may hold work the pipeline builds and deploys, and whether each item placed in it can reach what it requires. Change nothing.
-
-${asked.map((repo) => `- ${repo}${needs(repo).length ? `\n${needs(repo).join('\n')}` : ''}`).join('\n')}
-
-For each one return: repoPath (exactly as listed above); buildable (true when your records say it holds code the pipeline builds and deploys, false for a repository that holds only documentation, templates, the pipeline itself or nothing the pipeline builds); active (true when its lifecycle in your records is active, false when it is deprecated, archived, or not in your records); controlRepository (true when it is the project's control repository, the one that holds the pipeline and its tracker); unreachable (one entry per required item listed under it that its stacks cannot reach once the required item is built where it is placed: neither in the same stack nor through an SSM Parameter Store parameter the producing stack writes and this repository's stack reads, nor by the network or permissions the architecture gives it; itemId, requires (the required item's id) and reason; empty when every one is reachable or none is listed); and reason (the record that decides it, in a sentence).`,
-    { label: 'scope:check-placements', phase: 'Repo Scoping', agentType: 'agent-teams-workforce:polyrepo-steward', effort: 'low', schema: PLACEMENT_CHECK_SCHEMA }
-  )
-  if (!got) return { error: 'the polyrepo-steward returned no verdict on the span repositories' }
-  const verdicts = (Array.isArray(got.verdicts) ? got.verdicts : []).filter((v) => v && hasText(v.repoPath))
-  for (const repo of asked) {
-    const ids = byRepo.get(repo)
-    const v = verdicts.find((x) => normRepo(x.repoPath) === repo)
-    if (!v) {
-      refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: 'the polyrepo-steward gave no verdict for it' })
-      continue
-    }
-    const cut = (Array.isArray(v.unreachable) ? v.unreachable : []).filter((u) => u && hasText(u.itemId))
-    const faults = [
-      v.controlRepository === true ? 'it is the control repository' : '',
-      v.buildable !== true ? 'it is not a buildable repository' : '',
-      v.active !== true ? 'it is not an active repository' : '',
-      cut.length ? `its stacks cannot reach what placed items require: ${cut.map((u) => `${u.itemId} cannot reach ${u.requires} (${String(u.reason || '').trim()})`).join('; ')}` : '',
-    ].filter(Boolean)
-    if (faults.length) refusals.push({ repoPath: repo, itemIds: ids, items: itemText(ids), reason: `${faults.join(', ')} (the polyrepo-steward: ${String(v.reason || 'no reason given').trim()})` })
-  }
-  return { refusals, verdicts }
+  return out
 }
 
 enterPhase('Epic')
@@ -1217,38 +1128,12 @@ const epic = { key: epicRef.key || epicBeadId, ...epicRef, id: epicBeadId, type:
 produced.epic = epic
 recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
 
-enterPhase('PRD Parse')
-if (!hasText(prd.path)) {
-  const why = 'the PRD carries no file path: depscore.py prd-parse reads the PRD from its file (prd.path)'
-  return await holdForHuman('prd-parse', { reason: why }, [`Pass the PRD of ${epicBeadId} as a file in prd.path: ${why}`], 'the PRD file path has been supplied')
-}
-const prdParse = await runScript('prd:parse', 'PRD Parse', `prd-parse --prd ${shellq(prd.path)}`)
-if (!prdParse || prdParse.error) {
-  const died = dispatchDeaths('PRD Parse')
-  return partial('prd-parse', {
-    reason: `depscore.py prd-parse did not return a result for ${prd.path}: ${(prdParse && prdParse.error) || 'no result'}`,
-    ...(died.length ? { dispatchFailed: true, dispatchFailures: died } : {}),
-  })
-}
-if (prdParse.ok !== true) {
-  const failedChecks = (Array.isArray(prdParse.failed) ? prdParse.failed : []).filter((f) => f && hasText(f.check))
-  const named = failedChecks.map((f) => `${f.check} (${f.reason || 'no reason given'})`).join('; ') || 'prd-parse returned ok:false naming no check'
-  return await holdForHuman(
-    'prd-parse',
-    { reason: `the PRD at ${prd.path} failed depscore.py prd-parse: ${named}`, failedChecks },
-    [`Make the PRD at ${prd.path} readable: ${named}`],
-    'the PRD has been fixed'
-  )
-}
-const requirementHeadings = Array.isArray(prdParse.requirementHeadings) ? prdParse.requirementHeadings.filter(hasText) : []
-produced.prdParse = { prd: prd.path, requirementHeadings }
-recRuled(`PRD parsed by depscore.py prd-parse: ${requirementHeadings.length} requirement heading(s).`, { status: 'done' })
-
 enterPhase('Architecture')
 let architecture = null
-const archHit = resumeFresh('architecture')
+const archHit = await resumeFresh('architecture')
 const savedTargetSummary = archHit && archHit.names.includes('architecture/target.json') ? await readSavedTarget() : null
-if (archHit && savedTargetSummary && savedTargetSummary.ok === true && savedTargetSummary.closureSaved === true && hasText(savedTargetSummary.targetDir)) {
+if (archHit && savedTargetSummary && savedTargetSummary.found === true && hasText(savedTargetSummary.targetDir)) {
+  if (savedTargetSummary.ok !== true || savedTargetSummary.closureSaved !== true) log(`Architecture: the saved target ${savedTargetSummary.targetDir} is reused${hasText(savedTargetSummary.revisionProblem) ? `; ${savedTargetSummary.revisionProblem}` : ''}${savedTargetSummary.closureSaved !== true ? '; it holds no prerequisite closure' : ''}`)
   reuseFrom('architecture', archHit)
   await acceptPhase('architecture', 'reused')
   architecture = {
@@ -1297,13 +1182,13 @@ if (!architecture) {
 produced.architecture = (architecture.artifact || null)
 if (!architecture.ok) {
   const art = architecture.artifact || {}
-  if (art.stage === 'input') {
-    const noArch = /archPath|ATW_ARCH_PATH/.test(architecture.reason)
+  if (art.stage === 'input' && /archPath|ATW_ARCH_PATH/.test(architecture.reason)) {
+    // Where the architecture lives is the owner's configuration: only the owner can supply it.
     return await holdForHuman(
       'architecture',
       architecture,
-      [`architecture refused its input: ${architecture.reason}${noArch ? ' Set ATW_ARCH_PATH to the architecture directory (the folder holding arc42/, target/ and built/) for the pipeline host.' : ''}`],
-      noArch ? 'the architecture path is configured' : 'what the refusal names has been supplied'
+      [`architecture refused its input: ${architecture.reason} Set ATW_ARCH_PATH to the architecture directory (the folder holding arc42/, target/ and built/) for the pipeline host.`],
+      'the architecture path is configured'
     )
   }
   if (art.stage === 'owner-concern') {
@@ -1312,23 +1197,19 @@ if (!architecture.ok) {
       : [`The architecture of ${epicBeadId} found business requirements no design can satisfy together, or conflicting section 2 constraints: ${architecture.reason}`]
     return await holdForHuman('architecture', architecture, actions, 'the PRD or section 2 says which side holds')
   }
-  // Any other architecture stop that names actions for the owner holds the Epic: a re-dispatch meets the same stop.
-  if (Array.isArray(art.requiredHumanActions) && art.requiredHumanActions.length) {
-    return await holdForHuman('architecture', { ...architecture, headline: art.headline }, art.requiredHumanActions.slice(), 'what the actions above name has been done')
-  }
-  return partial('architecture', architecture)
+  // Any other architecture stop is the pipeline's to fix: it is reported, never held for a person.
+  return partial('architecture', { ...architecture, ...(art.headline ? { headline: art.headline } : {}) })
 }
 const archArt = architecture.artifact || {}
-if (!hasText(archArt.targetDir) || !hasText(archArt.deltaDir)) {
-  return partial('architecture', { reason: 'the architecture result names no target and delta directory, which every later phase reads' })
+if (!hasText(archArt.targetDir)) {
+  return partial('architecture', { reason: 'the architecture result names no target directory, which every later phase reads' })
 }
+if (!hasText(archArt.deltaDir)) archArt.deltaDir = `${archArt.targetDir.replace(/\/+$/, '')}/delta`
 const deltaList = await runScript('arch:delta', 'Architecture', `arch-delta --delta-dir ${shellq(archArt.deltaDir)}${ART_ON ? ` --save ${shellq(artPath('delta-items.json'))}` : ''}`)
-if (!deltaList || deltaList.error || deltaList.ok !== true) {
-  const why = deltaList && !deltaList.error
-    ? `depscore.py arch-delta refused the delta at ${archArt.deltaDir}: ${(deltaList.refusals || []).join('; ') || 'no reason given'}`
-    : `depscore.py arch-delta did not list the delta at ${archArt.deltaDir}: ${(deltaList && deltaList.error) || 'no result'}`
-  return partial('architecture', { reason: why })
+if (!deltaList || deltaList.error) {
+  return partial('architecture', { reason: `depscore.py arch-delta did not list the delta at ${archArt.deltaDir}: ${(deltaList && deltaList.error) || 'no result'}` })
 }
+if (deltaList.ok !== true) log(`Architecture: depscore.py arch-delta lists the delta at ${archArt.deltaDir} with refusals, carried on with the items it lists: ${(deltaList.refusals || []).join('; ') || 'none named'}`)
 const deltaItems = (Array.isArray(deltaList.items) ? deltaList.items : [])
   .filter((i) => i && hasText(i.id) && hasText(i.element))
   .map((i) => ({ ...i, id: i.id, element: i.element, views: Array.isArray(i.views) ? i.views.filter(hasText) : [] }))
@@ -1359,7 +1240,7 @@ log(`Build items: ${deltaItems.length} item(s) from ${delta.targetDir} (architec
 
 let scoping = null
 /** Returns { scoping, scopeHit }: the saved placement on a resume, else a fresh one. */
-async function runRepoScoping() {
+async function runRepoScoping(avoid = []) {
   if (noImplementationWork) {
     return { scopeHit: null, scoping: {
       ok: true, repos: [], placements: [], createdRepos: [],
@@ -1368,7 +1249,7 @@ async function runRepoScoping() {
       baselineValidated: true,
     } }
   }
-  const scopeHit = resumeFresh('repo-scoping')
+  const scopeHit = avoid.length ? null : await resumeFresh('repo-scoping')
   const saved = scopeHit && ART_ON ? await readSavedSpan() : null
   if (scopeHit && !saved) log(`Repo Scoping: the saved ruling in ${ART_DIR} was not read back; the span is ruled again`)
   if (saved) {
@@ -1396,6 +1277,7 @@ async function runRepoScoping() {
     prd: { id: prd.id, title: prd.title, path: prd.path },
     delta,
     epic: { key: epic.key, title: epic.title },
+    ...(avoid.length ? { avoidRepos: avoid } : {}),
   })
   return { scoping: ruled, scopeHit: null }
 }
@@ -1415,7 +1297,7 @@ const TRD_INPUTS = [
 ].filter(hasText)
 /** Returns { mode: 'resumed' | 'ran', trdAuthoring: { ok, artifact } }. */
 async function runTrdAuthoring() {
-  const trdHit = resumeFresh('trd')
+  const trdHit = await resumeFresh('trd')
   if (trdHit && trdHit.names.includes('trd.md')) {
     reuseFrom('trd', trdHit)
     return {
@@ -1468,38 +1350,21 @@ if (!scoping || scoping.ok === false) {
     ...(!scoping || scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (scoping && scoping.dispatchFailures) || [] } : {}),
   })
 }
-const createdNames = (Array.isArray(scoping.createdRepos) ? scoping.createdRepos : []).map((c) => c && c.name).filter(hasText).map((n) => n.trim())
-if (createdNames.length) {
-  const namedCheck = await runScript('scope:created-named', 'Repo Scoping', `arch-target-names --target-dir ${shellq(delta.targetDir)} --names ${shellq(createdNames.join(','))}`)
-  produced.createdNamed = namedCheck
-  if (!namedCheck || namedCheck.error) return partial('repo-scoping', { reason: `depscore.py arch-target-names did not check the repositories the polyrepo-steward created: ${(namedCheck && namedCheck.error) || 'no result'}` })
-  const closureNamed = new Set(prerequisiteItems.map((i) => (i.repository && hasText(i.repository.name) ? i.repository.name.trim().toLowerCase() : '')).filter(Boolean))
-  const unnamed = (Array.isArray(namedCheck.unnamed) ? namedCheck.unnamed.filter(hasText) : []).filter((n) => !closureNamed.has(n.trim().toLowerCase()))
-  if (unnamed.length) {
-    return await holdForHuman(
-      'repo-scoping',
-      { reason: `the polyrepo-steward created repositories the approved target at ${delta.targetDir} does not name: ${unnamed.join(', ')}`, unnamedRepos: unnamed },
-      unnamed.map((n) => `The polyrepo-steward created ${n} for ${epicBeadId}, and neither the approved target at ${delta.targetDir} nor its prerequisite closure names it. Decide whether ${n} stays; the polyrepo-steward removes it on your approval.`),
-      'each repository the target does not name has been ruled on'
-    )
+let wrongPlace = misplaced(scoping.placements)
+if (wrongPlace.length) {
+  const named = wrongPlace.map((r) => `${r.repoPath} (${r.itemIds.join(', ') || 'no item named'}): ${r.reason}`)
+  log(`Repo Scoping: placements in a repository that never holds placed work go back to the polyrepo-steward once — ${named.join(' | ')}`)
+  const again = await runRepoScoping(wrongPlace)
+  if (again && again.scoping && again.scoping.ok !== false) {
+    scoping = again.scoping
+    if (scoping.ledger) runLedger.push(scoping.ledger)
+    produced.repoScoping = scoping
+    wrongPlace = misplaced(scoping.placements)
+  }
+  if (wrongPlace.length) {
+    return partial('repo-scoping', { reason: `the polyrepo-steward placed delta items in a repository that never holds placed work, twice — ${wrongPlace.map((r) => `${r.repoPath} (${r.itemIds.join(', ')}): ${r.reason}`).join(' | ')}`, misplaced: wrongPlace })
   }
 }
-const placementCheck = await checkPlacements(Array.isArray(scoping.placements) ? scoping.placements : [])
-produced.placementCheck = placementCheck
-if (placementCheck.error) {
-  const died = dispatchDeaths('Repo Scoping')
-  return partial('repo-scoping', { reason: placementCheck.error, ...(died.length ? { dispatchFailed: true, dispatchFailures: died } : {}) })
-}
-if (placementCheck.refusals.length) {
-  const named = placementCheck.refusals.map((r) => `${r.repoPath}: ${r.reason}; delta items placed there: ${r.items}`)
-  return await holdForHuman(
-    'repo-scoping',
-    { reason: `the span names repositories that may not hold placed work — ${named.join(' | ')}`, refusals: placementCheck.refusals },
-    named.map((n) => `Delta items of ${epicBeadId} are placed in a repository that may not hold them. ${n}. Correct the polyrepo-steward's records of that repository, or place these items in a buildable, active repository.`),
-    "each refused placement has been resolved"
-  )
-}
-recRuled(`Placement check: the polyrepo-steward ruled ${placementCheck.verdicts.length} span repositor(ies) buildable and active.`)
 if (scoping.resumed === true) reuseFrom('repo-scoping', scopeSettled.scopeHit)
 if (noImplementationWork) {
   artPhases['repo-scoping'] = 'skipped'
@@ -1509,17 +1374,16 @@ if (noImplementationWork) {
 }
 repos = Array.isArray(scoping.repos) ? scoping.repos : []
 recRuled(`Repo span: ${repos.join(', ') || 'no repository'}, the repositories the delta changes.`, { status: 'done' })
-if (!repos.length && !noImplementationWork) return partial('repo-scoping', { reason: 'the span names no repository' })
+if (!repos.length && !noImplementationWork) log('Repo Scoping: the span names no repository: every delta item has no code here, so there is no implementation work')
+/** True when there is nothing to build: the assessment needs no implementation, or no delta item has code here. */
+const nothingToBuild = noImplementationWork || !repos.length
 const createdRepos = (Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
-log(`Span: ${repos.join(', ')}${createdRepos.length ? `; created by the polyrepo-steward: ${createdRepos.map((c) => (c && c.name) || String(c)).join(', ')}` : ''}`)
+log(`Span: ${repos.join(', ') || 'no repository'}${createdRepos.length ? `; created by the polyrepo-steward: ${createdRepos.map((c) => (c && c.name) || String(c)).join(', ')}` : ''}`)
 
 enterPhase('TRD Authoring')
 if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
 produced.trdAuthoring = (trdAuthoring.artifact || null)
 if (!trdAuthoring.ok) {
-  if (trdAuthoring.artifact && trdAuthoring.artifact.stage === 'input') {
-    return await holdForHuman('trd-authoring', trdAuthoring, [`trd-authoring refused its input: ${trdAuthoring.reason}`], 'what the refusal names has been supplied')
-  }
   return partial('trd-authoring', trdAuthoring)
 }
 recRuled(`TRD ${trdSettled.mode === 'resumed' ? 'reused' : 'authored'}${hasText(trdAuthoring.artifact.trdPath) ? ` at ${trdAuthoring.artifact.trdPath}` : ''}.`, { status: 'done' })
@@ -1636,7 +1500,7 @@ async function authorSpecForRepo(repo, repoIndex) {
   const slug = repoSlug(repo)
   const specPhase = `spec:${slug}`
   const reconPhase = `recon:${slug}`
-  const reconHit = resumeFresh(reconPhase)
+  const reconHit = await resumeFresh(reconPhase)
   const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
   const recon = await settleWorkflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
   if (recon && recon.ledger) runLedger.push(recon.ledger)
@@ -1655,7 +1519,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     }
   }
   await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
-  const specHit = resumeFresh(specPhase)
+  const specHit = await resumeFresh(specPhase)
   const args = specArgs(repo, storyKey, slug, recon)
   const r = await settleWorkflow('agent-teams-workforce:spec-authoring', specHit ? { ...args, replay: true } : args)
   const specAuthoring = r && r.ok === true && r.story
@@ -1701,7 +1565,7 @@ for (const [repoIndex, repo] of repos.entries()) {
 produced.reconciliationByRepo = Array.from(reconByRepo, ([rp, recon]) => ({ repoPath: rp, recon }))
 produced.specPairs = specPairs
 produced.specFailures = specFailures
-if (!specPairs.length && !noImplementationWork) {
+if (!specPairs.length && !nothingToBuild) {
   return partial('spec-authoring', {
     reason: `no repo produced a spec — ${specFailures.map((x) => `${x.repoPath}: ${x.reason}`).join('; ')}`,
     specFailures,
@@ -1770,7 +1634,7 @@ function decompArgs(pair) {
 async function decomposeStory(pair) {
   const slug = repoSlug(pair.repoPath)
   const tasksPhase = `tasks:${slug}`
-  const tasksHit = resumeFresh(tasksPhase)
+  const tasksHit = await resumeFresh(tasksPhase)
   const replay = !!(tasksHit && ART_ON && tasksHit.names.includes(`tasks-${slug}.json`))
   const r = await settleWorkflow('agent-teams-workforce:task-decomposition', replay ? { ...decompArgs(pair), replay: true } : decompArgs(pair))
   if (r && r.ok === true) {
@@ -1821,7 +1685,7 @@ produced.stories = stories
 produced.decompositions = decompositions
 produced.decompositionFailures = decompositionFailures
 produced.tasks = tasks
-if (!decompositions.length && !noImplementationWork) {
+if (!decompositions.length && !nothingToBuild) {
   return partial('task-decomposition', {
     reason: `no Story produced tasks — ${decompositionFailures.map((x) => `${x.storyKey || x.repoPath}: ${x.reason}`).join('; ')}`,
     decompositionFailures,
@@ -1830,24 +1694,24 @@ if (!decompositions.length && !noImplementationWork) {
 }
 
 const crossStory = { ran: false, reason: null, note: null, edges: [], rejected: 0, written: null }
-/** The Task edges between Stories that the delta's requires relations make, from depscore.py closure-edges; its refusals keep the Epic from done. */
-const closureEdges = { edges: [], refusals: [] }
+/** The Task edges between Stories that the delta's requires relations make, from depscore.py closure-edges; its warnings are reported. */
+const closureEdges = { edges: [], warnings: 0 }
 if (ART_ON && repos.length) {
   const out = await runScript('beads:closure-edges', 'Task Decomposition', `closure-edges --dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`)
-  if (!out || out.error) closureEdges.refusals.push(`depscore.py closure-edges did not run: ${(out && out.error) || 'no result'}`)
+  if (!out || out.error) log(`Prerequisites: depscore.py closure-edges did not run: ${(out && out.error) || 'no result'}`)
   else {
     closureEdges.edges = Array.isArray(out.edges) ? out.edges : []
-    closureEdges.refusals = Array.isArray(out.refusals) ? out.refusals.filter(hasText) : []
+    closureEdges.warnings = Number(out.summary && out.summary.warnings) || 0
   }
-  if (closureEdges.refusals.length) log(`Prerequisites: a Task's required item has no Task, no open bead and is not done — ${closureEdges.refusals.join('; ')}`)
-  else if (closureEdges.edges.length) log(`Prerequisites: ${closureEdges.edges.length} Task edge(s) between Stories from the delta's requires relations`)
+  if (closureEdges.warnings) log(`Prerequisites: ${closureEdges.warnings} required item(s) with no Task, no open bead and not done (listed under warnings in ${out.relayFile})`)
+  if (closureEdges.edges.length) log(`Prerequisites: ${closureEdges.edges.length} Task edge(s) between Stories from the delta's requires relations`)
 }
 produced.closureEdges = closureEdges
 if (decompositions.filter((d) => Array.isArray(d.artifact.tasks) && d.artifact.tasks.length).length < 2) {
   crossStory.note = 'the Tasks sit in one Story or none'
 } else {
   crossStory.ran = true
-  const depsHit = resumeFresh(TASK_DEPS_PHASE)
+  const depsHit = await resumeFresh(TASK_DEPS_PHASE)
   const spanArgs = `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`
   const edgeOut = (name) => `--out ${shellq(`${ART_DIR}/task-edges/${name}.json`)}`
   /** Writes the saved Task edges between Stories to beads with depscore.py write-all-task-edges; returns its checked summary or null. */
@@ -1912,14 +1776,14 @@ if (decompositions.filter((d) => Array.isArray(d.artifact.tasks) && d.artifact.t
         }
     const mappingCandidate = artPath('candidates/task-deps.json')
     const inputBinding = await relayKit.artifactRevision(settleAgent, { label: 'sequence:inputs', phase: 'Task Decomposition', runner: relayRunner(), files: depsInputs, relayFile: nextRelayFile('task-deps-inputs'), context: { epic: epic.id, listing } })
-    if (!inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'Task Decomposition', reason: inputBinding.error })
-    const inputRevision = inputBinding.revision
+    if (!inputBinding.ok) log(`Cross-Story Task dependencies: the inputs could not be fingerprinted (${inputBinding.error}); the mapping is bound to no revision`)
+    const inputRevision = inputBinding.ok ? inputBinding.revision : ''
     const mapDependencies = () => settleAgent(
       `Derive the Task-to-Task build dependencies whose two ends are Tasks in different Stories of Epic ${epic.id} — ${epic.title || ''}. Each Story is one repository's slice; the edges inside each Story are already drawn and listed. Read each Story's saved task file named below for what each Task builds. Return ONLY edges whose two ends are Tasks in DIFFERENT Stories, referencing Tasks by their key exactly as given. An edge "from -> to" means "from must be built before to".
 
 Add an edge ONLY where a Task cannot be built until a Task in another Story is built: an API it consumes that the other Task provides, an event contract whose producer must publish first, a table, bucket or IAM grant the other repository provisions. Sharing a domain or this Epic is not a dependency. Type each edge as data, contract, infrastructure or event-flow and justify it in one line.
 
-The whole Task graph — the edges already drawn plus yours — must be acyclic. If the only honest reading implies a cycle, set acyclic=false, name the cycle as Task keys, and return no edges.
+The whole Task graph — the edges already drawn plus yours — must be acyclic. If the only honest reading implies a cycle, set acyclic=false and name the cycle as Task keys; return the edges you found, and the workflow drops each edge that closes a cycle.
 
 Do NOT add, remove, split or rescope Tasks. Do NOT write code.
 
@@ -1942,16 +1806,13 @@ Write nothing to beads: the workflow writes the edges from that file.`,
     const mapped = accepted && accepted.facts
     if (!accepted || !accepted.ok) {
       crossStory.reason = `The authoritative cross-Story dependency artifact was not accepted: ${accepted && accepted.error || 'dispatch interrupted'}`
-    } else if (mapped.acyclic === false) {
-      crossStory.reason = `the mapper reported a cycle across Stories (${(mapped.cycle || []).join(' -> ') || 'not named'}) and returned no edges`
     } else {
+      if (mapped.acyclic === false) log(`Cross-Story Task dependencies: the mapper reported a cycle (${(mapped.cycle || []).join(' -> ') || 'not named'}); the edges that close it are dropped when they are written`)
       const art = artFor(TASK_DEPS_PHASE, depsInputs)
       const rec = await runProgram('sequence:record', 'Task Decomposition', ['python3', art.script, 'record', artPath('task-deps.json'), '--epic', art.epicId, '--phase', art.phase, ...(depsInputs.length ? ['--inputs', ...depsInputs] : [])], { tail: 5 })
-      if (!rec.ok || rec.exitCode !== 0) crossStory.reason = `The accepted cross-Story dependency artifact was not recorded: ${rec.error || rec.stderrTail || rec.exitCode}`
-      else {
-        await acceptPhase(TASK_DEPS_PHASE, 'passed')
-        ran = await writeEdges()
-      }
+      if (!rec.ok || rec.exitCode !== 0) log(`Cross-Story Task dependencies: the accepted mapping was not recorded (${rec.error || rec.stderrTail || rec.exitCode}); its edges are written`)
+      else await acceptPhase(TASK_DEPS_PHASE, 'passed')
+      ran = await writeEdges()
     }
   }
   if (ran) {
@@ -1975,18 +1836,18 @@ produced.crossStoryDependencies = crossStory
 recRuled(`${tasks.length} Task(s) across ${decompositions.length} Story/Stories; ${crossStory.edges.length} edge(s) across Stories.`, { status: 'done' })
 
 enterPhase('Finish')
-const done = !specFailures.length && !decompositionFailures.length && !crossStory.reason && !closureEdges.refusals.length
+// Done once any Story has Tasks written, or nothing is to be built. What produced nothing is
+// reported in the handback; it does not keep the Epic in_progress.
+const done = nothingToBuild || decompositions.some((d) => Array.isArray(d.artifact.tasks) && d.artifact.tasks.length)
 const finishArgs = [
   `elaboration-finish --epic ${shellq(epicBeadId)}`,
   lifecycle.owner ? `--owner ${shellq(lifecycle.owner)}` : '',
   done ? '--done' : '',
-  ART_ON ? `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}` : '',
 ].filter(Boolean).join(' ')
 const finishOut = await runScript('epic:finish', 'Finish', finishArgs)
 lifecycle.finish = finishOut
 const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
 const epicMarkedDone = finishOk && !!finishOut.lifecycle
-const unheld = finishOk && Array.isArray(finishOut.missing) ? finishOut.missing.filter(hasText) : []
 const scoringLine = finishOk
   ? `Epic ${epicBeadId} and ${(finishOut.summary && finishOut.summary.tasksScored) || 0} Task(s) scored; Epic ${epicMarkedDone ? 'is elaboration_state=done' : 'stays in_progress'}. `
   : `Scoring did not run for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'}. `
@@ -2001,7 +1862,7 @@ const storyEdgeLine = !storyEdges
       (storyEdges.ok ? '' : `Not written for ${(storyEdges.refusedStories || []).join(', ')} — ${storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `)
 if (storyEdgeLine) log(storyEdgeLine)
 const targetRemoval = { removed: false, commit: null, reason: null }
-if (epicMarkedDone && !unheld.length) {
+if (epicMarkedDone) {
   if (!hasText(a.archPath)) {
     targetRemoval.reason = 'no archPath was passed, so the target folder was not removed'
   } else {
@@ -2047,7 +1908,7 @@ const runJournal = {
     decomposition: decompositions,
   },
 }
-recRuled(writeLine + scoringLine, { status: unheld.length ? 'failed' : 'done' })
+recRuled(writeLine + scoringLine, { status: 'done' })
 const common = {
   degraded,
   beadsEmitted,
@@ -2060,12 +1921,6 @@ const common = {
   targetRemoval,
   ...(createdRepos.length ? { createdRepos } : {}),
 }
-if (unheld.length) {
-  return {
-    ...handback(false, UNPERSISTED_STAGE, `decomposed but beads does not hold all of it — ${unheld.slice(0, 20).join('; ')}${unheld.length > 20 ? `; and ${unheld.length - 20} more` : ''}. Re-dispatch the Epic: every write is keyed by elab_key, so the rerun updates what landed.`, runJournal),
-    ...common,
-  }
-}
 return {
   ...handback(
     true,
@@ -2077,8 +1932,8 @@ return {
       scoringLine +
       storyEdgeLine +
       targetLine +
-      (specFailures.length || decompositionFailures.length || crossStory.reason || closureEdges.refusals.length
-        ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}${closureEdges.refusals.length ? `, prerequisites with no Task, no open bead and not done: ${closureEdges.refusals.join('; ')}` : ''}.` +
+      (specFailures.length || decompositionFailures.length || crossStory.reason || closureEdges.warnings
+        ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}${closureEdges.warnings ? `, ${closureEdges.warnings} prerequisite(s) with no Task, no open bead and not done` : ''}.` +
           (specFailures.length ? ` No spec: ${specFailures.map((x) => `${x.repoPath} at ${x.stage || 'spec-authoring'}: ${x.reason}`).join('; ')}`.slice(0, 1500) : '')
         : ''),
     runJournal

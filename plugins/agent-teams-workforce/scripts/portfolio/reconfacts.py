@@ -5,10 +5,12 @@
 repository a status (`add`, `modify`, `remove`, `done`, `planned-elsewhere`), the file:line
 evidence for it, its surface, the design source each `ui` item takes (`bundle`, `cds` or
 `none`, with the supplied bundle and build spec of a `bundle` item), and the upstream
-dependency changes. This command checks it against the items placed in the repository and
-prints the small facts: whether it is usable and, when not, what is wrong with which item;
-the ids of the items that make work and of those that do not; each `ui` work item's design
-source; the mocks directory; whether the dependencies are current.
+dependency changes. This command reads it against the items placed in the repository and
+prints the small facts: the ids of the items that make work and of those that do not; each
+`ui` work item's design source; the mocks directory; whether the dependencies are current.
+What it had to normalize (a missing or repeated entry, an unknown status, surface or design
+source, a missing artifact, an unusable bundle) is named in `warnings`; only a file that is
+not a detailing at all is not usable.
 
 No item text travels back: the sessions that specify and decompose the repository read the
 file by its path.
@@ -26,10 +28,27 @@ from pathlib import Path
 from cdsbundles import DESIGN_SOURCES, KINDS, bundle_problem, read_bundle
 
 STATUSES = ("add", "modify", "remove", "done", "planned-elsewhere")
+#: Close synonyms of a status, as a detailing may write them.
+STATUS_SYNONYMS = {
+    "new": "add",
+    "create": "add",
+    "added": "add",
+    "change": "modify",
+    "changed": "modify",
+    "update": "modify",
+    "modified": "modify",
+    "delete": "remove",
+    "removed": "remove",
+    "retire": "remove",
+    "exists": "done",
+    "built": "done",
+    "complete": "done",
+    "planned": "planned-elsewhere",
+}
 WORK_STATUSES = ("add", "modify", "remove")
 SURFACES = ("ui", "service", "infra", "data", "unknown")
 FILE_LINE = re.compile(r"[^\s:]+:\d+")
-#: At most this many item problems are printed; the count of all of them is always printed.
+#: At most this many warnings are printed; the count of all of them is always printed.
 MAX_PROBLEMS = 40
 
 
@@ -83,59 +102,69 @@ def _load(path: Path) -> object:
         raise ReconError(msg) from exc
 
 
-def _item_problems(items: list[dict], placed: list[str]) -> list[dict]:
-    """Name every item of the detailing that makes it unusable.
+def _normalize_items(
+    items: list[dict], placed: list[str]
+) -> tuple[list[dict], list[str]]:
+    """Settle the detailing's items on one usable entry per placed item.
+
+    A placed item with no entry is `add`; a repeated entry keeps the first; an entry for an
+    item not placed here is ignored; a status is mapped from a close synonym, else taken as
+    `modify`; `planned-elsewhere` with no `plannedBy` is `done`; an unknown surface is
+    `unknown`. A work or done status that cites no file:line is only noted.
 
     Args:
-        items: The normalized items.
+        items: The items as read.
         placed: The ids of the delta items placed in the repository.
 
     Returns:
-        One `{id, problem}` per defect.
+        The items, one per placed id in placement order, and the warnings.
     """
     placed_set = set(placed)
-    counted: dict[str, int] = {}
+    warnings: list[str] = []
+    first: dict[str, dict] = {}
     for r in items:
-        counted[r["id"]] = counted.get(r["id"], 0) + 1
-    problems = [
-        {"id": i, "problem": "has no entry"} for i in placed if i not in counted
-    ]
-    problems += [
-        {"id": i, "problem": "listed more than once"}
-        for i, n in counted.items()
-        if i in placed_set and n > 1
-    ]
-    for r in items:
-        rid = r["id"] or "(no id)"
         if r["id"] not in placed_set:
-            problems.append(
-                {"id": rid, "problem": "not an item placed in this repository"}
+            warnings.append(
+                f"{r['id'] or '(no id)'}: not an item placed in this repository; ignored"
             )
             continue
-        if r["status"] not in STATUSES:
-            problems.append(
-                {
-                    "id": rid,
-                    "problem": f"status {json.dumps(r['status'])} is not one of "
-                    + ", ".join(STATUSES),
-                }
+        if r["id"] in first:
+            warnings.append(
+                f"{r['id']}: listed more than once; the first entry is used"
             )
             continue
-        if not any(FILE_LINE.search(e) for e in r["evidence"]):
-            problems.append({"id": rid, "problem": f"{r['status']} cites no file:line"})
+        first[r["id"]] = r
+    out = []
+    for i in placed:
+        r = first.get(i)
+        if r is None:
+            warnings.append(f"{i}: has no entry; taken as add")
+            r = {
+                "id": i,
+                "status": "add",
+                "evidence": [],
+                "plannedBy": None,
+                "surface": "unknown",
+            }
+        status = r["status"]
+        if status not in STATUSES:
+            mapped = STATUS_SYNONYMS.get(status.lower(), "modify")
+            warnings.append(f"{i}: status {json.dumps(status)} taken as {mapped}")
+            r = r | {"status": mapped}
         if r["status"] == "planned-elsewhere" and not r["plannedBy"]:
-            problems.append(
-                {"id": rid, "problem": "planned-elsewhere names no bead in plannedBy"}
+            warnings.append(
+                f"{i}: planned-elsewhere names no bead in plannedBy; taken as done"
             )
+            r = r | {"status": "done"}
         if r["surface"] not in SURFACES:
-            problems.append(
-                {
-                    "id": rid,
-                    "problem": f"surface {json.dumps(r['surface'])} is not one of "
-                    + ", ".join(SURFACES),
-                }
-            )
-    return problems
+            warnings.append(f"{i}: surface {json.dumps(r['surface'])} taken as unknown")
+            r = r | {"surface": "unknown"}
+        if r["status"] != "planned-elsewhere" and not any(
+            FILE_LINE.search(e) for e in r["evidence"]
+        ):
+            warnings.append(f"{i}: {r['status']} cites no file:line")
+        out.append(r)
+    return out, warnings
 
 
 def _ui_authority(raw: object, work_ui: list[str]) -> dict:
@@ -186,63 +215,49 @@ def _ui_authority(raw: object, work_ui: list[str]) -> dict:
     }
 
 
-def _ui_problems(ui_work: list[dict]) -> list[dict]:
-    """Name every `ui` work item whose design source cannot be built from.
+def _normalize_ui(ui_work: list[dict]) -> list[str]:
+    """Settle each `ui` work item on a design source it can be built from.
 
-    A `bundle` item cites a supplied bundle (the newest of its kind and slug) and the build
-    spec its `bundle.json` names; a `cds` or `none` item cites nothing.
+    A design source outside `bundle`, `cds` and `none` is `cds`. A `bundle` item whose
+    bundle or build spec cannot be built from is `cds`; its artifact is the one its bundle
+    packages. A `bundle` or `cds` item with no artifact gets a `page` named for the item.
 
     Args:
-        ui_work: The `uiWork` entries.
+        ui_work: The `uiWork` entries; changed in place.
 
     Returns:
-        One `{id, problem}` per defect.
+        The warnings.
     """
-    problems = []
+    warnings = []
     for item in ui_work:
         source = item["designSource"]
         if source not in DESIGN_SOURCES:
-            problems.append(
-                {
-                    "id": item["id"],
-                    "problem": f"design source {json.dumps(source)} is not one of "
-                    + ", ".join(DESIGN_SOURCES)
-                    + " (uiAuthority.uiItems gives every ui item one)",
-                }
+            warnings.append(
+                f"{item['id']}: design source {json.dumps(source)} taken as cds"
             )
-            continue
+            source = item["designSource"] = "cds"
         if source == "none":
             continue
+        if source == "bundle":
+            problem = bundle_problem(item["bundle"] or "", item["buildSpec"] or "")
+            held = None if problem else read_bundle(Path(item["bundle"]))
+            if problem or held is None:
+                warnings.append(
+                    f"{item['id']}: bundle {problem or 'unreadable'}; taken as cds"
+                )
+                source = item["designSource"] = "cds"
+                item["bundle"] = item["buildSpec"] = None
+                item["sections"] = []
+            else:
+                art = {"kind": held["kind"], "slug": held["slug"]}
+                if (item["artifact"] or {}) != art:
+                    item["artifact"] = art
         art = item["artifact"] or {}
-        if source == "bundle" and not (art.get("kind") and art.get("slug")):
-            held = read_bundle(Path(item["bundle"])) if item["bundle"] else None
-            if held:
-                art = item["artifact"] = {"kind": held["kind"], "slug": held["slug"]}
         if art.get("kind") not in KINDS or not art.get("slug"):
-            problems.append(
-                {
-                    "id": item["id"],
-                    "problem": "names no artifact: a bundle or cds item records "
-                    "`artifact` {kind: page | shell | view, slug}",
-                }
-            )
-            continue
-        if source != "bundle":
-            continue
-        problem = bundle_problem(item["bundle"] or "", item["buildSpec"] or "")
-        if problem:
-            problems.append({"id": item["id"], "problem": f"bundle: {problem}"})
-            continue
-        held = read_bundle(Path(item["bundle"]))
-        if held and (held["kind"], held["slug"]) != (art["kind"], art["slug"]):
-            problems.append(
-                {
-                    "id": item["id"],
-                    "problem": f"artifact {art['kind']} {art['slug']} is not the one "
-                    f"{item['bundle']} packages ({held['kind']} {held['slug']})",
-                }
-            )
-    return problems
+            slug = re.sub(r"[^a-z0-9]+", "-", item["id"].lower()).strip("-") or "page"
+            item["artifact"] = {"kind": "page", "slug": slug}
+            warnings.append(f"{item['id']}: names no artifact; taken as page {slug}")
+    return warnings
 
 
 def recon_facts(path: Path, placed: list[str]) -> dict:
@@ -253,8 +268,8 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
         placed: The ids of the delta items placed in the repository.
 
     Returns:
-        `file`, `bytes`, `ok`; when not ok, `problem` (the file as a whole) or
-        `failedItems` with `problemCount`. When ok: `itemCount`, `counts` per status,
+        `file`, `bytes`, `ok`; when not ok, `problem` (the file as a whole is not a
+        detailing). When ok: `warnings`, `itemCount`, `counts` per status,
         `work` (ids that make work), `idle` (`{id, status, plannedBy}` of the others),
         `mocksDir`, `uiWork` (each `ui` work item's design source, and for a `bundle`
         item its bundle and build spec), `dependenciesCurrent` and
@@ -274,12 +289,13 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
             "problem": "the file holds no `items` list (a detailing saved in an earlier "
             "format, or not a detailing)",
         }
+    warnings: list[str] = []
     dc = body.get("dependencyChanges")
     if not isinstance(dc, dict) or not isinstance(dc.get("current"), bool):
-        return head | {
-            "ok": False,
-            "problem": "`dependencyChanges.current` is not true or false",
-        }
+        warnings.append(
+            "`dependencyChanges.current` is not true or false; taken as true"
+        )
+        dc = {"current": True, "changeFindings": []}
     items = [
         {
             "id": _text(r.get("id")),
@@ -291,14 +307,8 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
         for r in raw
         if isinstance(r, dict)
     ]
-    problems = _item_problems(items, placed)
-    if problems:
-        return head | {
-            "ok": False,
-            "itemCount": len(items),
-            "problemCount": len(problems),
-            "failedItems": problems[:MAX_PROBLEMS],
-        }
+    items, item_warnings = _normalize_items(items, placed)
+    warnings += item_warnings
     work = [r["id"] for r in items if r["status"] in WORK_STATUSES]
     ui = _ui_authority(
         body.get("uiAuthority"),
@@ -308,19 +318,14 @@ def recon_facts(path: Path, placed: list[str]) -> dict:
             if r["status"] in WORK_STATUSES and r["surface"] == "ui"
         ],
     )
-    ui_problems = _ui_problems(ui["uiWork"])
-    if ui_problems:
-        return head | {
-            "ok": False,
-            "itemCount": len(items),
-            "problemCount": len(ui_problems),
-            "failedItems": ui_problems[:MAX_PROBLEMS],
-        }
+    warnings += _normalize_ui(ui["uiWork"])
     findings = dc.get("changeFindings")
     return (
         head
         | {
             "ok": True,
+            "warnings": warnings[:MAX_PROBLEMS],
+            "warningCount": len(warnings),
             "itemCount": len(items),
             "counts": {s: sum(1 for r in items if r["status"] == s) for s in STATUSES},
             "work": work,

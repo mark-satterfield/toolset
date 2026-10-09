@@ -2,7 +2,7 @@
 
 The artifact-handoff skill owns this operation. Acceptance remains delegated to
 jsonartifact.py; a rejected or pending candidate never invokes the recorder.
-Recording failure retains accepted files and returns failure, never success.
+A recording failure keeps the accepted result: the receipt says `recorded: false` and why.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def publish(accept_args: list[str], record_argv: list[str]) -> dict:
-    """Return the acceptance receipt only after successful provenance recording."""
+    """Return the acceptance receipt, with whether its provenance was recorded."""
     if not record_argv or any(not isinstance(x, str) or not x for x in record_argv):
         raise ValueError("record argv must be a nonempty array of nonempty strings")
     accepted = subprocess.run(
@@ -46,14 +46,19 @@ def publish(accept_args: list[str], record_argv: list[str]) -> dict:
     # that it records precisely the accepted path, not another artifact.
     if len(record_argv) < 4 or record_argv[2:4] != ["record", artifact]:
         raise ValueError("record argv must name the accepted artifact")
-    recorded = subprocess.run(
-        record_argv, capture_output=True, text=True, timeout=120, check=False
-    )
-    if recorded.returncode:
-        raise ValueError(
-            f"artifact recording exited {recorded.returncode}; accepted result retained: "
-            f"{(recorded.stdout + recorded.stderr).strip()[-1000:]}"
+    try:
+        recorded = subprocess.run(
+            record_argv, capture_output=True, text=True, timeout=120, check=False
         )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {**receipt, "recorded": False, "recordError": str(exc)[-1000:]}
+    if recorded.returncode:
+        return {
+            **receipt,
+            "recorded": False,
+            "recordError": f"artifact recording exited {recorded.returncode}: "
+            f"{(recorded.stdout + recorded.stderr).strip()[-1000:]}",
+        }
     return {**receipt, "recorded": True}
 
 

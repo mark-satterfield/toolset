@@ -11,9 +11,20 @@ writer, and a rerun repairs it, because every write is keyed.
 from __future__ import annotations
 
 import json
+import re
+import sys
+import time
 from typing import TYPE_CHECKING
 
-from beadgraph import SCOPE_JUDGING, bead_of, children, fingerprints, same_value
+import beadgraph
+from beadgraph import (
+    SCOPE_JUDGING,
+    GraphError,
+    bead_of,
+    children,
+    fingerprints,
+    same_value,
+)
 from hierarchy import (
     SIZE_KEYS,
     HierarchyError,
@@ -31,6 +42,7 @@ from hierarchy import (
     read_task_deps,
     read_tasks,
     repo_slugs,
+    take_warnings,
 )
 from scoring import JUDGED_HASH_KEY
 
@@ -392,10 +404,8 @@ def plan_tasks(
         The Tasks.
 
     Raises:
-        HierarchyError: The file holds no `tasks` list, its edges form a cycle, a Task
-            cites no delta item the repository's detailing marks as work, an item a Task
-            builds requires an item of this repository no Task builds, or a web-ui Task's
-            contract does not match its design source.
+        HierarchyError: The file holds no `tasks` list. What the readers normalize
+            instead of refusing is in `hierarchy.take_warnings`.
     """
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids, packages_dir)
@@ -406,7 +416,77 @@ def plan_tasks(
     return tasks
 
 
+#: The pauses, in seconds, before a Story or Task write is made again after a transient
+#: beads error. Each attempt re-reads beads first and finds the bead by its `elab_key`, so a
+#: write that did apply is updated, never created twice.
+WRITE_BACKOFF = (2, 5)
+
+#: A beads error the server or the connection caused, not the command.
+TRANSIENT = re.compile(
+    r"i/o timeout|connection refused|deadline exceeded|database is locked|"
+    r"invalid connection|bad connection|failed to open database|"
+    r"write commit result indeterminate",
+    re.IGNORECASE,
+)
+
+
+def _again(label: str, attempt: int, exc: GraphError) -> bool:
+    """Whether a failed write is made again, pausing first when it is.
+
+    Args:
+        label: What was written, for the log line.
+        attempt: The attempt that failed, from 1.
+        exc: Its error.
+
+    Returns:
+        True when the error is transient and an attempt remains.
+    """
+    if attempt > len(WRITE_BACKOFF) or not TRANSIENT.search(str(exc)):
+        return False
+    pause = WRITE_BACKOFF[attempt - 1]
+    print(
+        f"[beadwrite] {label} failed ({exc}); writing it again in {pause}s",
+        file=sys.stderr,
+    )
+    time.sleep(pause)
+    return True
+
+
 def write_story(  # noqa: PLR0913 - the caller's facts, one each
+    graph: Graph,
+    writer: Writer,
+    epic_id: str,
+    directory: Path,
+    *,
+    slug: str,
+    repo: str,
+    root: Path | None,
+) -> dict:
+    """Write one repository's Story, again after a transient beads error (WRITE_BACKOFF).
+
+    Each attempt after the first reads beads again, so a Story an interrupted attempt
+    created is updated, not created twice.
+
+    Returns:
+        What `_write_story` returns.
+
+    Raises:
+        GraphError: A non-transient error, or a transient one on the last attempt.
+    """
+    attempt = 1
+    while True:
+        try:
+            return _write_story(
+                graph, writer, epic_id, directory, slug=slug, repo=repo, root=root
+            )
+        except GraphError as exc:
+            if not _again(f"story:{slug}", attempt, exc):
+                raise
+        attempt += 1
+        graph = beadgraph.load(writer.repo, with_description=True)
+
+
+def _write_story(
     graph: Graph,
     writer: Writer,
     epic_id: str,
@@ -559,10 +639,13 @@ def plan_story_tasks(
     Returns:
         Each Task's local key, `elab_key`, title and the local keys it depends on.
     """
+    take_warnings()
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
+    warnings = take_warnings()
     return {
         "ok": True,
         "slug": slug,
+        "warnings": warnings,
         "tasks": [
             {
                 "key": t.key,
@@ -576,7 +659,7 @@ def plan_story_tasks(
             }
             for t in tasks
         ],
-        "summary": {"tasks": len(tasks)},
+        "summary": {"tasks": len(tasks), "warnings": len(warnings)},
     }
 
 
@@ -613,6 +696,49 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     external: list[str] | None = None,
     packages_dir: str | None = None,
 ) -> dict:
+    """Write ONE Task, again after a transient beads error (WRITE_BACKOFF).
+
+    Each attempt reads the Story's Tasks from beads, so a Task an interrupted attempt
+    created is updated, not created twice.
+
+    Returns:
+        What `_write_task` returns.
+
+    Raises:
+        GraphError: A non-transient error, or a transient one on the last attempt.
+    """
+    attempt = 1
+    while True:
+        try:
+            return _write_task(
+                writer,
+                epic_id,
+                directory,
+                slug=slug,
+                repo=repo,
+                key=key,
+                root=root,
+                external=external,
+                packages_dir=packages_dir,
+            )
+        except GraphError as exc:
+            if not _again(f"Task {key} of story:{slug}", attempt, exc):
+                raise
+        attempt += 1
+
+
+def _write_task(
+    writer: Writer,
+    epic_id: str,
+    directory: Path,
+    *,
+    slug: str,
+    repo: str,
+    key: str,
+    root: Path | None,
+    external: list[str] | None = None,
+    packages_dir: str | None = None,
+) -> dict:
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
     The Task sits under the Epic's Story whose `elab_key` is `story:<slug>`, found in beads.
@@ -634,17 +760,19 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
-        The Task, what was done to it, its edge writes, and the blockers it carries
-        outside the Story.
+        The Task, what was done to it, its edge writes, the blockers it carries outside the
+        Story, and `warnings`: a Task it depends on that is not written yet is left out of
+        its edges (the next run's refresh adds the edge), and an external blocker that is a
+        Task of its own Story is taken as a Story edge.
 
     Raises:
-        HierarchyError: The repository is empty, the key names no Task, the Epic has no
-            Story for the slug, a Task
-            it depends on is not written, or an external blocker is a Task of its own Story.
+        HierarchyError: The repository is empty, the key names no Task, or the Epic has no
+            Story for the slug.
     """
     if not repo.strip():
         msg = f"Task {key} of story:{slug} has no repository: a Task is never written without one"
         raise HierarchyError(msg)
+    take_warnings()
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
     by_key = {t.key: t for t in tasks}
     task = by_key.get(key)
@@ -666,24 +794,25 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     priority = {str(r["id"]): r.get("priority") for r in records}
     keyed = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id))
     blockers: list[str] = []
+    warnings: list[str] = take_warnings()
     for dep in task.depends_on:
-        blocker = keyed.get(by_key[dep].elab_key or "")
+        blocker = keyed.get(by_key[dep].elab_key or "") if dep in by_key else None
         if blocker is None:
-            msg = (
-                f"{key} depends on {dep} ({by_key[dep].elab_key}), which is not under "
-                f"{story_id}: a Task is written after the Tasks it depends on"
+            warnings.append(
+                f"{key} depends on {dep}, which is not written under {story_id} yet; "
+                "the edge is left out and the next run's refresh adds it"
             )
-            raise HierarchyError(msg)
+            continue
         blockers.append(blocker.id)
     story_ids = {b.id for b in keyed.values()}
     outer = list(dict.fromkeys([*task.blocked_by_external, *(external or [])]))
     inner = [b for b in outer if b in story_ids]
     if inner:
-        msg = (
-            f"{key}: {', '.join(inner)} are Tasks of {story_id}; an edge inside the Story "
-            f"is a saved edge, not an external blocker"
+        warnings.append(
+            f"{key}: {', '.join(inner)} are Tasks of {story_id}; taken as Story edges"
         )
-        raise HierarchyError(msg)
+        blockers = list(dict.fromkeys([*blockers, *inner]))
+        outer = [b for b in outer if b not in story_ids]
     bead = keyed.get(task.elab_key or "")
     text = task_text(task, root)
     meta = task_metadata(task)
@@ -749,9 +878,16 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
             "outsideBlockers": outside,
         },
         "edges": edges,
+        "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
-        "summary": {"key": task.key, "id": task_id, "action": action, **edges},
+        "summary": {
+            "key": task.key,
+            "id": task_id,
+            "action": action,
+            **edges,
+            "warnings": len(warnings),
+        },
     }
 
 
@@ -857,8 +993,9 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
     another repository's detailing marks add, modify or remove, every Task of that
     repository's Story that builds Y is an edge to the Task. A required item that no Task
     of its Story builds, or that no repository details and the span ruling does not record
-    as having no code, is a refusal: the Task's prerequisite has no Task, no open bead and
-    is not done. Items detailed in the Task's own repository, and `done` or
+    as having no code, is a warning: the Task's prerequisite has no Task, no open bead and
+    is not done, and the edges that exist are still returned. Items detailed in the Task's
+    own repository, and `done` or
     `planned-elsewhere` items, are settled by `derive_prerequisites`. Runs no `bd` command.
 
     Args:
@@ -867,11 +1004,11 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
 
     Returns:
         The edges (`from`, `to`, `kind`, `reason`; ends are `S<i>-<local key>`) and the
-        refusals.
+        warnings.
     """
     requires = delta_requires(directory)
     edges: list[dict] = []
-    refusals: list[str] = []
+    warnings: list[str] = []
     if requires is not None:
         detailed = detailed_items(directory)
         no_code = _no_code(directory) | set(planned_prerequisites(directory))
@@ -897,7 +1034,7 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
                     d = detailed.get(y)
                     if d is None:
                         if y not in no_code:
-                            refusals.append(
+                            warnings.append(
                                 f"{name} builds {x}, which requires {y}; no repository's "
                                 "detailing holds it"
                             )
@@ -913,7 +1050,7 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
                         if task_slug[n] == d["slug"] and y in built
                     ]
                     if d["status"] not in WORK_STATUSES or not found:
-                        refusals.append(
+                        warnings.append(
                             f"{name} builds {x}, which requires {y}; {y} is marked "
                             f"{d['status'] or 'nothing'} in recon-{d['slug']}.json and no "
                             f"Task of {slug_story.get(d['slug'], d['slug'])} builds it"
@@ -932,10 +1069,10 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
                             }
                         )
     return {
-        "ok": not refusals,
+        "ok": True,
         "edges": edges,
-        "refusals": refusals,
-        "summary": {"ok": not refusals, "edges": len(edges), "refusals": refusals},
+        "warnings": warnings,
+        "summary": {"ok": True, "edges": len(edges), "warnings": warnings},
     }
 
 
@@ -950,16 +1087,12 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         repos: The span, in its ruled order.
 
     Returns:
-        The accepted edges, the rejected ones, and each blocked Task's blockers by name.
-
-    Raises:
-        HierarchyError: A Task's required item has no Task, no open bead and is not done,
-            or the edges close a cycle over the Epic's Task graph.
+        The accepted edges, the rejected ones, each blocked Task's blockers by name, and
+        `warnings`: the closure's warnings, and each edge dropped because it would close a
+        cycle over the Epic's Task graph (edges are taken in order, the closure's first).
     """
     closure = closure_task_edges(directory, repos)
-    if closure["refusals"]:
-        msg = "; ".join(closure["refusals"])
-        raise HierarchyError(msg)
+    warnings = list(closure["warnings"])
     standing = {(e["from"], e["to"]) for e in closure["edges"]}
     mapped = (
         read_task_deps(directory)
@@ -975,10 +1108,19 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         ),
     ]
     slug_of, intra, _elab = _span_tasks(directory, repos)
-    accepted, rejected, pairs = _accept(saved, slug_of)
-    if build_order(sorted(slug_of), [*intra, *sorted(pairs)]) is None:
-        msg = "the saved edges between Stories close a cycle over the Task graph"
-        raise HierarchyError(msg)
+    accepted, rejected, _pairs = _accept(saved, slug_of)
+    pairs: set[tuple[str, str]] = set()
+    kept = []
+    for edge in accepted:
+        pair = (edge["from"], edge["to"])
+        if build_order(sorted(slug_of), [*intra, *sorted(pairs | {pair})]) is None:
+            warnings.append(
+                f"edge {pair[0]} -> {pair[1]} would close a cycle over the Task graph; dropped"
+            )
+            continue
+        pairs.add(pair)
+        kept.append(edge)
+    accepted = kept
     blockers: dict[str, list[str]] = {}
     for frm, to in sorted(pairs):
         blockers.setdefault(to, []).append(frm)
@@ -987,10 +1129,12 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         "edges": accepted,
         "rejected": rejected,
         "blockers": blockers,
+        "warnings": warnings,
         "summary": {
             "edges": len(accepted),
             "rejected": len(rejected),
             "blockers": blockers,
+            "warnings": len(warnings),
         },
     }
 
@@ -1017,16 +1161,15 @@ def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
         name: The Task, as `S<i>-<local key>`.
 
     Returns:
-        The Task, its saved edges, and the edges added, removed and standing.
-
-    Raises:
-        HierarchyError: The saved edges are refused, or the Task or a blocker is not
-            written.
+        The Task, its saved edges, the edges added, removed and standing, and `warnings`:
+        an edge whose other end is not written is skipped, and a Task that is not written
+        has no edges written.
     """
     plan = plan_task_edges(directory, repos)
     slug_of, _intra, elab = _span_tasks(directory, repos)
+    warnings: list[str] = []
 
-    def bead_named(n: str) -> Bead:
+    def bead_named(n: str) -> Bead | None:
         story = _story_of(graph, epic_id, slug_of.get(n, ""))
         bead = (
             _keyed(_children(graph, story.id, "task")).get(elab.get(n, ""))
@@ -1034,12 +1177,30 @@ def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
             else None
         )
         if bead is None:
-            msg = f"Task {n} ({elab.get(n)}) is not written under {epic_id}"
-            raise HierarchyError(msg)
+            warnings.append(f"Task {n} ({elab.get(n)}) is not written under {epic_id}")
         return bead
 
     task = bead_named(name)
-    wanted = [bead_named(n).id for n in plan["blockers"].get(name, [])]
+    if task is None:
+        return {
+            "ok": True,
+            "epic": epic_id,
+            "task": {"name": name, "id": None},
+            "edges": [],
+            "warnings": warnings,
+            "dryRun": writer.dry_run,
+            "planned": writer.planned,
+            "summary": {
+                "name": name,
+                "id": None,
+                "added": 0,
+                "removed": 0,
+                "standing": 0,
+            },
+        }
+    wanted = [
+        b.id for n in plan["blockers"].get(name, []) if (b := bead_named(n)) is not None
+    ]
     story_of = {
         bead.id: story.id
         for story in _children(graph, epic_id, "story")
@@ -1073,6 +1234,7 @@ def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
         "epic": epic_id,
         "task": {"name": name, "id": task.id},
         "edges": [e for e in plan["edges"] if e["to"] == name],
+        "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {"name": name, "id": task.id, **counts},
@@ -1134,76 +1296,6 @@ def _carrying(
     ]
 
 
-def unpersisted(
-    graph: Graph, epic_id: str, directory: Path, repos: list[str]
-) -> list[str]:
-    """Return what the span's saved documents name that beads does not hold.
-
-    Every repository of the span has its saved `story-<slug>.json` and `tasks-<slug>.json`,
-    its Story under the Epic, and a Task bead under that Story for every saved Task; every
-    open Task carries its saved blockers in its own Story and the Tasks of other Epics its
-    saved `blockedByExternal` names, and, when `task-deps.json` is saved, its blockers in
-    other Stories. Reads the documents and the graph only.
-
-    Args:
-        graph: The tracker graph.
-        epic_id: The Epic.
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
-
-    Returns:
-        One line per missing document, Story, Task or edge; empty when all are held.
-    """
-    missing: list[str] = []
-    for repo, slug in repo_slugs(repos).items():
-        for name in (f"story-{slug}.json", f"tasks-{slug}.json"):
-            if not (directory / name).is_file():
-                missing.append(f"{name} is not saved")
-        story = _story_of(graph, epic_id, slug)
-        if story is None:
-            missing.append(f"Story story:{slug} is not under {epic_id}")
-            continue
-        if not (directory / f"tasks-{slug}.json").is_file():
-            continue
-        try:
-            tasks = plan_tasks(directory, None, slug, repo)
-        except HierarchyError as exc:
-            missing.append(str(exc))
-            continue
-        keyed = _keyed(_children(graph, story.id, "task"))
-        for t in tasks:
-            bead = keyed.get(t.elab_key or "")
-            if bead is None:
-                missing.append(f"Task {t.elab_key} is not under {story.id}")
-                continue
-            if bead.status != OPEN:
-                continue
-            for dep in t.depends_on:
-                blocker = next((x for x in tasks if x.key == dep), None)
-                held = keyed.get(blocker.elab_key or "") if blocker else None
-                if held is None or held.id not in bead.blockers:
-                    missing.append(f"edge {dep} -> {t.key} in story:{slug}")
-            missing.extend(
-                f"edge {b} -> {t.key} in story:{slug} from another Epic"
-                for b in t.blocked_by_external
-                if b not in bead.blockers
-            )
-    if not missing and (
-        (directory / "task-deps.json").is_file()
-        or delta_requires(directory) is not None
-    ):
-        try:
-            blockers = plan_task_edges(directory, repos)["blockers"]
-        except HierarchyError as exc:
-            return [str(exc)]
-        beads = _task_beads(graph, epic_id, directory, repos)
-        for to, froms in blockers.items():
-            for frm in froms:
-                if beads[frm].id not in beads[to].blockers:
-                    missing.append(f"edge {frm} -> {to} between Stories")
-    return missing
-
-
 def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
     graph: Graph,
     writer: Writer,
@@ -1229,11 +1321,7 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
 
     Returns:
         Each Task written with its counts, and a summary carrying the blockers by
-        name, the totals and the Tasks written.
-
-    Raises:
-        HierarchyError: The saved edges are refused, or a Task or a blocker is not
-            written.
+        name, the totals, the Tasks written and the number of warnings.
     """
     plan = plan_task_edges(directory, repos)
     names = list(
@@ -1241,15 +1329,20 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
             [*plan["blockers"], *also, *_carrying(graph, epic_id, directory, repos)]
         )
     )
-    tasks = [
-        write_task_edges(graph, writer, epic_id, directory, repos, name)["summary"]
+    written = [
+        write_task_edges(graph, writer, epic_id, directory, repos, name)
         for name in names
     ]
+    tasks = [w["summary"] for w in written]
+    warnings = list(
+        dict.fromkeys([*plan["warnings"], *(m for w in written for m in w["warnings"])])
+    )
     totals = {k: sum(t[k] for t in tasks) for k in ("added", "removed", "standing")}
     return {
         "ok": True,
         "epic": epic_id,
         "tasks": tasks,
+        "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
@@ -1257,6 +1350,7 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
             "rejected": plan["summary"]["rejected"],
             "blockers": plan["blockers"],
             "written": names,
+            "warnings": len(warnings),
             **totals,
         },
     }

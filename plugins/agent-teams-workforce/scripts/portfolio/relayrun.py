@@ -223,6 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--relay", type=Path, required=True)
     read.add_argument("--sha256", default="")
     read.add_argument("--bytes", type=int, default=None)
+    read.add_argument("--for-argv", default="")
     check = sub.add_parser(
         "check-file", help="whether a saved JSON file equals a hashed value"
     )
@@ -259,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "write-file":
         return _write_file(args)
     try:
-        shown = relay.read(args.relay, args.sha256, args.bytes)
+        shown = relay.read(args.relay, args.sha256, args.bytes, args.for_argv)
     except (relay.RelayError, ValueError, OSError) as exc:
         _dump(relay.seal({"error": str(exc)}, 2, None))
         return 2

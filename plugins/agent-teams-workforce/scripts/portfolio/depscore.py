@@ -13,8 +13,7 @@
     record               write judged values with their fingerprints
     score                recompute every WSJF and write what changed
     elaboration-start    mark one Epic `in_progress` when it may be elaborated
-    elaboration-finish   score an Epic and its Tasks; `--done` sets it done when beads holds
-                         every Story, Task and edge the span's saved documents name
+    elaboration-finish   score an Epic and its Tasks; `--done` sets it done
     elaboration-release  clear a run's owner token from an Epic
     arch-approve         set `lifecycle_state: effective` on the architecture files an
                          integration changed or created that its conformance review covered;
@@ -71,12 +70,9 @@
                          and commit the removal in the repository holding them; no `bd` call
     arch-commit          commit the architecture files an integration changed, staging only
                          those paths, and push the branch; no `bd` call
-    prd-parse            read from a PRD file what elaboration takes (its requirement headings),
-                         assuming the PRD was validated before its Epic was made ready; fails
-                         only on a file that cannot be read; no `bd` call
-    spec-ui-check        check that a saved spec document has a section per `ui` item and that
-                         the section of an item with a supplied cds bundle cites its
-                         `spec/build-spec.md` and resolved Section IDs; no `bd` call
+    spec-ui-append       write the `ui` items' design sources (bundle build spec and Section
+                         IDs, cds, or none) as the `## UI design sources` section of a saved
+                         spec document; no `bd` call
     cds-bundles          list the single-artifact cds bundles in a packages directory, the newest
                          per kind and slug (an absent or empty directory lists none); with
                          --design-source, also select the design source a web-ui Task builds
@@ -94,8 +90,8 @@
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
     closure-edges        the Task edges between Stories that the delta's `requires` relations
                          make (saved delta-items.json, recon-<slug>.json, tasks-<slug>.json),
-                         and the refusals where a required item has no Task, no open bead and
-                         is not done; no `bd` call
+                         and warnings where a required item has no Task, no open bead and is
+                         not done; no `bd` call
     arch-integration-files  measure the files an integration wrote since its saved
                          fingerprint, union them with the maintainer's report, write the lists
                          to a files file and relay their counts; no `bd` call
@@ -157,7 +153,6 @@ from beadwrite import (
     closure_task_edges,
     plan_story_tasks,
     plan_task_edges,
-    unpersisted,
     write_all_task_edges,
     write_story,
     write_task,
@@ -178,11 +173,10 @@ from edgeset import (
 )
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
-from prds import prd_parse
 from reconfacts import ReconError, recon_facts
 from resumefacts import saved_span, saved_target
 from scoring import ScoringError, judge_input, plan, record, rubric, score
-from specui import SpecUiError, spec_ui_check
+from specui import SpecUiError, spec_ui_append
 from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
@@ -657,16 +651,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="set the Epic's `elaboration_state` to `done`",
     )
-    efi.add_argument(
-        "--dir",
-        type=Path,
-        default=None,
-        help="the Epic's working directory; with `--repos`, `--done` holds unless beads "
-        "holds every Story, Task and edge its saved documents name",
-    )
-    efi.add_argument(
-        "--repos", default="", help="the span, comma-separated, in its ruled order"
-    )
     _dry_run_flag(efi)
 
     wst = sub.add_parser(
@@ -760,8 +744,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cle = sub.add_parser(
         "closure-edges",
-        help="the Task edges between Stories the delta's `requires` relations make, and the "
-        "refusals where a required item has no Task, no open bead and is not done; runs no "
+        help="the Task edges between Stories the delta's `requires` relations make, and "
+        "warnings where a required item has no Task, no open bead and is not done; runs no "
         "`bd` command",
         parents=[common],
     )
@@ -1153,18 +1137,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     acm.add_argument("--message", required=True, help="the commit message")
 
-    ppa = sub.add_parser(
-        "prd-parse",
-        help="check that a PRD file has the structure elaboration reads; writes nothing, "
-        "runs no `bd` command",
-        parents=[common],
-    )
-    ppa.add_argument("--prd", type=Path, required=True, help="the PRD file")
-
     sua = sub.add_parser(
-        "spec-ui-check",
-        help="check a saved spec document's UI sections against the cds build specs; "
-        "writes nothing, runs no `bd` command",
+        "spec-ui-append",
+        help="write the ui items' design sources into a saved spec document; runs no `bd` "
+        "command",
         parents=[common],
     )
     sua.add_argument("--doc", type=Path, required=True, help="the saved spec document")
@@ -1367,10 +1343,8 @@ def run(args: argparse.Namespace) -> dict:
             files=args.files,
             coverage_from=args.coverage_from,
         )
-    if command == "prd-parse":
-        return head | prd_parse(args.prd)
-    if command == "spec-ui-check":
-        return head | spec_ui_check(args.doc, args.items)
+    if command == "spec-ui-append":
+        return head | spec_ui_append(args.doc, args.items)
     if command == "recon-facts":
         return head | recon_facts(args.file, split_ids(args.items))
     if command == "cds-bundles":
@@ -1527,19 +1501,7 @@ def run(args: argparse.Namespace) -> dict:
             graph, writer, args.epic, owner=args.owner, reclaim=args.reclaim
         )
     if command == "elaboration-finish":
-        missing = (
-            unpersisted(graph, args.epic, args.dir, split_ids(args.repos))
-            if args.dir is not None and args.repos
-            else None
-        )
-        finished = finish(
-            graph,
-            writer,
-            args.epic,
-            owner=args.owner,
-            done=args.done,
-            missing=missing,
-        )
+        finished = finish(graph, writer, args.epic, owner=args.owner, done=args.done)
         if not writer.dry_run:
             finished["storyEdges"] = _story_edges_after(args.directory)
             finished.setdefault("summary", {})["storyEdges"] = _story_edges_summary(

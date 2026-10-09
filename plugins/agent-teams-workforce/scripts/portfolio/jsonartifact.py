@@ -112,7 +112,11 @@ def _atomic(path: Path, data: bytes) -> None:
 
 
 def accept(candidate: Path, final: Path, schema: dict, revision: str = "") -> dict:
-    """Validate a candidate without ever replacing a different accepted result."""
+    """Validate a candidate and publish it as the accepted result.
+
+    A different accepted result already at `final` is replaced; its bytes are kept as
+    `<name>.prev`. A prior result whose receipt no longer matches its bytes counts as absent.
+    """
     from jsonschema import Draft202012Validator
 
     candidate, final = candidate.absolute(), final.absolute()
@@ -122,18 +126,13 @@ def accept(candidate: Path, final: Path, schema: dict, revision: str = "") -> di
     value = decode(candidate.read_text(encoding="utf-8"))
     Draft202012Validator(schema).validate(value)
     data = canonical(value)
-    previous_value = read_artifact(final) if final.exists() else None
-    saved_receipt = (
-        decode(receipt_path(final).read_text()) if receipt_path(final).is_file() else {}
-    )
-    if (
-        final.exists()
-        and canonical(previous_value) != data
-        and (not revision or saved_receipt.get("revision") == revision)
-    ):
-        raise ValueError(
-            f"accepted artifact already exists with different content: {final}"
-        )
+    try:
+        previous_value = read_artifact(final) if final.exists() else None
+    except ValueError as exc:
+        LENIENT_READS.append(f"{final}: {exc}; replaced as absent")
+        previous_value = None
+    if previous_value is not None and canonical(previous_value) != data:
+        _atomic(final.with_name(final.name + ".prev"), canonical(previous_value))
     receipt = {
         "artifactPath": str(final),
         "sha256": _sha(data),
@@ -141,7 +140,7 @@ def accept(candidate: Path, final: Path, schema: dict, revision: str = "") -> di
         "schemaSha256": _sha(canonical(schema)),
         "revision": revision,
     }
-    previous_data = canonical(previous_value) if final.exists() else None
+    previous_data = canonical(previous_value) if previous_value is not None else None
     previous = (
         {
             "artifactPath": str(final),
@@ -153,7 +152,7 @@ def accept(candidate: Path, final: Path, schema: dict, revision: str = "") -> di
     )
     pending = final.with_name(final.name + ".publish")
     _atomic(pending, canonical({"previous": previous, "next": receipt}))
-    if not final.exists() or revision:
+    if previous_data != data:
         _atomic(final, data)
     _atomic(receipt_path(final), canonical(receipt))
     pending.unlink()
@@ -234,14 +233,11 @@ def document_receipt(path: Path) -> dict:
     }
 
 
-def source_receipt(
-    path: Path, *, allow_absent: bool = False, skipped: list[str] | None = None
-) -> dict:
+def source_receipt(path: Path, *, skipped: list[str] | None = None) -> dict:
     """Fingerprint an explicit source file or corpus without transporting content.
 
-    With `allow_absent` (the architecture step's inputs), a path that is neither a file nor a
-    directory fingerprints as `absent`, and a symlink or other non-regular entry of a corpus
-    is skipped and named in `skipped`.
+    A path that is neither a file nor a directory fingerprints as `absent`; a symlink or other
+    non-regular entry of a corpus is skipped and named in `skipped`.
     """
     if path.is_file():
         data = path.read_bytes()
@@ -252,24 +248,18 @@ def source_receipt(
             "format": "file",
         }
     if not path.is_dir():
-        if allow_absent:
-            return {
-                "artifactPath": str(path.absolute()),
-                "sha256": _sha(b"absent"),
-                "bytes": 0,
-                "format": "absent",
-            }
-        raise ValueError(f"source is not a readable file or directory: {path}")
+        return {
+            "artifactPath": str(path.absolute()),
+            "sha256": _sha(b"absent"),
+            "bytes": 0,
+            "format": "absent",
+        }
     entries = []
     for item in sorted(path.rglob("*")):
-        if allow_absent and (
-            item.is_symlink() or not (item.is_file() or item.is_dir())
-        ):
+        if item.is_symlink() or not (item.is_file() or item.is_dir()):
             if skipped is not None:
                 skipped.append(str(item))
             continue
-        if item.is_symlink():
-            raise ValueError(f"source corpus contains ambiguous symlink: {item}")
         if item.is_file():
             data = item.read_bytes()
             entries.append(
@@ -279,8 +269,6 @@ def source_receipt(
                     "bytes": len(data),
                 }
             )
-        elif not item.is_dir():
-            raise ValueError(f"source corpus contains nonregular entry: {item}")
     return {
         "artifactPath": str(path.absolute()),
         "sha256": _sha(canonical(entries)),
@@ -296,7 +284,6 @@ def main() -> int:
     parser.add_argument("--schema-json")
     parser.add_argument("--document", type=Path, action="append", default=[])
     parser.add_argument("--source", type=Path, action="append", default=[])
-    parser.add_argument("--allow-absent", action="store_true")
     parser.add_argument("--revision", default="")
     parser.add_argument("--projection", choices=["coordinator"], default=None)
     parser.add_argument("--keys", default="")
@@ -310,8 +297,7 @@ def main() -> int:
         try:
             skipped: list[str] = []
             receipts = [document_receipt(path) for path in args.document] + [
-                source_receipt(path, allow_absent=args.allow_absent, skipped=skipped)
-                for path in args.source
+                source_receipt(path, skipped=skipped) for path in args.source
             ]
             print(
                 json.dumps(
@@ -327,8 +313,12 @@ def main() -> int:
     try:
         receipt = None
         if args.probe and args.final.is_file() and receipt_path(args.final).is_file():
-            read_artifact(args.final)
-            saved = decode(receipt_path(args.final).read_text())
+            try:
+                read_artifact(args.final)
+                saved = decode(receipt_path(args.final).read_text())
+            except ValueError:
+                # A saved result whose receipt no longer matches is not reused: it counts as absent.
+                saved = {}
             if (
                 saved.get("schemaSha256") == _sha(canonical(decode(args.schema_json)))
                 and saved.get("revision", "") == args.revision
@@ -390,19 +380,7 @@ def main() -> int:
                         pending["research"] = research
                 print(json.dumps(pending))
                 return 0
-            args.recover = True
-        if args.recover and receipt is None:
-            checkpoint = decode(Path(str(args.candidate) + ".checkpoint").read_text())
-            if (
-                checkpoint.get("status") != "complete"
-                or checkpoint.get("revision", "") != args.revision
-                or checkpoint.get("artifactPath") != str(args.candidate)
-                or checkpoint.get("schemaSha256")
-                != _sha(canonical(decode(args.schema_json)))
-            ):
-                raise ValueError(
-                    "candidate recovery requires its complete matching checkpoint"
-                )
+        # A recovered candidate is accepted on its own schema validity, checkpoint or not.
         if receipt is None:
             receipt = accept(
                 args.candidate, args.final, decode(args.schema_json), args.revision

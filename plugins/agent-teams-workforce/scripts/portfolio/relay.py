@@ -182,7 +182,7 @@ ECHOED = ("source", "warnings", "planned", "command", "dryRun")
 #: Per command, the only top-level keys its view carries, when a workflow reads few of many.
 WHITELIST = {
     "elaboration-start": ("ok", "refusal", "owner", "previousState"),
-    "elaboration-finish": ("ok", "lifecycle", "missing", "summary", "storyEdges"),
+    "elaboration-finish": ("ok", "lifecycle", "summary", "storyEdges"),
 }
 
 
@@ -338,7 +338,13 @@ def save(command: str, result: dict, shown: dict, exit_code: int, path: Path) ->
         The envelope.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    saved = {"command": command, "exitCode": exit_code, "view": shown, "result": result}
+    saved = {
+        "command": command,
+        "argvSha256": TYPED_ARGV[0],
+        "exitCode": exit_code,
+        "view": shown,
+        "result": result,
+    }
     path.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
     return seal(shown, exit_code, path)
 
@@ -359,17 +365,22 @@ def write(command: str, result: dict, path: Path, exit_code: int = 0) -> dict:
 
 
 def read(
-    path: Path, expected_sha256: str = "", expected_bytes: int | None = None
+    path: Path,
+    expected_sha256: str = "",
+    expected_bytes: int | None = None,
+    for_argv: str = "",
 ) -> dict:
     """The envelope of a relay file written earlier, re-running nothing.
 
-    A missing file yields a sealed `{missing: true}` view with exit 4: the command never saved a
-    result, so the caller knows it may run it again.
+    A missing file, or with `for_argv` a file another command line wrote, yields a sealed
+    `{missing: true}` view with exit 4: the command never saved a result there.
 
     Args:
         path: The relay file.
         expected_sha256: Optional digest from the original command receipt.
         expected_bytes: Optional size from that receipt.
+        for_argv: The `--argv-sha256` of the command whose result is wanted; a file saved by
+            another command line, or before the files recorded it, is not that result.
 
     Returns:
         The same envelope as when the file was written, or the missing-file envelope.
@@ -396,6 +407,9 @@ def read(
         or not isinstance(saved.get("exitCode"), int)
     ):
         raise RelayError(f"{path}: not a relay file")
+    if for_argv and saved.get("argvSha256") != for_argv:
+        why = f"{path} holds the result of another command line"
+        return seal({"missing": True, "error": why}, 4, path)
     return seal(saved["view"], saved["exitCode"], None) | {
         "~file": str(path),
         "~sha256": digest,
@@ -404,6 +418,8 @@ def read(
 
 
 ARGV_FLAG = "--argv-sha256"
+#: The `--argv-sha256` of the command line this process checked; `save` records it in the relay file.
+TYPED_ARGV = [""]
 
 
 def argv_mismatch(argv: list[str]) -> tuple[list[str], str]:
@@ -421,6 +437,7 @@ def argv_mismatch(argv: list[str]) -> tuple[list[str], str]:
     if len(argv) < 2:
         return argv[1:], f"{ARGV_FLAG} has no value"
     want, rest = argv[1], argv[2:]
+    TYPED_ARGV[0] = want
     got = hashlib.sha256(canonical(rest).encode("ascii")).hexdigest()
     if got != want:
         return (

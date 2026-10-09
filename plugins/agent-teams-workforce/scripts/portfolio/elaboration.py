@@ -4,27 +4,18 @@
 `prd-to-spec` is the one elaborator, and every door into it — the headless lane, a person at
 `/work-bead` or `/start-prd` — arrives here twice.
 
-At the START, one Epic is judged against four conditions, in this order, and the first that
-fails is the refusal:
+At the START, one Epic is judged, and the first condition that fails is the refusal:
 
 * it is an open Epic;
-* it is SCORED: it carries its judged User-Business Value and Time Criticality and its
-  computed `wsjf`, because every Task it produces inherits the first two and an Epic's score
-  is what orders elaboration;
-* every Epic it depends on has `elaboration_state = done`, is closed, or is not in this
-  tracker (a dependency on a missing bead is released, never waited on), because an Epic
-  edge is an architecture dependency: an architecture decision this Epic rests on is designed from
-  the requirements of the Epics it depends on first. Its
-  dependencies are its `tracks` edges, and its `blocks` edges too, so an Epic edge stored
-  as either type holds it; a `blocks` edge onto anything other than an Epic holds it until
-  that bead closes. A run resuming the `in_progress` elaboration its own owner token holds
-  is not held by an edge set after it started;
-* its own `elaboration_state` is `ready`, or `in_progress` with no other owner. An absent
-  state is a PRD still being authored and `done` is an Epic whose Tasks are the workable
-  items.
+* it is not `elaboration_state = done`: its Tasks are written and they are the workable items;
+* it is not `in_progress` under another run's owner token (unless the caller reclaims).
 
-When all four hold, the Epic is marked `in_progress` and the run's owner token is recorded
-on it as `elaboration_state_owner`. The token is the caller's, or a fresh one. An
+Which Epic is elaborated next, and whether it is scored and its upstream Epics are elaborated,
+is decided by keeper selection before any door arrives here, so it is not judged again. An
+absent or unrecognised `elaboration_state` is taken as `ready`, with a warning for the latter.
+
+When the conditions hold, the Epic is marked `in_progress` and the run's owner token is
+recorded on it as `elaboration_state_owner`. The token is the caller's, or a fresh one. An
 `in_progress` Epic carrying a different token is owned by another run; the caller passes
 `reclaim` only once it has established that run is not live.
 
@@ -34,8 +25,7 @@ At the FINISH, after the Tasks are written:
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
   over every Task edge, across Stories;
-* with `done`, and when beads holds every Story, Task and edge the span's saved documents
-  name, the Epic's `elaboration_state` is set to `done` with the cause
+* with `done`, the Epic's `elaboration_state` is set to `done` with the cause
   `decomposed-into-tasks` and its owner token is cleared. The Epic stays open; it closes
   only when its work is released.
 
@@ -67,9 +57,6 @@ DONE = "done"
 #: The cause recorded when elaboration starts and when its Tasks are written.
 CAUSE_STARTED = "elaboration-started"
 CAUSE_DECOMPOSED = "decomposed-into-tasks"
-
-#: The judged Epic values a Task inherits, and the computed score that orders elaboration.
-SCORE_KEYS = ("wsjf_ubv", "wsjf_tc", "wsjf")
 
 
 class LifecycleError(RuntimeError):
@@ -158,65 +145,9 @@ def start(
             f"{epic_id} is not an open Epic in this tracker",
             epic,
         )
-    unscored = [k for k in SCORE_KEYS if epic.metadata.get(k) in (None, "")]
-    if unscored:
-        return _refusal(
-            "epic-unscored",
-            f"{epic_id} carries no {', '.join(unscored)}: an Epic is scored before it is "
-            "elaborated, because its Tasks inherit its value and its score orders "
-            "elaboration. Run dependency assessment and WSJF scoring for it first",
-            epic,
-            missing=unscored,
-        )
-    # A run resuming the elaboration it already owns passed this check when it started. An
-    # edge set since then (a later assessment or seeding) orders the next start, not a run
-    # already under way: refusing it here would discard every phase the run has saved.
-    resuming = (
-        epic.metadata.get(STATE_KEY) == IN_PROGRESS
-        and owner is not None
-        and epic.metadata.get(OWNER_KEY) == owner
-    )
-    waiting = []
-    for upstream in sorted(set(epic.tracked) | set(epic.blockers)):
-        if resuming:
-            break
-        bead = graph.beads.get(upstream)
-        state = bead.metadata.get(STATE_KEY) if bead else None
-        if bead is None or bead.closed:
-            satisfied = True
-        elif bead.kind == "epic":
-            satisfied = state == DONE
-        else:
-            satisfied = False
-        if not satisfied:
-            waiting.append(
-                {
-                    "id": upstream,
-                    "title": bead.title if bead else None,
-                    "elaborationState": state,
-                }
-            )
-    if waiting:
-        return _refusal(
-            "upstream-not-elaborated",
-            f"{epic_id} depends on {len(waiting)} item(s) not yet satisfied: "
-            + ", ".join(
-                f"{w['id']} ({w['elaborationState'] or 'no state'})" for w in waiting
-            )
-            + ". An Epic's architecture is designed after the architecture of the Epics "
-            "it depends on",
-            epic,
-            upstream=waiting,
-        )
     state = epic.metadata.get(STATE_KEY) or None
     recorded = epic.metadata.get(OWNER_KEY) or None
-    if state is None:
-        return _refusal(
-            "epic-authoring",
-            f"{epic_id} carries no {STATE_KEY}, which is how an Epic whose PRD is still being "
-            f"authored looks. Set {STATE_KEY}={READY} when authoring is finished",
-            epic,
-        )
+    warnings = []
     if state == DONE:
         return _refusal(
             "epic-done",
@@ -225,12 +156,12 @@ def start(
             "which resumes from its persisted artifacts",
             epic,
         )
-    if state not in (READY, IN_PROGRESS):
-        return _refusal(
-            "epic-state-unknown",
-            f"{epic_id} carries {STATE_KEY}={state}, which is not a lifecycle state",
-            epic,
+    if state is not None and state not in (READY, IN_PROGRESS):
+        warnings.append(
+            f"{epic_id} carries {STATE_KEY}={state}, which is not a lifecycle state; "
+            f"taken as {READY}"
         )
+        state = READY
     if state == IN_PROGRESS and recorded and recorded != owner and not reclaim:
         return _refusal(
             "epic-owned",
@@ -257,6 +188,7 @@ def start(
         "epic": _epic_value(epic),
         "owner": token,
         "previousState": state,
+        "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {"ok": True, "epic": epic.id, "previousState": state},
@@ -283,9 +215,8 @@ def finish(
     *,
     owner: str | None,
     done: bool,
-    missing: list[str] | None = None,
 ) -> dict:
-    """Score this Epic and its Tasks, and mark it done when beads holds its hierarchy.
+    """Score this Epic and its Tasks, and mark it done.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -293,8 +224,6 @@ def finish(
         epic_id: The Epic.
         owner: The owner token `start` returned.
         done: Set the Epic's `elaboration_state` to `done`.
-        missing: What the span's saved documents name that beads does not hold, or None
-            when no span was given. Anything in it keeps the Epic from being marked done.
 
     Returns:
         The scoring result and the lifecycle write.
@@ -308,8 +237,7 @@ def finish(
         msg = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
     under = _task_ids_under(graph, epic)
-    persisted = not missing
-    finishing = done and persisted
+    finishing = done
     scored = score(
         graph,
         writer,
@@ -341,7 +269,6 @@ def finish(
             )
         },
         "lifecycle": lifecycle,
-        "missing": list(missing or []),
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
@@ -352,8 +279,6 @@ def finish(
             "tasksWritten": scored["summary"]["tasksWritten"],
             "unscored": scored["summary"]["unscored"],
             "done": lifecycle is not None,
-            "persisted": persisted,
-            "missing": list(missing or []),
         },
     }
 

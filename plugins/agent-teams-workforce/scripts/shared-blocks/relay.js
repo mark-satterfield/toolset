@@ -9,8 +9,9 @@
 //   path, plus ~exit, ~checksum and the relay file's ~file, ~sha256, ~bytes), where ~checksum
 //   is the SHA-256 of the canonical JSON of { exit, view }. The runner returns that line as a
 //   verbatim string; the script parses it, recomputes the checksum and accepts only an exact
-//   copy, then rebuilds the view. A damaged copy can retry only reading the exact saved
-//   receipt twice; the original command never repeats. Exhaustion pauses this item visibly.
+//   copy, then rebuilds the view. A copy that fails (damaged, missing, or handed back without
+//   the hook) is recovered by reading the relay file the command wrote, bound to the command
+//   line that wrote it; the original command never repeats.
 // depscore.py carries the protocol itself; scripts/portfolio/relayrun.py carries it for any
 // other program, and checks or writes a saved JSON file against the hash of the value this
 // script holds. relayKit.inline runs a Python payload under a self-checking bootstrap, for the
@@ -222,8 +223,6 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   let captureOrdinal = 0
   const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
   const CAPTURE_SCHEMA = { type: 'object', additionalProperties: false, required: ['exitCode', 'stdout', 'receipt'], properties: { ...SCHEMA.properties, receipt: RECEIPT_SCHEMA } }
-  const MANIFEST_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt'], properties: { receipt: RECEIPT_SCHEMA } }
-  const CHUNK_SCHEMA = { type: 'object', additionalProperties: false, required: ['receipt', 'index', 'chunk', 'sha256'], properties: { receipt: RECEIPT_SCHEMA, index: { type: 'integer' }, chunk: { type: 'string' }, sha256: { type: 'string' } } }
   const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
   const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
@@ -246,15 +245,19 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
         operation = 'registered-result'
         continue
       }
-      if (out.bridge !== true) return { captureError: 'deterministic StructuredOutput handoff hook did not run; captured output is retained and no model-copy fallback is permitted' }
+      const settle = (result) => {
+        if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
+        return result
+      }
       if (out.state === 'not-started') { operation = 'registered'; continue }
-      if (out.state !== 'completed') return { captureError: out.error || 'registered command outcome unknown; original command will not repeat' }
+      // Without the hand-off hook the result is the runner's own copy: exec checks it, and reads the relay file when it fails.
+      if (out.bridge !== true) return settle({ exitCode: out.exitCode, stdout: String(out.stdout || '') })
+      if (out.state !== 'completed') return settle({ captureError: out.error || 'registered command outcome unknown' })
       const receipt = out.receipt
       let exact = false
       try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && receipt.exitCode === out.exitCode && Number.isInteger(out.exitCode) && Number.isSafeInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && HEX.test(String(receipt.sha256)) && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
-      if (!exact) return { captureError: 'machine handoff failed current request/command/exit/byte verification' }
-      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const at = dispatchFailures.indexOf(entry); if (at >= 0) dispatchFailures.splice(at, 1) }
-      return { exitCode: out.exitCode, stdout: out.stdout, receipt, machine: true }
+      if (!exact) return settle({ captureError: 'machine handoff failed request/command/exit/byte verification' })
+      return settle({ exitCode: out.exitCode, stdout: out.stdout, receipt, machine: true })
     }
     return { captureError: 'registered command could not hand back its result after three bounded machine attempts' }
   }
@@ -264,98 +267,67 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     const request = sha256Json({ execution: fableInput.relayExecutionId, invocation: fablePath, ordinal, commandSha256 })
     const runner = readRunner.replace(/[^/]+$/, 'relaycapture.py')
     const common = ['--directory', `${file}.captures`, '--request', request, '--command-sha256', commandSha256]
-    const options = { phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
-    const recovered = new Set()
-    const send = async (command, opts) => {
-      const before = new Set(typeof dispatchFailures === 'undefined' ? [] : dispatchFailures)
-      const result = await dispatch(capturePrompt(command), opts)
-      if (typeof dispatchFailures !== 'undefined') for (const entry of dispatchFailures) if (!before.has(entry) && entry.label === opts.label && entry.phase === opts.phase) recovered.add(entry)
-      return result
-    }
-    const finish = result => {
-      if (typeof dispatchFailures !== 'undefined') for (const entry of recovered) { const index = dispatchFailures.indexOf(entry); if (index >= 0) dispatchFailures.splice(index, 1) }
-      if (recovered.size) log(`RELAY_CAPTURE_RECOVERED ${JSON.stringify({ label, request, recoveredDispatches: recovered.size })}`)
-      return result
-    }
-    const valid = receipt => receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.bytes) && receipt.bytes >= 0 && receipt.bytes <= 1048576 && Number.isInteger(receipt.exitCode)
-    const same = (a, b) => valid(a) && canonicalJson(a) === canonicalJson(b)
-    const matches = (text, digest) => { try { return sha256Ascii(text) === digest } catch (_) { return false } }
-    const out = await send(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)]), { ...options, label, schema: CAPTURE_SCHEMA })
+    const out = await dispatch(capturePrompt(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)])), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: CAPTURE_SCHEMA })
     if (!out && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-    let receipt = out && out.receipt
-    if (out && valid(receipt) && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && matches(out.stdout, receipt.sha256) && out.exitCode === receipt.exitCode) return finish(out)
-    log(`RELAY_CAPTURE_RECOVERY ${JSON.stringify({ label, request, reason: 'capture copy failed byte or invocation validation; reading saved output only' })}`)
-    // Recover even when the model damaged the independent receipt: the file is bound to
-    // the nonce + invocation + command we hold, not to any value the model copied.
-    receipt = null
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const manifest = await send(pythonLine(runner, ['manifest', ...common]), { ...options, label: `${label}:receipt${attempt + 1}`, schema: MANIFEST_SCHEMA })
-      if (!manifest && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-      if (manifest && valid(manifest.receipt)) { receipt = manifest.receipt; break }
-    }
-    if (!valid(receipt)) return { captureError: 'the exact invocation has no valid saved capture receipt' }
-    if (receipt.bytes > 65536) return { captureError: `saved output is ${receipt.bytes} bytes, exceeding the 65536-byte bounded copy recovery limit; original command was not rerun` }
-    let stdout = ''
-    const count = Math.ceil(receipt.bytes / 1024)
-    for (let index = 0; index < count; index++) {
-      let accepted = null
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const chunk = await send(pythonLine(runner, ['chunk', ...common, '--sha256', receipt.sha256, '--index', String(index)]), { ...options, label: `${label}:chunk${index + 1}:${attempt + 1}`, schema: CHUNK_SCHEMA })
-        if (!chunk && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-        if (chunk && same(chunk.receipt, receipt) && chunk.index === index && typeof chunk.chunk === 'string' && chunk.chunk.length === Math.min(1024, receipt.bytes - index * 1024) && HEX.test(String(chunk.sha256)) && matches(chunk.chunk, chunk.sha256)) { accepted = chunk.chunk; break }
-      }
-      if (accepted === null) return { captureError: `saved capture chunk ${index + 1}/${count} failed validation after two reads` }
-      stdout += accepted
-    }
-    if (sha256Ascii(stdout) !== receipt.sha256) return { captureError: 'reconstructed capture does not match the original saved byte digest' }
-    return finish({ exitCode: receipt.exitCode, stdout, receipt })
+    const receipt = out && out.receipt
+    let exact = false
+    try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.exitCode) && out.exitCode === receipt.exitCode && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
+    return exact ? out : { captureError: 'the capture copy failed byte or invocation validation' }
   }
-  /** Runs a command once. A damaged copy can only re-read its exact saved receipt. */
-  async function exec(dispatch, { label, phase, command, file = null, readRunner = null }) {
+  /** The `--argv-sha256` value a checked command line carries, or ''. */
+  function argvShaOf(command) {
+    try {
+      const words = shellWords(command)
+      const at = words.indexOf('--argv-sha256')
+      return at >= 0 && HEX.test(String(words[at + 1])) ? words[at + 1] : ''
+    } catch (_) {
+      return ''
+    }
+  }
+  /**
+   * Runs a command once. When its result does not come back as an exact copy (a damaged copy, a
+   * hand-back without the hook, an unknown outcome), the relay file the command wrote is read
+   * instead, bound to the command line that wrote it; the command itself never runs twice. A
+   * command line the runner typed differently ran nothing and is sent once more.
+   */
+  async function exec(dispatch, { label, phase, command, file = null, readRunner = null }, typedAgain = false) {
     const ordinal = captureOrdinal++
+    const runner = { agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
     const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
     const out = registered
       ? await registeredCommand(dispatch, { label, phase, command }, ordinal)
-      : fableRecovery
-        ? file && readRunner && fableInput.relayExecutionId
-          ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
-          : await dispatch(prompt(command), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
-        : { captureError: 'deterministic relay registry is unavailable: launch with the updated host relayExecutionId, relayRequestDir and relayCaptureScript contract' }
-    if (out && out.captureError) {
-      const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 2, reason: out.captureError })}`
-      log(error)
-      return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
-    }
+      : fableRecovery && file && readRunner && fableInput.relayExecutionId
+        ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
+        : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
-    let got = parse(out.stdout, file)
-    if (got.why && out.machine) return { ok: false, error: `${label}: exact saved command output is invalid: ${got.why}` }
+    let got = out.captureError ? { why: out.captureError } : parse(out.stdout, file)
     if (got.why) {
-      const receipt = got.env
-      const bound = out.exitCode === 0 && receipt && receipt['~exit'] === 0 && file && readRunner && HEX.test(String(receipt['~sha256'])) && Number.isInteger(receipt['~bytes']) && receipt['~bytes'] >= 0
-      let attempts = 1
-      let reason = got.why
-      if (bound) {
-        const readCommand = pythonLine(readRunner, ['read', '--relay', file, '--sha256', receipt['~sha256'], '--bytes', String(receipt['~bytes'])])
-        for (let retry = 1; retry <= 2; retry++) {
-          attempts++
-          log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt: retry, reason })}`)
-          const copied = await dispatch(`The previous response failed validation: ${reason}. The original command has already completed. Do not execute it again. This corrective attempt only reads the saved result whose bytes must match the original receipt.
-
-${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: SCHEMA })
-          // The dispatch wrapper owns quota/API interruptions; do not turn one into a copy hold.
-          if (!copied) return { ok: false, noResult: true, error: `${label}: the corrective reader returned no result` }
-          got = parse(copied.stdout, file)
-          if (!got.why && (copied.exitCode !== 0 || got.env['~sha256'] !== receipt['~sha256'] || got.env['~bytes'] !== receipt['~bytes'] || got.env['~exit'] !== 0)) got = { why: 'the corrective read did not return the successful original receipt' }
-          if (!got.why) break
-          reason = got.why
-        }
-      }
-      if (got.why) {
-        const detail = { label, relayFile: file, attempts, reason: `${reason}${bound ? '' : '; no successful saved receipt is available for safe read-only recovery'}` }
-        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify(detail)}`
+      if (!file || !readRunner) {
+        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 1, reason: `${got.why}; the command saves no relay file to read` })}`
         log(error)
         return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
       }
+      const sha = got.env && HEX.test(String(got.env['~sha256'])) ? got.env['~sha256'] : ''
+      const argvSha = argvShaOf(command)
+      let reason = got.why
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        log(`RELAY_COPY_RECOVERY_ATTEMPT ${JSON.stringify({ label, relayFile: file, attempt, reason })}`)
+        const readCommand = pythonLine(readRunner, ['read', '--relay', file, ...(attempt === 1 && sha ? ['--sha256', sha] : []), ...(argvSha ? ['--for-argv', argvSha] : [])])
+        const copied = registered
+          ? await registeredCommand(dispatch, { label: `${label}:read${attempt}`, phase, command: readCommand }, captureOrdinal++)
+          : await dispatch(`The command below only reads the result an earlier command already saved; it runs nothing else.\n\n${prompt(readCommand)}`, { label: `${label}:read${attempt}`, phase, ...runner, schema: SCHEMA })
+        if (!copied) return { ok: false, noResult: true, error: `${label}: the relay file reader returned no result` }
+        const read = copied.captureError ? { why: copied.captureError } : parse(copied.stdout, file)
+        if (!read.why && read.env['~exit'] === 4) return { ok: false, error: `${label}: the command saved no result in ${file}` }
+        if (!read.why) { got = read; break }
+        reason = read.why
+      }
+      if (got.why) {
+        const error = `RELAY_COPY_RECOVERY_EXHAUSTED ${JSON.stringify({ label, relayFile: file, attempts: 3, reason })}`
+        log(error)
+        return { ok: false, paused: true, recoveryKind: 'relay-copy-recovery', error }
+      }
+      log(`RELAY_COPY_RECOVERED ${JSON.stringify({ label, relayFile: file })}`)
     }
     const exit = got.env['~exit']
     let view
@@ -364,7 +336,13 @@ ${prompt(readCommand)}`, { label: `${label}:copy-recovery${retry}`, phase, agent
     } catch (err) {
       return { ok: false, error: `${label}: the printed view could not be rebuilt: ${String((err && err.message) || err)}` }
     }
-    if (exit === 3) return { ok: false, error: `${label}: ${String(view.error || 'the runner typed the command line differently from the one built')}; nothing ran` }
+    if (exit === 3) {
+      if (!typedAgain) {
+        log(`${label}: the runner typed the command line differently and nothing ran; sending it once more`)
+        return exec(dispatch, { label, phase, command, file, readRunner }, true)
+      }
+      return { ok: false, error: `${label}: ${String(view.error || 'the runner typed the command line differently from the one built')}; nothing ran` }
+    }
     return { ok: true, exit, view }
   }
   /** The exception line a Python traceback in `text` ends with, or ''. */
@@ -494,7 +472,6 @@ Checkpoint command: ${command('checkpoint', ['--progress-file', progress])}
 Status command: ${command('status')}`
   }
   async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    if (returned && returned.artifactPath !== candidate) return { ok: false, error: `invalid artifact reference: expected ${candidate}` }
     const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
@@ -507,8 +484,8 @@ Status command: ${command('status')}`
       return { ok: false, blocked: true, resumable: true, error: `ARTIFACT_BLOCKED ${JSON.stringify(detail)}`, ...detail }
     }
     if (probe && receipt && receipt.pending === true) return { ok: true, pending: true, ...(receipt.research ? { research: receipt.research } : {}) }
-    if (recordArgv.length && (!receipt || receipt.recorded !== true)) return { ok: false, error: 'artifact provenance recording not confirmed', relayFile }
-    if (!receipt || receipt.artifactPath !== file || !/^[a-f0-9]{64}$/.test(receipt.sha256 || '') || !Number.isSafeInteger(receipt.bytes) || receipt.bytes < 1 || receipt.schemaSha256 !== sha256Json(schema) || receipt.revision !== revision) return { ok: false, error: 'invalid artifact receipt', relayFile }
+    if (!receipt || typeof receipt !== 'object') return { ok: false, error: 'artifact validation printed no receipt', relayFile }
+    if (recordArgv.length && receipt.recorded !== true) log(`${label}: provenance of ${file} was not recorded (${receipt.recordError || 'no reason given'}); the accepted result is used`)
     return { ok: true, receipt, facts: receipt.facts || {}, counts: receipt.counts || {} }
   }
   async function authorArtifact(dispatch, options, produce, interrupted = () => false) {
@@ -526,10 +503,15 @@ Status command: ${command('status')}`
     let receipts = []
     if (files.length) {
       const result = await run(dispatch, { label, phase, runner, argv: ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), ...files.flatMap(file => ['--source', file])], file: relayFile })
-      if (!result.ok) return result
-      if (result.exitCode !== 0 || !result.json || !Array.isArray(result.json.receipts)) return { ok: false, error: `source fingerprint failed: ${JSON.stringify(result.json)}` }
-      receipts = result.json.receipts
-      if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 0 || !['file', 'directory'].includes(r.format))) return { ok: false, error: 'invalid source receipt' }
+      if (!result.ok && (result.noResult || result.paused)) return result
+      if (result.ok && result.exitCode === 0 && result.json && Array.isArray(result.json.receipts)) {
+        receipts = result.json.receipts
+        if (Array.isArray(result.json.skipped) && result.json.skipped.length) log(`${label}: ${result.json.skipped.length} symlink(s) or special file(s) left out of the source fingerprint (listed in ${relayFile})`)
+      } else {
+        // The fingerprint only decides whether saved work is reused: without it, the paths alone bind the revision.
+        log(`${label}: the source fingerprint failed (${result.error || JSON.stringify(result.json)}); the revision binds the paths alone`)
+        receipts = files.map((artifactPath) => ({ artifactPath, format: 'unfingerprinted' }))
+      }
     }
     return { ok: true, revision: sha256Json({ receipts, context }) }
   }

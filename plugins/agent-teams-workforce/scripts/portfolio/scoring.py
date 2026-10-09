@@ -498,7 +498,7 @@ def _positive(record: dict, key: str, bead_id: str) -> int:
 
 
 def _percent(record: dict, key: str, bead_id: str) -> int:
-    """Read one judged confidence as an integer percent from 1 to 100.
+    """Read one judged confidence as an integer percent, a value above 100 taken as 100.
 
     Args:
         record: The judgment for one item.
@@ -509,13 +509,9 @@ def _percent(record: dict, key: str, bead_id: str) -> int:
         The value.
 
     Raises:
-        ScoringError: The value is missing or outside 1-100.
+        ScoringError: The value is missing or not a positive integer.
     """
-    value = _positive(record, key, bead_id)
-    if value > 100:
-        msg = f"{bead_id}: `{key}` is a percent, got {record.get(key)!r}"
-        raise ScoringError(msg)
-    return value
+    return min(_positive(record, key, bead_id), 100)
 
 
 def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
@@ -529,15 +525,12 @@ def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
         The size keys and their values.
 
     Raises:
-        ScoringError: A value is missing, not a positive integer, or the range does not
-            contain the estimate.
+        ScoringError: A value is missing or not a positive integer. A range that does not
+            contain the estimate is widened to contain it.
     """
     size = _positive(one, "jobSize", bead_id)
-    low = _positive(one, "sizeLow", bead_id)
-    high = _positive(one, "sizeHigh", bead_id)
-    if not low <= size <= high:
-        msg = f"{bead_id}: the range {low}-{high} does not contain the estimate {size}"
-        raise ScoringError(msg)
+    low = min(_positive(one, "sizeLow", bead_id), size)
+    high = max(_positive(one, "sizeHigh", bead_id), size)
     return {
         ESTIMATE_KEY: str(size),
         "wsjf_size_low": str(low),
@@ -558,13 +551,10 @@ def _value(record: dict, key: str, bead_id: str) -> int:
         The value.
 
     Raises:
-        ScoringError: The value is missing or outside 1 to the rubric's top rung.
+        ScoringError: The value is missing or not a positive integer. A value above the
+            rubric's top rung is taken as the top rung.
     """
-    value = _positive(record, key, bead_id)
-    if value > VALUE_TOP:
-        msg = f"{bead_id}: `{key}` tops out at {VALUE_TOP}, got {record.get(key)!r}"
-        raise ScoringError(msg)
-    return value
+    return min(_positive(record, key, bead_id), VALUE_TOP)
 
 
 def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, str]:
@@ -601,8 +591,8 @@ def record(
 
     The plan's adopted values get their fingerprint recorded beside them. Only items the
     plan named for judging are written. A judgment for an item the plan did not name is
-    not written, and an item judged twice has no value that belongs to it, so neither
-    judgment is written; both are listed under `rejected`. Every judgment is validated
+    not written and is listed under `rejected`; an item judged twice takes its last
+    judgment. Every judgment is validated
     before anything is written; one with a value off the rubric's scale is not written and
     is listed under `rejected` with its reason, and the others are written. One session's
     defect never costs another session's judgments.
@@ -625,17 +615,8 @@ def record(
     for level in ("epic", "task"):
         asked = {j["id"] for j in the_plan["judge"][f"{level}s"]}
         got: dict[str, dict] = {}
-        twice: set[str] = set()
         for one in judgments.get(level, []):
-            bead_id = str(one.get("id"))
-            if bead_id in got:
-                twice.add(bead_id)
-            got[bead_id] = one
-        for bead_id in sorted(twice):
-            del got[bead_id]
-            rejected.append(
-                {"id": bead_id, "level": level, "reason": "judged more than once"}
-            )
+            got[str(one.get("id"))] = one
         for bead_id in sorted(set(got) - asked):
             del got[bead_id]
             rejected.append(
@@ -645,7 +626,7 @@ def record(
                     "reason": "the plan did not name it for judging",
                 }
             )
-        missing += sorted(asked - set(got) - twice)
+        missing += sorted(asked - set(got))
         for bead_id in sorted(asked & set(got)):
             bead = graph.beads.get(bead_id)
             if bead is None:

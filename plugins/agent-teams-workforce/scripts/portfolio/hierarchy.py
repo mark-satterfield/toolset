@@ -44,6 +44,53 @@ class HierarchyError(ValueError):
     """The saved documents do not describe a Story or Tasks that can be written."""
 
 
+#: What reading a Story's Tasks normalized instead of refusing, since `take_warnings` last ran.
+_WARNINGS: list[str] = []
+
+
+def take_warnings() -> list[str]:
+    """Return, and forget, what reading the saved Tasks normalized instead of refusing.
+
+    Returns:
+        One line per normalization, in order.
+    """
+    out = list(dict.fromkeys(_WARNINGS))
+    _WARNINGS.clear()
+    return out
+
+
+def _acyclic(
+    nodes: list[str], fixed: list[tuple[str, str]], added: list[tuple[str, str]]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Take the edges in `added` one at a time, leaving out each that would close a cycle.
+
+    Args:
+        nodes: The graph's nodes.
+        fixed: Edges already taken, acyclic among themselves.
+        added: The edges to take, in order.
+
+    Returns:
+        The edges of `added` taken, and those left out.
+    """
+    taken: list[tuple[str, str]] = []
+    left: list[tuple[str, str]] = []
+    for edge in added:
+        if build_order(nodes, [*fixed, *taken, edge]) is None:
+            left.append(edge)
+        else:
+            taken.append(edge)
+    return taken, left
+
+
+def _artifact_slug(text: str) -> str:
+    """A kebab-case slug of a name, for an artifact a detailing named no slug for.
+
+    Returns:
+        The slug.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "page"
+
+
 def repo_slugs(repos: list[str]) -> dict[str, str]:
     """Return each repository's artifact slug: its directory name, suffixed on a collision.
 
@@ -463,8 +510,9 @@ def ui_authority(
     Reads `uiAuthority.uiItems` of the repository's saved detailing, `recon-<slug>.json`.
     Each item takes `bundle` (a cds bundle the owner supplied packages it), `cds` (it changes
     design and is designed with the CDS design system) or `none` (it changes no design).
-    A `bundle` item's bundle must be the newest of its kind and slug, hold the build spec its
-    `bundle.json` names, and, when the caller names a packages directory, sit in it.
+    A design source outside those is `cds`; a `cds` item with no artifact gets a `page`
+    named for the item; a `bundle` item whose bundle or build spec cannot be built from is
+    `cds`. Each is noted in `take_warnings`.
 
     Args:
         directory: The Epic's working directory.
@@ -476,18 +524,11 @@ def ui_authority(
         and its build-spec citations (the absolute `build-spec.md` path, followed by
         `#<Section ID>` for each Section it builds).
 
-    Raises:
-        HierarchyError: An item names no known design source, or a `bundle` item cites a
-            bundle or build spec that cannot be built from.
     """
     path = directory / f"recon-{slug}.json"
     ua = _read_json(path).get("uiAuthority") if path.is_file() else None
     ua = ua if isinstance(ua, dict) else {}
-    within = (
-        Path(packages_dir).expanduser().resolve()
-        if str(packages_dir or "").strip()
-        else None
-    )
+    del packages_dir
     designs: dict[str, UiDesign] = {}
     for entry in ua.get("uiItems") or []:
         if not isinstance(entry, dict):
@@ -497,10 +538,11 @@ def ui_authority(
         if not item or item in designs:
             continue
         if source not in DESIGN_SOURCES:
-            raise HierarchyError(
+            _WARNINGS.append(
                 f"recon-{slug}.json: ui item {item} has design source "
-                f"{json.dumps(source)}, not one of {', '.join(DESIGN_SOURCES)}"
+                f"{json.dumps(source)}; taken as cds"
             )
+            source = "cds"
         raw_art = (
             entry.get("artifact") if isinstance(entry.get("artifact"), dict) else {}
         )
@@ -511,25 +553,25 @@ def ui_authority(
         if source == "none":
             designs[item] = UiDesign(source)
             continue
+        if source == "bundle":
+            bundle = str(entry.get("bundle") or "").strip()
+            spec = str(entry.get("buildSpec") or "").strip()
+            problem = bundle_problem(bundle, spec)
+            if problem:
+                _WARNINGS.append(
+                    f"recon-{slug}.json: ui item {item}: {problem}; taken as cds"
+                )
+                source = "cds"
         if source == "cds":
             if artifact["kind"] not in KINDS or not artifact["slug"]:
-                raise HierarchyError(
-                    f"recon-{slug}.json: cds ui item {item} names no artifact "
-                    "{kind: page | shell | view, slug}"
+                artifact = {"kind": "page", "slug": _artifact_slug(item)}
+                _WARNINGS.append(
+                    f"recon-{slug}.json: cds ui item {item} names no artifact; "
+                    f"taken as page {artifact['slug']}"
                 )
             designs[item] = UiDesign(source, artifact=artifact)
             continue
-        bundle = str(entry.get("bundle") or "").strip()
-        spec = str(entry.get("buildSpec") or "").strip()
-        problem = bundle_problem(bundle, spec)
-        if problem:
-            raise HierarchyError(f"recon-{slug}.json: ui item {item}: {problem}")
         root = Path(bundle).resolve()
-        if within is not None and root.parent != within:
-            raise HierarchyError(
-                f"recon-{slug}.json: ui item {item} cites the bundle {root}, which is "
-                f"not in the packages directory {within}"
-            )
         spec = str(Path(spec).resolve())
         sections = str_list(entry.get("sections"))
         held = read_bundle(root) or {}
@@ -573,65 +615,48 @@ def task_design(
 
 
 def check_cds_contract(slug: str, tasks: list[Task]) -> None:
-    """Refuse a web-ui Task whose build contract does not match its design source.
+    """Settle each web-ui Task's build contract on one design source and one artifact.
 
-    A web-ui Task takes one design source. A `bundle` Task names the one supplied bundle it
-    builds against and at least one `build-spec.md` citation, each a file that exists. A
-    `cds` Task (designed with the CDS design system) and a `none` Task (no design change)
-    name no bundle.
+    A Task citing ui items of more than one artifact keeps the first for its contract and
+    names the others in its description. A `bundle` Task citing more than one bundle builds
+    against the newest; with no build-spec citation of that bundle, it takes the build spec
+    the bundle's `bundle.json` names. Each is noted in `take_warnings`.
 
     Args:
         slug: The Story's repository slug.
-        tasks: The Story's Tasks.
-
-    Raises:
-        HierarchyError: A web-ui Task has no known design source, or a `bundle` Task names
-            no bundle, more than one bundle, no build spec, or a build spec that does not
-            exist.
+        tasks: The Story's Tasks; changed in place.
     """
-    problems = []
     for t in tasks:
         if UI_SURFACE not in (t.surfaces or []):
             continue
-        if t.cds_design_source not in DESIGN_SOURCES:
-            problems.append(f"{t.key} has no design source")
-            continue
         if len(t.cds_artifacts) > 1:
-            problems.append(
-                f"{t.key} builds ui items of more than one artifact ("
-                + ", ".join(f"{a['kind']} {a['slug']}" for a in t.cds_artifacts)
-                + "); a web-ui Task builds one artifact, so split it by artifact"
+            others = t.cds_artifacts[1:]
+            t.cds_artifacts = t.cds_artifacts[:1]
+            named = ", ".join(f"{a['kind']} {a['slug']}" for a in others)
+            t.description = (
+                f"{t.description}\n\nIt also builds ui items of: {named}."
+            ).strip()
+            _WARNINGS.append(
+                f"tasks-{slug}.json: {t.key} builds ui items of more than one artifact; "
+                f"its contract takes {t.cds_artifacts[0]['kind']} "
+                f"{t.cds_artifacts[0]['slug']} and its description names {named}"
             )
-            continue
         if t.cds_design_source != "bundle":
             continue
-        if not t.cds_bundle_path:
-            problems.append(
-                f"{t.key} builds ui items from more than one supplied cds bundle "
-                f"({', '.join(t.cds_bundles)}); a Task builds against one bundle, so "
-                "split it by bundle"
-                if len(t.cds_bundles) > 1
-                else f"{t.key} takes a supplied bundle but names none"
+        if not t.cds_bundle_path and t.cds_bundles:
+            held = [b for b in (read_bundle(Path(p)) for p in t.cds_bundles) if b]
+            newest = max(held, key=lambda b: b["createdAt"]) if held else None
+            t.cds_bundle_path = newest["path"] if newest else t.cds_bundles[0]
+            _WARNINGS.append(
+                f"tasks-{slug}.json: {t.key} cites more than one cds bundle; it builds "
+                f"against the newest, {t.cds_bundle_path}"
             )
-        if not t.cds_build_specs:
-            problems.append(f"{t.key} takes a supplied bundle but cites no build spec")
-        missing = sorted(
-            {
-                c.split("#", 1)[0]
-                for c in t.cds_build_specs
-                if not Path(c.split("#", 1)[0]).is_file()
-            }
-        )
-        if missing:
-            problems.append(
-                f"{t.key} cites build specs that do not exist: {', '.join(missing)}"
-            )
-    if problems:
-        msg = (
-            f"tasks-{slug}.json: web-ui Tasks whose cds contract does not hold: "
-            + "; ".join(problems)
-        )
-        raise HierarchyError(msg)
+        root = t.cds_bundle_path or ""
+        own = [c for c in t.cds_build_specs if root and c.startswith(f"{root}/")]
+        if not own:
+            held = read_bundle(Path(root)) if root else None
+            own = [held["buildSpec"]] if held else []
+        t.cds_build_specs = own
 
 
 def _spec_refs(directory: Path, rel: str | None, slug: str) -> list[str]:
@@ -677,7 +702,7 @@ def read_tasks(
         The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.
 
     Raises:
-        HierarchyError: The file holds no `tasks` list, or its edges form a cycle.
+        HierarchyError: The file holds no `tasks` list.
     """
     saved = _read_json(directory / f"tasks-{slug}.json")
     if not isinstance(saved.get("tasks"), list):
@@ -687,10 +712,13 @@ def read_tasks(
     unique, copies = _unique_tasks(raw)
     edges = _unique_edges(saved.get("edges"), copies)
     scores = _unique_scores(saved.get("scores"), copies)
-    order = build_order([t["key"] for t in unique], edges)
-    if order is None:
-        msg = f"tasks-{slug}.json: the Task edges form a cycle"
-        raise HierarchyError(msg)
+    nodes = [t["key"] for t in unique]
+    edges, left = _acyclic(nodes, [], list(edges))
+    _WARNINGS.extend(
+        f"tasks-{slug}.json: the edge {frm} -> {to} closes a cycle; dropped"
+        for frm, to in left
+    )
+    order = build_order(nodes, edges)
     refs = _spec_refs(directory, rel, slug)
     verified = "true"
     strategy = (
@@ -755,7 +783,7 @@ WORK_STATUSES = ("add", "modify", "remove")
 
 
 def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
-    """Refuse Tasks that build no delta item the repository's detailing marks as work.
+    """Note Tasks that build no delta item the repository's detailing marks as work.
 
     The detailing of a repository, `recon-<slug>.json`, gives each delta item placed in it
     a status; only `add`, `modify` and `remove` make work. Every Task cites, in its
@@ -765,10 +793,8 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
-        tasks: The Story's Tasks.
-
-    Raises:
-        HierarchyError: A Task cites no delta item that makes work.
+        tasks: The Story's Tasks; each one citing no such item is noted in
+            `take_warnings` and kept.
     """
     path = directory / f"recon-{slug}.json"
     if not path.is_file():
@@ -784,12 +810,11 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
     }
     idle = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
-        msg = (
+        _WARNINGS.append(
             f"tasks-{slug}.json: {', '.join(idle)} cite no delta item recon-{slug}.json "
-            f"marks {', '.join(WORK_STATUSES)} in requirementIds; a Task is made only "
-            f"for such an item ({', '.join(sorted(work)) or 'none here'})"
+            f"marks {', '.join(WORK_STATUSES)} in requirementIds "
+            f"({', '.join(sorted(work)) or 'none here'})"
         )
-        raise HierarchyError(msg)
 
 
 #: The listing `depscore.py arch-delta --save` writes in the Epic's working directory.
@@ -887,11 +912,9 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
         tasks: The Story's Tasks in build order.
 
     Returns:
-        The Tasks in build order with the derived edges and blockers.
-
-    Raises:
-        HierarchyError: A required item detailed here has no Task in this Story, or the
-            derived edges close a cycle.
+        The Tasks in build order with the derived edges and blockers. A required item
+        detailed here that no Task of this Story builds, and a derived edge that would close
+        a cycle, are noted in `take_warnings` and make no edge.
     """
     requires = delta_requires(directory)
     if requires is None:
@@ -903,6 +926,7 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
         for item in t.requirement_ids:
             builders.setdefault(item, []).append(t.key)
     problems: list[str] = []
+    saved_edges = [(d, t.key) for t in tasks for d in t.depends_on]
     for t in tasks:
         for x in t.requirement_ids:
             own = detailed.get(x, {})
@@ -931,16 +955,22 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
                         f"{d['status']} in recon-{slug}.json and no Task of this Story builds it"
                     )
                 t.depends_on.extend(k for k in found if k not in t.depends_on)
-    if problems:
-        msg = f"tasks-{slug}.json: " + "; ".join(problems)
-        raise HierarchyError(msg)
+    _WARNINGS.extend(f"tasks-{slug}.json: {p}" for p in problems)
     by_key = {t.key: t for t in tasks}
-    order = build_order(
-        [t.key for t in tasks], [(d, t.key) for t in tasks for d in t.depends_on]
-    )
-    if order is None:
-        msg = f"tasks-{slug}.json: the Task edges and the delta's `requires` relations form a cycle"
-        raise HierarchyError(msg)
+    nodes = [t.key for t in tasks]
+    derived = [
+        (d, t.key)
+        for t in tasks
+        for d in t.depends_on
+        if (d, t.key) not in set(saved_edges)
+    ]
+    _taken, left = _acyclic(nodes, saved_edges, derived)
+    for frm, to in left:
+        by_key[to].depends_on.remove(frm)
+        _WARNINGS.append(
+            f"tasks-{slug}.json: the derived edge {frm} -> {to} closes a cycle; dropped"
+        )
+    order = build_order(nodes, [(d, t.key) for t in tasks for d in t.depends_on])
     return [by_key[k] for k in order]
 
 

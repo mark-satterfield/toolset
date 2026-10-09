@@ -42,9 +42,6 @@ refuses, with `stage: epic-lifecycle` and a `refusal` naming the code, when:
 | --- | --- | --- |
 | `no-epic` | `epic.id` names no bead | Create the Epic, then assess and score it |
 | `not-an-open-epic` | the id is not an open Epic | Pass the right Epic |
-| `epic-unscored` | no `wsjf_ubv`, `wsjf_tc` or `wsjf` | Run the `dependency-assessment` and `wsjf-scoring` workflows for it |
-| `upstream-not-elaborated` | an Epic it depends on is not `elaboration_state=done` | Elaborate that Epic first |
-| `epic-authoring` | no `elaboration_state` | Set `elaboration_state=ready` when the PRD is finished |
 | `epic-done` | already `done` | A person sets it to `in_progress` to elaborate again; the run resumes from its persisted artifacts |
 | `epic-owned` | `in_progress` under another run's owner token | Pass `reclaim: true` only once that run is known not to be live |
 
@@ -150,15 +147,13 @@ What comes back:
   is false the Epic's elaboration stays `in_progress` and the next run completes it.
 - `beadsEmitted` — how many Stories and Tasks this run created or updated.
 
-`depscore.py elaboration-finish` reads beads: when beads does not hold every Story, Task
-and edge the span's saved documents name, it leaves the Epic `in_progress` and the run
-returns `ok: false` at stage `hierarchy-not-persisted`, its `headline` naming what is
-missing. Re-dispatch: the rerun replays every saved step, and each write updates what
-landed and creates what did not.
+`depscore.py elaboration-finish` sets the Epic `done` once any Story has Tasks written, or
+when nothing is to be built. A repository or Story that produced nothing is named in the
+handback's DEGRADED line; re-dispatch the Epic to complete it, since every write is keyed by
+its `elab_key` and the rerun updates what landed.
 
 Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
-compose them from your own account of what you think landed. `beadsEmitted` counts the
-writes whose results were relayed; beads itself is what `lifecycle.done` was decided on.
+compose them from your own account of what you think landed.
 
 ## 4. Report
 
@@ -171,8 +166,7 @@ The report contains the following, carried by the caller's schema when one is gi
 - Repositories created: every `createdRepos` entry, with why no existing repo fits
 - Stories: how many, and which repo each covers
 - Tasks: how many, and how many dependency edges cross Stories
-- Beads: `beadsEmitted`, and — when the run stopped at `hierarchy-not-persisted` —
-  each missing Story, Task or edge the `headline` names
+- Beads: `beadsEmitted`, and each repository or Story the DEGRADED line names
 - A run that stopped — the composite's `headline` carries the phase and the reason; every
   phase artifact is in the run journal at `detailPath`, and the composite returns none of
   them. A stopped run names what it DID produce under `partialProduced` — read the journal

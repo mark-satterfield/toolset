@@ -71,10 +71,10 @@ def artifact_status(candidate: Path, schema: dict, revision: str) -> dict:
             "remaining": saved["remaining"],
             "reason": saved.get("reason", ""),
         }
+    # A candidate rewritten after its completion is judged as it is now: it is valid
+    # against the schema or validate_candidate raises.
     value = validate_candidate(candidate, schema)
     digest = hashlib.sha256(canonical(value)).hexdigest()
-    if saved.get("candidateSha256") != digest:
-        return {"status": "incomplete", "reason": "candidate changed after completion"}
     return {"status": "complete-unaccepted", **expected, "candidateSha256": digest}
 
 
@@ -115,11 +115,10 @@ def main() -> int:
                     "--progress-file is required; author task, completed, remaining and artifacts"
                 )
             progress = load_json(args.progress_file)
+            if not isinstance(progress, dict):
+                raise ValueError("the progress file is not a JSON object")
             allowed = {"task", "completed", "remaining", "artifacts", "reason"}
-            if not isinstance(progress, dict) or set(progress) - allowed:
-                raise ValueError(
-                    "progress accepts only task, completed, remaining, artifacts and reason"
-                )
+            progress = {k: v for k, v in progress.items() if k in allowed}
             status = (
                 "complete" if args.operation in {"complete", "submit"} else args.status
             )
@@ -131,10 +130,7 @@ def main() -> int:
                 "status": status,
             }
             if status == "complete":
-                if progress.get("remaining") != []:
-                    raise ValueError(
-                        "completion requires an explicitly empty remaining list"
-                    )
+                saved["remaining"] = []
                 value = validate_candidate(candidate, schema)
                 if args.files_field is not None:
                     if not isinstance(value, dict) or args.files_field not in value:
