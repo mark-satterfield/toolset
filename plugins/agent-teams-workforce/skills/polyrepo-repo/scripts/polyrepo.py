@@ -2790,6 +2790,108 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+# clone -----------------------------------------------------------------------------------------
+
+
+def _clone_dest(cfg: Config, name: str) -> Path:
+    """Return the one folder a clone of this repo belongs in, from the naming standard.
+
+    Returns:
+        The destination path: the app space, then the template placement folder for its kind.
+
+    Raises:
+        PolyrepoError: when the name matches no application or deprecated pattern, or its
+            app space folder does not exist.
+    """
+    space = cfg.expected_space(name)
+    if space is None:
+        msg = f"{name} matches no naming pattern that implies an app space"
+        raise PolyrepoError(msg)
+    space_dir = cfg.root / space
+    if not space_dir.is_dir():
+        msg = f"no app space folder {space_dir}"
+        raise PolyrepoError(msg)
+    base = name
+    if name.startswith("deprecated-"):
+        base = name[len("deprecated-") :]
+    tset = cfg.raw.get("templates") or {}
+    kinds = tset.get("kinds") or {}
+    placement = (tset.get("placement") or {}).get(space) or {}
+    sub = next(
+        (
+            placement[k]
+            for k, v in kinds.items()
+            if k in placement
+            and v.get("name_regex")
+            and re.search(v["name_regex"], base, re.IGNORECASE)
+        ),
+        "",
+    )
+    return space_dir / sub / name if sub else space_dir / name
+
+
+def _clone_conflicts(cfg: Config, name: str, dest: Path) -> list[Path]:
+    """Find every clone of this repo already on disk, by folder name or by origin URL.
+
+    Returns:
+        The paths of those clones.
+    """
+    local, dups = discover(cfg)
+    found = {r.path for n, r in local.items() if n.lower() == name.lower()}
+    for n, paths in dups:
+        if n.lower() == name.lower():
+            found.update(paths)
+    wanted = {
+        cfg.github_url(name).lower(),
+        cfg.github_url(name)[: -len(".git")].lower(),
+    }
+    for r in local.values():
+        url = (git_out(r.path, "remote", "get-url", "origin") or "").lower()
+        if url in wanted:
+            found.add(r.path)
+    return sorted(found)
+
+
+def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
+    """Clone a repo into the folder its name and project give it, never anywhere else.
+
+    Returns:
+        0 when the repo is cloned or is already at its correct folder.
+
+    Raises:
+        PolyrepoError: when the repo already exists at any other path, is on disk more than
+            once, does not exist on GitHub, or the clone fails.
+    """
+    name = args.repo
+    dest = _clone_dest(cfg, name)
+    here = _clone_conflicts(cfg, name, dest)
+    res: dict[str, Any] = {"repo": name, "path": str(dest), "cloned": False}
+    wrong = [p for p in here if p != dest]
+    if wrong:
+        msg = (
+            f"refusing to clone {name} into {dest}: it already exists at "
+            + ", ".join(str(p) for p in wrong)
+        )
+        raise PolyrepoError(msg)
+    if dest in here:
+        emit(args, res, lambda: f"{name}: already at {dest}")
+        return 0
+    if dest.exists():
+        msg = f"{dest} exists and is not a git clone"
+        raise PolyrepoError(msg)
+    if GitHub(cfg, use_cache=False).resolve(name) is None:
+        msg = f"{cfg.owner}/{name} does not exist on GitHub"
+        raise PolyrepoError(msg)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cp = run(["git", "clone", cfg.github_url(name), str(dest)], timeout=600)
+    if cp.returncode != 0:
+        msg = f"git clone failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    res["cloned"] = True
+    emit(args, res, lambda: f"{name}: cloned to {dest}")
+    return 0
+
+
 # rename ----------------------------------------------------------------------------------------
 
 
@@ -4200,6 +4302,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("repo")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
     s.set_defaults(func=cmd_deprecate)
+
+    s = sub.add_parser(
+        "clone",
+        parents=[common],
+        help="clone a repo into the folder its name gives it; refuse if it exists elsewhere",
+    )
+    s.add_argument("repo")
+    s.set_defaults(func=cmd_clone)
 
     s = sub.add_parser(
         "rename",
