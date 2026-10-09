@@ -30,6 +30,7 @@ Usage:
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
+  polyrepo.py beads-setup [repo ...] [--all] [--check] [--dry-run] [--trailer TEXT]
   polyrepo.py beads-fleet [--fix]
   polyrepo.py deprecated-prs [--fix]
   polyrepo.py doctor [--fix]
@@ -2532,7 +2533,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"git init on {b}, exclude {WORKTREES_LINE} locally, and commit",
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
-            "add it to the beads fleet list (repos.additional) when it has a .beads folder",
+            "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
+            "add it to the beads fleet list (repos.additional)",
         ],
     }
     if args.dry_run:
@@ -2605,12 +2607,18 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     log = [
         f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
     ]
-    if args.lifecycle not in LIFECYCLES_INACTIVE and (dest / ".beads").is_dir():
+    code = 0
+    if args.lifecycle not in LIFECYCLES_INACTIVE:
         try:
+            done = beads_setup(
+                cfg, LocalRepo(name=name, path=dest, space=args.space), None
+            )
+            log.append(f"beads set up: {'; '.join(done['steps']) or 'already set up'}")
             log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[dest]))
-        except (OSError, PolyrepoError) as exc:
-            res["fleet_error"] = str(exc)
-            log.append(f"beads fleet list NOT updated: {exc}")
+        except (GitFailedError, OSError, PolyrepoError) as exc:
+            res["beads_error"] = str(exc)
+            log.append(f"beads setup FAILED: {exc}")
+            code = 1
     append_changelog(cfg, "polyrepo create", log)
     GitHub(cfg, use_cache=True).invalidate()
     finish_records(cfg, res)
@@ -2618,10 +2626,437 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         args,
         res,
         lambda: "\n".join(
-            [f"{name}: created at {dest} and pushed to GitHub", *_records_line(res)]
+            [
+                f"{name}: created at {dest} and pushed to GitHub"
+                + (f"; beads setup failed: {res['beads_error']}" if code else ""),
+                *_records_line(res),
+            ]
         ),
     )
-    return 0
+    return code
+
+
+# beads setup -------------------------------------------------------------------------------------
+# Creating a repo includes its beads setup: the `.beads` config files committed, its database on
+# the shared server, its entry in the control repo's beads fleet list, and a `.gitignore` that
+# covers the beads runtime and database files and the standard ignores for its template kind.
+
+BEADS_GITIGNORE = (
+    ".dolt/",
+    "*.db",
+    ".beads-credential-key",
+    ".beads/proxieddb/",
+    ".beads/issues.jsonl",
+    "*.gate.lock*",
+)
+BEADS_TRACKED = (
+    ".beads/config.yaml",
+    ".beads/metadata.json",
+    ".beads/.gitignore",
+    ".beads/README.md",
+)
+BEADS_REQUIRED = BEADS_TRACKED[:3]
+BEADS_SCRIPTS = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts"
+
+
+def _ignore_key(line: str) -> str:
+    return line.strip().rstrip("/")
+
+
+def _template_ignore_lines(cfg: Config, r: LocalRepo) -> list[str]:
+    """Return the ignore lines of the `.gitignore` of the template this repo's kind is built from.
+
+    Returns:
+        The non-comment lines; empty when the repo matches no template.
+    """
+    troot, tset = _templates(cfg)
+    kind, _how, _answers = _template_for(r, tset.get("kinds") or {})
+    f = troot / kind / ".gitignore" if kind else None
+    if f is None or not f.is_file():
+        return []
+    return [
+        ln.strip()
+        for ln in f.read_text().splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+
+
+def gitignore_missing(cfg: Config, r: LocalRepo) -> list[str]:
+    """List the ignore lines the repo's `.gitignore` lacks: the beads ones and its kind's standard ones.
+
+    Returns:
+        The missing lines, in order.
+    """
+    f = r.path / ".gitignore"
+    have = (
+        {_ignore_key(ln) for ln in f.read_text().splitlines()} if f.is_file() else set()
+    )
+    want = [*BEADS_GITIGNORE, *_template_ignore_lines(cfg, r)]
+    out: list[str] = []
+    for w in want:
+        if _ignore_key(w) not in have and w not in out:
+            out.append(w)
+    return out
+
+
+def ensure_gitignore(cfg: Config, r: LocalRepo) -> list[str]:
+    """Append the missing ignore lines to the repo's `.gitignore`.
+
+    Returns:
+        The lines added.
+    """
+    miss = gitignore_missing(cfg, r)
+    if not miss:
+        return []
+    f = r.path / ".gitignore"
+    text = f.read_text() if f.is_file() else ""
+    sep = "" if not text or text.endswith("\n") else "\n"
+    f.write_text(
+        f"{text}{sep}\n# Beads runtime and database files, and the standard ignores (polyrepo)\n"
+        + "\n".join(miss)
+        + "\n"
+    )
+    return miss
+
+
+def _beads_prefix(cfg: Config) -> str:
+    """Read the fleet's issue prefix from the control repo's beads config.
+
+    Returns:
+        The prefix.
+
+    Raises:
+        PolyrepoError: when the control repo has none.
+    """
+    cp = run(["bd", "config", "get", "issue_prefix"], cwd=fleet_file(cfg).parent.parent)
+    prefix = cp.stdout.strip()
+    if cp.returncode != 0 or not prefix:
+        msg = "could not read issue_prefix from the beads config of the control repo"
+        raise PolyrepoError(msg)
+    return prefix
+
+
+def _beads_port() -> int:
+    return int(os.environ.get("ATW_BEADS_PORT") or 3308)
+
+
+def _server_databases() -> set[str]:
+    """Return the database names on the shared Dolt server.
+
+    Returns:
+        The names.
+
+    Raises:
+        PolyrepoError: when the server cannot be listed.
+    """
+    cp = run(
+        [
+            "env",
+            f"BEADS_SHARED_PORT={_beads_port()}",
+            "uv",
+            "run",
+            "--quiet",
+            str(BEADS_SCRIPTS / "beads_server.py"),
+            "list",
+        ],
+        timeout=120,
+    )
+    if cp.returncode != 0:
+        msg = f"could not list the shared Dolt server's databases: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    return {ln.strip() for ln in cp.stdout.splitlines() if ln.strip()}
+
+
+def _beads_files(
+    path: Path, prefix: str, remote: str, db: str, port: int, shared: bool
+) -> None:
+    """Write `.beads/config.yaml` and `.beads/metadata.json`, in shared-server or embedded mode,
+    keeping a `project_id` already in the metadata."""
+    beads = path / ".beads"
+    beads.mkdir(mode=0o700, exist_ok=True)
+    cfgtext = f'issue-prefix: "{prefix}"\nsync:\n    remote: "{remote}"\n'
+    meta: dict[str, Any] = {"database": "dolt", "backend": "dolt"}
+    if shared:
+        cfgtext += (
+            f"dolt:\n    shared-server: true\n    port: {port}\n    database: {db}\n"
+        )
+        meta.update(dolt_mode="server", dolt_server_port=port, dolt_database=db)
+    else:
+        meta.update(dolt_mode="embedded")
+    try:
+        old = json.loads((beads / "metadata.json").read_text())
+    except (OSError, ValueError):
+        old = {}
+    if shared and old.get("project_id"):
+        meta["project_id"] = old["project_id"]
+    (beads / "config.yaml").write_text(cfgtext)
+    (beads / "metadata.json").write_text(json.dumps(meta, indent=2) + "\n")
+
+
+def _bd(path: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess[str]:
+    return run(
+        ["env", "BD_ALLOW_REMOTE_MIGRATE=1", "bd", "-C", str(path), *args],
+        timeout=timeout,
+    )
+
+
+def _create_beads_database(
+    path: Path, prefix: str, remote: str, db: str, port: int
+) -> list[str]:
+    """Give the repo a database on the shared server, without `bd init`.
+
+    `bd bootstrap` clones the repo's `refs/dolt/data` into the shared server when the remote
+    has it. When it has not, bootstrap creates a fresh database only as an embedded store, so
+    the repo is bootstrapped in embedded mode, given the fleet prefix, pushed to
+    `refs/dolt/data`, and bootstrapped again in shared-server mode, which clones it.
+
+    Returns:
+        One line per step taken.
+
+    Raises:
+        GitFailedError: when a step fails.
+    """
+    steps: list[str] = []
+    remote_has = git_out(path, "ls-remote", "origin", "refs/dolt/data")
+    if not remote_has:
+        _beads_files(path, prefix, remote, db, port, shared=False)
+        must(_bd(path, "bootstrap", "--yes"))
+        must(_bd(path, "rename-prefix", f"{prefix}-", "--repair"))
+        must(_bd(path, "dolt", "push"))
+        shutil.rmtree(path / ".beads" / "embeddeddolt", ignore_errors=True)
+        steps.append("created the database (embedded) and pushed it to refs/dolt/data")
+    _beads_files(path, prefix, remote, db, port, shared=True)
+    must(_bd(path, "bootstrap", "--yes"))
+    steps.append(f"cloned refs/dolt/data into the shared server as {db}")
+    return steps
+
+
+def _unstage(repo: Path, pattern: str) -> None:
+    """Take the staged entries matching a pattern (an index-only change) out of the index."""
+    names = git(repo, "diff", "--cached", "--name-only", "--", pattern).stdout.split()
+    for n in names:
+        git(repo, "rm", "--cached", "-q", "-f", "--", n)
+
+
+def beads_setup(
+    cfg: Config, r: LocalRepo, trailer: str | None = None
+) -> dict[str, Any]:
+    """Bring one repo to the canonical beads state, commit and push it.
+
+    Gives it a database when the shared server has none, repairs identity, prefix and mode
+    (`bd doctor --fix` and the polyrepo-beads `converge-repo.sh`), completes its `.gitignore`,
+    and commits `.beads/` config files and the `.gitignore` on the default branch.
+
+    Returns:
+        {"repo", "steps": [...], "committed": bool, "pushed": bool}.
+
+    Raises:
+        GitFailedError: when a step fails.
+        PolyrepoError: when the environment lacks what the step needs.
+    """
+    path, name, b = r.path, r.name, cfg.default_branch
+    if git_out(path, "symbolic-ref", "--short", "-q", "HEAD") != b:
+        msg = f"{name} is not on {b}"
+        raise GitFailedError(msg)
+    prefix, port, remote = _beads_prefix(cfg), _beads_port(), cfg.github_url(name)
+    try:
+        db = json.loads((path / ".beads" / "metadata.json").read_text()).get(
+            "dolt_database"
+        )
+    except (OSError, ValueError):
+        db = None
+    db = db or name.replace("-", "_")
+    steps: list[str] = []
+    meta_f = path / ".beads" / "metadata.json"
+
+    def project_id() -> str | None:
+        try:
+            return json.loads(meta_f.read_text()).get("project_id")
+        except (OSError, ValueError):
+            return None
+
+    on_server = db in _server_databases()
+    files_ok = (path / ".beads" / "config.yaml").is_file() and meta_f.is_file()
+    if not on_server:
+        steps.extend(_create_beads_database(path, prefix, remote, db, port))
+    elif not files_ok:
+        _beads_files(path, prefix, remote, db, port, shared=True)
+        steps.append("wrote the missing .beads config files")
+    if not (on_server and files_ok and project_id()):
+        _bd(path, "doctor", "--fix", "--yes")
+        _bd(path, "vc", "commit", "-m", "chore: record project identity")
+        env = f"ATW_CONTROL_REPO={fleet_file(cfg).parent.parent}"
+        conv = ["env", env, "bash", str(BEADS_SCRIPTS / "converge-repo.sh"), str(path)]
+        must(run([*conv, "--clean"], timeout=600))
+        steps.append("converged to the shared-server canonical state")
+        if not project_id():
+            msg = f"{name}: metadata.json has no project_id after convergence"
+            raise GitFailedError(msg)
+    _unstage(path, "*.gate.lock*")
+    added = ensure_gitignore(cfg, r)
+    if added:
+        steps.append(f"added {len(added)} lines to .gitignore")
+    paths = [p for p in (*BEADS_TRACKED, ".gitignore") if (path / p).is_file()]
+    must(git(path, "add", "-f", "--", *paths))
+    res: dict[str, Any] = {
+        "repo": name,
+        "steps": steps,
+        "committed": False,
+        "pushed": False,
+    }
+    if git(path, "diff", "--cached", "--quiet", "--", *paths).returncode == 0:
+        return res
+    msg = f"chore(beads): set up beads for {name}"
+    if trailer:
+        msg += f"\n\n{trailer}"
+    cp = git(path, "commit", "-m", msg, "--", *paths, timeout=300)
+    if cp.returncode != 0:
+        must(git(path, "add", "-f", "--", *paths))
+        must(git(path, "commit", "-m", msg, "--", *paths, timeout=300))
+    res["committed"] = True
+    must(git(path, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+    must(git(path, "push", "origin", b, timeout=120))
+    res["pushed"] = True
+    return res
+
+
+def beads_setup_findings(st: State) -> list[Finding]:
+    """Check that every active repo carries its beads setup: config files committed, its entry in
+    the fleet list, and a complete `.gitignore`.
+
+    Returns:
+        One finding per gap. The database on the server is the beads audit's check.
+    """
+    cfg = st.cfg
+    control = os.path.normpath(fleet_file(cfg).parent.parent)
+    listed = fleet_paths(cfg)
+    out: list[Finding] = []
+    for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
+        if st.lifecycle(name) != "active" or os.path.normpath(r.path) == control:
+            continue
+        missing = [p for p in BEADS_REQUIRED if not (r.path / p).is_file()]
+        if missing:
+            out.append(
+                Finding("beads-config-missing", name, f"missing {', '.join(missing)}")
+            )
+        else:
+            loose = [
+                p
+                for p in BEADS_REQUIRED
+                if git(r.path, "ls-files", "--error-unmatch", "--", p).returncode != 0
+            ]
+            if loose:
+                out.append(
+                    Finding(
+                        "beads-config-uncommitted",
+                        name,
+                        f"not tracked by git: {', '.join(loose)}",
+                    )
+                )
+        if os.path.normpath(r.path) not in listed:
+            out.append(
+                Finding(
+                    "beads-not-in-fleet",
+                    name,
+                    "not in the control repo's beads fleet list (repos.additional)",
+                )
+            )
+        gi = gitignore_missing(cfg, r)
+        if gi:
+            out.append(
+                Finding(
+                    "gitignore-incomplete",
+                    name,
+                    f".gitignore lacks {', '.join(gi)}",
+                )
+            )
+    return out
+
+
+def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
+    """Check every active repo's beads setup (--check), or set up the named repos or, with --all,
+    every active repo that has a gap or no database on the server.
+
+    Returns:
+        0 when nothing is left open, else 1.
+
+    Raises:
+        PolyrepoError: when neither repos, --all nor --check is given.
+    """
+    st = gather(cfg, fetch=False, use_cache=not args.no_cache)
+    findings = beads_setup_findings(st)
+    if args.check:
+        data: dict[str, Any] = {
+            "findings": [f.as_dict() for f in findings],
+            "open": len(findings),
+        }
+        emit(
+            args,
+            data,
+            lambda: "\n".join(
+                [f"{len(findings)} beads setup gaps"]
+                + [f"  [{f.kind}] {f.repo}: {f.detail}" for f in findings]
+            ),
+        )
+        return 1 if findings else 0
+    if args.repos:
+        names = st.resolve(args.repos)
+    elif args.all:
+        dbs = _server_databases()
+        control = os.path.normpath(fleet_file(cfg).parent.parent)
+        gaps = {f.repo for f in findings}
+        names = []
+        for n, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
+            if st.lifecycle(n) != "active" or os.path.normpath(r.path) == control:
+                continue
+            try:
+                db = json.loads((r.path / ".beads" / "metadata.json").read_text())
+                db = db.get("dolt_database")
+            except (OSError, ValueError):
+                db = None
+            if n in gaps or (db or n.replace("-", "_")) not in dbs:
+                names.append(n)
+    else:
+        msg = "give repo names, --all, or --check"
+        raise PolyrepoError(msg)
+    results: list[dict[str, Any]] = []
+    log: list[str] = []
+    for n in names:
+        r = st.local[n]
+        if args.dry_run:
+            results.append({"repo": n, "dry_run": True})
+            continue
+        try:
+            res = beads_setup(cfg, r, args.trailer)
+            if (r.path / ".beads").is_dir():
+                log.extend(
+                    f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[r.path])
+                )
+        except (GitFailedError, PolyrepoError, OSError) as exc:
+            res = {"repo": n, "error": str(exc)}
+        results.append(res)
+        if "error" not in res:
+            log.append(
+                f"{n}: beads set up ({'; '.join(res['steps']) or 'already set up'})"
+            )
+    if log:
+        append_changelog(cfg, "polyrepo beads-setup", log)
+    data = {
+        "repos": results,
+        "open": sum("error" in x for x in results),
+        "fixed": sum("error" not in x and not x.get("dry_run") for x in results),
+    }
+    finish_records(cfg, data)
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            f"{x['repo']}: "
+            + (x.get("error") or ("would set up" if x.get("dry_run") else "set up"))
+            for x in results
+        ),
+    )
+    return 1 if data["open"] else 0
 
 
 # clone -----------------------------------------------------------------------------------------
@@ -3844,12 +4279,14 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
+    "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
+    "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
     "deprecated-prs --fix": [
         sys.executable, str(SELF), "deprecated-prs", "--fix", "--json",
@@ -3887,7 +4324,7 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     if "error" in data:
         return [_finding(check, "-", "error", str(data["error"]))]
-    if check in {"reconcile", "beads-fleet", "deprecated-prs"}:
+    if check in {"reconcile", "beads-fleet", "beads-setup", "deprecated-prs"}:
         return [
             _finding(check, f["repo"], f["kind"], f["detail"])
             for f in data.get("findings") or []
@@ -4340,6 +4777,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--fix", action="store_true", help="correct the list")
     s.set_defaults(func=cmd_beads_fleet)
+
+    s = sub.add_parser(
+        "beads-setup",
+        parents=[common],
+        help="check every active repo's beads setup; set up the named repos or --all",
+    )
+    s.add_argument("repos", nargs="*", help="repos to set up")
+    s.add_argument(
+        "--all", action="store_true", help="set up every active repo with a gap"
+    )
+    s.add_argument(
+        "--check", action="store_true", help="report the gaps, change nothing"
+    )
+    s.add_argument(
+        "--dry-run", action="store_true", help="list the repos it would set up"
+    )
+    s.add_argument("--trailer", help="a line to end each commit message body with")
+    s.set_defaults(func=cmd_beads_setup)
 
     s = sub.add_parser(
         "deprecated-prs",

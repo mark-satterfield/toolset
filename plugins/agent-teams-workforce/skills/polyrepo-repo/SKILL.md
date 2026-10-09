@@ -43,15 +43,16 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `purpose <repo> [--text T]` | Record (`--text`) or confirm the repo's purpose at its current `main`; clears `purpose-recheck`. |
 | `grep <pattern> [--space S] [--repo R …] [-i] [-l] [-F] [-w] [--glob G …]` | `rg` across every in-scope repo on disk. |
 | `rebase <repo …\|--all>` | Fetch and rebase `main` on `origin/main`; stops and reports on a conflict or a dirty tree. |
-| `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry, and add the repo to the beads fleet list when it has a `.beads` folder. |
+| `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry, then do the repo's full beads setup (see `beads-setup`) and add the repo to the beads fleet list. |
 | `clone <repo>` | Clone an existing GitHub repo into the one folder its name gives it (app space, then the template placement folder for its kind). A repo already at that folder is reported, not re-cloned. It refuses, exiting 2, when the repo already exists at any other path or is on disk twice. Anything that needs a local checkout of a repo uses this command; no session or script picks a folder or runs `git clone` itself. |
 | `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry, and replace the old path in the beads fleet list with the new one. Refuses an invalid or taken name, or a `main` not known to be pushed. |
 | `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list, then close every open pull request in the repo with the comment "Closed: this repository is deprecated." (branches are kept), reporting each one, then delete the local clone and its linked worktrees. The clone is deleted (`shutil.rmtree`, only on a path under the repository root whose name starts with `deprecated-`) only when it holds no work that exists only on this machine: no uncommitted changes or untracked files outside ignored paths in the clone or any linked worktree, no stash, and no local branch or worktree `HEAD` with commits on no remote branch. Otherwise the clone is left, the rest of the deprecation stands, the reasons and the exact path to delete by hand are reported, and the command exits 1. `--dry-run` lists the pull requests it would close and whether it would delete the clone. |
+| `beads-setup [repo…] [--all] [--check] [--dry-run] [--trailer TEXT]` | Give a repo its complete beads setup: its database on the shared server (created through `bd bootstrap`, never `bd init`: a fresh database is bootstrapped embedded, given the fleet prefix, pushed to `refs/dolt/data`, then cloned into the shared server), identity and prefix repaired with `bd doctor --fix` and `converge-repo.sh`, the `.beads` config files (`config.yaml`, `metadata.json`, `.gitignore`) and a `.gitignore` with the beads and standard ignores for the repo's template kind committed and pushed to `main`, and the repo added to the beads fleet list. `--all` sets up every active repo with a gap or no database; `--check` reports gaps (missing or uncommitted `.beads` config, missing fleet list entry, incomplete `.gitignore`) and changes nothing. `create` runs it. |
 | `beads-fleet [--fix]` | Check the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`, config `beads.fleet_config`): every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed. `--fix` corrects the list. |
 | `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-fleet`, `deprecated-prs`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-fleet --fix` and `deprecated-prs --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `deprecated-prs`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and `deprecated-prs --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
@@ -93,11 +94,14 @@ judgment, and each has an obvious next step:
   the kinds).
   Every new repository is created private and with `allow_auto_merge=true` (the tool sets
   both); the owner is the only human, so every fleet repo allows auto-merge.
+  Creating a repo includes its beads setup, its entry in the control repo's beads repository
+  list, and a correct `.gitignore`; `create` does all three, and fails (exit 1) when beads setup
+  fails, after the repo and manifest entry exist. `beads-setup` repairs it.
 - **update** — Mechanical fields (`remote_url`, `lifecycle`, archived state) are kept true
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
   `role`, `owner`: edit the manifest (below).
-- **rename** — `rename <repo> <new-name>`, on GitHub and locally together.
-- **delete / deprecate** — `deprecate <repo>`. A repository is never deleted from GitHub.
+- **rename** — `rename <repo> <new-name>`, on GitHub and locally together. The repo's entry in the beads repository list is replaced with the new path; its beads database keeps its name.
+- **delete / deprecate** — `deprecate <repo>`. A repository is never deleted from GitHub. Its entry is removed from the beads repository list.
   The new name is `deprecated-` plus the old name, all lowercase
   (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`).
   The rename happens on GitHub and locally together. Every open pull request in the repo is
