@@ -91,17 +91,28 @@ function dispatchPolicy(options) {
   return { maxAttempts: Number.isInteger(policy.maxAttempts) && policy.maxAttempts > 0 ? policy.maxAttempts : 3,
     maxWaitMs: Number.isFinite(policy.maxWaitMs) && policy.maxWaitMs >= 0 ? policy.maxWaitMs : 300000 }
 }
-function dispatchFailureCause(err) {
+/**
+ * Classifies a thrown error as exhausted (quota), transient (api) or deterministic. Its structured
+ * fields decide first: the HTTP status and the API's error type or code. Its message is read only
+ * when `ownMessage` is true, for the error a session's own API call threw; an error a child
+ * workflow threw carries text a workflow composed (a Task title can say "rate limit"), so only
+ * its structured fields count.
+ */
+function dispatchFailureCause(err, ownMessage = true) {
   const e = err && typeof err === 'object' ? err : {}
-  const text = [e.message || err || '', e.type, e.code, e.error && e.error.type].join(' ')
+  const kinds = [e.type, e.error && e.error.type, typeof e.code === 'string' ? e.code : ''].filter(Boolean).join(' ')
+  const known = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
+  if (/insufficient_quota|billing_error|quota|usage_limit/i.test(kinds)) return 'exhausted'
+  if ([408, 425, 429, 500, 502, 503, 504, 529].includes(known) || /rate_limit|overloaded|api_error|timeout|econnreset|econnrefused|etimedout|eai_again/i.test(kinds)) return 'transient'
+  if (!ownMessage) return 'deterministic'
+  const text = [e.message || err || '', kinds].join(' ')
   if (/structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i.test(text)) return 'deterministic'
   if (/insufficient_quota|quota|usage[ _-]?limit|spend[ _-]?limit|session[ _-]?limit|credit balance|out of credits|hit your limit|token limit|account.quota.exhausted/i.test(text)) return 'exhausted'
-  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
-    .map((value) => Number(value)).find((value) => Number.isFinite(value) && value >= 100 && value < 600)
-  return [408, 425, 429, 500, 502, 503, 504, 529].includes(status) || /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
+  return /overload|rate[ _-]?limit|too many requests|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i.test(text) ? 'transient' : 'deterministic'
 }
-function dispatchRetry(err, name, attempt, waitedMs, policy, canWait) {
-  const cause = dispatchFailureCause(err)
+function dispatchRetry(err, name, attempt, waitedMs, policy, canWait, ownMessage = true) {
+  const cause = dispatchFailureCause(err, ownMessage)
   if (cause === 'deterministic') return { retry: false, cause }
   const e = err && typeof err === 'object' ? err : {}
   const headers = e.headers || (e.response && e.response.headers) || {}
@@ -126,7 +137,8 @@ async function settleWorkflow(name, input) {
     if (out && out.paused && out.resumable && out.dispatchInterruption) dispatchInterruption = out.dispatchInterruption
     return out
   } catch (err) {
-    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false)
+    // A child workflow's error message is text a workflow composed: only its structured fields count.
+    const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(null), false, false)
     if (!plan.interruption) throw err
     dispatchInterruption = plan.interruption
     return dispatchOutcome({})
@@ -913,9 +925,11 @@ const HOLD_BACKOFF_MS = [10000, 30000, 90000]
 const pause = (ms) => (typeof setTimeout === 'function' ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
 /**
  * Clears the Epic's elaboration_state with cause awaiting-human-action; returns whether the write
- * succeeded. A failed hold write has a known cause, the relay ('relay') or bd ('bd-timeout'): the
- * same write is made again after each pause in HOLD_BACKOFF_MS. Setting the same metadata twice
- * changes nothing, so the write is safe to repeat. Once a hold is attempted the Epic is never
+ * succeeded. A failed hold write carries the cause beads-contract.py printed ('bd-timeout' or
+ * 'contention', from bd's own error) or 'relay' when its result did not come back. Only a
+ * bd-timeout or contention is retried, after each pause in HOLD_BACKOFF_MS: setting the same
+ * metadata twice changes nothing, so the write is safe to repeat. Any other cause is recorded
+ * and not retried. Once a hold is attempted the Epic is never
  * released (lifecycle.holdAttempted): when every attempt fails it is left in_progress under this
  * run's owner, and lifecycle.holdWrite says why.
  */
@@ -929,10 +943,10 @@ async function holdForPerson(epicId) {
       lifecycle.holdWrite = { written: true, attempts: attempt }
       break
     }
-    const cause = out && out.ok === false ? causeOrOther(out.cause) : 'bd-timeout'
+    const cause = out && out.ok === false ? causeOrOther(out.cause) : causeOrOther(out && out.json && out.json.cause)
     const error = String((out && (out.error || (out.json && out.json.error) || out.stderrTail)) || `exit ${out && out.exitCode}`).slice(0, 600)
     lifecycle.holdWrite = { written: false, attempts: attempt, cause, error }
-    if (attempt > HOLD_BACKOFF_MS.length || dispatchInterruption) break
+    if (!['bd-timeout', 'contention'].includes(cause) || attempt > HOLD_BACKOFF_MS.length || dispatchInterruption) break
     log(`Epic ${epicId}: the hold write failed (${cause}: ${error}); writing it again in ${HOLD_BACKOFF_MS[attempt - 1] / 1000}s`)
     await pause(HOLD_BACKOFF_MS[attempt - 1])
   }

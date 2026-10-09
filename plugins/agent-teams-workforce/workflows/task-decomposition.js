@@ -666,7 +666,10 @@ const combinedCause = (causes) => (causes.length && causes.every((c) => TRANSIEN
  * when it failed. The cause is the dispatch interruption's when the run was interrupted, else
  * `cause`, which the caller took from the structured result of the step that failed.
  */
+/** The rerun case once decided; every result after that carries it, failed or not. */
+let rerun = null
 function withFailure(out, cause = 'other') {
+  if (out && rerun && !out.rerun) out = { ...out, rerun }
   if (!out || out.ok !== false) return out
   const c = dispatchInterruption ? interruptionCause(dispatchInterruption) : TRANSIENT_CAUSES.includes(cause) ? cause : 'other'
   const stage = out.stage || 'decompose'
@@ -814,13 +817,21 @@ async function writeTasks() {
   const error = errors.length && !written.length ? errors.join('; ') : ''
   return { plan, written, errors, causes, error }
 }
-/** Records the saved tasks-<slug>.json with the artifact script's `record`; returns '' or why it was not recorded. */
+/** The cause of the last failed recordTasks: 'relay' when its result did not come back, else 'other'. */
+let recordCause = null
+/** Records the saved tasks-<slug>.json with the artifact script's `record`; returns '' or why it was not recorded (its cause in recordCause). */
 async function recordTasks() {
+  recordCause = null
   const inputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter(hasText)
   const argv = ['python3', ART.script, 'record', `${ART.dir}/tasks-${artSlug}.json`, '--epic', ART.epicId, '--phase', ART.phase, ...(inputs.length ? ['--inputs', ...inputs] : [])]
   const r = await relayKit.run(settleAgent, { label: 'record:tasks', phase: 'Decompose', runner: RELAY_RUNNER, argv, file: relayFile('record:tasks'), keys: ['sha256', 'bytes'], tail: 20 })
-  if (!r.ok) return r.error
-  return r.exitCode === 0 ? '' : `the record command exited ${r.exitCode}: ${String(r.stderrTail || r.stdoutTail || '').trim().slice(0, 600)}`
+  if (!r.ok) {
+    recordCause = r.cause || 'other'
+    return r.error
+  }
+  if (r.exitCode === 0) return ''
+  recordCause = 'other'
+  return `the record command exited ${r.exitCode}: ${String(r.stderrTail || r.stdoutTail || '').trim().slice(0, 600)}`
 }
 
 phase('Decompose')
@@ -858,7 +869,7 @@ const upstreamChange = hasText(a.upstreamChange) ? a.upstreamChange.trim() : ''
  * the Story's unstarted Task beads and the full set is decomposed again around the started or
  * closed ones it kept. 'new': no Task bead existed yet.
  */
-let rerun = replayed ? { case: 'unchanged', reason: `prd-to-spec found tasks-${artSlug}.json and every input it records current, and replays it` } : null
+rerun = replayed ? { case: 'unchanged', reason: `prd-to-spec found tasks-${artSlug}.json and every input it records current, and replays it` } : null
 let keptTasks = []
 if (!replayed) {
   const inputs = await depscore('beads:tasks-inputs', `tasks-inputs ${taskArgs}`, null)
@@ -1042,6 +1053,8 @@ ${specBlock}${relayKit.artifactBrief(candidate, correctionSchema, binding.revisi
 }
 const firstUncited = !ran.error && ran.plan && Array.isArray(ran.plan.uncited) ? ran.plan.uncited.filter(hasText) : []
 const coverage = { first: firstUncited, uncited: [], correction: null }
+/** A failed record of tasks-<slug>.json after the corrective pass changed it: { error, cause }. */
+let reRecordFailure = null
 if (firstUncited.length) {
   log(`Story story:${artSlug}: no Task cites ${firstUncited.join(', ')}; one corrective pass runs for them`)
   const fix = await correctUncited(ran.plan)
@@ -1049,7 +1062,10 @@ if (firstUncited.length) {
   coverage.uncited = fix.ok ? fix.uncited : firstUncited
   if (fix.ok && fix.added.length) {
     const again = await recordTasks()
-    if (again) log(`tasks-${artSlug}.json was not recorded after the corrective pass: ${again}`)
+    if (again) {
+      reRecordFailure = { error: `tasks-${artSlug}.json was not recorded after the corrective pass: ${again}`, cause: recordCause || 'other' }
+      log(reRecordFailure.error)
+    }
     ran = await writeTasks()
     if (ran.error) log(`Story story:${artSlug}: the Task beads were not all written after the corrective pass — ${ran.error}`)
   }
@@ -1088,14 +1104,20 @@ const coverageFailure = coverage.uncited.length
     (fix && fix.ok ? `the maker's answer is ${fix.answerFile}${rejectedText}` : `the corrective pass did not complete: ${(fix && fix.error) || 'no result'}`)
   : ''
 // The cause comes from the structured results of the step that failed, never from the reason text.
-const failureCause = writeFailure ? combinedCause(ran.causes) : fix && !fix.ok ? fix.cause || 'other' : 'other'
+const failureCause = writeFailure
+  ? combinedCause(ran.causes)
+  : coverageFailure
+    ? fix && !fix.ok ? fix.cause || 'other' : 'other'
+    : reRecordFailure ? reRecordFailure.cause : 'other'
 return withFailure(dispatchOutcome({
-  ok: !writeFailure && !coverageFailure,
+  ok: !writeFailure && !coverageFailure && !reRecordFailure,
   ...(writeFailure
     ? { stage: 'task-write', reason: writeFailure, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
     : coverageFailure
       ? { stage: 'uncited-items', reason: coverageFailure.slice(0, 1500), uncitedItems: coverage.uncited, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
-      : {}),
+      : reRecordFailure
+        ? { stage: 'task-record', reason: reRecordFailure.error, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
+        : {}),
   ...(coverageFailure && fix && !fix.ok && dispatchDeaths('Decompose').length ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Decompose') } : {}),
   ...(coverage.first.length
     ? {

@@ -1340,7 +1340,9 @@ def _write_task(
         task_id, action = writer.create(args, task.elab_key or key), "created"
         edges["added"] = len(blockers) + len(outer)
         outside = outer
-    elif bead.status != OPEN:
+    elif bead.status != OPEN or bead.metadata.get("build_state"):
+        # A started Task (not open, or open with a build_state) or a closed one is never
+        # rewritten: neither its prose, its metadata nor its edges.
         task_id, action = bead.id, "unchanged-started"
     else:
         task_id = bead.id

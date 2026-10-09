@@ -91,6 +91,34 @@ RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
 )
 
 
+#: What `bd` prints on standard error when another writer held a lock.
+LOCK_CONTENTION = re.compile(
+    r"database is locked|lock wait timeout|deadlock", re.IGNORECASE
+)
+#: What `bd` prints on standard error when the beads server or its connection failed.
+SERVER_FAILURE = re.compile(
+    r"i/o timeout|connection refused|deadline exceeded|"
+    r"invalid connection|bad connection|failed to open database|"
+    r"write commit result indeterminate",
+    re.IGNORECASE,
+)
+
+
+def failure_cause(stderr: str) -> str:
+    """The cause of a failed `bd` command, from what `bd` printed on standard error.
+
+    Args:
+        stderr: `bd`'s standard error, without the command line.
+
+    Returns:
+        `contention` when another writer held a lock, `bd-timeout` when the beads server
+        or its connection failed, else `other`.
+    """
+    if LOCK_CONTENTION.search(stderr):
+        return "contention"
+    return "bd-timeout" if SERVER_FAILURE.search(stderr) else "other"
+
+
 def connection_retryable(args: list[str], stderr: str) -> str:
     """The reason a failed `bd` command may be run again, or "" when it may not.
 
@@ -674,7 +702,20 @@ def metadata_of(rec: dict) -> dict:
 
 
 class BeadsError(RuntimeError):
-    """Raised when `bd` could not be run, or returned something unreadable."""
+    """Raised when `bd` could not be run, or returned something unreadable.
+
+    `cause` is set where `bd` fails, from `bd`'s standard error (`failure_cause`).
+    """
+
+    def __init__(self, message: str, cause: str = "other") -> None:
+        """Keep the message and the cause.
+
+        Args:
+            message: What failed.
+            cause: `contention`, `bd-timeout` or `other`.
+        """
+        super().__init__(message)
+        self.cause = cause
 
 
 def _load_records(records_file: str) -> object:
@@ -833,7 +874,7 @@ class Reader:
             if not why or attempt == attempts:
                 if why:
                     msg += f" (failed {attempts} times to reach the beads server)"
-                raise BeadsError(msg)
+                raise BeadsError(msg, failure_cause(stderr))
             pause = CONNECTION_BACKOFF[attempt - 1]
             print(
                 f"[beads-contract] attempt {attempt} of {attempts} failed: {msg}; "
@@ -1461,8 +1502,13 @@ def main(argv: list[str] | None = None) -> int:
         reader = Reader(repo=args.repo, records_file=args.records)
         result = args.run(args, reader)
     except (ContractError, BeadsError) as exc:
+        cause = getattr(exc, "cause", "other")
         print(
-            json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False)
+            json.dumps(
+                {"ok": False, "error": str(exc), "cause": cause},
+                indent=2,
+                ensure_ascii=False,
+            )
         )
         return 2
     print(json.dumps(result, indent=2, ensure_ascii=False))
