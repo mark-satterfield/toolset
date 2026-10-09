@@ -1,39 +1,30 @@
 ---
 name: subagent-contract
-description: >-
-  Shared contract for bounded specialist assignments: preserve role and scope, follow
-  the caller's response format, retain verifiable artifacts, and report incomplete work explicitly.
+description: Bounded specialist work in direct sessions, with file outputs and independent validation.
 user-invocable: false
 ---
 
-# Subagent Contract
+# Direct specialist session
 
-## Caller contract comes first
+Perform the role in your definition. The brief gives a bead, input paths, output path and outcome;
+it supplies no procedures or schema. Load the skills in your frontmatter and read the applicable
+contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
+Write the result file; Python handles validation, acceptance, fingerprints and pipeline state.
+Do not invoke a Workflow, another agent, a command runner, a submission helper or StructuredOutput.
+Do not create receipts, revision bindings or checkpoint sidecars. If resumed, inspect and continue
+the existing result and input files; retain completed valid work.
 
-Follow the caller's exact response schema and artifact protocol. Do not prepend `STATUS`, restate the task, add report fields, or append commentary to a machine-consumed response. Put evidence, findings, progress and blockers only in the artifacts or fields the caller provides. An artifact's on-disk schema and the response-reference schema serve different purposes; do not return the artifact body when the caller requests only its path.
+Only assigned files are writable. Reviewers may write their result, never the reviewed source.
+Never write arc42 section 2, expose secrets or touch apps/marketing repositories. Never run keeper
+or supervisor. Agents do not write pipeline beads; Python owns those writes. If reading beads is
+needed, use the central atw-bd wrapper from beads-contract. No agent creates a bug or loose Task.
+Read repository AGENTS.md before an authorized repository edit; input-only reads do not require
+loading every repository's instruction tree.
 
-When the caller supplies a response schema, your only reply is the StructuredOutput call that carries it; in artifact mode that call carries the `{artifactPath}` the submission tool emits. A prose report never substitutes for that call. Reserve your last turns for submission: when the turn budget runs low, stop working, put the remaining work in the schema's fields and submit.
-
-When an executable submission/checkpoint tool is supplied, use it to validate the authored result, compute bindings and construct the response. Return its successful response unchanged through the requested channel. Do not manually manufacture completion flags or hashes. Structural validation proves neither semantic correctness nor review approval. On failure preserve work and report the exact remaining work or blocker through the caller's supported mechanism; never send a success reference for an incomplete assignment. If the supplied protocol has no failure channel, report that incompatibility to the caller rather than inventing a successful response.
-
-Only when the caller supplies no response format, use `STATUS: DONE` or `STATUS: BLOCKED` with a concise description of deliverables and verification, or the blocker and what is needed. Claim DONE only when the assigned work is complete and verified. No separate preliminary restatement or generic final report is required.
-
-## Role and scope
-
-- Perform only the role assigned in the agent definition and task. Do not invent requirements, select downstream work or enlarge your authority.
-- Identify the minimal relevant files, artifacts and decisions. Use only allowed tools and preserve file ownership. Read-only reviewers may write caller-authorized result/checkpoint artifacts, never source artifacts.
-- An explicit assignment to repair all baseline failures in an affected repository includes pre-existing failures there. Preserve test-author ownership and required checks; this does not authorize unrelated cleanup, other repositories or invented external resources.
-- Prefer small, reversible changes unless the assignment requires broader change. Report material actions and their outcomes in the existing evidence channel, without adding fields to a fixed schema.
-- Pipeline beads are always read and written in the central beads database, wherever you run: run every `bd` command as `atw-bd` with `bd`'s own arguments, never a plain `bd` (the `beads-contract` skill).
-- Missing required context is a named dependency, not permission to guess. Distinguish facts, justified assumptions and unresolved questions; do not silently complete only the easy portion.
-
-## Skills and authoritative artifacts
-
-Read canonical skill content already delivered in the prompt; do not reload it solely because its name also appears in frontmatter. Assess which other declared skills apply and load those through the Skill tool using their exact names. A name alone is not delivered content. A missing required skill is an explicit dependency; do not substitute recollection. Note material applicability decisions only in existing progress/evidence channels that permit them, never by expanding the return schema.
-
-Read the actual relevant source sections and connected contracts. Shared Markdown, vault notes, diagrams, schemas and JSON stay authoritative at their paths; summaries guide navigation and do not replace source verification. Observe assigned read/edit/create ownership. Preserve content unless its change is assigned. Pass references rather than copying whole documents between agents. When exact copying is required, use deterministic file tools rather than model transcription. Use version/provenance where relevant; do not require hashes merely for semantic editing.
-
-For durable authoring, checkpoint meaningful progress using the caller's location and executable mechanism where supplied. Record completed work, remaining work and artifact references; blocked progress names the dependency and reason. Checkpoints are progress, not accepted results. On resume verify the checkpoint against actual artifacts and finish missing work without regenerating valid completed documents.
+Missing inputs are named dependencies, not permission to invent facts. Distinguish observed
+facts, assumptions and unresolved questions in the artifact's supported fields. Do not mark your
+own work approved. In elaboration, repository code is evidence of current design detail only;
+the matrix is the sole built-state record, and Python derives implementation work from it.
 
 ## Resource use and incremental review
 
@@ -46,7 +37,7 @@ For durable authoring, checkpoint meaningful progress using the caller's locatio
 
 Where the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item.
 
-Two things go to the owner, through the channel the caller provides for them: two of the owner's business requirements that no design can satisfy together, and a conflict in arc42 section 2, which only the owner writes (constraints that contradict each other, or that no design can meet together with the business requirements). Nothing else does. Never put a technical question to the owner or any person, and never hold work waiting for a technical answer.
+Owner-only facts (credentials, money and destructive actions outside AWS dev), irreconcilable business requirements and section 2 conflicts go through the caller's owner channel. Technical choices remain with the specialists. Never put a technical question to the owner or any person, and never hold work waiting for a technical answer.
 
 ## The approved architecture is authoritative
 

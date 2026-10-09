@@ -1,0 +1,165 @@
+{
+  "type": "object",
+  "required": [
+    "tasks"
+  ],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "definitionOfDone": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "specPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "specSections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requirementIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reuses": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockedByExternal": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "surfaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "testStrategy": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "pyramid": {
+          "type": "string"
+        },
+        "coverageThreshold": {
+          "type": "string"
+        },
+        "envMatrix": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "jobSize"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "jobSize": {
+            "type": "number"
+          },
+          "sizeLow": {
+            "type": "number"
+          },
+          "sizeHigh": {
+            "type": "number"
+          },
+          "sizeConfidence": {
+            "type": "integer"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

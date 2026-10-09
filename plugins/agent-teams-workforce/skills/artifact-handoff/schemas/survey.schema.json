@@ -1,0 +1,514 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject",
+    "subjectReason",
+    "capabilities",
+    "baseline",
+    "openTargets",
+    "businessConflicts",
+    "coverage",
+    "summary"
+  ],
+  "properties": {
+    "subject": {
+      "type": "string"
+    },
+    "subjectReason": {
+      "type": "string"
+    },
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "subject",
+          "scope",
+          "obligation",
+          "sources",
+          "views",
+          "status",
+          "action",
+          "reason",
+          "evidenceRefs",
+          "disposition",
+          "dispositionReason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "obligation": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Present and sufficient",
+              "Present but incomplete",
+              "Required and absent",
+              "Not yet applicable",
+              "Not assessed"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "unchanged",
+              "remove",
+              "not-applicable",
+              "unresolved"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "heading",
+                "repo",
+                "revision",
+                "url"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "heading": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "required",
+              "unrelated-debt"
+            ]
+          },
+          "dispositionReason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "baseline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "requirements",
+          "subjects",
+          "documents",
+          "code",
+          "awsGuidance",
+          "designAction",
+          "documentationAction",
+          "implementationAction",
+          "rationale",
+          "conflicts",
+          "current",
+          "target",
+          "disposition",
+          "suitabilityEvidenceRefs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "version",
+                "lifecycle_state"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "enum": [
+                    "effective",
+                    "target",
+                    "delta",
+                    "built"
+                  ]
+                },
+                "lifecycle_state": {
+                  "type": "string",
+                  "enum": [
+                    "effective",
+                    "in-review"
+                  ]
+                }
+              }
+            }
+          },
+          "code": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "behaviorEvidenceRefs",
+              "infrastructureEvidenceRefs"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "partial",
+                  "absent",
+                  "unknown",
+                  "not-applicable"
+                ]
+              },
+              "behaviorEvidenceRefs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "heading",
+                    "repo",
+                    "revision",
+                    "url"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "heading": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "infrastructureEvidenceRefs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "heading",
+                    "repo",
+                    "revision",
+                    "url"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "heading": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "awsGuidance": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "heading",
+                "repo",
+                "revision",
+                "url"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "heading": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "designAction": {
+            "type": "string",
+            "enum": [
+              "none",
+              "reuse",
+              "validate-existing",
+              "modify",
+              "new"
+            ]
+          },
+          "documentationAction": {
+            "type": "string",
+            "enum": [
+              "none",
+              "update",
+              "create"
+            ]
+          },
+          "implementationAction": {
+            "type": "string",
+            "enum": [
+              "none",
+              "modify",
+              "new",
+              "replace",
+              "retire",
+              "unknown"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "behavior",
+              "infrastructure",
+              "documentation"
+            ]
+          },
+          "current": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "retain",
+              "change",
+              "replace",
+              "add",
+              "retire",
+              "undetermined"
+            ],
+            "description": "Implementation disposition from assessed current behavior to the required target; existing code is evidence, never an obligation to retain it."
+          },
+          "suitabilityEvidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "heading",
+                "repo",
+                "revision",
+                "url"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "heading": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "requirements",
+          "effectiveViews",
+          "code",
+          "openBeads",
+          "openTargets"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effectiveViews": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "code": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "openBeads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "openTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "openTargets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "businessConflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requirements",
+          "why"
+        ],
+        "properties": {
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

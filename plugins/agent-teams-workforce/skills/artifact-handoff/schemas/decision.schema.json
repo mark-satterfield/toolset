@@ -1,0 +1,121 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "round",
+    "verdict",
+    "diligence",
+    "choices",
+    "returnTo",
+    "ownerConcerns",
+    "summary"
+  ],
+  "properties": {
+    "round": {
+      "type": "integer"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "return",
+        "owner-concern"
+      ]
+    },
+    "diligence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "check",
+          "present",
+          "where"
+        ],
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returnTo": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agentType",
+          "missing"
+        ],
+        "properties": {
+          "agentType": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "choices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dispute",
+          "chosen",
+          "why"
+        ],
+        "properties": {
+          "dispute": {
+            "type": "string"
+          },
+          "chosen": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ownerConcerns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "concern",
+          "evidence"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "business-conflict",
+              "architecture-conflict"
+            ]
+          },
+          "concern": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

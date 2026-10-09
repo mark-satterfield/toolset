@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "edges",
+    "acyclic",
+    "cycle"
+  ],
+  "properties": {
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "data",
+              "contract",
+              "infrastructure",
+              "event-flow"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "acyclic": {
+      "type": "boolean"
+    },
+    "cycle": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "placements",
+    "missingRepos",
+    "noCode",
+    "spanRationale"
+  ],
+  "properties": {
+    "placements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repoPath",
+          "repoName",
+          "itemIds",
+          "frontend",
+          "rationale"
+        ],
+        "properties": {
+          "repoPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoName": {
+            "type": "string"
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "frontend": {
+            "type": "boolean"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "missingRepos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "template",
+          "purpose",
+          "itemIds"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "noCode": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "spanRationale": {
+      "type": "string"
+    }
+  }
+}

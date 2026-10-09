@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "changedFiles",
+    "createdFiles",
+    "deletedFiles",
+    "viewsChecked",
+    "constraintIssues",
+    "contradictions",
+    "summary"
+  ],
+  "properties": {
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createdFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "deletedFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "viewsChecked": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "element",
+          "view",
+          "action"
+        ],
+        "properties": {
+          "element": {
+            "type": "string"
+          },
+          "view": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "deleted",
+              "added",
+              "unaffected"
+            ]
+          }
+        }
+      }
+    },
+    "constraintIssues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "uiItems"
+  ],
+  "properties": {
+    "uiItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "designSource"
+        ],
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "designSource": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "artifact": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "slug"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "bundle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buildSpec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "mocksDir": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

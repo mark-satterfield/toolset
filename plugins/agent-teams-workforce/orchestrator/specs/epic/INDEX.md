@@ -25,8 +25,8 @@ another reader, the row says so.
 The element status matrix (CONTEXT 7.25) is written by no Epic flow: it is seeded once with state
 `unknown` (PLAN S05a), and only the build pipeline sets `built` or `deployed`. The Epic flows read
 it in `architecture#5`, `#7` (the survey, through `survey-matrix.json`), `architecture#32` (the
-Closure) and `repo-scoping#3`, `#5`, `#6` (placement). Its storage and format are QUESTIONS.md item
-32e, so it has no row below.
+Closure) and `repo-scoping#3`, `#5`, `#6` (placement). Its tracked location and snapshot contract are settled in DESIGN.md section 10; the matrix and
+snapshot are listed below.
 
 The `prd-reconciliation` step and its files (`recon-<slug>.json`, `recon-<slug>.bundles.json`) are
 removed (CONTEXT 7.10, 7.23).
@@ -47,15 +47,22 @@ removed (CONTEXT 7.10, 7.23).
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | `prd-to-spec#17` (event set: an open item in QUESTIONS.md) | `driver` (`outcomes.py`, `observe.py`, `runview.py`, `attemptview.py`, `failures.py`) | JSON lines |
 | `<arch>/target/<subject>/` (deletion, committed in the vault) | `prd-to-spec#15` (`depscore.py arch-target-remove`) | none: the removal is the end state | git commit in the vault repository |
 
+### Matrix and run inputs (DESIGN sections 4 and 10)
+
+| Path pattern | Producer | Consumers | Format |
+|---|---|---|---|
+| `<control>/ops/sdlc-automation/element-matrix.json` | seed/build Python only | dispatch snapshot | JSON matrix, DESIGN 10 |
+| `<work>/matrix-snapshot.json` | Python dispatch snapshot | Closure classification; placement | JSON matrix snapshot, DESIGN 10 |
+
 ### `architecture`
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
 | `<arch-work>/arc42-revision.json` | `architecture#2` (`archrevision.check`), updated by `#21`, `#22`, `#28` (`archrevision.mark`) | `architecture#2` (next run); `driver` (`arc42-revision` input kind of the `architecture` step's record) | JSON: `{ archRoot, revision, files{}, views{}, integrating, recordedAt }` |
 | `<work>/stale-<timestamp>/architecture/` | `architecture#2` (moves stale saved work aside) | none: kept, not deleted, for the owner and the incident-responder | the moved files |
-| `<arch-work>/repositories.json` | `architecture#6` (agent `polyrepo-steward`) | `architecture#7` | JSON: `[{ name, path, role, lifecycle }]` |
+| `<arch-work>/repositories.json` | `architecture#6` (Python inventory; DESIGN 11.1) | `architecture#7` | JSON: `[{ name, path, role, lifecycle }]` |
 | `<arch-work>/survey.json`, `survey.md` (+ `.meta.json`) | `architecture#7` (agent `prd-reality-reconciler`, SURVEY), accepted `#8` | `architecture#5`, `#9`, `#11`, `#12`, `#13`, `#15`, `#16`, `#17`, `#20`, `#23`; `trd-authoring#2` (input), `#3`; `prd-to-spec#5` (`saved-target`) | JSON (SURVEY_SCHEMA) and Markdown |
-| `<arch-work>/survey-matrix.json` | `architecture` before `#7` (Python: the element status matrix rows of the listed repositories) | `architecture#7`; `architecture#5` (seal input) | JSON: matrix rows |
+| `<arch-work>/survey-matrix.json` (retired by DESIGN 3.6) | `architecture` before `#7` (Python: the element status matrix rows of the listed repositories) | `architecture#7`; `architecture#5` (seal input) | JSON: matrix rows |
 | `<arch-work>/survey.json.baseline-inputs.json` | `architecture#8` (`survey_freshness(seal=True)`) | `architecture#5` | JSON: `{ revision, surveySha256, contextSha, inputs[], repos[] }` |
 | `<arch-work>/ledger.json` | `architecture#4` (`archresume.resume_facts`, after every saving step) | `architecture#11`, `#13`, `#15`, `#16`, `#17`, `#23`, `#25` | JSON (contract version 2) |
 | `<arch-work>/plans/round<n>-plan-0.json` | `architecture#13` (agent coordinator), settled `#14` | `architecture#4`, `#14`, `#15`, `#16` | JSON (COORDINATOR_SCHEMA) |
@@ -104,7 +111,7 @@ removed (CONTEXT 7.10, 7.23).
 | `<work>/spec-<slug>.md` (+ `.meta.json`) | `spec-authoring#3` (agent `api-specification-author`); `## UI design sources` appended `#6` | `spec-authoring#5`, `#7`, `#9`, `#10`, `#11` (input); `task-decomposition#2` (input), `#6`, `#10`; `driver` (lane `file_in_vault`) | Markdown with YAML frontmatter `decisionIds` |
 | `<work>/spec-<slug>.data-model.md` (+ `.meta.json`) | `spec-authoring#4` (agent `data-model-specification-author`) | `spec-authoring#5`, `#7`, `#9`, `#10`, `#11` (input); `task-decomposition#2` (input), `#6`, `#10`; `driver` (lane `file_in_vault`) | Markdown with YAML frontmatter `decisionIds` |
 | `<work>/spec-<slug>.criteria.md` (+ `.meta.json`) | `spec-authoring#7` (agent `acceptance-criteria-writer`) | `spec-authoring#10`, `#11` (input); `task-decomposition#2` (input), `#6`, `#10`; `driver` (lane `file_in_vault`) | Markdown |
-| `<work>/story-<slug>.draft.json` | `spec-authoring#10` (agent `user-story-writer`) | `spec-authoring#11` | JSON: `{ title, description }` |
+| `<work>/story-<slug>.draft.json` (retired by DESIGN 11.5) | historical JavaScript only; no new producer | `spec-authoring#11` | JSON: `{ title, description }` |
 | `<work>/story-<slug>.json` (+ `.meta.json`) | `spec-authoring#11` | `spec-authoring#12` (`write_story`); `task-decomposition#2` (input), `#6`, `#9`, `#10` | JSON: `{ title, description, decisionIds }` |
 | the filed Spec documents in the vault | `driver` (lane `file_in_vault`) | none: read by the owner in the vault | Markdown |
 

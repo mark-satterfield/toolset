@@ -1,0 +1,130 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "readyForDecision",
+    "reason",
+    "dispatches",
+    "overlaps"
+  ],
+  "properties": {
+    "readyForDecision": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "dispatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agentType",
+          "role",
+          "task",
+          "selectionReason",
+          "repairIds",
+          "files",
+          "answers",
+          "claimIds",
+          "claimFiles",
+          "coverageIds"
+        ],
+        "properties": {
+          "agentType": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "proposer",
+              "diagram",
+              "reviewer",
+              "cost"
+            ]
+          },
+          "task": {
+            "type": "string"
+          },
+          "selectionReason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repairIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coverageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "overlaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "files",
+          "claimIds",
+          "agentTypes",
+          "reason"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claimIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

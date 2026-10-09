@@ -1,0 +1,149 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "prerequisites",
+    "rootEdges",
+    "satisfied",
+    "summary"
+  ],
+  "properties": {
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "element",
+          "views",
+          "requiredBy",
+          "requires",
+          "evidence",
+          "state",
+          "repository"
+        ],
+        "properties": {
+          "element": {
+            "type": "string"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
+            "enum": [
+              "unknown"
+            ]
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "rootEdges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "requires",
+          "evidence"
+        ],
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "satisfied": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "element",
+          "state",
+          "repository",
+          "task",
+          "commit"
+        ],
+        "properties": {
+          "element": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "built",
+              "deployed"
+            ]
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
