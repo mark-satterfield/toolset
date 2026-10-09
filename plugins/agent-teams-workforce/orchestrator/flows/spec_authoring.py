@@ -93,7 +93,17 @@ class SpecAuthoring:
 
     def record(self, inputs: tuple[str, ...], outputs: tuple[Path, ...]) -> None:
         try:
-            self.store.accept(self.stage, inputs, outputs)
+            self.store.invalidate(outputs)
+            for output in outputs:
+                self.store.module.record(
+                    output,
+                    epic=self.context.bead,
+                    phase=self.stage,
+                    inputs=list(inputs),
+                    producer="python",
+                    run_id=self.context.run_id,
+                    root=self.store.root,
+                )
         except Exception as exc:  # noqa: BLE001 - receipt failure is explicitly nonfatal
             self.warnings.append(f"artifact receipt: {type(exc).__name__}: {exc}")
 
@@ -288,6 +298,11 @@ def run(
     flow.documents()
     body = flow.story_document()
     written = flow.write_story()
+    if flow.ran:
+        try:
+            store.module.complete_step(context.work, flow.stage)
+        except Exception as exc:  # noqa: BLE001 - final step receipt is nonfatal
+            flow.warnings.append(f"step receipt: {type(exc).__name__}: {exc}")
     return {
         "ok": True,
         "story": {
