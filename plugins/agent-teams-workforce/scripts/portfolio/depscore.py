@@ -129,15 +129,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import beadgraph
 import relay
+from archclosure import write_closure
 from archfiles import files_from, integration_files, review_check
+from archresume import ResumeError, resume_facts
 from archrevision import check as revision_check
 from archrevision import mark as revision_mark
-from archresume import ResumeError, resume_facts
 from archstate import (
     commit_integration,
     delta_items,
@@ -154,7 +155,6 @@ from archstate import promote as approve_arch
 from archstate import states as arch_states
 from assesscontext import assess_context, task_context
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
-from archclosure import write_closure
 from beadwrite import (
     add_corrective_tasks,
     closure_task_edges,
@@ -253,7 +253,7 @@ def _instant(text: str) -> datetime | None:
         value = datetime.fromisoformat(text.strip())
     except ValueError:
         return None
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def assess_plan(
@@ -393,7 +393,7 @@ def bead_status(bead_id: str, repo: Path | None) -> str | None:
         The status, or None.
     """
     try:
-        shown = beadgraph._bd_json(["show", bead_id, "--json"], repo)  # noqa: SLF001 - the read-only bd reader
+        shown = beadgraph._bd_json(["show", bead_id, "--json"], repo)
     except GraphError:
         return None
     record = shown[0] if isinstance(shown, list) and shown else shown
@@ -1352,9 +1352,8 @@ def run(args: argparse.Namespace) -> dict:
         return listing
     if command == "arch-closure":
         return head | write_closure(
-            args.closure,
+            json.loads(Path(args.closure).read_text(encoding="utf-8")),
             args.delta_dir,
-            status_of=lambda bead: bead_status(bead, args.directory),
             dry_run=args.dry_run,
         )
     if command == "closure-edges":

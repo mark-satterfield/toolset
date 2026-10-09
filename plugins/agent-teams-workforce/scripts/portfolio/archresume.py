@@ -525,7 +525,13 @@ def _baseline_out(baseline: dict) -> dict:
 
 
 def resume_facts(
-    work_dir: str, *, roster: str, assign: str = "", team: str = "", plan: str = ""
+    work_dir: str,
+    *,
+    roster: str,
+    assign: str = "",
+    team: str = "",
+    plan: str = "",
+    matrix_snapshot: dict | None = None,
 ) -> dict:
     """Read the architecture step's saved work and return the facts its control flow needs.
 
@@ -631,7 +637,7 @@ def resume_facts(
     for c in ledger.claims:
         if c["active"] and not c["verdicts"]:
             unreviewed[c["by"]] = unreviewed.get(c["by"], 0) + 1
-    baseline = baseline_facts(s)
+    baseline = baseline_facts(s, matrix_snapshot)
     # Bind approval to the assessed baseline and claims; per-row checks stay reusable.
     coverage_summary["revision"] = digest(
         {

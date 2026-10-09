@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from archbaseline import survey_freshness
 from archevidence import saved_evidence_current
 from archrevision import record_problem
-from archbaseline import survey_freshness
 
 
 def _count(report: object, key: str) -> int:
@@ -46,8 +46,12 @@ def saved_target(art_dir: Path) -> dict:
     summary = (saved.get("summary") or saved) if isinstance(saved, dict) else {}
     report = json.loads(update.read_text(encoding="utf-8")) if update.is_file() else {}
     delta_files = saved.get("deltaFiles") if isinstance(saved, dict) else None
+    seal_path = work / "survey.json.baseline-inputs.json"
+    seal = json.loads(seal_path.read_text()) if seal_path.is_file() else {}
     baseline_current = (
-        survey_freshness(work / "survey.json")["current"] if saved else False
+        survey_freshness(work / "survey.json", form=seal.get("form"))["current"]
+        if saved
+        else False
     )
     revision_problem = record_problem(work) if saved else None
     return {
@@ -66,13 +70,7 @@ def saved_target(art_dir: Path) -> dict:
         "integratedFiles": _count(report, "changedFiles")
         + _count(report, "createdFiles"),
         "closureSaved": bool(summary.get("deltaDir"))
-        and any(
-            (folder / "closure.json").is_file()
-            for folder in (
-                Path(str(summary.get("deltaDir"))).parent,
-                Path(str(summary.get("deltaDir"))),
-            )
-        ),
+        and (Path(str(summary.get("deltaDir"))).parent / "closure.json").is_file(),
     }
 
 

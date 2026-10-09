@@ -16,9 +16,9 @@ import re
 import subprocess
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
-
 from archevidence import digest, evidence_state, view_content
+from archmatrix import catalog_elements, row_of, satisfied
+from jsonschema import Draft202012Validator
 
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[2]
@@ -203,7 +203,7 @@ def _entry_warnings(entry: dict) -> list[str]:
     return warnings
 
 
-def baseline_facts(survey: dict) -> dict:
+def baseline_facts(survey: dict, matrix_snapshot: dict | None = None) -> dict:
     """Return explicit actions; missing/invalid observations never imply no work.
 
     The assessment is invalid only when the survey carries none. Each entry is normalized
@@ -265,7 +265,9 @@ def baseline_facts(survey: dict) -> dict:
         result["warnings"].append(f"{key}: no surveyed capability has this name")
     for key, entry in by_id.items():
         notes: list[str] = []
-        unknown = _normalize(entry, notes)
+        _normalize(entry, notes)
+        # Historical code judgments remain context, never the scope decision.
+        unknown = entry["disposition"] == "undetermined"
         if key in named:
             stated = [
                 str(r)
@@ -285,8 +287,17 @@ def baseline_facts(survey: dict) -> dict:
             result["docWork"].append(key)
         if unknown or entry["conflicts"]:
             result["unknowns"].append(key)
+        try:
+            elements = catalog_elements(entry["documents"])
+        except (OSError, UnicodeError) as exc:
+            elements = {}
+            result["warnings"].append(f"{key}: cited catalog unreadable: {exc}")
         if (
-            entry["implementationAction"] in {"modify", "new", "replace", "retire"}
+            not elements
+            or any(
+                not satisfied(matrix_snapshot or {}, row_of(matrix_snapshot, name))
+                for name in elements
+            )
             or key in result["unknowns"]
         ):
             result["implementationWork"].append(key)
@@ -302,6 +313,7 @@ def survey_freshness(
     repos: list[str] | None = None,
     seal: bool = False,
     context_sha: str | None = None,
+    form: str | None = None,
 ) -> dict:
     """Bind survey reuse to its inputs, cited evidence and repository main trees.
 
@@ -345,11 +357,11 @@ def survey_freshness(
     try:
         survey = json.loads(survey_path.read_text(encoding="utf-8"))
         if not isinstance(survey, dict):
-            raise ValueError("survey is not an object")
+            raise TypeError("survey is not an object")
         parsed = True
     except FileNotFoundError:
         survey = {}
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         survey = {}
         errors.append(f"survey unreadable: {exc}")
     facts = baseline_facts(survey)
@@ -405,8 +417,10 @@ def survey_freshness(
         and ref.get("repo")
         and not Path(str(ref.get("path") or "")).is_absolute()
     }
+    if form not in {None, "adopted", "v2"}:
+        raise ValueError(f"unknown survey seal form: {form}")
     trees = {}
-    for repo in sorted(repositories):
+    for repo in sorted(repositories) if form is None else []:
         try:
             result = subprocess.run(
                 ["git", "-C", repo, "rev-parse", "--verify", "main^{tree}"],
@@ -434,6 +448,8 @@ def survey_freshness(
         "inputs": sorted(str(path) for path in inputs),
         "repos": sorted(repositories),
     }
+    if form is not None:
+        receipt["form"] = form
     valid = facts["valid"] and not errors
     current = False
     if seal and parsed:

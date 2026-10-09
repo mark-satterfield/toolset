@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """The one place that reads and writes `lifecycle_state` on architecture files for the pipeline.
 
 Every architecture file, in any version (effective, target, delta, built), carries its own
@@ -35,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +42,8 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from archgit import git_result, run_git
+from archmatrix import catalog_elements, element_id, row_of, satisfied
 from archrevision import arc42_revision
 
 STATE_KEY = "lifecycle_state"
@@ -53,7 +55,7 @@ CONSTRAINTS_FOLDER = "02-architecture-constraints"
 TARGET_FOLDER = "target"
 DELTA_FOLDER = "delta"
 # The baseline handoff: the effective views each capability relies on and the implementation
-# gaps between the future set and the code on `main`. It belongs to the future set, never to the
+# work derived from the element matrix. It belongs to the future set, never to the
 # delta; `delta/baseline.json` is read only from targets written before that rule.
 BASELINE_FILE = "baseline.json"
 SEED_FILES = (BASELINE_FILE, f"{DELTA_FOLDER}/{BASELINE_FILE}")
@@ -63,13 +65,13 @@ SEED_FILES = (BASELINE_FILE, f"{DELTA_FOLDER}/{BASELINE_FILE}")
 CHANGE_NOTES = {
     "none": "No architecture change: current and future are the same. The future set is the "
     "effective views cited in `entries[].documents`; there is no delta. Build work is "
-    "`implementationWork`, the gaps between these views and the code on `main`.",
+    "every element those views show, including satisfied elements whose Tasks verify them.",
     "new": "Entirely new architecture: there is no current set. The target views are both the "
     "future and the delta; there is no separate delta folder. Build work is the elements those "
     "views show plus `implementationWork`.",
     "partial": "Partial change: the target views are the future set, and `delta/` holds the "
     "change alone. Build work is the elements the delta shows plus `implementationWork`, the "
-    "gaps between the future set and the code on `main`.",
+    "elements of the future set not satisfied by the element matrix.",
     "pending": "Change not yet authored: the assessment names design or documentation work "
     "(`designChanged` or `documentationChanged`), and no view is written yet, so the case is "
     "not known: it becomes `new` or `partial` when the views are authored. It is never `none`, "
@@ -389,7 +391,7 @@ def snapshot_constraints(arch_root: str, *, keep: bool = False) -> dict:
         sorted(p for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else []
     )
     each, digest = _digest(files, folder) if files else ({}, "")
-    git = subprocess.run(  # noqa: S603
+    git = subprocess.run(
         [
             "git",
             "-C",
@@ -399,10 +401,11 @@ def snapshot_constraints(arch_root: str, *, keep: bool = False) -> dict:
             "--untracked-files=all",
             "--",
             str(folder),
-        ],  # noqa: S607
+        ],
         capture_output=True,
         text=True,
         check=False,
+        timeout=float(os.environ.get("ATW_GIT_TIMEOUT", "120")),
     )
     out = {
         "folder": str(folder),
@@ -767,6 +770,7 @@ def write_target(
     dry_run: bool = False,
     baseline: str = "",
     seed: bool = False,
+    matrix_snapshot: dict | None = None,
 ) -> dict:
     """Check an approved draft and write it to `target/<subject>/`, every view `in-review`.
 
@@ -821,7 +825,7 @@ def write_target(
 
         try:
             survey = json.loads(Path(baseline).read_text(encoding="utf-8"))
-            facts = baseline_facts(survey)
+            facts = baseline_facts(survey, matrix_snapshot)
             baseline_refusals = facts["errors"]
             warnings.extend(facts["warnings"])
             warnings.extend(
@@ -1033,7 +1037,7 @@ def _unquote(value: str) -> str:
         The scalar without its quotes.
     """
     value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:  # noqa: PLR2004 - a quote pair
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
         return value[1:-1]
     return value
 
@@ -1141,7 +1145,9 @@ def _change_of(baseline_file: Path, delta_root: Path) -> str:
     return "partial" if delta_root.is_dir() else "none"
 
 
-def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: C901, PLR0912, PLR0915 - one listing, read top to bottom
+def delta_items(
+    delta_dir: str, *, with_closure: bool = True, matrix_snapshot: dict | None = None
+) -> dict:
     """List the build items of a written target, one item per element.
 
     The documents deduplicate as CHANGE_NOTES describes. With a partial change an item is one
@@ -1149,7 +1155,7 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
     architecture the target views are the delta, so their elements are the items; with no
     architecture change there is no delta and no view item. Items are numbered `D1`, `D2` ...
     in element-name order, so the same target always yields the same ids. The implementation
-    gaps of the baseline handoff (the future set against the code on `main`) follow, then,
+    gaps of the future set against the element matrix follow, then,
     when the target holds a checked `closure.json`, one `prerequisite` item per element the
     work rests on that is not built and current; every item then carries `requires`, the ids
     of the items it needs built first. Runs no `bd` command and writes nothing.
@@ -1235,43 +1241,62 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
         {"id": f"D{n}", "element": element, "views": shown[element]}
         for n, element in enumerate(sorted(shown, key=str.casefold), start=1)
     ]
-    if manifest:
-        for entry in sorted(manifest["entries"], key=lambda row: row["id"].casefold()):
-            if entry["id"] not in manifest["implementationWork"]:
-                continue
-            items.append(
-                {
-                    "id": f"D{len(items) + 1}",
-                    "element": entry["id"],
-                    "kind": "implementation-gap",
-                    "views": [document["path"] for document in entry["documents"]],
-                    "requirements": entry["requirements"],
-                    "subjects": entry["subjects"],
-                    "implementationAction": entry["implementationAction"],
-                    "current": entry["current"],
-                    "target": entry["target"],
-                    "disposition": entry["disposition"],
-                    "suitabilityEvidenceRefs": entry["suitabilityEvidenceRefs"],
-                    "code": entry["code"],
-                    "rationale": entry["rationale"],
-                    "baseline": str(baseline_file),
-                }
-            )
+    # Build scope is catalog elements, not survey capability labels or code judgments.
+    present = {element_id(item["element"]) for item in items}
+    if change == "partial":
+        documents = [
+            {"path": str(path)}
+            for path in _draft_files(target)
+            if path.suffix == ".md"
+            and DELTA_FOLDER not in path.relative_to(target).parts
+        ]
+    elif change == "none" and manifest:
+        documents = [
+            doc for entry in manifest["entries"] for doc in entry.get("documents", [])
+        ]
+    else:
+        documents = []
+    try:
+        future = catalog_elements(documents)
+    except (OSError, UnicodeError) as exc:
+        future = {}
+        refusals.append(f"cannot read future-set catalog: {exc}")
+    for element, element_views in sorted(
+        future.items(), key=lambda pair: element_id(pair[0])
+    ):
+        key = element_id(element)
+        row = row_of(matrix_snapshot, element)
+        if key in present or (
+            change == "partial" and satisfied(matrix_snapshot or {}, row)
+        ):
+            continue
+        items.append(
+            {
+                "id": f"D{len(items) + 1}",
+                "element": element,
+                "kind": "implementation-gap",
+                "views": sorted(set(element_views)),
+                "state": row.get("state", "unknown"),
+                "repository": row.get("repository"),
+                "baseline": str(baseline_file),
+            }
+        )
+        present.add(key)
+    if change == "none" and not items:
+        refusals.append(
+            "the unchanged architecture's cited effective views name no elements"
+        )
     prerequisites = 0
     if with_closure and not refusals:
-        from archclosure import merge_closure  # noqa: PLC0415 - archclosure imports this module
+        from archclosure import merge_closure
 
         items, closure_refusals, prerequisites = merge_closure(root, items)
         refusals += closure_refusals
     baseline_validated = manifest is not None and not refusals
     baseline_summary = {
         "baselineValidated": baseline_validated,
-        "implementationWork": len(manifest["implementationWork"]) + prerequisites
-        if baseline_validated
-        else None,
-        "implementationComplete": baseline_validated
-        and not manifest["implementationWork"]
-        and not prerequisites,
+        "implementationWork": len(items) if baseline_validated else None,
+        "implementationComplete": baseline_validated and not items,
         "prerequisites": prerequisites,
     }
     return {
@@ -1299,7 +1324,10 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: 
     }
 
 
-def remove_target(arch_root: str, target_dir: str, *, message: str) -> dict:
+@git_result
+def remove_target(
+    arch_root: str, target_dir: str, *, message: str, execution_id: str = ""
+) -> dict:
     """Delete one `target/<subject>/` folder and commit the removal.
 
     The folder must be a direct child of `<arch_root>/target/`. Its tracked files are
@@ -1340,12 +1368,7 @@ def remove_target(arch_root: str, target_dir: str, *, message: str) -> dict:
         return report
 
     def git(*argv: str) -> subprocess.CompletedProcess:
-        return subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), *argv],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        return run_git(root, *argv, execution_id=execution_id)
 
     tracked = git("ls-files", "--", str(folder))
     if tracked.returncode != 0:
@@ -1387,7 +1410,10 @@ def _refused(why: list[str]) -> dict:
     return {"ok": False, "refusals": why, "summary": {"ok": False, "refusals": why}}
 
 
-def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
+@git_result
+def remove_built(
+    arch_root: str, files: list[str], *, message: str, execution_id: str = ""
+) -> dict:
     """Delete built files the effective version now matches, and commit the removal.
 
     Every file must sit inside a subject folder under `<arch_root>/built/`. Tracked files are
@@ -1414,7 +1440,7 @@ def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
     outside = [
         str(f)
         for f in wanted
-        if not f.is_relative_to(built) or len(f.relative_to(built).parts) < 2  # noqa: PLR2004
+        if not f.is_relative_to(built) or len(f.relative_to(built).parts) < 2
     ]
     if outside:
         return _refused(
@@ -1422,12 +1448,7 @@ def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
         )
 
     def git(*argv: str) -> subprocess.CompletedProcess:
-        return subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), *argv],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        return run_git(root, *argv, execution_id=execution_id)
 
     present = [f for f in wanted if f.exists()]
     gone = [str(f) for f in wanted if not f.exists()]
@@ -1475,7 +1496,10 @@ def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
     return report
 
 
-def commit_integration(arch_root: str, files: list[str], *, message: str) -> dict:
+@git_result
+def commit_integration(
+    arch_root: str, files: list[str], *, message: str, execution_id: str = ""
+) -> dict:
     """Commit the architecture files an integration changed, and push the branch.
 
     Every file must sit under `arch_root`. Only these paths are staged (`git add -A --
@@ -1507,12 +1531,7 @@ def commit_integration(arch_root: str, files: list[str], *, message: str) -> dic
         return _refused([f"not under {root}: {', '.join(outside)}"])
 
     def git(*argv: str) -> subprocess.CompletedProcess:
-        return subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), *argv],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        return run_git(root, *argv, execution_id=execution_id)
 
     branch = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
     if not branch:

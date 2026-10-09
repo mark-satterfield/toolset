@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import UTC, datetime
@@ -62,6 +63,20 @@ def overlap_justified(plan: dict, claim: dict, reviewers: list) -> bool:
     return any(str(d.get("overlapReason", "")).strip() for d in reviewers)
 
 
+def _recorded_meta(path: Path) -> dict:
+    """Read a result's receipt only when it still describes the bytes on disk."""
+    try:
+        meta = json.loads(path.with_name(path.name + ".meta.json").read_text())
+        return (
+            meta
+            if isinstance(meta, dict)
+            and meta.get("sha256") == hashlib.sha256(path.read_bytes()).hexdigest()
+            else {}
+        )
+    except (OSError, ValueError):
+        return {}
+
+
 def round_facts(
     work: Path,
     plans: list,
@@ -90,9 +105,14 @@ def round_facts(
     )
     if not isinstance(decision, dict):
         decision = {}
-    newer_results = decision_path.is_file() and any(
+    decision_meta = _recorded_meta(decision_path)
+    newer_results = any(
         Path(name).name.startswith(f"r{legacy_round}-")
-        and Path(name).stat().st_mtime > decision_path.stat().st_mtime
+        and (meta := _recorded_meta(Path(name)))
+        and (
+            not decision_meta
+            or meta.get("updated_at", "") > decision_meta.get("updated_at", "")
+        )
         for name in ledger.files
     )
     resume_round = (

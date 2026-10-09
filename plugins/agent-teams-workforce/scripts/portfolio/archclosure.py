@@ -1,28 +1,18 @@
-"""The prerequisite closure of an architecture delta: what the delta's work rests on.
+"""Classified architecture prerequisites derived from the element matrix snapshot.
 
-A delta lists the elements a PRD's target changes (and the implementation gaps the baseline
-assessment found). The work on those elements rests on other elements the effective
-architecture shows: a table rests on its database cluster, the cluster on its network, a
-handler on its event bus. The architecture step's Closure phase walks those relationships
-from every delta item and records, in `closure.json`, each element the walk reaches that is
-not built and current on `main`: absent, stale, or planned by an open bead.
-
-`closure_facts` checks a closure against the delta's root items. `depscore.py arch-closure`
-runs `write_closure`, which also confirms every planning bead is open and writes the checked
-closure to `target/<subject>/closure.json`; `depscore.py arch-delta` then lists one
-`prerequisite` item per closure entry and gives every item its `requires`.
+The flow walks effective architecture views, classifies each reached element in Python,
+and supplies that result here. This module resolves item edges and writes the durable
+closure; it never reads bead states or searches repository code for satisfaction.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 CLOSURE_FILE = "closure.json"
 CLOSURE_VERSION = 1
-STATES = ("absent", "stale", "planned")
-CLOSED_STATUSES = ("closed", "tombstone")
+STATES = ("unknown", "built", "deployed")
 
 
 def _text(value: object) -> str:
@@ -78,36 +68,14 @@ def _cyclic(requires: dict[str, list[str]]) -> list[str]:
     )
 
 
-def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bottom
+def closure_facts(
     closure: object,
     roots: list[dict],
-    *,
-    is_open: Callable[[str], bool] | None = None,
 ) -> dict:
-    """Read a prerequisite closure against the delta's root items.
+    """Resolve classified matrix prerequisites into an acyclic item dependency graph.
 
-    Every prerequisite names an element no root item shows, a state (`absent`, `stale` or
-    `planned`), the effective views that show it, and `requiredBy`: the root items (by id or
-    element) or other prerequisites (by element) that need it. `requires` names what it needs
-    in turn. `rootEdges` record that one root item needs another. The only refusals are a
-    closure that is not an object with a `prerequisites` list and a `requires` graph with a
-    cycle. Everything else is normalized and named in `warnings`: an entry with no element,
-    one a root item already is, or a second entry for one element is dropped; a reference to
-    no known item, or to itself, is dropped; an empty `requiredBy` means every root item; a
-    state that is not one of STATES is `absent`; a `planned` prerequisite whose bead is not
-    open (with `is_open`) is `absent`; missing views, evidence and repositories are noted for
-    repo scoping to place.
-
-    Args:
-        closure: The parsed closure.
-        roots: The delta's root items, each with `id` and `element`.
-        is_open: Whether a bead is open; when given, a `planned` prerequisite whose bead is not
-            open becomes `absent`.
-
-    Returns:
-        `valid`, the refusals, the warnings, the prerequisites with `requiredBy` and
-        `requires` resolved to node names (a root's id, or a prerequisite's element), and each
-        root's requirements.
+    Only the matrix classifier supplies states and repositories. No bead status or source
+    inspection participates. Root aliases and prerequisite names resolve to stable nodes.
     """
     refusals: list[str] = []
     warnings: list[str] = []
@@ -160,47 +128,12 @@ def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bot
         state = _text(p.get("state"))
         views = _texts(p.get("views"))
         evidence = _texts(p.get("evidence"))
-        deployed_by = _text(p.get("deployedBy")) or None
-        planned_by = _text(p.get("plannedBy")) or None
-        repository = (
-            p.get("repository") if isinstance(p.get("repository"), dict) else None
-        )
+        repository = _text(p.get("repository")) or None
         if state not in STATES:
-            warnings.append(f"{element}: state {state or 'none'} is taken as absent")
-            state = "absent"
-        if (
-            state == "planned"
-            and planned_by
-            and is_open is not None
-            and not is_open(planned_by)
-        ):
+            refusals.append(f"{element}: invalid matrix state {state!r}")
+        if not repository:
             warnings.append(
-                f"{element} is planned by {planned_by}, which is not an open bead; it is absent"
-            )
-            state = "absent"
-            planned_by = None
-        if not views:
-            warnings.append(f"{element} names no effective view that shows it")
-        warnings.extend(
-            f"{element}: view {v} does not exist"
-            for v in views
-            if not Path(v).is_file()
-        )
-        if state in ("absent", "stale") and not evidence:
-            warnings.append(f"{element} is {state} and cites no evidence")
-        if state == "stale" and not deployed_by:
-            warnings.append(
-                f"{element} is stale and names no repository that deploys it"
-            )
-        if state == "planned" and not planned_by:
-            warnings.append(f"{element} is planned and names no bead that plans it")
-        if (
-            state == "absent"
-            and not deployed_by
-            and not (repository and _text(repository.get("name")))
-        ):
-            warnings.append(
-                f"{element} is absent and names no repository that deploys it or is to be created; repo scoping places it"
+                f"{element} has no matrix repository; repo scoping places it"
             )
         named_by = _texts(p.get("requiredBy"))
         required_by = [
@@ -232,15 +165,7 @@ def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bot
                 "state": state,
                 "views": views,
                 "evidence": evidence,
-                "deployedBy": deployed_by,
-                "plannedBy": planned_by,
-                "repository": {
-                    "name": _text(repository.get("name")),
-                    "template": _text(repository.get("template")),
-                    "reason": _text(repository.get("reason")),
-                }
-                if repository and _text(repository.get("name"))
-                else None,
+                "repository": repository,
                 "requiredBy": sorted(set(required_by)),
                 "reason": _text(p.get("reason")),
             }
@@ -269,7 +194,9 @@ def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bot
     satisfied = [
         s
         for s in satisfied
-        if isinstance(s, dict) and _text(s.get("element")) and _texts(s.get("evidence"))
+        if isinstance(s, dict)
+        and _text(s.get("element"))
+        and s.get("state") in {"built", "deployed"}
     ]
     requires = {k: sorted(set(v)) for k, v in requires.items()}
     cycle = _cyclic(requires)
@@ -289,58 +216,24 @@ def closure_facts(  # noqa: C901, PLR0912, PLR0915 - one reader, read top to bot
     }
 
 
-def bead_open(status_of: Callable[[str], str | None], bead_id: str) -> bool:
-    """Whether a bead exists and is not closed.
-
-    Args:
-        status_of: Returns a bead's status, or None when it cannot be read.
-        bead_id: The bead.
-
-    Returns:
-        True when it is open.
-    """
-    status = status_of(bead_id)
-    return status is not None and status not in CLOSED_STATUSES
-
-
 def write_closure(
-    closure_path: str,
+    closure: dict,
     delta_dir: str,
     *,
-    status_of: Callable[[str], str | None],
     dry_run: bool = False,
+    matrix_snapshot: dict | None = None,
 ) -> dict:
-    """Check a prerequisite closure and write it beside the target's baseline as `closure.json`.
+    """Write the Python-classified closure beside the target's baseline.
 
-    The closure is checked against the delta's root items (`delta_items` without a closure),
-    and every bead a `planned` prerequisite names must be open. The written file carries the
-    closure as saved plus the root items it was computed for, so a later change to the delta
-    invalidates it.
-
-    Args:
-        closure_path: The closure the Closure phase saved.
-        delta_dir: The `target/<subject>/delta/` directory.
-        status_of: Returns a bead's status, or None when it cannot be read.
-        dry_run: Check only; write nothing.
-
-    Returns:
-        `ok`, the refusals, the written path, and the prerequisites by element and state.
+    Bind its roots to the same matrix snapshot used to classify the walk. The closure is
+    build work and sits in the future set even when architecture has no delta directory.
     """
-    from archstate import delta_items  # noqa: PLC0415 - archstate imports this module
+    from archstate import delta_items
 
-    listed = delta_items(delta_dir, with_closure=False)
+    listed = delta_items(delta_dir, with_closure=False, matrix_snapshot=matrix_snapshot)
     refusals = list(listed["refusals"])
-    try:
-        closure = json.loads(Path(closure_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        closure = None
-        refusals.append(f"{closure_path} could not be read: {exc}")
     roots = [{"id": i["id"], "element": i["element"]} for i in listed.get("items", [])]
-    facts = (
-        closure_facts(closure, roots, is_open=lambda bead: bead_open(status_of, bead))
-        if closure is not None
-        else {"refusals": []}
-    )
+    facts = closure_facts(closure, roots)
     refusals += facts["refusals"]
     warnings = list(listed.get("warnings", [])) + list(facts.get("warnings", []))
     # The written closure carries the prerequisites as read, so a later reader sees the same
@@ -401,8 +294,6 @@ def merge_closure(
     """
     path = delta_dir.parent / CLOSURE_FILE
     if not path.is_file():
-        path = delta_dir / CLOSURE_FILE
-    if not path.is_file():
         return items, [], 0
     try:
         closure = json.loads(path.read_text(encoding="utf-8"))
@@ -435,8 +326,6 @@ def merge_closure(
                 "state": p["state"],
                 "requiredBy": [id_of[r] for r in p["requiredBy"]],
                 "requires": [id_of[r] for r in p["requires"]],
-                "deployedBy": p["deployedBy"],
-                "plannedBy": p["plannedBy"],
                 "repository": p["repository"],
                 "evidence": p["evidence"],
                 "reason": p["reason"],
