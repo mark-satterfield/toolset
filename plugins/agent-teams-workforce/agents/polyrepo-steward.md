@@ -143,7 +143,10 @@ in it and runs `bd repo sync`, so a stale path silently stops that repo's beads 
 The tool keeps it true whenever a repository changes: `create` adds the new repo when it
 has a `.beads` folder, `rename` replaces the old path with the new one, and `deprecate` and
 the archive repair remove the entry. Every write re-reads the file first and touches only
-the one entry, so a concurrent edit to another entry is kept. The doctor's `beads-fleet`
+the one entry, so a concurrent edit to another entry is kept. `beads-setup` with several
+repos (or `--all`) collects every repo to add and writes the list once at the end of the
+run, in a single edit: the watcher restarts after each change to the list, so one write
+means one restart. The doctor's `beads-fleet`
 check reports any listed path that is missing or not an active fleet repo, and any active
 repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 

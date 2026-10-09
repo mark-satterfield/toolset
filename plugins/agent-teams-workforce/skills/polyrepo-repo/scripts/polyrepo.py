@@ -3021,6 +3021,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
         raise PolyrepoError(msg)
     results: list[dict[str, Any]] = []
     log: list[str] = []
+    fleet_adds: list[Path] = []
     for n in names:
         r = st.local[n]
         if args.dry_run:
@@ -3029,9 +3030,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
         try:
             res = beads_setup(cfg, r, args.trailer)
             if (r.path / ".beads").is_dir():
-                log.extend(
-                    f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[r.path])
-                )
+                fleet_adds.append(r.path)
         except (GitFailedError, PolyrepoError, OSError) as exc:
             res = {"repo": n, "error": str(exc)}
         results.append(res)
@@ -3039,6 +3038,12 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
             log.append(
                 f"{n}: beads set up ({'; '.join(res['steps']) or 'already set up'})"
             )
+    if fleet_adds:
+        # One write for the whole run: the fleet watcher restarts on each list change.
+        try:
+            log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=fleet_adds))
+        except (PolyrepoError, OSError) as exc:
+            results.append({"repo": "(beads fleet list)", "error": str(exc)})
     if log:
         append_changelog(cfg, "polyrepo beads-setup", log)
     data = {

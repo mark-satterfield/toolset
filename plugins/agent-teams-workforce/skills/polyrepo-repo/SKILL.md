@@ -117,7 +117,7 @@ judgment, and each has an obvious next step:
   what `com.skillspoke.beads-fleet-watch` watches; a stale path silently stops that repo's
   beads syncing. `create`, `rename`, `deprecate` and the `archive-due` repair keep it true
   deterministically (add, replace, remove), re-reading the file immediately before each
-  write and touching only the one entry. Never edit it by hand for a repository change;
+  write and touching only the one entry. `beads-setup` over several repos writes the list once at the end of the run, so the watcher restarts once. Never edit it by hand for a repository change;
   `beads-fleet --fix` repairs drift.
 - **list** — `list` or `inventory`: "how many repos", "which repos are deprecated".
 - **search** — `search` for record attributes; `grep` for content. For facts neither holds
