@@ -702,13 +702,26 @@ const died = (phaseName) => {
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
 }
 
-if (!hasText(delta.deltaDir) || !hasText(delta.targetDir)) {
-  return dispatchOutcome({ ...fail('no approved target and delta were supplied: the span is the repositories the delta changes'), stage: 'input', deterministicFailure: true })
+if (!hasText(delta.targetDir)) {
+  return dispatchOutcome({ ...fail('no approved target was supplied: the span is the repositories its build items change'), stage: 'input', deterministicFailure: true })
 }
 if (!items.length) {
-  return dispatchOutcome({ ...fail(`the delta at ${delta.deltaDir} lists no item: depscore.py arch-delta found no element in its views' \`shows\``), stage: 'input', deterministicFailure: true })
+  return dispatchOutcome({ ...fail(`the target at ${delta.targetDir} lists no build item: depscore.py arch-delta found no element and no implementation gap`), stage: 'input', deterministicFailure: true })
 }
 
+/**
+ * The approved target's documents as a prompt sentence. The documents are deduplicated: a partial
+ * change has target views and a delta folder of the change alone; an entirely new architecture has
+ * target views that are also its delta; no architecture change has one set, the effective views the
+ * target's baseline.json cites, and no delta. Build items then come from the future set's gaps
+ * against the code on main, never from an architecture delta.
+ */
+const targetDocs = (t) => {
+  const change = t && hasText(t.architectureChange) ? t.architectureChange : hasText(t && t.deltaDir) ? 'partial' : 'none'
+  if (change === 'partial' && hasText(t.deltaDir)) return `THIS PRD'S APPROVED TARGET is ${t.targetDir}, and the change alone, its delta, is ${t.deltaDir}.`
+  if (change === 'new') return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: an entirely new architecture, with no current set, so its target views are both the future and the delta (there is no delta folder). Its baseline.json lists the implementation gaps against the code on \`main\`.`
+  return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: no architecture change, so current and future are the same and there is no delta. The future set is the effective views its baseline.json cites (\`entries[].documents\`); the build work is the gaps between those views and the code on \`main\` (\`implementationWork\` in baseline.json, and the prerequisites in closure.json beside it).`
+}
 phase('Place and provision')
 
 const prerequisiteNote = (i) => {
@@ -793,7 +806,7 @@ const inputRevision = inputBinding.revision
 const place = () => run(
   `Place each item of an approved architecture delta in the repository whose code changes for it, and CREATE each new repository the approved target names. You own the project's repositories and your records of them; repository facts come from your records and the live repositories, as the polyrepo-repo skill describes.
 
-THE APPROVED TARGET for ${prdTitle || prdId || 'this PRD'} is ${delta.targetDir}; the change alone, its delta, is ${delta.deltaDir}. Read the delta views, and the target views where a delta view leaves an element's home unstated. Each item below is one element the delta shows:
+${targetDocs(delta)} (This is the target for ${prdTitle || prdId || 'this PRD'}.) Read the delta views, and the target views where a delta view leaves an element's home unstated; an implementation-gap item cites the effective views it rests on. Each item below is one build item: an element the delta shows, or a gap between the future set and the code on \`main\`:
 ${itemLines}
 
 DO THIS, IN ORDER:

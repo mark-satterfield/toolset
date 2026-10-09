@@ -9,7 +9,7 @@ not built and current on `main`: absent, stale, or planned by an open bead.
 
 `closure_facts` checks a closure against the delta's root items. `depscore.py arch-closure`
 runs `write_closure`, which also confirms every planning bead is open and writes the checked
-closure to `target/<subject>/delta/closure.json`; `depscore.py arch-delta` then lists one
+closure to `target/<subject>/closure.json`; `depscore.py arch-delta` then lists one
 `prerequisite` item per closure entry and gives every item its `requires`.
 """
 
@@ -286,7 +286,7 @@ def write_closure(
     status_of: Callable[[str], str | None],
     dry_run: bool = False,
 ) -> dict:
-    """Check a prerequisite closure and write it to the delta as `closure.json`.
+    """Check a prerequisite closure and write it beside the target's baseline as `closure.json`.
 
     The closure is checked against the delta's root items (`delta_items` without a closure),
     and every bead a `planned` prerequisite names must be open. The written file carries the
@@ -323,7 +323,9 @@ def write_closure(
             refusals.append(
                 f"{p['element']} is planned by {p['plannedBy']}, which is not an open bead"
             )
-    target = Path(delta_dir) / CLOSURE_FILE
+    # The closure is build work, not architecture change: it sits with the future set, beside
+    # its baseline handoff, so a target with no delta has one too.
+    target = Path(delta_dir).parent / CLOSURE_FILE
     ok = not refusals
     if ok and not dry_run:
         content = {**closure, "version": CLOSURE_VERSION, "roots": roots}
@@ -352,7 +354,7 @@ def write_closure(
 def merge_closure(
     delta_dir: Path, items: list[dict]
 ) -> tuple[list[dict], list[str], int]:
-    """Append one `prerequisite` item per entry of the delta's `closure.json`.
+    """Append one `prerequisite` item per entry of the target's `closure.json`.
 
     Every item, root or prerequisite, then carries `requires`: the ids of the items it needs
     built first. A delta with no `closure.json` is returned unchanged.
@@ -364,7 +366,9 @@ def merge_closure(
     Returns:
         The items, the refusals, and the number of prerequisite items.
     """
-    path = delta_dir / CLOSURE_FILE
+    path = delta_dir.parent / CLOSURE_FILE
+    if not path.is_file():
+        path = delta_dir / CLOSURE_FILE
     if not path.is_file():
         return items, [], 0
     try:

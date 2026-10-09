@@ -1337,17 +1337,25 @@ const deltaItems = (Array.isArray(deltaList.items) ? deltaList.items : [])
 const prerequisiteItems = deltaItems.filter((i) => i.kind === 'prerequisite')
 const noImplementationWork = deltaList.baselineValidated === true &&
   deltaList.implementationComplete === true && deltaList.implementationWork === 0 && !prerequisiteItems.length
-/** The approved target and its delta, as every later phase reads them. */
+/**
+ * The approved target, its delta and the build items, as every later phase reads them. deltaDir is
+ * the delta folder only when the target has one (a partial change); with no architecture change, or
+ * an entirely new one, there is no delta folder and the items come from the future set and its gaps
+ * against the code on main.
+ */
+const architectureChange = hasText(deltaList.architectureChange) ? deltaList.architectureChange : 'partial'
 const delta = {
   subject: archArt.subject || null,
   targetDir: archArt.targetDir,
-  deltaDir: archArt.deltaDir,
+  deltaDir: deltaList.deltaExists === false ? '' : archArt.deltaDir,
+  architectureChange,
+  note: hasText(deltaList.note) ? deltaList.note : '',
   decisionPath: archArt.decisionPath || artPath('architecture/decision.md'),
   items: deltaItems,
   noImplementationWork,
 }
 produced.delta = delta
-log(`Delta: ${deltaItems.length} item(s) in ${delta.deltaDir}${prerequisiteItems.length ? `, ${prerequisiteItems.length} of them prerequisites the delta's work rests on (${prerequisiteItems.map((i) => `${i.id} ${i.element} [${i.state}]`).join('; ')})` : ''}`)
+log(`Build items: ${deltaItems.length} item(s) from ${delta.targetDir} (architecture change ${architectureChange}${delta.deltaDir ? `, delta ${delta.deltaDir}` : ', no delta'})${prerequisiteItems.length ? `, ${prerequisiteItems.length} of them prerequisites the delta's work rests on (${prerequisiteItems.map((i) => `${i.id} ${i.element} [${i.state}]`).join('; ')})` : ''}`)
 
 let scoping = null
 /** Returns { scoping, scopeHit }: the saved placement on a resume, else a fresh one. */
@@ -1495,7 +1503,7 @@ recRuled(`Placement check: the polyrepo-steward ruled ${placementCheck.verdicts.
 if (scoping.resumed === true) reuseFrom('repo-scoping', scopeSettled.scopeHit)
 if (noImplementationWork) {
   artPhases['repo-scoping'] = 'skipped'
-  log('Repo Scoping skipped: the verified architecture assessment requires no implementation; its delta handoff (delta/baseline.json) is the durable record.')
+  log('Repo Scoping skipped: the verified architecture assessment requires no implementation; its baseline handoff (baseline.json in the target) is the durable record.')
 } else {
   await acceptPhase('repo-scoping', scoping.resumed === true ? 'reused' : 'passed')
 }
@@ -1586,7 +1594,7 @@ const DESIGN_SYSTEM = designSystemArg
 function reconArgs(repo, slug, reconReplay) {
   return {
     items: itemsPlacedIn(repo),
-    delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
+    delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir, architectureChange: delta.architectureChange, note: delta.note },
     artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('architecture/target.json'), artPath('repo-scoping.json'), artPath('architecture/survey.json'), `git-main:${repo}`], { slug }),
     depscore: beadsArgs.script,
     ...(reconReplay ? { replay: reconReplay } : {}),
@@ -1610,7 +1618,7 @@ function specArgs(repo, storyKey, slug, recon) {
       repoPath: repo,
     },
     trd,
-    architecture: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
+    architecture: { targetDir: delta.targetDir, deltaDir: delta.deltaDir, architectureChange: delta.architectureChange, note: delta.note },
     accessPatterns: a.accessPatterns,
     repoPath: repo,
     storyKey,

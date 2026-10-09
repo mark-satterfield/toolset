@@ -7,9 +7,9 @@ export const meta = {
     { title: 'Check', detail: 'when the survey finds every capability served by the effective architecture and the code on main, with nothing in arc42 left unrepresented, one architecture-boundary-guardian session verifies every coverage row and that section 2 constraints and non-effective arc42 content are represented, and the decider rules, with no coordinator and no design authoring; a finding sends the survey back once to reassess the affected capabilities; otherwise the capabilities the survey marks for design, documentation or unresolved evidence form the design scope' },
     { title: 'Rounds', detail: 'the coordinator names each round of proposers, reviewers, diagram authors and cost reviewers; the script runs them and tracks every claim and finding' },
     { title: 'Decide', detail: 'after the team has designed, challenged and settled the target, the architecture-decider approves it, choosing where the team left competing solutions, or returns it to a named proposer; only two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, reach the owner' },
-    { title: 'Target', detail: 'depscore.py arch-target writes the approved draft to target/<subject>/ and its delta/ as in-review; with no design or documentation change it writes the delta handoff alone, recording the views approved in place and the implementation work' },
+    { title: 'Target', detail: 'depscore.py arch-target writes the approved draft to target/<subject>/ as in-review, each document once: a partial change as target views and delta/ of the change alone, an entirely new architecture as target views that are also its delta, and no architecture change as baseline.json alone (the current views it cites are the future set; no delta). baseline.json always carries that note and the implementation gaps against the code on main' },
     { title: 'Integrate', detail: 'the architecture-maintainer integrates the target into arc42; the architecture-conformance-reviewer checks it; depscore.py arch-approve sets the reviewed files to effective; depscore.py arch-commit commits and pushes the integrated files; with no design or documentation change, depscore.py arch-approve sets the independently approved in-review views to effective with no maintainer' },
-    { title: 'Closure', detail: 'never skipped: the polyrepo-steward names what each repository deploys on main; a prd-reality-reconciler session walks the effective views from every delta item to the elements its work rests on and records each one not built and current (absent, stale, or planned by an open bead of any Epic) with the repository that deploys it or the repository to create; depscore.py arch-closure checks it against the delta and the open beads and writes delta/closure.json, which depscore.py arch-delta merges as prerequisite items' },
+    { title: 'Closure', detail: 'never skipped: the polyrepo-steward names what each repository deploys on main; a prd-reality-reconciler session walks the effective views from every build item (delta elements and implementation gaps) to the elements its work rests on and records each one not built and current (absent, stale, or planned by an open bead of any Epic) with the repository that deploys it or the repository to create; depscore.py arch-closure checks it against the build items and the open beads and writes target/<subject>/closure.json, which depscore.py arch-delta merges as prerequisite items' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -804,7 +804,8 @@ const BUSINESS_CONFLICT_RULE = `List in \`businessConflicts\` only two BUSINESS 
 const DRAFT_RULES = `THE DRAFT TARGET is the folder ${DRAFT}. It has the arc42 section layout (\`05-building-block-view/…\`, \`06-runtime-view/…\`, \`07-deployment-view/…\`, \`08-crosscutting-concepts/…\`, and \`03-context-and-scope/\` or \`04-solution-strategy/\` only when the change reaches them) and a \`delta/\` folder beside them.
 - A target view is the view as it will read once approved: a changed copy of each effective view that shows a changed element, at every scope where the element appears, and coverage for new elements according to the applicable obligations in ${MODEL}. Extend a sufficient shared view when it answers the required reader question; create a new view only when no existing or shared view supplies the required coverage. Catalog every covered element in \`shows\`. Copy an effective view into the draft before you change it, at the same relative path.
 - \`delta/\` holds the views that show only what changes between the effective version and the target. Specs and Tasks are made from it.
-- \`baseline.json\` and \`delta/baseline.json\` are the baseline handoff the workflow writes from the survey (the effective views each capability relies on, and its implementation gaps). Read them; never edit or list them in \`files\`.
+- Write each document once. A partial change (an element the effective version already shows changes): the target views plus a \`delta/\` of the change alone. An entirely new architecture (no effective view shows any element you draw): the target views alone, with no \`delta/\`; they are both the future and the delta. No architecture change: write no view at all.
+- \`baseline.json\` is the baseline handoff the workflow writes from the survey: the effective views each capability relies on, the implementation gaps between the future set and the code on \`main\`, and a note naming which of the three cases the draft is. Read it; never edit it or list it in \`files\`.
 - Every view is Markdown with catalog frontmatter (\`view_type\` from ${MENU}, \`scope\`, \`subject\`, \`shows\`, \`lifecycle_state: in-review\`), a Mermaid diagram where the view type has one, and prose.
 - Nothing goes under \`02-architecture-constraints/\`: section 2 holds the owner's constraints.
 - Name files and folders for their subject, never for the PRD, the Epic, a bead or a date. Write no history, decision record, rule or open item into a view.
@@ -1436,13 +1437,14 @@ async function decisionGaps(label) {
 }
 
 /**
- * Makes the draft a target and a delta before any review reads it. depscore.py arch-target --seed
- * writes the baseline handoff from the survey into the draft: baseline.json (the target: the
- * effective views each capability relies on, cited by path) and delta/baseline.json (the delta: the
- * implementation gaps, which depscore.py arch-delta lists as delta items). It is deterministic and
+ * Makes the draft reviewable before any review reads it. depscore.py arch-target --seed writes the
+ * baseline handoff from the survey into the draft as baseline.json: the effective views each
+ * capability relies on, the implementation gaps against the code on main, and the note naming the
+ * case — none (future = current: this one set, no delta), new (the authored views are both future
+ * and delta) or partial (target views and a delta of the change alone). It is deterministic and
  * rewritten from the current survey each time; views a writer authored sit beside it. Returns
- * { draft: true } when the draft exists to review, { draft: false } when it could not be made (the
- * reviewers then read the canonical views), or { error }.
+ * { draft: true, change } when the draft exists to review, { draft: false } when it could not be
+ * made (the reviewers then read the canonical views), or { error }.
  */
 async function reviewTarget(label, phaseName) {
   const seeded = await depscore(`${label}:seed`, phaseName, `arch-target --seed --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(FORBID.join(','))}`)
@@ -1450,11 +1452,11 @@ async function reviewTarget(label, phaseName) {
   if (!seedOk) log(`${label}: the baseline handoff could not be seeded into the draft: ${(seeded && seeded.error) || listed(seeded && seeded.summary && seeded.summary.refusals).join('; ') || 'no result'}`)
   const check = await checkDraft(label, phaseName, subject)
   if (!check || check.error) return { error: `the draft could not be checked: ${(check && check.error) || 'no result'}` }
-  return { draft: seedOk || check.draftWritten === true, authored: check.draftWritten === true }
+  return { draft: seedOk || check.draftWritten === true, authored: check.draftWritten === true, change: (seedOk && seeded.summary.architectureChange) || '' }
 }
 /** The design a reviewer or the decider reads, as one prompt line. */
 const reviewedDesign = (draft) => draft
-  ? `THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the change alone in \`delta/\`). Its \`baseline.json\` is the baseline handoff written from the survey: each capability with the effective views it relies on (\`entries[].documents\`, cited by path) and \`implementationWork\`, the capabilities whose implementation is not built on \`main\`; \`delta/baseline.json\` is the same handoff as the delta, from which each implementation gap becomes a delta item. Views a writer authored sit beside it; where there are none, the target is the existing design in the canonical views it cites (${ARC42}) and the delta is the implementation gaps alone. Review the target and its delta as they stand. Read it; write nothing in it and nothing in ${archPath}.`
+  ? `THE DRAFT TARGET is ${DRAFT}. Its \`baseline.json\` is the baseline handoff written from the survey: each capability with the effective views it relies on (\`entries[].documents\`, cited by path), \`implementationWork\` (the capabilities whose implementation is not built on \`main\`: the build work, which is not architecture change), and \`architectureChange\` with its \`note\`. Review the documents the note names: \`none\` — no architecture change, so the one set is the current effective views it cites (${ARC42}) and there is no delta; \`new\` — the authored views in the arc42 section layout are both the future and the delta; \`partial\` — the authored target views and \`delta/\`, the change alone. Read it; write nothing in it and nothing in ${archPath}.`
   : `THE DESIGN UNDER REVIEW is the existing design: the draft could not be written, so review the canonical arc42 views in ${ARC42} (the effective version, with the owner's constraints in section 2) and the open targets in ${archPath}/target/, against the survey. Read them; write nothing in ${archPath}.`
 
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
@@ -1802,7 +1804,7 @@ Read all coverage rows and independent checks in ${LEDGER_JSON}; check completen
 
 The team has designed, challenged and settled this target in its rounds, led by the coordinator. You are not its lead: you approve its result, and you choose only where the team left competing solutions it could not settle.
 
-CHECK THAT THE DUE DILIGENCE IS PRESENT, item by item in \`diligence\`: every claim reviewed with evidence and every finding answered; the target shows every changed element at every scope where the effective version shows it; the delta shows the change; the owner's constraints in section 2 are honoured; the open targets that show the same elements were read and are not contradicted; a departure from an established pattern states its reason and evidence.
+CHECK THAT THE DUE DILIGENCE IS PRESENT, item by item in \`diligence\`: every claim reviewed with evidence and every finding answered; the target shows every changed element at every scope where the effective version shows it; the delta shows the change alone (an entirely new architecture has its target views as its delta, and no architecture change has one set and no delta, as the note in \`baseline.json\` says); the owner's constraints in section 2 are honoured; the open targets that show the same elements were read and are not contradicted; a departure from an established pattern states its reason and evidence.
 
 COMPETING SOLUTIONS: where findings stand disputed, or a reviewer's alternative was argued with evidence and not adopted, choose between them in \`choices\`: what was in dispute, the option you chose, and why, from the evidence in the artifacts and the product's priorities (the seeker's privacy and data protection first). A choice is part of an approval, not a reason to escalate.
 
@@ -2142,8 +2144,9 @@ const CLOSURE_SCHEMA = {
   },
 }
 /**
- * The Closure phase: walks from every item of the approved delta to the elements its work rests
- * on, and writes each one that is not built and current to delta/closure.json, which
+ * The Closure phase: walks from every build root (the delta's elements, the authored views of an
+ * entirely new architecture, and the future set's implementation gaps) to the elements its work
+ * rests on, and writes each one that is not built and current to target/<subject>/closure.json, which
  * depscore.py arch-delta merges as prerequisite items. Never skipped. Returns { closure } with
  * its counts, or { failure } with the result that stops the step.
  */
@@ -2175,7 +2178,7 @@ PRD: ${prdRef}
 
 ${ARCH_WHERE}
 
-THE ROOTS are the \`items\` of ${CLOSURE_ROOTS}: the approved delta of this PRD (target ${targetDir}, delta ${deltaDir}), one item per element, with its id.
+THE ROOTS are the \`items\` of ${CLOSURE_ROOTS}: the build roots of this PRD's approved target ${targetDir} (its \`architectureChange\` and \`note\` say whether a delta exists), one item per element, with its id: elements the delta (or an entirely new target) shows, and the implementation gaps between the future set and the code on \`main\`.
 WHAT EACH REPOSITORY DEPLOYS on \`main\`, from the polyrepo-steward, is ${CLOSURE_DEPLOYMENTS}.
 THE OPEN BEADS of every repository and Epic are in the central beads database (${DS.repo}); read them with \`atw-bd\`, read-only.${artifactBrief(candidate, CLOSURE_SCHEMA, rev)}`,
       { label: 'closure:walk', phase: 'Closure', agentType: 'prd-reality-reconciler', effort: 'medium', schema: ARTIFACT_RETURN_SCHEMA }
@@ -2207,7 +2210,10 @@ if (!targetSummary || target.error || targetSummary.ok !== true) {
 }
 const targetDir = targetSummary.targetDir
 const deltaDir = targetSummary.deltaDir
-log(`Target: ${targetSummary.files} view file(s) at ${targetDir}, ${targetSummary.deltaFiles} in its delta`)
+const architectureChange = hasText(targetSummary.architectureChange) ? targetSummary.architectureChange : 'partial'
+/** The delta folder when the target has one: a partial change. With none or an entirely new architecture there is no delta folder. */
+const deltaFolder = architectureChange === 'partial' ? deltaDir : ''
+log(`Target: ${targetSummary.files} file(s) at ${targetDir}; architecture change ${architectureChange}${deltaFolder ? `, ${targetSummary.deltaFiles} in its delta` : ', no delta folder'}`)
 
 // Approved existing views need only lifecycle publication; no author or maintainer is
 // dispatched when the validated assessment contains no design/documentation change and no
@@ -2261,7 +2267,7 @@ if (targetSummary.designChanged === false && targetSummary.documentationChanged 
     surveyPath: SURVEY_MD, decision, decisionPath: DECISION_MD,
     architectureUpdate: { changedFiles: approvalFiles.length, createdFiles: 0, deletedFiles: 0, constraintIssues: 0, contradictions: 0 },
     conformance: null, approval, vaultCommit, rounds: lastRound, retries, openItems: [],
-    noArchitectureChange: true, implementationWork: targetSummary.implementationWork,
+    noArchitectureChange: true, architectureChange, implementationWork: targetSummary.implementationWork,
     architectureUpdatePath: UPDATE_JSON, ledgerPath: LEDGER_JSON,
   }
 }
@@ -2271,12 +2277,12 @@ phase('Integrate')
 const integrationMarked = await markRevision('integrating', 'Integrate')
 if (integrationMarked) return { ...integrationMarked, decision, subject, targetDir, deltaDir }
 const SECTION_2_RULE = `Write nothing under ${CONSTRAINTS}: section 2 holds the owner's constraints, and only the owner changes them; the run fails on any change there. A constraint you believe should change goes in \`constraintIssues\`, with the constraint, the conflicting content and the reason.`
-const INTEGRATE_TASK = `Architecture root: ${archPath}\nMODEL: ${MODEL}\nMENU: ${MENU}\n\nIntegrate the approved target at ${targetDir} (the change alone is in ${deltaDir}) into the effective version, the folder ${ARC42}, as the architecture documentation model's step 5 describes. For each element the delta adds, changes or removes, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update or delete each one; add the target's new views in the section folder the model names, named for their subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${targetDir} as it is: later phases read its delta.
+const INTEGRATE_TASK = `Architecture root: ${archPath}\nMODEL: ${MODEL}\nMENU: ${MENU}\n\nIntegrate the approved target at ${targetDir} (${deltaFolder ? `the change alone is in ${deltaFolder}` : 'an entirely new architecture: its target views are also its delta, and there is no delta folder'}) into the effective version, the folder ${ARC42}, as the architecture documentation model's step 5 describes. For each element the delta (or, with no delta folder, the target) adds, changes or removes, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update or delete each one; add the target's new views in the section folder the model names, named for their subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${targetDir} as it is: later phases read it.
 ${SECTION_2_RULE}
 Read approved coverage rows/checks in ${LEDGER_JSON} and approval ${DECISION_JSON}. Apply every approved coverage action, including absent/new views and affected navigation; do not invent unapproved design. For independently excluded unrelated-debt rows record only the unchanged disposition; never repair their absent views. Record each row id in viewsChecked.element with its view/action, using unaffected for justified unchanged/not-applicable rows and view="" for a not-applicable or independently excluded unrelated-debt obligation without an existing path (never invent a view).
 
 The result names every file you changed, created or deleted as an absolute path under ${ARC42}, every view the catalog listed for a changed element and what you did to it, and every contradiction with another effective view or open target.`
-const integrationRevision = await sourceRevision('integrate:inputs', 'Integrate', [targetDir, deltaDir, DECISION_JSON, SURVEY_JSON, prd.path], { schema: MAINTAIN_SCHEMA, coverageRevision: decision.coverageRevision })
+const integrationRevision = await sourceRevision('integrate:inputs', 'Integrate', [targetDir, deltaFolder, DECISION_JSON, SURVEY_JSON, prd.path], { schema: MAINTAIN_SCHEMA, coverageRevision: decision.coverageRevision })
 if (!integrationRevision) return { ok: false, stage: 'integrate-inputs', ...died('Integrate') }
 const updateCandidate = `${WORK}/candidates/${integrationRevision}.json`
 const updateBrief = artifactBrief(updateCandidate, MAINTAIN_SCHEMA, integrationRevision)
@@ -2380,14 +2386,14 @@ async function review(again) {
   }
   integrationCoverageRevision = current.integration.coverageRevision
   integrationCoverageRows = coverageRowsOf(current)
-  const reviewRevision = await sourceRevision(`integrate:review-${reviewPass}:inputs`, 'Integrate', [archPath, targetDir, deltaDir, UPDATE_JSON, FILES_JSON, DECISION_JSON], { reviewPass, again, schema: CONFORMANCE_SCHEMA })
+  const reviewRevision = await sourceRevision(`integrate:review-${reviewPass}:inputs`, 'Integrate', [archPath, targetDir, deltaFolder, UPDATE_JSON, FILES_JSON, DECISION_JSON], { reviewPass, again, schema: CONFORMANCE_SCHEMA })
   if (!reviewRevision) return null
   const prior = await probeArtifact(`integrate:review-${reviewPass}`, 'Integrate', reviewCandidate, reviewFile, CONFORMANCE_SCHEMA, reviewRevision)
   if (!prior) return null
   const got = prior.pending ? await run(
     `You are the architecture-conformance-reviewer. Check one integration of an approved target into the effective version; report findings and fix nothing.
 
-THE APPROVED TARGET: ${targetDir} (the change alone in ${deltaDir}).
+THE APPROVED TARGET: ${targetDir} (${deltaFolder ? `the change alone in ${deltaFolder}` : 'an entirely new architecture: its target views are also its delta, with no delta folder'}).
 THE INTEGRATION REPORT: ${UPDATE_JSON}. The ${update.touched} file(s) it changed or created, every one of which you review, are the \`touched\` list in ${FILES_JSON}; the ${update.deleted} it deleted are its \`deleted\` list.
 ${againBlock}
 ${ARCH_WHERE}
@@ -2507,6 +2513,7 @@ return {
   subjectName,
   targetDir,
   deltaDir,
+  architectureChange,
   closure: closed.closure,
   targetPath: TARGET_JSON,
   surveyPath: SURVEY_MD,

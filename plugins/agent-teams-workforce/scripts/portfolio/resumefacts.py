@@ -66,7 +66,13 @@ def saved_target(art_dir: Path) -> dict:
         "integratedFiles": _count(report, "changedFiles")
         + _count(report, "createdFiles"),
         "closureSaved": bool(summary.get("deltaDir"))
-        and (Path(str(summary.get("deltaDir"))) / "closure.json").is_file(),
+        and any(
+            (folder / "closure.json").is_file()
+            for folder in (
+                Path(str(summary.get("deltaDir"))).parent,
+                Path(str(summary.get("deltaDir"))),
+            )
+        ),
     }
 
 

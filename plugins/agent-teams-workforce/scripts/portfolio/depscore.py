@@ -49,16 +49,20 @@
                          the folder name is derived from the subject (lower-case, hyphens:
                          `Company Intelligence` is `company-intelligence`) and returned as
                          `subject`, the subject as given as `subjectName`; no `bd` call
-    arch-delta           list the elements a target's delta shows, one item per element with
-                         the delta views that show it, numbered D1, D2 ... in element-name
-                         order, then one `prerequisite` item per entry of the delta's
-                         `closure.json`, every item with the ids it `requires`;
+    arch-delta           list a written target's build items: the elements its delta shows
+                         (an entirely new target's views are its delta; no architecture
+                         change has no delta), numbered D1, D2 ... in element-name order, then
+                         the future set's implementation gaps, then one `prerequisite` item
+                         per entry of the target's `closure.json`, every item with the ids it
+                         `requires`; `--delta-dir` is the target's delta/ path, which exists
+                         only for a partial change;
                          `--roots-only` leaves the closure out, `--save FILE` also writes the
                          listing to FILE; no `bd` call
     arch-closure         check the prerequisite closure the architecture step's Closure phase
                          saved (every element the delta's work rests on that is not built and
-                         current) against the delta's items and the open beads, and write it
-                         to the delta as `closure.json`; reads beads, writes none
+                         current) against the target's build items and the open beads, and
+                         write it beside the target's baseline as `closure.json`; reads beads,
+                         writes none
     arch-target-names    tell which names an approved target's files mention as whole words;
                          no `bd` call
     arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
@@ -1045,8 +1049,9 @@ def build_parser() -> argparse.ArgumentParser:
     atg.add_argument(
         "--seed",
         action="store_true",
-        help="write only the baseline handoff (baseline.json, delta/baseline.json) from "
-        "--baseline into the draft, so a review always has a target and a delta",
+        help="write only the baseline handoff (baseline.json, with the note naming the "
+        "architecture change: none, new or partial) from --baseline into the draft, so "
+        "every review has the documents it reviews",
     )
     _dry_run_flag(atg)
 
@@ -1079,7 +1084,7 @@ def build_parser() -> argparse.ArgumentParser:
     adl.add_argument(
         "--roots-only",
         action="store_true",
-        help="list the delta's own items, without the prerequisites its closure.json adds",
+        help="list the root items alone, without the prerequisites closure.json adds",
     )
     adl.add_argument(
         "--save",
@@ -1091,7 +1096,7 @@ def build_parser() -> argparse.ArgumentParser:
     acl = sub.add_parser(
         "arch-closure",
         help="check a prerequisite closure against the delta and the open beads and write "
-        "it to the delta as closure.json; reads beads, writes no bead",
+        "it beside the target's baseline as closure.json; reads beads, writes no bead",
         parents=[common],
     )
     acl.add_argument(

@@ -719,8 +719,8 @@ if (!archPath.startsWith('/')) {
 
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const target = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
-if (!target || !hasText(target.targetDir) || !hasText(target.deltaDir)) {
-  const why = 'no approved target and delta supplied — architecture.targetDir and architecture.deltaDir name the views the TRD states obligations on.'
+if (!target || !hasText(target.targetDir)) {
+  const why = 'no approved target supplied — architecture.targetDir (with architecture.deltaDir when the target has a delta) names the views the TRD states obligations on.'
   return dispatchOutcome({ ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why })
 }
 
@@ -729,11 +729,24 @@ const died = (...phases) => {
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
 }
 
+/**
+ * The approved target's documents as a prompt sentence. The documents are deduplicated: a partial
+ * change has target views and a delta folder of the change alone; an entirely new architecture has
+ * target views that are also its delta; no architecture change has one set, the effective views the
+ * target's baseline.json cites, and no delta. Build items then come from the future set's gaps
+ * against the code on main, never from an architecture delta.
+ */
+const targetDocs = (t) => {
+  const change = t && hasText(t.architectureChange) ? t.architectureChange : hasText(t && t.deltaDir) ? 'partial' : 'none'
+  if (change === 'partial' && hasText(t.deltaDir)) return `THIS PRD'S APPROVED TARGET is ${t.targetDir}, and the change alone, its delta, is ${t.deltaDir}.`
+  if (change === 'new') return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: an entirely new architecture, with no current set, so its target views are both the future and the delta (there is no delta folder). Its baseline.json lists the implementation gaps against the code on \`main\`.`
+  return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: no architecture change, so current and future are the same and there is no delta. The future set is the effective views its baseline.json cites (\`entries[].documents\`); the build work is the gaps between those views and the code on \`main\` (\`implementationWork\` in baseline.json, and the prerequisites in closure.json beside it).`
+}
 const archText = `THE ARCHITECTURE is at ${archPath}. It is not inside the product repository ${repo}. Its \`arc42/\` folder is the effective version (the approved architecture), its \`target/\` folder holds the targets in progress, and the architecture documentation model in its \`reference/\` folder says what each version and section holds.
 - \`arc42/02-architecture-constraints\` holds the owner's constraints. Read its README.md in full.
 - \`arc42/04-solution-strategy\` holds the enterprise-level strategy. Read its README.md.
 - Every other arc42 section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog.
-- THIS PRD'S APPROVED TARGET is ${target.targetDir}, and the change alone, its delta, is ${target.deltaDir}. Read every delta view in full, and the target views that show the elements the delta adds or changes. For each such element, find its effective views by searching the catalog frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them. The views in \`arc42/08-crosscutting-concepts\` describe patterns used across services; read every one whose concept applies to an element the delta adds or changes.
+- ${targetDocs(target)} Read every delta view in full (with no delta folder: every target view of an entirely new architecture, or, with no architecture change, the effective views its baseline.json cites for the capabilities with implementation gaps), and the target views that show the elements the delta adds or changes. For each such element, find its effective views by searching the catalog frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them. The views in \`arc42/08-crosscutting-concepts\` describe patterns used across services; read every one whose concept applies to an element the delta adds or changes.
 - When a relevant architecture view selects a scoped UI design/mock or hand-off package, follow that reference and preserve its identity and scope in the applicable TRD obligation with the architecture citation. Do not substitute a newer unrelated mock or promote other advisory mocks to requirements. Report missing or conflicting references in your summary; do not invent package paths. Consumed by: spec-authoring — carries the applicable design obligation into the implementation contract.
 - Other open targets in \`target/\` that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
 const prdText = prdContent

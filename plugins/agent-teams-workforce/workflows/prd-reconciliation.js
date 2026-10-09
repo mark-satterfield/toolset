@@ -710,9 +710,22 @@ const depscorePath = hasText(a.depscore) && a.depscore.trim().startsWith('/') ? 
 const replayFile = a.replay && a.replay.files && a.replay.files.recon
 const replayPath = typeof replayFile === 'string' && replayFile.startsWith('/') ? replayFile : null
 
+/**
+ * The approved target's documents as a prompt sentence. The documents are deduplicated: a partial
+ * change has target views and a delta folder of the change alone; an entirely new architecture has
+ * target views that are also its delta; no architecture change has one set, the effective views the
+ * target's baseline.json cites, and no delta. Build items then come from the future set's gaps
+ * against the code on main, never from an architecture delta.
+ */
+const targetDocs = (t) => {
+  const change = t && hasText(t.architectureChange) ? t.architectureChange : hasText(t && t.deltaDir) ? 'partial' : 'none'
+  if (change === 'partial' && hasText(t.deltaDir)) return `THIS PRD'S APPROVED TARGET is ${t.targetDir}, and the change alone, its delta, is ${t.deltaDir}.`
+  if (change === 'new') return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: an entirely new architecture, with no current set, so its target views are both the future and the delta (there is no delta folder). Its baseline.json lists the implementation gaps against the code on \`main\`.`
+  return `THIS PRD'S APPROVED TARGET is ${t.targetDir}: no architecture change, so current and future are the same and there is no delta. The future set is the effective views its baseline.json cites (\`entries[].documents\`); the build work is the gaps between those views and the code on \`main\` (\`implementationWork\` in baseline.json, and the prerequisites in closure.json beside it).`
+}
 const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true, headline: `Detailing refused its input: ${why}`, reason: why, error: why })
 if (repos.length !== 1) return dispatchOutcome(refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`))
-if (!hasText(delta.deltaDir)) return dispatchOutcome(refuse('no delta supplied: delta.deltaDir names the views the items come from'))
+if (!hasText(delta.targetDir) && !hasText(delta.deltaDir)) return dispatchOutcome(refuse('no approved target supplied: delta.targetDir names the documents the items come from'))
 if (!placed.length) return dispatchOutcome(refuse(`no delta item is placed in ${repos[0]}`))
 if (!reconPath) return dispatchOutcome(refuse(`no artifact directory and slug were supplied for ${repos[0]}: the detailing exists only as recon-<slug>.json in the Epic's artifact directory, which the sessions downstream read by path`))
 if (!depscorePath) return dispatchOutcome(refuse('no absolute depscore.py path was supplied in `depscore`: depscore.py recon-facts reads the saved detailing'))
@@ -835,7 +848,7 @@ THE REPOSITORY — this run is scoped to it, and only it:
   ${repos[0]}
 Read its code as committed on \`main\` (\`git -C <repo> grep -n <term> main\`, \`git -C <repo> show main:<path>\`). Do not survey other repositories.
 
-THE APPROVED TARGET is ${delta.targetDir || '(the folder above the delta)'}, and the change alone, its delta, is ${delta.deltaDir}. What the delta views say about an element is what it becomes; read the target views where a delta view needs their context.
+${targetDocs({ ...delta, targetDir: delta.targetDir || '(the folder above the delta)' })} What the delta views (or the views an item cites) say about an element is what it becomes; read the target views where a delta view needs their context.
 
 THE ITEMS PLACED IN THIS REPOSITORY (each one element the delta shows):
 ${itemLines}

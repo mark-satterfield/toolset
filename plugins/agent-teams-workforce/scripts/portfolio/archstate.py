@@ -52,9 +52,25 @@ EFFECTIVE_FOLDER = "arc42"
 CONSTRAINTS_FOLDER = "02-architecture-constraints"
 TARGET_FOLDER = "target"
 DELTA_FOLDER = "delta"
-# The baseline handoff the seed writes into a draft: the target cites the effective views each
-# capability relies on, and the delta lists the implementation gaps.
-SEED_FILES = ("baseline.json", f"{DELTA_FOLDER}/baseline.json")
+# The baseline handoff: the effective views each capability relies on and the implementation
+# gaps between the future set and the code on `main`. It belongs to the future set, never to the
+# delta; `delta/baseline.json` is read only from targets written before that rule.
+BASELINE_FILE = "baseline.json"
+SEED_FILES = (BASELINE_FILE, f"{DELTA_FOLDER}/{BASELINE_FILE}")
+# How the documents are deduplicated: `none` (future = current, one set, no delta), `new` (no
+# current, one set that is both the future and the delta), `partial` (the future set and a delta
+# of the change alone).
+CHANGE_NOTES = {
+    "none": "No architecture change: current and future are the same. The future set is the "
+    "effective views cited in `entries[].documents`; there is no delta. Build work is "
+    "`implementationWork`, the gaps between these views and the code on `main`.",
+    "new": "Entirely new architecture: there is no current set. The target views are both the "
+    "future and the delta; there is no separate delta folder. Build work is the elements those "
+    "views show plus `implementationWork`.",
+    "partial": "Partial change: the target views are the future set, and `delta/` holds the "
+    "change alone. Build work is the elements the delta shows plus `implementationWork`, the "
+    "gaps between the future set and the code on `main`.",
+}
 BUILT_FOLDER = "built"
 CATALOG_KEYS = ("view_type", "scope", "subject", "shows")
 SUBJECT_SEPARATOR = re.compile(r"[^a-z0-9]+")
@@ -596,22 +612,83 @@ def _catalog_gaps(path: Path) -> list[str]:
     return [key for key in CATALOG_KEYS if key not in present]
 
 
-def _draft_refusals(draft: Path, files: list[Path]) -> list[str]:
+def _effective_elements(root: Path) -> set[str]:
+    """Name every element a canonical arc42 view shows: the current set.
+
+    Args:
+        root: The architecture directory holding `arc42/`.
+
+    Returns:
+        The element names, case-folded.
+    """
+    arc42 = root / "arc42"
+    if not arc42.is_dir():
+        return set()
+    return {
+        element.casefold()
+        for view in arc42.rglob("*.md")
+        if CONSTRAINTS_FOLDER not in view.relative_to(arc42).parts
+        for element in _catalog(view)["shows"]
+    }
+
+
+def _change_kind(draft: Path, files: list[Path]) -> str:
+    """Tell how a draft's views deduplicate: `none`, `new` or `partial` (see CHANGE_NOTES).
+
+    Args:
+        draft: The draft directory.
+        files: Its authored files.
+
+    Returns:
+        `none` with no authored view, `partial` with a `delta/` view, else `new`.
+    """
+    rels = [p.relative_to(draft) for p in files if p.suffix == ".md"]
+    if not rels:
+        return "none"
+    if any(r.parts and r.parts[0] == DELTA_FOLDER for r in rels):
+        return "partial"
+    return "new"
+
+
+def _draft_refusals(draft: Path, files: list[Path], current: set[str]) -> list[str]:
     """Name every reason a draft cannot become a target.
+
+    A draft with no `delta/` view is an entirely new architecture, whose target views are
+    also its delta; it is refused when a view shows an element the current set shows, since a
+    change to an existing element needs a delta of the change alone.
 
     Args:
         draft: The draft directory.
         files: Its files.
+        current: The elements the effective views show, case-folded.
 
     Returns:
         The reasons; empty when the draft can be written.
     """
     reasons = []
     rels = [p.relative_to(draft) for p in files]
-    if not any(r.parts and r.parts[0] == DELTA_FOLDER for r in rels):
+    kind = _change_kind(draft, files)
+    if kind == "none":
         reasons.append(
-            f"the draft has no {DELTA_FOLDER}/ views: the delta is what Specs and Tasks read"
+            "the draft has no views: the design or documentation work the assessment "
+            "names has not been authored"
         )
+    elif kind == "new":
+        existing = sorted(
+            {
+                element
+                for path in files
+                if path.suffix == ".md"
+                for element in _catalog(path)["shows"]
+                if element.casefold() in current
+            }
+        )
+        if existing:
+            reasons.append(
+                f"the draft has no {DELTA_FOLDER}/ views, yet it shows elements the "
+                f"effective version already shows ({', '.join(existing)}): a change to an "
+                f"existing element needs a {DELTA_FOLDER}/ of the change alone"
+            )
     reasons.extend(
         f"{r.as_posix()} is in section 2, which holds the owner's constraints"
         for r in rels
@@ -713,28 +790,41 @@ def write_target(
             baseline_refusals = [f"baseline unreadable or invalid: {exc}"]
     if seed:
         if manifest is None:
-            reasons = baseline_refusals or ["no baseline was given to seed the draft from"]
+            reasons = baseline_refusals or [
+                "no baseline was given to seed the draft from"
+            ]
             return {
                 "ok": False,
                 "refusals": reasons,
                 "seeded": [],
                 "summary": {"ok": False, "refusals": reasons, "seeded": 0},
             }
-        content = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-        seeded = []
-        for rel in SEED_FILES:
-            out = source / rel
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(content, encoding="utf-8")
-            seeded.append(str(out))
+        authored_now = (
+            [
+                p
+                for p in _draft_files(source)
+                if p.relative_to(source).as_posix() not in SEED_FILES
+            ]
+            if source.is_dir()
+            else []
+        )
+        kind = _change_kind(source, authored_now)
+        noted = {**manifest, "architectureChange": kind, "note": CHANGE_NOTES[kind]}
+        out = source / BASELINE_FILE
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(noted, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return {
             "ok": True,
             "refusals": [],
-            "seeded": seeded,
+            "seeded": [str(out)],
+            "architectureChange": kind,
             "summary": {
                 "ok": True,
                 "refusals": [],
-                "seeded": len(seeded),
+                "seeded": 1,
+                "architectureChange": kind,
                 "implementationWork": len(manifest["implementationWork"]),
             },
         }
@@ -757,8 +847,9 @@ def write_target(
         and not draft_written
     )
     files = [] if no_author else authored
+    change = _change_kind(source, files)
     draft_refusals = (
-        _draft_refusals(source, files)
+        _draft_refusals(source, files, _effective_elements(root))
         if source.is_dir()
         else [f"the draft {source} is not a directory"]
     )
@@ -784,6 +875,8 @@ def write_target(
         "deltaFiles": [str(dest / p.relative_to(source)) for p in delta],
         "dryRun": dry_run,
         "draftWritten": draft_written,
+        "architectureChange": change,
+        "note": CHANGE_NOTES[change],
     }
     if manifest:
         report.update(
@@ -794,11 +887,7 @@ def write_target(
                 "approvalFiles": manifest["approvalFiles"],
             }
         )
-        report["files"] += [
-            str(dest / "baseline.json"),
-            str(dest / DELTA_FOLDER / "baseline.json"),
-        ]
-        report["deltaFiles"].append(str(dest / DELTA_FOLDER / "baseline.json"))
+        report["files"].append(str(dest / BASELINE_FILE))
     # The summary carries what a caller acts on, because `--out` prints only the summary.
     report["summary"] = {
         key: report[key]
@@ -812,6 +901,7 @@ def write_target(
             "deltaDir",
             "dryRun",
             "draftWritten",
+            "architectureChange",
         )
     } | {"files": len(report["files"]), "deltaFiles": len(report["deltaFiles"])}
     if manifest:
@@ -839,10 +929,11 @@ def write_target(
         else:
             shutil.copyfile(path, out)
     if manifest:
-        (dest / DELTA_FOLDER).mkdir(parents=True, exist_ok=True)
-        content = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-        (dest / "baseline.json").write_text(content, encoding="utf-8")
-        (dest / DELTA_FOLDER / "baseline.json").write_text(content, encoding="utf-8")
+        dest.mkdir(parents=True, exist_ok=True)
+        noted = {**manifest, "architectureChange": change, "note": CHANGE_NOTES[change]}
+        (dest / BASELINE_FILE).write_text(
+            json.dumps(noted, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     return report
 
 
@@ -942,33 +1033,72 @@ def target_names(target_dir: str, names: list[str]) -> dict:
     }
 
 
-def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
-    """List the elements a target's delta shows, one item per element.
-
-    An item is one element named in the `shows` frontmatter of a delta view, with every
-    delta view that shows it. Items are numbered `D1`, `D2` ... in element-name order, so
-    the same delta always yields the same ids. The baseline's implementation gaps follow,
-    then, when the delta holds a checked `closure.json`, one `prerequisite` item per element
-    the delta's work rests on that is not built and current; every item then carries
-    `requires`, the ids of the items it needs built first. Runs no `bd` command and writes
-    nothing.
+def _change_of(baseline_file: Path, delta_root: Path) -> str:
+    """Read how a written target deduplicates its documents (see CHANGE_NOTES).
 
     Args:
-        delta_dir: The `target/<subject>/delta/` directory.
-        with_closure: Merge the delta's `closure.json`; False lists the root items alone.
+        baseline_file: The target's baseline handoff.
+        delta_root: The `delta/` folder beside it.
 
     Returns:
-        `ok`, the refusals, the delta views, and the items.
+        The recorded `architectureChange`; a target written before it was recorded is
+        `partial` when it has a `delta/` folder and `none` otherwise.
+    """
+    try:
+        recorded = json.loads(baseline_file.read_text(encoding="utf-8")).get(
+            "architectureChange"
+        )
+    except (OSError, ValueError, AttributeError):
+        recorded = None
+    if recorded in CHANGE_NOTES:
+        return recorded
+    return "partial" if delta_root.is_dir() else "none"
+
+
+def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:  # noqa: C901, PLR0912, PLR0915 - one listing, read top to bottom
+    """List the build items of a written target, one item per element.
+
+    The documents deduplicate as CHANGE_NOTES describes. With a partial change an item is one
+    element named in the `shows` frontmatter of a `delta/` view; with an entirely new
+    architecture the target views are the delta, so their elements are the items; with no
+    architecture change there is no delta and no view item. Items are numbered `D1`, `D2` ...
+    in element-name order, so the same target always yields the same ids. The implementation
+    gaps of the baseline handoff (the future set against the code on `main`) follow, then,
+    when the target holds a checked `closure.json`, one `prerequisite` item per element the
+    work rests on that is not built and current; every item then carries `requires`, the ids
+    of the items it needs built first. Runs no `bd` command and writes nothing.
+
+    Args:
+        delta_dir: The `target/<subject>/delta/` path; the folder exists only for a partial
+            change.
+        with_closure: Merge the target's `closure.json`; False lists the root items alone.
+
+    Returns:
+        `ok`, the refusals, `architectureChange` and its note, the views, and the items.
     """
     root = Path(delta_dir).resolve()
-    if root.name != DELTA_FOLDER or not root.is_dir():
-        none = [f"{root} is not a {DELTA_FOLDER}/ directory"]
+    target = root.parent
+    if root.name != DELTA_FOLDER or not target.is_dir():
+        none = [f"{root} is not the {DELTA_FOLDER}/ path of a written target"]
         return {
             "ok": False,
             "refusals": none,
             "summary": {"ok": False, "refusals": none},
         }
-    views = [p for p in _draft_files(root) if p.suffix == ".md"]
+    baseline_file = target / BASELINE_FILE
+    if not baseline_file.is_file():
+        baseline_file = root / BASELINE_FILE
+    change = _change_of(baseline_file, root)
+    if root.is_dir():
+        views = [p for p in _draft_files(root) if p.suffix == ".md"]
+    elif change == "new":
+        views = [
+            p
+            for p in _draft_files(target)
+            if p.suffix == ".md" and p.relative_to(target).parts[0] != DELTA_FOLDER
+        ]
+    else:
+        views = []
     shown: dict[str, list[str]] = {}
     listed = []
     refusals = []
@@ -980,7 +1110,6 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
         for element in cat["shows"]:
             shown.setdefault(element, []).append(str(view))
     manifest = None
-    baseline_file = root / "baseline.json"
     if baseline_file.is_file():
         try:
             manifest = json.loads(baseline_file.read_text(encoding="utf-8"))
@@ -1010,7 +1139,7 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
         not manifest or manifest["designChanged"] or manifest["documentationChanged"]
     ):
         refusals.append(
-            f"{root} holds no required view or validated unchanged baseline handoff"
+            f"{target} holds no required view or validated unchanged baseline handoff"
         )
     items = [
         {"id": f"D{n}", "element": element, "views": shown[element]}
@@ -1059,6 +1188,10 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
         "ok": not refusals,
         "refusals": refusals,
         "deltaDir": str(root),
+        "deltaExists": root.is_dir(),
+        "targetDir": str(target),
+        "architectureChange": change,
+        "note": CHANGE_NOTES[change],
         "views": listed,
         "items": items,
         **baseline_summary,
@@ -1067,6 +1200,8 @@ def delta_items(delta_dir: str, *, with_closure: bool = True) -> dict:
             "refusals": refusals,
             "views": len(listed),
             "items": len(items),
+            "architectureChange": change,
+            "deltaExists": root.is_dir(),
             **baseline_summary,
         },
     }
