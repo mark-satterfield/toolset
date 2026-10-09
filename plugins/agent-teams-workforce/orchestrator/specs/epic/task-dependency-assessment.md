@@ -1,5 +1,13 @@
 # Net-effect spec: `task-dependency-assessment`
 
+**Status: to be deleted in S08; not rewritten.** It assesses a Task created outside elaboration,
+and no such Task legitimately exists: every Task is created by elaboration under a Story of an
+Epic (CONTEXT 7.16; the owner's answers 7 and 8 of 2026-10-09). Elaboration sets every Task's
+edges itself (`task-decomposition.md`, `prd-to-spec.md` steps 11 to 13). S08 deletes
+`task-dependency-assessment.js` unconditionally (PLAN S08), together with the
+`task-dependency-mapper`'s second assignment and `assess-plan --level task` / `assess-context
+--task` when nothing else uses them. This file stays only as the record of what is deleted.
+
 Source: `<plugin>/workflows/task-dependency-assessment.js` (`meta.description`), the agent
 `<plugin>/agents/task-dependency-mapper.md`, `<plugin>/skills/beads-contract/SKILL.md` (sequencing
 and Story-edge keys), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
@@ -12,7 +20,7 @@ and Story-edge keys), `<plugin>/workflows/README.md` (Portfolio section), and, f
 ## Who calls it (the S01f question)
 
 - **The Epic pipeline does not call this flow.** Tasks written by elaboration carry `elab_key`
-  and get their `blocks` edges from elaboration (`depscore.py write-task-edges` within a Story,
+  and get their `blocks` edges from elaboration (`depscore.py write-task` within a Story,
   `write-all-task-edges` across Stories; see `<orch>/specs/epic/task-decomposition.md` and
   `<orch>/specs/epic/prd-to-spec.md`). `prd-to-spec` does dispatch the same agent,
   `task-dependency-mapper`, but in its other assignment (edges between Tasks of different Stories
@@ -23,7 +31,7 @@ and Story-edge keys), `<plugin>/workflows/README.md` (Portfolio section), and, f
 - **No plugin command calls it.** There is no `commands/task-dependency-assessment.md`; the only
   references are `workflows/README.md`, `skills/beads-contract/SKILL.md`,
   `scripts/shared-blocks.mjs` and `<driver>/runcost.py` (`FORMER_TRIGGER_COMPOSITES`). Today it is
-  reachable only by calling the Workflow tool by name. See Open question 1.
+  reachable only by calling the Workflow tool by name.
 
 ## 1. Purpose
 
@@ -165,7 +173,7 @@ Agents dispatched by the JavaScript, accounted for:
 
 **Checks the intent requires that the code does not enforce**
 - Re-adding a withdrawn edge without `answers` (`readdsWithdrawn`) is reported but not part of
-  `ok` (Open question 1 of `<orch>/specs/epic/dependency-assessment.md`).
+  `ok` (an open item in QUESTIONS.md).
 
 **Checks dropped**
 - `resolveArgs` / `refuseArgs`, `artifactRevision`, `authorArtifact`, relay `noResult`, and
@@ -190,10 +198,12 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
   `context.json` and the corpus and index files; unchanged recorded inputs start no session.
 - Step 8: idempotent. Step 9: idempotent (writes only changed Story edges and keys). Step 10:
   resumes as `wsjf-scoring` does.
-- A stable `workDir` is needed: merged question Q8 in `wsjf-scoring.md`.
+- A stable `workDir` is needed: an open item in QUESTIONS.md.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
+- 7.16 Hierarchy and sources of work: every Task is created by elaboration, so this flow has no
+  input to assess; it is deleted in S08 and not rewritten.
 - 7.8 "Tasks with no WSJF score are never considered": via step 10. A Task created outside
   elaboration under no Epic, or under an unscored Epic, gets no `wsjf` and so is never selected by
   `selection.build_candidates`; this flow does not work around that.
@@ -202,16 +212,6 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
 - 7.4 Retries, 7.9 who gets asked, 7.11, 7.14, 7.2: as in the Epic spec.
 - 7.5 (Task rerun rule) does not apply: this flow never creates or deletes a Task.
 
-## 10. Open questions
+## 10. Open items
 
-1. **[owner] Keep or delete this flow.** It has no caller: no plugin command, no driver trigger,
-   and the Epic pipeline writes its own Tasks' edges. The commit that removed the triggers says
-   Tasks come only from `prd-to-spec`. If the owner never creates Tasks by hand, the flow (and the
-   `task-dependency-mapper`'s second assignment, and `assess-plan --level task` /
-   `assess-context --task`) can go; if the owner does, it needs a command. S08 or S15 acts on the
-   answer.
-2. **[owner] Orphan Tasks are never scored.** A Task with no Epic has no value to inherit and so
-   never gets a `wsjf`, which keeps it out of the build lane even after this flow gives it edges.
-   Is that intended, or should such a Task be refused at step 1?
-- The `task-dependency-mapper`'s `fable` model: merged question Q1 in `driver-contract.md`.
-- A stable work directory: merged question Q8 in `wsjf-scoring.md`.
+See QUESTIONS.md

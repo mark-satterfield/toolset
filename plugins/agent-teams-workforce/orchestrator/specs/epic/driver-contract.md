@@ -4,15 +4,15 @@ Step S01g. What the driver at `<control>/ops/sdlc-automation` (`<driver>`) sends
 dispatch, what it reads back, which ledger events and phase names its readers depend on, and how it
 attributes cost to a run. Extracted from the driver's Python on 2026-10-09; code comments were not
 used. Everything here describes **today's** contract, which the Python orchestrator must either honour
-or replace in S05 (open questions at the end).
+or replace in S05 (open items: QUESTIONS.md).
 
 Paths below are relative to `<driver>` unless absolute.
 
 This file is a boundary contract, not a workflow spec (PLAN S01g names it apart from the workflow
 specs), so it does not use the ten S01 template headings. It carries the template's last two
-(owner rules, open questions) as §9 and §10, and §8 holds the session-runner rules every Epic flow
-cites. It is also the home of the open questions shared by every Epic flow (the session runner,
-`bd` writes, resume records), so each is asked once.
+(requirements that apply, open items) as §9 and §10, and §8 holds the session-runner rules every
+Epic flow cites. Open items, including those shared by every Epic flow, live only in
+`QUESTIONS.md`.
 
 ## 1. Purpose
 
@@ -245,10 +245,9 @@ Facts, for S02 and S05 to decide on:
   wall and its reset time, `handbackio._died_of_outage` and `step_defect_origin` match output and
   `dispatchFailures` message text, and `headless._resume_unavailable` matches headline phrases.
   CONTEXT 7.4 says causes are never classified by matching error text.
-- `observe.py` shows an Epic "Done" only with state `done`, a TRD, a Story and a Task. An Epic
-  correctly done with nothing to build (an empty span, or a span repository with no work items)
-  is shown as not done. Once S02 defines the one "nothing to build" record (`prd-to-spec.md` Open
-  question 4), S05 makes `observe.py`'s Done rule accept it (CONTEXT 7.6, 7.12).
+- `observe.py` shows an Epic "Done" only with state `done`, a TRD, a Story and a Task. That rule
+  stays as it is: every Epic that reaches elaboration gets Stories and Tasks (CONTEXT 7.6), so no
+  "nothing to build" record exists for it to accept.
 
 ## 8. Session-runner rules every Epic flow cites
 
@@ -278,7 +277,14 @@ as recorded. The one exception is the architecture survey's existing seal
 (`survey.json.baseline-inputs.json`, CONTEXT 7.13). The driver's `artifactio.plan` already reads
 `.meta.json`, so this is the format; each flow's own spec is the single source of its input list.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
+
+- **7.18 Entry point.** The owner starts the pipeline only with `python3
+  ops/sdlc-automation/keeper.py`; the elaboration lane is the only door into `prd-to-spec`. No
+  plugin command (`/start-prd`, `/work-bead`) dispatches it; S08 deletes both.
+- **7.6 and 7.17 at the boundary.** The lane's "Elaboration done" read (`elaboration_state=done`)
+  now means Stories, Tasks, Task edges and Task WSJF scores all exist; the Epic's own WSJF is not
+  rewritten by elaboration.
 
 - **7.12 Dashboard truth.** "Running" only from a live lease and a verified session process. Today
   one Epic run is one host session, whose process and lease the driver verifies. A Python Epic run
@@ -287,96 +293,22 @@ as recorded. The one exception is the architecture survey's existing seal
   shown running only while that lease is live and that process is verified; an agent step is shown
   running only while its session's process is verified. A phase or step name shown comes only from
   an event the run wrote (no inferred phases), and no counter is shown that the records cannot
-  compute (no "Tasks built" style totals). How the run unit is recorded is Open question 1.
+  compute (no "Tasks built" style totals). How the run unit is recorded is an open item in
+  QUESTIONS.md.
 - **7.4 Structured causes.** The text-based classifications listed in §7 (`breaker.pause_of`,
   `handbackio._died_of_outage`, `step_defect_origin`, `headless._resume_unavailable`) do not carry
   into the Python run: the runner sets `api`, `quota`, `bd-timeout`, `contention`, `other` from the
   session's structured result (exit status, stream events), exception types and script JSON
-  fields. Open question 3 and merged questions Q3 and Q5.
+  fields. The remaining choices are open items in QUESTIONS.md.
 - **7.9 Who gets asked what.** Only owner facts become `requiredHumanActions`: the architecture's
   `owner-concern` (business or section 2 conflict), a missing architecture path (`no-arch-path`),
   and credentials the run cannot hold. The driver alone writes the hold and the owner inbox from
   them (§4). Every other failure is `failure.cause`; `other` opens an incident for the
   incident-responder, never an owner action.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
-- **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2); `prd-to-spec.md` step 2
-  repeats them at the flow's entry for any door that bypasses selection.
+- **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the
+  driver is the only door, so `prd-to-spec` does not repeat them.
 
-## 10. Open questions
+## 10. Open items
 
-Questions shared by every Epic flow, merged by the S01h review and asked here only:
-
-**Q1 [S02]. The model for agents declaring `model: fable`, and the Fable recovery.** What model does
-the Python runner pass for an agent whose frontmatter says `fable` (`task-dependency-mapper`,
-`data-model-specification-author`, `task-decomposer`, the architecture proposers), and does the
-Fable-to-Opus recovery (`fablerecovery.py`, session resume, `fableAgentTypes`, `fableRecovery`)
-apply to direct sessions? Asked also in `prd-to-spec.md`, `architecture.md`, `spec-authoring.md`,
-`task-dependency-assessment.md`.
-
-**Q2 [S02]. `isolation: worktree` in agent frontmatter.** `prd-reality-reconciler`, the four spec
-makers, `task-decomposer` and `wsjf-scorer` declare it, yet each writes its result under `<art>` /
-`<workDir>` (outside any worktree) and reads a repository's `main`. Does the runner honour or
-ignore the field? Asked also in `prd-reconciliation.md`, `spec-authoring.md`,
-`task-decomposition.md`, `wsjf-scoring.md`.
-
-**Q3 [S02]. The `relay` failure cause.** Once no relay exists, does `failurecause.CAUSE_RELAY` keep a
-producer, or is it retired? (CONTEXT 7.4 leaves this to the design step.) Every Epic spec states
-"no producer"; asked also in `prd-to-spec.md`.
-
-**Q4 [S02]. `bd` backoff inside the library.** `beadwrite.WRITE_BACKOFF = (2, 5)` seconds retries
-`bd-timeout`/`contention` inside `write_story` and `write_task`, shorter than CONTEXT 7.4's 30 s
-doubling to 30 minutes. Keep the inner retry, or move all `bd` backoff to the orchestrator? Asked
-also in `spec-authoring.md`, `task-decomposition.md`.
-
-**Q5 [S02]. The structured fact for `bd` failures.** `beadgraph.GraphError` has a `cause` field
-(`CONTENTION`, `BD_TIMEOUT`, `OTHER_CAUSE`), but `beadgraph._bd` chooses it by reading `bd`'s
-standard error, which CONTEXT 7.4 does not accept ("never classify a cause by matching error
-text"). Which structured fact sets `bd-timeout` and `contention` (an exit status, a `bd --json`
-error field), so every flow cites it? The same applies to `polyrepo.py` and `git` lock failures.
-Asked also in `wsjf-scoring.md`, `dependency-assessment.md`, `task-decomposition.md`,
-`spec-authoring.md`, `trd-authoring.md`, `architecture.md`.
-
-**Q6 [S02]. The input lists that fingerprint each Epic step, and the driver's ruling.** Each flow's
-spec now owns its input list and its reuse decision (S01h finding 3). Does the driver keep computing
-`resume` (`artifactio.plan`, `dispatch_resume`) and setting stale files aside before a dispatch
-(`artifactio.set_aside_stale`), and if so with the same lists? The lists differ from today's
-recorded ones: `repo-scoping` adds `delta-items.json`, `targetDir`, `deltaDir`; `trd` adds
-`delta-items.json`; `tasks:<slug>` adds `recon-<slug>.json` and the correction file. Should the
-target and delta view directories also be inputs of `recon:<slug>` and `spec:<slug>` (a view
-rewritten while `target.json`, `trd.md` and `recon-<slug>.json` stay byte-identical invalidates
-nothing today)? `observe.py` also reads `artifactio.plan` for the dashboard's accepted and stale
-steps. Asked also in `repo-scoping.md`, `trd-authoring.md`, `spec-authoring.md`,
-`prd-reconciliation.md`, `task-decomposition.md`, `prd-to-spec.md`.
-
-**Q14 [S02]. Leftover step names in `STEPS.md`.** Saved working folders can list steps that are no
-longer steps (for example `prd-validation`, seen for `ssbd-guuuz`); `resume.stale` currently carries
-them. Ignore unknown step names, or clean the saved folders once (S05)? Asked also in
-`prd-validation.md`.
-
-**Q15 [S02]. Verdict events.** Should reviewer and decider steps keep emitting `verdict` ledger
-events with `{phase, label, verdict, detail}` (`headless.py` `VERDICT_MARKER_KEYS`; read by
-`observe.py` and `attemptview.py`)? Asked also in `gate-enforce.md`.
-
-**Q19 [S02]. Run-ledger and phase events.** What phase names and events does the Python flow emit
-so that `outcomes.py`, `observe.py` and `runview.py` keep working, what replaces
-`phaserec.expected_phases` once the `.js` files are deleted (S08), and does the per-phase ledger
-object the phases return today (for example `phase: "prd-reconciliation"` with counts) survive in
-`run.json` or become driver ledger events? Asked also in `prd-reconciliation.md`.
-
-Questions of this contract alone:
-
-1. **[S02] Run unit for cost and the dashboard.** Should the Python orchestrator write one `.out` /
-   `.cost.json` / `state/phases/` record per Epic run that sums all its agent sessions, or one per
-   agent session with a shared execution id? `runcost` dedups by `sessionId` and `harnesspaths`
-   finds a session by the `dispatching bead <id> to` marker; neither fits several sessions per run.
-   The answer also fixes what proves the run is running (§9, 7.12).
-2. **[S02] Handback channel.** Does the Python flow return a `Handback` object to the lane
-   in-process (no `HANDBACK` line, no harness record), and which of the result keys in section 4
-   does it keep?
-3. **[S02] Text-based pause detection.** The usage-wall pause and the API-outage origin are derived
-   from headline and output text today. Does the Python runner set them from structured facts (exit
-   status, the stream's `rate_limit_event`, exception type) instead?
-4. **[S02] Relay-step dashboard view.** What replaces `observe.relay_steps` for showing
-   architecture rounds when no relay files are written?
-5. **[S02] Host-only and Workflow-runtime args.** Which of `pluginRoot`, `relay*` survive when the
-   orchestrator runs in Python? (The Fable args are Q1.)
+See QUESTIONS.md

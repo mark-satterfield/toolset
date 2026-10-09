@@ -120,7 +120,7 @@ TRD's vault path when the caller passes no `trdPath`. The driver already derives
 deterministically (`workitems.trd_path_for`) and passes it for every PRD in a `prds/` folder; the
 lane falls back to the same function at filing time. When neither applies the lane records "trd.md
 not filed" as a visible lane failure, and no wrong file reaches the vault. So the session adds no
-outcome. (Open question 1.)
+outcome. (See QUESTIONS.md.)
 
 The relay calls of the current script map as follows: `relayKit.documentReceipt` (jsonartifact.py
 `--document`) → step 4 in Python; `relayKit.inline` (`FRONTMATTER_IDS_PY`) → step 4 in Python;
@@ -169,7 +169,7 @@ remains.
 | `decisionIds` entries that name no file | `other` | Once, with the exact entries as feedback; then no. |
 | Section 2 changed (the runner's guard) | `other` | No; restored, then incident-responder. |
 | `artifactio.record` fails | `other` | No. |
-| `beads-contract.py metadata set` times out or hits a Dolt lock | `bd-timeout` or `contention`, from the structured fact merged question Q5 in `driver-contract.md` settles | Yes, backoff from 30 s, doubling, capped at 30 minutes. |
+| `beads-contract.py metadata set` times out or hits a Dolt lock | `bd-timeout` or `contention`, from the structured fact S02 settles (QUESTIONS.md) | Yes, backoff from 30 s, doubling, capped at 30 minutes. |
 
 Causes come from exit statuses, the session's structured result and exception types, never from
 error text. `relay` has no producer in this flow.
@@ -184,11 +184,13 @@ An interrupted session leaves no accepted `trd.md.meta.json`, so the rerun autho
 partial `trd.md` without a matching `.meta.json` is overwritten. A rerun of `repo-scoping` alone
 does not redo the TRD: the span is not a TRD input.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
 - 7.7: the three cases decide which documents are the TRD's architecture source, and something
   reaches the TRD in every case (with no architecture change, the obligations on the gaps
   `baseline.json` and `closure.json` name).
+- 7.20: the prerequisites the Closure lists are build items, so the TRD states the obligations on
+  them like on any other element the delta adds or changes.
 - Section 2 hard limit (CONTEXT 6): the session runner's guard around step 3.
 - 7.13: the saved `survey.json` is handed to the author by path, so the survey is not redone.
 - 7.4: only API, quota and `bd` contention are retried; a missing file is retried once with the
@@ -197,16 +199,6 @@ does not redo the TRD: the span is not a TRD input.
 - 7.14: the brief states facts (paths, the case, the rules), not theories about what the TRD will
   contain.
 
-## 10. Open questions
+## 10. Open items
 
-1. **[S02] Filing path for a PRD outside a `prds/` folder.** Dropping the `filing-clerk` session
-   leaves such a TRD unfiled (a visible lane note). Does any PRD the pipeline elaborates live
-   outside a `prds/` folder (S02 can list `$ATW_PRD_DIR`)? If so, should a rule in `trd_path_for`
-   cover it, or should the filing-clerk run for that case only?
-2. **[S02] The 40-requirement and 25,000-character limits.** They are brief guidance and are not
-   checked. Keep them unchecked?
-- Whether the driver's resume ruling uses this flow's input list (which adds `delta-items.json` to
-  the list `prd-to-spec.js` passes today): merged question Q6 in `driver-contract.md`.
-- Where the TRD summary goes: settled; it stays in `trd.md`, and `prd-to-spec.md` and
-  `spec-authoring.md` pass and read the path only (S01h finding 5).
-- `decisionIds` that name no file: settled; step 5 checks them (S01h finding 25).
+See QUESTIONS.md

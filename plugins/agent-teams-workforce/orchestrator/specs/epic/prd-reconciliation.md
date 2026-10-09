@@ -28,6 +28,12 @@ built; and report upstream dependency changes. The detailing is saved as `recon-
 flow returns only the small facts its callers branch on, and every later session reads the file
 by its path. A saved detailing whose inputs are unchanged is reused without a session.
 
+A status describes the code; it never removes work. `add`, `modify`, `remove` and `done` items are
+all work items and each gets a Task: a `done` item's Task carries the `file:line` evidence that the
+code already meets it, and the build pipeline's tests decide whether anything changes (CONTEXT
+7.6, 7.19). Only a `planned-elsewhere` item gets no Task of its own, because another Epic's open
+bead already plans it; it becomes a `blocks` edge onto that bead.
+
 ## Produces and decides
 
 After a successful run:
@@ -40,12 +46,14 @@ After a successful run:
   (`artifactio.py step <epic> recon:<slug>`) when the detailing was produced in this run.
 - Decided, per placed item, after normalization (`reconfacts.recon_facts`): exactly one status;
   a surface (`ui | service | infra | data | unknown`); for every `ui` item with a work status
-  (`add | modify | remove`) one design source in `bundle | cds | none`, an artifact for `bundle`
-  and `cds`, and for `bundle` the bundle directory, its build spec and the Section IDs it builds.
+  (`add | modify | remove | done`) one design source in `bundle | cds | none`, an artifact for
+  `bundle` and `cds`, and for `bundle` the bundle directory, its build spec and the Section IDs it
+  builds.
 - Decided for the repository: whether its upstream dependencies are current
   (`dependenciesCurrent`) and how many invalidating findings exist.
 - Returned to the caller (in-process, no file): `reconPath`, `itemCount`, `counts` per status,
-  `work` (ids with `add|modify|remove`), `idle` (`{id, status, plannedBy}` of the rest), `uiWork`
+  `work` (ids with `add|modify|remove|done`; today `recon_facts` puts `done` in `idle`, and S04
+  moves it), `idle` (`{id, status, plannedBy}` of the `planned-elsewhere` items), `uiWork`
   (`{id, designSource, artifact, bundle, buildSpec, sections}`), `bundles` (distinct bundle
   directories cited), `mocksDir`, `dependenciesCurrent`, `dependencyFindings`, `warnings`,
   `resumed` (true when the saved file was reused).
@@ -80,7 +88,7 @@ No bead, vault or git write happens in this flow.
   `{kind: page|shell|view, slug, shell, created_at, build_spec}`, `spec/build-spec.md`,
   `design/<kind>.html`, `styles/`.
 - **Upstream dependencies:** an optional list (`dependencies` in the `prd-to-spec` arguments). The
-  driver sends none today (see Open questions); the session then discovers them from the
+  driver sends none today (see QUESTIONS.md); the session then discovers them from the
   repository's manifests, lockfiles and imports on `main`.
 - **Beads (read only, by the session):** open Stories and Tasks of other Epics, read with
   `atw-bd list | show | search`, to name a `planned-elsewhere` bead.
@@ -168,9 +176,11 @@ No bead writes, no vault writes, no git commits.
    or non-boolean `dependencyChanges.current` is taken as `true`. Each normalization is a warning.
    `ok: false` (with `problem`) only when the file is not one JSON object or has no `items` list. A
    file that is absent or not JSON raises `ReconError`.
-   Two entries are **findings**, not normalizations, because each silently removes work: a `done`
-   item whose `evidence` cites no `file:line`, and a `planned-elsewhere` item with no `plannedBy`
-   (today `recon_facts` turns it into `done`). Python collects their exact ids from the file.
+   One entry is a **finding**, not a normalization, because it silently removes work: a
+   `planned-elsewhere` item with no `plannedBy` (today `recon_facts` turns it into `done`; it must
+   not become a work item with no Task nor an item with no bead). Python collects the exact ids from
+   the file. A `done` item with no `file:line` is not a finding: it still gets a Task, whose tests
+   decide (an uncited status of any kind is a warning).
    **One corrective pass:** a `ReconError`, an `ok: false`, or any finding re-dispatches step 4
    once, in a new session, naming the exact problem (the missing path, the `problem` text, or the
    finding ids and what each lacks), then runs steps 5 and 6 again. Still failing → stop the
@@ -196,14 +206,13 @@ step above).
   would get no status and therefore no Task, and a made-up status, surface or design source would
   reach the Story's spec and the Task build contracts in beads; nothing later re-reads the
   detailing against the placed items. Missing → `add` keeps CONTEXT 7.6 (every placed item reaches
-  a Task or is recorded idle).
+  a Task, or a `blocks` edge onto the bead of another Epic that plans it).
 - **Not-a-detailing (`ok: false`) and unreadable file (`ReconError`).** Without it, an empty or
   foreign file would be handed to `spec-authoring` and `task-decomposition` as the repository's
   detailing and the Epic would be marked done with no work; nothing later checks the shape.
-- **An uncited `done` and a `planned-elsewhere` with no bead are findings (step 6).** Each removes
-  an item from the work list: no Task is written for it, and `task-decomposition` checks coverage
-  of work items only, so a wrongly `done` item is never seen again. One corrective pass, then the
-  repository fails at `detailing`.
+- **A `planned-elsewhere` with no bead is a finding (step 6).** It removes an item from the work
+  list with no bead to point at: no Task is written for it and no edge either, and nothing later
+  sees it. One corrective pass, then the repository fails at `detailing`.
 - **Section 2 hard limit:** the session runner's guard around step 4 (`driver-contract.md` §8).
 - **Bundle usability inside `recon_facts`** (`cdsbundles.bundle_problem`: absolute path, usable
   `bundle.json`, newest of its kind and slug, build spec named by `bundle.json` and present).
@@ -214,6 +223,8 @@ step above).
 
 **Checks dropped:**
 
+- The uncited-`done` finding (S01h finding 23, first half): a `done` item is now a work item and
+  gets a Task (CONTEXT 7.6), so a wrong `done` no longer removes work; the Task's tests catch it.
 - Refusals for no repository, no target, no placed item, no artifact directory/slug, no absolute
   `depscore.py` path: the Python composite builds these arguments itself; a missing one is a
   programming error that raises, not a run outcome.
@@ -242,7 +253,7 @@ step above).
 | Step 5, `artifactio.record` fails (file vanished, `git rev-parse main` fails for `git-main:<repo>`) | `other` | No. Non-fatal: the detailing is used; the cost is that a later run cannot reuse it. Logged as a warning in the result. |
 | Step 6, `ReconError` (not JSON) | `other` | The same one corrective re-dispatch, carrying the exact error; after that, stage `detailing`, incident-responder. |
 | Step 6, `ok: false` (`problem`) | `other` | The same one corrective re-dispatch, carrying the `problem` text; after that, stage `detailing`, incident-responder. |
-| Step 6, findings (uncited `done`, `planned-elsewhere` with no `plannedBy`) | `other` | The same one corrective re-dispatch, carrying the exact ids; after that, stage `detailing`, incident-responder. |
+| Step 6, findings (`planned-elsewhere` with no `plannedBy`) | `other` | The same one corrective re-dispatch, carrying the exact ids; after that, stage `detailing`, incident-responder. |
 
 All four step 6 outcomes share one corrective re-dispatch per run: a run that already used it
 fails on the next.
@@ -264,14 +275,17 @@ fails on the next.
   found when the Task is built (the item's recorded artifact `{kind, slug}` and
   `cds-bundles --design-source` in the Task pipeline), so it does not invalidate the detailing.
 
-## Owner rules that apply
+## Requirements that apply
 
 - **7.4 Retries:** structured causes from the runner and from exception types; no text matching;
   one corrective re-dispatch only when it carries the exact problem (CONTEXT 7.4 allows a retry
   with specific gap feedback); a reused detailing is never redone.
-- **7.6 Done rule:** the `work` list is the contract for this repository: every `add`/`modify`/
-  `remove` id must reach a Task or a recorded "nothing to build"; normalization makes a missing
-  item `add` so it cannot vanish.
+- **7.6 Done rule and no "nothing to build":** the `work` list is the contract for this repository:
+  every `add`/`modify`/`remove`/`done` id must reach a Task, and every `planned-elsewhere` id a
+  `blocks` edge onto the bead that plans it; normalization makes a missing item `add` so it cannot
+  vanish. No status removes work.
+- **7.19 Existing code:** a `done` status records that code on `main` already appears to meet the
+  item, with `file:line`; the item still gets a Task, and the build pipeline's tests decide.
 - **7.7 Three-case model:** the brief states which case the target is (`none`, `new`, `partial`)
   and where build items come from in each.
 - **7.9 Who gets asked:** the session decides technical gaps itself (`subagent-contract`); nothing
@@ -289,20 +303,6 @@ fails on the next.
 - **Hard limits:** read-only session; no write to arc42 section 2; no secrets; nothing in
   `apps/marketing/`.
 
-## Open questions
+## Open items
 
-1. **[S02] An uncited work status (`add`/`modify`/`remove`).** `recon_facts` only warns when a work
-   status cites no `file:line`. Such an item still gets a Task, so no work is lost; should it also
-   be a step 6 finding?
-- `git-main:<repo>` as a fingerprint input (any commit on `main` invalidates the detailing):
-  merged question Q7 in `architecture.md`.
-- Target and delta view directories as fingerprint inputs: merged question Q6 in
-  `driver-contract.md`.
-- The `dependencies` input with no producer: merged question Q13 in `prd-to-spec.md` (its Open
-  question 3).
-- `isolation: worktree` in the agent frontmatter: merged question Q2 in `driver-contract.md`.
-- The run ledger entry: merged question Q19 in `driver-contract.md`.
-- Citation rule vs normalization for `done`: settled; an uncited `done` is a step 6 finding (S01h
-  finding 23).
-- The corrective re-dispatch: settled; CONTEXT 7.4 allows a retry that carries specific gap
-  feedback (S01h merged question Q16).
+See QUESTIONS.md

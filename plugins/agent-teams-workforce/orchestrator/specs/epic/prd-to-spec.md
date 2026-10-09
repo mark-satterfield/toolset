@@ -19,25 +19,32 @@ fields and reuse decision; this one does not restate them:
 | Detailing (PRD reconciliation) | `<orch>/specs/epic/prd-reconciliation.md` |
 | Spec authoring and the Story bead | `<orch>/specs/epic/spec-authoring.md` |
 | Task decomposition, Task beads, the corrective pass, the rerun rule | `<orch>/specs/epic/task-decomposition.md` |
-| WSJF scoring and dependency assessment (not called by this flow; see step 14) | `<orch>/specs/epic/wsjf-scoring.md`, `<orch>/specs/epic/dependency-assessment.md` |
+| Epic WSJF scoring and Epic dependency assessment (not part of elaboration: the future readiness process, CONTEXT 7.17; the Task WSJF arithmetic this flow runs is step 14) | `<orch>/specs/epic/wsjf-scoring.md`, `<orch>/specs/epic/dependency-assessment.md` |
 | What the driver sends and reads back; the session runner's shared rules | `<orch>/specs/epic/driver-contract.md` |
 | Every artifact and bead write across the Epic flows | `<orch>/specs/epic/INDEX.md` |
 
-`prd-validation` and `gate-enforce` are not called by `prd-to-spec`.
+`prd-validation` and `gate-enforce` are not called by `prd-to-spec`. The only entry into this flow
+is the driver's elaboration lane, which the owner starts with `python3 ops/sdlc-automation/keeper.py`
+(CONTEXT 7.18); there is no `/start-prd` or `/work-bead` door.
 
 ## 1. Purpose
 
-Elaborate one existing, scored Epic and its PRD into Stories and Tasks written to beads. The flow
-claims the Epic (`depscore.py elaboration-start`), runs the architecture phase for every PRD (never
+Elaborate one existing, scored Epic and its PRD into Stories and Tasks written to beads. The
+Epic's validation, its dependency assessment and its WSJF score are assumed done by the future
+readiness process (CONTEXT 7.17); this flow neither scores nor assesses the Epic. The flow claims
+the Epic (`depscore.py elaboration-start`), runs the architecture phase for every PRD (never
 skipped: a PRD the effective architecture already serves gets a "no change" result that says so),
 returns owner facts to the driver only on business requirements no design can satisfy together, on
 contradictory section 2 constraints, or on a missing architecture path, lists the build items from
 the approved target and delta, has the repo-scoping phase rule the repository span from where the
 polyrepo-steward places those items, authors the TRD, and per span repository details the items
 against `main`, authors one Spec and one Story, and decomposes the Story into Tasks for its
-`add`/`modify`/`remove` items. It then derives the Task edges between Stories, scores the Epic and
-its Tasks, and marks the Epic `elaboration_state=done` (`depscore.py elaboration-finish --done`)
-once every span repository has its result, after which it deletes the Epic's `target/<subject>/`
+`add`/`modify`/`remove`/`done` items. Every span repository gets a Story and Tasks; there is no
+"nothing to build" outcome (CONTEXT 7.6): code that already meets a requirement still gets its
+Task, and the build pipeline's tests decide that nothing needs to change. It then sets the Task
+edges between Stories, computes every Task's WSJF score, and marks the Epic
+`elaboration_state=done` once every span repository has its Story and Tasks and every Task has its
+edges and its score, after which it deletes the Epic's `target/<subject>/`
 (`depscore.py arch-target-remove`). A failed run returns `ok:false` with `failure: { stage, cause,
 repositories[] }` and releases the Epic; the driver backs off a transient cause and opens an
 incident for any other.
@@ -54,28 +61,28 @@ After a successful run (`ok: true`, stage `finish`):
   `prerequisite` item per element the Closure found absent, stale or planned by an open bead, each
   with `requires`).
 - The repository span is the one the repo-scoping phase returned (its checks: every item placed
-  exactly once, nothing in the control, architecture or marketing repositories).
+  exactly once, nothing in the control, architecture or marketing repositories, at least one
+  repository).
 - `trd.md` exists for the PRD.
 - For every span repository: `recon-<slug>.json`, the spec documents, `story-<slug>.json`, one
-  Story bead (keyed by `elab_key`), `tasks-<slug>.json`, and Task beads covering every `add`,
-  `modify` and `remove` item of that repository, or a recorded "nothing to build" (the record is
-  Open question 4).
-- Task `blocks` edges between Stories are written: those the delta's `requires` relations make
-  (`closure-edges`) and those the task-dependency-mapper derived (`task-deps.json`), with every
-  edge that closes a cycle dropped.
+  Story bead (keyed by `elab_key`), `tasks-<slug>.json`, and at least one Task bead, the Tasks
+  together covering every `add`, `modify`, `remove` and `done` item of that repository.
+- Every Task carries its `blocks` edges: those inside its Story (written with the Task by
+  `write-task`, from the `task-decomposer`'s edges, in build order), and those between Stories:
+  the ones the delta's `requires` relations make (`closure-edges`) and the ones the
+  task-dependency-mapper derived (`task-deps.json`), with every edge that closes a cycle dropped.
 - Story-to-Story `blocks` edges are rewritten from the Task edges (`story-edges`, run inside
-  `elaboration-finish`).
-- The Epic and every Task beneath it are rescored (WSJF arithmetic, Epic size rolled up from its
-  Tasks).
+  `elaboration-finish`). Stories get no WSJF score.
+- Every Task beneath the Epic carries a computed WSJF score (`wsjf` and the computed keys), from
+  its judged size and the value it inherits from the Epic. The Epic's own WSJF keys are not
+  written by this flow (CONTEXT 7.17).
 
 Decisions the flow makes:
-- **Refuse or claim** the Epic (step 2 selection filters, step 3 `elaboration-start`).
+- **Claim or refuse** the Epic (step 3 `elaboration-start`).
 - **Return owner facts** (architecture `owner-concern` or `no-arch-path`): the flow returns
   `requiredHumanActions`; the driver holds the Epic and writes the owner inbox.
-- **Nothing to build**: the span repo-scoping returns names no repository (its no-implementation
-  short cut, or every item recorded as having no code here). Then detailing, specs and Tasks produce
-  nothing, and the Epic is still marked done.
-- **Done or not done** (CONTEXT 7.6): done only when every span repository has its result.
+- **Done or not done** (CONTEXT 7.6): done only when every span repository has its Story and
+  Tasks, every Task's edges are written, and every Task of the Epic has a WSJF score.
 - **Transient or not** for a failed run's `failure.cause`; the driver acts on it (section 7).
 
 ## 3. Inputs
@@ -84,7 +91,7 @@ From the driver (`<driver>/workitems.py` `elaboration_args`, `dispatch_context`,
 `with_artifact_plan`; the full list is in `driver-contract.md` §3):
 - `prd`: `{ id, title, path }`; `id` is the PRD file stem; `path` is the PRD file under
   `$ATW_PRD_DIR`. The JavaScript also accepts inline `body`/`content`; the driver never sends it
-  (Open question 3).
+  and no other door exists (CONTEXT 7.18), so the input is dropped.
 - `epic`: `{ id, key, type: "epic", title, prdRef }`.
 - `owner`: the run's owner token (the dispatch execution id); `reclaim: true` when the Epic is
   `in_progress` under a token whose run is not live (`itemownership`).
@@ -96,16 +103,17 @@ From the driver (`<driver>/workitems.py` `elaboration_args`, `dispatch_context`,
 - `artifactScript`: `$ATW_ARTIFACT_SCRIPT` (`<driver>/artifactio.py`); `projectRoot` /
   `skillspokeRoot`: `$SKILLSPOKE_ROOT`.
 - `resume`: `artifactio.dispatch_resume(artifactio.plan(<epic>))`. Whether the driver keeps
-  computing it once each phase rules its own reuse is merged question Q6 in `driver-contract.md`.
-- Optional and passed through to phases: `architectureSubject`, `maxArchitectureRounds`,
-  `dependencies`, `accessPatterns`, `spec` (the driver sends none of them today; Open question 3
-  covers the last three).
+  computing it once each phase rules its own reuse is an open item in QUESTIONS.md.
+- Optional and passed through to phases: `architectureSubject`, `dependencies`, `accessPatterns`,
+  `spec` (the driver sends none of them today; see QUESTIONS.md for the last three).
+  `maxArchitectureRounds` is dropped: the round bound is fixed at 3 (CONTEXT 7.7,
+  `architecture.md` step 18).
 
-Bead fields read (by `depscore.py` and `<driver>/elabstate.py`, not by the flow's own code): the
-Epic's `issue_type`, status, metadata `elaboration_state`, `elaboration_state_cause`,
-`elaboration_state_owner`, `elaboration_state_at`, `wsjf_ubv`, `wsjf_tc`, `wsjf_confidence`,
-`wsjf`; its `tracks`/`blocks` prerequisites (step 2); all Tasks beneath the Epic and their edges
-(scoring, story edges).
+Bead fields read (by `depscore.py`, not by the flow's own code): the Epic's `issue_type`, status,
+metadata `elaboration_state`, `elaboration_state_cause`, `elaboration_state_owner`,
+`elaboration_state_at`, and `wsjf_ubv`, `wsjf_tc`, `wsjf_confidence` (the value each Task
+inherits; read, never written); all Tasks beneath the Epic and their edges (Task scoring, story
+edges).
 
 Vault: the PRD file; `$ATW_ARCH_PATH/arc42/` (effective views, section 2
 `02-architecture-constraints/` read-only); `$ATW_ARCH_PATH/target/<subject>/` (target, `delta/`,
@@ -148,7 +156,7 @@ Bead writes made by this flow's own steps (all through `depscore.py`, run in `be
 |---|---|---|
 | 3 | `depscore.py elaboration-start --epic <id> --owner <token> [--reclaim]` | Epic metadata `elaboration_state=in_progress`, `elaboration_state_at`, `elaboration_state_cause=elaboration-started`, `elaboration_state_owner=<token>` |
 | 13 | `depscore.py write-all-task-edges --epic <id> --dir <work> --repos <span> --out <work>/task-edges/all.json` | `blocks` edges between Tasks of different Stories |
-| 14 | `depscore.py elaboration-finish --epic <id> --owner <token> [--done]` | WSJF values on the Epic and its Tasks; with `--done`: `elaboration_state=done`, `elaboration_state_cause=decomposed-into-tasks`, `elaboration_state_at`, `elaboration_state_owner=""`; then Story `blocks` edges and `story_*` keys (`story-edges`) |
+| 14 | the finish logic of `depscore.py elaboration-finish` (`elaboration.finish`), with the write scope limited to the Epic's Tasks (step 14) | WSJF computed keys on the Epic's Tasks only; once every Task is scored: `elaboration_state=done`, `elaboration_state_cause=decomposed-into-tasks`, `elaboration_state_at`, `elaboration_state_owner=""`; then Story `blocks` edges and `story_*` keys (`story-edges`) |
 | 16 | `depscore.py elaboration-release --epic <id> --owner <token>` | `elaboration_state_owner=""` when it is still this run's token; state stays `in_progress` |
 
 The flow writes no hold. The person hold (`elabstate.hold_for_person`) and the owner inbox entry
@@ -183,15 +191,12 @@ section 2 guard (`driver-contract.md` §8).
 1. `deterministic` **Inputs.** Validate the typed arguments: Epic id present, `beadsRepoPath`
    present, PRD path readable, plugin root known (the orchestrator's own install; no resolver
    runs). Failure: stage `input`, cause `other`, no bead touched.
-2. `deterministic` **Selection filters (CONTEXT 7.8).** In-process, with the driver's own functions
-   (`elabstate.candidacy`, `elabstate.unmet_blockers`, `BeadIndex.wsjf_of`), refuse an Epic that
-   driver selection would not pick: `elaboration_state` empty (the mobile Epics `ssbd-cb6i4`,
-   `ssbd-kfihs`, `ssbd-mx3vn`, and an Epic held `awaiting-human-action`) or `done`; no `wsjf`; an
-   unmet Epic prerequisite. The refusal codes are the driver's existing `WAIT_CODES` and
-   `PERSON_CODES` (`epic-authoring`, `epic-unscored`, `upstream-not-elaborated`, `epic-done`,
-   `epic-state-unknown`). A refusal returns `ok:false`, stage `epic-lifecycle`, `refusal` set, and
-   touches nothing. For a driver dispatch this repeats selection; it matters for any door that does
-   not go through selection (merged question Q12 in `route-elaboration.md`).
+2. *(removed)* **Selection filters.** The CONTEXT 7.8 filters (no `elaboration_state`, among them
+   the mobile Epics `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn`; no WSJF score; an unmet Epic
+   dependency) are applied by driver selection (`selection.py`, `elabstate.py`), and the driver is
+   the only entry into this flow (CONTEXT 7.18). Repeating them here fails the check test: no
+   other door can bring an unfiltered Epic in, and step 3 refuses an Epic that changed state
+   since selection (`epic-done`, `epic-owned`).
 3. `deterministic` **Claim the Epic.** `depscore.py elaboration-start --epic <id> --owner <token>
    [--reclaim]`. Result `{ ok, refusal{ code, reason }, owner, previousState, warnings[] }`.
    Refusal codes: `not-an-open-epic`, `epic-done`, `epic-owned`. A refusal returns `ok:false`,
@@ -220,9 +225,10 @@ section 2 guard (`driver-contract.md` §8).
    `deltaExists:false`).
 8. In parallel:
    - 8a. `phase` **Repo scoping** (`repo-scoping.md`). The composite passes the `delta-items.json`
-     path, the `arch-delta` result fields and the Epic; the phase owns the no-implementation short
-     cut, its own reuse, the placement checks and the one corrective pass, and returns the span as
-     final (`repo-scoping.md` §4, flow result). An empty span means **nothingToBuild**.
+     path, the `arch-delta` result fields and the Epic; the phase owns its own reuse, the placement
+     checks and the one corrective pass, and returns the span as final (`repo-scoping.md` §4, flow
+     result). The span always names at least one repository; an empty span is a repo-scoping
+     failure, never a "nothing to build" result (CONTEXT 7.6).
    - 8b. `phase` **TRD authoring** (`trd-authoring.md`). The composite passes the PRD, the
      `arch-delta` result fields and the architecture paths; the result is `{ ok, trdPath,
      filingPath, decisionIds }` (`trd-authoring.md` §4). No summary is passed on: spec authoring
@@ -240,10 +246,11 @@ section 2 guard (`driver-contract.md` §8).
 10. Per Story, in parallel: `phase` **Task decomposition** (`task-decomposition.md`). The composite
     passes `specPaths` from 9b, the `recon-<slug>.json` path, the Story `{ id, key, title }`,
     `beadsRepoPath`, `designSystem.packagesDir` and the stale reason of `tasks:<slug>` when the
-    phase reports one. The phase owns the rerun rule (CONTEXT 7.5), the Task bead writes and the one
-    corrective pass for uncited items (CONTEXT 7.6); its result is in `task-decomposition.md` §4. A
-    `rerun` is recorded as ledger event `task-rerun` with its case and reason. A failure at stage
-    `uncited-items` carries the items no Task cites after the corrective pass.
+    phase reports one. The phase owns the rerun rule (CONTEXT 7.5), the Task bead writes with their
+    same-Story `blocks` edges, and the one corrective pass for uncited items and unsized Tasks
+    (CONTEXT 7.6); its result is in `task-decomposition.md` §4. A `rerun` is recorded as ledger
+    event `task-rerun` with its case and reason. A failure at stage `uncited-items` carries the
+    items no Task cites, and the Tasks with no valid size, after the corrective pass.
 11. `deterministic` **Closure edges.** After every Story's decomposition: `depscore.py
     closure-edges --dir <work> --repos <span> --out <work>/closure-edges.json` returns `{ edges[{
     from, to, reason }], summary.warnings }`: the edges the delta's `requires` relations make. A
@@ -252,9 +259,12 @@ section 2 guard (`driver-contract.md` §8).
     work item, so such an item is a defect for the incident-responder, and a `blocks` dependency
     with no builder would otherwise reach beads unnoticed. `closure-edges` failing to run fails the
     run at the same stage with the cause its result carries.
-12. `agent` **Cross-Story Task dependencies.** Runs only when two or more Stories have Tasks, and
-    `task-deps.json` is not reusable (its `.meta.json` inputs, the `tasks-<slug>.json` files, hash
-    as recorded).
+12. `agent` **Cross-Story Task dependencies.** Runs when the span has two or more repositories
+    (every Story has Tasks), and `task-deps.json` is not reusable (its `.meta.json` inputs, the
+    `tasks-<slug>.json` files, hash as recorded). A session that ends without an accepted
+    `task-deps.json` (after the one retry with the exact validation errors that step 12's
+    acceptance allows) fails the run at stage `task-edges` with the session's cause: the Epic is
+    not done while edges between its Stories are missing (CONTEXT 7.6).
     - Agent: `task-dependency-mapper` (`<plugin>/agents/task-dependency-mapper.md`).
     - Input paths: each Story's `<work>/tasks-<slug>.json`; a short listing of each Story's Task
       keys, titles and same-Story edges (keys and titles only; descriptions stay in the files); the
@@ -265,22 +275,33 @@ section 2 guard (`driver-contract.md` §8).
     - Model and effort as used today: frontmatter `model: fable`, call `effort: medium`
       (frontmatter also `effort: medium`); the shared `fable` block switches to `opus` on
       recovery. Medium effort fits a bounded read-and-relate job; the model for `fable` agents is
-      merged question Q1 in `driver-contract.md`.
+      an open item in QUESTIONS.md.
     - Runs alone (after step 11).
 13. `deterministic` **Write the Task edges between Stories.** `depscore.py write-all-task-edges
     --epic <id> --dir <work> --repos <span> --out <work>/task-edges/all.json`: reads
     `task-deps.json` and the closure edges, drops any edge that closes a cycle, writes the `blocks`
     edges. Result `summary{ blockers{ to: [from] }, added, removed, standing, rejected }`. Runs when
     `task-deps.json` exists (fresh or reused) or step 11 returned edges.
-14. `deterministic` **Finish.** **done** = **nothingToBuild**, or no repository failed in steps 9
-    and 10 and steps 11 to 13 succeeded. Run `depscore.py elaboration-finish --epic <id> --owner
-    <token> [--done]`. Result `{ ok, lifecycle (non-null when marked done), summary{ tasksScored,
-    epicsWritten, tasksWritten, unscored, done }, storyEdges{ ok, added[], removed[], unchanged,
-    refusedStories[], reason, conflicts[], cycles[], error? } }`. Scoring runs whether or not the
-    Epic is done. This flow calls no WSJF judging and no dependency-assessment workflow: Epic and
-    Task WSJF judgments (sizes, values) come from the task-decomposition phase and the earlier Epic
-    scoring; finish only runs the arithmetic. A Task the maker left without a valid size stays
-    unscored here (merged question Q10 in `wsjf-scoring.md`).
+14. `deterministic` **Finish.** Runs after steps 9 to 13, never before, because a Task's WSJF reads
+    the Tasks and their edges (RR-OE is computed from the `blocks` graph).
+    - 14a. **Score the Tasks.** The WSJF arithmetic of `elaboration.finish` (`scoring.score`, rubric
+      `<plugin>/skills/wsjf/scripts/wsjf.py`) over the tracker, with the write scope limited to the
+      Epic's Tasks and no Epic roll-up: each Task's score comes from the size the
+      `task-decomposer` judged (`wsjf_size_estimate`) and the value it inherits from the Epic
+      (`wsjf_ubv`, `wsjf_tc`, `wsjf_confidence`). The Epic's own WSJF keys are not written (CONTEXT
+      7.17). This flow calls no WSJF judging and no dependency-assessment flow. Scoring runs even
+      when a repository failed, so the Tasks that exist are scored; the Epic is then not done.
+    - 14b. **Done rule (CONTEXT 7.6).** **done** = no repository failed in steps 9 and 10, steps 11
+      to 13 succeeded, and 14a left no Task of the Epic unscored. A Task still unscored here (the
+      task-decomposition phase's corrective pass sizes every Task, so this means a defect or an
+      unscored Epic) fails the run at stage `task-scores`, cause `other`, naming the Tasks and the
+      reason `scoring.score` gives for each.
+    - 14c. **Mark done.** Only when 14b holds: write the lifecycle keys and run `story-edges`, as
+      `elaboration-finish --done` does. Result `{ ok, lifecycle, summary{ tasksScored,
+      tasksWritten, unscored, done }, storyEdges{ ok, added[], removed[], unchanged,
+      refusedStories[], reason, conflicts[], cycles[], error? } }`.
+    A failure of 14a or 14c (for example a `bd` timeout) is a run failure at stage `finish` with its
+    structured cause, so the Epic is released and the rerun redoes only this step (section 8).
 15. `deterministic` **Remove the target**, only when step 14 marked the Epic done and `archPath`
     is set: `depscore.py arch-target-remove --arch-root <archPath> --target-dir <targetDir>
     --message "<message in section 4>"`. Result `{ ok, removed, commit, refusals[] }`. A refusal
@@ -288,7 +309,7 @@ section 2 guard (`driver-contract.md` §8).
 16. `deterministic` **Release** (on every exit after step 3 succeeded, unless step 14 marked the
     Epic done): `depscore.py elaboration-release`. The Epic stays `in_progress` with no owner. The
     driver acts on the handback: a transient `failure.cause` (`api`, `quota`, `bd-timeout`,
-    `contention`; `relay` while it has a producer, merged question Q3) backs off and redispatches,
+    `contention`; `relay` while it has a producer, an open item in QUESTIONS.md) backs off and redispatches,
     and the rerun redoes only the failed steps (section 8); `other` opens an incident, whose hold
     (`incidents.IncidentBook.held_ids`) keeps the Epic out of dispatch until the
     incident-responder resolves it; `requiredHumanActions` holds it for the owner. A release that
@@ -298,7 +319,7 @@ section 2 guard (`driver-contract.md` §8).
 17. `deterministic` **Record the run.** Write `<work>/run.json` (the record the JavaScript emitted
     as `RUN-JOURNAL` log lines: composite, Epic, PRD id, outcome, per-phase status and decision,
     the reused/stale/task-rerun events, partial results on failure), append the ledger events the
-    driver reads (`driver-contract.md` §5, merged question Q19), and return the handback with
+    driver reads (`driver-contract.md` §5, an open item in QUESTIONS.md), and return the handback with
     `detailPath` = that file.
 
 Parallelism summary: 8a with 8b; 9 across repositories; 10 across Stories; 12 alone. Each agent
@@ -321,21 +342,21 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | `sequence:accept-cross-story` (`jsonartifact.py` acceptance) | step 12, in-process schema validation and write |
 | `sequence:record` (`artifactio.py record`) | step 12, in-process `artifactio.record` |
 | `beads:write-all-task-edges` | step 13, `depscore.py write-all-task-edges` |
-| `epic:finish` | step 14, `depscore.py elaboration-finish` |
+| `epic:finish` | step 14, the `elaboration.finish` logic in-process, write scope limited to the Epic's Tasks |
 | `arch:target-remove` | step 15, `depscore.py arch-target-remove` |
 | `epic:release` | step 16, `depscore.py elaboration-release` |
 
 ## 6. Checks kept / Checks dropped
 
 **Checks kept**
-- Selection filters at entry (step 2, CONTEXT 7.8): without them an Epic with no
-  `elaboration_state` (the mobile Epics, a held Epic), no WSJF score or an unmet Epic dependency is
-  claimed and elaborated into beads by any door that bypasses driver selection; nothing later
-  undoes the Stories and Tasks.
 - `elaboration-start` refusals (`not-an-open-epic`, `epic-done`, `epic-owned`): without them two
   runs write the same Epic's beads at once, or a done Epic's Tasks are rewritten.
-- The done rule (CONTEXT 7.6): without it the Epic is marked done with a repository missing its
-  Story or Tasks, and selection never elaborates it again.
+- The done rule (step 14b, CONTEXT 7.6): without it the Epic is marked done with a repository
+  missing its Story or Tasks, a Task missing its edges between Stories, or a Task with no WSJF
+  score (never selected for build, CONTEXT 7.8), and selection never elaborates it again.
+- Cross-Story edges before done (step 12): a missing `task-deps.json` fails the run instead of
+  letting it finish; without it Tasks of different Stories are built in any order and nothing
+  later derives the edges.
 - A required item with no builder fails step 11 (CONTEXT 6 check test): a `blocks` dependency with
   no builder in beads is caught by nothing later.
 - Target removal only after done: without it `target/<subject>/` (the input of every rerun step)
@@ -353,6 +374,12 @@ Relay and command-runner calls of the JavaScript, each mapped:
   §8); this flow's own steps write nothing under arc42.
 
 **Checks dropped**
+- The entry selection filters (old step 2): the driver is the only entry (CONTEXT 7.18) and
+  applies them in selection.
+- "Nothing to build" (the empty span, the `noImplementationWork` short cut, a repository with no
+  work items): there is no such outcome (CONTEXT 7.6).
+- Writing the Epic's WSJF (size rolled up from its Tasks) at finish: Epic scoring belongs to the
+  future readiness process (CONTEXT 7.17).
 - Plugin-root resolution and its three attempts: the orchestrator runs from its install.
 - `!hasText(emitTarget)` "no tracker" refusal and the PRD body-or-path check: typed arguments from
   the driver; the PRD path is checked once in step 1.
@@ -363,7 +390,8 @@ Relay and command-runner calls of the JavaScript, each mapped:
   input list.
 - The misplacement check (`misplaced`), the `avoidRepos` re-dispatch, the saved-span read
   (`readSavedSpan`, `depscore.py saved-span`), the `noCode` fill for items a reused span does not
-  place, and the `noImplementationWork` derivation: owned by `repo-scoping.md` (steps 2, 3 and 6).
+  place: owned by `repo-scoping.md` (steps 3 and 6). The `noImplementationWork` derivation is
+  dropped (CONTEXT 7.6).
 - The flow's own hold write (`beads-contract.py metadata set ... awaiting-human-action`), its
   owner inbox write, and the rule "hold attempted means never released": the driver holds from
   `requiredHumanActions` (owner facts) and from an open incident (every other non-transient
@@ -376,8 +404,7 @@ Relay and command-runner calls of the JavaScript, each mapped:
   from structured facts.
 - `RUN-JOURNAL` chunking into 4000-character log lines: the run record is a file (step 17).
 - `EXPECTED_PHASES` entries `PRD`, `Epic`, `PRD Parse` and `Run Ledger` as phases: `PRD Parse` was
-  never entered; the others do no work. Phase names for the dashboard are merged question Q19 in
-  `driver-contract.md`.
+  never entered; the others do no work. Phase names for the dashboard are an open item in QUESTIONS.md.
 - The fixed 10/30/90 s hold-write backoff: the hold write is gone; the release write uses the
   CONTEXT 7.4 backoff.
 - The `degraded` flag and the `DEGRADED:` headline text: the driver reads neither
@@ -389,8 +416,8 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | Failure point | Stage | Cause | Retry reasonable? |
 |---|---|---|---|
 | Typed input missing (Epic id, beads repo, PRD path) | `input` | `other` | No: the same input fails the same way. |
-| Selection filter or `elaboration-start` refusal | `epic-lifecycle` (+ `refusal.code`) | none (a refusal, not a failure) | No; the driver waits or holds until the bead changes. |
-| `depscore.py` / `bd` exit with a `bd` lock or timeout | the step's stage | `bd-timeout` or `contention`, from the field the script's JSON result carries (merged question Q5 in `driver-contract.md`) | Yes, backoff 30 s doubling, cap 30 min. |
+| `elaboration-start` refusal | `epic-lifecycle` (+ `refusal.code`) | none (a refusal, not a failure) | No; the driver waits or holds until the bead changes. |
+| `depscore.py` / `bd` exit with a `bd` lock or timeout | the step's stage | `bd-timeout` or `contention`, from the field the script's JSON result carries (an open item in QUESTIONS.md) | Yes, backoff 30 s doubling, cap 30 min. |
 | An agent session ends on an API error or quota | the phase's stage | `api` / `quota`, from the session's structured result (stream event / exit status), never from text | Yes, through `breaker.py`. |
 | Architecture `owner-concern` / `no-arch-path` | `requires-human-action` | none (owner facts) | No: the driver holds for the owner. |
 | Other architecture failure | `architecture` | the phase's `failure.cause` | Per that cause. |
@@ -398,18 +425,19 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | TRD authoring fails | `trd-authoring` | the phase's cause | Per cause. |
 | One repository's detailing or spec fails | per repository: the phase's stage; run: `repositories-incomplete` | per repository from its phase's `failure.cause`; the run's cause is transient only when every failed repository's is | Transient: yes, rerun only the failed steps. Otherwise: incident-responder. |
 | One Story's decomposition fails (incl. `uncited-items` after the one corrective pass) | per repository: the phase's stage; run: `repositories-incomplete` | as above; `uncited-items` is `other` | `uncited-items`: no, it already had its one corrective pass. |
-| No repository produced a Spec, or no Story produced Tasks (and not nothingToBuild) | `repositories-incomplete` | combined, as above | as above. |
+| A span repository has no Story, or a Story has no Task | `repositories-incomplete` | combined, as above | as above. |
 | `closure-edges` fails, or warns of a required item with no builder | `task-edges` | from its result; a warning is `other` | Contention: yes. A warning: no, incident-responder. |
-| task-dependency-mapper ends without an accepted file | none; `crossStoryDependencies.reason` set, the run continues | the session's cause | Transient: yes, on the next dispatch (the step is not recorded). Otherwise no. |
+| task-dependency-mapper ends without an accepted file | `task-edges` | the session's cause; a file rejected twice is `other` | `api`/`quota`: yes, through `breaker.py`. Otherwise no: incident-responder. |
 | `write-all-task-edges` fails | `task-edges` | from its result | Contention: yes. |
-| `elaboration-finish` fails | the Epic is not done; the run is `ok:true` today with a "scoring did not run" headline (Open question 1) | from its result | Contention: yes. |
+| A Task of the Epic is left unscored (step 14b) | `task-scores` | `other` | No: incident-responder. |
+| Task scoring or the done write fails (step 14a, 14c) | `finish` | from its structured result | `bd-timeout`/`contention`: yes, with backoff; the rerun redoes only step 14. Otherwise no. |
 | `arch-target-remove` refused | none; `targetRemoval.reason` | `other` | No. |
 | Release write fails | recorded in `lifecycle.release` | `bd-timeout` / `contention` / `other` | `bd-timeout`/`contention`: yes, with backoff; else no (the driver reclaims). |
 | Unexpected exception | the current phase's name | `other` | No: incident-responder. |
 
 Every failure returns `failure: { stage, cause, repositories: [{ repository, stage, cause,
 headline }] }`. `relay` is produced today only by relay plumbing; after the rewrite nothing in this
-flow produces it (merged question Q3 in `driver-contract.md`).
+flow produces it (see QUESTIONS.md).
 
 ## 8. Resume points
 
@@ -430,69 +458,55 @@ table does not restate it.
 | `tasks:<slug>` | `tasks-<slug>.json` | `task-decomposition.md` §8 | the missing Task beads only (CONTEXT 7.5 rule, owned by `task-decomposition.md`) |
 | (closure edges) | `closure-edges.json` | none: recomputed | always recomputed; costs no session |
 | `task-deps` | `task-deps.json` | every `tasks-<slug>.json` | `write-all-task-edges` from the saved file, no agent |
-| (finish) | none | none | `elaboration-finish` again; idempotent |
+| (finish) | none | none | step 14 again; idempotent (the arithmetic writes only changed values) |
 | (target removal) | none | none | `arch-target-remove` again; `removed:false` when already gone |
 
 A failed repository's steps are not recorded, so the next dispatch redoes exactly those. Setting
 stale work aside is done by the phase that owns the files: the architecture phase moves its own
 stale work aside (`archrevision.check`, `architecture.md` step 2); every other phase overwrites its
 own outputs when it reruns. Whether the driver's `artifactio.set_aside_stale` keeps running before
-the dispatch is merged question Q6 in `driver-contract.md`. The saved architecture surveys of
+the dispatch is an open item in QUESTIONS.md. The saved architecture surveys of
 `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` (CONTEXT 7.13) are reused through the architecture
 phase's resume points when their inputs are unchanged.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
 - **7.4 Retries:** structured causes only (section 7); transient causes release the Epic for a
   later rerun of the failed steps; succeeded steps are never redone (section 8); the same step with
   nothing changed is not retried but diagnosed (the driver's incident for the incident-responder).
 - **7.5 Rerunning Task creation:** delegated to the task-decomposition phase; this flow passes the
   stale reason and records `task-rerun`.
-- **7.6 Done:** step 14's done rule; the one corrective pass is inside the task-decomposition
-  phase, and its leftover `uncitedItems` fail that repository. "Epic closed" is never used: done is
-  `elaboration_state=done` and the Epic stays open.
+- **7.6 Done:** step 14b's done rule: every span repository has its Story and Tasks, every Task's
+  edges are written (inside a Story by the task-decomposition phase, between Stories by steps 11
+  to 13), and every Task is scored (step 14a), in that order, because scoring needs the Tasks and
+  their edges to exist. There is no "nothing to build" outcome: every span repository gets a Story
+  and Tasks, `done` items included, and the build pipeline decides whether code changes. The one
+  corrective pass is inside the task-decomposition phase, and its leftovers fail that repository.
+  "Epic closed" is never used: done is `elaboration_state=done` and the Epic stays open.
 - **7.7 Three-case architecture model:** `architectureChange` (`none`, `new`, `partial`) from
-  `arch-delta` drives `deltaDir`; every case yields build items (view items and/or
-  `implementationWork` gaps), so something always reaches the TRD and the Tasks unless the
-  validated assessment says no implementation work.
-- **7.8 Selection filters:** step 2 refuses an Epic with no `elaboration_state` (the mobile Epics
-  `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn` among them), no WSJF score, or an unmet Epic dependency,
-  whichever door started the run.
+  `arch-delta` drives `deltaDir`; in every case build items reach the TRD and the Tasks (view items,
+  `implementationWork` gaps, prerequisites). The architecture round bound is 3 with a hard stop
+  (`architecture.md` step 18); this flow passes no round argument.
+- **7.8 Selection filters:** applied by driver selection before dispatch; this flow does not repeat
+  them (step 2) because the driver is its only entry. The Task WSJF scores this flow computes are
+  what lets the build lane consider the Tasks.
 - **7.9 Who gets asked what:** only `owner-concern` and the missing architecture path become
   `requiredHumanActions` (the driver writes the owner inbox and the hold); every other failure goes
   to the incident-responder through the driver's incident.
 - **7.10 Repositories:** the repo-scoping phase owns placement through the polyrepo-steward.
 - **7.11 Deterministic over agentic:** only step 12 and the phases' reasoning steps are agents.
 - **7.13 Saved work:** the architecture resume point reuses the existing surveys.
+- **7.16 Hierarchy:** every Task this flow writes sits under a Story of this Epic; the flow creates
+  no bug bead and no Task outside elaboration.
+- **7.17 Epic readiness:** the Epic's validation, dependency assessment and WSJF score are assumed
+  done; this flow writes none of them (step 14a limits scoring to the Tasks).
+- **7.18 Entry point:** the driver started by `keeper.py` is the only entry.
+- **7.20 Missing prerequisites:** prerequisites the architecture's Closure finds become build items
+  and Tasks like any other item; none is raised as an error.
 - **Hard limits (CONTEXT 6):** no arc42 section 2 writes (the session runner's guard); no
   destructive operations beyond the target folder removal after done, and the unstarted-Task
   deletion inside task decomposition.
 
-## 10. Open questions
+## 10. Open items
 
-1. **[S02] `elaboration-finish` failure.** Today a failed finish leaves the Epic not done but
-   returns `ok:true` (headline "Scoring did not run"). Should it be a failure with its structured
-   cause, so the Epic is released for a retry? The done rule suggests yes.
-2. **[S02] Task-deps when one Story is reused and another changed.** The `task-deps` step is
-   fingerprinted by all `tasks-<slug>.json` files; when one Story's Tasks are recreated, all
-   cross-Story edges are derived again. Acceptable, or derive only the edges touching the changed
-   Story?
-3. **[S02] Pass-through inputs (merged Q13).** The driver never sends `prd.body`, `dependencies`
-   or `accessPatterns` (nor `spec`). Drop each input, or add a producer? Asked also in
-   `prd-reconciliation.md` and `spec-authoring.md`, which point here. Whether `prd.body` survives
-   also depends on the doors (merged question Q12 in `route-elaboration.md`).
-4. **[S02] The "nothing to build" record (CONTEXT 7.6, 7.12).** No artifact, bead field or
-   metadata key records "nothing to build" today, for an empty span or for one span repository
-   with no work items, and `observe.py` shows an Epic "Done" only with a TRD, a Story and a Task
-   (`driver-contract.md` §7), so a correctly done Epic is shown as not done. S02 defines one record
-   (for example an Epic metadata key listing the span repositories with nothing to build and the
-   reason), names its one writer (this flow's step 14 is the natural place), and S05 makes
-   `observe.py`'s Done rule accept it. Related: `spec-authoring.md` Open question 1 (whether such
-   a repository gets a Story).
-- Misplacement after the corrective pass: merged question Q11 in `repo-scoping.md`.
-- The `relay` cause: merged question Q3 in `driver-contract.md`.
-- The task-dependency-mapper's `fable` model: merged question Q1 in `driver-contract.md`.
-- Inline PRD text and the manual doors: merged question Q12 in `route-elaboration.md`.
-- Closure-edge warnings: settled (step 11 fails on them; S01h finding 24).
-- Owner inbox writer: settled (the driver writes it from `requiredHumanActions`; S01h findings 11
-  and 16).
+See QUESTIONS.md

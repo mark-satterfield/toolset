@@ -92,7 +92,7 @@ After a successful run, all of the following are true:
     - There is no cycle. Every `planned` prerequisite is planned by an open bead.
     The path is `target/<subject>/closure.json` (beside `baseline.json`), not `delta/closure.json`:
     the code writes it there (`archclosure.write_closure`) and every Epic spec reads it there. The
-    `meta.description` and PLAN S01a say `delta/`; see Open questions.
+    `meta.description` and PLAN S01a say `delta/`; see QUESTIONS.md.
     `depscore.py arch-delta` later lists these entries as `prerequisite` items.
 11. The step returns a result. On success it has `ok: true`, `subject`, `subjectName`, `targetDir`,
     `deltaDir`, `architectureChange`, `closure {path, workPath, prerequisites}`, `targetPath`,
@@ -111,7 +111,7 @@ After a successful run, all of the following are true:
 | PRD | `prd.path` (a vault file under `docs/sdlc/`) or `prd.body`; `prd.id`, `prd.title` |
 | Epic | `epic.id` (`ssbd-…`); its prefix, `prd.id` and the PRD file's base name are the names a subject may not carry (`--forbid`) |
 | Subject override | optional `subject` arg (`architectureSubject` on the composite) |
-| Round bound | optional `maxRounds` (default 6; the composite passes `maxArchitectureRounds`) |
+| Round bound | none: fixed at 3 review rounds with a hard stop (CONTEXT 7.7, the owner's answer 5 of 2026-10-09). Today's `maxRounds` argument (default 6) and the composite's `maxArchitectureRounds` are dropped |
 | Beads | the central beads database (`depscore.repo`, the composite's `emitTarget`), read-only, through `atw-bd` in sessions and `bead_status` in `arch-closure` |
 | Artifact recorder | `artifacts {dir, relDir, epicId, script, phase: 'architecture', inputs, beadId}`; `script` is `<driver>/artifactio.py` (`$ATW_ARTIFACT_SCRIPT`). `inputs` are the PRD path plus `arc42-revision:{"dir":"<arch>/arc42","record":"<work>/arc42-revision.json"}` |
 | Repositories | each repository's local checkout and its `main` (read with `git -C <repo> show/grep main:…`), as named by the polyrepo-steward |
@@ -178,7 +178,7 @@ result file, and Python validates and accepts it.
 
 Model and effort: "current" is what the JS passes as `effort`. The model comes from the agent's
 frontmatter. Agents with `model: fable` are rerun on `opus` by the driver's fable recovery today
-(merged question Q1 in `driver-contract.md`).
+(an open item in QUESTIONS.md).
 
 Every agent session in this flow runs inside the session runner's section 2 guard
 (`driver-contract.md` §8): section 2 is fingerprinted and copied before the session and restored,
@@ -194,7 +194,7 @@ with a failure at stage `constraints-written`, if the session changed it.
    It returns `status: new | current | integrating | stale`.
    - `stale`: a view the saved survey, ledger or decision cites, or a draft copy, changed in `arc42/`.
      Everything in `<work>` is then moved to `<art>/stale-<timestamp>/architecture/` and the
-     step restarts from the survey (see Open question 2). This is the one mechanism that sets stale
+     step restarts from the survey (see QUESTIONS.md). This is the one mechanism that sets stale
      architecture work aside; `prd-to-spec.md` §8 refers here.
    - `integrating`: this step's own interrupted integration. The work is current.
 3. *(removed)* The section 2 fingerprint and copy at the start of the run is replaced by the
@@ -219,10 +219,10 @@ with a failure at stage `constraints-written`, if the session changed it.
    - the baseline schema;
    - `contextSha` = sha256 of `relay.canonical({prdBody: prd.body or "", schema: SURVEY_SCHEMA})`.
    The new code must reproduce this exactly or the three saved surveys (CONTEXT 7.13) read as stale
-   (see Open questions 3 and Q7).
+   (see QUESTIONS.md).
 6. *agent: polyrepo-steward*, list repositories `{name, path, role, lifecycle}`. Current: sonnet,
    effort `low`, inline schema. New: write `<work>/repositories.json`. Runs only when the survey must
-   be produced. Correctness of the agent choice: see merged question Q17 (this may be deterministic
+   be produced. Correctness of the agent choice: see QUESTIONS.md (this may be deterministic
    from the steward's manifest).
 7. *agent: prd-reality-reconciler (SURVEY mode).*
    - Inputs (paths): the PRD, `<arch>` (with MODEL, MENU and section 2), `repositories.json`, the
@@ -266,7 +266,7 @@ with a failure at stage `constraints-written`, if the session changed it.
 13. *agent: architecture-decision-workflow-coordinator*, round plan for round n.
     - Inputs (paths): PRD, `survey.*`, `draft/`, `rounds/`, `ledger.json`, `decision.json` (when
       returned or when team notes exist).
-    - Inline facts in the brief: round n of the limit; the roster with each agent's coverage; the
+    - Inline facts in the brief: round n of 3; the roster with each agent's coverage; the
       design scope with requirement ids; open notes (open repairs, repair checks needed, coverage
       gaps, unanswered or awaiting-resolution findings with owners, claims without a reviewer verdict
       per writer); agents returned to by the decider; dispatches refused or silent last round.
@@ -301,6 +301,13 @@ with a failure at stage `constraints-written`, if the session changed it.
       coverage ids, repair ids), `rounds/`, `draft/`, `<arch>`, MODEL, MENU and the writer schema. The
       writer listed last is told that it reconciles: it folds the other writers' settled
       contributions into its assigned views and identifies cross-view repairs.
+    - Same expectations (CONTEXT 7.21): every writer is given, by path, the same review standard
+      the reviewers in step 16 and the decider in step 17 judge against (today the
+      `DESIGN_REVIEW_STANDARD` and `COVERAGE_RULE` text the JavaScript pastes only into some
+      briefs), including the level of implementation detail a view must carry. The arc42 baseline
+      lacks that detail, so writers fill it in the views they author; a reviewer finding that a
+      writer could have met from that standard is a sign the briefs diverged, not normal
+      operation.
     - Each writes its owned `draft/` files and `rounds/r<n>-<seq>-<role>-<agent>.json`.
     - Python validates each result before starting the next writer. Then it folds the ledger (step 4).
 16. *agents: reviewers, in parallel.* Before them, deterministic: seed the draft and run the dry-run
@@ -312,10 +319,10 @@ with a failure at stage `constraints-written`, if the session changed it.
       The models are fable, sonnet and opus per frontmatter; operational-readiness-reviewer is opus
       with frontmatter effort `low`.
     - Each receives the same paths plus its `assignedClaims` / `claimFiles` / coverage ids / repair ids
-      in the plan entry.
+      in the plan entry, and the same review standard the writers received (step 15).
     - Output: `rounds/r<n>-<seq>-<role>-<agent>.json` (review schema; cost reviewers add `estimates`).
     - Then fold the ledger. The round counts as complete when every plan dispatch has a saved result
-      file. `ready` = the coordinator's `readyForDecision`, or the round limit was passed.
+      file. `ready` = the coordinator's `readyForDecision`, or round 3 is complete.
 17. *agent: architecture-decider.*
     - Inputs: PRD, `survey.*`, `rounds/`, `ledger.json`, `draft/` (seeded first, as in step 10),
       `<arch>/arc42`, `<arch>/target/`, plus the open notes as in step 13.
@@ -338,10 +345,16 @@ with a failure at stage `constraints-written`, if the session changed it.
       for the incident-responder. The target is never taken as approved without the decider's
       `approve`: neither the `meta.description` nor the `architecture-decider` definition provides
       an approval the decider did not give.
-18. *Loop bounds.* At `lastRound >= maxRounds` (6) the decider rules on the target as the team left
-    it. Past that, each return gets one more round. At `2 × maxRounds` → `stage: rounds`
-    failure. These bounds come from the JavaScript, not from the intent; they stay only with an
-    owner reason (Open question 6).
+18. *Round bound: at most 3 review rounds, then a hard stop (CONTEXT 7.7).* A round is steps 13 to
+    17. A `return` after round 1 or round 2 starts the next round. After round 3 the decider rules
+    once on the target as the team left it; a verdict other than `approve` (or an owner-concern of
+    the owner kinds) fails the run at `stage: rounds`, cause `other`, for the incident-responder: no
+    fourth round, no extension per return, no implicit approval. The goal is approval in round 1.
+    A run that needs a second or third round records a `rounds-warning` note in the result and the
+    run ledger (rounds used and the findings that drove each extra round): repeated rounds signal a
+    mismatch between what writers and reviewers expect, or a pipeline defect, not normal operation.
+    Today's bounds (6 rounds, each return one more, hard stop at 12) came from the JavaScript and are
+    dropped (the owner's answer 5 of 2026-10-09).
 19. *(removed)* The section 2 check after the rounds is the session runner's guard around each
     session.
 
@@ -419,7 +432,7 @@ with a failure at stage `constraints-written`, if the session changed it.
     file:line, named as arc42 names the element.
     - Output: `closure-deployments.json`.
     - Current: sonnet, effort `medium`.
-    - It does not read the roots, so it can start in parallel with step 22 (see Open question 5).
+    - It does not read the roots, so it can start in parallel with step 22 (see QUESTIONS.md).
 31. *agent: prd-reality-reconciler (CLOSURE mode).*
     - Inputs: PRD, `<arch>`, `closure-roots.json`, `closure-deployments.json`, beads (read-only), the
       closure schema.
@@ -495,8 +508,9 @@ with a failure at stage `constraints-written`, if the session changed it.
   blocker that never clears. Nothing later recomputes either.
 - *Decision owner-concern filter* (only `business-conflict` / `architecture-conflict` reach the
   owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
-- *Rounds bound (`maxRounds`, hard stop at 2×).* This is a stop condition for spend, not a quality
-  check, carried from the JavaScript; it stays only with an owner reason (Open question 6).
+- *Round bound: 3 review rounds, then a hard stop* (step 18). Owner requirement (CONTEXT 7.7), not a
+  quality check: rounds beyond 3 spend without converging and point at a defect for the
+  incident-responder.
 
 **Dropped**
 
@@ -548,7 +562,7 @@ with a failure at stage `constraints-written`, if the session changed it.
 | Decider writes no decision | `decide` | as above | As above |
 | Decider owner-concern (business or section 2) | `owner-concern` | none: an owner hold, not a failure | No; owner acts and deletes `decision.json` |
 | Decider repeats a non-actionable return after the one re-ask | `decide` | `other` | No; incident |
-| Rounds exceed 2× limit | `rounds` | `other` | No; incident |
+| No `approve` after round 3 (the hard stop) | `rounds` | `other` | No; incident |
 | Section 2 written by a session | `constraints-written` | `other` | No; restored, incident |
 | `write_target` refusal | `target` | `other` | No; incident (the approved draft is wrong) |
 | `promote` refused files | `approve` | `other` | No; incident |
@@ -557,7 +571,7 @@ with a failure at stage `constraints-written`, if the session changed it.
 | Integration measurement fails | `integrate` | `other` | No; incident |
 | Integration wrote section 2 | `integrate` | `other` | No; restored, incident |
 | Conformance reviewer or review check gives no result | `integrate` | from the session, or `other` | As above |
-| `arch-closure` bead status read times out (`bd`/Dolt) | `closure` | `bd-timeout` (structured fact: merged question Q5 in `driver-contract.md`) | Yes: backoff as for contention |
+| `arch-closure` bead status read times out (`bd`/Dolt) | `closure` | `bd-timeout` (structured fact: an open item in QUESTIONS.md) | Yes: backoff as for contention |
 | Closure refused twice | `closure` | `other` | No; incident |
 
 `relay` has no producer in this flow after the rewrite.
@@ -585,7 +599,7 @@ input lists below are the single source; `prd-to-spec.md` refers here.
 | `architecture-update.json` + last `conformance-<n>.json` with `conforms: true` | target dir + delta + `decision.json` + `survey.json` + PRD | nothing: the maintainer and reviewer are skipped; `review_check` re-runs (deterministic) |
 | `architecture-update.json` without a conforming review | same | maintainer RESUMING pass, then review |
 | `closure-roots.json` | target dir | recomputed (deterministic) |
-| `closure-deployments.json` | `closure-roots.json` (today); see Open question 5 | nothing |
+| `closure-deployments.json` | `closure-roots.json` (today); see QUESTIONS.md | nothing |
 | `<work>/closure.json` + `target/<subject>/closure.json` | roots + deployments + `arc42/` + PRD | nothing |
 
 The saved work of `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` (CONTEXT 7.13) must be read in place:
@@ -596,15 +610,24 @@ The saved work of `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` (CONTEXT 7.13) mus
 
 Of these, `candidates/` only matters if it holds a complete result for a dispatch whose final file
 is missing. The new runner may promote such a candidate after schema validation, or ignore it (see
-Open question 8). `relay/` is ignored.
+QUESTIONS.md). `relay/` is ignored.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
 - **7.7 Three-case model.** It is decided deterministically by `archstate` from the draft and the
   assessment (`none` / `new` / `partial`), recorded in `baseline.json` with its note. The no-change
   case still carries `implementationWork`, and the Closure always runs, so something reaches the TRD
   and Tasks. Writers run before reviewers in every round. The last listed writer reconciles. No
-  `designOwner` is stored, and a legacy one is ignored.
+  `designOwner` is stored, and a legacy one is ignored. At most 3 review rounds, then a hard stop
+  (step 18); needing more than one round is recorded as a warning.
+- **7.21 arc42 detail gap.** The arc42 baseline lacks implementation detail, and this step fills
+  it: the survey assesses it per capability, and the writers author it into the views. Writers,
+  reviewers and the decider work from the same review standard, handed to each by path (steps 15
+  to 17), so a first-round review does not find gaps the writers were never told to close.
+- **7.20 Missing prerequisites.** The Closure (steps 29 to 32) writes every element the delta's
+  work rests on that is not built and current (for example a VPC, a security group, a Lambda
+  layer) as a prerequisite; `depscore.py arch-delta` lists each as a build item, so it is built as
+  part of the Epic's work and never raised as an error.
 - **6 hard limits.**
   - Section 2: the session runner's fingerprint, copy and restore guard (`driver-contract.md` §8);
     the `integration_files` section 2 count; `promote` and `write_target` refusals; and briefs that
@@ -631,55 +654,6 @@ Open question 8). `relay/` is ignored.
 - **7.14 Briefs.** Briefs carry paths and the expected outcome. The ledger's open items are facts with
   file locations, never theories.
 
-## 10. Open questions
+## 10. Open items
 
-**Q7 [S02] (merged; also asked in `prd-reconciliation.md`). Is any commit on a cited repository's
-`main` meant to invalidate saved work, or should code evidence be bound per cited file?** The
-survey seal binds the `main^{tree}` of every repository the survey cites, and the detailing records
-`git-main:<repo>`, so any commit (including Tasks of the same Epic merged later) invalidates the
-about 850k-token survey or costs a fresh opus detailing session.
-
-**Q17 [S02] (merged; also asked in `repo-scoping.md`). Can repository facts come from the steward's
-manifest (`.polyrepo/manifest.yaml` through the `polyrepo` tool) deterministically instead of a
-polyrepo-steward session?** This covers the Survey's repository list (step 6), and in
-`repo-scoping` the creation of a repository the target names with name and template (`polyrepo.py
-create` still needs `--space` and `--purpose`); `repo-scoping.md` step 4 already takes the
-inventory in code. The Closure's deployments inventory (step 30) needs reading code and likely
-stays an agent.
-
-1. **[S02] Closure path fallback.** Settled: the contract is `target/<subject>/closure.json`
-   (`archclosure.write_closure` writes it there, `merge_closure` and `resumefacts.saved_target`
-   read it there, and every Epic spec agrees). The discrepancy: the architecture `meta.description`
-   ("writes those ... to delta/closure.json") and PLAN S01a ("Closure output (`delta/closure.json`)")
-   say `delta/`; S08 corrects the meta description. Open: does the `delta/closure.json` fallback
-   read (`merge_closure`, `resumefacts.saved_target`) stay for old saved targets?
-2. **[S02] Stale saved work.** `archrevision.check` moves all of `<work>`, including the about
-   850k-token survey, aside when any arc42 view the survey, ledger, decision or draft cites changed.
-   Should the new flow instead re-run only the parts bound to the changed views? For example: keep
-   the survey when its own seal is still current, and drop only the rounds and decision.
-3. **[S02] Survey `contextSha`.** `contextSha` includes SURVEY_SCHEMA's canonical JSON. Must the new
-   code reproduce the JS schema byte-for-byte, or reuse the saved `contextSha`, to keep the three
-   saved surveys current? (The `main^{tree}` half of the old question is Q7 above.)
-5. **[S02] Deployments inventory binding.** Today it is fingerprinted only to `closure-roots.json`,
-   yet its content depends on every repository's `main`. What should invalidate it? Can it run in
-   parallel with the integration?
-6. **[owner] Round limits.** `maxRounds = 6` and the hard stop at 12 rounds come from the
-   JavaScript, not from the `meta.description` or the agent definitions. They are a spend bound.
-   Are they wanted, and at what values? (A repeated non-actionable return is no longer taken as
-   approval: settled, S01h finding 30.)
-7. **[S02] Effort.** The code passes `medium` to architecture-conformance-reviewer,
-   architecture-boundary-guardian (Check) and operational-readiness-reviewer, whose frontmatter says
-   `low`. Which wins? (The `fable` half of the old question is merged question Q1 in
-   `driver-contract.md`.)
-8. **[S02] `candidates/` in saved work.** Promote a complete, schema-valid candidate whose final file
-   is missing, or ignore `candidates/` entirely?
-10. **[S02] Inline brief text.** Which of today's inline rule blocks (`ARCH_WHERE`, `DRAFT_RULES`,
-    `COVERAGE_RULE`, `DESIGN_REVIEW_STANDARD`, the RECHECK block) are already covered by the agent
-    definitions and skills, and which must move into them before the briefs shrink to paths?
-11. **[S02] Schemas defined only in the JS.** SURVEY, COORDINATOR, DECISION, MAINTAIN, CONFORMANCE,
-    REPOSITORIES, DEPLOYMENTS and CLOSURE are defined only in `architecture.js`. Where do they live
-    in the new code? Do they become files under `skills/artifact-handoff/schemas/` beside the
-    writer, review and baseline schemas?
-- Old question 4 (repository listing) is Q17 above.
-- Old question 9 (marketing repositories): settled by `repo-scoping.md` step 6, which rejects any
-  placement under `apps/marketing/`, prerequisites included.
+See QUESTIONS.md

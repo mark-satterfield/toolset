@@ -1,5 +1,14 @@
 # Net-effect spec: `wsjf-scoring`
 
+**Status: not part of the Epic pipeline rewrite.** This flow judges and scores Epics. Epic WSJF
+scoring belongs to the future readiness process, which is not yet built (CONTEXT 7.17; the owner's
+answer 6 of 2026-10-09); elaboration assumes it is done and no Epic flow runs this one. The only
+part of it the Epic pipeline uses is the Task WSJF arithmetic (`scoring.score`, rubric
+`wsjf.py`), which `prd-to-spec` step 14 runs with the write scope limited to the Epic's Tasks, from
+the sizes `task-decomposition` writes. Whether this owner-run command is kept until the readiness
+process exists is an open item in QUESTIONS.md. The rest of this file is the record of its
+contract, for that decision and for the readiness process.
+
 Source: `<plugin>/workflows/wsjf-scoring.js` (`meta.description`), the plugin command
 `<plugin>/commands/wsjf-scoring.md`, the agent `<plugin>/agents/wsjf-scorer.md` and its skills
 (`wsjf`, `beads-contract`), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts
@@ -11,13 +20,15 @@ only, `<plugin>/scripts/portfolio/depscore.py` (`score-plan`, `judge-input`, `re
 
 ## Who calls it (the S01f question)
 
-- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only through
-  `depscore.py elaboration-finish` (`elaboration.finish`), which runs the **arithmetic** step of
-  this flow (`scoring.score`) scoped to the Epic and its Tasks, with the Epic's size rolled up from
-  its Tasks when it is being marked `done`. It never judges: the Epic's value must already be
-  judged (by this flow), and its Tasks arrive sized and fingerprinted by `depscore.py write-task`
-  (see `<orch>/specs/epic/task-decomposition.md`). So the arithmetic is one shared Python function
-  that both this flow and the `prd-to-spec` finish step call.
+- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only in its finish step,
+  which runs the **arithmetic** step of this flow (`scoring.score`) with the write scope limited
+  to the Epic's Tasks. Today `depscore.py elaboration-finish` also writes the Epic's values, with
+  its size rolled up from its Tasks; the rewrite drops that write (CONTEXT 7.17). It never judges:
+  the Epic's value must already be judged (by the readiness process; today by this flow), and its
+  Tasks arrive sized and fingerprinted by `depscore.py write-task` (see
+  `<orch>/specs/epic/task-decomposition.md`, whose corrective pass leaves no Task unsized). So the
+  arithmetic is one shared Python function that both this flow and the `prd-to-spec` finish step
+  call.
 - **The driver does not call this flow.** Commit `64b4adbb` (2026-10-02) deleted `triggers.py`; the
   supervisor no longer assesses or re-scores on its own. What is left in `<driver>`: the ledger
   event types `trigger_plan` and `trigger_dispatch` (`ledger.EVENT_TYPES`, no producer),
@@ -226,8 +237,7 @@ Agents dispatched by the JavaScript, accounted for:
   (`beadgraph.py`: `CONTENTION`, `BD_TIMEOUT`, else `OTHER_CAUSE`) gives `contention`,
   `bd-timeout` or `other`. Retry reasonable for `bd-timeout`/`contention` (backoff 30 s doubling,
   cap 30 min); not for `other`. The field exists, but `beadgraph._bd` chooses it by reading `bd`'s
-  standard error, which CONTEXT 7.4 does not accept as a structured fact; merged question Q5 in
-  `driver-contract.md`.
+  standard error, which CONTEXT 7.4 does not accept as a structured fact; an open item in QUESTIONS.md.
 - `ScoringError` from the rubric or a malformed plan file: `other`; not retried (same input, same
   result); incident-responder.
 - A judging session fails: `api` or `quota` from the headless runner's structured result (the
@@ -247,11 +257,12 @@ Agents dispatched by the JavaScript, accounted for:
   plans none of those items, so it judges nothing again.
 - Step 8: idempotent; a rerun writes only what changed (nothing, if nothing changed).
 - A rerun after any point therefore redoes no session whose inputs are unchanged and starts no
-  session when nothing needs judging. This needs a `workDir` that survives between runs: merged
-  question Q8.
+  session when nothing needs judging. This needs a `workDir` that survives between runs: an open item in QUESTIONS.md.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
+- 7.17 Epic readiness: Epic WSJF judging and scoring belong to the future readiness process; no
+  Epic pipeline step runs this flow, and the pipeline's own finish step writes Task scores only.
 - 7.8 WSJF selection filter: this flow is the producer of the `wsjf` value that
   `selection._epic_candidates` (Epics), `selection.build_candidates` and `waiting_build` (Tasks)
   and the dashboard require. It never writes an empty `wsjf`; an item it cannot score keeps no
@@ -262,42 +273,13 @@ Agents dispatched by the JavaScript, accounted for:
 - 7.2 Only the owner runs the pipeline: this flow is an owner-run command; no session runs it as
   a test, and `dryRun` exists for the owner, not for rehearsal.
 - 7.4 Retries: section 7; a failed judging session is not rerun on unchanged input in the same run.
-- 7.6 / prd-to-spec: the arithmetic is shared with `elaboration-finish` (Epic rolled up from its
-  Tasks only once `done`; never "Epic closed").
+- 7.6 / prd-to-spec: the arithmetic is shared with the `prd-to-spec` finish step, which computes
+  every Task's WSJF after the Tasks and their edges exist (never "Epic closed").
 - 7.11 Deterministic over agentic: planning, fingerprints, validation, arithmetic and writes are
   code; only value and size judgments are agent work.
 - 7.14 Briefs: the judging brief gives the rubric, the files and the expected output, no expected
   score.
 
-## 10. Open questions
+## 10. Open items
 
-**Q8 [S02] (merged; also asked in `dependency-assessment.md` and `task-dependency-assessment.md`).
-A stable work directory for the owner-run portfolio flows.** The commands create a fresh `workDir`
-per run (`.claude/workflow-runs/wsjf-scoring/<timestamp>`, and the same for the two assessment
-flows), so a crashed run's judgments and edges are never reused. Reuse needs a stable directory
-(for example `<control>/.claude/workflow-runs/artifacts/_portfolio/<flow>/`, or per Epic or Task
-for the assessments).
-
-**Q9 [S02] (merged; also asked in `dependency-assessment.md`). Which PRD text is authoritative for
-judging and assessment?** Judging and the assessment corpus read the Epic's bead `description` as
-its PRD; `prd-to-spec` reads the vault PRD it finds through `workitems.find_prd` /
-`$ATW_PRD_DIR`. If the two differ, value and edges are judged from a different text than the one
-elaborated. S02 checks whether the driver's PRD-to-Epic sync (`ATW_PRD_EPIC_SYNC`,
-`ATW_PRD_EPIC_VERIFY`) keeps them equal, and if not, picks the vault PRD or the description.
-
-**Q10 [owner] (merged; also asked in `dependency-assessment.md`, `task-decomposition.md` and
-`prd-to-spec.md`). Do new Epics, and Tasks left unsized, stay manual for scoring and dependency
-assessment, or does the orchestrator run them?** With the triggers removed (commit `64b4adbb`, on
-purpose), a new Epic has no `wsjf` and no `tracks` edges until the owner runs
-`/wsjf-scoring` and `/dependency-assessment`, so the driver never selects it. The same holds for a
-Task `task-decomposition` writes without a valid size: nothing in the Epic pipeline or the driver
-judges its size later, so it stays unselectable (CONTEXT 7.8) and the Epic's size roll-up is
-incomplete until the owner runs `/wsjf-scoring`. If the owner wants the orchestrator to do it, S02
-picks where (for unsized Tasks: `task-decomposition`'s one corrective pass with the exact Task keys,
-or Task-level judging for this Epic's unsized Tasks before `elaboration-finish`).
-
-1. **[S02] Leftover driver trigger vocabulary.** `ledger.EVENT_TYPES` `trigger_plan`/
-   `trigger_dispatch` and `failures.py`'s `trigger_dispatch` handling have no producer. Keep them
-   for old ledgers or remove them (S05)?
-- The structured cause for `bd` failures: merged question Q5 in `driver-contract.md`.
-- `wsjf-scorer` frontmatter `isolation: worktree`: merged question Q2 in `driver-contract.md`.
+See QUESTIONS.md

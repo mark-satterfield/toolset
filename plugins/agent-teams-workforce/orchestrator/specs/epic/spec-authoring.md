@@ -15,8 +15,11 @@ Path conventions: `<art>`, `<slug>` and `<repo>` as in
 ## Purpose
 
 Author the implementation-ready spec set for ONE repository of an Epic's span, from the TRD and
-the approved target and delta views, specifying the change for exactly the delta items the
-repository's detailing marks `add`, `modify` or `remove`: the API/OpenAPI, event and error
+the approved target and delta views, specifying exactly the delta items the repository's
+detailing marks `add`, `modify`, `remove` or `done` (for a `done` item: the required behaviour and
+the existing code the detailing cites as meeting it, so the Task's tests can verify it; CONTEXT
+7.6, 7.19). Every span repository gets a spec set and a Story; there is no "nothing to build"
+case. The spec set covers: the API/OpenAPI, event and error
 contracts; the data model; the acceptance criteria and Definition of Done. The contracts maker and
 the data-model maker run in parallel; the criteria maker then reads their completed documents. For
 a repository with `ui` work items the contracts document carries one section per item stating its
@@ -113,9 +116,11 @@ No vault writes, no git commits.
 ## Steps
 
 1. **deterministic** — Build the brief context once (Python, no script): spec header; the
-   three-case target sentence; the detailing pointer (`<recon>`) with the work ids ("specify the
-   change for these items, and only these: add = new, modify = from → to, remove = removal") and
-   the idle ids ("no specification for these: <id> [status by <bead>]"); when
+   three-case target sentence; the detailing pointer (`<recon>`) with the work ids ("specify these
+   items, and only these: add = new, modify = from → to, remove = removal, done = the required
+   behaviour and the existing code cited as meeting it, which the Task's tests will verify") and
+   the idle ids, which are only `planned-elsewhere` items ("no specification for these: <id>
+   planned by <bead>"); when
    `dependenciesCurrent` is false, the pointer to `dependencyChanges.changeFindings` in `<recon>`;
    the UI items grouped by design source; the TRD path; the reading-scope rules (only `<repo>`, no
    fleet survey; evidence continuity; existing code is evidence, not proof; a `done` item
@@ -139,7 +144,7 @@ No vault writes, no git commits.
 4. **agent, in parallel with step 3** — `data-model-specification-author`. Inputs: the step 1
    context and the access patterns (or "derive them"). Output: `<art>/spec-<slug>.data-model.md`.
    Model `fable` (frontmatter; the current shared `fable` block switches a recovered session to
-   `opus`), effort `medium`. Kept; see Open questions on `fable`.
+   `opus`), effort `medium`. Kept; see QUESTIONS.md on `fable`.
 5. **deterministic** — Check both documents exist, are non-empty UTF-8 (today
    `jsonartifact.py --document`). Then check their citations: every `decisionIds` entry in each
    document's YAML frontmatter, with any `#<heading>` removed, must name an existing file relative
@@ -172,7 +177,7 @@ No vault writes, no git commits.
     three spec document paths, `<repo>`, the spec header. Task: title and description of the ONE
     Story, in terms of the spec set; a container, no task breakdown, WSJF or priority; runs no
     `bd`. Output: `<art>/story-<slug>.draft.json` `{title, description}`. Model `sonnet`
-    (frontmatter), effort `low` (dispatch; frontmatter `medium`). See Open questions on whether
+    (frontmatter), effort `low` (dispatch; frontmatter `medium`). See QUESTIONS.md on whether
     this session is needed.
 11. **deterministic** — Write `<art>/story-<slug>.json` = `{title, description, decisionIds}`:
     title/description from the draft when non-empty, else the default title
@@ -203,10 +208,10 @@ inputs. No `workflow-command-runner` session remains.
 
 Agents accounted for: `api-specification-author` (kept, step 3),
 `data-model-specification-author` (kept, step 4), `acceptance-criteria-writer` (kept, step 7),
-`user-story-writer` (kept, step 10, see Open questions),
+`user-story-writer` (kept, step 10, see QUESTIONS.md),
 `agent-teams-workforce:workflow-command-runner` (dropped: every call is a deterministic step).
 Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
-`definition-of-done-enforcer`, `prd-alignment-verifier` (see Open questions).
+`definition-of-done-enforcer`, `prd-alignment-verifier` (see QUESTIONS.md).
 
 ## Checks kept
 
@@ -265,7 +270,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 | Step 6: `SpecUiError` (items not a JSON list) | `other` | No (a programming error in the flow); stage `author`. |
 | Step 10: story draft missing or empty after a normal end | none | Not a failure: step 11 uses the default title and description. |
 | Step 11: `story-<slug>.json` cannot be written (`OSError`) | `other` | No; stage `story`. |
-| Step 12: `write_story` raises `GraphError` with cause `bd-timeout` or `contention` | that cause (today `GraphError.cause` is chosen from `bd`'s standard error, which CONTEXT 7.4 does not accept as structured; the structured fact is merged question Q5 in `driver-contract.md`) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so a Story an interrupted attempt created is updated, not duplicated. |
+| Step 12: `write_story` raises `GraphError` with cause `bd-timeout` or `contention` | that cause (today `GraphError.cause` is chosen from `bd`'s standard error, which CONTEXT 7.4 does not accept as structured; the structured fact is an open item in QUESTIONS.md) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so a Story an interrupted attempt created is updated, not duplicated. |
 | Step 12: `write_story` raises any other `GraphError` / `bd` failure | `other` | No; stage `story-write`, incident-responder. |
 | Step 13: `record_step` fails | `other` | No; non-fatal warning. |
 
@@ -290,48 +295,26 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 - **R3, the Story bead** is never "redone": `write_story` is idempotent and always runs.
 - A rerun after a crash between step 11 and step 12 reruns only step 12.
 
-## Owner rules that apply
+## Requirements that apply
 
 - **7.4 Retries:** structured causes from the runner and from `GraphError.cause`; `bd` contention
   backoff 30 s doubling to 30 minutes; one corrective re-dispatch only with the exact missing file;
   saved documents are never redone with unchanged inputs.
-- **7.6 Done rule:** the Spec covers exactly the detailing's `work` ids; the Story is the
-  repository's container for the Tasks that must cover every `add`/`modify`/`remove` item.
+- **7.6 Done rule and no "nothing to build":** every span repository gets a spec set and one Story.
+  The Spec covers exactly the detailing's `work` ids (`add`/`modify`/`remove`/`done`); the Story is
+  the repository's container for the Tasks that must cover every one of them.
+- **7.19 Existing code:** a `done` item is specified as the required behaviour plus the existing
+  code cited for it, so its Task's tests verify it rather than assume it.
 - **7.7 Three-case model:** the brief states the target case and where build items come from.
 - **7.9 Who gets asked:** makers decide technical gaps; nothing goes to the owner.
 - **7.10 Repositories:** one repository per Spec and Story; the makers read only `<repo>`.
 - **7.11 Deterministic over agentic:** UI design sources, decision ids, the Story file and the bead
   write are code; only the four documents' prose is a session.
 - **7.14 Facts, not guesses:** briefs carry paths and the item ids, not theories.
+- **7.16 Hierarchy:** the Story is written under its Epic, keyed by `elab_key`.
 - **Hard limits:** no write to arc42 section 2; no secrets; nothing in `apps/marketing/`; no
   destructive bead operation (a Story is created or updated, never deleted).
 
-## Open questions
+## Open items
 
-1. **[S02] A repository with no work items.** When the detailing's `work` list is empty, the
-   current flow still authors three documents and a Story ("no change to specify"). CONTEXT 7.6
-   allows a recorded "nothing to build" instead. Should this flow skip all sessions and record
-   "nothing to build" for the repository (and write no Story)? The record itself is Open question
-   4 in `prd-to-spec.md`.
-2. **[S02] Is the `user-story-writer` session needed?** Step 11 already has a deterministic default
-   title and description. Should the Story's title/description be deterministic (CONTEXT 7.11),
-   dropping one session per repository?
-3. **[S02] `outOfRepoFindings`.** `user-story-writer.md` lists `outOfRepoFindings` as an output
-   and an acceptance criterion, but the workflow's schema allows only `title` and `description`
-   and always returns `outOfRepoFindings: []`. Keep the finding (and where does it go: incident, a
-   new placement?) or drop it from the agent?
-4. **[S02] No independent review.** `openapi-contract-reviewer` and `spec-decider` describe a
-   maker, checker, decider loop for Spec Authoring, but the current workflow dispatches neither.
-   Keep the flow without review, or add one review pass (with the check test applied)?
-5. **[S02] Skipping makers by surface.** The contracts and data-model makers always run, even when
-   no work item has a `service` or `data` surface. Skip a maker (and write a one-line "not
-   applicable" document) when the detailing gives it nothing to specify?
-- The model for `fable` agents (`data-model-specification-author`): merged question Q1 in
-  `driver-contract.md`.
-- `isolation: worktree` in the makers' frontmatter: merged question Q2 in `driver-contract.md`.
-- The `accessPatterns` input with no producer: merged question Q13 in `prd-to-spec.md` (its Open
-  question 3).
-- `write_story`'s internal retry (`beadwrite.WRITE_BACKOFF`): merged question Q4 in
-  `driver-contract.md`.
-- Recorded inputs of the spec step (target and delta directories, cited views): merged question Q6
-  in `driver-contract.md`.
+See QUESTIONS.md

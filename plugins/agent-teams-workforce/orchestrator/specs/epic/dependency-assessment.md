@@ -1,5 +1,12 @@
 # Net-effect spec: `dependency-assessment`
 
+**Status: not part of the Epic pipeline rewrite.** This flow assesses an Epic's dependencies and
+re-scores Epics. Epic dependency assessment and Epic WSJF scoring belong to the future readiness
+process, which is not yet built (CONTEXT 7.17; the owner's answer 6 of 2026-10-09); elaboration
+assumes they are done and no Epic flow runs this one. Whether this owner-run command is kept until
+the readiness process exists is an open item in QUESTIONS.md. The rest of this file is the record
+of its contract, for that decision and for the readiness process.
+
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command
 `<plugin>/commands/dependency-assessment.md`, the agent `<plugin>/agents/epic-sequencer.md` and its
 skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (sequencing keys),
@@ -186,7 +193,7 @@ Agents dispatched by the JavaScript, accounted for:
 - Hard limit: no write to arc42 section 2; this flow's own steps write nothing in the vault, and
   the session runner's guard covers the agent session.
 
-**Checks the intent requires that the code does not enforce** (see Open question 1)
+**Checks the intent requires that the code does not enforce** (see QUESTIONS.md)
 - Missing `archCheck` (`missingArchCheck`) and re-adding a withdrawn edge without `answers`
   (`readdsWithdrawn`) are reported by `validate` but are not part of `ok`, although the session's
   brief, the command text and `README.md` say they are refused.
@@ -206,8 +213,7 @@ Agents dispatched by the JavaScript, accounted for:
 
 - Steps 1, 2, 6, 8 `bd` read or write (`beadgraph.GraphError`): its `cause` field gives
   `bd-timeout`, `contention` or `other`. The field exists, but `beadgraph._bd` chooses it from
-  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (merged question Q5 in
-  `driver-contract.md`). Retry reasonable for the first two with backoff (30 s doubling, cap 30
+  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (an open item in QUESTIONS.md). Retry reasonable for the first two with backoff (30 s doubling, cap 30
   min).
 - Step 1 scope refused (not an open Epic) or `SequencingError`: `other`; not retried.
 - Step 4/7 session: `api` / `quota` from the headless runner's structured result (breaker);
@@ -232,10 +238,12 @@ Agents dispatched by the JavaScript, accounted for:
 - Step 8: idempotent (`apply_edges` writes nothing for an unchanged proposal). A rerun after it
   writes nothing again.
 - Step 9: resumes as `wsjf-scoring` does; after a scoring failure a rerun redoes only scoring.
-- A rerun needs the same `workDir`: merged question Q8 in `wsjf-scoring.md`.
+- A rerun needs the same `workDir`: an open item in QUESTIONS.md.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
+- 7.17 Epic readiness: Epic dependency assessment belongs to the future readiness process; no Epic
+  pipeline step runs this flow.
 - 7.8 "Epics wait on unmet Epic dependencies": this flow is the producer of the `tracks` edges
   that `elabstate.unmet_blockers` reads; an edge it writes holds the blocked Epic out of
   elaboration until the blocker's `elaboration_state` is `done`. It never closes or opens an
@@ -249,17 +257,6 @@ Agents dispatched by the JavaScript, accounted for:
 - 7.14 Briefs: the brief states THE TEST and the files; it names no expected edge.
 - 7.2: `apply: false` (`--propose`) is the owner's option; no session uses it as a rehearsal.
 
-## 10. Open questions
+## 10. Open items
 
-1. **[S02] `archCheck` and `answers` enforcement.** `edgeset.validate` reports `missingArchCheck`
-   and `readdsWithdrawn` but excludes them from `ok`, while the brief, the command and `README.md`
-   say such edges are refused. Should `ok` include them? (`archCheck` is also not stored in
-   `seq_edge_reasons`; it lives only in `edges.json`.)
-2. **[S02] Architecture as an input to resume.** The session's verdict depends on which views are
-   `effective`, but the input fingerprint covers only the PRD corpus and edges. Should an arc42
-   revision (as `<orch>/specs/epic/architecture.md` records it) join the fingerprint?
-- Work directory for resume: merged question Q8 in `wsjf-scoring.md`.
-- PRD source (bead description vs vault PRD): merged question Q9 in `wsjf-scoring.md`.
-- Who assesses a new Epic: merged question Q10 in `wsjf-scoring.md`.
-- Corrective pass (step 7): settled; CONTEXT 7.4 allows a retry that carries the exact validation
-  findings (S01h merged question Q16).
+See QUESTIONS.md

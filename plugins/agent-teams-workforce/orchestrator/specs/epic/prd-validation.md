@@ -1,5 +1,10 @@
 # Net-effect spec: `prd-validation` (Epic pipeline)
 
+**Status: to be deleted in S08; not rewritten.** `prd-validation.js` and its agent dispatch are
+deleted in S08 (CONTEXT 7.17, 7.18; the owner's answer 9 of 2026-10-09). PRD validation belongs to
+the future readiness process and will be written then, not ported. Elaboration assumes the PRD is
+validated. This file stays only as the record of what is deleted and why.
+
 Step S01g. Scope: `prd-validation` only where the Epic pipeline (`prd-to-spec` and the workflows it
 calls) calls it. **The Epic pipeline does not call it.** Every heading below except Purpose and Open
 questions therefore reads "not called by the Epic pipeline".
@@ -44,7 +49,9 @@ working tree, and the control repo):
   names no saved file"}`: a leftover entry in that Epic's `STEPS.md`, not a call.
 
 The PRD gate the Epic pipeline relies on today is the owner setting `elaboration_state=ready` on the
-Epic (`ops/sdlc-automation/elabstate.py` `candidacy`); see `<orch>/specs/epic/prd-to-spec.md`.
+Epic (`ops/sdlc-automation/elabstate.py` `candidacy`); see `<orch>/specs/epic/prd-to-spec.md`. The
+Python Epic pipeline adds no PRD check of its own before architecture: elaboration assumes the
+readiness process validated the PRD (CONTEXT 7.17).
 
 ## 2. Produces and decides
 
@@ -76,22 +83,14 @@ Not called by the Epic pipeline.
 
 Not called by the Epic pipeline. One resume fact does affect the Epic flows: an Epic's working folder
 can still list `prd-validation` in `STEPS.md` (seen for `ssbd-guuuz`), and today's
-`artifactio.plan` reports it as a stale step that "names no saved file". See Open questions.
+`artifactio.plan` reports it as a stale step that "names no saved file". See QUESTIONS.md.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
-Not called by the Epic pipeline. CONTEXT 7.11 (deterministic over agentic) and 7.9 (only owner facts
-go to the owner) are why the PRD's readiness is the owner's `ready` ruling, not an agent session.
+Not called by the Epic pipeline. CONTEXT 7.17: validating an Epic and its PRD belongs to the future
+readiness process; `prd-validation.js` is deleted in S08 and PRD validation is rewritten later as
+part of that process. CONTEXT 7.18: the only entry into the pipeline is `keeper.py`.
 
-## 10. Open questions
+## 10. Open items
 
-1. **[S02] Any PRD check before architecture?** Since `b42c43d5` the Epic pipeline runs no
-   structural PRD check (neither `prd-validation` nor `depscore.py prd-parse`). Whether the Python
-   pipeline needs a deterministic PRD parse (file readable, not superseded, requirements present)
-   before the first agent step, or relies only on the owner's `ready` ruling; it belongs in
-   `<orch>/specs/epic/prd-to-spec.md` if kept.
-2. **[owner] Fate of `prd-validation.js`.** Nothing in the Epic or Task pipelines, the commands, or
-   the driver calls it. Does it (with `prd-validation-analyst`) stay as a manual tool the owner
-   uses, or do S08/S15 delete it?
-- Leftover `prd-validation` step entries in saved `STEPS.md`: merged question Q14 in
-  `<orch>/specs/epic/driver-contract.md`.
+See QUESTIONS.md

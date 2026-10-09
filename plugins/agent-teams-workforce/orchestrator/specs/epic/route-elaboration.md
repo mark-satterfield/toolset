@@ -1,9 +1,14 @@
 # Net-effect spec: `route-elaboration`
 
-Source: `<plugin>/workflows/route-elaboration.js` (`meta.description`), the plugin command
-`<plugin>/commands/work-bead.md` (its only caller), `<plugin>/workflows/ROUTING.md`, and the
-driver's `<driver>/routing.py` and `<driver>/selection.py`. `<driver>` is
+Source: `<plugin>/workflows/route-elaboration.js` (`meta.description`), `<plugin>/workflows/ROUTING.md`,
+and the driver's `<driver>/routing.py` and `<driver>/selection.py`. `<driver>` is
 `$ATW_CONTROL_REPO/ops/sdlc-automation`.
+
+**Entry.** The only entry into the Epic pipeline is the driver's elaboration lane, which the owner
+starts with `python3 ops/sdlc-automation/keeper.py` (CONTEXT 7.18). There is no `/work-bead` entry
+and no `/start-prd` entry: S08 deletes both plugin commands. Today the JavaScript's only caller is
+`/work-bead`, so with that command gone `route-elaboration.js` has no caller and S08 deletes it;
+the driver's `routing.route_elaboration` is the one router.
 
 ## 1. Purpose
 
@@ -22,9 +27,10 @@ After a run:
 - An Epic is `elaborate`.
 - A Story is `elaborate`, and the caller elaborates the Story's parent **Epic**, never the Story:
   `prd-to-spec` takes an Epic. A Story with no Epic ancestor cannot be elaborated.
-- A feature is `elaborate` only in the sense that it needs a PRD and an Epic first: no door
-  dispatches `prd-to-spec` with a feature (the driver's `selection.select_only` skips it, naming
-  `/agent-teams-workforce:start-prd`; `workitems.elaboration_args` refuses a bead with no PRD).
+- A feature is `elaborate` only in the sense that it needs a PRD and an Epic first: the driver
+  never dispatches `prd-to-spec` with a feature (`selection.select_only` skips it, today naming
+  `/agent-teams-workforce:start-prd`, a command S08 deletes, so the skip reason must stop naming
+  it; `workitems.elaboration_args` refuses a bead with no PRD).
 - A Bug, a Task, an infrastructure bead, a `chore`/`docs`/`research`/`spike` bead and any
   unrecognised kind are `skip`.
 - Nothing is written anywhere.
@@ -32,8 +38,7 @@ After a run:
 ## 3. Inputs
 
 - One bead record: `id`, `type`, `labels`, and (for the reason text only) `parentType`,
-  `parentId`, `ancestorTypes`. Callers read it with `atw-bd show <id> --json` (the command) or
-  from the driver's `BeadIndex.routing_bead(id)` (the driver).
+  `parentId`, `ancestorTypes`, from the driver's `BeadIndex.routing_bead(id)`.
 - The infrastructure vocabulary `<plugin>/scripts/infra-vocabulary.json` (`types`, `labels`),
   which `routing.py` reads through `pluginversion.plugin_file`. The JavaScript hardcodes
   `infra`/`infrastructure` instead.
@@ -57,10 +62,9 @@ vocabulary's infrastructure types. Elaboration labels: `epic`; `story`; `feature
    elaboration kind (Epic, Story, feature by type or label) -> `elaborate` / `prd-to-spec`; then
    Bug -> skip; then Task or infrastructure type or label -> skip ("route through route-build");
    then out-of-pipeline types -> skip; else skip as unclassifiable.
-2. `deterministic` (caller, not this flow): a Story is mapped to its Epic ancestor before
-   dispatch. The driver does this in `selection.select_only` (a Story with an Epic ancestor is
-   selected as that Epic; one without is skipped, naming the missing Epic). The `/work-bead`
-   command does it in its step 5.
+2. `deterministic` (the driver, not this flow): a Story is mapped to its Epic ancestor before
+   dispatch, in `selection.select_only` (a Story with an Epic ancestor is selected as that Epic;
+   one without is skipped, naming the missing Epic).
 
 There are no agent steps. The JavaScript's one phase (`Classify`) and its `log` line are not
 carried over.
@@ -68,16 +72,13 @@ carried over.
 **Is `<driver>/routing.py` already covering it? Yes.** `routing.route_elaboration` applies the
 same rules to the same inputs and returns the same verdict for every bead kind, and `routing.route`
 sends Epic/Story/feature beads to it. The driver never calls `route-elaboration.js`: every
-elaboration dispatch is routed by `selection._to_item` -> `routing.route`. The only caller of the
-JavaScript is the plugin command `commands/work-bead.md` (step 3, "ELABORATION work"), the manual
-door.
+elaboration dispatch is routed by `selection._to_item` -> `routing.route`.
 
-**Is it still needed? Not as a workflow.** Its logic already exists in Python and is the one the
-pipeline uses. The rewrite keeps one router (`routing.route_elaboration`) and no
-`route-elaboration` flow. `route-elaboration.js` becomes deletable once `/work-bead` routes
-through the Python router, or loses its elaboration branch (merged question Q12 and Open question
-1). Differences between the two today, which
-the Python version settles:
+**Is it still needed? No.** Its logic already exists in Python, in the driver, and is the one the
+pipeline uses. The rewrite keeps one router (`routing.route_elaboration`, where it is) and no
+`route-elaboration` flow; S08 deletes `route-elaboration.js` with the `/work-bead` command that was
+its only caller (CONTEXT 7.18). Differences between the two today, which the Python version
+settles:
 - Infrastructure kinds: the JavaScript hardcodes `infra`/`infrastructure`; `routing.py` reads
   `infra-vocabulary.json`. The vocabulary is the one source.
 - Story reason text: `routing.py` says a Story run "reconciles the Story with its Spec and emits
@@ -97,7 +98,8 @@ the Python version settles:
 - The JavaScript's argument parsing (`typeof args === 'string'` -> `JSON.parse`): a sandbox
   artifact; the Python function takes a dict.
 - The JavaScript's own copy of the rules: replaced by the single Python router.
-- `humanInitiated` (named in `ROUTING.md` step 3): no code reads it; drop it from the command text.
+- `humanInitiated` (named in `ROUTING.md` step 3): no code reads it; it goes with the deleted
+  `/work-bead` command.
 
 ## 7. Failure causes
 
@@ -111,8 +113,12 @@ the Python version settles:
 
 None. The verdict is recomputed from the bead each time; it costs nothing and saves nothing.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
+- 7.18 Entry point: the only entry is the driver started by `keeper.py`; no `/work-bead` or
+  `/start-prd` entry exists or is added.
+- 7.16 Hierarchy: a Bug is never routed to a composite (Claude Code never creates or works bug
+  beads; bugs are for humans and a later triage process).
 - 7.11 Deterministic over agentic: routing is code, no agent.
 - 7.8 Owner selection filters: not implemented here. The filters (unscored Tasks, unmet Epic
   dependencies, the mobile Epics `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn` left without
@@ -121,20 +127,6 @@ None. The verdict is recomputed from the bead each time; it costs nothing and sa
 - 7.9 Who gets asked what: a skip is reported, never put to the owner; a Bug's reason names
   triage by a person because only a person files and triages Bugs.
 
-## 10. Open questions
+## 10. Open items
 
-**Q12 [owner] (merged; also asked in `prd-to-spec.md`). Which manual doors into the Epic
-pipeline survive?** Today three exist besides the driver: the `/work-bead` command's elaboration
-branch (step 3, "ELABORATION work", and step 5), the `/start-prd` command, and the inline PRD text
-(`prd.body`) those doors could pass. If the owner wants manual elaboration, each surviving door
-needs a Python entry point that routes and starts the `prd-to-spec` flow (which applies the
-selection filters of CONTEXT 7.8 at its entry, `prd-to-spec.md` step 2); if not, the branches go and S08
-deletes `route-elaboration.js`. Where the router then lives is Open question 1.
-
-1. **[S02] Where the router lives** (after Q12). `routing.py` is in the driver (control
-   repository) and imports `pluginversion`; the `/work-bead` command runs from the installed plugin
-   and cannot import the driver. Either the router moves into `<orch>` and the driver imports it
-   from the installed plugin, or the command calls a driver CLI.
-2. **[S02] Feature verdict.** Both routers return `elaborate` for a feature, yet no door can
-   dispatch one (it has no Epic or PRD yet). Returning `skip` with "needs `/start-prd`" would match
-   what happens. Change the verdict?
+See QUESTIONS.md

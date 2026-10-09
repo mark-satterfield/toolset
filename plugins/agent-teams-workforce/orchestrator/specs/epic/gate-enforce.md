@@ -2,7 +2,7 @@
 
 Step S01g. Scope: `gate-enforce` only at its call sites in the Epic pipeline (`prd-to-spec` and the
 workflows it calls). **The Epic pipeline has no call site.** Every heading below except Purpose and
-Open questions therefore reads "not called by the Epic pipeline". Its call sites in `bug-fix.js` belong
+Open items therefore reads "not called by the Epic pipeline". Its call sites in `bug-fix.js` belong
 to the Task pipeline (S09).
 
 ## 1. Purpose
@@ -71,11 +71,10 @@ Not called by the Epic pipeline.
 
 Not called by the Epic pipeline.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
 Not called by the Epic pipeline.
 
-## 10. Open questions
+## 10. Open items
 
-- Driver `verdict` events without a gate (in the Epic pipeline they come from reviewers and
-  deciders, not from `gate-enforce`): merged question Q15 in `<orch>/specs/epic/driver-contract.md`.
+See QUESTIONS.md

@@ -12,7 +12,11 @@ Path placeholders:
 - `<arch>` = `$ATW_ARCH_PATH` (the architecture folder of the `skillspoke-docs` vault).
 - `<slug>` = a span repository's artifact slug; `<subject>` = the target's folder name.
 - `<workDir>` = the work directory of an owner-run portfolio flow (`wsjf-scoring`,
-  `dependency-assessment`, `task-dependency-assessment`; a stable location is merged question Q8).
+  `dependency-assessment`, `task-dependency-assessment`). None of them is part of the Epic
+  pipeline: Epic scoring and Epic dependency assessment belong to the future readiness process
+  (CONTEXT 7.17), and `task-dependency-assessment` is deleted in S08.
+
+Open items live only in QUESTIONS.md.
 
 Every `.meta.json` named below is written by `artifactio.record` beside its file and is read by
 the same flow's reuse step (the one input-record format, `driver-contract.md` §8); where it has
@@ -24,14 +28,14 @@ another reader, the row says so.
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<work>/delta-items.json` | `prd-to-spec#7` (`depscore.py arch-delta --save`) | `repo-scoping#2`, `#3` (input), `#5`, `#6`; `trd-authoring#2` (input), `#3`; `prd-reconciliation#1` (placed items joined to it); `task-decomposition#9`; `prd-to-spec#11` (`closure-edges`) | JSON: `{ ok, refusals[], architectureChange, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[], ... }] }` |
+| `<work>/delta-items.json` | `prd-to-spec#7` (`depscore.py arch-delta --save`) | `repo-scoping#1`, `#3` (input), `#5`, `#6`; `trd-authoring#2` (input), `#3`; `prd-reconciliation#1` (placed items joined to it); `task-decomposition#9`; `prd-to-spec#11` (`closure-edges`) | JSON: `{ ok, refusals[], architectureChange, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[], ... }] }` |
 | `<work>/closure-edges.json` | `prd-to-spec#11` (`depscore.py closure-edges --out`) | `prd-to-spec#12` (agent input), `#13` | JSON: `{ edges[{ from, to, reason }], summary.warnings }` |
-| `<work>/candidates/task-deps.json` | `prd-to-spec#12` (agent `task-dependency-mapper`) | `prd-to-spec#12` (Python acceptance) | JSON: `{ edges[{ from, to, kind, reason }], acyclic, cycle[] }` |
+| `<work>/candidates/task-deps.json` | `prd-to-spec#12` (agent `task-dependency-mapper`; required when the span has two or more repositories) | `prd-to-spec#12` (Python acceptance) | JSON: `{ edges[{ from, to, kind, reason }], acyclic, cycle[] }` |
 | `<work>/task-deps.json` (+ `.meta.json`) | `prd-to-spec#12` (accepted copy) | `prd-to-spec#12` (reuse), `#13` | JSON, same shape |
 | `<work>/task-edges/all.json` | `prd-to-spec#13` (`depscore.py write-all-task-edges --out`) | none: read by the incident-responder as run evidence | JSON: write summary `{ blockers, added, removed, standing, rejected }` |
-| `<work>/STEPS.md` | after each phase: `prd-to-spec` (`artifactio.complete_step`), `prd-reconciliation#7`, `spec-authoring#13` | `driver` (`artifactio.plan` -> the `resume` argument; `observe.py` accepted and stale steps; merged question Q6) | text: one completed step id per line |
+| `<work>/STEPS.md` | after each phase: `prd-to-spec` (`artifactio.complete_step`), `prd-reconciliation#7`, `spec-authoring#13` | `driver` (`artifactio.plan` -> the `resume` argument; `observe.py` accepted and stale steps; an open item in QUESTIONS.md) | text: one completed step id per line |
 | `<work>/run.json` | `prd-to-spec#17` | none: read by the driver (handback `detailPath` -> incident evidence and human-action detail, `driver-contract.md` §4) and the owner | JSON: the run record (composite, Epic, PRD id, outcome, per-phase status, reused/stale/task-rerun events) |
-| `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | `prd-to-spec#17` (event set: merged question Q19) | `driver` (`outcomes.py`, `observe.py`, `runview.py`, `attemptview.py`, `failures.py`) | JSON lines |
+| `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | `prd-to-spec#17` (event set: an open item in QUESTIONS.md) | `driver` (`outcomes.py`, `observe.py`, `runview.py`, `attemptview.py`, `failures.py`) | JSON lines |
 | `<arch>/target/<subject>/` (deletion, committed in the vault) | `prd-to-spec#15` (`depscore.py arch-target-remove`) | none: the removal is the end state | git commit in the vault repository |
 
 ### `architecture`
@@ -61,7 +65,7 @@ another reader, the row says so.
 | `<arch-work>/closure-deployments.json` | `architecture#30` (agent `polyrepo-steward`) | `architecture#31` | JSON: `{ repositories[{ name, path, lifecycle, deploys[] }], summary }` |
 | `<arch-work>/closure.json` | `architecture#31` (agent `prd-reality-reconciler`, CLOSURE) | `architecture#32` | JSON (CLOSURE_SCHEMA) |
 | `<arch>/target/<subject>/closure.json` | `architecture#32` (`archclosure.write_closure`) | `prd-to-spec#5` (`saved-target` `closureSaved`), `#7` (`arch-delta` lists prerequisites); `repo-scoping#5`; `trd-authoring#3`; `prd-reconciliation#4` (closure entries) | JSON: `{ prerequisites[], rootEdges[], satisfied[], version, roots }` |
-| `<arch-work>/tree-start.json`, `survey.json.receipt`, `candidates/` (legacy) | the JavaScript (not produced by the new flow) | `architecture` saved work read in place (CONTEXT 7.13; `candidates/` is `architecture.md` Open question 8) | JSON |
+| `<arch-work>/tree-start.json`, `survey.json.receipt`, `candidates/` (legacy) | the JavaScript (not produced by the new flow) | `architecture` saved work read in place (CONTEXT 7.13; `candidates/` is an open item in QUESTIONS.md) | JSON |
 
 ### `repo-scoping`
 
@@ -69,7 +73,7 @@ another reader, the row says so.
 |---|---|---|---|
 | `<work>/repo-scoping.inventory.json` | `repo-scoping#4` (`polyrepo.py inventory --json`) | `repo-scoping#5` | JSON: live repository inventory |
 | `<work>/candidates/repo-scoping.json` | `repo-scoping#5` (agent `polyrepo-steward`) | `repo-scoping#6` | JSON: ruling schema |
-| `<work>/repo-scoping.json` (+ `.meta.json`) | `repo-scoping#7` (also the `#2` short cut) | `repo-scoping#3`; `prd-reconciliation#1`, `#5` (input); `spec-authoring#5` (input); `prd-to-spec#11` (`closure-edges` through `beadwrite._no_code`) | JSON: `{ placements[], noCode[], createdRepos[], creationFailures[], surveySummary, spanRationale }` |
+| `<work>/repo-scoping.json` (+ `.meta.json`) | `repo-scoping#7` | `repo-scoping#3`; `prd-reconciliation#1`, `#5` (input); `spec-authoring#5` (input); `prd-to-spec#11` (`closure-edges` through `beadwrite._no_code`) | JSON: `{ placements[], noCode[], createdRepos[], creationFailures[], surveySummary, spanRationale }` |
 | a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | `repo-scoping#5` (`polyrepo.py create`) | `prd-reconciliation#4` (its `main`); the Task pipeline | git repository |
 
 ### `trd-authoring`
@@ -104,10 +108,10 @@ another reader, the row says so.
 | `<work>/tasks-<slug>.context.json` | `task-decomposition#5` (beads read) | `task-decomposition#6` | JSON: `{ existingTasks[], otherEpicTasks[] }` |
 | `<work>/candidates/tasks-<slug>.json` | `task-decomposition#6` (agent `task-decomposer`) | `task-decomposition#7` | JSON: decomposition schema |
 | `<work>/tasks-<slug>.json` (+ `.meta.json`) | `task-decomposition#7`, amended `#11`, recorded `#8` | `task-decomposition#2`, `#9`, `#10`, `#11`; `prd-to-spec#11` (`closure-edges`), `#12` (agent input and `task-deps` input), `#13` | JSON: `{ tasks[], testStrategy, rationale, edges[], scores[], notes }` |
-| `<work>/candidates/tasks-<slug>.correction.json` | `task-decomposition#10` (agent `task-decomposer`) | `task-decomposition#10` (Python acceptance) | JSON: `{ tasks[], noWork[], edges[], scores[] }` |
-| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | `task-decomposition#10` | `task-decomposition#2` (input), `#9` (`noWork` ids), `#11` | JSON, same shape |
+| `<work>/candidates/tasks-<slug>.correction.json` | `task-decomposition#10` (agent `task-decomposer`) | `task-decomposition#10` (Python acceptance) | JSON: `{ tasks[], edges[], scores[] }` (no `noWork`; `scores` also for saved Task keys named as unsized) |
+| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | `task-decomposition#10` | `task-decomposition#11` (merged into `tasks-<slug>.json`); otherwise evidence for the incident-responder | JSON, same shape |
 
-### Owner-run portfolio flows (not called by `prd-to-spec`)
+### Owner-run portfolio flows (not part of the Epic pipeline: future readiness process, CONTEXT 7.17; `task-dependency-assessment` deleted in S08)
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
@@ -137,10 +141,11 @@ another reader, the row says so.
 | `beads-contract.py metadata set <epic> artifact_trd_path=... artifact_trd_sha256=...` | Epic: `artifact_trd_path`, `artifact_trd_sha256` | `trd-authoring#7` |
 | `depscore.py write-story` (`beadwrite.write_story`): `bd create --type story --parent <epic>` or one `bd update` | Story: title, description, acceptance, notes `repoPath: <repo>`; metadata `elab_key=story:<slug>`, `repoPath`, `decision_ids`, `artifact_spec_path`, `artifact_spec_meta`, `artifact_spec_sha256`, `artifact_spec_data_model_path`, `artifact_spec_data_model_meta`, `artifact_spec_data_model_sha256`, `artifact_spec_criteria_path`, `artifact_spec_criteria_meta`, `artifact_spec_criteria_sha256`, `artifact_story_path`, `artifact_story_meta`, `artifact_story_sha256` | `spec-authoring#12` |
 | `bd delete <ids...> --force` (`beadwrite.replace_tasks`) | the Story's unstarted, elaboration-written Task beads (and their edges) | `task-decomposition#4` (case `replaced` only) |
-| `bd create --type task --parent <story> ... --metadata <json> [--deps blocked-by:...]`, `bd update <id> [--title --description] [--set-metadata ...]`, `bd dep add --file -` (`blocks`), `bd dep remove` (`beadwrite.write_task`) | Task: title, description (with the `## Spec contract` block), acceptance, notes `repoPath: <repo>`; metadata `elab_key`, `repoPath`, `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`, `wsjf_content_hash`, `decision_ids`, `spec_sections`, `acceptance_criteria`, `definition_of_done`, `requirement_ids`, `surfaces`, `test_strategy`, `cds_design_source`, `cds_artifact`, `cds_bundle_path`, `cds_build_specs`, `spec_path`, `spec_paths`, `spec_paths_verified`; same-Story `blocks` edges, `planned-elsewhere` and `blockedByExternal` blockers | `task-decomposition#9` (again after `#11`) |
+| `bd create --type task --parent <story> ... --metadata <json> [--deps blocked-by:...]`, `bd update <id> [--title --description] [--set-metadata ...]`, `bd dep add --file -` (`blocks`), `bd dep remove` (`beadwrite.write_task`), in build order, at least one Task per Story, every Task sized | Task: title, description (with the `## Spec contract` block), acceptance, notes `repoPath: <repo>`; metadata `elab_key`, `repoPath`, `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`, `wsjf_content_hash`, `decision_ids`, `spec_sections`, `acceptance_criteria`, `definition_of_done`, `requirement_ids`, `surfaces`, `test_strategy`, `cds_design_source`, `cds_artifact`, `cds_bundle_path`, `cds_build_specs`, `spec_path`, `spec_paths`, `spec_paths_verified`; same-Story `blocks` edges, `planned-elsewhere` and `blockedByExternal` blockers | `task-decomposition#9` (again after `#11`) |
 | `depscore.py write-all-task-edges --epic <id> --dir <work> --repos <span>` | `blocks` edges between Tasks of different Stories (closure edges and `task-deps.json`, cycle-closing edges dropped) | `prd-to-spec#13` |
-| `depscore.py elaboration-finish --epic <id> --owner <token> [--done]` | Epic and its Tasks: `wsjf`, `wsjf_calculated_at`, `wsjf_rubric`, `wsjf_rroe`, `wsjf_reaches` (Epic) / `wsjf_unblocks` (Task), `wsjf_cod`, `wsjf_size`, `wsjf_size_source`, `wsjf_value_from` (Task), `wsjf_size_outside_range` (Epic); with `--done`, Epic: `elaboration_state=done`, `elaboration_state_cause=decomposed-into-tasks`, `elaboration_state_at`, `elaboration_state_owner=""`; then `story-edges`: Story `blocks` edges, `story_owned_blockers`, `story_owned_blockers_at`, `story_edge_reasons` | `prd-to-spec#14` |
+| the `elaboration-finish` logic (`elaboration.finish`, `scoring.score`) with the write scope limited to the Epic's Tasks | the Epic's Tasks only: `wsjf`, `wsjf_calculated_at`, `wsjf_rubric`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`, `wsjf_size_source`, `wsjf_value_from` (the Epic's WSJF keys are not written, CONTEXT 7.17); once every Task is scored, Epic: `elaboration_state=done`, `elaboration_state_cause=decomposed-into-tasks`, `elaboration_state_at`, `elaboration_state_owner=""`; then `story-edges`: Story `blocks` edges, `story_owned_blockers`, `story_owned_blockers_at`, `story_edge_reasons` (Stories get no WSJF) | `prd-to-spec#14` |
 | `depscore.py elaboration-release --epic <id> --owner <token>` | Epic: `elaboration_state_owner=""` (when still this run's token) | `prd-to-spec#16` |
+| *Rows below to `storyedges.story_edges` belong to the owner-run portfolio flows, which are not part of the Epic pipeline (CONTEXT 7.17); `task-dependency-assessment` is deleted in S08.* | | |
 | `scoring.record` (`depscore.py record`): `bd update --set-metadata` | Epic: `wsjf_ubv`, `wsjf_tc`, `wsjf_confidence`, `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`, `wsjf_content_hash`; Task: the size keys and `wsjf_content_hash`; adopted items: `wsjf_content_hash` only | `wsjf-scoring#7` |
 | `scoring.score` (`depscore.py score`): `bd update --set-metadata` | the computed keys listed for `elaboration-finish`, on every open Epic and Task whose value changed | `wsjf-scoring#8` (also run by `dependency-assessment#9`, `task-dependency-assessment#10`) |
 | `edgeset.apply_edges` (`depscore.py apply-edges`): `bd dep add --type tracks`, conversions, removals, `bd update --set-metadata` | Epic `tracks` edges touching the Epic; on each blocked Epic `seq_owned_blockers`, `seq_owned_blockers_at`, `seq_edge_reasons`, `seq_edge_withdrawn`; on the assessed Epic `seq_content_hash`, `seq_assessed_at` | `dependency-assessment#8` |

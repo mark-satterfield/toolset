@@ -16,9 +16,10 @@ code in this project. A prerequisite is placed in the repository that deploys it
 entry's `deployedBy`), or in the repository its closure entry names, created when it does not
 exist; a prerequisite an open bead of another Epic plans (`state: planned`) is recorded as having
 no code here. Each new repository the approved target or a prerequisite names is created by the
-`polyrepo-steward`. The span is the distinct repositories the placements name. A span with no
-repository means there is no implementation work for this PRD; that is a valid result, not a
-failure.
+`polyrepo-steward`: a missing repository is work to build, not an error to report (CONTEXT 7.20).
+The span is the distinct repositories the placements name, and it always names at least one: every
+Epic gets Stories and Tasks, so a span with no repository is a failure, never a "nothing to build"
+result (CONTEXT 7.6).
 
 ## 2. Produces and decides
 
@@ -28,14 +29,14 @@ After a successful run:
 - No placement names the control repository (`$ATW_CONTROL_REPO`), the repository that holds the
   architecture (`$ATW_ARCH_PATH` or a parent of it), or a repository under `apps/marketing/`.
 - Every `planned` prerequisite is in `noCode` with the bead that plans it as the reason.
-- Every repository the target or a prerequisite names for creation either exists (created now or
-  by an earlier run of the same PRD, found in the live inventory) or is listed in
-  `creationFailures`.
+- Every repository the target or a prerequisite names for creation exists (created now, or by an
+  earlier run of the same PRD and found in the live inventory), and every item it was named for is
+  placed in it. A creation that still fails after the corrective pass fails the run (step 6).
+- The span names at least one repository.
 - `<art>/repo-scoping.json` holds the ruling and `<art>/repo-scoping.json.meta.json` records its
   input fingerprints.
 - The flow's result carries `repos` (the span, ordered by first placement), `placements`,
-  `noCode`, `createdRepos`, `creationFailures`, `spanRationale`, and an empty `repos` when nothing
-  has code here.
+  `noCode`, `createdRepos`, `creationFailures` (empty on success), `spanRationale`.
 
 ## 3. Inputs
 
@@ -68,13 +69,14 @@ No bead write and no vault write.
 ## 5. Steps
 
 1. **Refuse a missing target** (deterministic, Python). No `targetDir` → fail at stage `input`,
-   cause `other`. An empty item list → succeed with an empty span and the warning "no build item to
-   place"; no session is started.
-2. **No-implementation short cut** (deterministic, Python; owned here, moved from the composite).
-   When the `arch-delta` result has `baselineValidated`, `implementationComplete`,
-   `implementationWork == 0` and no prerequisite item, write the ruling with every item in
-   `noCode` ("the validated architecture assessment requires no implementation work") and an empty
-   span, record it (step 7), and start no session.
+   cause `other`. An empty item list → fail at stage `input`, cause `other`, with no session: the
+   architecture step lists build items in every case (CONTEXT 7.7), so an empty list is a defect
+   for the incident-responder, not a "nothing to build" result.
+2. *(removed)* **No-implementation short cut.** Today, when the `arch-delta` result has
+   `baselineValidated`, `implementationComplete`, `implementationWork == 0` and no prerequisite
+   item, every item goes to `noCode` and the span is empty. There is no "nothing to build" outcome
+   (CONTEXT 7.6): code that already meets the requirements still gets Stories and Tasks, and the
+   build pipeline's tests decide that nothing changes. The items are placed like any others.
 3. **Fingerprint the inputs and look for saved work** (deterministic, Python). Inputs: the PRD,
    `decision.md`, `target.json`, `delta-items.json`, `targetDir`, `deltaDir`. The ruling is
    reusable when `<art>/repo-scoping.json` exists and every input recorded in its `.meta.json`
@@ -95,8 +97,11 @@ No bead write and no vault write.
    another item's repository) goes in `noCode` with the reason; before creating a repository look
    in the inventory for one that already serves the element, including one an earlier run of this
    PRD created; create only repositories the target or a prerequisite names, with the name,
-   template and reason given (or the template whose kind matches the element); on a creation
-   failure fix what the error names and try once more, then report it in `creationFailures`;
+   template and reason given (or the template whose kind matches the element), and create it when
+   the element needs a repository that does not exist (a missing repository is work to build,
+   CONTEXT 7.20); on a creation failure fix what the error names and try once more, then report it
+   in `creationFailures`; an element of this PRD is never left in `noCode` because the code that
+   would hold it is missing or already meets the requirement;
    change nothing in any repository beyond creating the named ones; a placement never makes one
    repository depend on another (CONTEXT 7.10, section 9). Model and effort today: the
    agent's `sonnet` with the workflow's `effort: 'high'` override (the definition says `medium`).
@@ -109,17 +114,19 @@ No bead write and no vault write.
    - placements in a never-placed repository (control repository, architecture repository,
      `apps/marketing/`);
    - prerequisites placed elsewhere than their `deployedBy`, and `planned` prerequisites placed
-     anywhere.
-   If any of the first two kinds, or a never-placed repository, or a `planned` prerequisite placed,
-   is found: run step 5 **once more** with the exact findings (the ids and the repositories, with
-   reasons) as the avoid list and gap feedback. If the second pass still has them, fail at stage
-   `repo-scoping`, cause `other` (what happens instead to a placement still misplaced or an item
-   still unplaced is merged question Q11). A prerequisite placed against its `deployedBy` after the
-   corrective pass stands with a warning (Open question 1).
+     anywhere;
+   - `creationFailures` entries (their items are unplaced);
+   - an empty span (no placement names a repository).
+   If any of the first two kinds, a never-placed repository, a `planned` prerequisite placed, a
+   creation failure or an empty span is found: run step 5 **once more** with the exact findings
+   (the ids, the repositories and the creation errors, with reasons) as the avoid list and gap
+   feedback. If the second pass still has them, fail at stage `repo-scoping`, cause `other` (a
+   creation failure that is an owner fact, such as missing GitHub credentials, is returned as
+   `requiredHumanActions` instead; CONTEXT 7.9). A prerequisite placed against its `deployedBy`
+   after the corrective pass stands with a warning (an open item in QUESTIONS.md).
 7. **Save** (deterministic, Python). Write `<art>/repo-scoping.json` (canonical JSON), then
    `artifactio.record` it with the step 3 inputs. Build the flow result: `repos` in first-
    placement order, `frontend` defaulting to false, `repoName` defaulting to the path basename.
-   An empty span is logged ("every item has no code in this project") and returned with `ok: true`.
    The composite takes this span as final: it runs no placement check of its own.
 
 The relay calls of the current script map as follows: `relayKit.artifactRevision` (jsonartifact.py
@@ -147,15 +154,19 @@ of this flow. No `workflow-command-runner` session remains.
 - Section 2 hard limit: the session runner's guard around the steward session
   (`driver-contract.md` §8); the steward holds every tool.
 
+- An empty span fails (step 6, in `meta.description`, not in today's code): every Epic gets
+  Stories and Tasks (CONTEXT 7.6); without the check the Epic is marked done with nothing built,
+  and nothing later notices.
+- A creation failure is a finding (step 6): its items are otherwise unplaced, and a missing
+  repository is work to build (CONTEXT 7.20), not a warning.
+
 **Checks dropped**
 
-- "The run fails when no placement names a repository" (in `meta.description`, not in the code):
-  dropped. An empty span means no implementation work (PLAN S01c note, CONTEXT 7.6 "recorded
-  nothing to build").
+- The no-implementation short cut (step 2) and the "empty span is valid" rule: CONTEXT 7.6.
 - Unknown item ids: not a failure; ignored with a warning (they change nothing downstream).
 - Silent conversion of unplaced items to `noCode` (current code, after the steward session and in
   the composite's `readSavedSpan`): replaced by the step 6 corrective pass and then a failure,
-  because it hid dropped work (merged question Q11 asks S02 to confirm).
+  because it hid dropped work (S02 confirms; an open item in QUESTIONS.md).
 - The candidate-with-revision-sidecar resume (`jsonartifact.py --candidate` with an input
   revision): a sandbox workaround; the candidate is validated once in step 6 and only the accepted
   `repo-scoping.json` with its `.meta.json` is a resume point.
@@ -176,7 +187,8 @@ of this flow. No `workflow-command-runner` session remains.
 | Steward session: API error or overload | `api` | Yes, through `breaker.py`. |
 | Steward session: usage or quota limit | `quota` | Yes, through `breaker.py`. |
 | Steward session ends with no candidate file, or a candidate that fails the schema | `other` | Once, with the parse error as feedback (clarified instruction); then no. |
-| Placement findings remain after the corrective pass | `other` | No; incident-responder. |
+| Placement findings remain after the corrective pass (incl. an empty span or a creation failure) | `other` | No; incident-responder. |
+| Repository creation fails for want of an owner fact (GitHub credentials, organisation permission) | none: `requiredHumanActions` | No; the driver holds the Epic for the owner (CONTEXT 7.9). |
 | `artifactio.py record` fails | `other` | No. |
 
 Causes are set from the exit status, the session's structured result, or the parse exception at
@@ -197,7 +209,7 @@ change confined to other Epics' files is not an input and redoes nothing. Reposi
 an earlier, interrupted run are found again in the inventory, so a rerun does not create them
 twice.
 
-## 9. Owner rules that apply
+## 9. Requirements that apply
 
 - 7.10: the steward owns placement and creation; Python never picks a repository. No placement in
   `apps/marketing/`. "Repositories never depend on repositories": this flow records no
@@ -208,36 +220,19 @@ twice.
   repository's code on another's. A new repository is created standalone from its template. How
   the rule constrains code inside a repository (imports, packages) is enforced by the build
   pipeline, not by the Epic flows.
-- 7.7: the three architecture cases decide which documents the steward reads (step 5).
-- 7.6: an empty span is "nothing to build", a valid end state for the Epic's done rule.
+- 7.7: the three architecture cases decide which documents the steward reads (step 5); every case
+  has build items to place.
+- 7.6: there is no "nothing to build" outcome; the span always names at least one repository, and
+  the no-implementation short cut is gone (steps 1, 2, 6).
+- 7.20: a missing repository, like any missing prerequisite, is created as part of the Epic's work
+  (step 5); a creation failure is a finding, not a warning.
 - 7.4: one corrective pass with exact findings; contention retried with backoff; structured causes.
 - 7.11: inventory, fingerprinting, acceptance and every check are code.
 - 7.14: the brief gives the steward paths and rules, not a theory of where items belong.
-- 7.9: a repository creation that fails for want of GitHub credentials is an owner fact (Open
-  question 2).
+- 7.9: a repository creation that fails for want of GitHub credentials or organisation permission
+  is an owner fact, returned as `requiredHumanActions`; every other failure goes to the
+  incident-responder.
 
-## 10. Open questions
+## 10. Open items
 
-**Q11 [S02] (merged; also asked in `prd-to-spec.md`). A placement still misplaced, or an item
-still unplaced, after the one corrective pass: fail, or leave unplaced as `noCode`?** The
-`prd-to-spec` `meta.description` says a placement in the control or architecture repository "goes
-back to the steward once, and is then left unplaced"; this flow's `meta.description` says the run
-fails when an item is placed twice or not at all; the code records unplaced items as `noCode`.
-This spec fails in both cases, because an item left unplaced is work the Epic is marked done
-without, which nothing later catches (CONTEXT 6 check test). S02 confirms or changes it.
-
-1. **[S02] Prerequisite placed against its closure `deployedBy`.** `meta.description` says the run
-   fails; the code lets the steward's placement stand with a warning. This spec includes it in the
-   corrective feedback and then lets it stand, since the steward owns placement (7.10).
-2. **[S02] Creation failures.** Today a failed creation is only a warning, and its items are then
-   unplaced. Which creation errors are owner facts (GitHub credentials, organisation permissions)
-   that become `requiredHumanActions` (the driver writes the owner inbox), and which are `other`?
-3. **[S02] Live inventory as a fingerprint input.** The ruling is not redone when a repository
-   appears or is renamed after it was saved. Should the inventory (or the manifest's revision) be a
-   resume input?
-- Whether the driver's resume ruling uses this flow's input list: merged question Q6 in
-  `driver-contract.md`.
-- Whether creation (and the repository list) can come from the steward's manifest without a
-  session: merged question Q17 in `architecture.md`.
-- Ownership of the never-placed check, the corrective pass and the saved-span read: settled; this
-  flow owns them and `prd-to-spec.md` keeps no copy (S01h findings 1 and 2).
+See QUESTIONS.md
