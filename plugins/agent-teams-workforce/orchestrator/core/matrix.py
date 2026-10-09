@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .io import write_json
 from .models import RunContext, StepError
-from .tool_locks import control_repo, seconds
+from .tool_locks import LockTimeout, control_repo, file_lock, seconds
 from .tools import Tools
 
 
@@ -72,3 +72,18 @@ def snapshot(context: RunContext, tools: Tools) -> Path:
     target = context.work / "matrix-snapshot.json"
     write_json(target, tools.operation("matrix", read))
     return target
+
+
+def write_seed(path: Path, root: Path, build, publish=None) -> dict:
+    """Merge under the same flock readers use; retain it through optional publication."""
+    lock = root / "ops/sdlc-automation/state/element-matrix.lock"
+    try:
+        with file_lock(lock, seconds("ATW_MATRIX_LOCK_WAIT", 120)):
+            previous = read_snapshot(path) if path.exists() else {}
+            result = build(previous)
+            write_json(path, result)
+            if publish is not None:
+                publish()
+            return result
+    except LockTimeout as exc:
+        raise StepError("matrix", "contention", (str(lock),)) from exc
