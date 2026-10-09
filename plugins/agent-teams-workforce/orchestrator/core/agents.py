@@ -10,6 +10,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -19,10 +20,12 @@ import jsonschema
 from .agent_context import brief, driver_module, prepare
 from .agent_process import SessionProcesses
 from .artifacts import ArtifactStore
+from .constraints import Section2Guard
 from .events import EventWriter
 from .io import write_json
 from .manifest import record_session
 from .models import AgentStep, RunContext, StepError
+from .tools import Tools
 
 
 def strict_json(path: Path) -> Any:
@@ -256,6 +259,7 @@ class AgentRunner:
         details["model"] = model
         pid = None
         facts = None
+        failure_cause = None
 
         def started(value: int) -> None:
             nonlocal pid
@@ -263,19 +267,35 @@ class AgentRunner:
             self.emit("session", state="started", pid=pid, pgid=pid, **details)
 
         try:
-            facts = self.processes.run(
-                command,
-                prompt,
-                directory,
-                env,
-                stream,
-                started,
-                lambda: self.emit("heartbeat", live=[row["sessionId"]], at=time.time()),
+            arch = self.context.args.get("archPath") or os.environ.get("ATW_ARCH_PATH")
+            guard = (
+                Section2Guard(
+                    Path(arch),
+                    Tools(self.context.work / "evidence"),
+                    self.processes.stop_all,
+                ).session(row["sessionId"])
+                if arch
+                else nullcontext()
             )
+            with guard:
+                facts = self.processes.run(
+                    command,
+                    prompt,
+                    directory,
+                    env,
+                    stream,
+                    started,
+                    lambda: self.emit(
+                        "heartbeat", live=[row["sessionId"]], at=time.time()
+                    ),
+                )
             return facts
+        except StepError as exc:
+            failure_cause = exc.cause
+            raise
         finally:
             if pid is not None:
-                cause = self._cause(facts) if facts else "other"
+                cause = failure_cause or (self._cause(facts) if facts else "other")
                 self.emit(
                     "session",
                     state="ended",
