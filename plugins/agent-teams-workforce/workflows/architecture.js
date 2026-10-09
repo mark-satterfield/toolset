@@ -1644,9 +1644,9 @@ function settleDispatches(plan, n) {
     }
   }
   const writers = out.filter(d => WRITER_ROLES.includes(d.role))
-  const owner = agentName(plan.designOwner)
-  if (writers.length && !writers.some(d => d.agentType === owner)) bad.push('designOwner must name one selected author responsible for combined target coherence')
-  if (!writers.length && owner) bad.push('a review-only plan has no designOwner')
+  const named = agentName(plan.designOwner)
+  const owner = writers.some(d => d.agentType === named) ? named : (writers.length ? writers[writers.length - 1].agentType : '')
+  plan.designOwner = owner
   for (const d of writers) if (d.agentType === owner) d.designOwner = true
   // Only the coordinator selects authors. Missing assignments remain ledger gaps,
   // rather than silently creating additional writer dispatches here.
@@ -1893,7 +1893,7 @@ ${PRD_RULE}
 ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
-Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. Set designOwner to a selected author, or empty when no author is needed. The workflow executes that author after the other authors for final reconciliation. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
+Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. Optionally set designOwner to the selected author best placed to reconcile the combined target; otherwise leave it empty. The workflow runs that author after the other authors for final reconciliation, and when designOwner is empty or names no selected author it uses the last selected author. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
 
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
@@ -1930,11 +1930,6 @@ HOW TO ROUTE:
     plan = acceptedPlan && acceptedPlan.facts
     if (plan && (typeof plan.readyForDecision !== 'boolean' || !Array.isArray(plan.dispatches) || !Array.isArray(plan.overlaps))) { log(`${planLabel}: invalid routing facts`); plan = null }
     const overlapRefusals = plan ? unjustifiedOverlaps(plan) : []
-    if (plan) {
-      const selectedWriters = plan.dispatches.filter(d => WRITER_ROLES.includes(roleOf(agentName(d.agentType))))
-      const selectedOwner = agentName(plan.designOwner)
-      if (selectedWriters.length ? !selectedWriters.some(d => agentName(d.agentType) === selectedOwner) : !!selectedOwner) overlapRefusals.push('designOwner must identify a selected author, or be empty for a review-only plan')
-    }
     if (!overlapRefusals.length) break
     if (fix >= MAX_PLAN_FIXES) {
       const why = `the architecture-decision-workflow-coordinator's plan for round ${n} violates the routing contract after ${MAX_PLAN_FIXES} correction(s): ${overlapRefusals.join('; ')}. The plan was not saved.`
