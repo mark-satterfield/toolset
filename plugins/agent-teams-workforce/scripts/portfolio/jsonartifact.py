@@ -182,7 +182,6 @@ def coordinator_facts(path: Path) -> dict:
     return {
         "readyForDecision": value["readyForDecision"],
         "reason": f"Read reason in {path}",
-        "designOwner": value.get("designOwner", ""),
         "dispatches": dispatches,
         "overlaps": overlaps,
     }
