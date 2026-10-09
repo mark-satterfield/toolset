@@ -1010,6 +1010,33 @@ META_SUFFIX = ".meta.json"
 UNSTARTED = frozenset({"open", "blocked", "deferred"})
 
 
+def _record_root(path: Path, meta: object, root: Path | None) -> Path | None:
+    """The root an artifact record's paths are relative to.
+
+    The record names the saved file itself (`path`) relative to that root, so the root is
+    what the file's absolute path holds before it. The caller's root is used when the
+    record's own path resolves under it.
+
+    Args:
+        path: The saved file.
+        meta: Its parsed record, or None.
+        root: The caller's project root, or None.
+
+    Returns:
+        The root, or None when neither the caller nor the record gives one.
+    """
+    named = str(meta.get("path") or "") if isinstance(meta, dict) else ""
+    if not named or Path(named).is_absolute():
+        return root
+    if root is not None and (root / named).resolve() == path.resolve():
+        return root
+    full = path.resolve()
+    parts = Path(named).parts
+    if len(full.parts) > len(parts) and full.parts[-len(parts) :] == parts:
+        return Path(*full.parts[: -len(parts)])
+    return root
+
+
 def tasks_inputs(directory: Path, *, slug: str, root: Path | None) -> dict:
     """Whether a Story's saved Tasks were decomposed from the inputs they record, unchanged.
 
@@ -1021,7 +1048,8 @@ def tasks_inputs(directory: Path, *, slug: str, root: Path | None) -> dict:
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
-        root: The project root the recorded input paths are relative to, or None.
+        root: The project root the recorded input paths are relative to, or None; when
+            it is None or does not hold the saved file, `_record_root` derives it.
 
     Returns:
         `saved` (the file exists), `recorded` (its input record was read), `changedInputs`
@@ -1040,6 +1068,7 @@ def tasks_inputs(directory: Path, *, slug: str, root: Path | None) -> dict:
         except (OSError, ValueError):
             meta = None
     inputs = meta.get("inputs") if isinstance(meta, dict) else None
+    root = _record_root(path, meta, root)
     for entry in inputs if isinstance(inputs, list) else []:
         name = str(entry.get("path") or "") if isinstance(entry, dict) else ""
         recorded = str(entry.get("sha256") or "") if isinstance(entry, dict) else ""
