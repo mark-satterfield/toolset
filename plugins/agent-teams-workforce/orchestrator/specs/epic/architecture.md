@@ -26,8 +26,10 @@ capability gets an explicit current-to-target action: retain, change, replace, a
 is no fixed specialty or proposal quota. The approved target and its delta are integrated into the
 canonical arc42 views, independently checked and set effective, and superseded content is corrected or
 removed. The Closure phase then walks the effective views from every build item to the elements its
-work rests on. It writes each element that is not built and current as a prerequisite. Valid saved
-work is kept, and only the inputs or evidence that changed are refreshed.
+work rests on, and reads each such element's state in the element status matrix (CONTEXT 7.25)
+instead of searching code. It writes each element whose state is `unknown` or not built as a
+prerequisite, which pulls it into the Epic's scope. Valid saved work is kept, and only the inputs
+or evidence that changed are refreshed.
 
 ## 2. Produces and decides
 
@@ -86,10 +88,19 @@ After a successful run, all of the following are true:
    If any session changes it, the session runner's guard (`driver-contract.md` §8) restores it from
    the copy taken before that session and the run fails (hard limit).
 10. `<arch>/target/<subject>/closure.json` holds the checked prerequisite closure:
-    - `prerequisites[]`: each has `element`, `state` (`absent` | `stale` | `planned`), `views`,
-      `requiredBy`, `requires`, `evidence`, `deployedBy`, `plannedBy`, `repository` and `reason`.
-    - `rootEdges[]`, `satisfied[]`, `version` and `roots`.
-    - There is no cycle. Every `planned` prerequisite is planned by an open bead.
+    - `prerequisites[]`: one per element the delta's work rests on (reached from a build item
+      through the effective views, and not itself a build item) whose element status matrix state
+      is `unknown` or not built; an element with no row reads `unknown` (CONTEXT 7.25). Each has
+      `element` (named as the arc42 views name it), `state` (the matrix state it read, so
+      `unknown`), `views`, `requiredBy`, `requires`, `evidence` (view paths and headings, never
+      code) and `repository` (the repository the element's matrix row names, when it names one).
+    - `satisfied[]`: the elements reached whose matrix state is `built` or `deployed`, each with
+      the row's `state`, `repository` and the Task and commit that last changed it.
+    - `rootEdges[]`, `version` and `roots`.
+    - There is no cycle.
+    - The matrix is read, never written: only the build pipeline writes it. While it is empty,
+      every element reached is a prerequisite, and its Tasks and the build pipeline's tests settle
+      what already works.
     The path is `target/<subject>/closure.json` (beside `baseline.json`), not `delta/closure.json`:
     the code writes it there (`archclosure.write_closure`) and every Epic spec reads it there. The
     `meta.description` and PLAN S01a say `delta/`; see QUESTIONS.md.
@@ -100,8 +111,9 @@ After a successful run, all of the following are true:
     `ledgerPath`, `rounds`, `openItems` and `noArchitectureChange` (publication-only path). On failure
     it has `{ok: false, stage, reason, cause}`, plus `requiredHumanActions` for the two owner-fact
     stages, `owner-concern` and `no-arch-path`.
-12. The step writes nothing to beads. It only reads them: the survey and closure sessions read them
-    through `atw-bd`, and `arch-closure` reads bead status.
+12. The step writes nothing to beads. Only the survey session reads them, through `atw-bd`. The
+    Closure reads no beads and no repository code: it reads the effective views and the element
+    status matrix.
 
 ## 3. Inputs
 
@@ -112,12 +124,12 @@ After a successful run, all of the following are true:
 | Epic | `epic.id` (`ssbd-…`); its prefix, `prd.id` and the PRD file's base name are the names a subject may not carry (`--forbid`) |
 | Subject override | optional `subject` arg (`architectureSubject` on the composite) |
 | Round bound | none: fixed at 3 review rounds with a hard stop (CONTEXT 7.7, the owner's answer 5 of 2026-10-09). Today's `maxRounds` argument (default 6) and the composite's `maxArchitectureRounds` are dropped |
-| Beads | the central beads database (`depscore.repo`, the composite's `emitTarget`), read-only, through `atw-bd` in sessions and `bead_status` in `arch-closure` |
+| Beads | the central beads database (`depscore.repo`, the composite's `emitTarget`), read-only, through `atw-bd` in the survey session |
 | Artifact recorder | `artifacts {dir, relDir, epicId, script, phase: 'architecture', inputs, beadId}`; `script` is `<driver>/artifactio.py` (`$ATW_ARTIFACT_SCRIPT`). `inputs` are the PRD path plus `arc42-revision:{"dir":"<arch>/arc42","record":"<work>/arc42-revision.json"}` |
 | Repositories | each repository's local checkout and its `main` (read with `git -C <repo> show/grep main:…`), as named by the polyrepo-steward |
-| Repository deployments | per repository: the elements its `main` deploys or publishes (polyrepo-steward, Closure only) |
+| Element status matrix | Closure only: the row of each element the walk reaches: repository; state (`unknown`, `built` meaning tests passing, `deployed` meaning deployed to AWS dev and verified); the Task and commit that last changed it (CONTEXT 7.25). Read only; its storage, format and the rule that matches a row to an element named in the views are S02's item 10. Empty today, so every element reads `unknown`. |
 | AWS guidance | the AWS MCP Server documentation tools and `aws-core:*` skills (sessions only; no AWS account calls) |
-| Schemas | `<plugin>/skills/artifact-handoff/schemas/architecture-writer.schema.json`, `architecture-review.schema.json`, `architecture-baseline.schema.json`, `checkpoint.schema.json`; the survey, coordinator, decision, maintain, conformance, repositories, deployments and closure schemas are defined in the workflow today (section 4 lists their fields) |
+| Schemas | `<plugin>/skills/artifact-handoff/schemas/architecture-writer.schema.json`, `architecture-review.schema.json`, `architecture-baseline.schema.json`, `checkpoint.schema.json`; the survey, coordinator, decision, maintain, conformance, repositories and closure schemas are defined in the workflow today (section 4 lists their fields; the closure walk's schema is new, section 4) |
 
 Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. Drop them.
 
@@ -141,15 +153,15 @@ Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. D
 | `draft/` | writers; `arch-target --seed` writes `draft/baseline.json` | arc42 section layout plus `delta/`; never `02-architecture-constraints/` | yes (the writers' views) |
 | `target-check.json` | `arch-target --dry-run --out` | full dry-run report (`subject`, `subjectRefusals`, `draftWritten`, …) | no (recomputed) |
 | `decision.json`, `decision.md` | architecture-decider, accepted | DECISION_SCHEMA: `round, verdict: approve\|return\|owner-concern, diligence[{check, present, where}], choices[{dispute, chosen, why}], returnTo[{agentType, missing}], ownerConcerns[{kind: business-conflict\|architecture-conflict, concern, evidence}], summary` | **yes** |
-| `target.json` | `arch-target --out` | full target report (`targetDir, deltaDir, files, deltaFiles, architectureChange, note, designChanged, documentationChanged, implementationWork, approvalFiles, draftWritten`) | read by the composite (`depscore.py saved-target`, which also reports `ok` and `closureSaved`; the composite reuses the phase only when both are true) and by `prd-reconciliation`, `spec-authoring`, `trd-authoring` |
+| `target.json` | `arch-target --out` | full target report (`targetDir, deltaDir, files, deltaFiles, architectureChange, note, designChanged, documentationChanged, implementationWork, approvalFiles, draftWritten`) | read by the composite (`depscore.py saved-target`, which also reports `ok` and `closureSaved`; the composite reuses the phase only when both are true and the Closure's inputs are unchanged) and by `repo-scoping`, `spec-authoring`, `trd-authoring` |
 | `integrate-before.json` | `snapshot_tree` | tree hashes before integration | yes (integration measurement baseline) |
 | `tree-last.json` | `arch-integration-files --save-last` | tree hashes after the last measurement | yes |
 | `integration-files.json` | `arch-integration-files --files-out` | `touched[]`, `deleted[]`, `all[]`, `unreported[]`, `section2[]`, `outside[]`, `changedSinceLast[]` | yes |
 | `architecture-update.json` | architecture-maintainer (accepted), or written directly on the publication-only path | MAINTAIN_SCHEMA: `changedFiles, createdFiles, deletedFiles, viewsChecked[{element, view, action: updated\|deleted\|added\|unaffected}], constraintIssues[], contradictions[], summary` | **yes** |
 | `conformance-<n>.json` | architecture-conformance-reviewer, accepted | CONFORMANCE_SCHEMA: `conforms, reviewedFiles[], findings[{file, finding, evidence}], coverageChecks[{id, verdict, evidence}], summary` | **yes** (last one) |
 | `closure-roots.json` | `arch-delta --roots-only --save` | the build roots: `items[{id, element, kind, views, requires…}]`, `architectureChange`, `note` | yes (deterministic) |
-| `closure-deployments.json` | polyrepo-steward, accepted | `repositories[{name, path, lifecycle, deploys[{element, kind, evidence}]}], summary` | **yes** |
-| `closure.json` | prd-reality-reconciler (CLOSURE mode), accepted | CLOSURE_SCHEMA: `prerequisites[]` (fields in section 2.10), `rootEdges[{item, requires, evidence}]`, `satisfied[{element, deployedBy, evidence}]`, `summary` | **yes** |
+| `closure-walk.json` | prd-reality-reconciler (CLOSURE mode), accepted | the walk from the roots through the effective views: `rootEdges[{item, requires, evidence}]`, `elements[{element, views, requiredBy, requires, evidence}]` (every element reached that is not itself a root; evidence is view paths and headings), `summary`. No state: the agent does not judge what is built | **yes** |
+| `closure.json` | step 32, Python, from `closure-walk.json` and the element status matrix | CLOSURE_SCHEMA: `prerequisites[]` and `satisfied[]` (fields in section 2.10), `rootEdges[]`, `summary` | **yes** |
 | `relay/`, `*.relay` files | relay plumbing | none needed | **dropped** |
 
 ### Vault writes (`skillspoke-docs` repository)
@@ -426,20 +438,32 @@ with a failure at stage `constraints-written`, if the session changed it.
 
 **Closure (never skipped; runs after either Integrate path)**
 
+The Closure reads the element status matrix (CONTEXT 7.25) to learn what is built; it does not
+search repository code and reads no beads (CONTEXT 7.20, 7.23).
+
 29. *deterministic:* `archstate.delta_items(deltaDir, with_closure=False)` → save
     `closure-roots.json`. Refusals are recorded and the run carries on with the listed items.
-30. *agent: polyrepo-steward* lists what each repository's `main` deploys or publishes, with
-    file:line, named as arc42 names the element.
-    - Output: `closure-deployments.json`.
-    - Current: sonnet, effort `medium`.
-    - It does not read the roots, so it can start in parallel with step 22 (see QUESTIONS.md).
-31. *agent: prd-reality-reconciler (CLOSURE mode).*
-    - Inputs: PRD, `<arch>`, `closure-roots.json`, `closure-deployments.json`, beads (read-only), the
-      closure schema.
-    - Output: `<work>/closure.json`.
-    - Current: opus, effort `medium`.
-32. *deterministic:* `archclosure.write_closure(<work>/closure.json, deltaDir, status_of=bead_status)`
-    writes `target/<subject>/closure.json`.
+30. *(removed)* *agent: polyrepo-steward* listing what each repository's `main` deploys or
+    publishes, with file:line (`closure-deployments.json`). It searched code to learn what is
+    built; the element status matrix replaces it.
+31. *agent: prd-reality-reconciler (CLOSURE mode), the walk only.*
+    - Task: from every root in `closure-roots.json`, walk the effective views to the elements its
+      work rests on (for example a VPC, a security group, a Lambda layer, an event bus, a table),
+      naming each element as the arc42 views name it, with the views that show the dependency.
+      It does not judge whether any element is built and does not read repository code.
+    - Inputs: PRD, `<arch>`, `closure-roots.json`, the walk schema.
+    - Output: `<work>/closure-walk.json`.
+    - Current: opus, effort `medium`. The walk is reading views only, so S07 measurement may
+      lower the model or effort.
+32. *deterministic: classify and write.* For every element in `closure-walk.json`, read its row in
+    the element status matrix (the matching rule is S02's item 10):
+    - state `built` or `deployed` → a `satisfied` entry with the row's state, repository, Task and
+      commit;
+    - state `unknown`, or no row → a `prerequisites` entry with `state: unknown` and the row's
+      repository when it names one: the element is pulled into the Epic's scope, and its Tasks
+      build it (CONTEXT 7.25).
+    Write `<work>/closure.json`, then `archclosure.write_closure(<work>/closure.json, deltaDir)`
+    writes `target/<subject>/closure.json` (no bead status read).
     - Refused (a cycle, or not a closure object) → one corrective pass of step 31. The brief carries
       the exact refusals and the path of the refused check result.
     - Refused again → `stage: closure`.
@@ -447,8 +471,8 @@ with a failure at stage `constraints-written`, if the session changed it.
 
 **Agents accounted for.**
 - Kept:
-  - polyrepo-steward (steps 6, 30)
-  - prd-reality-reconciler (steps 7, 12, 31)
+  - polyrepo-steward (step 6; its Closure deployments listing, old step 30, is removed)
+  - prd-reality-reconciler (steps 7, 12, and 31 for the walk only)
   - architecture-boundary-guardian (step 11, and as a roster reviewer)
   - architecture-decision-workflow-coordinator (step 13)
   - the 9 proposers and 3 diagram authors (step 15)
@@ -465,7 +489,6 @@ with a failure at stage `constraints-written`, if the session changed it.
 **Parallelism summary.**
 - Reviewers within a round run in parallel; everything else in a round is sequential.
 - Step 6 (repositories) can run alongside steps 2 to 5 when a survey is needed.
-- Step 30 can overlap steps 22 to 28.
 - All deterministic steps are local and fast.
 
 ## 6. Checks kept / Checks dropped
@@ -503,9 +526,11 @@ with a failure at stage `constraints-written`, if the session changed it.
 - *`integration_files` measures what was actually written (`unreported`, `section2`, `outside`).* The
   maintainer's report can omit files. Unreported files would be committed or set effective without
   review.
-- *`arch-closure` cycle refusal and the planned-by-open-bead rule.* A `requires` cycle becomes cyclic
-  Task `blocks` edges in beads. A prerequisite planned by a closed bead would produce no Task and a
-  blocker that never clears. Nothing later recomputes either.
+- *`arch-closure` cycle refusal.* A `requires` cycle becomes cyclic Task `blocks` edges in beads,
+  and nothing later recomputes it.
+- *Closure states come from the element status matrix, in Python (step 32).* Without it a session's
+  guess about what is built would decide which prerequisites get no Task; nothing later adds a Task
+  for an element the Closure left out.
 - *Decision owner-concern filter* (only `business-conflict` / `architecture-conflict` reach the
   owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
 - *Round bound: 3 review rounds, then a hard stop* (step 18). Owner requirement (CONTEXT 7.7), not a
@@ -542,6 +567,15 @@ with a failure at stage `constraints-written`, if the session changed it.
   non-actionable return fails at `decide` for the incident-responder (step 17).
 - *This flow's own section 2 snapshot at the start (step 3) and check after the rounds (step 19).*
   Replaced by the session runner's one guard around every session (`driver-contract.md` §8).
+- *The Closure's code search and its states `absent`, `stale` and `planned`* (the steward's
+  deployments listing of old step 30, the reconciler judging each element against the code on
+  `main`, `deployedBy`, `plannedBy`, the planned-by-open-bead rule and the bead status read in
+  `arch-closure`). Elaboration does not search code to judge what is built (CONTEXT 7.23); the
+  matrix is the record (CONTEXT 7.25), and an element that is `unknown` or not built is pulled into
+  the Epic's scope. Work another Epic's open Task already plans in the same repository is not
+  duplicated: `task-decomposition` makes it a `blocks` edge (`blockedByExternal`).
+- *The Closure naming a repository to create for a prerequisite* (`repository {name, template,
+  reason}`): the polyrepo-steward names every missing repository in `repo-scoping` (CONTEXT 7.10).
 
 ## 7. Failure causes
 
@@ -571,7 +605,7 @@ with a failure at stage `constraints-written`, if the session changed it.
 | Integration measurement fails | `integrate` | `other` | No; incident |
 | Integration wrote section 2 | `integrate` | `other` | No; restored, incident |
 | Conformance reviewer or review check gives no result | `integrate` | from the session, or `other` | As above |
-| `arch-closure` bead status read times out (`bd`/Dolt) | `closure` | `bd-timeout` (structured fact: an open item in QUESTIONS.md) | Yes: backoff as for contention |
+| Reading the element status matrix fails | `closure` | from the structured fact of its storage (S02's item 10); otherwise `other` | Contention: yes, backoff as above. Otherwise no; incident |
 | Closure refused twice | `closure` | `other` | No; incident |
 
 `relay` has no producer in this flow after the rewrite.
@@ -599,8 +633,8 @@ input lists below are the single source; `prd-to-spec.md` refers here.
 | `architecture-update.json` + last `conformance-<n>.json` with `conforms: true` | target dir + delta + `decision.json` + `survey.json` + PRD | nothing: the maintainer and reviewer are skipped; `review_check` re-runs (deterministic) |
 | `architecture-update.json` without a conforming review | same | maintainer RESUMING pass, then review |
 | `closure-roots.json` | target dir | recomputed (deterministic) |
-| `closure-deployments.json` | `closure-roots.json` (today); see QUESTIONS.md | nothing |
-| `<work>/closure.json` + `target/<subject>/closure.json` | roots + deployments + `arc42/` + PRD | nothing |
+| `closure-walk.json` | `closure-roots.json` + `arc42/` + PRD | nothing: **no session starts** |
+| `<work>/closure.json` + `target/<subject>/closure.json` | `closure-walk.json` + the element status matrix rows of the elements it names | nothing; a changed matrix row reruns only step 32 (deterministic, no session) |
 
 The saved work of `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` (CONTEXT 7.13) must be read in place:
 - `survey.json`, `survey.md`, their `.meta.json`, `survey.json.baseline-inputs.json`,
@@ -624,10 +658,16 @@ QUESTIONS.md). `relay/` is ignored.
   it: the survey assesses it per capability, and the writers author it into the views. Writers,
   reviewers and the decider work from the same review standard, handed to each by path (steps 15
   to 17), so a first-round review does not find gaps the writers were never told to close.
-- **7.20 Missing prerequisites.** The Closure (steps 29 to 32) writes every element the delta's
-  work rests on that is not built and current (for example a VPC, a security group, a Lambda
-  layer) as a prerequisite; `depscore.py arch-delta` lists each as a build item, so it is built as
-  part of the Epic's work and never raised as an error.
+- **7.20 Missing prerequisites.** The Closure (steps 29 to 32) reads the element status matrix
+  instead of searching code, and writes every element the delta's work rests on whose state is
+  `unknown` or not built (for example a VPC, a security group, a Lambda layer) as a prerequisite;
+  `depscore.py arch-delta` lists each as a build item, so it is built as part of the Epic's work
+  and never raised as an error.
+- **7.25 Element status matrix.** The Closure is one of its two elaboration readers (repo scoping
+  is the other); it never writes it. Today it is empty, so every element reached is a
+  prerequisite.
+- **7.23 No code judgment in the Closure.** The walk reads views only, and the states come from the
+  matrix.
 - **6 hard limits.**
   - Section 2: the session runner's fingerprint, copy and restore guard (`driver-contract.md` §8);
     the `integration_files` section 2 count; `promote` and `write_target` refusals; and briefs that
@@ -635,9 +675,9 @@ QUESTIONS.md). `relay/` is ignored.
   - No secret exposure: the sessions read code and views only.
   - No destructive operation other than replacing `target/<subject>/` (this step's own folder) and
     moving stale saved work aside (`stale-<timestamp>/`, kept, not deleted).
-  - Nothing in `apps/marketing/`: the polyrepo-steward's inventory is the source; a closure entry
-    naming a marketing repository cannot become work, because `repo-scoping` rejects any placement
-    under `apps/marketing/`, prerequisites included (`repo-scoping.md` step 6).
+  - Nothing in `apps/marketing/`: a prerequisite cannot become work in a marketing repository,
+    because `repo-scoping` rejects any placement under `apps/marketing/`, prerequisites included
+    (`repo-scoping.md` step 6).
 - **7.4 Retries.** Structured causes come from the session runner and the script results. There are
   no unchanged reruns. Clarified reruns are allowed: an unanswered finding is re-sent once with the
   omission named, and the decider is re-asked once after a non-actionable return (a repeat goes to

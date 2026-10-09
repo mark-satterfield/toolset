@@ -21,7 +21,8 @@ working tree, and the control repo):
   (`grep -rn -o "(settleWorkflow|fableWorkflow|workflow)\('agent-teams-workforce:[a-z0-9-]+'" workflows/`):
   `gate-enforce` is called only from `bug-fix.js` lines 1359, 1504 and 1534. `prd-to-spec.js` calls
   `architecture`, `repo-scoping`, `trd-authoring`, `prd-reconciliation`, `spec-authoring`,
-  `task-decomposition`; those six make no child-workflow call.
+  `task-decomposition`; those six make no child-workflow call. (`prd-reconciliation` is removed
+  in the rewrite, CONTEXT 7.10.)
 - `gate-enforce.js` dispatches `agent-teams-workforce:advantage-evaluator` (line 281) and
   `agent-teams-workforce:phase-gate-enforcer` (line 432). No Epic workflow dispatches either agent
   directly (`grep` for the quoted names `phase-gate-enforcer`, `advantage-evaluator`,

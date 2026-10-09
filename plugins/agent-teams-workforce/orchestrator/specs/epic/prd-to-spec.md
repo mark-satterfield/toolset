@@ -14,10 +14,9 @@ fields and reuse decision; this one does not restate them:
 | Phase | Spec |
 |---|---|
 | Architecture | `<orch>/specs/epic/architecture.md` |
-| Repo scoping (span, placement checks, the no-implementation short cut) | `<orch>/specs/epic/repo-scoping.md` |
+| Repo scoping (placement by the polyrepo-steward, the placement checks, then creation of the missing repositories) | `<orch>/specs/epic/repo-scoping.md` |
 | TRD authoring | `<orch>/specs/epic/trd-authoring.md` |
-| Detailing (PRD reconciliation) | `<orch>/specs/epic/prd-reconciliation.md` |
-| Spec authoring and the Story bead | `<orch>/specs/epic/spec-authoring.md` |
+| Spec authoring, the UI design sources and the Story bead | `<orch>/specs/epic/spec-authoring.md` |
 | Task decomposition, Task beads, the corrective pass, the rerun rule | `<orch>/specs/epic/task-decomposition.md` |
 | Epic WSJF scoring and Epic dependency assessment (not part of elaboration: the future readiness process, CONTEXT 7.17; the Task WSJF arithmetic this flow runs is step 14) | `<orch>/specs/epic/wsjf-scoring.md`, `<orch>/specs/epic/dependency-assessment.md` |
 | What the driver sends and reads back; the session runner's shared rules | `<orch>/specs/epic/driver-contract.md` |
@@ -29,19 +28,21 @@ is the driver's elaboration lane, which the owner starts with `python3 ops/sdlc-
 
 ## 1. Purpose
 
-Elaborate one existing, scored Epic and its PRD into Stories and Tasks written to beads. The
-Epic's validation, its dependency assessment and its WSJF score are assumed done by the future
-readiness process (CONTEXT 7.17); this flow neither scores nor assesses the Epic. The flow claims
-the Epic (`depscore.py elaboration-start`), runs the architecture phase for every PRD (never
-skipped: a PRD the effective architecture already serves gets a "no change" result that says so),
-returns owner facts to the driver only on business requirements no design can satisfy together, on
-contradictory section 2 constraints, or on a missing architecture path, lists the build items from
-the approved target and delta, has the repo-scoping phase rule the repository span from where the
-polyrepo-steward places those items, authors the TRD, and per span repository details the items
-against `main`, authors one Spec and one Story, and decomposes the Story into Tasks for its
-`add`/`modify`/`remove`/`done` items. Every span repository gets a Story and Tasks; there is no
-"nothing to build" outcome (CONTEXT 7.6): code that already meets a requirement still gets its
-Task, and the build pipeline's tests decide that nothing needs to change. It then sets the Task
+Elaborate one existing, scored Epic and its PRD into the Architecture (current, future and delta
+views), the TRD, the Stories, the Specs and the Tasks (CONTEXT 7.22), with the Stories and Tasks
+written to beads. The Epic's validation, its dependency assessment and its WSJF score are assumed
+done by the future readiness process (CONTEXT 7.17); this flow neither scores nor assesses the
+Epic. The flow claims the Epic (`depscore.py elaboration-start`), runs the architecture phase for
+every PRD (never skipped: a PRD the effective architecture already serves gets a "no change"
+result that says so), returns owner facts to the driver only on business requirements no design
+can satisfy together, on contradictory section 2 constraints, or on a missing architecture path,
+lists the elements the change needs from the approved target and delta, has the repo-scoping phase
+have the polyrepo-steward place those elements in repositories and then create the missing
+repositories, authors the TRD, and per span repository authors one Spec and one Story, and
+decomposes the Story into Tasks that say what to build and how for every element placed in that
+repository. Elaboration never judges whether existing code already satisfies anything (CONTEXT
+7.23): every span repository gets a Story and Tasks; there is no "nothing to build" outcome
+(CONTEXT 7.6); and the build pipeline's tests decide what already works. It then sets the Task
 edges between Stories, computes every Task's WSJF score, and marks the Epic
 `elaboration_state=done` once every span repository has its Story and Tasks and every Task has its
 edges and its score, after which it deletes the Epic's `target/<subject>/`
@@ -58,15 +59,15 @@ After a successful run (`ok: true`, stage `finish`):
   phase), and `target/<subject>/` under `$ATW_ARCH_PATH` is deleted and the deletion committed in
   the vault repository.
 - `delta-items.json` lists every build item (one per element the delta shows, then one
-  `prerequisite` item per element the Closure found absent, stale or planned by an open bead, each
-  with `requires`).
+  `prerequisite` item per element the Closure pulled into scope because its element status matrix
+  state is `unknown` or not built, each with `requires`).
 - The repository span is the one the repo-scoping phase returned (its checks: every item placed
   exactly once, nothing in the control, architecture or marketing repositories, at least one
-  repository).
+  repository, every missing repository created).
 - `trd.md` exists for the PRD.
-- For every span repository: `recon-<slug>.json`, the spec documents, `story-<slug>.json`, one
-  Story bead (keyed by `elab_key`), `tasks-<slug>.json`, and at least one Task bead, the Tasks
-  together covering every `add`, `modify`, `remove` and `done` item of that repository.
+- For every span repository: the spec documents (and `spec-<slug>.ui.json` when it holds UI),
+  `story-<slug>.json`, one Story bead (keyed by `elab_key`), `tasks-<slug>.json`, and at least one
+  Task bead, the Tasks together covering every item placed in that repository.
 - Every Task carries its `blocks` edges: those inside its Story (written with the Task by
   `write-task`, from the `task-decomposer`'s edges, in build order), and those between Stories:
   the ones the delta's `requires` relations make (`closure-edges`) and the ones the
@@ -79,7 +80,8 @@ After a successful run (`ok: true`, stage `finish`):
 
 Decisions the flow makes:
 - **Claim or refuse** the Epic (step 3 `elaboration-start`).
-- **Return owner facts** (architecture `owner-concern` or `no-arch-path`): the flow returns
+- **Return owner facts** (architecture `owner-concern` or `no-arch-path`, or a repository creation
+  that needs an owner fact): the flow returns
   `requiredHumanActions`; the driver holds the Epic and writes the owner inbox.
 - **Done or not done** (CONTEXT 7.6): done only when every span repository has its Story and
   Tasks, every Task's edges are written, and every Task of the Epic has a WSJF score.
@@ -104,8 +106,9 @@ From the driver (`<driver>/workitems.py` `elaboration_args`, `dispatch_context`,
   `skillspokeRoot`: `$SKILLSPOKE_ROOT`.
 - `resume`: `artifactio.dispatch_resume(artifactio.plan(<epic>))`. Whether the driver keeps
   computing it once each phase rules its own reuse is an open item in QUESTIONS.md.
-- Optional and passed through to phases: `architectureSubject`, `dependencies`, `accessPatterns`,
-  `spec` (the driver sends none of them today; see QUESTIONS.md for the last three).
+- Optional and passed through to phases: `architectureSubject`, `accessPatterns`, `spec` (the
+  driver sends none of them today; see QUESTIONS.md for the last two). `dependencies` is dropped:
+  its only reader was the removed detailing step.
   `maxArchitectureRounds` is dropped: the round bound is fixed at 3 (CONTEXT 7.7,
   `architecture.md` step 18).
 
@@ -119,7 +122,11 @@ Vault: the PRD file; `$ATW_ARCH_PATH/arc42/` (effective views, section 2
 `02-architecture-constraints/` read-only); `$ATW_ARCH_PATH/target/<subject>/` (target, `delta/`,
 `baseline.json`, `closure.json`).
 
-Repositories: each span repository's `main` (read by the detailing phase).
+Repositories: no phase of this flow compares repository code with the build items (CONTEXT 7.23).
+The architecture phase's survey reads code as its spec says.
+
+Element status matrix (CONTEXT 7.25): read by the architecture phase's Closure and by the
+repo-scoping phase; never written by elaboration.
 
 Working directory: `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (`artifactio.working_dir`;
 `<epic-id>` sanitised by `artifactio.safe_key`). Called `<work>` below.
@@ -133,11 +140,10 @@ input-record format of every Epic flow):
 |---|---|---|
 | `architecture/...` | architecture phase | see `architecture.md` §4 |
 | `delta-items.json` | step 7, `depscore.py arch-delta --save` | `{ ok, refusals[], architectureChange: none\|new\|partial, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[] }] }` |
-| `repo-scoping.json` (+ inventory, candidate) | repo-scoping phase | see `repo-scoping.md` §4 |
+| `repo-scoping.json`, `repo-creation.json` (+ inventory, candidate) | repo-scoping phase | see `repo-scoping.md` §4 |
 | `trd.md` | trd-authoring phase | see `trd-authoring.md` §4 |
-| `recon-<slug>.json` (+ `.bundles.json`) | detailing phase | see `prd-reconciliation.md` Outputs |
-| `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md`, `story-<slug>.json` (+ draft) | spec-authoring phase | see `spec-authoring.md` Outputs |
-| `tasks-<slug>.json` (+ context, candidate, correction) | task-decomposition phase | see `task-decomposition.md` §4 |
+| `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md`, `spec-<slug>.ui.json` (+ bundles listing, candidate), `story-<slug>.json` (+ draft) | spec-authoring phase | see `spec-authoring.md` Outputs |
+| `tasks-<slug>.json` (+ items, context, candidate, correction) | task-decomposition phase | see `task-decomposition.md` §4 |
 | `closure-edges.json` | step 11, `depscore.py closure-edges --out` | `{ edges[{ from, to, reason }], summary.warnings }` |
 | `candidates/task-deps.json` | agent, step 12 | `{ edges[{ from, to, kind: data\|contract\|infrastructure\|event-flow, reason }], acyclic, cycle[] }`; Task keys as `S<i>-<local key>` |
 | `task-deps.json` (+ `.meta.json`) | step 12, accepted copy of the candidate | same shape |
@@ -209,8 +215,10 @@ section 2 guard (`driver-contract.md` §8).
 5. `phase` **Architecture** (`architecture.md`). Skipped only when the saved result is complete and
    current: `depscore.py saved-target --art-dir <work>` (`resumefacts.saved_target`) returns
    `found:true` with a `targetDir`, `ok:true` (survey current, arc42 revision unchanged) **and**
-   `closureSaved:true`. Otherwise the architecture flow runs; its own resume points make a call on
-   saved work cheap. Inputs and result: `architecture.md` §3 and §2 item 11.
+   `closureSaved:true`, **and** the saved Closure's recorded inputs (among them the element status
+   matrix rows it read) hash as recorded (`architecture.md` §8). Otherwise the architecture flow
+   runs; its own resume points make a call on saved work cheap (a matrix change reruns only the
+   Closure). Inputs and result: `architecture.md` §3 and §2 item 11.
 6. `deterministic` **Owner facts from architecture.** When the architecture result is `stage:
    owner-concern` (two business requirements no design satisfies together, or contradictory or
    unsatisfiable section 2 constraints) or `stage: no-arch-path` (no architecture root configured):
@@ -225,27 +233,32 @@ section 2 guard (`driver-contract.md` §8).
    `deltaExists:false`).
 8. In parallel:
    - 8a. `phase` **Repo scoping** (`repo-scoping.md`). The composite passes the `delta-items.json`
-     path, the `arch-delta` result fields and the Epic; the phase owns its own reuse, the placement
-     checks and the one corrective pass, and returns the span as final (`repo-scoping.md` §4, flow
+     path, the `arch-delta` result fields and the Epic; the phase owns its own reuse, the
+     placement by the polyrepo-steward with its checks and one corrective pass, and then, as a
+     separate deterministic step, the creation of the missing repositories the steward named. It
+     returns the span as final, every repository in it existing (`repo-scoping.md` §4, flow
      result). The span always names at least one repository; an empty span is a repo-scoping
-     failure, never a "nothing to build" result (CONTEXT 7.6).
+     failure, never a "nothing to build" result (CONTEXT 7.6). A creation that fails for want of
+     an owner fact returns `requiredHumanActions`, which the composite returns as in step 6.
    - 8b. `phase` **TRD authoring** (`trd-authoring.md`). The composite passes the PRD, the
      `arch-delta` result fields and the architecture paths; the result is `{ ok, trdPath,
      filingPath, decisionIds }` (`trd-authoring.md` §4). No summary is passed on: spec authoring
      reads the TRD by path.
-9. Per span repository, in parallel across repositories, in this order within one repository:
-   - 9a. `phase` **Detailing** (`prd-reconciliation.md`). The composite passes the repository, its
-     placed items, `uiRepo`, the `arch-delta` result fields and `designSystem`; the result is the
-     facts list in `prd-reconciliation.md` (Produces and decides), including `uiWork[]` with
-     `artifact`. A failed detailing blocks that repository's Spec; the repository fails at the
-     phase's stage.
+9. Per span repository, in parallel across repositories:
+   - 9a. *(removed)* **Detailing** (`prd-reconciliation`). It compared each placed item with the
+     code on the repository's `main` and gave it a status (add, modify, remove, "done",
+     "planned-elsewhere"). Elaboration does not judge existing code (CONTEXT 7.10, 7.23): every
+     placed item goes to spec authoring and gets Tasks, and the build pipeline's tests decide what
+     already works. The UI design sources it chose are now chosen in spec authoring.
    - 9b. `phase` **Spec authoring** (`spec-authoring.md`). The composite passes `trd.md` (path
-     only), the detailing facts, the repository, the Story key `S<i>` and the Epic; the phase writes
-     the Story bead. The result is the one in `spec-authoring.md` (Produces and decides): `story`,
-     `specPaths`, `decisionIds`, `summary`. A result without `story` is a failure.
+     only), the `repo-scoping.json` and `delta-items.json` paths, the repository, its `frontend`
+     flag, `designSystem`, the Story key `S<i>` and the Epic; the phase writes the Story bead. The
+     result is the one in `spec-authoring.md` (Produces and decides): `story`, `specPaths`,
+     `uiPath`, `decisionIds`, `summary`. A result without `story` is a failure.
 10. Per Story, in parallel: `phase` **Task decomposition** (`task-decomposition.md`). The composite
-    passes `specPaths` from 9b, the `recon-<slug>.json` path, the Story `{ id, key, title }`,
-    `beadsRepoPath`, `designSystem.packagesDir` and the stale reason of `tasks:<slug>` when the
+    passes `specPaths` and `uiPath` from 9b, the `repo-scoping.json` and `delta-items.json` paths,
+    the Story `{ id, key, title }`, `beadsRepoPath`, `designSystem.packagesDir` and the stale
+    reason of `tasks:<slug>` when the
     phase reports one. The phase owns the rerun rule (CONTEXT 7.5), the Task bead writes with their
     same-Story `blocks` edges, and the one corrective pass for uncited items and unsized Tasks
     (CONTEXT 7.6); its result is in `task-decomposition.md` §4. A `rerun` is recorded as ledger
@@ -253,10 +266,12 @@ section 2 guard (`driver-contract.md` §8).
     items no Task cites, and the Tasks with no valid size, after the corrective pass.
 11. `deterministic` **Closure edges.** After every Story's decomposition: `depscore.py
     closure-edges --dir <work> --repos <span> --out <work>/closure-edges.json` returns `{ edges[{
-    from, to, reason }], summary.warnings }`: the edges the delta's `requires` relations make. A
-    warning for a required item with no Task, no open bead and not done fails the run at stage
-    `task-edges`, cause `other`: repo scoping places every item and task decomposition covers every
-    work item, so such an item is a defect for the incident-responder, and a `blocks` dependency
+    from, to, reason }], summary.warnings }`: the edges the delta's `requires` relations make
+    between Tasks of different Stories, where `repo-scoping.json` places the required item in
+    another repository. A warning for a required item that no Task builds and that the span ruling
+    does not record as having no code fails the run at stage `task-edges`, cause `other`: repo
+    scoping places every item and task decomposition covers every placed item, so such an item is
+    a defect for the incident-responder, and a `blocks` dependency
     with no builder would otherwise reach beads unnoticed. `closure-edges` failing to run fails the
     run at the same stage with the cause its result carries.
 12. `agent` **Cross-Story Task dependencies.** Runs when the span has two or more repositories
@@ -422,8 +437,10 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | Architecture `owner-concern` / `no-arch-path` | `requires-human-action` | none (owner facts) | No: the driver holds for the owner. |
 | Other architecture failure | `architecture` | the phase's `failure.cause` | Per that cause. |
 | Repo scoping fails (incl. placement findings left after its corrective pass) | `repo-scoping` | the phase's cause | Per cause; `other`: incident-responder. |
+| A missing repository cannot be created for want of an owner fact (GitHub credentials, organisation permission) | `requires-human-action` | none (owner facts) | No: the driver holds for the owner. |
+| A missing repository cannot be created otherwise | `repo-creation` | the phase's cause | `contention`: yes, with backoff; otherwise incident-responder. |
 | TRD authoring fails | `trd-authoring` | the phase's cause | Per cause. |
-| One repository's detailing or spec fails | per repository: the phase's stage; run: `repositories-incomplete` | per repository from its phase's `failure.cause`; the run's cause is transient only when every failed repository's is | Transient: yes, rerun only the failed steps. Otherwise: incident-responder. |
+| One repository's spec authoring fails | per repository: the phase's stage; run: `repositories-incomplete` | per repository from its phase's `failure.cause`; the run's cause is transient only when every failed repository's is | Transient: yes, rerun only the failed steps. Otherwise: incident-responder. |
 | One Story's decomposition fails (incl. `uncited-items` after the one corrective pass) | per repository: the phase's stage; run: `repositories-incomplete` | as above; `uncited-items` is `other` | `uncited-items`: no, it already had its one corrective pass. |
 | A span repository has no Story, or a Story has no Task | `repositories-incomplete` | combined, as above | as above. |
 | `closure-edges` fails, or warns of a required item with no builder | `task-edges` | from its result; a warning is `other` | Contention: yes. A warning: no, incident-responder. |
@@ -451,10 +468,9 @@ table does not restate it.
 | (claim) | none | none | step 3 again; idempotent: the same owner token resumes an `in_progress` Epic |
 | `architecture` | `architecture/` deliverables incl. `target.json` | `architecture.md` §8 | nothing in architecture when step 5's reuse test passes; otherwise the architecture flow's own resume points decide |
 | (items) | `delta-items.json` | none: recomputed every run from `target/<subject>/` | always recomputed; costs no session |
-| `repo-scoping` | `repo-scoping.json` | `repo-scoping.md` §8 | nothing when unchanged |
+| `repo-scoping` | `repo-scoping.json`, `repo-creation.json` | `repo-scoping.md` §8 | no placement session when unchanged; the creation step finds every repository it created in the inventory and creates none twice |
 | `trd` | `trd.md` | `trd-authoring.md` §8 | nothing when unchanged |
-| `recon:<slug>` | `recon-<slug>.json` | `prd-reconciliation.md` Resume points | nothing when unchanged |
-| `spec:<slug>` | the spec documents, `story-<slug>.json` | `spec-authoring.md` Resume points | `depscore.py write-story` from the saved files (idempotent by `elab_key`), no agent |
+| `spec:<slug>` | the spec documents, `spec-<slug>.ui.json` (UI repositories), `story-<slug>.json` | `spec-authoring.md` Resume points | `depscore.py write-story` from the saved files (idempotent by `elab_key`), no agent |
 | `tasks:<slug>` | `tasks-<slug>.json` | `task-decomposition.md` §8 | the missing Task beads only (CONTEXT 7.5 rule, owned by `task-decomposition.md`) |
 | (closure edges) | `closure-edges.json` | none: recomputed | always recomputed; costs no session |
 | `task-deps` | `task-deps.json` | every `tasks-<slug>.json` | `write-all-task-edges` from the saved file, no agent |
@@ -480,7 +496,7 @@ phase's resume points when their inputs are unchanged.
   edges are written (inside a Story by the task-decomposition phase, between Stories by steps 11
   to 13), and every Task is scored (step 14a), in that order, because scoring needs the Tasks and
   their edges to exist. There is no "nothing to build" outcome: every span repository gets a Story
-  and Tasks, `done` items included, and the build pipeline decides whether code changes. The one
+  and Tasks for every item placed in it, and the build pipeline decides whether code changes. The one
   corrective pass is inside the task-decomposition phase, and its leftovers fail that repository.
   "Epic closed" is never used: done is `elaboration_state=done` and the Epic stays open.
 - **7.7 Three-case architecture model:** `architectureChange` (`none`, `new`, `partial`) from
@@ -490,10 +506,22 @@ phase's resume points when their inputs are unchanged.
 - **7.8 Selection filters:** applied by driver selection before dispatch; this flow does not repeat
   them (step 2) because the driver is its only entry. The Task WSJF scores this flow computes are
   what lets the build lane consider the Tasks.
-- **7.9 Who gets asked what:** only `owner-concern` and the missing architecture path become
+- **7.9 Who gets asked what:** only `owner-concern`, the missing architecture path and a
+  repository creation that needs an owner fact (credentials, organisation permission) become
   `requiredHumanActions` (the driver writes the owner inbox and the hold); every other failure goes
   to the incident-responder through the driver's incident.
-- **7.10 Repositories:** the repo-scoping phase owns placement through the polyrepo-steward.
+- **7.10 Repositories:** the order is fixed: the elements come from the approved delta (step 7),
+  the polyrepo-steward places them and names missing repositories, and a separate deterministic
+  step then creates those repositories (step 8a, `repo-scoping.md`). The `prd-reconciliation`
+  step is removed (step 9a).
+- **7.22 What elaboration produces:** the Architecture (phase 5), the TRD (8b), the Stories and
+  Specs (9b) and the Tasks (10 to 14).
+- **7.23 No judgment of existing code:** no step compares the build items with repository code;
+  every placed item gets Tasks, and the build pipeline decides what is already satisfied.
+- **7.24 Tasks are activities:** the Tasks say what to build and how; the requirements stay in the
+  PRD and TRD (`task-decomposition.md`).
+- **7.25 Element status matrix:** read by the architecture phase's Closure and by repo scoping;
+  elaboration never writes it.
 - **7.11 Deterministic over agentic:** only step 12 and the phases' reasoning steps are agents.
 - **7.13 Saved work:** the architecture resume point reuses the existing surveys.
 - **7.16 Hierarchy:** every Task this flow writes sits under a Story of this Epic; the flow creates

@@ -24,6 +24,7 @@ working tree, and the control repo):
   (`grep -o "settleWorkflow('agent-teams-workforce:[a-z-]*'" workflows/*.js`): `architecture`
   (line 1295), `repo-scoping` (1411), `trd-authoring` (1452), `prd-reconciliation` (1642),
   `spec-authoring` (1662), `task-decomposition` (1777). `prd-validation` is not among them.
+  (`prd-reconciliation` is removed in the rewrite, CONTEXT 7.10.)
 - `architecture.js`, `repo-scoping.js`, `trd-authoring.js`, `prd-reconciliation.js`,
   `spec-authoring.js`, `task-decomposition.js` define `fableWorkflow` but make no child-workflow
   call (`grep -o "(settleWorkflow|fableWorkflow|workflow)\('agent-teams-workforce:[a-z0-9-]+'"` finds

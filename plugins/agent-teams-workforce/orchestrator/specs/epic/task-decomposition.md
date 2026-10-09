@@ -15,26 +15,32 @@ Names used below:
 - `<slug>`: the Story's repository slug (the repository basename, suffixed `-2`, `-3` when two
   span repositories share a basename; assigned by the composite).
 - `<root>`: the project root that recorded paths are relative to (`$SKILLSPOKE_ROOT`).
-- "work item": a delta item that `recon-<slug>.json` marks `add`, `modify`, `remove` or `done`.
-  A `done` item is a work item because code that already meets a requirement still gets a Task:
-  the Task's Red step tests the requirement, and the build pipeline decides whether any code
-  changes (CONTEXT 7.6, 7.19; the owner's answer 2 of 2026-10-09). Today's
-  `hierarchy.WORK_STATUSES` lists only `add`, `modify`, `remove`; S04 widens it. Only a
-  `planned-elsewhere` item is not a work item: another Epic's open bead plans it, and it becomes a
-  `blocks` edge onto that bead.
+- "work item": a build item `repo-scoping` placed in the Story's repository: the `itemIds` of
+  every `placements[]` entry of `<work>/repo-scoping.json` whose `repoPath` is `repoPath`, joined
+  to `<work>/delta-items.json` for `element`, `views`, `requires` and, for a prerequisite, `kind`.
+  Every placed item is a work item and carries no status: elaboration does not judge whether code
+  for it exists or already meets anything (CONTEXT 7.23); the Task says what to build and how, and
+  the build pipeline's tests decide whether any code changes (CONTEXT 7.6, 7.19). Today's
+  `hierarchy` and `beadwrite` planning read the work items from the removed detailing file
+  (`recon-<slug>.json`) and filter by status (`hierarchy.WORK_STATUSES`); S04 changes them to
+  read the placed items.
 
 ## 1. Purpose
 
 Decompose ONE repository's Spec into Tasks, and only Tasks, under the Story that Spec pairs with, in
-that Story's single repository. A Task is build work (code, infrastructure or documentation); the
-Spec's acceptance criteria are carried inside the build Tasks and become tests in each Task's Red
-step, so no Task only writes tests. Tasks exist for every work item, `done` items included; work an
-open Task of another Epic in the same repository already plans (a `planned-elsewhere` item, or an
-`otherEpicTasks` entry) is not duplicated but becomes a `blocks` edge onto that Task. A missing
-prerequisite the architecture's Closure found (for example a VPC, a security group or a Lambda
-layer) is a work item like any other and gets a Task (CONTEXT 7.20). A `web-ui` Task carries in its
-build contract the design source of the ui items it cites (`bundle`, `cds` or `none`) and, for
-`bundle`/`cds`, its artifact (kind and slug). One maker session decomposes, sequences and sizes;
+that Story's single repository. A Task is an activity, the "how": it says what to build in this
+repository and how to build it (for example "in repository xyz, for service abx, write Lambda abc
+that does lm"); the requirements, the "what", stay in the PRD and the TRD, and the spec documents
+carry their technical detail, which the Task cites (CONTEXT 7.24). A Task is build work (code,
+infrastructure or documentation); the Task's Red step writes tests from the PRD, the TRD, the
+Story, the spec documents and the Task, so no Task only writes tests. Tasks exist for every work
+item; work an open Task of another Epic in the same repository already plans (an `otherEpicTasks`
+entry) is not duplicated but becomes a `blocks` edge onto that Task. A missing prerequisite the
+architecture's Closure found (for example a VPC, a security group or a Lambda layer) is a work
+item like any other and gets a Task (CONTEXT 7.20). A `web-ui` Task carries in its build contract
+the design source of the ui items it cites (`bundle`, `cds` or `none`, from
+`spec-<slug>.ui.json`) and, for `bundle`/`cds`, its artifact (kind and slug). One maker session
+decomposes, sequences and sizes;
 everything else (planning the build order, writing beads with their same-Story edges, the rerun
 decision, coverage of items and sizes) is deterministic. Every Story gets at least one Task; there
 is no "nothing to build" result (CONTEXT 7.6). Rerunning the flow keeps every existing Task when
@@ -62,13 +68,11 @@ After a successful run, all of these are true:
    job size (`wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`), and
    all its `blocks` edges inside the Story: onto the Tasks of the same Story it depends on (maker
    edges plus the edges the delta's `requires` relations make inside this repository, cycles
-   dropped); onto the bead that plans each `planned-elsewhere` item it needs; and onto each open
-   Task of another Epic named in `blockedByExternal`. The edges are written with the Task, in
-   build order, so every blocker exists when its dependent is written.
-7. Every work item of `recon-<slug>.json` is cited in `requirementIds` by at least one Task
-   (`recon-<slug>.json` itself is never edited by this flow). No item is recorded as needing no
-   work: the `noWork` answer of today's corrective pass is a "nothing to build" record and is
-   dropped (CONTEXT 7.6). Every required work item that `hierarchy.derive_prerequisites` finds
+   dropped); and onto each open Task of another Epic named in `blockedByExternal`. The edges are
+   written with the Task, in build order, so every blocker exists when its dependent is written.
+7. Every work item is cited in `requirementIds` by at least one Task (no input file is edited by
+   this flow). No item is recorded as needing no work: the `noWork` answer of today's corrective
+   pass is a "nothing to build" record and is dropped (CONTEXT 7.6). Every required work item that `hierarchy.derive_prerequisites` finds
    without a Task is treated the same way. Every Task has a valid size. If after the one corrective pass any such item is still uncited, or any Task still
    has no valid size, the run failed at stage `uncited-items` naming them (CONTEXT 7.6).
 8. The Story has at least one Task. An empty decomposition is not a result: it is a finding for
@@ -90,7 +94,9 @@ From the caller (`prd-to-spec`, `decompArgs`), per Story:
 | `story` | `{id, key, title}` of the Story bead `spec-authoring` wrote (`elab_key` `story:<slug>`). |
 | `spec` | `{id, title, description, source}`: navigation text only (a summary); the contract is in the spec documents. |
 | `specDocs` | `[{path, ref}]`: the three documents `spec-authoring` returns as `specPaths`: `<work>/spec-<slug>.md`, `<work>/spec-<slug>.data-model.md`, `<work>/spec-<slug>.criteria.md`; `ref` is the path relative to `<root>` that Tasks cite. There are no other spec artifact paths. |
-| `detailingPath` | `<work>/recon-<slug>.json`. |
+| `scopingPath` | `<work>/repo-scoping.json` (the placed items). |
+| `itemsPath` | `<work>/delta-items.json` (the build items' elements, views and `requires`). |
+| `uiPath` | `<work>/spec-<slug>.ui.json` from `spec-authoring`, or null when the repository holds no UI. |
 | `packagesDir` | `$ATW_DESIGN_PACKAGES_DIR`: the directory every cited cds bundle must sit in. Optional. |
 | `pluginRoot` | Locates `<plugin>/skills/wsjf/SKILL.md` for the maker's sizing brief. |
 | `upstreamChange` | Optional text: why the composite's resume found this step's saved files stale. Used only as the human-readable reason. |
@@ -100,13 +106,14 @@ Files read (all under `<work>` unless stated):
 - `story-<slug>.json`: the Story's saved document (title, description, acceptance criteria,
   `decisionIds`; a Task citing no `decisionIds` inherits the Story's).
 - `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md`.
-- `recon-<slug>.json`: `items[]` (`id`, `status`, `element`, `from`, `to`, surface, evidence,
-  `plannedBy`) and `uiAuthority.uiItems[]` (`item`, `designSource`, `bundle`, `buildSpec`,
-  `sections`, `artifact {kind, slug}`).
-- every `recon-*.json` (the Epic-wide detailed items: id -> status, `plannedBy`, slug).
-- `delta-items.json` (`depscore.py arch-delta --save`): `items[]` with `id`, `requires`, `kind`
-  (`prerequisite`), `state` (`planned`) and `plannedBy`.
-- cds bundles named by `uiAuthority` (`bundle.json`: `kind`, `slug`, `createdAt`, `buildSpec`).
+- `repo-scoping.json`: `placements[]` (`repoPath`, `itemIds`) for every repository of the span
+  (the Epic-wide map from item id to repository), and `noCode[]`.
+- `delta-items.json` (`depscore.py arch-delta --save`): `items[]` with `id`, `element`, `views`,
+  `requires` and `kind` (`prerequisite`).
+- `spec-<slug>.ui.json` when it exists: `uiItems[]` (`item`, `designSource`, `bundle`,
+  `buildSpec`, `sections`, `artifact {kind, slug}`).
+- cds bundles named by `spec-<slug>.ui.json` (`bundle.json`: `kind`, `slug`, `createdAt`,
+  `buildSpec`).
 - `tasks-<slug>.json` and `tasks-<slug>.json.meta.json` when they exist (rerun decision).
 
 Beads read:
@@ -125,11 +132,12 @@ Files:
 | Path | Format and key fields | Written by |
 |---|---|---|
 | `<work>/tasks-<slug>.context.json` | `existingTasks` (`elabKey`, `title`, description head, `status`, `requirementIds`) and `otherEpicTasks` (`id`, `title`, description head, `status`, `epic`), read from beads right before the maker runs; replaces the maker's use of `story-<slug>.written.json`. | step 5 |
+| `<work>/tasks-<slug>.items.json` | The Story's work items: `items[]` (`id`, `element`, `views`, `requires`, `kind`), from `repo-scoping.json` and `delta-items.json`. | step 5 |
 | `<work>/candidates/tasks-<slug>.json` | The maker's output file, schema below. Validated once by step 7; not a resume point. | step 6 (agent) |
 | `<work>/tasks-<slug>.json` | Accepted decomposition: `tasks[]` (`key`, `title`, `description`, `type`, `acceptanceCriteria[]`, `definitionOfDone[]`, `specPaths[]`, `specSections[]`, `requirementIds[]`, `decisionIds[]`, `reuses` (string or null), `blockedByExternal[]`, `surfaces` (list or null)), `testStrategy` (`pyramid`, `coverageThreshold`, `envMatrix[]`, `source`) or null, `rationale`, `edges[]` (`from`, `to`: local keys), `scores[]` (`key`, `jobSize`, `sizeLow`, `sizeHigh`, `sizeConfidence`, `rationale`), `notes`. Canonical JSON. | step 7 |
 | `<work>/tasks-<slug>.json.meta.json` | `artifactio.record`: `artifact`, `path` (relative to `<root>`), `epic_id`, `phase` (`tasks:<slug>`), `sha256`, `bytes`, `created_at`, `updated_at`, `inputs[]` (`path`, `kind` `file`, `sha256`). | step 8, again in step 11 |
 | `<work>/candidates/tasks-<slug>.correction.json` | The corrective maker's output file: `tasks[]` (same item schema, keys `N1`, `N2`, ...), `edges[]` (only into a new Task), `scores[]` (one per new Task, and one per saved Task key the brief named as unsized). No `noWork[]`. Validated once by step 10. | step 10 (agent) |
-| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | The accepted corrective answer, recorded with `artifactio.record` (inputs: `tasks-<slug>.json` as it was before the merge, `recon-<slug>.json`). Kept as evidence of the pass; its content reaches beads only through the amended `tasks-<slug>.json`. | step 10 |
+| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | The accepted corrective answer, recorded with `artifactio.record` (inputs: `tasks-<slug>.json` as it was before the merge, `repo-scoping.json`, `delta-items.json`). Kept as evidence of the pass; its content reaches beads only through the amended `tasks-<slug>.json`. | step 10 |
 | `<work>/tasks-<slug>.json` (amended) | `add-tasks` appends the accepted new Tasks under fresh keys `T<n>` past the highest saved key, with their edges and scores, and replaces the score of each saved Task the brief named as unsized. Saved Tasks are otherwise not changed. | step 11 |
 
 Bead writes (all through the beads writer in `beadwrite.py`; every write keyed by `elab_key`):
@@ -144,6 +152,7 @@ Bead writes (all through the beads writer in `beadwrite.py`; every write keyed b
   `{"issue_id", "depends_on_id", "type": "blocks"}` for missing blockers; `bd dep remove <id> <b>`
   for each same-Story blocker it no longer depends on. Blockers outside the Story are never removed.
 - **Description** = `Repository: <repo> — work only in this repository.` + the Task's description
+  (the activity: what to build and how)
   + a `## Spec contract` block: spec path(s) relative to `<root>`, spec sections, requirement ids,
   surfaces (`unknown (none declared)` for null), test strategy line, Definition of Done, and for a
   `web-ui` Task its design source, cds artifact, cds bundle and cds build specs.
@@ -195,21 +204,27 @@ library functions directly (no `depscore.py` subprocess, no relay, no command-ru
    `tasks-<slug>.context.json`: `existingTasks` is `kept` from step 4 (empty in case `new`);
    `otherEpicTasks` from `other_epic_tasks`. This replaces
    reading `story-<slug>.written.json`, which `spec-authoring` wrote when it wrote the Story and
-   which is stale whenever that step was reused.
+   which is stale whenever that step was reused. Also write the work items to
+   `tasks-<slug>.items.json` (from `repo-scoping.json` and `delta-items.json`), so the maker reads
+   one short file by path.
 6. **Decompose, sequence and size** (agent `task-decomposer`; model `fable`, effort `medium`, as the
    agent definition and the current dispatch set them; right for one authoring pass over the spec
-   set and the repository code). One session. Input paths: `specDocs` (with their cite-as refs),
-   `recon-<slug>.json`, `story-<slug>.json`, `tasks-<slug>.context.json`,
-   `<plugin>/skills/wsjf/SKILL.md`, the repository `repoPath`. Brief (facts and expected outcome
+   set). One session. Input paths: `specDocs` (with their cite-as refs), the work items (written
+   by Python to `<work>/tasks-<slug>.items.json`: `id`, `element`, `views`, `requires`, `kind`),
+   `spec-<slug>.ui.json` when it exists, `story-<slug>.json`, `tasks-<slug>.context.json`,
+   `<plugin>/skills/wsjf/SKILL.md`, the repository `repoPath` (where the Tasks' work goes). Brief
+   (facts and expected outcome
    only): the three jobs (decompose into build Tasks with their contract fields and `testStrategy`;
    name the DAG edges; size each Task with `jobSize`, `sizeLow`, `sizeHigh`, `sizeConfidence`,
    one-line rationale); only work items make Tasks, each Task cites at least one, and every work
-   item is cited; a `done` item gets a Task like any other, whose contract names the code on
-   `main` the detailing cites as already meeting it, so its Red step tests that code and the
-   build pipeline decides whether anything changes; a prerequisite item (a VPC, a security group,
-   a Lambda layer, any element the delta's work rests on) gets a Task that builds it; work an
-   `otherEpicTasks` Task or a `planned-elsewhere` bead already plans goes into `blockedByExternal`
-   instead of a Task; `reuses` names the `elabKey` of the existing Task it is; in case `replaced`,
+   item is cited; each Task is an activity that says what to build in this repository and how,
+   and cites the spec sections and views that hold the requirements it serves, without restating
+   them as its own requirements (CONTEXT 7.24); do not judge whether code for an item already
+   exists or meets anything: every work item gets its Task, and the build pipeline's tests decide
+   what already works (CONTEXT 7.19, 7.23); a prerequisite item (a VPC, a security group, a Lambda
+   layer, any element the delta's work rests on) gets a Task that builds it; work an
+   `otherEpicTasks` Task already plans goes into `blockedByExternal` instead of a Task; `reuses`
+   names the `elabKey` of the existing Task it is; in case `replaced`,
    the kept Tasks are existing work never to be duplicated; `surfaces` is a list or null; one
    artifact per `web-ui` Task; at least one Task. Output: the maker writes
    `<work>/candidates/tasks-<slug>.json` (the
@@ -227,10 +242,11 @@ library functions directly (no `depscore.py` subprocess, no relay, no command-ru
    re-decompose.
 9. **Plan and write the Task beads** (deterministic; `beadwrite.plan_story_tasks` then
    `beadwrite.write_task` per Task in build order). Planning reads `story-<slug>.json`,
-   `tasks-<slug>.json`, `recon-*.json`, `delta-items.json` and the bundles, runs no `bd`, and:
+   `tasks-<slug>.json`, `repo-scoping.json`, `delta-items.json`, `spec-<slug>.ui.json` and the
+   bundles, runs no `bd`, and:
    makes repeated keys unique (`K`, `K-2`, ...; an edge on `K` applies to each copy; the n-th score
    on `K` to the n-th copy); drops edges that do not join two known Tasks; drops each edge that
-   closes a cycle; derives in-repository `requires` edges and `planned-elsewhere` blockers
+   closes a cycle; derives in-repository `requires` edges
    (`hierarchy.derive_prerequisites`); settles each `web-ui` Task on one design source and one
    artifact (`hierarchy.check_cds_contract`); assigns `elab_key`s; computes `uncited` (work items no
    Task cites, plus every required work item `derive_prerequisites` reports without a Task, which
@@ -249,29 +265,29 @@ library functions directly (no `depscore.py` subprocess, no relay, no command-ru
    never leaves a Task without one of its edges; the rerun writes only what is missing.
 10. **One corrective pass** (agent `task-decomposer`, model `fable`, effort `medium`), only when
     step 9's plan has uncited work items, unsized Tasks, or no Task at all. Input paths:
-    `tasks-<slug>.json` (read-only), `recon-<slug>.json`, `specDocs`, `story-<slug>.json`, the
-    repository, `<plugin>/skills/wsjf/SKILL.md`; the brief lists the uncited items exactly (`id`,
-    `status`, `element`, `to`) and the unsized Task keys with what each score lacks. Output: the
+    `tasks-<slug>.json` (read-only), `tasks-<slug>.items.json`, `specDocs`, `story-<slug>.json`,
+    the repository, `<plugin>/skills/wsjf/SKILL.md`; the brief lists the uncited items exactly
+    (`id`, `element`, `views`) and the unsized Task keys with what each score lacks. Output: the
     maker writes `<work>/candidates/tasks-<slug>.correction.json`; Python validates it once
     (strict JSON, schema), writes the accepted `tasks-<slug>.correction.json` and records it
     (section 4).
 11. **Merge the corrective answer** (deterministic; `beadwrite.add_corrective_tasks`, changed so
-    it no longer edits the detailing and no longer takes `noWork` answers). Take a new Task only
+    it edits no other step's file and no longer takes `noWork` answers). Take a new Task only
     when every work item it cites is uncited; give it a fresh `T<n>` key; when two new Tasks cite
     the same item the first keeps it, it is removed from the later ones' citations (`trimmed`), and
     a later Task left citing none of them is dropped (`dropped`); take edges only into a new Task;
     take a score for a new Task or for a saved Task key the brief named as unsized (`resized`), and
-    only when it is valid; everything else is `rejected` with why. `recon-<slug>.json` and every
-    other step's `.meta.json` are left untouched. Record the inputs again (step 8) and run step 9
+    only when it is valid; everything else is `rejected` with why. Every other step's file and
+    `.meta.json` are left untouched. Record the inputs again (step 8) and run step 9
     again. Items still uncited, Tasks still unsized, or a Story still without a Task fail the
     Story at stage `uncited-items` (or `decompose` for no Task), naming them, the answer file and
     the rejected answers. No further pass runs.
 12. **Not in this flow: edges between Stories.** After every Story of the Epic is decomposed, the
     composite runs `depscore.py closure-edges` (`beadwrite.closure_task_edges`): for every saved
-    Task building item X and every item Y that X requires and that ANOTHER repository's detailing
-    marks as work, an edge from each Task of that Story building Y (ends named `S<i>-<key>`, `i` the
-    repository's position in the span), and a warning for a required item no Task builds, that no
-    repository details and the span ruling does not record as having no code, which fails the
+    Task building item X and every item Y that X requires and that `repo-scoping.json` places in
+    ANOTHER repository, an edge from each Task of that Story building Y (ends named `S<i>-<key>`,
+    `i` the repository's position in the span), and a warning for a required item that no Task
+    builds and that the span ruling does not record as having no code, which fails the
     composite's step 11. It runs no `bd`. Its edges are written with the cross-Story edges by
     `write-all-task-edges`. Spec: `<orch>/specs/epic/prd-to-spec.md` steps 11 to 13.
 
@@ -328,9 +344,14 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
   `.progress.json` checkpoints, the "probe" and "recover" dance, the "revision binds the paths
   alone" fallback and the `.prev` copy. They exist because the sandbox cannot read files; Python
   reads the maker's output file and validates it once.
-- `add-tasks` editing `recon-<slug>.json` and re-binding its sha256 in every `*.meta.json` under
-  `<work>`: it rewrote another step's input records so their staleness checks could not see the
-  change.
+- `add-tasks` editing the detailing file (`recon-<slug>.json`) and re-binding its sha256 in every
+  `*.meta.json` under `<work>`: it rewrote another step's input records so their staleness checks
+  could not see the change. The detailing step itself is removed (CONTEXT 7.10).
+- Work-item statuses (add, modify, remove, "done") and the `planned-elsewhere` blocker onto
+  another Epic's bead: they came from the removed detailing step (`prd-reconciliation`), which
+  judged existing code; elaboration does not (CONTEXT 7.23). Every placed item is a work item, and
+  work another Epic already plans in this repository is caught through `otherEpicTasks`
+  (`blockedByExternal`).
 - The `noWork` answer (an uncited item recorded as needing no work, with a `file:line` reason): a
   "nothing to build" record per item, which CONTEXT 7.6 removes; such an item gets a Task.
 - "A Story with nothing to build gets no Tasks and goes straight to deploy and verify" (the
@@ -374,12 +395,15 @@ as `{path, kind: "file", sha256}`):
 2. `<work>/spec-<slug>.data-model.md`
 3. `<work>/spec-<slug>.criteria.md`
 4. `<work>/story-<slug>.json`
-5. `<work>/recon-<slug>.json` (the detailing; CONTEXT 7.5 names it, and the maker reads it)
+5. `<work>/repo-scoping.json` (the placed items; the maker reads them)
+6. `<work>/delta-items.json` (the items' elements, views and `requires`)
+7. `<work>/spec-<slug>.ui.json`, when the repository holds UI (the design sources the Tasks carry)
 
-The correction file is not an input: its accepted content is already merged into
-`tasks-<slug>.json` (step 11). This list is the single source; `prd-to-spec.md` refers here. The PRD, the architecture and the
+The correction file and `tasks-<slug>.items.json` are not inputs: the first's accepted content is
+already merged into `tasks-<slug>.json` (step 11), and the second is derived from inputs 5 and 6.
+This list is the single source; `prd-to-spec.md` refers here. The PRD, the architecture and the
 TRD are covered through these: the spec step reruns when its recorded inputs (`trd.md`,
-`repo-scoping.json`, `recon-<slug>.json`, the PRD) change, which rewrites the spec files. "Unchanged" is true only when `tasks-<slug>.json` exists,
+`repo-scoping.json`, `delta-items.json`, the PRD) change, which rewrites the spec files. "Unchanged" is true only when `tasks-<slug>.json` exists,
 its record names at least one input, and every recorded input exists and hashes as recorded. An
 input recorded without a hash, or not of kind `file`, makes the decision "changed" (never "can't
 tell").
@@ -401,7 +425,7 @@ elaboration). The edge cases are open items in QUESTIONS.md.
 | `tasks-<slug>.json` + its `.meta.json` | section 8 inputs | Nothing upstream; case `unchanged`: plan and write only the missing or differing Task beads; no session. |
 | Deletion of unstarted Tasks (step 4) | not saved (beads are the record) | If the run stops before step 8, the next run still sees "changed", deletes any unstarted Tasks again (none, or ones this run created), recomputes `kept`, and decomposes. |
 | Task beads (step 9) | `elab_key` on each bead | Only beads missing or differing are written; started and closed ones are untouched. |
-| `tasks-<slug>.correction.json` accepted + its `.meta.json` | `tasks-<slug>.json` as it was before the merge, `recon-<slug>.json` | The merge (idempotent: answers for items already cited or Tasks already sized are rejected) and the bead writes; no session. |
+| `tasks-<slug>.correction.json` accepted + its `.meta.json` | `tasks-<slug>.json` as it was before the merge, `repo-scoping.json`, `delta-items.json` | The merge (idempotent: answers for items already cited or Tasks already sized are rejected) and the bead writes; no session. |
 | `uncited-items` failure with unchanged inputs | the same accepted correction | Reproduces the failure without starting a session (CONTEXT 7.4: no retry with nothing changed). |
 
 An interrupted maker session leaves at most a candidate file with no accepted result; the rerun
@@ -417,7 +441,7 @@ writes only for what is missing or differs.
   recreates the set; started and closed Tasks are kept and named to the maker; the fingerprints
   decide, with no third case.
 - **7.6 Done:** this flow delivers the per-Story half: at least one Task per Story; every work
-  item, `done` items included, cited by a Task; every Task sized and written with its same-Story
+  item (every placed item) cited by a Task; every Task sized and written with its same-Story
   edges; one corrective pass naming the exact uncited items and unsized Tasks. There is no
   "nothing to build" result and no `noWork` record. The Epic-level rule, the edges between
   Stories and the WSJF arithmetic are the composite's (`prd-to-spec.md` steps 11 to 14), and run
@@ -435,8 +459,10 @@ writes only for what is missing or differs.
   theories.
 - **7.16 Hierarchy:** every Task is written under its Story, which is under the Epic; this flow is
   the only creator of Tasks.
-- **7.19 Existing code:** a `done` item gets a Task whose contract names the existing code; the
-  build pipeline's Red step tests it and decides whether anything changes.
+- **7.19, 7.23 Existing code:** this flow does not judge existing code; every placed item gets a
+  Task, and the build pipeline's Red step and TDD loop decide whether anything changes.
+- **7.24 Tasks are activities:** each Task says what to build in its repository and how, and cites
+  the spec sections and views holding the requirements; the requirements stay in the PRD and TRD.
 - **7.20 Missing prerequisites:** a prerequisite item gets a Task that builds it.
 - **Hard limits (CONTEXT 6):** the only destructive operation is the sanctioned deletion of a
   Story's unstarted Tasks; no vault writes; nothing in `apps/marketing/`.

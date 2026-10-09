@@ -268,12 +268,14 @@ It stops wrong output nothing later catches: every agent with Write or Edit (the
 `prd-reality-reconciler`, the architecture writers and maintainer, `trd-author`, the four spec
 makers, `task-decomposer`, `task-dependency-mapper`, `wsjf-scorer`, `epic-sequencer`) can write
 anywhere, and no later step re-reads section 2. How the guard spans sessions that run in parallel
-(the per-repository detailing and spec chains, the architecture reviewers) is S02's to settle.
+(the per-repository spec chains, the architecture reviewers) is S02's to settle.
 
 **Input record.** Every Epic flow records a saved result's inputs with `artifactio.record` as
 `<result>.meta.json` (`inputs[]` of `{path, kind, sha256}`; kinds `file`, `dir`, `missing`,
-`git-main`, `arc42-revision`, `arch-views`), and a result is reused when every recorded input hashes
-as recorded. The one exception is the architecture survey's existing seal
+`arc42-revision`, `arch-views`, plus whatever kind S02 gives the element status matrix rows that
+repo scoping and the architecture Closure read), and a result is reused when every recorded input
+hashes as recorded. No Epic flow records `git-main` any more: its only user was the removed
+detailing step (`prd-reconciliation`). The one exception is the architecture survey's existing seal
 (`survey.json.baseline-inputs.json`, CONTEXT 7.13). The driver's `artifactio.plan` already reads
 `.meta.json`, so this is the format; each flow's own spec is the single source of its input list.
 
