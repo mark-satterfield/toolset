@@ -121,16 +121,8 @@ tree and the optional scan commands.
 
 ### Phase 3: relationships
 
-- Dependencies are never derived from repository code. Take them from the effective
-  arc42 architecture, or from the human; record none where neither states one.
-- Which repos depend on which? (build-time, runtime, type-only,
-  data-contract, deployment-order) — and does any dependency hold for a
-  whole *group* rather than a single repo? "Every backend service
-  depends on shared-types" is one group-level edge (`group:backend-services
-  → shared-types`), not one edge per service that rots when a service is
-  added.
-- Are there any circular dependencies? (record them — do not silently
-  flag them as problems unless the human says so)
+- Dependencies are between services, components and infrastructure, never between repos.
+  Record none in the manifest; they are answered from the effective arc42 architecture.
 - Are there shared contracts (proto files, OpenAPI specs, JSON schemas,
   shared types) that multiple repos consume? Where do they live?
 - Is there a deploy order that must be honored? Capture it as *waves*

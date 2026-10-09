@@ -23,7 +23,8 @@ inside a repository's contents:
 
 - **Answers** from live facts it checks against the repositories and GitHub: which repos
   exist, which repo owns a function, uncommitted files in a repo, when a repo was last
-  updated, whether a repo is up to date with GitHub `main`, what depends on what.
+  updated, whether a repo is up to date with GitHub `main`, what depends on what (answered from the
+  effective arc42 architecture at the level of services and components, then placed in repos).
 - **Acts**: creates a repo from a template (locally and on GitHub), renames, deprecates and
   archives repos, rebases repos on `origin/main`, searches across repos, and propagates
   shared `AGENTS.md` content.
@@ -44,7 +45,7 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command
 | Which repos exist, how many | `list` |
 | A repo's uncommitted files, last commit, whether `main` is up to date with GitHub | `status <repo>` |
 | Repos with an attribute | `search attr=value` (dotted keys, e.g. `main.behind=0`, `github.archived=false`) |
-| Every repo's full record (path, purpose, groups, dependencies, live state) | `inventory` |
+| Every repo's full record (path, purpose, owns, groups, live state) | `inventory` |
 | Text across every repo | `grep <pattern>` |
 
 Invoke the tool by that path; a bare `polyrepo` on `PATH` may be an unrelated program.

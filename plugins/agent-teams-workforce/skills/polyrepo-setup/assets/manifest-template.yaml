@@ -8,7 +8,7 @@
 # See references/manifest-schema.md for the full schema and validation
 # rules.
 
-schema_version: 4
+schema_version: 5
 
 project:
   name: <project-name>
@@ -42,23 +42,14 @@ repos:
 adjacent_repos: []
 
 # Named sets of repos — a class like "backend-services" or
-# "mobile-clients". Used as dependency endpoints (group:<name>) and as
-# rule-scope targets. Optional: add a group only when a dependency or
-# rule targets a whole class of repos. Every member must be a real repo
-# name listed above.
+# "mobile-clients". Optional: add a group only when a whole class of
+# repos needs a name. Every member must be a real repo name listed above.
 groups:
   # - name: backend-services
   #   description: <one sentence — what unites these repos>
   #   members: [<repo-name>, <repo-name>]
 
 relationships:
-  dependencies:
-    # from/to may EACH be a repo name or a group:<name> defined above.
-    # A group endpoint means "every member of that group".
-    # - from: consumer-repo            # or group:<name>
-    #   to: producer-repo              # or group:<name>
-    #   kind: build | runtime | type | contract | deployment | dev-tooling
-    #   notes: <optional>
   shared_contracts:
     # - name: user-events
     #   kind: protobuf | openapi | jsonschema | graphql | typescript-types | other

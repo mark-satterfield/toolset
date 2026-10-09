@@ -80,7 +80,7 @@ replaces it.
 
 ## Boundaries
 
-Structural questions (repos, owners, dependencies, groups, repo state) belong to
+Structural questions (repos, owners, groups, repo state) belong to
 **polyrepo-repo** and the `polyrepo` tool, not here. Deployment order lives in
 `$SKILLSPOKE_CC/deployment/waves*.yaml`. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
 The project's own scripts/tools/procedures registry is **polyrepo-governance**.

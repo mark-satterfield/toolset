@@ -23,7 +23,7 @@ Facts that are true of the repository *as a repository*, and that have no other 
 |---|---|
 | Repo identity | `name`, `purpose` (one line, what the repo *is*), `role`, `lifecycle` |
 | Ownership | `owner`, `owns` |
-| Repo-to-repo structure | dependency edges, groups |
+| Repo grouping | groups |
 | Lifecycle dates | `deprecated_on` |
 | Pointers | a path or link to the canonical document for anything else |
 
@@ -47,9 +47,12 @@ Naming a technology is not automatically a violation. Apply this test:
 - **Identity — keep.** A statement of what *this* repo is, owns, or provisions. `SkillSpoke-sessionCache-infra: ElastiCache (Valkey/Redis) for sessions` is what that repo *is*; deleting it would make the manifest useless for finding which repo owns what.
 - **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
 
-A dependency **edge** between two repos is structural and belongs, but only when the effective arc42 architecture states it; an edge is never derived from repository code, and an edge whose only source is repository code is removed. A `notes:` field on that
-edge explaining *how* the dependency is implemented is a claim, not identity, and does not
-belong — name the canonical document instead, or let `kind:` carry it.
+A **dependency** is between services, components and infrastructure, never between code
+repositories: a repository is only where code lives, and repos can be combined or split while
+service A still depends on service B. The manifest therefore stores no repo-to-repo dependency
+edge. The canonical home of a dependency is the effective arc42 architecture in the
+`skillspoke-docs` vault; `owns` (the service or component placement in each repo) is what maps
+a question about a repo onto it.
 
 ### Why
 
@@ -86,7 +89,7 @@ Either way the fact ends up in exactly one place: the canonical document.
 ## Top-level structure
 
 ```yaml
-schema_version: 4
+schema_version: 5
 project:
   name: string                   # short kebab-case identifier
   purpose: string                # one sentence, what the project does
@@ -97,17 +100,13 @@ project:
 repos: [Repo]                    # see Repo schema below
 adjacent_repos: [Repo]?          # related but not part of the project
 
-groups: [Group]?                 # named sets of repos, usable as
-                                 # dependency endpoints; see Group schema
+groups: [Group]?                 # named sets of repos; see Group schema
 
 relationships:
-  dependencies: [Dependency]?    # see Dependency schema; each endpoint
-                                 # may name a repo or a group:<name>
   shared_contracts: [Contract]?  # proto, openapi, schemas
   deploy_waves: [DeployWave]?    # tiered deploy stages; supersedes the
                                  # v1 flat deployment_order — see
                                  # DeployWave schema
-  cycles: [Cycle]?               # known circular deps, with notes
 
 conventions:
   branching_model: string?
@@ -169,11 +168,7 @@ encouraged but optional — fill in what you can, mark the rest as
 
 A **group** is a named set of repos that share a role or constraint — a
 *class* like "backend services", "mobile clients", or "infra repos".
-Groups exist so a dependency can name a class of repos instead of
-hand-listing members or being forced project-wide. A shared library
-consumed by every backend service is one `group:backend-services →
-shared-types` edge, not N repo→repo edges that rot the moment a service
-is added.
+Groups name a class of repos so it need not be hand-listed.
 
 Groups are a *different partition* of the repo set than `deploy_waves`:
 group membership is about **kind** (what a repo is), wave membership is
@@ -181,39 +176,12 @@ about **deploy timing** (when it ships). A repo typically belongs to one
 group and one wave, and the two need not align — keep the sections
 separate.
 
-## Endpoint notation: a repo or a group
+## Dependencies are not stored
 
-Several fields name a node in the project graph. A node may be either:
-
-- a **repo name** — e.g., `auth-svc`
-- a **group**, written with a `group:` prefix — e.g.,
-  `group:backend-services`
-
-The `group:` prefix is the only thing that distinguishes the two; a bare
-string is always a repo name. The one field that accepts this notation is
-`relationships.dependencies[].from` and `.to`.
-
-Any `group:<name>` used there must resolve to a group defined in the
-top-level `groups` section. A group endpoint means "every member of that
-group", expanded against `groups` at read time — so the manifest stays
-correct as members are added or removed without editing every edge by
-hand.
-
-## Dependency schema
-
-```yaml
-- from: endpoint                 # consumer — a repo name or group:<name>
-  to: endpoint                   # producer — a repo name or group:<name>
-  kind: enum                     # build, runtime, type, contract,
-                                 # deployment, dev-tooling
-  notes: string?
-```
-
-Dependencies are directed: `from` depends on `to`. Either endpoint may
-be a repo name or a `group:<name>` (see *Endpoint notation* above); a
-group endpoint expands to every member, which is the lossless way to
-record that a whole *class* of repos consumes a shared producer. Cycles
-are recorded in `relationships.cycles`, not by reversing the arrows.
+A dependency is between services, components and infrastructure, never between repos. The
+manifest has no dependency field and no `group:<name>` endpoint notation. `polyrepo
+reconcile --fix` removes a stored `relationships.dependencies` (finding
+`repo-dependency-stored`).
 
 ## Contract schema
 
@@ -273,12 +241,11 @@ those are content, not metadata the steward must keep current.
 When writing or updating the manifest, ensure (all v1 invariants still
 hold; the group and wave rules are new in v2):
 
-- `schema_version` is present and is `4`.
+- `schema_version` is present and is `5`.
 - Every `repos[].name` is unique.
 - Every `groups[].name` is unique, and every `groups[].members[]` entry
   resolves to a real repo (in `repos`, or an adjacent repo).
-- Every dependency endpoint (`from` and `to`) is either a real repo (or
-  adjacent repo) or a `group:<name>` that resolves to a defined group.
+- No `relationships.dependencies` field: dependencies are not stored between repos.
 - Every `relationships.deploy_waves[].repos[].name` resolves to a real
   repo (or adjacent repo).
 - `relationships.deploy_waves` stage order **is the list order** — the
@@ -319,11 +286,8 @@ with two changes:
    model. Drop the old `deployment_order` field once `deploy_waves` is
    in place.
 
-2. **`groups` is new and optional.** Repo-only dependency and rule
-   endpoints remain valid exactly as written in v1 — `group:<name>` is
-   an *additional* endpoint kind, never a required one. Introduce a
-   group only when a dependency or rule genuinely targets a class of
-   repos.
+2. **`groups` is new and optional.** Introduce a group only when a class
+   of repos genuinely needs a name.
 
 Bump `schema_version` to `2`, record the migration in the project's
 `.polyrepo/changelog.md`, and add a line to *Schema version history*
@@ -332,8 +296,7 @@ below, per *Evolving the schema*.
 ## Worked example (v2)
 
 A small project — a shared types library, two backend services, a web
-app, and an infra repo — exercising every v2 addition: one group, one
-`group:`-scoped rule, one `group:` → repo dependency edge, and a
+app, and an infra repo — exercising every v2 addition: one group and a
 two-stage `deploy_waves` block with a gated repo.
 
 ```yaml
@@ -354,14 +317,6 @@ groups:
     members: [auth-svc, billing-svc]
 
 relationships:
-  dependencies:
-    # A group → repo edge: the whole class of backend services consumes
-    # shared-types. One edge, not one-per-service.
-    - from: group:backend-services
-      to: shared-types
-      kind: type
-      notes: Consumed as a published package, never by path import.
-
   deploy_waves:
     - name: foundation
       description: Shared infrastructure and contracts land first.
@@ -390,7 +345,7 @@ rules:
 
 This validates against the rules above: every `backend-services` member
 resolves to a real repo; the `group:backend-services` used in the
-dependency edge and the rule resolves to the defined group; every
+rule resolves to the defined group; every
 `deploy_waves` repo name resolves to a real repo; and the two stages
 deploy in list order (`foundation`, then `services`) with `auth-svc`
 gated on `vpc_enabled=true`.
@@ -503,3 +458,9 @@ read `schema_version` and know exactly what changed between versions.
   that store's one job). Not backward-compatible: a v3 manifest carrying any of
   these fields must have them removed (and, where the fact is still worth keeping,
   moved to its real canonical home or to `knowledge.yaml`) to become valid v4.
+- **v5** - removed repo-to-repo dependencies: `relationships.dependencies`, its
+  `Dependency` schema, the `group:<name>` endpoint notation and `relationships.cycles`.
+  A dependency is between services, components and infrastructure, never between code
+  repositories, so its canonical home is the effective arc42 architecture. `owns` stays as
+  the service and component placement in each repo. Not backward-compatible: a v4 manifest
+  carrying `relationships.dependencies` must drop it to become valid v5.

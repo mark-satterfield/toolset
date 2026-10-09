@@ -3,8 +3,8 @@ name: polyrepo-steward
 description: >-
   The one place for anything about this project's repositories, other than work inside a
   repository's contents. Answers from live git and GitHub facts: how many repos there are,
-  which repo owns a piece of functionality, what a repo depends on, whether a repo has
-  uncommitted files, when it was last updated, whether it is up to date with GitHub `main`.
+  which repo owns a piece of functionality, which repos hold the services and components
+  something depends on, whether a repo has uncommitted files, when it was last updated, whether it is up to date with GitHub `main`.
   Does the repository work itself: creates a repo from a template (locally and on GitHub),
   renames, deprecates and archives repos, rebases repos on `origin/main`, searches across
   repos, propagates the shared `AGENTS.md` block, and keeps its own records true to the
@@ -71,14 +71,14 @@ Every command takes `--json`; read the JSON, not the text form. Exit status: 0 c
 The repository folders and GitHub are the source of truth. The tool reads git and GitHub
 live on every call. The manifest (`.polyrepo/manifest.yaml` in the SkillSpoke
 command-and-control repo, `$SKILLSPOKE_CC`) is your own private cache plus the few facts
-neither holds — purpose, owns, groups, dependencies, deprecation dates. Nobody else reads
+neither holds — purpose, owns, groups, deprecation dates. Nobody else reads
 or edits it; they ask you. The tool checks those facts live too: a group member must exist
 and be active, and each `owns` claim carries `confirmed`, read from the owning repo's
-tracked files. Dependencies are never derived from repository code and never checked
-against it: most are not in code yet, and will not be until every PRD has become Tasks and
-those Tasks are built. A dependency comes from the effective arc42 architecture in the
-`skillspoke-docs` vault (`docs/tech/architecture/arc42/`); where it states none, record
-none.
+tracked files. A dependency is between services, components and infrastructure, never
+between code repositories: a repository is only where code lives, and repos can be combined
+or split while service A still depends on service B. You record no repo-to-repo dependency
+anywhere. `owns` is the placement of services and components in repos, and it is how a
+question about a repo maps onto the architecture.
 
 Every command that changes your files (manifest, changelog, knowledge store) commits and
 pushes them itself and reports it under `records`. After you edit one by hand, run
@@ -89,8 +89,8 @@ pushes them itself and reports it under `records`. After you edit one by hand, r
 1. Run `reconcile --fix --json` first, before anything else. It compares disk, GitHub and
    the manifest and repairs every mechanical finding itself: it updates the manifest,
    pushes unpushed `main`, renames on GitHub so local and GitHub match, archives
-   deprecated repos that are due, drops group members and dependency edges whose repo is
-   gone, appends `.polyrepo/changelog.md`, and commits and pushes its files.
+   deprecated repos that are due, drops group members whose repo is gone, removes any stored
+   repo-to-repo dependency, appends `.polyrepo/changelog.md`, and commits and pushes its files.
 2. Read what is left open. Findings with `mechanical: false` are yours to judge (see
    *Judgment*). Findings with `status: failed` carry an `error`: fix the cause and run
    `reconcile --fix` again. Do not report a failure you have not tried to resolve.
@@ -112,7 +112,7 @@ checked it against the repository or GitHub in the same invocation.
 | When a repo was last updated | `status <repo>` → `last_commit.date` and `github.pushed_at` |
 | Whether a repo is up to date with GitHub `main` | `status <repo>` → `main.ahead`, `main.behind`, `main.up_to_date` |
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
-| What depends on what | `status <repo>` or `inventory` → `dependencies` (recorded from the effective arc42 architecture, never from code); for a repo with no recorded edge, say none is recorded |
+| What depends on what | The effective arc42 architecture in the `skillspoke-docs` vault (`docs/tech/architecture/arc42/`), at the level of services and components. Then say which repos hold them from `owns` (`status <repo>` or `inventory`). When the question needs what code does today, use GraphRAG (`mcp__mcp-graphrag-server__search`). Never answer with, or record, a repo → repo edge. |
 | Which repo owns a piece of functionality | Judgment — see below |
 
 ## Doing the work
@@ -175,14 +175,12 @@ Your judgment is for what a script cannot decide, and only that:
   then confirm in code with GitNexus, GraphRAG (`mcp__mcp-graphrag-server__search`) and
   `grep`. Answer only what the code confirms. Record a durable finding through
   `polyrepo-info`.
-- **Grouping and dependencies.** Which group a repo belongs to and which repos depend on
-  it. A dependency edge is sourced only from the effective arc42 architecture in the
-  `skillspoke-docs` vault; when it states none, the manifest records none. Never derive,
-  add, keep or reject an edge because repository code does or does not name another repo
-  (not by `grep`, GitNexus, GraphRAG or reading source), and remove any edge whose only
-  source is repository code. An `owns-unconfirmed` finding means the owning repo's code
-  does not name the item: read the code, then correct or remove the claim. Edit these in
-  the manifest yourself (see the `polyrepo-repo` skill for how).
+- **Grouping and placement.** Which group a repo belongs to, and which service or
+  component each repo holds (`owns`). There is no dependency field: dependencies are
+  between services, components and infrastructure and are answered from the effective arc42
+  architecture, never recorded as repo → repo. An `owns-unconfirmed` finding means the
+  owning repo's code does not name the item: read the code, then correct or remove the
+  claim. Edit these in the manifest yourself (see the `polyrepo-repo` skill for how).
 - **Questions.** The manifest holds no question or open item. Put a question to the user
   in your reply.
 

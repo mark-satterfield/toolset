@@ -8,7 +8,7 @@
 The repository folders and GitHub are the source of truth. Every fact this tool reports about
 a repo (branch, uncommitted files, last commit, main against origin/main, GitHub state) is read
 live from git and GitHub on each call. The manifest contributes only what neither holds:
-purpose, owns, groups and dependencies. `reconcile` compares disk, GitHub and the manifest, and
+purpose, owns and groups. `reconcile` compares disk, GitHub and the manifest, and
 `reconcile --fix` repairs every mechanical finding: it rewrites the manifest, pushes, creates or
 renames the GitHub repo so local and GitHub move together, and appends the changelog.
 
@@ -610,14 +610,21 @@ class Manifest:
             if isinstance(g, dict) and g.get("name")
         ]
 
-    def edges(self) -> list[CommentedMap]:
-        """Return the dependency edges as written (group references not expanded).
+    def has_stored_dependencies(self) -> bool:
+        """Say whether the manifest holds repo-to-repo dependency edges, which it may not.
 
         Returns:
-            The edge mappings.
+            True when `relationships.dependencies` is present and not empty.
         """
         rel = self.doc.get("relationships") or {}
-        return [e for e in rel.get("dependencies") or [] if isinstance(e, dict)]
+        return bool(rel.get("dependencies"))
+
+    def drop_stored_dependencies(self) -> None:
+        """Remove the `relationships.dependencies` field."""
+        rel = self.doc.get("relationships")
+        if rel is not None and "dependencies" in rel:
+            del rel["dependencies"]
+            self.dirty = True
 
     def groups_of(self, name: str) -> list[str]:
         """Return the groups a repo is a member of.
@@ -626,38 +633,6 @@ class Manifest:
             Group names.
         """
         return [g["name"] for g in self.groups() if name in (g.get("members") or [])]
-
-    def expand(self, ref: str) -> list[str]:
-        if ref.startswith("group:"):
-            gname = ref[len("group:") :]
-            for g in self.groups():
-                if g.get("name") == gname:
-                    return list(g.get("members") or [])
-            return []
-        return [ref]
-
-    def dependencies(self, name: str) -> dict[str, list[dict[str, str]]]:
-        """Return a repo's dependency edges, with group references expanded.
-
-        Returns:
-            {"depends_on": [...], "depended_on_by": [...]}, each item {"repo", "kind"}.
-        """
-        out: dict[str, list[dict[str, str]]] = {"depends_on": [], "depended_on_by": []}
-        for e in self.edges():
-            kind = str(e.get("kind", ""))
-            src, dst = (
-                self.expand(str(e.get("from", ""))),
-                self.expand(str(e.get("to", ""))),
-            )
-            if name in src:
-                out["depends_on"].extend(
-                    {"repo": d, "kind": kind} for d in dst if d != name
-                )
-            if name in dst:
-                out["depended_on_by"].extend(
-                    {"repo": s, "kind": kind} for s in src if s != name
-                )
-        return out
 
     def add_entry(self, name: str, fields: dict[str, Any]) -> None:
         """Append a new repo entry; for an entry that exists, fill only the fields it lacks."""
@@ -686,13 +661,6 @@ class Manifest:
                     members[members.index(old)] = new
                 self.dirty = True
 
-    def remove_edge(self, edge: CommentedMap) -> None:
-        """Remove one dependency edge."""
-        deps = (self.doc.get("relationships") or {}).get("dependencies")
-        if deps and edge in deps:
-            deps.remove(edge)
-            self.dirty = True
-
     def remove_section(self, key: str) -> None:
         """Remove a top-level section."""
         if key in self.doc:
@@ -709,7 +677,7 @@ class Manifest:
         self.dirty = True
 
     def remove_entry(self, name: str) -> None:
-        """Remove an entry, its group memberships and its dependency edges."""
+        """Remove an entry and its group memberships."""
         for key in ENTRY_LISTS:
             items = self.doc.get(key)
             if items:
@@ -720,16 +688,6 @@ class Manifest:
             members = g.get("members")
             if members and name in members:
                 members.remove(name)
-        rel = self.doc.get("relationships") or {}
-        deps = rel.get("dependencies")
-        if deps:
-            keep = [
-                e
-                for e in deps
-                if not (isinstance(e, dict) and name in (e.get("from"), e.get("to")))
-            ]
-            deps.clear()
-            deps.extend(keep)
         self.dirty = True
 
     def rename_entry(self, old: str, new: str) -> None:
@@ -739,10 +697,6 @@ class Manifest:
             members = g.get("members")
             if members and old in members:
                 members[members.index(old)] = new
-        for e in self.edges():
-            for k in ("from", "to"):
-                if e.get(k) == old:
-                    e[k] = new
         self.dirty = True
 
     def save(self) -> None:
@@ -793,8 +747,6 @@ class State:
     def confirm(self, src: str, item: str) -> bool | None:
         """Check live whether a repo's code names an item it claims to own.
 
-        Dependencies are never checked this way: they are not derived from repository code.
-
         Returns:
             True or False from the repo's tracked files; None when src is not on disk.
         """
@@ -805,21 +757,6 @@ class State:
         if key not in self.confirmed:
             self.confirmed[key] = mentions(r.path, item)
         return self.confirmed[key]
-
-    def dependency_pairs(self) -> list[tuple[str, str, str]]:
-        """Return every dependency edge with its group references expanded.
-
-        Returns:
-            (from repo, to repo, kind) triples, without duplicates.
-        """
-        seen: dict[tuple[str, str], str] = {}
-        for e in self.manifest.edges():
-            kind = str(e.get("kind", ""))
-            for s in self.manifest.expand(str(e.get("from", ""))):
-                for d in self.manifest.expand(str(e.get("to", ""))):
-                    if s != d:
-                        seen.setdefault((s, d), kind)
-        return [(s, d, k) for (s, d), k in seen.items()]
 
     def confirm_all(self, names: set[str] | None = None) -> None:
         """Run every live `owns` check touching the names (all when None), in parallel."""
@@ -897,12 +834,13 @@ class State:
         return sorted(names, key=str.lower)
 
     def record(self, name: str, deep: bool = True) -> dict[str, Any]:
-        """Build a repo's full record: live facts plus the manifest's purpose, owns, groups, dependencies.
+        """Build a repo's full record: live facts plus the manifest's purpose, owns, groups.
 
         Groups are reported only for a repo that exists and is active. Each `owns` item
         carries `confirmed`, checked live against the repo's tracked files (None when the
-        repo is not on disk, or when deep is False). Dependencies are as the manifest
-        records them and are never checked against repository code.
+        repo is not on disk, or when deep is False). The record carries no dependencies:
+        a dependency is between services, components and infrastructure, never between
+        repos.
 
         Returns:
             The record.
@@ -913,7 +851,6 @@ class State:
         pat = self.cfg.classify(name)
         purpose_head = e.get("purpose_head")
         lifecycle = self.lifecycle(name)
-        deps = self.manifest.dependencies(name)
         live = r is not None or g is not None
         rec: dict[str, Any] = {
             "name": name,
@@ -968,7 +905,6 @@ class State:
                 if live and lifecycle not in LIFECYCLES_INACTIVE
                 else []
             ),
-            "dependencies": deps,
         }
         if e.get("deprecated_on"):
             rec["deprecated_on"] = str(e["deprecated_on"])
@@ -1152,7 +1088,7 @@ def reconcile(st: State) -> list[Finding]:
                     "orphan-entry",
                     name,
                     "manifest entry with no repo on disk or on GitHub",
-                    fix="remove the entry, its group memberships and its dependency edges",
+                    fix="remove the entry and its group memberships",
                     action=lambda n=name: man.remove_entry(n),
                     manifest_change=True,
                 )
@@ -1232,9 +1168,8 @@ def reconcile(st: State) -> list[Finding]:
 
 
 def _check_relationships(st: State) -> list[Finding]:
-    """Check group members and dependency edges against disk and GitHub, and each
-    `owns` claim against the owning repo's code. Dependency edges are never checked
-    against repository code.
+    """Check group members against disk and GitHub, each `owns` claim against the owning
+    repo's code, and that the manifest stores no repo-to-repo dependency.
 
     Returns:
         The findings.
@@ -1283,53 +1218,18 @@ def _check_relationships(st: State) -> list[Finding]:
                 )
             )
 
-    groups = {str(g["name"]) for g in man.groups()}
-    for e in man.edges():
-        ends = {k: str(e.get(k, "")) for k in ("from", "to")}
-        label = f"{ends['from']} -> {ends['to']}"
-        problems: list[str] = []
-        renames: dict[str, str] = {}
-        for k, ref in ends.items():
-            if ref.startswith("group:"):
-                if ref[len("group:") :] not in groups:
-                    problems.append(f"{ref} is not a group")
-                continue
-            s = live(ref)
-            if s.startswith("renamed:"):
-                renames[k] = s.split(":", 1)[1]
-            elif s != "active":
-                problems.append(
-                    f"{ref} is {'on neither disk nor GitHub' if s == 'missing' else 'deprecated or archived'}"
-                )
-        if problems:
-            out.append(
-                Finding(
-                    "dependency-endpoint",
-                    ends["from"],
-                    f"dependency {label}: {'; '.join(problems)}",
-                    fix="remove the edge",
-                    action=lambda e=e: man.remove_edge(e),
-                    manifest_change=True,
-                )
+    if man.has_stored_dependencies():
+        out.append(
+            Finding(
+                "repo-dependency-stored",
+                "relationships.dependencies",
+                "the manifest stores repo-to-repo dependency edges; a dependency is "
+                "between services, components and infrastructure, never between repos",
+                fix="remove relationships.dependencies",
+                action=man.drop_stored_dependencies,
+                manifest_change=True,
             )
-        elif renames:
-
-            def act(e: CommentedMap = e, renames: dict[str, str] = renames) -> None:
-                for k, v in renames.items():
-                    e[k] = v
-                man.dirty = True
-
-            out.append(
-                Finding(
-                    "dependency-endpoint",
-                    ends["from"],
-                    f"dependency {label}: GitHub renamed "
-                    + ", ".join(f"{ends[k]} to {v}" for k, v in renames.items()),
-                    fix="point the edge at the current names",
-                    action=act,
-                    manifest_change=True,
-                )
-            )
+        )
 
     st.confirm_all()
     for n, e in man.entries().items():
@@ -2243,7 +2143,7 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
             raise PolyrepoError(msg)
         terms.append(m.groups())
     st = gather(cfg, fetch=args.fetch, use_cache=not args.no_cache)
-    deep = any(a.split(".")[0] in {"dependencies", "owns"} for a, _, _ in terms)
+    deep = any(a.split(".")[0] == "owns" for a, _, _ in terms)
     if deep:
         st.confirm_all()
     recs = [st.record(n, deep=deep) for n in st.tracked_names()]

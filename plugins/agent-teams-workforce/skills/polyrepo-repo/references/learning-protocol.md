@@ -1,7 +1,7 @@
 # Learning Protocol
 
 The manifest is the steward's private cache of the repositories plus the few facts neither
-the folders nor GitHub hold: purpose, `owns`, groups, dependencies, deprecation dates. It is
+the folders nor GitHub hold: purpose, `owns`, groups, deprecation dates. It is
 only useful if it is correct, and the repositories change constantly. Keeping it correct is
 the steward's normal operation, done on its own authority: there is no read-back step and no
 approval step for a manifest change.
@@ -14,7 +14,7 @@ approval step for a manifest change.
   `create`, `rename`, `deprecate` and `purpose` do the same for their own changes. Every one
   of them commits and pushes the steward's files. Never edit a field the tool maintains.
 - **The steward** writes what needs judgment: a purpose (through `purpose <repo> --text`),
-  and groups, `owns`, dependencies, `role`, `owner` (by editing the manifest, per the
+  and groups, `owns`, `role`, `owner` (by editing the manifest, per the
   `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward.
 
 ## What counts as a learning event
@@ -22,8 +22,6 @@ approval step for a manifest change.
 Anything the steward learns that changes one of the judgment fields:
 
 - What a repo is for (its purpose), or what it owns.
-- A new or removed dependency between two repos, or a change in its kind. The source is
-  the effective arc42 architecture in the `skillspoke-docs` vault, never repository code.
 - A repo joining or leaving a group; a group added or removed.
 - A change of a repo's role or owner.
 
@@ -48,7 +46,7 @@ requirements, deployment order) are never stored; see `manifest-schema.md`.
 
 3. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
 4. **Commit and push** with `commit --message "<what changed>"`.
-5. **Speak in outcomes.** "Noted — X now depends on Y." Not the file mechanics.
+5. **Speak in outcomes.** "Noted — X now owns Y." Not the file mechanics.
 
 ## Drift
 

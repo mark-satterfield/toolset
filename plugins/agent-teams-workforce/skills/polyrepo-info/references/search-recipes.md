@@ -55,7 +55,7 @@ kind of information lives** — record it, so the next search is faster: as a re
 ## When search is the wrong tool
 
 If the answer is **structural** — which repos exist, their state against GitHub, purposes,
-owners, dependencies, groups — it comes from the `polyrepo` tool (`status`, `list`, `search`,
+owners, groups — it comes from the `polyrepo` tool (`status`, `list`, `search`,
 `inventory`; see **polyrepo-repo**), not from search. Deployment order is in
 `$SKILLSPOKE_CC/deployment/waves*.yaml`. Search is for what neither holds; for text across
 every repo, the tool's `grep` runs `rg` over all of them at once.

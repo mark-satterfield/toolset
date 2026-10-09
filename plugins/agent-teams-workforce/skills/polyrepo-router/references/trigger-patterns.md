@@ -34,8 +34,8 @@ These are unambiguous. Activate without hesitation.
   repos", "where is the auth code", etc.).
 - The user mentions adding, renaming, archiving, or splitting a
   repo.
-- The user mentions a new dependency, contract, or shared schema
-  between repos.
+- The user mentions a new dependency between services or components,
+  or a new contract or shared schema.
 - The user mentions a new architectural rule, naming convention,
   branching rule, or release rule that should apply across the
   project.
@@ -58,15 +58,17 @@ if the conversation has been narrowly scoped to a single repo.
   that consume X.
 - **API or contract changes.** "I'm changing the response shape of
   X" — surface every consumer.
-- **Deployment work.** "I'm deploying X" — surface the repos X
-  depends on and the repos that depend on X.
+- **Deployment work.** "I'm deploying X" — surface the services and
+  components X depends on and those that depend on X, and the repos that
+  hold them.
 - **Onboarding.** "Where do I start" / "How do I set up my dev env"
   — give them the steward's view of the project's repositories and
   the relevant documentation pointers.
 - **Code review preparation.** "I'm reviewing PR #X" — if the PR
   touches a repo with known dependents or rules, surface them.
 - **Retros and postmortems.** "Why did X fail" — the dependencies
-  between repos often explain why something is the way it is.
+  between services and components often explain why something is the
+  way it is.
 
 ## Conditional-fire patterns
 
@@ -104,7 +106,7 @@ a change to the pattern lists above, naming the pattern.
 
 The first sentence of any unsolicited steward intervention should
 make its relevance obvious. Bad: "I'd like to remind you about the
-project's structure." Good: "Heads up — three other repos depend on
+project's structure." Good: "Heads up — three other services depend on
 the type you're about to rename, so this rename will need
 coordinated changes." Lead with what the human needs to know, then
 unpack as needed.

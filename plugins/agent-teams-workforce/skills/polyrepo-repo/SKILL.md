@@ -36,7 +36,7 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | Command | What it does |
 |---|---|
 | `reconcile [--fix] [--dry-run] [--no-fetch]` | Compare disk, GitHub and the manifest. `--fix` repairs every mechanical finding (manifest, push, GitHub rename, archive) and appends the changelog. |
-| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted` and `uncommitted_files`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, `archived`, and dependencies (as recorded, never checked against code). |
+| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted` and `uncommitted_files`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, and `archived`. |
 | `list [--group G] [--lifecycle L] [--space S]` | Repos, filtered. |
 | `search attr=value [attr~regex …] [--fetch]` | Repos by any record attribute, dotted keys (`github.archived=false`, `main.behind=0`, `space=shared`). |
 | `inventory [--all] [--no-fetch]` | Every repo's full record; `--all` adds every repo the manifest or GitHub has that is not on disk. |
@@ -57,12 +57,13 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
 manifest), `naming`, `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
 `origin_url`, `github`, `purpose`, `purpose_head`, `purpose_stale`, `owns` (`item`,
-`confirmed`), `groups` (only for a repo that exists and is active), `dependencies`
-(`depends_on`, `depended_on_by`, each `repo`, `kind`). `owns[].confirmed` is read live from
-the owning repo's tracked files; it is null when that repo is not on disk. Dependencies are
-never derived from repository code and carry no `confirmed`: they come from the effective
-arc42 architecture in the `skillspoke-docs` vault (`docs/tech/architecture/arc42/`), or are
-recorded as none.
+`confirmed`), `groups` (only for a repo that exists and is active). `owns[].confirmed` is
+read live from the owning repo's tracked files; it is null when that repo is not on disk.
+A record has no dependencies: a dependency is between services, components and
+infrastructure, never between repos. Answer "what depends on what" from the effective arc42
+architecture in the `skillspoke-docs` vault (`docs/tech/architecture/arc42/`) at the level of
+services and components, then use `owns` to say which repos hold them; when the question needs
+what code does today, use the GraphRAG MCP server. Never record a repo to repo edge.
 
 ### Reconcile findings
 
@@ -71,7 +72,7 @@ Each finding carries `mechanical` (true when `--fix` repairs it, with the repair
 include `untracked-repo`, `untracked-github`, `orphan-entry`, `renamed`, `remote-url`,
 `local-path`, `lifecycle`, `name-mismatch`, `origin-stale`, `no-origin`, `unpushed`,
 `local-only`, `deprecated-undated`, `archive-due`, `group-member-unknown`,
-`group-member-inactive`, `group-member-renamed`, `dependency-endpoint`, and `open-items`
+`group-member-inactive`, `group-member-renamed`, `repo-dependency-stored`, and `open-items`
 once every item in the section is settled. The rest are left open for the steward's
 judgment, and each has an obvious next step:
 
@@ -94,7 +95,7 @@ judgment, and each has an obvious next step:
   both); the owner is the only human, so every fleet repo allows auto-merge.
 - **update** — Mechanical fields (`remote_url`, `lifecycle`, archived state) are kept true
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
-  dependencies, `role`, `owner`: edit the manifest (below).
+  `role`, `owner`: edit the manifest (below).
 - **rename** — `rename <repo> <new-name>`, on GitHub and locally together.
 - **delete / deprecate** — `deprecate <repo>`. A repository is never deleted from GitHub.
   The new name is `deprecated-` plus the old name, all lowercase
@@ -130,10 +131,9 @@ sections, examples, deprecation examples and archive delay agree with the patter
 
 ## Editing the manifest by judgment
 
-For the fields the tool does not write (groups, `owns`, dependencies, `role`, `owner`):
-a dependency edge is recorded only from the effective arc42 architecture in the
-`skillspoke-docs` vault, never from repository code; with no architecture source, record
-none.
+For the fields the tool does not write (groups, `owns`, `role`, `owner`): there is no
+dependency field. A dependency is between services, components and infrastructure, never
+between repos.
 
 1. Edit `$SKILLSPOKE_CC/.polyrepo/manifest.yaml` preserving its comments — with an editor
    tool for a small change, or `uv run --with ruamel.yaml python3 …` (round-trip mode) for a
