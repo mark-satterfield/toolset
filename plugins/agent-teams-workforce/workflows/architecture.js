@@ -1393,7 +1393,6 @@ const checkPlan = () => {
   const review = listed(facts.baseline && facts.baseline.designReview)
   return {
     readyForDecision: true,
-    designOwner: '',
     overlaps: [],
     dispatches: [{
       role: 'reviewer',
@@ -1424,7 +1423,8 @@ async function decisionGaps(label) {
   for (const id of listed(facts.repairs && facts.repairs.open)) gaps.push(`repair ${id} requires its bounded correction in ${LEDGER_JSON}`)
   for (const id of listed(facts.repairs && facts.repairs.checksNeeded)) gaps.push(`repair ${id} awaits independent verification of the current artifacts in ${LEDGER_JSON}`)
   if (hasGaps(facts)) gaps.push(`${facts.coverage && Number.isInteger(facts.coverage.gapCount) ? facts.coverage.gapCount : 'an unknown number of'} coverage gap(s): each is listed under result.coverage.gaps in ${facts.relayFile}, with its row in ${LEDGER_JSON}`)
-  if (!facts.baseline || facts.baseline.valid !== true) gaps.push("the survey's assessment is missing or invalid")
+  if (!facts.baseline) gaps.push(`depscore.py arch-resume reported no assessment facts for the survey (the \`baseline\` list of ${SURVEY_JSON})`)
+  else if (facts.baseline.valid !== true) gaps.push(`the survey's assessment (the \`baseline\` list of ${SURVEY_JSON}) is invalid: ${listed(facts.baseline.errors).join('; ') || 'no error named'}`)
   if (listed(facts.baseline && facts.baseline.unknowns).length) gaps.push(`the survey's implementation evidence remains unresolved for ${facts.baseline.unknowns.join(', ')}`)
   if (baselineNeedsAuthor() && !writersSoFar().length) gaps.push("the survey's assessment identifies design or documentation work that has not been authored")
   for (const f of openFindings()) gaps.push(`finding ${f.id} (its verdict and file are in ${LEDGER_JSON}) ${f.answered ? 'awaits independent resolution of its answer' : 'needs a bounded evidenced repair'}; owner ${f.owner || 'not known — assign it to a writer'}`)
@@ -1456,7 +1456,7 @@ async function reviewTarget(label, phaseName) {
 }
 /** The design a reviewer or the decider reads, as one prompt line. */
 const reviewedDesign = (draft) => draft
-  ? `THE DRAFT TARGET is ${DRAFT}. Its \`baseline.json\` is the baseline handoff written from the survey: each capability with the effective views it relies on (\`entries[].documents\`, cited by path), \`implementationWork\` (the capabilities whose implementation is not built on \`main\`: the build work, which is not architecture change), and \`architectureChange\` with its \`note\`. Review the documents the note names: \`none\` — no architecture change, so the one set is the current effective views it cites (${ARC42}) and there is no delta; \`new\` — the authored views in the arc42 section layout are both the future and the delta; \`partial\` — the authored target views and \`delta/\`, the change alone. Read it; write nothing in it and nothing in ${archPath}.`
+  ? `THE DRAFT TARGET is ${DRAFT}. Its \`baseline.json\` is the baseline handoff written from the survey: each capability with the effective views it relies on (\`entries[].documents\`, cited by path), \`implementationWork\` (the capabilities whose implementation is not built on \`main\`: the build work, which is not architecture change), and \`architectureChange\` with its \`note\`. Review the documents the note names: \`none\` — no architecture change, so the one set is the current effective views it cites (${ARC42}) and there is no delta; \`new\` — the authored views in the arc42 section layout are both the future and the delta; \`partial\` — the authored target views and \`delta/\`, the change alone; \`pending\` — the assessment names design or documentation work no writer has authored yet, so there is nothing to review but the handoff, and every missing view is a finding for its writer. Read it; write nothing in it and nothing in ${archPath}.`
   : `THE DESIGN UNDER REVIEW is the existing design: the draft could not be written, so review the canonical arc42 views in ${ARC42} (the effective version, with the owner's constraints in section 2) and the open targets in ${archPath}/target/, against the survey. Read them; write nothing in ${archPath}.`
 
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
@@ -1515,7 +1515,7 @@ if (savedDecision && savedDecision.verdict === 'owner-concern') {
 }
 
 /** Returns the prompt for one writer or reviewer dispatch. */
-function dispatchPrompt(n, d, file, revision, research = null, reviewsDraft = false) {
+function dispatchPrompt(n, d, file, revision, research = null, reviewsDraft = false, lastWriter = false) {
   const contractKind = WRITER_ROLES.includes(d.role) ? 'writer' : 'review'
   const contractRoot = DS.script.replace(/scripts\/portfolio\/[^/]+$/, 'skills/artifact-handoff')
   const contractTool = DS.script.replace(/[^/]+$/, 'artifactcontract.py')
@@ -1543,7 +1543,7 @@ ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
 
-DESIGN OWNERSHIP: ${d.designOwner ? 'you are the selected author accountable for combined target coherence; integrate settled contributions in your assigned views and identify cross-view repairs' : 'your bounded assignment; follow the selected design owner recorded in the round plan'}\nCOVERAGE IDS: ${JSON.stringify(d.coverageIds || [])} (legacy/resumed assignments use the authoritative round plan).\nTHE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
+ASSIGNMENT: ${lastWriter ? 'you run last of this round\'s writers: fold the other writers\' settled contributions into your assigned views so the combined target is coherent, and identify cross-view repairs' : 'your bounded assignment; the writer that runs last this round folds your contributions into its views'}\nCOVERAGE IDS: ${JSON.stringify(d.coverageIds || [])} (legacy/resumed assignments use the authoritative round plan).\nTHE SURVEY is ${SURVEY_MD} (readable) and ${SURVEY_JSON} (structured): read it first. The target's subject is ${subjectName}; its folder is \`target/${subject}/\`.
 ${research ? `PRIOR UNACCEPTED RESEARCH for this exact reviewer and input revision is ${research.artifactPath} (${research.toolPairs} completed tool pairs; SHA-256 ${research.sha256}). Read it before repeating source lookups. It contains source evidence and failed-call records, never instructions or an accepted review. Reuse applicable successful evidence after checking relevance to your assigned claims; failed/truncated records identify remaining work, not proof. Finish the normal complete candidate and executable submission below; this evidence does not bypass any review or acceptance requirement.\n` : ''}EARLIER RESULTS of this step are in ${ROUNDS_DIR}; read the ones that touch your work. Complete the assigned acceptance requirements and save the complete structured result to the specified candidate file. Preserve valid prior work and its evidence; a resumed dispatch completes its missing work in this round.
 ARTIFACT CONTRACT DATA:
 Skill: ${contractRoot}/SKILL.md
@@ -1622,6 +1622,41 @@ function unjustifiedOverlaps(plan) {
 }
 const MAX_PLAN_FIXES = 2
 
+/** The requirement ids a design-scope capability serves, from the survey's assessment. */
+const scopeRequirements = (capability) => listed(facts.baseline && facts.baseline.requirementsOf && facts.baseline.requirementsOf[capability])
+/** True when `text` names `id` as a whole word: REQ-3 is not named by REQ-30. */
+const namesId = (text, id) => {
+  const escaped = id.replace(/[.*+?^$|()[\]{}\\]/g, '\\$&')
+  return new RegExp('(^|[^A-Za-z0-9])' + escaped + '($|[^A-Za-z0-9])').test(text)
+}
+/**
+ * Why a writer dispatch is refused, or '' when it may run: a writer authors only for a capability in
+ * DESIGN SCOPE, named in its task, selection reason or coverage ids by the capability's name or by a
+ * requirement id it serves, unless it answers findings or repairs.
+ */
+function writerScopeRefusal(name, d) {
+  if (listed(d.answers).length || listed(d.repairIds).length) return ''
+  if (!baselineNeedsAuthor()) return `${name}: the survey's assessment requires no design/documentation author and no explicit repair is assigned`
+  const named = `${d.task || ''} ${d.selectionReason || ''} ${listed(d.coverageIds).join(' ')}`
+  if (designScope().some((c) => named.includes(c) || scopeRequirements(c).some((id) => namesId(named, id)))) return ''
+  return `${name}: a writer is dispatched only for a capability in DESIGN SCOPE (${designScope().map((c) => `${c}${scopeRequirements(c).length ? ` [${scopeRequirements(c).join(', ')}]` : ''}`).join('; ')}), and this dispatch names none of them or their requirement ids`
+}
+/**
+ * Why a plan cannot run as given, or '' when it can: while the survey's assessment names design or
+ * documentation work and no writer has authored any, a round must send a writer that passes, since
+ * reviewers review authored work only.
+ */
+function missingAuthorRefusal(plan) {
+  if (!baselineNeedsAuthor() || writersSoFar().length) return ''
+  const writers = (Array.isArray(plan && plan.dispatches) ? plan.dispatches : []).filter((d) => {
+    const name = agentName(d && d.agentType)
+    return WRITER_ROLES.includes(roleOf(name)) && roleOf(name) === d.role && hasText(d.selectionReason)
+  })
+  const refused = writers.map((d) => writerScopeRefusal(agentName(d.agentType), d)).filter(Boolean)
+  if (writers.length > refused.length) return ''
+  return `the survey's assessment names design or documentation work for ${designScope().join(', ')} and no writer has authored it yet, so this round must dispatch a writer to author those views before any reviewer runs; reviewers review authored work only${refused.length ? `. Refused writer(s): ${refused.join('; ')}` : '. The plan has no writer'}`
+}
+
 /** Validates only the coordinator's justified dispatches; returns { dispatches, rejected, stuck }. */
 function settleDispatches(plan, n) {
   const out = []
@@ -1634,11 +1669,8 @@ function settleDispatches(plan, n) {
       continue
     }
     if (!hasText(d.selectionReason)) { bad.push(`${name}: no evidence-based selection reason`); continue }
-    if (WRITER_ROLES.includes(role) && !baselineNeedsAuthor() && !listed(d.answers).length && !listed(d.repairIds).length) { bad.push(`${name}: the survey's assessment requires no design/documentation author and no explicit repair is assigned`); continue }
-    if (WRITER_ROLES.includes(role) && designScope().length && !listed(d.answers).length && !listed(d.repairIds).length) {
-      const named = `${d.task || ''} ${d.selectionReason || ''} ${listed(d.coverageIds).join(' ')}`
-      if (!designScope().some((id) => named.includes(id))) { bad.push(`${name}: a writer is dispatched only for a capability in DESIGN SCOPE (${designScope().join(', ')}), and this dispatch names none`); continue }
-    }
+    const scopeRefusal = WRITER_ROLES.includes(role) ? writerScopeRefusal(name, d) : ''
+    if (scopeRefusal) { bad.push(scopeRefusal); continue }
     const files = WRITER_ROLES.includes(role) ? listed(d.files).map(cleanFile) : []
     const badFile = files.find((f) => !f || f.split('/').includes('..') || f.split('/').includes('02-architecture-constraints'))
     if (badFile !== undefined) {
@@ -1667,10 +1699,6 @@ function settleDispatches(plan, n) {
       out.push({ agentType: name, role, task: String(d.task || ''), selectionReason: String(d.selectionReason || ''), repairIds: listed(d.repairIds), files, answers, coverageIds: listed(d.coverageIds), claimIds: listed(d.claimIds), claimFiles: listed(d.claimFiles).map(cleanFile) })
     }
   }
-  const writers = out.filter(d => WRITER_ROLES.includes(d.role))
-  const owner = writers.length ? writers[writers.length - 1].agentType : ''
-  plan.designOwner = owner
-  for (const d of writers) if (d.agentType === owner) d.designOwner = true
   // Only the coordinator selects authors. Missing assignments remain ledger gaps,
   // rather than silently creating additional writer dispatches here.
   for (const d of out) d.answers = d.answers.filter((id) => openFindings().some((f) => f.id === id && f.owner === d.agentType))
@@ -1705,6 +1733,9 @@ async function runRound(n, dispatches) {
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
   const held = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1 }))
   let ordered = held.map((d) => ({ ...d, file: resultFile(n, d) }))
+  // The writer that runs last in the round, by position in the dispatch order, reconciles the target.
+  const writerSeqs = ordered.filter((d) => WRITER_ROLES.includes(d.role)).map((d) => d.seq)
+  const lastWriterSeq = writerSeqs.length ? writerSeqs[writerSeqs.length - 1] : null
   // Reviewers read the draft only when the rounds have written one; set after the writers run.
   let reviewsDraft = false
   // A dispatch counts only after its referenced on-disk candidate is validated and recorded.
@@ -1718,7 +1749,7 @@ async function runRound(n, dispatches) {
     if (!revision) return null
     const prior = await probeArtifact(label, 'Rounds', candidate, d.file, schema, revision, '', REVIEW_ROLES.includes(d.role) ? d.agentType : '')
     if (!prior) return null
-    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision, prior.research, reviewing && reviewsDraft), {
+    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision, prior.research, reviewing && reviewsDraft, WRITER_ROLES.includes(d.role) && d.seq === lastWriterSeq), {
       label,
       phase: 'Rounds',
       agentType: dispatchName(d.agentType),
@@ -1911,7 +1942,7 @@ THE SURVEY: ${SURVEY_MD} and ${SURVEY_JSON}. The target's subject is ${subjectNa
 THE DRAFT TARGET: ${DRAFT} (arc42 section layout; \`delta/\` holds the change alone).
 THE SURVEY'S ASSESSMENT (per-capability actions): ${JSON.stringify(facts.baseline)}
 EARLIER RESULTS: ${ROUNDS_DIR}.
-THE ARCHITECTURE: ${archPath} (\`arc42/\` effective; \`target/\` open targets).${designScope().length ? `\nDESIGN SCOPE: capabilities ${designScope().join(', ')}` : ''}
+THE ARCHITECTURE: ${archPath} (\`arc42/\` effective; \`target/\` open targets).${designScope().length ? `\nDESIGN SCOPE: capabilities ${designScope().map((c) => `${c}${scopeRequirements(c).length ? ` (${scopeRequirements(c).join(', ')})` : ''}`).join('; ')}` : ''}
 
 THE ROSTER (role: agent — what it covers):
 ${rosterText}
@@ -1927,7 +1958,7 @@ ${PRD_RULE}
 ${COVERAGE_RULE}
 
 ${DESIGN_REVIEW_STANDARD}
-Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. The workflow makes your last selected author the design owner and runs it after the other authors for final reconciliation, so list writers in the order they should run. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
+Set each dispatch's coverageIds to its applicable ledger row IDs; name its coverage question in task. Writers run in the order you list them, and the last one listed folds the other writers' contributions into its views and finds cross-view repairs, so list writers in the order they should run, with the integrating writer last. Coverage gaps in the ledger are work to route, including absent views; do not restart unrelated completed design.
 
 YOU LEAD THE TEAM to a consensus architecture. The architecture-decider is not part of the rounds: it sees the result only after the team has designed, challenged and settled it.
 
@@ -1944,7 +1975,8 @@ HOW TO ROUTE:
 - For answered findings, route independent resolution; do not send an unchanged accepted claim back to its maker. If a resolution rejects an answer, the next brief names the specific remaining defect and evidence from the ledger.
 - Every unanswered open finding is answered by its owner: put its id in that writer's \`answers\`. A finding with no owner is yours to assign to a writer. Reassign an outstanding finding explicitly through its selected writer's answers when its concern requires a different specialist; preserve accepted answers.
 - Dispatch diagram authors to draw the views the proposers describe, once the design is written.
-- Writers and their coverage ids are limited to the capabilities in DESIGN SCOPE, and each writer's task names the capabilities it covers; every other capability gets review only.
+- Writers and their coverage ids are limited to the capabilities in DESIGN SCOPE, and each writer's task names the capabilities it covers, by name or by the requirement ids shown beside them; every other capability gets review only.
+- While DESIGN SCOPE names work no writer has authored yet, the round dispatches the writers that author those views first: reviewers review authored work only, and a plan with no writer that may run is refused.
 - Writers run first and reviewers after them in the same round, so a reviewer sees this round's writing.
 - Set \`readyForDecision\` true, with no dispatches, only when the list above says nothing stands between the draft and a decision.`
   const checking = !pendingPlan && n === 1 && checkOnly()
@@ -1964,9 +1996,11 @@ HOW TO ROUTE:
     plan = acceptedPlan && acceptedPlan.facts
     if (plan && (typeof plan.readyForDecision !== 'boolean' || !Array.isArray(plan.dispatches) || !Array.isArray(plan.overlaps))) { log(`${planLabel}: invalid routing facts`); plan = null }
     const overlapRefusals = plan ? unjustifiedOverlaps(plan) : []
-    if (!overlapRefusals.length) break
+    const authorRefusal = plan ? missingAuthorRefusal(plan) : ''
+    const planRefusals = [...overlapRefusals, ...(authorRefusal ? [authorRefusal] : [])]
+    if (!planRefusals.length) break
     if (fix >= MAX_PLAN_FIXES) {
-      const why = `the architecture-decision-workflow-coordinator's plan for round ${n} violates the routing contract after ${MAX_PLAN_FIXES} correction(s): ${overlapRefusals.join('; ')}. The plan was not saved.`
+      const why = `the architecture-decision-workflow-coordinator's plan for round ${n} violates the routing contract after ${MAX_PLAN_FIXES} correction(s): ${planRefusals.join('; ')}. The plan was not saved.`
       log(`Round ${n}: ${why}`)
       return {
         ok: false,
@@ -1975,14 +2009,14 @@ HOW TO ROUTE:
         headline: `Architecture stopped: the coordinator's round ${n} plan violates the routing contract after ${MAX_PLAN_FIXES} corrections`,
         reason: why,
         error: why,
-        requiredHumanActions: [`The architecture-decision-workflow-coordinator returned ${MAX_PLAN_FIXES + 1} plans for round ${n} of ${subject}, each assigning the same claims or draft files to several reviewers with no \`overlaps\` entry stating why: ${overlapRefusals.join('; ')}. No plan was saved. Check the overlap rule the coordinator is given (the coordinator brief in workflows/architecture.js), then re-run the Epic.`],
+        requiredHumanActions: [`The architecture-decision-workflow-coordinator returned ${MAX_PLAN_FIXES + 1} plans for round ${n} of ${subject}, each refused: ${planRefusals.join('; ')}. No plan was saved. Check the routing rules the coordinator is given (the coordinator brief in workflows/architecture.js), then re-run the Epic.`],
         subject,
         ...surveyPaths,
       }
     }
-    log(`Round ${n}: plan refused — ${overlapRefusals.join('; ')}`)
-    retries.push({ step: `round${n}:coordinate`, whatChanged: `the plan was refused for invalid routing: ${overlapRefusals.join('; ')}` })
-    refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${overlapRefusals.join('; ')}. Return the whole plan again. Correct every named identity or overlap defect. For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.`
+    log(`Round ${n}: plan refused — ${planRefusals.join('; ')}`)
+    retries.push({ step: `round${n}:coordinate`, whatChanged: `the plan was refused for invalid routing: ${planRefusals.join('; ')}` })
+    refusal = `\n\nYOUR LAST PLAN FOR ROUND ${n} WAS REFUSED and nothing of it was saved: ${planRefusals.join('; ')}. Return the whole plan again. Correct every named defect. ${authorRefusal ? 'Dispatch the writer(s) that author the views the assessment names, each task naming the capabilities (or their requirement ids) it covers, listed before the reviewers. ' : ''}${overlapRefusals.length ? 'For each overlap you keep, add one \`overlaps\` entry naming the shared files and claimIds, the reviewers that share them, and the reason; or assign the shared work to one reviewer.' : ''}`
   }
   if (!plan) return { ok: false, stage: 'rounds', reason: `the coordinator returned no plan for round ${n}`, ...died('Rounds'), subject, ...surveyPaths }
   const settled = pendingPlan ? { dispatches: planDispatches(pendingPlan), rejected: [], stuck: [] } : settleDispatches(plan, n)
@@ -1997,9 +2031,7 @@ HOW TO ROUTE:
   }
   for (const r of retries.filter((x) => x.step.startsWith(`round${n}:`))) log(`Round ${n}: re-dispatch — ${r.whatChanged}`)
   if (!pendingPlan) {
-    const orderedWriters = settled.dispatches.filter(d => WRITER_ROLES.includes(d.role))
-    const selectedOwner = agentName(plan.designOwner)
-    const orderedPlan = { round: n, designOwner: selectedOwner, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...orderedWriters.filter(d => d.agentType !== selectedOwner), ...orderedWriters.filter(d => d.agentType === selectedOwner), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
+    const orderedPlan = { round: n, readyForDecision: plan.readyForDecision, overlaps: planOverlaps(plan), dispatches: [...settled.dispatches.filter(d => WRITER_ROLES.includes(d.role)), ...settled.dispatches.filter(d => REVIEW_ROLES.includes(d.role))] }
     const savedPlan = await readFacts(`round${n}:save-plan`, 'Rounds', orderedPlan)
     if (savedPlan.error) return { ok: false, stage: 'rounds', reason: savedPlan.error, subject }
     facts = savedPlan

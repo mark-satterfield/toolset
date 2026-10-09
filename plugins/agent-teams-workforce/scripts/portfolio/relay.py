@@ -165,6 +165,47 @@ def _integration_view(integration: object) -> object:
     return out
 
 
+def _baseline_view(baseline: object) -> dict | None:
+    """The survey's assessment as the architecture workflow branches on it.
+
+    The capability names in each work list, the validity and its errors, and, for each
+    capability with design or documentation work, the requirement ids it serves (the text
+    before the first colon of each requirement reference), so a writer dispatch can be
+    matched to its capability by either. The entries stay in the relay file and in
+    `survey.json`, which the sessions read.
+
+    Args:
+        baseline: The `baseline` facts of `arch-resume` (`archbaseline.baseline_facts`).
+
+    Returns:
+        The reduced facts, or None when arch-resume printed none.
+    """
+    if not isinstance(baseline, dict):
+        return None
+    lists = ("errors", "designWork", "designReview", "docWork", "implementationWork")
+    out: dict = {
+        "valid": baseline.get("valid") is True,
+        "revision": baseline.get("revision"),
+    }
+    for key in (*lists, "unknowns"):
+        value = baseline.get(key)
+        out[key] = [str(v) for v in value] if isinstance(value, list) else []
+    scope = set(out["designWork"]) | set(out["docWork"]) | set(out["unknowns"])
+    requirements: dict[str, list[str]] = {}
+    for entry in baseline.get("entries") or []:
+        if not isinstance(entry, dict) or entry.get("id") not in scope:
+            continue
+        ids = [
+            str(r).split(":", 1)[0].strip()
+            for r in entry.get("requirements") or []
+            if str(r).split(":", 1)[0].strip()
+        ]
+        requirements[str(entry["id"])] = ids
+    out["requirementsOf"] = requirements
+    out["entries"] = len(baseline.get("entries") or [])
+    return out
+
+
 def _arch_resume_view(result: dict) -> dict:
     """The facts of `arch-resume` the architecture workflow branches on, and nothing else.
 
@@ -217,6 +258,7 @@ def _arch_resume_view(result: dict) -> dict:
             k: survey.get(k)
             for k in ("saved", "coverageSaved", "subject", "capabilities")
         },
+        "baseline": _baseline_view(result.get("baseline")),
         "decision": result.get("decision"),
         "repairs": result.get("repairs"),
         "integration": _integration_view(result.get("integration")),

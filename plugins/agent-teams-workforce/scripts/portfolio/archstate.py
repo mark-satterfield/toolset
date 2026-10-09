@@ -70,6 +70,10 @@ CHANGE_NOTES = {
     "partial": "Partial change: the target views are the future set, and `delta/` holds the "
     "change alone. Build work is the elements the delta shows plus `implementationWork`, the "
     "gaps between the future set and the code on `main`.",
+    "pending": "Change not yet authored: the assessment names design or documentation work "
+    "(`designChanged` or `documentationChanged`), and no view is written yet, so the case is "
+    "not known: it becomes `new` or `partial` when the views are authored. It is never `none`, "
+    "and no target is written in this state. Build work so far is `implementationWork`.",
 }
 BUILT_FOLDER = "built"
 CATALOG_KEYS = ("view_type", "scope", "subject", "shows")
@@ -632,6 +636,30 @@ def _effective_elements(root: Path) -> set[str]:
     }
 
 
+def _change_case(draft: Path, files: list[Path], manifest: dict | None) -> str:
+    """Tell which case a draft is, consistent with the survey's assessment (see CHANGE_NOTES).
+
+    A draft with no authored view is `none` only when the assessment names no design or
+    documentation work; when it names some, the change is `pending` until the views exist.
+
+    Args:
+        draft: The draft directory.
+        files: Its authored files.
+        manifest: The baseline handoff built from the survey, or None without one.
+
+    Returns:
+        `none`, `new`, `partial` or `pending`.
+    """
+    kind = _change_kind(draft, files)
+    if (
+        kind == "none"
+        and manifest
+        and (manifest["designChanged"] or manifest["documentationChanged"])
+    ):
+        return "pending"
+    return kind
+
+
 def _change_kind(draft: Path, files: list[Path]) -> str:
     """Tell how a draft's views deduplicate: `none`, `new` or `partial` (see CHANGE_NOTES).
 
@@ -808,7 +836,7 @@ def write_target(
             if source.is_dir()
             else []
         )
-        kind = _change_kind(source, authored_now)
+        kind = _change_case(source, authored_now, manifest)
         noted = {**manifest, "architectureChange": kind, "note": CHANGE_NOTES[kind]}
         out = source / BASELINE_FILE
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -847,7 +875,7 @@ def write_target(
         and not draft_written
     )
     files = [] if no_author else authored
-    change = _change_kind(source, files)
+    change = _change_case(source, files, manifest)
     draft_refusals = (
         _draft_refusals(source, files, _effective_elements(root))
         if source.is_dir()
@@ -1050,7 +1078,7 @@ def _change_of(baseline_file: Path, delta_root: Path) -> str:
         )
     except (OSError, ValueError, AttributeError):
         recorded = None
-    if recorded in CHANGE_NOTES:
+    if recorded in CHANGE_NOTES and recorded != "pending":
         return recorded
     return "partial" if delta_root.is_dir() else "none"
 

@@ -110,16 +110,8 @@ def round_facts(
         if not isinstance(n, int) or n < 1 or not isinstance(dispatches, list):
             raise ValueError("invalid durable round plan")
         writers = [d for d in dispatches if d.get("role") in ("proposer", "diagram")]
-        if "designOwner" not in plan:
-            # Legacy plans retain work; deterministically designate their last selected
-            # author for final reconciliation instead of making a new dispatch.
-            plan["designOwner"] = writers[-1]["agentType"] if writers else ""
-        if writers and plan["designOwner"] not in {d["agentType"] for d in writers}:
-            raise ValueError("design owner is not a selected author")
-        if writers and writers[-1]["agentType"] != plan["designOwner"]:
-            raise ValueError("design owner must run after the other selected authors")
-        if not writers and plan["designOwner"]:
-            raise ValueError("review-only plan names a design owner")
+        # A plan saved before the last writer was chosen by position may carry this field.
+        plan.pop("designOwner", None)
         for seq, d in enumerate(dispatches, 1):
             if roles.get(d.get("agentType")) != d.get("role"):
                 raise ValueError("durable plan names invalid role")
@@ -129,7 +121,7 @@ def round_facts(
                 else max([x.get("seq", 0) for x in dispatches[: seq - 1]] + [0]) + 1
             )
             d["seq"] = seq
-            d["designOwner"] = d["agentType"] == plan["designOwner"]
+            d.pop("designOwner", None)
             file = work / "rounds" / f"r{n}-{seq}-{d['role']}-{d['agentType']}.json"
             d["file"] = str(file)
             d["complete"] = file.is_file()
@@ -258,7 +250,6 @@ def compact_plan(plan: dict | None) -> dict | None:
     return {
         "round": plan["round"],
         "readyForDecision": bool(plan.get("readyForDecision")),
-        "designOwner": plan.get("designOwner", ""),
         "complete": bool(plan.get("complete")),
         "dispatches": [
             {
@@ -266,7 +257,6 @@ def compact_plan(plan: dict | None) -> dict | None:
                 "role": d.get("role"),
                 "agentType": d.get("agentType"),
                 "complete": bool(d.get("complete")),
-                "designOwner": bool(d.get("designOwner")),
                 "coverageIds": list(d.get("coverageIds") or []),
                 "claimIds": list(d.get("claimIds") or []),
                 "claimFiles": list(d.get("claimFiles") or []),
