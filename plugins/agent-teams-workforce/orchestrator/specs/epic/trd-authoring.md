@@ -81,8 +81,8 @@ No git commit. No vault write by this flow.
    restores it and fails the step if the session changed it. Inputs, as paths only: the PRD file, `targetDir`,
    `deltaDir` and the `architectureChange` case with its documents (CONTEXT 7.7: partial = target
    plus the delta of the change; new = the target views are the delta, no delta folder; none = one
-   set, the effective views `baseline.json` cites, build work from its `implementationWork` and
-   `closure.json`), `delta-items.json`, `decision.md`, `survey.json`, `$ATW_ARCH_PATH`, and the
+   set, the effective views `baseline.json` cites, build work from its `implementationWork` (the
+   elements the element status matrix does not show as built) and `closure.json`), `delta-items.json`, `decision.md`, `survey.json`, `$ATW_ARCH_PATH`, and the
    output path `<art>/trd.md` with the filing destination named as "not to be written". The brief
    carries the rules of the current prompt, which are the agent's job, not the script's: the two
    requirement sources; an obligation binds only what the delta adds or changes and names that

@@ -1,6 +1,6 @@
 # Index of the Epic pipeline's artifacts and bead writes
 
-Step S01h. Every file, vault path and bead write the Epic flows produce, with the step that
+Steps S01h and S01i. Every file, vault path and bead write the Epic flows produce, with the step that
 produces it and the steps that consume it. A step is cited as `<spec>#<step number>`, the number
 in that spec's Steps section; `driver` means the driver at `<control>/ops/sdlc-automation` as
 `driver-contract.md` describes it. When a spec and this index disagree, the spec is right and this
@@ -22,9 +22,11 @@ Every `.meta.json` named below is written by `artifactio.record` beside its file
 the same flow's reuse step (the one input-record format, `driver-contract.md` §8); where it has
 another reader, the row says so.
 
-The element status matrix (CONTEXT 7.25) is written by no Epic flow: only the build pipeline
-writes it. The Epic flows read it in `architecture#32` (the Closure) and `repo-scoping#3`, `#5`,
-`#6` (placement). Its storage and format are S02's item 10, so it has no row below.
+The element status matrix (CONTEXT 7.25) is written by no Epic flow: it is seeded once with state
+`unknown` (PLAN S05a), and only the build pipeline sets `built` or `deployed`. The Epic flows read
+it in `architecture#5`, `#7` (the survey, through `survey-matrix.json`), `architecture#32` (the
+Closure) and `repo-scoping#3`, `#5`, `#6` (placement). Its storage and format are QUESTIONS.md item
+32e, so it has no row below.
 
 The `prd-reconciliation` step and its files (`recon-<slug>.json`, `recon-<slug>.bundles.json`) are
 removed (CONTEXT 7.10, 7.23).
@@ -35,7 +37,7 @@ removed (CONTEXT 7.10, 7.23).
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<work>/delta-items.json` | `prd-to-spec#7` (`depscore.py arch-delta --save`) | `repo-scoping#1`, `#3` (input), `#5`, `#6`; `trd-authoring#2` (input), `#3`; `spec-authoring#1` (placed items joined to it), `#5`, `#8` (input); `task-decomposition#2` (input), `#5`, `#9`, `#10`; `prd-to-spec#11` (`closure-edges`) | JSON: `{ ok, refusals[], architectureChange, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[], ... }] }` |
+| `<work>/delta-items.json` | `prd-to-spec#7` (`depscore.py arch-delta --save`) | `repo-scoping#1`, `#3` (input), `#5`, `#6`; `trd-authoring#2` (input), `#3`; `spec-authoring#1` (placed items joined to it), `#5`, `#8` (input); `task-decomposition#2` (input), `#5`, `#9`, `#10`; `prd-to-spec#11` (`closure-edges`) | JSON: `{ ok, refusals[], architectureChange, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[], ... }] }` (`implementationWork` and `implementationComplete` from the element status matrix) |
 | `<work>/closure-edges.json` | `prd-to-spec#11` (`depscore.py closure-edges --out`) | `prd-to-spec#12` (agent input), `#13` | JSON: `{ edges[{ from, to, reason }], summary.warnings }` |
 | `<work>/candidates/task-deps.json` | `prd-to-spec#12` (agent `task-dependency-mapper`; required when the span has two or more repositories) | `prd-to-spec#12` (Python acceptance) | JSON: `{ edges[{ from, to, kind, reason }], acyclic, cycle[] }` |
 | `<work>/task-deps.json` (+ `.meta.json`) | `prd-to-spec#12` (accepted copy) | `prd-to-spec#12` (reuse), `#13` | JSON, same shape |
@@ -53,13 +55,14 @@ removed (CONTEXT 7.10, 7.23).
 | `<work>/stale-<timestamp>/architecture/` | `architecture#2` (moves stale saved work aside) | none: kept, not deleted, for the owner and the incident-responder | the moved files |
 | `<arch-work>/repositories.json` | `architecture#6` (agent `polyrepo-steward`) | `architecture#7` | JSON: `[{ name, path, role, lifecycle }]` |
 | `<arch-work>/survey.json`, `survey.md` (+ `.meta.json`) | `architecture#7` (agent `prd-reality-reconciler`, SURVEY), accepted `#8` | `architecture#5`, `#9`, `#11`, `#12`, `#13`, `#15`, `#16`, `#17`, `#20`, `#23`; `trd-authoring#2` (input), `#3`; `prd-to-spec#5` (`saved-target`) | JSON (SURVEY_SCHEMA) and Markdown |
+| `<arch-work>/survey-matrix.json` | `architecture` before `#7` (Python: the element status matrix rows of the listed repositories) | `architecture#7`; `architecture#5` (seal input) | JSON: matrix rows |
 | `<arch-work>/survey.json.baseline-inputs.json` | `architecture#8` (`survey_freshness(seal=True)`) | `architecture#5` | JSON: `{ revision, surveySha256, contextSha, inputs[], repos[] }` |
 | `<arch-work>/ledger.json` | `architecture#4` (`archresume.resume_facts`, after every saving step) | `architecture#11`, `#13`, `#15`, `#16`, `#17`, `#23`, `#25` | JSON (contract version 2) |
 | `<arch-work>/plans/round<n>-plan-0.json` | `architecture#13` (agent coordinator), settled `#14` | `architecture#4`, `#14`, `#15`, `#16` | JSON (COORDINATOR_SCHEMA) |
 | `<arch-work>/rounds/r<n>-<seq>-<role>-<agent>.json` | `architecture#11` (boundary guardian), `#15` (writers), `#16` (reviewers) | `architecture#4`, `#13`, `#17` | JSON (writer or review schema) |
 | `<arch-work>/draft/` (views, `delta/`, `draft/baseline.json`) | `architecture#15` (writers); seed `#10` (`arch-target --seed`) | `architecture#16`, `#17`, `#20` | arc42 Markdown views, JSON baseline |
 | `<arch-work>/target-check.json` | `architecture#9`, `#10` (dry-run check) | `architecture#9` (subject refusals, in-process); file: none, read by the incident-responder | JSON: dry-run report |
-| `<arch-work>/decision.json`, `decision.md` (+ `.meta.json`) | `architecture#17` (agent `architecture-decider`) | `architecture#2` (cited views), `#13`, `#23`, `#25`; `repo-scoping#3` (input), `#5`; `trd-authoring#2` (input), `#3` | JSON (DECISION_SCHEMA) and Markdown |
+| `<arch-work>/decision.json`, `decision.md` (+ `.meta.json`) | `architecture#17` (agent `architecture-decider`) | `architecture#2` (cited views), `#13`, `#23`, `#25`; `repo-scoping#3` (input); `trd-authoring#2` (input), `#3` | JSON (DECISION_SCHEMA) and Markdown |
 | `<arch-work>/target.json` | `architecture#20` (`arch-target --out`) | `prd-to-spec#5` (`saved-target`); `repo-scoping#3` (input); `trd-authoring#2` (input); `spec-authoring#1` | JSON: target report |
 | `<arch>/target/<subject>/` (views, `delta/`, `baseline.json`) | `architecture#20` (`write_target`) | `prd-to-spec#7` (`arch-delta`); `architecture#23`, `#25`, `#29`; `repo-scoping#5`; `trd-authoring#2` (input), `#3`; `spec-authoring#3`, `#4`; deleted by `prd-to-spec#15` | arc42 Markdown (`lifecycle_state: in-review`), JSON baseline |
 | `<arch-work>/integrate-before.json` | `architecture#22` | `architecture#24` | JSON: tree hashes |
@@ -150,7 +153,7 @@ removed (CONTEXT 7.10, 7.23).
 | `depscore.py write-all-task-edges --epic <id> --dir <work> --repos <span>` | `blocks` edges between Tasks of different Stories (closure edges and `task-deps.json`, cycle-closing edges dropped) | `prd-to-spec#13` |
 | the `elaboration-finish` logic (`elaboration.finish`, `scoring.score`) with the write scope limited to the Epic's Tasks | the Epic's Tasks only: `wsjf`, `wsjf_calculated_at`, `wsjf_rubric`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`, `wsjf_size_source`, `wsjf_value_from` (the Epic's WSJF keys are not written, CONTEXT 7.17); once every Task is scored, Epic: `elaboration_state=done`, `elaboration_state_cause=decomposed-into-tasks`, `elaboration_state_at`, `elaboration_state_owner=""`; then `story-edges`: Story `blocks` edges, `story_owned_blockers`, `story_owned_blockers_at`, `story_edge_reasons` (Stories get no WSJF) | `prd-to-spec#14` |
 | `depscore.py elaboration-release --epic <id> --owner <token>` | Epic: `elaboration_state_owner=""` (when still this run's token) | `prd-to-spec#16` |
-| *Rows below to `storyedges.story_edges` belong to the owner-run portfolio flows, which are not part of the Epic pipeline (CONTEXT 7.17); `task-dependency-assessment` is deleted in S08.* | | |
+| *Rows below to `storyedges.story_edges` belong to the owner-run portfolio flows, which are not part of the Epic pipeline (CONTEXT 7.17); `task-dependency-assessment` is deleted in S08. Two are shared: `scoring.score` and `storyedges.story_edges` also run inside `prd-to-spec#14`.* | | |
 | `scoring.record` (`depscore.py record`): `bd update --set-metadata` | Epic: `wsjf_ubv`, `wsjf_tc`, `wsjf_confidence`, `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`, `wsjf_content_hash`; Task: the size keys and `wsjf_content_hash`; adopted items: `wsjf_content_hash` only | `wsjf-scoring#7` |
 | `scoring.score` (`depscore.py score`): `bd update --set-metadata` | the computed keys listed for `elaboration-finish`, on every open Epic and Task whose value changed | `wsjf-scoring#8` (also run by `dependency-assessment#9`, `task-dependency-assessment#10`) |
 | `edgeset.apply_edges` (`depscore.py apply-edges`): `bd dep add --type tracks`, conversions, removals, `bd update --set-metadata` | Epic `tracks` edges touching the Epic; on each blocked Epic `seq_owned_blockers`, `seq_owned_blockers_at`, `seq_edge_reasons`, `seq_edge_withdrawn`; on the assessed Epic `seq_content_hash`, `seq_assessed_at` | `dependency-assessment#8` |

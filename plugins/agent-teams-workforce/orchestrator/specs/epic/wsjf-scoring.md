@@ -6,7 +6,7 @@ answer 6 of 2026-10-09); elaboration assumes it is done and no Epic flow runs th
 part of it the Epic pipeline uses is the Task WSJF arithmetic (`scoring.score`, rubric
 `wsjf.py`), which `prd-to-spec` step 14 runs with the write scope limited to the Epic's Tasks, from
 the sizes `task-decomposition` writes. Whether this owner-run command is kept until the readiness
-process exists is an open item in QUESTIONS.md. The rest of this file is the record of its
+process exists is the owner's concern, outside this rewrite. The rest of this file is the record of its
 contract, for that decision and for the readiness process.
 
 Source: `<plugin>/workflows/wsjf-scoring.js` (`meta.description`), the plugin command
@@ -237,7 +237,7 @@ Agents dispatched by the JavaScript, accounted for:
   (`beadgraph.py`: `CONTENTION`, `BD_TIMEOUT`, else `OTHER_CAUSE`) gives `contention`,
   `bd-timeout` or `other`. Retry reasonable for `bd-timeout`/`contention` (backoff 30 s doubling,
   cap 30 min); not for `other`. The field exists, but `beadgraph._bd` chooses it by reading `bd`'s
-  standard error, which CONTEXT 7.4 does not accept as a structured fact; an open item in QUESTIONS.md.
+  standard error, which CONTEXT 7.4 does not accept as a structured fact (QUESTIONS.md item 6).
 - `ScoringError` from the rubric or a malformed plan file: `other`; not retried (same input, same
   result); incident-responder.
 - A judging session fails: `api` or `quota` from the headless runner's structured result (the
@@ -257,7 +257,7 @@ Agents dispatched by the JavaScript, accounted for:
   plans none of those items, so it judges nothing again.
 - Step 8: idempotent; a rerun writes only what changed (nothing, if nothing changed).
 - A rerun after any point therefore redoes no session whose inputs are unchanged and starts no
-  session when nothing needs judging. This needs a `workDir` that survives between runs: an open item in QUESTIONS.md.
+  session when nothing needs judging. This needs a `workDir` that survives between runs; not designed here, the flow being outside this rewrite (CONTEXT 7.17).
 
 ## 9. Requirements that apply
 

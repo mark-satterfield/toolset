@@ -4,7 +4,7 @@
 re-scores Epics. Epic dependency assessment and Epic WSJF scoring belong to the future readiness
 process, which is not yet built (CONTEXT 7.17; the owner's answer 6 of 2026-10-09); elaboration
 assumes they are done and no Epic flow runs this one. Whether this owner-run command is kept until
-the readiness process exists is an open item in QUESTIONS.md. The rest of this file is the record
+the readiness process exists is the owner's concern, outside this rewrite. The rest of this file is the record
 of its contract, for that decision and for the readiness process.
 
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command
@@ -193,7 +193,7 @@ Agents dispatched by the JavaScript, accounted for:
 - Hard limit: no write to arc42 section 2; this flow's own steps write nothing in the vault, and
   the session runner's guard covers the agent session.
 
-**Checks the intent requires that the code does not enforce** (see QUESTIONS.md)
+**Checks the intent requires that the code does not enforce** (recorded, not settled: outside this rewrite, CONTEXT 7.17)
 - Missing `archCheck` (`missingArchCheck`) and re-adding a withdrawn edge without `answers`
   (`readdsWithdrawn`) are reported by `validate` but are not part of `ok`, although the session's
   brief, the command text and `README.md` say they are refused.
@@ -213,7 +213,7 @@ Agents dispatched by the JavaScript, accounted for:
 
 - Steps 1, 2, 6, 8 `bd` read or write (`beadgraph.GraphError`): its `cause` field gives
   `bd-timeout`, `contention` or `other`. The field exists, but `beadgraph._bd` chooses it from
-  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (an open item in QUESTIONS.md). Retry reasonable for the first two with backoff (30 s doubling, cap 30
+  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (QUESTIONS.md item 6). Retry reasonable for the first two with backoff (30 s doubling, cap 30
   min).
 - Step 1 scope refused (not an open Epic) or `SequencingError`: `other`; not retried.
 - Step 4/7 session: `api` / `quota` from the headless runner's structured result (breaker);
@@ -238,7 +238,7 @@ Agents dispatched by the JavaScript, accounted for:
 - Step 8: idempotent (`apply_edges` writes nothing for an unchanged proposal). A rerun after it
   writes nothing again.
 - Step 9: resumes as `wsjf-scoring` does; after a scoring failure a rerun redoes only scoring.
-- A rerun needs the same `workDir`: an open item in QUESTIONS.md.
+- A rerun needs the same `workDir`; not designed here, the flow being outside this rewrite (CONTEXT 7.17).
 
 ## 9. Requirements that apply
 

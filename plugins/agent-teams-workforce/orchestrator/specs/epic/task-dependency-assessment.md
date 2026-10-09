@@ -173,7 +173,7 @@ Agents dispatched by the JavaScript, accounted for:
 
 **Checks the intent requires that the code does not enforce**
 - Re-adding a withdrawn edge without `answers` (`readdsWithdrawn`) is reported but not part of
-  `ok` (an open item in QUESTIONS.md).
+  `ok`. Not settled: the flow is deleted in S08.
 
 **Checks dropped**
 - `resolveArgs` / `refuseArgs`, `artifactRevision`, `authorArtifact`, relay `noResult`, and
@@ -198,7 +198,7 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
   `context.json` and the corpus and index files; unchanged recorded inputs start no session.
 - Step 8: idempotent. Step 9: idempotent (writes only changed Story edges and keys). Step 10:
   resumes as `wsjf-scoring` does.
-- A stable `workDir` is needed: an open item in QUESTIONS.md.
+- A stable `workDir` would be needed; none is designed, because the flow is deleted in S08.
 
 ## 9. Requirements that apply
 

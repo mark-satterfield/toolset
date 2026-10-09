@@ -38,8 +38,7 @@ working tree, and the control repo):
   2026-09-23: historical.
 
 Review and approval inside the Epic flows are done by the flows' own reviewer and decider agents
-(for example `architecture-decider`, `architecture-conformance-reviewer`, `openapi-contract-reviewer`,
-`spec-decider`); those belong to `<orch>/specs/epic/architecture.md`,
+(for example `architecture-decider`, `architecture-conformance-reviewer`); those belong to `<orch>/specs/epic/architecture.md`,
 `<orch>/specs/epic/spec-authoring.md` and the other Epic specs, not to this one.
 
 ## 2. Produces and decides

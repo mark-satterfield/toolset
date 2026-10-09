@@ -13,8 +13,9 @@ Rule the repository span of one PRD from its approved architecture, in two separ
 order (CONTEXT 7.10):
 
 - **Placement (part A).** The list of elements the change needs comes from the approved delta:
-  each build item `depscore.py arch-delta` lists (an element a delta view shows, an implementation
-  gap of the baseline handoff, or a prerequisite from the architecture step's Closure). The
+  each build item `depscore.py arch-delta` lists (an element a delta view shows, an element of the
+  future set the element status matrix does not show as built (`implementationWork`), or a
+  prerequisite from the architecture step's Closure). The
   `polyrepo-steward` places each element in exactly one repository, or records that the element
   has no code in this project. Where the repository an element belongs in does not exist yet, the
   steward names it as a missing repository, with its name and template. The steward creates
@@ -57,7 +58,7 @@ After a successful run:
 | Build items | `<art>/delta-items.json`, written by `depscore.py arch-delta --delta-dir <deltaDir> --save <art>/delta-items.json` in the composite's step 7 (`prd-to-spec.md`), after its Architecture phase. Item fields used: `id`, `element`, `views`, `kind` (`implementation-gap`, `prerequisite`, or absent for a view item), and for a prerequisite `requiredBy` and `repository` (the repository its element status matrix row names, when the row names one; `architecture.md` section 2 item 10). |
 | Approved target | `targetDir` (`<archPath>/target/<subject>/`), `deltaDir` (`<targetDir>/delta/`, present only for a partial change), `architectureChange` (`partial`, `new`, `none`) and `note`, all from the `arch-delta` result |
 | Architecture records | `<art>/architecture/decision.md`, `<art>/architecture/target.json` |
-| Element status matrix | the rows for the build items' elements: repository, state (`unknown`, `built`, `deployed`), and the Task and commit that last changed the element (CONTEXT 7.25; its storage and format are S02's item 10). Read only. Empty today, so every element reads `unknown` with no repository. |
+| Element status matrix | the rows for the build items' elements: repository, state (`unknown`, `built`, `deployed`), and the Task and commit that last changed the element (CONTEXT 7.25; its storage, row format and matching rule: QUESTIONS.md item 32e). Read only. Seeded once with every repository, the CDK stacks each holds and their expected content, state `unknown` (PLAN S05a); only the build pipeline sets `built` or `deployed`. |
 | Live repository inventory | `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py inventory --json` |
 | Repositories to avoid | the corrective-pass list (section 5, step 6): `{repoPath or repoName, reason, itemIds}` |
 | Paths that never hold placed work | `$ATW_CONTROL_REPO`, `$ATW_ARCH_PATH`, `$SKILLSPOKE_ROOT/apps/marketing/` (the `marketing-*` repositories) |
@@ -125,7 +126,7 @@ No bead write and no vault write.
    - a placement never makes one repository depend on another (CONTEXT 7.10, section 9).
    Model and effort today: the agent's `sonnet` with the workflow's `effort: 'high'` override (the
    definition says `medium`). Keep `sonnet`/`high`: a wrong placement propagates into every later
-   step; S07 measurement may lower it. Runs in parallel with `trd-authoring` (the composite starts
+   step. Runs in parallel with `trd-authoring` (the composite starts
    both after Architecture). The session runs inside the session runner's section 2 guard
    (`driver-contract.md` §8).
 6. **Accept and check the placement** (deterministic, Python). Parse the candidate once, strictly,
@@ -202,8 +203,9 @@ of this flow. Repository creation, which the steward did inside its session toda
 - The no-implementation short cut (step 2) and the "empty span is valid" rule: CONTEXT 7.6.
 - The `planned` prerequisite rule (a prerequisite another Epic's open bead plans goes in `noCode`)
   and placement by the Closure's `deployedBy`: the Closure no longer produces either (it reads the
-  element status matrix, `architecture.md` section 2 item 10). A Task another Epic already plans in
-  the same repository is not duplicated: `task-decomposition` turns it into a `blocks` edge
+  element status matrix, `architecture.md` section 2 item 10). Every element the matrix does not
+  show as built is placed and gets Tasks in this Epic; where an open Task of another Epic in the
+  same repository overlaps, `task-decomposition` adds a `blocks` edge onto it as well
   (`blockedByExternal`).
 - Unknown item ids: not a failure; ignored with a warning (they change nothing downstream).
 - Silent conversion of unplaced items to `noCode` (current code, after the steward session and in
@@ -273,8 +275,8 @@ change confined to other Epics' files is not an input and redoes nothing.
   new repository is created standalone from its template. How the rule constrains code inside a
   repository (imports, packages) is enforced by the build pipeline, not by the Epic flows.
 - 7.25: the element status matrix is read, never written: an element's row names the repository
-  the build pipeline recorded for it. With the matrix empty, every element reads `unknown` and the
-  steward places it from the inventory and its own records.
+  the seeding or the build pipeline recorded for it. An element with no row reads `unknown`, and
+  the steward places it from the inventory and its own records.
 - 7.23: no code is read to judge what is built; an element is never left unplaced because code for
   it may exist.
 - 7.7: the three architecture cases decide which documents the steward reads (step 5); every case

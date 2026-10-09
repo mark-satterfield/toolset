@@ -84,7 +84,7 @@ settles:
 - Story reason text: `routing.py` says a Story run "reconciles the Story with its Spec and emits
   the Task beads parented to it", which is not what happens; the JavaScript's reason (the Story is
   elaborated through its parent Epic) is correct. The verdict is the same; only the reason text
-  differs. Fix the text when `routing.py` is next edited (S05 or S08).
+  differs. See QUESTIONS.md item 48.
 
 ## 6. Checks kept / Checks dropped
 

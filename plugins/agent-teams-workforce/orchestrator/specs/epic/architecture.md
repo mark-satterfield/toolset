@@ -16,11 +16,16 @@ subcommands and result fields). Paths below use:
 ## 1. Purpose
 
 The architecture step runs for every PRD and is never skipped. It assesses the effective
-architecture in arc42 against the PRD, capability by capability, using the code on each repository's
-`main` (including CDK), arc42 review states, open work in beads and AWS guidance. It also checks that
-section 2 constraints and non-effective arc42 content (in-review views, open targets, build records)
-are represented in the effective views. Where the effective architecture falls short, a team of
-writers builds out a target from the non-effective documents, the code and the AWS MCP Server. The
+architecture in arc42 against the PRD, capability by capability, using arc42 review states, the
+element status matrix (CONTEXT 7.25), open work in beads and AWS guidance. Every "is this built?"
+judgment in this step (the survey's `implementationAction` and `code.state`, the baseline's
+`implementationWork`, the Closure) comes from the element status matrix, never from repository code
+(CONTEXT 7.23, 7.25). Repository code may be read only to learn the current design detail the arc42
+baseline lacks (CONTEXT 7.21), and such a read never yields a built or not-built verdict. It also
+checks that section 2 constraints and non-effective arc42 content (in-review views, open targets,
+build records) are represented in the effective views. Where the effective architecture falls
+short, a team of writers builds out a target from the non-effective documents, the current design
+detail and the AWS MCP Server. The
 team works under independent review, and the architecture-decider approves the result. Each
 capability gets an explicit current-to-target action: retain, change, replace, add or retire. There
 is no fixed specialty or proposal quota. The approved target and its delta are integrated into the
@@ -40,7 +45,10 @@ After a successful run, all of the following are true:
    - the target `subject`;
    - one `capabilities` entry per capability the PRD needs;
    - one `baseline` assessment entry per capability, with `designAction`, `documentationAction`,
-     `implementationAction`, `disposition` and evidence refs;
+     `implementationAction`, `disposition` and evidence refs. `implementationAction` and
+     `code.state` are set from the element status matrix rows of the elements the capability's
+     views show: an element the matrix does not show as built (`unknown`, or no row) means
+     implementation work. They are never set from code;
    - the `coverage` rows.
 2. The subject folder name is derived deterministically from the subject: lower-case, hyphens, with
    dates and the Epic, PRD and bead names removed (`archstate.subject_folder` / `subject_name`). Only
@@ -57,8 +65,10 @@ After a successful run, all of the following are true:
    - `partial`: a partial change. The future set plus `delta/` holding the change alone.
    - `pending` exists only on a seeded draft before the writers have authored views. It never
      reaches a written target.
-   In every case `baseline.json` carries `implementationWork` (the gaps between the future set and
-   the code on `main`). So something always reaches the TRD and the Tasks.
+   In every case `baseline.json` carries `implementationWork`: the elements of the future set
+   (the cited views, for `none`) that the element status matrix does not show as built. While the
+   matrix holds no `built` row, that is every element the future set shows. So something always
+   reaches the TRD and the Tasks, and the build pipeline's tests settle what already works.
 5. Writers author views before any reviewer reviews them. Within a round the writers run in the order
    the coordinator lists them, and the last writer folds the others' contributions into its views
    (it is the round's reconciler). No `designOwner` field is stored. A legacy plan that carries one
@@ -98,12 +108,12 @@ After a successful run, all of the following are true:
       the row's `state`, `repository` and the Task and commit that last changed it.
     - `rootEdges[]`, `version` and `roots`.
     - There is no cycle.
-    - The matrix is read, never written: only the build pipeline writes it. While it is empty,
+    - The matrix is read, never written, by this step: it is seeded once with state `unknown`
+      (PLAN S05a), and only the build pipeline sets `built` or `deployed`. While no row is `built`,
       every element reached is a prerequisite, and its Tasks and the build pipeline's tests settle
       what already works.
     The path is `target/<subject>/closure.json` (beside `baseline.json`), not `delta/closure.json`:
-    the code writes it there (`archclosure.write_closure`) and every Epic spec reads it there. The
-    `meta.description` and PLAN S01a say `delta/`; see QUESTIONS.md.
+    the code writes it there (`archclosure.write_closure`) and every Epic spec reads it there.
     `depscore.py arch-delta` later lists these entries as `prerequisite` items.
 11. The step returns a result. On success it has `ok: true`, `subject`, `subjectName`, `targetDir`,
     `deltaDir`, `architectureChange`, `closure {path, workPath, prerequisites}`, `targetPath`,
@@ -127,7 +137,7 @@ After a successful run, all of the following are true:
 | Beads | the central beads database (`depscore.repo`, the composite's `emitTarget`), read-only, through `atw-bd` in the survey session |
 | Artifact recorder | `artifacts {dir, relDir, epicId, script, phase: 'architecture', inputs, beadId}`; `script` is `<driver>/artifactio.py` (`$ATW_ARTIFACT_SCRIPT`). `inputs` are the PRD path plus `arc42-revision:{"dir":"<arch>/arc42","record":"<work>/arc42-revision.json"}` |
 | Repositories | each repository's local checkout and its `main` (read with `git -C <repo> show/grep main:…`), as named by the polyrepo-steward |
-| Element status matrix | Closure only: the row of each element the walk reaches: repository; state (`unknown`, `built` meaning tests passing, `deployed` meaning deployed to AWS dev and verified); the Task and commit that last changed it (CONTEXT 7.25). Read only; its storage, format and the rule that matches a row to an element named in the views are S02's item 10. Empty today, so every element reads `unknown`. |
+| Element status matrix | the survey (step 7: the rows of the listed repositories) and the Closure (step 32: the row of each element the walk reaches): repository and CDK stack; expected content per the architecture; state (`unknown`, `built` meaning tests passing, `deployed` meaning deployed to AWS dev and verified); the Task and commit that last changed it (CONTEXT 7.25). Read only. Seeded once with every repository and CDK stack, state `unknown` (PLAN S05a); only the build pipeline sets `built` or `deployed`. Its storage, row format, matching rule and read-failure fact: QUESTIONS.md item 32e. |
 | AWS guidance | the AWS MCP Server documentation tools and `aws-core:*` skills (sessions only; no AWS account calls) |
 | Schemas | `<plugin>/skills/artifact-handoff/schemas/architecture-writer.schema.json`, `architecture-review.schema.json`, `architecture-baseline.schema.json`, `checkpoint.schema.json`; the survey, coordinator, decision, maintain, conformance, repositories and closure schemas are defined in the workflow today (section 4 lists their fields; the closure walk's schema is new, section 4) |
 
@@ -145,6 +155,7 @@ Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. D
 | `survey.json.baseline-inputs.json` | `archbaseline.survey_freshness(seal=True)` | `{revision, surveySha256, contextSha, inputs[], repos[]}` | the survey's seal |
 | `survey.json.receipt` | `jsonartifact.py` acceptance | integrity receipt of the accepted bytes | legacy; read leniently |
 | `survey.md` | prd-reality-reconciler | readable survey | with `survey.json` |
+| `survey-matrix.json` | Python, before step 7 | the element status matrix rows of the repositories in `repositories.json`, for the survey session to read by path | input of the survey's seal |
 | `*.meta.json` (beside `survey.json`, `survey.md`, `decision.md`, `architecture-update.json`, …) | `artifactio.py record` | `{artifact, path, epic_id, phase, created_at, updated_at, sha256, bytes, inputs}` | read by the composite's phase-level reuse (S01b) |
 | `candidates/` | session submission helpers | in-progress candidate files and `*.progress.json` checkpoints | replaced (see section 8) |
 | `plans/round<n>-plan-0.json` | coordinator, accepted | COORDINATOR_SCHEMA: `readyForDecision, reason, dispatches[{agentType, role, task, selectionReason, repairIds, files, answers, coverageIds, claimIds, claimFiles}], overlaps[{files, claimIds, agentTypes, reason}]` | **yes** |
@@ -226,20 +237,27 @@ with a failure at stage `constraints-written`, if the session changed it.
    - the inputs;
    - every document and absolute evidence path the assessment cites (`.md` by view content, others by
      sha256);
-   - the `main^{tree}` of every repository the survey cites;
+   - the element status matrix rows the assessment's built/not-built judgments rest on (new
+     surveys);
    - the cited evidence state;
    - the baseline schema;
    - `contextSha` = sha256 of `relay.canonical({prdBody: prd.body or "", schema: SURVEY_SCHEMA})`.
-   The new code must reproduce this exactly or the three saved surveys (CONTEXT 7.13) read as stale
-   (see QUESTIONS.md).
+   Saved surveys also bind the `main^{tree}` of every repository they cite, because they judged
+   code; new surveys judge no code, so they bind no `main^{tree}`. How the three saved surveys
+   (CONTEXT 7.13) stay reusable, with their code-derived `implementationAction`, `code.state` and
+   `implementationWork` replaced by the matrix's answer, and whether `contextSha` must change, is
+   QUESTIONS.md item 32b.
 6. *agent: polyrepo-steward*, list repositories `{name, path, role, lifecycle}`. Current: sonnet,
    effort `low`, inline schema. New: write `<work>/repositories.json`. Runs only when the survey must
-   be produced. Correctness of the agent choice: see QUESTIONS.md (this may be deterministic
-   from the steward's manifest).
+   be produced. See QUESTIONS.md item 28.
 7. *agent: prd-reality-reconciler (SURVEY mode).*
    - Inputs (paths): the PRD, `<arch>` (with MODEL, MENU and section 2), `repositories.json`, the
-     beads database (read-only), the survey schema file, and the prior `survey.json` if any (retain
-     valid evidence).
+     element status matrix rows of the repositories listed (written by Python to
+     `<work>/survey-matrix.json`), the beads database (read-only), the survey schema file, and the
+     prior `survey.json` if any (retain valid evidence).
+   - The brief states: set `implementationAction` and `code.state` from the matrix rows (an element
+     the matrix does not show as built is implementation work); read repository code only for
+     current design detail, never to judge whether anything is built (CONTEXT 7.23, 7.25).
    - Output: `survey.json` + `survey.md`.
    - Current: opus, effort `medium`. That is right: this is the expensive assessment, and lowering it
      risks a wrong scope.
@@ -260,8 +278,8 @@ with a failure at stage `constraints-written`, if the session changed it.
 10. *deterministic: seed the draft* with `write_target(…, seed=True)` → `draft/baseline.json`
     (`architectureChange` `none` or `pending`), then a dry-run check.
 11. *agent: architecture-boundary-guardian* (the fixed Check plan; no coordinator).
-    - Task: verify every `coverage` row in `ledger.json` against the effective views and the code on
-      `main`; verify the `validate-existing` capabilities (`designReview`); report every section 2
+    - Task: verify every `coverage` row in `ledger.json` against the effective views (not against
+      code: what is built is the matrix's record); verify the `validate-existing` capabilities (`designReview`); report every section 2
       constraint or non-effective arc42 document that applies and is not represented, as a finding.
     - Inputs: PRD, `survey.*`, `ledger.json`, `draft/`, `<arch>`.
     - Output: `rounds/r1-1-reviewer-architecture-boundary-guardian.json` (review schema).
@@ -358,10 +376,11 @@ with a failure at stage `constraints-written`, if the session changed it.
       `approve`: neither the `meta.description` nor the `architecture-decider` definition provides
       an approval the decider did not give.
 18. *Round bound: at most 3 review rounds, then a hard stop (CONTEXT 7.7).* A round is steps 13 to
-    17. A `return` after round 1 or round 2 starts the next round. After round 3 the decider rules
-    once on the target as the team left it; a verdict other than `approve` (or an owner-concern of
-    the owner kinds) fails the run at `stage: rounds`, cause `other`, for the incident-responder: no
-    fourth round, no extension per return, no implicit approval. The goal is approval in round 1.
+    17. A `return` after round 1 or round 2 starts the next round. The round-3 decider of step 17 is
+    the last ruling (with at most the one re-ask step 17 allows after a non-actionable return; no
+    further decider session follows it). A round-3 verdict other than `approve` (or an
+    owner-concern of the owner kinds) fails the run at `stage: rounds`, cause `other`, for the
+    incident-responder: no fourth round, no extension per return, no implicit approval. The goal is approval in round 1.
     A run that needs a second or third round records a `rounds-warning` note in the result and the
     run ledger (rounds used and the findings that drove each extra round): repeated rounds signal a
     mismatch between what writers and reviewers expect, or a pipeline defect, not normal operation.
@@ -453,12 +472,12 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
       It does not judge whether any element is built and does not read repository code.
     - Inputs: PRD, `<arch>`, `closure-roots.json`, the walk schema.
     - Output: `<work>/closure-walk.json`.
-    - Current: opus, effort `medium`. The walk is reading views only, so S07 measurement may
-      lower the model or effort.
+    - Current: opus, effort `medium`.
 32. *deterministic: classify and write.* For every element in `closure-walk.json`, read its row in
-    the element status matrix (the matching rule is S02's item 10):
+    the element status matrix (the matching rule: QUESTIONS.md item 32e):
     - state `built` or `deployed` → a `satisfied` entry with the row's state, repository, Task and
-      commit;
+      commit (whether `built` alone satisfies a prerequisite that must be deployed: QUESTIONS.md
+      item 32f);
     - state `unknown`, or no row → a `prerequisites` entry with `state: unknown` and the row's
       repository when it names one: the element is pulled into the Epic's scope, and its Tasks
       build it (CONTEXT 7.25).
@@ -483,8 +502,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
 - Dropped: workflow-command-runner (every one of its calls is a deterministic step above).
 - Merged: none.
 - Not dispatched: the agents the coordinator's definition lists but the roster does not offer
-  (ubiquitous-language-writer, architecture-fitness-function-author). They stay out unless S02 adds
-  them to the roster.
+  (ubiquitous-language-writer, architecture-fitness-function-author). They stay out.
 
 **Parallelism summary.**
 - Reviewers within a round run in parallel; everything else in a round is sequential.
@@ -554,7 +572,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
   `quota` causes pause for the driver's breaker. Any other cause goes to the incident-responder. A
   missing result is not papered over.
 - *Tree snapshot after the rounds that only logs a diff count* (`tree-start.json` diff). It changes
-  nothing. Drop it unless S02 wants the count as a ledger note.
+  nothing. Dropped.
 - *Overlap warnings, survey/assessment warning counts, "plan kept" logs* as control flow. These are
   informational. Python may record them as notes. They decide nothing.
 - *Separate per-file `recordFiles` runner sessions.* `artifactio.record` is called directly. It is
@@ -605,7 +623,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
 | Integration measurement fails | `integrate` | `other` | No; incident |
 | Integration wrote section 2 | `integrate` | `other` | No; restored, incident |
 | Conformance reviewer or review check gives no result | `integrate` | from the session, or `other` | As above |
-| Reading the element status matrix fails | `closure` | from the structured fact of its storage (S02's item 10); otherwise `other` | Contention: yes, backoff as above. Otherwise no; incident |
+| Reading the element status matrix fails | `closure` | from the structured fact of its storage (QUESTIONS.md item 32e); otherwise `other` | Contention: yes, backoff as above. Otherwise no; incident |
 | Closure refused twice | `closure` | `other` | No; incident |
 
 `relay` has no producer in this flow after the rewrite.
@@ -622,7 +640,7 @@ input lists below are the single source; `prd-to-spec.md` refers here.
 | Saved result | Fingerprint inputs | A rerun after it redoes |
 |---|---|---|
 | `arc42-revision.json` | per-file arc42 hashes of the views the saved work cites | nothing, while the cited views are unchanged |
-| `survey.json` (+ seal) | the `survey_freshness` binding (step 5): PRD, MODEL, MENU, section 2 folder, cited documents and evidence, cited repositories' `main^{tree}`, `contextSha` | nothing: Survey is skipped, **no session starts** |
+| `survey.json` (+ seal) | the `survey_freshness` binding (step 5): PRD, MODEL, MENU, section 2 folder, cited documents and evidence, the element status matrix rows its judgments rest on, `contextSha` (saved surveys also bind cited repositories' `main^{tree}`; QUESTIONS.md item 32b) | nothing: Survey is skipped, **no session starts** |
 | `repositories.json` | none (the steward's live facts); reused within a run | only when the survey reruns |
 | `plans/round<n>-plan-0.json` | `ledger.json` + `survey.json` + PRD + n | nothing for that round's plan; a saved pending plan is resumed as is |
 | `rounds/r<n>-<seq>-…json` | writer: PRD + `survey.json` + its plan entry; reviewer: the same + `draft/` | only the dispatches of the pending plan with no saved result |
@@ -650,8 +668,8 @@ QUESTIONS.md). `relay/` is ignored.
 
 - **7.7 Three-case model.** It is decided deterministically by `archstate` from the draft and the
   assessment (`none` / `new` / `partial`), recorded in `baseline.json` with its note. The no-change
-  case still carries `implementationWork`, and the Closure always runs, so something reaches the TRD
-  and Tasks. Writers run before reviewers in every round. The last listed writer reconciles. No
+  case still carries `implementationWork` (the cited views' elements the element status matrix does
+  not show as built), and the Closure always runs, so something reaches the TRD and Tasks. Writers run before reviewers in every round. The last listed writer reconciles. No
   `designOwner` is stored, and a legacy one is ignored. At most 3 review rounds, then a hard stop
   (step 18); needing more than one round is recorded as a warning.
 - **7.21 arc42 detail gap.** The arc42 baseline lacks implementation detail, and this step fills
@@ -663,11 +681,13 @@ QUESTIONS.md). `relay/` is ignored.
   `unknown` or not built (for example a VPC, a security group, a Lambda layer) as a prerequisite;
   `depscore.py arch-delta` lists each as a build item, so it is built as part of the Epic's work
   and never raised as an error.
-- **7.25 Element status matrix.** The Closure is one of its two elaboration readers (repo scoping
-  is the other); it never writes it. Today it is empty, so every element reached is a
-  prerequisite.
-- **7.23 No code judgment in the Closure.** The walk reads views only, and the states come from the
-  matrix.
+- **7.25 Element status matrix.** The survey and the Closure read it (repo scoping is the other
+  elaboration reader); this step never writes it. Any element it does not show as built is
+  implementation work and, when the delta's work rests on it, a prerequisite. While no row is
+  `built`, every element is.
+- **7.23 No code judgment.** The survey's `implementationAction`, `code.state` and
+  `implementationWork` come from the matrix; the Closure's walk reads views only and its states
+  come from the matrix. Code is read only for current design detail (7.21).
 - **6 hard limits.**
   - Section 2: the session runner's fingerprint, copy and restore guard (`driver-contract.md` §8);
     the `integration_files` section 2 count; `promote` and `write_target` refusals; and briefs that

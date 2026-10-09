@@ -7,7 +7,7 @@ validated. This file stays only as the record of what is deleted and why.
 
 Step S01g. Scope: `prd-validation` only where the Epic pipeline (`prd-to-spec` and the workflows it
 calls) calls it. **The Epic pipeline does not call it.** Every heading below except Purpose and Open
-questions therefore reads "not called by the Epic pipeline".
+items therefore reads "not called by the Epic pipeline".
 
 ## 1. Purpose
 

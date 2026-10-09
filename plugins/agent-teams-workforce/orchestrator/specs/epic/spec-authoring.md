@@ -24,7 +24,7 @@ Path conventions:
   `<art>/delta-items.json` for each item's `element`, `views` and, for a prerequisite, `kind` and
   `requiredBy`.
 
-## Purpose
+## 1. Purpose
 
 Author the implementation-ready spec set for ONE repository of an Epic's span, from the PRD, the
 TRD and the approved target and delta views, for every placed item of that repository. The spec set
@@ -48,7 +48,7 @@ full result land in `story-<slug>.written.json`; its only reader was `task-decom
 the Python `task-decomposition` reads beads itself, so the file is dropped.) When the saved spec
 set is reusable, no session runs and only the Story write is repeated.
 
-## Produces and decides
+## 2. Produces and decides
 
 After a successful run:
 
@@ -77,11 +77,12 @@ After a successful run:
   in order).
 - Returned to the caller in-process: `story` (`key` = `S<n>` from the caller, `type: "story"`,
   `id` (bead id), `elabKey`, `title`, `descriptionPath` = `<art>/story-<slug>.json#/description`,
-  `repoPath`, `parentEpicKey`), `specPaths` (the three spec documents; the composite hands exactly
-  these to `task-decomposition`), `uiPath` (`<art>/spec-<slug>.ui.json`, or null), `decisionIds`,
+  `repoPath`, `parentEpicKey`), `specPaths` (the three spec documents as absolute paths; the
+  composite hands exactly these to `task-decomposition` as `specPaths`, which computes their
+  cite-as refs itself), `uiPath` (`<art>/spec-<slug>.ui.json`, or null), `decisionIds`,
   `summary` `{created, updated}`, `resumed`.
 
-## Inputs
+## 3. Inputs
 
 - **Epic:** Epic bead id (`beads.epicId`), its key/title.
 - **Repository:** `<repo>`; the Story key `S<n>` (the repository's index in the span, from the
@@ -96,7 +97,8 @@ After a successful run:
   `partial` = target views plus a delta folder of the change only; `new` = target views that are
   both future and delta, no delta folder; `none` = one set (the effective views the target's
   `baseline.json` cites in `entries[].documents`), no delta; build work is the gaps
-  (`implementationWork` in `baseline.json`) and the prerequisites in `closure.json`.
+  (`implementationWork` in `baseline.json`: the elements the element status matrix does not show
+  as built) and the prerequisites in `closure.json`.
 - **Placed items:** from `<art>/repo-scoping.json` and `<art>/delta-items.json` (see Path
   conventions).
 - **Design system** (only when `frontend`), from the driver (`<driver>/workitems.py`
@@ -115,7 +117,7 @@ After a successful run:
 
 No repository code is compared with the placed items (CONTEXT 7.23).
 
-## Outputs
+## 4. Outputs
 
 - **Documents** (written by the makers, one file each): `<art>/spec-<slug>.md`,
   `<art>/spec-<slug>.data-model.md`, `<art>/spec-<slug>.criteria.md` (Markdown; the first two with
@@ -150,7 +152,7 @@ No repository code is compared with the placed items (CONTEXT 7.23).
 
 No vault writes, no git commits.
 
-## Steps
+## 5. Steps
 
 1. **deterministic** — Build the brief context once (Python, no script): spec header; the PRD
    path; the three-case target sentence; the placed items (`id`, `element`, delta view paths; for
@@ -265,7 +267,7 @@ step 7), `user-story-writer` (kept, step 10, see QUESTIONS.md),
 Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 `definition-of-done-enforcer`, `prd-alignment-verifier` (see QUESTIONS.md).
 
-## Checks kept
+## 6. Checks kept / Checks dropped
 
 - **Documents exist and are non-empty (steps 5 and 8).** Without it, the Story bead would be
   written with missing `artifact_spec*` metadata and `task-decomposition` would decompose from
@@ -319,7 +321,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   (`tasks-<slug>.context.json`), which is current even when this step was reused.
 - The `trd.summary` input: the TRD is read by path.
 
-## Failure causes
+## 7. Failure causes
 
 | Point | Cause | Retry reasonable? |
 |---|---|---|
@@ -339,7 +341,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 
 `relay` has no producer in this flow.
 
-## Resume points
+## 8. Resume points
 
 - **R1, the whole spec set** (step `spec:<slug>`: `spec-<slug>.md`, `spec-<slug>.data-model.md`,
   `spec-<slug>.criteria.md`, `spec-<slug>.ui.json` for a UI repository, `story-<slug>.json`, each
@@ -363,7 +365,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   authored is found when the Task is built (the item's recorded artifact `{kind, slug}` and
   `cds-bundles --design-source` in the Task pipeline), so it does not invalidate the spec set.
 
-## Requirements that apply
+## 9. Requirements that apply
 
 - **7.4 Retries:** structured causes from the runner and from `GraphError.cause`; `bd` contention
   backoff 30 s doubling to 30 minutes; one corrective re-dispatch only with the exact missing file;
@@ -388,6 +390,6 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 - **Hard limits:** no write to arc42 section 2; no secrets; nothing in `apps/marketing/`; no
   destructive bead operation (a Story is created or updated, never deleted).
 
-## Open items
+## 10. Open items
 
 See QUESTIONS.md

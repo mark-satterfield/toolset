@@ -122,11 +122,12 @@ Vault: the PRD file; `$ATW_ARCH_PATH/arc42/` (effective views, section 2
 `02-architecture-constraints/` read-only); `$ATW_ARCH_PATH/target/<subject>/` (target, `delta/`,
 `baseline.json`, `closure.json`).
 
-Repositories: no phase of this flow compares repository code with the build items (CONTEXT 7.23).
-The architecture phase's survey reads code as its spec says.
+Repositories: no phase of this flow judges from repository code whether anything is built
+(CONTEXT 7.23).
 
-Element status matrix (CONTEXT 7.25): read by the architecture phase's Closure and by the
-repo-scoping phase; never written by elaboration.
+Element status matrix (CONTEXT 7.25): the only record elaboration reads for "is this built?". Read
+by the architecture phase's survey and Closure and by the repo-scoping phase; never written by
+elaboration. Any element it does not show as built is included in the Epic's Stories and Tasks.
 
 Working directory: `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (`artifactio.working_dir`;
 `<epic-id>` sanitised by `artifactio.safe_key`). Called `<work>` below.
@@ -139,7 +140,7 @@ input-record format of every Epic flow):
 | File | Written by | Format, key fields |
 |---|---|---|
 | `architecture/...` | architecture phase | see `architecture.md` §4 |
-| `delta-items.json` | step 7, `depscore.py arch-delta --save` | `{ ok, refusals[], architectureChange: none\|new\|partial, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[] }] }` |
+| `delta-items.json` | step 7, `depscore.py arch-delta --save` | `{ ok, refusals[], architectureChange: none\|new\|partial, note, deltaExists, baselineValidated, implementationComplete, implementationWork, views[], items[{ id, element, views[], kind, state, requires[] }] }`; `implementationWork` and `implementationComplete` come from the element status matrix, never from code (`architecture.md` §2 item 4) |
 | `repo-scoping.json`, `repo-creation.json` (+ inventory, candidate) | repo-scoping phase | see `repo-scoping.md` §4 |
 | `trd.md` | trd-authoring phase | see `trd-authoring.md` §4 |
 | `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md`, `spec-<slug>.ui.json` (+ bundles listing, candidate), `story-<slug>.json` (+ draft) | spec-authoring phase | see `spec-authoring.md` Outputs |
@@ -268,8 +269,11 @@ section 2 guard (`driver-contract.md` §8).
     closure-edges --dir <work> --repos <span> --out <work>/closure-edges.json` returns `{ edges[{
     from, to, reason }], summary.warnings }`: the edges the delta's `requires` relations make
     between Tasks of different Stories, where `repo-scoping.json` places the required item in
-    another repository. A warning for a required item that no Task builds and that the span ruling
-    does not record as having no code fails the run at stage `task-edges`, cause `other`: repo
+    another repository. A `requires` target that `target/<subject>/closure.json` lists in
+    `satisfied[]` (the element status matrix shows it built) gets no edge and no warning. A warning
+    for a required item that no Task builds, that the span ruling does not record as having no
+    code, and that the Closure does not list as satisfied fails the run at stage `task-edges`,
+    cause `other`: repo
     scoping places every item and task decomposition covers every placed item, so such an item is
     a defect for the incident-responder, and a `blocks` dependency
     with no builder would otherwise reach beads unnoticed. `closure-edges` failing to run fails the
@@ -383,8 +387,8 @@ Relay and command-runner calls of the JavaScript, each mapped:
 - Cycle drop in `write-all-task-edges` (inside `depscore.py`): a cycle in `blocks` edges makes
   every Task on it unbuildable, and nothing later breaks it.
 - Schema validation of `candidates/task-deps.json` before it is written: a malformed edge (unknown
-  key, wrong kind) reaches beads otherwise; `write-all-task-edges` validates keys too, so this may
-  be merged into that one check (S02).
+  key, wrong kind) reaches beads otherwise; `write-all-task-edges` validates keys too; see
+  QUESTIONS.md item 42.
 - Section 2 hard limit: the session runner's guard around every agent step (`driver-contract.md`
   §8); this flow's own steps write nothing under arc42.
 
@@ -501,7 +505,8 @@ phase's resume points when their inputs are unchanged.
   "Epic closed" is never used: done is `elaboration_state=done` and the Epic stays open.
 - **7.7 Three-case architecture model:** `architectureChange` (`none`, `new`, `partial`) from
   `arch-delta` drives `deltaDir`; in every case build items reach the TRD and the Tasks (view items,
-  `implementationWork` gaps, prerequisites). The architecture round bound is 3 with a hard stop
+  `implementationWork` (the elements the element status matrix does not show as built),
+  prerequisites). The architecture round bound is 3 with a hard stop
   (`architecture.md` step 18); this flow passes no round argument.
 - **7.8 Selection filters:** applied by driver selection before dispatch; this flow does not repeat
   them (step 2) because the driver is its only entry. The Task WSJF scores this flow computes are
@@ -520,8 +525,8 @@ phase's resume points when their inputs are unchanged.
   every placed item gets Tasks, and the build pipeline decides what is already satisfied.
 - **7.24 Tasks are activities:** the Tasks say what to build and how; the requirements stay in the
   PRD and TRD (`task-decomposition.md`).
-- **7.25 Element status matrix:** read by the architecture phase's Closure and by repo scoping;
-  elaboration never writes it.
+- **7.25 Element status matrix:** read by the architecture phase's survey and Closure and by repo
+  scoping; elaboration never writes it, and answers every "is this built?" question from it.
 - **7.11 Deterministic over agentic:** only step 12 and the phases' reasoning steps are agents.
 - **7.13 Saved work:** the architecture resume point reuses the existing surveys.
 - **7.16 Hierarchy:** every Task this flow writes sits under a Story of this Epic; the flow creates
