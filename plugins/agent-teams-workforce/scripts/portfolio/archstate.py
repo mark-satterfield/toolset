@@ -1362,7 +1362,17 @@ def remove_target(
         "targetDir": str(folder),
         "commit": None,
     }
-    if not folder.exists():
+    pending = run_git(
+        root,
+        "diff",
+        "--cached",
+        "--name-only",
+        "--diff-filter=D",
+        "--",
+        str(folder),
+        execution_id=execution_id,
+    ).stdout.strip()
+    if not folder.exists() and not pending:
         report["removed"] = False
         report["summary"] = {"ok": True, "removed": False, "commit": None}
         return report
@@ -1389,7 +1399,7 @@ def remove_target(
             }
     if folder.exists():
         shutil.rmtree(folder)
-    if tracked.stdout.strip():
+    if tracked.stdout.strip() or pending:
         done = git("commit", "-q", "-m", message, "--", str(folder))
         if done.returncode != 0:
             why = [f"git commit failed: {(done.stderr or done.stdout).strip()}"]
@@ -1480,8 +1490,16 @@ def remove_built(
                 sub.rmdir()
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
-    if tracked:
-        done = git("commit", "-q", "-m", message, "--", *tracked)
+    pending = git(
+        "diff",
+        "--cached",
+        "--name-only",
+        "--diff-filter=D",
+        "--",
+        *(str(f) for f in wanted),
+    ).stdout.strip()
+    if tracked or pending:
+        done = git("commit", "-q", "-m", message, "--", *(str(f) for f in wanted))
         if done.returncode != 0:
             why = [f"git commit failed: {(done.stderr or done.stdout).strip()}"]
             return report | _refused(why)

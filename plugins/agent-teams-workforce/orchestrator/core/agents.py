@@ -78,8 +78,10 @@ class AgentRunner:
         context.cleanup.append(self.processes.stop_all)
         self._lock = threading.Lock()
         self._version_checked = False
-        self._fable_until = float(context.args.get("fableUntil") or 0)
-        self._fable_blocked = False
+        self.context.model_policy.setdefault(
+            "fable_until", float(context.args.get("fableUntil") or 0)
+        )
+        self.context.model_policy.setdefault("fable_blocked", False)
 
     def _version(self) -> None:
         with self._lock:
@@ -123,10 +125,11 @@ class AgentRunner:
                 return final
             self.store.invalidate((final,))
             self._version()
-            return self._execute(step, final)
+            with self.context.session_slots:
+                return self._execute(step, final)
         except StepError as exc:
             if exc.cause in {"api", "quota"}:
-                self.processes.stop_all()
+                self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
             raise
         except Exception as exc:
             evidence = (
@@ -161,7 +164,10 @@ class AgentRunner:
         model = (
             "opus"
             if step.model == "fable"
-            and (self._fable_blocked or self._fable_until > time.time())
+            and (
+                self.context.model_policy["fable_blocked"]
+                or self.context.model_policy["fable_until"] > time.time()
+            )
             else step.model
         )
         row = {
@@ -207,15 +213,17 @@ class AgentRunner:
                 and model == "fable"
             ):
                 with self._lock:
-                    self._fable_until = (
+                    self.context.model_policy["fable_until"] = (
                         driver_module("fablewall").reset_of(info)
                         or driver_module("breaker").exhausted_reset(info)
                         or 0
                     )
-                    self._fable_blocked = not bool(self._fable_until)
+                    self.context.model_policy["fable_blocked"] = not bool(
+                        self.context.model_policy["fable_until"]
+                    )
                 self.emit(
                     "fable-wall",
-                    resetsAt=self._fable_until or None,
+                    resetsAt=self.context.model_policy["fable_until"] or None,
                     window=info.get("rateLimitType"),
                 )
                 model, resume = "opus", True
@@ -334,6 +342,10 @@ class AgentRunner:
             or (result.get("is_error") and result.get("api_error_status") is not None)
         ):
             return "api"
+        if facts["timeout"] or (result and result.get("is_error")):
+            return "other"
+        if facts.get("cancelledCause"):
+            return facts["cancelledCause"]
         if (
             facts["timeout"]
             or facts["exit"] != 0
@@ -352,7 +364,7 @@ class AgentRunner:
         if cause:
             reset = (
                 driver_module("breaker").exhausted_reset(facts["rate"])
-                if cause == "quota"
-                else None
+                if cause == "quota" and facts["rate"] is not None
+                else facts.get("cancelledResumeAt")
             )
             raise StepError(step.stage, cause, (str(stream),), resume_at=reset)

@@ -76,6 +76,82 @@ def check_outcome(
     return None
 
 
+def outcome_signatures(path: Path) -> dict:
+    """Key positional contracts by defining module/class, never bare method name."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    result = {}
+
+    def visit(nodes, owner=""):
+        for node in nodes:
+            if isinstance(node, ast.ClassDef):
+                visit(node.body, node.name)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names = [
+                    arg.arg
+                    for arg in (*node.args.posonlyargs, *node.args.args)
+                    if arg.arg not in {"self", "cls"}
+                ]
+                if "outcome" in names:
+                    result[(path.stem, owner, node.name)] = names.index("outcome")
+
+    visit(tree.body)
+    return result
+
+
+def call_position(node, tree, path, parents, signatures):
+    """Resolve local methods and imported helpers from receiver declarations."""
+    name = (
+        node.func.id
+        if isinstance(node.func, ast.Name)
+        else getattr(node.func, "attr", "")
+    )
+    imports = {
+        alias.asname or alias.name: ((item.module or "").split(".")[-1], alias.name)
+        for item in tree.body
+        if isinstance(item, ast.ImportFrom)
+        for alias in item.names
+    }
+    scope = parents.get(node)
+    while scope is not None and not isinstance(
+        scope, (ast.FunctionDef, ast.AsyncFunctionDef)
+    ):
+        scope = parents.get(scope)
+    if isinstance(node.func, ast.Name):
+        module, symbol = imports.get(name, (path.stem, name))
+        key = (module, "", symbol)
+    elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+        receiver = node.func.value.id
+        owner = None
+        if receiver in {"self", "cls"}:
+            ancestor = parents.get(node)
+            while ancestor is not None and not isinstance(ancestor, ast.ClassDef):
+                ancestor = parents.get(ancestor)
+            owner = ancestor.name if ancestor else None
+        elif scope is not None:
+            for arg in (
+                *scope.args.posonlyargs,
+                *scope.args.args,
+                *scope.args.kwonlyargs,
+            ):
+                if arg.arg == receiver and isinstance(arg.annotation, ast.Name):
+                    owner = arg.annotation.id
+            for assignment in ast.walk(scope):
+                if isinstance(assignment, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == receiver
+                    for t in assignment.targets
+                ):
+                    if isinstance(assignment.value, ast.Call) and isinstance(
+                        assignment.value.func, ast.Name
+                    ):
+                        owner = assignment.value.func.id
+        module, symbol = imports.get(owner, (path.stem, owner))
+        key = (module, symbol, name)
+    else:
+        key = None
+    # Bare keys support callers that explicitly supply one known helper contract.
+    return signatures.get(key, signatures.get(name))
+
+
 def flow_findings(path: Path, outcome_positions: dict[str, int]) -> list[str]:
     """Reject inline schema/brief construction; the runner alone formats fact fields."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -162,8 +238,9 @@ def flow_findings(path: Path, outcome_positions: dict[str, int]) -> list[str]:
                 if isinstance(node.func, ast.Name)
                 else getattr(node.func, "attr", "")
             )
-            if name in outcome_positions and len(node.args) > outcome_positions[name]:
-                if problem := outcome_problem(node.args[outcome_positions[name]]):
+            position = call_position(node, tree, path, parents, outcome_positions)
+            if position is not None and len(node.args) > position:
+                if problem := outcome_problem(node.args[position]):
                     report(node, problem)
             if name in {"brief", "prompt", "format_brief", "build_brief"}:
                 report(node, "flow must declare AgentStep facts, not construct a brief")
@@ -305,15 +382,7 @@ def main() -> int:
         )
         outcome_positions = {}
         for path in flows:
-            for node in ast.walk(ast.parse(path.read_text())):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    names = [
-                        arg.arg
-                        for arg in node.args.args
-                        if arg.arg not in {"self", "cls"}
-                    ]
-                    if "outcome" in names:
-                        outcome_positions[node.name] = names.index("outcome")
+            outcome_positions.update(outcome_signatures(path))
         for path in flows:
             findings.extend(flow_findings(path, outcome_positions))
     except (

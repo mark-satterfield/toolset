@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -61,3 +63,15 @@ class RunContext:
     stage: str = "input"
     sessions: list[dict[str, Any]] = field(default_factory=list)
     cleanup: list[Callable[[], None]] = field(default_factory=list)
+    model_policy: dict[str, Any] = field(default_factory=dict)
+    session_slots: threading.BoundedSemaphore = field(
+        default_factory=lambda: session_slots()
+    )
+
+
+def session_slots() -> threading.BoundedSemaphore:
+    """One shared cap for all nested phase pools of this dispatch."""
+    count = int(os.environ.get("ATW_ORCH_SESSIONS", "4"))
+    if count < 1:
+        raise ValueError("ATW_ORCH_SESSIONS must be positive")
+    return threading.BoundedSemaphore(count)

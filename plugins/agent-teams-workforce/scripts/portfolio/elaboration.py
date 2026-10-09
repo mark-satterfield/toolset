@@ -215,6 +215,7 @@ def finish(
     *,
     owner: str | None,
     done: bool,
+    scope: str = "epic-and-tasks",
 ) -> dict:
     """Score this Epic and its Tasks, and mark it done.
 
@@ -237,13 +238,20 @@ def finish(
         msg = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
     under = _task_ids_under(graph, epic)
+    if scope not in {"epic-and-tasks", "epic-tasks"}:
+        raise ValueError(f"unknown finish scope: {scope}")
+    task_only = scope == "epic-tasks"
     finishing = done
     scored = score(
         graph,
         writer,
-        scope={epic.id} | under,
-        rollup={epic.id} if finishing else frozenset(),
+        scope=under if task_only else {epic.id} | under,
+        rollup={epic.id} if finishing and not task_only else frozenset(),
     )
+    if task_only:
+        scored["unscored"] = [row for row in scored["unscored"] if row["id"] in under]
+        scored["summary"]["unscored"] = len(scored["unscored"])
+        finishing = finishing and bool(under) and not scored["unscored"]
     lifecycle = None
     if finishing:
         lifecycle = {

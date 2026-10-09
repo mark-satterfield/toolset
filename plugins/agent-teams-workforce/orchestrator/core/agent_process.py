@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_context import driver_module
+from .models import StepError
 
 
 class SessionProcesses:
@@ -21,6 +22,9 @@ class SessionProcesses:
         self._lock = threading.Lock()
         self._live: dict[int, subprocess.Popen] = {}
         self._stopped = False
+        self._stop_cause = "other"
+        self._stop_resume_at = None
+        self._cancelled: set[int] = set()
 
     @staticmethod
     def kill(process: subprocess.Popen) -> None:
@@ -47,10 +51,13 @@ class SessionProcesses:
             pass
         process.wait()
 
-    def stop_all(self) -> None:
+    def stop_all(self, *, cause: str = "other", resume_at: float | None = None) -> None:
         with self._lock:
+            if not self._stopped:
+                self._stop_cause, self._stop_resume_at = cause, resume_at
             self._stopped = True
             live = list(self._live.values())
+            self._cancelled.update(p.pid for p in live if p.poll() is None)
         for process in live:
             self.kill(process)
 
@@ -75,7 +82,12 @@ class SessionProcesses:
         ):
             with self._lock:
                 if self._stopped:
-                    raise InterruptedError("run sessions have been stopped")
+                    raise StepError(
+                        "session",
+                        self._stop_cause,
+                        ("run sessions have been stopped",),
+                        resume_at=self._stop_resume_at,
+                    )
                 process = subprocess.Popen(
                     argv,
                     cwd=directory,
@@ -154,6 +166,12 @@ class SessionProcesses:
                             facts["timeout"] = True
                             self.kill(process)
                 facts.update(exit=process.wait(), pid=process.pid)
+                with self._lock:
+                    if process.pid in self._cancelled:
+                        facts.update(
+                            cancelledCause=self._stop_cause,
+                            cancelledResumeAt=self._stop_resume_at,
+                        )
                 return facts
             finally:
                 # Includes MCP descendants left behind after the main CLI exits.
