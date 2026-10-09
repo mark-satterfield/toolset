@@ -782,30 +782,11 @@ def read_tasks(
 WORK_STATUSES = ("add", "modify", "remove")
 
 
-def work_items(directory: Path, slug: str) -> list[str] | None:
-    """Return the ids of the delta items a repository's detailing marks add, modify or remove.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The repository slug.
-
-    Returns:
-        The ids in the order `recon-<slug>.json` lists them; None when the detailing is not
-        saved or saves no `items` list.
-    """
-    path = directory / f"recon-{slug}.json"
-    if not path.is_file():
-        return None
-    items = _read_json(path).get("items")
-    if not isinstance(items, list):
-        return None
-    return list(
-        dict.fromkeys(
-            str(i.get("id")).strip()
-            for i in items
-            if isinstance(i, dict) and i.get("id") and i.get("status") in WORK_STATUSES
-        )
-    )
+def work_items(directory: Path, slug: str) -> list[str]:
+    """Every item placed in the repository is work; no built-state judgment."""
+    return [
+        key for key, item in placed_items(directory).items() if item["slug"] == slug
+    ]
 
 
 def uncited_work(directory: Path, slug: str, tasks: list[Task]) -> list[str]:
@@ -824,56 +805,14 @@ def uncited_work(directory: Path, slug: str, tasks: list[Task]) -> list[str]:
     return [i for i in work_items(directory, slug) or [] if i not in cited]
 
 
-def item_briefs(directory: Path, slug: str, ids: list[str]) -> list[dict[str, str]]:
-    """Return what the detailing says of each named item: status, element and target.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The repository slug.
-        ids: The item ids.
-
-    Returns:
-        One `{id, status, element, to}` per id, in the order given; text is cut to 200
-        characters.
-    """
-    path = directory / f"recon-{slug}.json"
-    items = _read_json(path).get("items") if path.is_file() else None
-    by_id = {
-        str(i.get("id")).strip(): i
-        for i in (items if isinstance(items, list) else [])
-        if isinstance(i, dict) and i.get("id")
-    }
-
-    def text(value: object) -> str:
-        if value is None:
-            return ""
-        return (value if isinstance(value, str) else json.dumps(value))[:200]
-
-    return [
-        {
-            "id": i,
-            "status": text(by_id.get(i, {}).get("status")),
-            "element": text(by_id.get(i, {}).get("element")),
-            "to": text(by_id.get(i, {}).get("to")),
-        }
-        for i in ids
-    ]
+def item_briefs(directory: Path, slug: str, ids: list[str]) -> list[dict]:
+    """Return architecture facts for the precise uncited items."""
+    items = placed_items(directory)
+    return [items[key] for key in ids if key in items and items[key]["slug"] == slug]
 
 
 def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
-    """Note Tasks that build no delta item the repository's detailing marks as work.
-
-    The detailing of a repository, `recon-<slug>.json`, gives each delta item placed in it
-    a status; only `add`, `modify` and `remove` make work. Every Task cites, in its
-    `requirementIds`, at least one item with one of those statuses. A Story whose detailing
-    is not saved, or saves no `items` list, is not checked.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
-        tasks: The Story's Tasks; each one citing no such item is noted in
-            `take_warnings` and kept.
-    """
+    """Warn when a Task cites no placed item; never classify existing code."""
     listed = work_items(directory, slug)
     if listed is None:
         return
@@ -881,9 +820,8 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
     idle = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
         _WARNINGS.append(
-            f"tasks-{slug}.json: {', '.join(idle)} cite no delta item recon-{slug}.json "
-            f"marks {', '.join(WORK_STATUSES)} in requirementIds "
-            f"({', '.join(sorted(work)) or 'none here'})"
+            f"tasks-{slug}.json: {', '.join(idle)} cite no placed item in requirementIds "
+            f"({', '.join(sorted(work)) or 'none here'})",
         )
 
 
@@ -941,56 +879,22 @@ def planned_prerequisites(directory: Path) -> dict[str, str]:
     }
 
 
-def detailed_items(directory: Path) -> dict[str, dict[str, str]]:
-    """Return every detailed delta item of the Epic, across its repositories' detailings.
-
-    Args:
-        directory: The Epic's working directory.
-
-    Returns:
-        Item id -> its `status`, its `plannedBy` and the `slug` of the repository whose
-        `recon-<slug>.json` details it.
-    """
-    out: dict[str, dict[str, str]] = {}
-    for path in sorted(directory.glob("recon-*.json")):
-        items = _read_json(path).get("items")
-        slug = path.name[len("recon-") : -len(".json")]
-        for i in items if isinstance(items, list) else []:
-            if isinstance(i, dict) and i.get("id"):
-                out[str(i["id"]).strip()] = {
-                    "status": str(i.get("status") or ""),
-                    "plannedBy": str(i.get("plannedBy") or "").strip(),
-                    "slug": slug,
-                }
-    return out
+def detailed_items(directory: Path) -> dict[str, dict]:
+    """Compatibility name for the declared placement map; contains no status labels."""
+    return placed_items(directory)
 
 
 def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[Task]:
-    """Give a Story's Tasks the edges the delta's `requires` relations make, in this Story.
+    """Derive in-Story prerequisite edges from placed architecture items.
 
-    For every Task that builds item X and every item Y that X requires: Y `done` makes no
-    edge; Y `planned-elsewhere` adds the bead that plans it to the Task's external
-    blockers, whichever repository Y is detailed in, as does a prerequisite Y the closure
-    found planned by an open bead (placed in no repository); Y marked add, modify or remove in this
-    repository adds an edge from every Task of this Story that builds Y. Y detailed in
-    another repository is left to `closure_task_edges`, which joins the Stories. A delta
-    with no prerequisite closure leaves the Tasks as they are.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
-        tasks: The Story's Tasks in build order.
-
-    Returns:
-        The Tasks in build order with the derived edges and blockers. A required item
-        detailed here that no Task of this Story builds, and a derived edge that would close
-        a cycle, are noted in `take_warnings` and make no edge.
+    Missing builders remain coverage findings. Cross-repository prerequisites are
+    connected by closure_task_edges after every repository's Tasks exist.
+    Cyclic derived edges are dropped and reported as normalization warnings.
     """
     requires = delta_requires(directory)
     if requires is None:
         return tasks
     detailed = detailed_items(directory)
-    planned = planned_prerequisites(directory)
     builders: dict[str, list[str]] = {}
     for t in tasks:
         for item in t.requirement_ids:
@@ -1000,29 +904,16 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
     for t in tasks:
         for x in t.requirement_ids:
             own = detailed.get(x, {})
-            if own.get("slug") != slug or own.get("status") not in WORK_STATUSES:
+            if own.get("slug") != slug:
                 continue
             for y in requires.get(x, []):
                 d = detailed.get(y)
-                if d is None and y in planned:
-                    d = {
-                        "status": "planned-elsewhere",
-                        "plannedBy": planned[y],
-                        "slug": "",
-                    }
-                if d is None or d["status"] == "done" or y in t.requirement_ids:
-                    continue
-                if d["status"] == "planned-elsewhere":
-                    if d["plannedBy"] and d["plannedBy"] not in t.blocked_by_external:
-                        t.blocked_by_external.append(d["plannedBy"])
-                    continue
-                if d["slug"] != slug or d["status"] not in WORK_STATUSES:
+                if d is None or y in t.requirement_ids or d["slug"] != slug:
                     continue
                 found = [k for k in builders.get(y, []) if k != t.key]
                 if not found:
                     problems.append(
-                        f"{t.key} builds {x}, which requires {y}; {y} is marked "
-                        f"{d['status']} in recon-{slug}.json and no Task of this Story builds it"
+                        f"{t.key} builds {x}, which requires {y}; no Task of this Story builds it",
                     )
                 t.depends_on.extend(k for k in found if k not in t.depends_on)
     _WARNINGS.extend(f"tasks-{slug}.json: {p}" for p in problems)
@@ -1038,7 +929,7 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
     for frm, to in left:
         by_key[to].depends_on.remove(frm)
         _WARNINGS.append(
-            f"tasks-{slug}.json: the derived edge {frm} -> {to} closes a cycle; dropped"
+            f"tasks-{slug}.json: the derived edge {frm} -> {to} closes a cycle; dropped",
         )
     order = build_order(nodes, [(d, t.key) for t in tasks for d in t.depends_on])
     return [by_key[k] for k in order]
@@ -1056,3 +947,16 @@ def read_task_deps(directory: Path) -> list[dict]:
     """
     saved = _read_json(directory / "task-deps.json")
     return [e for e in saved.get("edges") or [] if isinstance(e, dict)]
+
+
+def placed_items(directory: Path) -> dict[str, dict]:
+    """Join declared placements to architecture items, without inspecting code."""
+    scope = _read_json(directory / "repo-scoping.json")
+    repos = list(dict.fromkeys(p["repoPath"] for p in scope["placements"]))
+    slugs = repo_slugs(repos)
+    items = {i["id"]: i for i in _read_json(directory / "delta-items.json")["items"]}
+    return {
+        item: {**items[item], "slug": slugs[p["repoPath"]], "repoPath": p["repoPath"]}
+        for p in scope["placements"]
+        for item in p["itemIds"]
+    }

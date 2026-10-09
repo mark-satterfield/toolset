@@ -25,18 +25,17 @@ from beadgraph import (
 )
 from hierarchy import (
     SIZE_KEYS,
+    _sizes,
     HierarchyError,
     Task,
     build_order,
     check_cds_contract,
-    WORK_STATUSES,
     check_detailed_work,
     delta_requires,
     derive_prerequisites,
     detailed_items,
     elab_slug,
     item_briefs,
-    planned_prerequisites,
     read_story,
     read_task_deps,
     read_tasks,
@@ -634,6 +633,7 @@ def plan_story_tasks(
     Returns:
         Each Task's local key, `elab_key`, title and the local keys it depends on, and
         `uncited`: the work items of the repository's detailing no Task cites.
+
     """
     take_warnings()
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
@@ -645,6 +645,7 @@ def plan_story_tasks(
         "warnings": warnings,
         "uncited": uncited,
         "uncitedItems": item_briefs(directory, slug, uncited),
+        "unsized": [t.key for t in tasks if not t.sizes],
         "tasks": [
             {
                 "key": t.key,
@@ -741,129 +742,73 @@ def _local_keys(start: list[dict]) -> Iterator[str]:
 
 
 def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dict:
-    """Merge one corrective pass into a Story's saved Tasks and its detailing.
-
-    The pass answers for the work items no saved Task cites: a Task for some, a reason no
-    work is needed for others. A new Task is taken only when every work item it cites is
-    one of those; it gets a fresh local key, and the saved Tasks are left as they are. Two
-    new Tasks never build the same item: the first in order keeps it, it is removed from the
-    later Tasks' citations, and a later Task left citing none of those items is dropped. An
-    edge is taken only into a new Task. A "no work needed" answer for one of those items
-    that no new Task builds is recorded on `recon-<slug>.json` as `done` with its reason,
-    and the hash recorded for the detailing as an input is updated to match.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
-        correction: The accepted corrective pass: `tasks`, `noWork` (`{id, reason}`),
-            `edges` and `scores`.
-
-    Returns:
-        `added` (the new local keys), `noWork` (the ids recorded done), `rejected`
-        (each answer not taken, with why), `dropped` (each new Task dropped because an
-        earlier one builds every item it cites) and `trimmed` (each new Task taken without
-        the items an earlier one builds), both as `{task, items, keptBy}`, and `uncited`
-        (the work items still cited by no Task).
-
-    Raises:
-        HierarchyError: The saved Tasks or the corrective pass cannot be read.
-    """
-    tasks_path = directory / f"tasks-{slug}.json"
-    try:
-        saved = json.loads(tasks_path.read_text("utf-8"))
-        fix = json.loads(correction.read_text("utf-8"))
-    except (OSError, ValueError) as exc:
-        msg = f"the corrective pass for tasks-{slug}.json cannot be read: {exc}"
-        raise HierarchyError(msg) from exc
-    existing = [t for t in saved.get("tasks") or [] if isinstance(t, dict)]
-    work = work_items(directory, slug) or []
+    """Merge one gap repair, preserving saved Tasks and all upstream artifacts."""
+    path = directory / f"tasks-{slug}.json"
+    saved = json.loads(path.read_text("utf-8"))
+    fix = json.loads(correction.read_text("utf-8"))
+    if "noWork" in fix:
+        raise HierarchyError("noWork is not a Task correction")
+    existing = saved["tasks"]
+    work = set(work_items(directory, slug))
     cited = {i for t in existing for i in str_list(t.get("requirementIds"))}
-    gap = [i for i in work if i not in cited]
-    rejected: list[dict] = []
-    added: list[dict] = []
-    dropped: list[dict] = []
-    trimmed: list[dict] = []
-    keymap: dict[str, str] = {}
-    taken_by: dict[str, str] = {}
+    gap = work - cited
+    original_scores = {str(s["key"]): s for s in saved.get("scores", [])}
+    unsized = {
+        str(t["key"])
+        for t in existing
+        if not _sizes(original_scores.get(str(t["key"])))
+    }
     fresh = _local_keys(existing)
-    for t in fix.get("tasks") or []:
-        if not isinstance(t, dict):
-            continue
-        builds = [i for i in str_list(t.get("requirementIds")) if i in work]
-        outside = [i for i in builds if i not in gap]
-        if not builds or outside:
-            why = (
-                f"cites {', '.join(outside)}, which a saved Task already builds"
-                if outside
-                else "cites none of the items with no Task"
+    keymap, taken = {}, set()
+    added, rejected, dropped, trimmed = [], [], [], []
+    for task in fix["tasks"]:
+        ids = set(str_list(task.get("requirementIds")))
+        if not ids or not ids <= gap:
+            rejected.append(
+                {"task": task.get("key"), "reason": "cites items outside the gap"}
             )
-            rejected.append({"task": str(t.get("title") or ""), "reason": why})
             continue
-        twice = [i for i in builds if i in taken_by]
-        if twice:
-            entry = {
-                "task": str(t.get("title") or ""),
-                "items": twice,
-                "keptBy": sorted({taken_by[i] for i in twice}),
-            }
-            if len(twice) == len(builds):
-                dropped.append(entry)
-                continue
-            trimmed.append(entry)
-            kept = [i for i in str_list(t.get("requirementIds")) if i not in taken_by]
-            t = t | {"requirementIds": kept}
+        remaining = ids - taken
+        if not remaining:
+            dropped.append(task.get("key"))
+            continue
+        if remaining != ids:
+            trimmed.append(task.get("key"))
         key = next(fresh)
-        keymap[str(t.get("key") or key)] = key
-        added.append(t | {"key": key})
-        for i in builds:
-            taken_by.setdefault(i, key)
-    built = {i for t in added for i in str_list(t.get("requirementIds"))}
-    no_work: dict[str, str] = {}
-    for e in fix.get("noWork") or []:
-        item = str(e.get("id") or "").strip() if isinstance(e, dict) else ""
-        reason = str(e.get("reason") or "").strip() if isinstance(e, dict) else ""
-        if item in gap and item not in built and reason:
-            no_work[item] = reason
-        else:
-            why = "not an item with no Task, or no reason"
-            rejected.append({"item": item, "reason": why})
-    own = {str(t.get("key")) for t in existing}
-    for e in fix.get("edges") or []:
-        frm = keymap.get(str(e.get("from")), str(e.get("from")))
-        to = keymap.get(str(e.get("to")))
-        if to and (frm in keymap.values() or frm in own):
+        keymap[str(task.get("key"))] = key
+        added.append({**task, "key": key, "requirementIds": sorted(remaining)})
+        taken.update(remaining)
+    keys = {str(t["key"]) for t in existing} | set(keymap.values())
+    for edge in fix["edges"]:
+        frm = keymap.get(edge["from"], edge["from"])
+        to = keymap.get(edge["to"])
+        if to and frm in keys:
             saved.setdefault("edges", []).append({"from": frm, "to": to})
-    for s in fix.get("scores") or []:
-        if isinstance(s, dict) and str(s.get("key")) in keymap:
-            saved.setdefault("scores", []).append(s | {"key": keymap[str(s["key"])]})
-    if added:
-        saved["tasks"] = [*existing, *added]
-        _write_json(tasks_path, saved)
-    if no_work:
-        recon_path = directory / f"recon-{slug}.json"
-        recon = json.loads(recon_path.read_text("utf-8"))
-        for item in recon.get("items") or []:
-            if isinstance(item, dict) and str(item.get("id") or "").strip() in no_work:
-                item["status"] = "done"
-                item["doneReason"] = no_work[str(item["id"]).strip()]
-                item["ruledBy"] = NO_WORK_RULED_BY
-        _write_json(recon_path, recon)
-        _rebind_input(directory, recon_path.name)
+        else:
+            rejected.append({"edge": edge, "reason": "edge is not into a new Task"})
+    resized = []
+    for score in fix["scores"]:
+        original = str(score["key"])
+        key = keymap.get(original, original)
+        if not _sizes(score) or (original not in keymap and key not in unsized):
+            rejected.append(
+                {"score": original, "reason": "invalid or outside unsized keys"}
+            )
+            continue
+        original_scores[key] = {**score, "key": key}
+        if key in unsized:
+            resized.append(key)
+    saved["tasks"] = [*existing, *added]
+    saved["scores"] = list(original_scores.values())
+    _write_json(path, saved)
     return {
         "ok": True,
-        "slug": slug,
         "added": [t["key"] for t in added],
-        "noWork": sorted(no_work, key=_item_order),
+        "resized": resized,
         "rejected": rejected,
         "dropped": dropped,
         "trimmed": trimmed,
-        "uncited": [i for i in gap if i not in built and i not in no_work],
-        "summary": {
-            "added": len(added),
-            "noWork": len(no_work),
-            "dropped": len(dropped),
-            "trimmed": len(trimmed),
-        },
+        "uncited": sorted(gap - taken),
     }
 
 
@@ -1054,7 +999,7 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> di
     """Delete a Story's unstarted Task beads, before its Tasks are decomposed again.
 
     Runs only when something upstream of the Story's Tasks changed. A Task elaboration wrote
-    (`elab_key` `task:...`) that no one has started (status in UNSTARTED, no `build_state`)
+    (`elab_key` `task:...`) that no one has started (open/blocked, no build-lane facts)
     is deleted; a started or closed Task, or one elaboration did not write, is kept and
     returned, so the new decomposition is told about it instead of duplicating it.
 
@@ -1067,12 +1012,13 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> di
     Returns:
         `story` (its id, or None when the Story has no bead yet), `deleted` and `kept`, each
         `{id, title, elabKey, status}` (`kept` also with `requirementIds`), and `reason`.
+
     """
     stories = _keyed(
         sorted(
             (bead_of(r) for r in children(writer.repo, epic_id, "story")),
             key=lambda b: b.id,
-        )
+        ),
     )
     story = stories.get(f"story:{slug}")
     deleted: list[dict] = []
@@ -1082,7 +1028,7 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> di
         for b in sorted((bead_of(r) for r in records), key=lambda b: b.id):
             key = str(b.metadata.get("elab_key") or "")
             facts = {"id": b.id, "title": b.title, "elabKey": key, "status": b.status}
-            started = b.status not in UNSTARTED or bool(b.metadata.get("build_state"))
+            started = task_started(b)
             if started or not key.startswith("task:"):
                 ids = _cited_ids(b.metadata.get("requirement_ids"))
                 kept.append(facts | {"requirementIds": ids})
@@ -1134,6 +1080,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     root: Path | None,
     external: list[str] | None = None,
     packages_dir: str | None = None,
+    missing_only: bool = False,
 ) -> dict:
     """Write one Task once; the keyed implementation reads the current Story's Tasks."""
     return _write_task(
@@ -1146,6 +1093,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         root=root,
         external=external,
         packages_dir=packages_dir,
+        missing_only=missing_only,
     )
 
 
@@ -1160,6 +1108,7 @@ def _write_task(
     root: Path | None,
     external: list[str] | None = None,
     packages_dir: str | None = None,
+    missing_only: bool = False,
 ) -> dict:
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
@@ -1193,6 +1142,7 @@ def _write_task(
     Raises:
         HierarchyError: The repository is empty, the key names no Task, or the Epic has no
             Story for the slug.
+
     """
     if not repo.strip():
         msg = f"Task {key} of story:{slug} has no repository: a Task is never written without one"
@@ -1208,7 +1158,7 @@ def _write_task(
         sorted(
             (bead_of(r) for r in children(writer.repo, epic_id, "story")),
             key=lambda b: b.id,
-        )
+        ),
     )
     story = stories.get(f"story:{slug}")
     if story is None:
@@ -1230,18 +1180,15 @@ def _write_task(
     for dep in task.depends_on:
         blocker = found(by_key[dep]) if dep in by_key else None
         if blocker is None:
-            warnings.append(
-                f"{key} depends on {dep}, which is not written under {story_id} yet; "
-                "the edge is left out and the next run's refresh adds it"
-            )
-            continue
+            msg = f"{key} depends on {dep}, which is not written under {story_id}"
+            raise HierarchyError(msg)
         blockers.append(blocker.id)
     story_ids = {b.id for b in keyed.values()}
     outer = list(dict.fromkeys([*task.blocked_by_external, *(external or [])]))
     inner = [b for b in outer if b in story_ids]
     if inner:
         warnings.append(
-            f"{key}: {', '.join(inner)} are Tasks of {story_id}; taken as Story edges"
+            f"{key}: {', '.join(inner)} are Tasks of {story_id}; taken as Story edges",
         )
         blockers = list(dict.fromkeys([*blockers, *inner]))
         outer = [b for b in outer if b not in story_ids]
@@ -1250,7 +1197,9 @@ def _write_task(
     meta = task_metadata(task)
     if task.sizes:
         meta[JUDGED_HASH_KEY] = _judged_hash(
-            task.title, text, priority.get(bead.id) if bead else DEFAULT_PRIORITY
+            task.title,
+            text,
+            priority.get(bead.id) if bead else DEFAULT_PRIORITY,
         )
     edges = {"added": 0, "removed": 0, "standing": 0}
     outside: list[str] = []
@@ -1272,10 +1221,13 @@ def _write_task(
         task_id, action = writer.create(args, task.elab_key or key), "created"
         edges["added"] = len(blockers) + len(outer)
         outside = outer
-    elif bead.status != OPEN or bead.metadata.get("build_state"):
+    elif task_started(bead) or missing_only:
         # A started Task (not open, or open with a build_state) or a closed one is never
         # rewritten: neither its prose, its metadata nor its edges.
-        task_id, action = bead.id, "unchanged-started"
+        task_id, action = (
+            bead.id,
+            "unchanged-started" if task_started(bead) else "unchanged",
+        )
     else:
         task_id = bead.id
         action = (
@@ -1297,7 +1249,7 @@ def _write_task(
             "standing": len(blockers) + len(outer) - len(add),
         }
         outside = list(
-            dict.fromkeys([*(b for b in bead.blockers if b not in story_ids), *outer])
+            dict.fromkeys([*(b for b in bead.blockers if b not in story_ids), *outer]),
         )
     return {
         "ok": True,
@@ -1421,31 +1373,23 @@ def _no_code(directory: Path) -> set[str]:
 
 
 def closure_task_edges(directory: Path, repos: list[str]) -> dict:
-    """Return the Task edges between Stories that the delta's `requires` relations make.
+    """Derive cross-Story edges from placements and declared requires relations.
 
-    For every saved Task that builds item X, and every item Y that X requires and that
-    another repository's detailing marks add, modify or remove, every Task of that
-    repository's Story that builds Y is an edge to the Task. A required item that no Task
-    of its Story builds, or that no repository details and the span ruling does not record
-    as having no code, is a warning: the Task's prerequisite has no Task, no open bead and
-    is not done, and the edges that exist are still returned. Items detailed in the Task's
-    own repository, and `done` or
-    `planned-elsewhere` items, are settled by `derive_prerequisites`. Runs no `bd` command.
-
-    Args:
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
-
-    Returns:
-        The edges (`from`, `to`, `kind`, `reason`; ends are `S<i>-<local key>`) and the
-        warnings.
+    Every placed requirement needs a builder. Only explicit no-code items and
+    matrix-satisfied Closure elements may lack Tasks without a finding.
     """
     requires = delta_requires(directory)
     edges: list[dict] = []
     warnings: list[str] = []
     if requires is not None:
         detailed = detailed_items(directory)
-        no_code = _no_code(directory) | set(planned_prerequisites(directory))
+        no_code = _no_code(directory)
+        closure = directory / "architecture" / "closure.json"
+        if closure.is_file():
+            data = json.loads(closure.read_text("utf-8"))
+            no_code.update(
+                str(i.get("id") or i.get("element")) for i in data.get("satisfied", [])
+            )
         slug_story: dict[str, str] = {}
         builds: dict[str, list[str]] = {}
         task_slug: dict[str, str] = {}
@@ -1462,7 +1406,7 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
             slug = task_slug[name]
             for x in items:
                 own = detailed.get(x, {})
-                if own.get("slug") != slug or own.get("status") not in WORK_STATUSES:
+                if own.get("slug") != slug:
                     continue
                 for y in requires.get(x, []):
                     d = detailed.get(y)
@@ -1470,24 +1414,20 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
                         if y not in no_code:
                             warnings.append(
                                 f"{name} builds {x}, which requires {y}; no repository's "
-                                "detailing holds it"
+                                "placement holds it",
                             )
                         continue
-                    if d["slug"] == slug or d["status"] in (
-                        "done",
-                        "planned-elsewhere",
-                    ):
+                    if d["slug"] == slug:
                         continue
                     found = [
                         n
                         for n, built in builds.items()
                         if task_slug[n] == d["slug"] and y in built
                     ]
-                    if d["status"] not in WORK_STATUSES or not found:
+                    if not found:
                         warnings.append(
-                            f"{name} builds {x}, which requires {y}; {y} is marked "
-                            f"{d['status'] or 'nothing'} in recon-{d['slug']}.json and no "
-                            f"Task of {slug_story.get(d['slug'], d['slug'])} builds it"
+                            f"{name} builds {x}, which requires {y}; no "
+                            f"Task of {slug_story.get(d['slug'], d['slug'])} builds it",
                         )
                         continue
                     for frm in found:
@@ -1500,7 +1440,7 @@ def closure_task_edges(directory: Path, repos: list[str]) -> dict:
                                 "to": name,
                                 "kind": "infrastructure",
                                 "reason": f"{x} requires {y} (the delta's prerequisite closure)",
-                            }
+                            },
                         )
     return {
         "ok": True,
@@ -1788,3 +1728,11 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
             **totals,
         },
     }
+
+
+def task_started(bead: Bead) -> bool:
+    """Deferred is an owner ruling; any build-lane fact protects existing work."""
+    return bead.status not in {"open", "blocked"} or any(
+        str(key).startswith(("build_", "cds_audit_")) and bool(value)
+        for key, value in bead.metadata.items()
+    )
