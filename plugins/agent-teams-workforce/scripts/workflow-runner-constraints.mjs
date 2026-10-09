@@ -9,20 +9,16 @@
 // anything. A script that reaches for one of those is unrunnable in production no
 // matter how well it behaves in a test harness.
 //
-// WHY THIS FILE IS SHARED, AND WHY THAT MATTERS
+// WHY THIS FILE EXISTS
 //
-// 6.0.6 shipped a workspace.js that could not load. Both of the things that were
-// supposed to catch it — the syntax checker and the unit-test harness — model the
+// 6.0.6 shipped a workspace.js that could not load. The syntax checker modelled the
 // runtime with an AsyncFunction body, and an AsyncFunction is strictly MORE
 // PERMISSIVE than the runner. The construct the runner refuses statically is
-// perfectly legal inside one. So 446 tests passed, an adversarial verifier probed 28
-// variants, and nothing noticed that the first phase of all three composites was
-// unloadable.
+// perfectly legal inside one, so nothing noticed that the first phase of all three
+// composites was unloadable.
 //
-// The fix is only worth anything if BOTH models get stricter, and they only stay
-// in step if there is one list rather than two copies that drift. This is that list:
-// scripts/check-workflow-syntax.mjs and tests/workflows/helpers/run-workflow.mjs
-// both import it, so a construct added here is refused by both at once.
+// This is the one list of what the runner refuses: scripts/check-workflow-syntax.mjs
+// imports it, so a construct added here is refused by the pre-commit gate.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // THE CAPABILITY MODEL — what a workflow script is PERMITTED to reach
