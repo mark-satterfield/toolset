@@ -72,6 +72,10 @@ OWNED_AT_KEY = "seq_owned_blockers_at"
 
 #: The cause of a failure the beads server or its connection made, not the command.
 BD_TIMEOUT = "bd-timeout"
+#: The cause of a failure another writer's lock made: the command collided, it did not fail.
+CONTENTION = "contention"
+#: The causes a write is made again for.
+RETRIED_CAUSES = frozenset({BD_TIMEOUT, CONTENTION})
 #: The cause of any other failure.
 OTHER_CAUSE = "other"
 
@@ -79,8 +83,9 @@ OTHER_CAUSE = "other"
 class GraphError(RuntimeError):
     """The tracker could not be read, or answered with something unusable.
 
-    `cause` is BD_TIMEOUT when `bd` itself reported that the beads server or its connection
-    failed, else OTHER_CAUSE; it is set where `bd` fails, never from the message.
+    `cause` is CONTENTION when `bd` reported a lock another writer held, BD_TIMEOUT when it
+    reported that the beads server or its connection failed, else OTHER_CAUSE; it is set where
+    `bd` fails, from `bd`'s standard error, never from the message.
     """
 
     def __init__(self, message: str, cause: str = OTHER_CAUSE) -> None:
@@ -88,7 +93,7 @@ class GraphError(RuntimeError):
 
         Args:
             message: What failed.
-            cause: BD_TIMEOUT or OTHER_CAUSE.
+            cause: CONTENTION, BD_TIMEOUT or OTHER_CAUSE.
         """
         super().__init__(message)
         self.cause = cause
@@ -240,9 +245,13 @@ RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
 )
 
 
+#: What `bd` prints on standard error when another writer held a lock.
+LOCK_CONTENTION = re.compile(
+    r"database is locked|lock wait timeout|deadlock", re.IGNORECASE
+)
 #: What `bd` prints on standard error when the beads server or its connection failed.
 SERVER_FAILURE = re.compile(
-    r"i/o timeout|connection refused|deadline exceeded|database is locked|"
+    r"i/o timeout|connection refused|deadline exceeded|"
     r"invalid connection|bad connection|failed to open database|"
     r"write commit result indeterminate",
     re.IGNORECASE,
@@ -256,8 +265,11 @@ def failure_cause(stderr: str) -> str:
         stderr: `bd`'s standard error, without the command line.
 
     Returns:
-        BD_TIMEOUT when the beads server or its connection failed, else OTHER_CAUSE.
+        CONTENTION when another writer held a lock, BD_TIMEOUT when the beads server or
+        its connection failed, else OTHER_CAUSE.
     """
+    if LOCK_CONTENTION.search(stderr):
+        return CONTENTION
     return BD_TIMEOUT if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
 
 

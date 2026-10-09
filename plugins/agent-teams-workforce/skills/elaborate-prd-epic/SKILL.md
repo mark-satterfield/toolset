@@ -151,12 +151,17 @@ What comes back:
 Story and Tasks, or nothing to build. A work item no written Task cites gets one corrective
 pass (new Tasks for it, or why no work is needed, recorded on the detailing as `done`); the
 saved Tasks are never re-decomposed; when two new Tasks cite the same item, the first keeps
-it. A Task bead is matched by `elab_key`, else by the items it cites, else by title, and
-updated in place, so a changed detailing never makes a second open bead for the same work. A
-repository still failed returns `ok:false` at stage `repositories-incomplete`.
+it. When a Story's Tasks are written again, the input record of its saved
+`tasks-<slug>.json` decides the case (`depscore.py tasks-inputs`): unchanged inputs keep every
+Task as it is and write only the missing ones; changed inputs delete the Story's unstarted Task
+beads (`depscore.py replace-tasks`) and decompose the full set again, keeping started or closed
+ones and naming them to the maker. The case and why are returned as `rerun` and logged in the
+run ledger (event `task-rerun`). A Task bead is matched by `elab_key`, else by the items it
+cites, else by title, and updated in place. A repository still failed returns `ok:false` at
+stage `repositories-incomplete`.
 
 Every failure carries `failure: { stage, cause, repositories: [{ repository, stage, cause,
-headline }] }`. `cause` is `api`, `quota`, `bd-timeout`, `relay` or `other`, set where the
+headline }] }`. `cause` is `api`, `quota`, `bd-timeout`, `relay`, `contention` or `other`, set where the
 failure happens from exit codes and structured fields, never by matching text. The run's cause
 is transient (anything but `other`) only when every failed repository's is. A transient cause
 releases the Epic: the next dispatch, after the supervisor's backoff, reruns only the failed

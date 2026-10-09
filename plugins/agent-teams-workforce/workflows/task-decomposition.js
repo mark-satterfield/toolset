@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. When the written Tasks leave a work item the detailing marks add, modify or remove cited by no Task, one corrective pass tells the maker exactly which items have no Task; it answers with new Tasks for them or, per item, why no work is needed, and depscore.py add-tasks merges the answer without changing the saved Tasks and records each no-work item on the detailing as done with its reason; when two new Tasks cite the same item, the first keeps it, it is removed from the later ones\' citations, and a later Task left citing none of those items is dropped, reported in coverage.dropped and coverage.trimmed. A Task bead is matched by elab_key, else by the delta items it cites, else by title, and updated in place; an open Task bead no Task matches whose items are no longer add, modify or remove is closed with a reason naming the detailing change. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay or other, set from the structured result of the step that failed. Items still cited by no Task after that pass fail the Story at stage uncited-items, naming them and the maker\'s answer; no further pass runs. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. When the written Tasks leave a work item the detailing marks add, modify or remove cited by no Task, one corrective pass tells the maker exactly which items have no Task; it answers with new Tasks for them or, per item, why no work is needed, and depscore.py add-tasks merges the answer without changing the saved Tasks and records each no-work item on the detailing as done with its reason; when two new Tasks cite the same item, the first keeps it, it is removed from the later ones\' citations, and a later Task left citing none of those items is dropped, reported in coverage.dropped and coverage.trimmed. Before the maker runs, the step decides its rerun case from the input record the artifact script keeps for tasks-<slug>.json (depscore.py tasks-inputs): unchanged (replay, or every recorded input hashes as recorded) keeps the saved Tasks as they are, runs no maker and creates only the beads not yet written; changed deletes the Story\'s unstarted Task beads (depscore.py replace-tasks; a started or closed one is kept and named to the maker as existing work) and decomposes the full set again; the case, why, and the beads deleted and kept are returned as rerun. A Task bead is matched by elab_key, else by the delta items it cites, else by title, and updated in place; write-task never deletes or closes one. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay, contention or other, set from the structured result of the step that failed. Items still cited by no Task after that pass fail the Story at stage uncited-items, naming them and the maker\'s answer; no further pass runs. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes; the script writes each Task bead with one depscore.py write-task command' },
   ],
@@ -455,7 +455,8 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
    * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
    * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
-   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
+   * printed ('contention' when bd reported another writer's lock, 'bd-timeout' when it reported
+   * the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
@@ -469,7 +470,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      const cause = ['bd-timeout', 'contention'].includes(r.view.cause) ? r.view.cause : 'other'
       return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
@@ -655,7 +656,7 @@ async function settleAgent(prompt, opts) {
 }
 
 /** The causes a failure may carry that a later dispatch can get past; any other is 'other'. */
-const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay']
+const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay', 'contention']
 /** The cause of a dispatch interruption: 'quota' or 'api', from the stage it was set with. */
 const interruptionCause = (i) => (i && i.stage === 'account-quota-exhausted' ? 'quota' : i && i.stage === 'api-unavailable' ? 'api' : 'other')
 /** One cause for several failures: the first one's when every one is transient, else 'other'. */
@@ -846,6 +847,48 @@ if (!writable) {
 }
 const replayed = a.replay === true
 if (replayed) log(`Decompose replayed: the Tasks are written from the saved tasks-${artSlug}.json`)
+const asList = (x) => (Array.isArray(x) ? x : [])
+/** Why prd-to-spec found this step's saved files stale, when its resume did. */
+const upstreamChange = hasText(a.upstreamChange) ? a.upstreamChange.trim() : ''
+/**
+ * Which rerun case applies, returned as `rerun`. 'unchanged': nothing upstream of the Tasks
+ * changed (prd-to-spec replays the saved tasks-<slug>.json, or every input its artifact record
+ * names hashes as recorded), so the saved Tasks are written as they are and only the beads not
+ * yet created are created. 'replaced': an input changed, so depscore.py replace-tasks deleted
+ * the Story's unstarted Task beads and the full set is decomposed again around the started or
+ * closed ones it kept. 'new': no Task bead existed yet.
+ */
+let rerun = replayed ? { case: 'unchanged', reason: `prd-to-spec found tasks-${artSlug}.json and every input it records current, and replays it` } : null
+let keptTasks = []
+if (!replayed) {
+  const inputs = await depscore('beads:tasks-inputs', `tasks-inputs ${taskArgs}`, null)
+  if (inputs.error) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', reason: `depscore.py tasks-inputs: ${inputs.error}`, spec: specRef }), inputs.cause)
+  if (inputs.unchanged === true) {
+    rerun = { case: 'unchanged', reason: `tasks-${artSlug}.json and every input it records are unchanged: the saved Tasks are kept as they are, and only the ones not yet written are created` }
+  } else {
+    const changed = asList(inputs.changedInputs)
+    const why = [
+      upstreamChange,
+      ...changed.map((c) => `${c.path} ${c.why}`),
+      inputs.saved ? '' : `no tasks-${artSlug}.json is saved`,
+      inputs.saved && !changed.length ? `the input record of tasks-${artSlug}.json cannot show its inputs unchanged (${asList(inputs.unverified).join(', ') || 'it records no input'})` : '',
+    ].filter(hasText).join('; ')
+    const replaced = await depscore('beads:replace-tasks', `replace-tasks --epic ${shq(BEADS.epicId)} --reason ${shq(why)} ${taskArgs}`, BEADS.repo)
+    if (replaced.error) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', reason: `depscore.py replace-tasks: ${replaced.error}`, spec: specRef }), replaced.cause)
+    const deleted = asList(replaced.deleted)
+    keptTasks = asList(replaced.kept)
+    rerun = deleted.length || keptTasks.length
+      ? { case: 'replaced', reason: why, changedInputs: changed, deleted, kept: keptTasks }
+      : { case: 'new', reason: why || 'the Story has no Task bead yet' }
+  }
+  log(`Story story:${artSlug}: rerun case ${rerun.case} — ${rerun.reason}${rerun.case === 'replaced' ? `; deleted ${rerun.deleted.map((d) => d.id).join(', ') || 'none'}, kept ${keptTasks.map((k) => `${k.id} (${k.status})`).join(', ') || 'none'}` : ''}`)
+}
+/** True when the saved Tasks are written as they are and the maker does not run. */
+const reuseSaved = replayed || rerun.case === 'unchanged'
+/** What the maker is told about the Tasks kept when the Story's unstarted Tasks were deleted. */
+const keptBlock = rerun.case !== 'replaced'
+  ? ''
+  : `\n\nREPLACED TASKS: ${rerun.reason}. The Story's unstarted Tasks were deleted and you decompose the full set again; the "existingTasks" list in ${writtenPath} is out of date, so ignore it. These Tasks are kept because they are started or closed: ${keptTasks.map((k) => `${k.elabKey || k.id} (${k.status}: ${k.title}; cites ${asList(k.requirementIds).join(', ') || 'no item'})`).join('; ') || 'none'}. Never write a task for work one of them covers: when a task you write is the same work, set its \`reuses\` to that Task's exact elabKey.`
 const decompositionSchema = {
       type: 'object',
       required: ['tasks'],
@@ -869,7 +912,7 @@ const decompositionSchema = {
       },
     }
 const candidateFile = `${ART.dir}/candidates/tasks-${artSlug}.json`
-const inputBinding = replayed ? null : await relayKit.artifactRevision(settleAgent, { label: 'decompose:inputs', phase: 'Decompose', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), ...specDocs.map(d => d.path), detailingPath, writtenPath].filter(hasText))], relayFile: relayFile('decompose-inputs'), context: { spec, story, repoPath } })
+const inputBinding = reuseSaved ? null : await relayKit.artifactRevision(settleAgent, { label: 'decompose:inputs', phase: 'Decompose', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), ...specDocs.map(d => d.path), detailingPath, writtenPath].filter(hasText))], relayFile: relayFile('decompose-inputs'), context: { spec, story, repoPath } })
 if (inputBinding && !inputBinding.ok) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', reason: inputBinding.error }), inputBinding.cause)
 const inputRevision = inputBinding ? inputBinding.revision : ''
 const makeTasks = () => settleAgent(
@@ -899,7 +942,7 @@ JOB 2 — SEQUENCE (return in \`edges\`): the dependencies between the tasks as 
 
 JOB 3 — SIZE EVERY TASK (return in \`scores\`): ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, \`sizeLow\`, \`sizeHigh\`, \`sizeConfidence\`, and a one-line \`rationale\`.
 
-${specBlock}${relayKit.artifactBrief(candidateFile, decompositionSchema, inputRevision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
+${specBlock}${keptBlock}${relayKit.artifactBrief(candidateFile, decompositionSchema, inputRevision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
@@ -911,7 +954,7 @@ ${specBlock}${relayKit.artifactBrief(candidateFile, decompositionSchema, inputRe
 if (dispatchInterruption) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', spec: specRef }))
 let taskFacts = null
 let recordError = ''
-if (!replayed) {
+if (!reuseSaved) {
   const saved = await relayKit.authorArtifact(settleAgent, { label: 'save:tasks', phase: 'Decompose', runner: RELAY_RUNNER, candidate: candidateFile, file: `${ART.dir}/tasks-${artSlug}.json`, schema: decompositionSchema, revision: inputRevision, relayFile: relayFile('accepted-tasks'), keys: ['tasks.key', 'tasks.title'] }, makeTasks, () => !!dispatchInterruption)
   taskFacts = saved.facts
   if (!saved.ok) {
@@ -1067,6 +1110,7 @@ return withFailure(dispatchOutcome({
       }
     : {}),
   ...(replayed ? { resumed: true } : {}),
+  rerun,
   spec: specRef,
   repoPath,
   story: { id: story.id || null, elabKey: `story:${artSlug}` },

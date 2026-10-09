@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; when a repository failed the run returns ok:false at stage repositories-incomplete. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay or other, set where the failure happens from structured fields (a dispatch interruption, the cause a depscore.py or relay result carries, a child workflow\'s failure.cause), never from a reason\'s text; the run\'s cause is transient (any but other) only when every failed repository\'s is. A transient cause releases the Epic so the next dispatch reruns only the failed steps after the supervisor\'s backoff; any other cause holds the Epic for the incident-responder to diagnose. A failed hold write is made again after backoff, and an Epic whose hold was attempted is never released; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; when a repository failed the run returns ok:false at stage repositories-incomplete. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay, contention or other, set where the failure happens from structured fields (a dispatch interruption, the cause a depscore.py or relay result carries, a child workflow\'s failure.cause), never from a reason\'s text; the run\'s cause is transient (any but other) only when every failed repository\'s is. A transient cause releases the Epic so the next dispatch reruns only the failed steps after the supervisor\'s backoff; any other cause holds the Epic for the incident-responder to diagnose. A failed hold write is made again after backoff, and an Epic whose hold was attempted is never released; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. A Story whose saved Tasks\' inputs are unchanged keeps every Task as it is and gets only the ones not yet written; one whose inputs changed has its unstarted Task beads deleted and the full set decomposed again around the started or closed ones; the case and why are in the run ledger (event task-rerun). Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -184,8 +184,8 @@ const HUMAN_ACTION_STAGE = 'requires-human-action'
  * or relay result carries, a child workflow's failure.cause), never from a reason's text. Every
  * cause but 'other' is transient: a later dispatch, after backoff, can be expected to get past it.
  */
-const CAUSES = ['api', 'quota', 'bd-timeout', 'relay', 'other']
-const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay']
+const CAUSES = ['api', 'quota', 'bd-timeout', 'relay', 'contention', 'other']
+const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay', 'contention']
 const causeOrOther = (c) => (CAUSES.includes(c) ? c : 'other')
 /** The cause of a dispatch interruption: 'quota' or 'api', from the stage it was set with. */
 const interruptionCause = (i) => (i && i.stage === 'account-quota-exhausted' ? 'quota' : i && i.stage === 'api-unavailable' ? 'api' : 'other')
@@ -708,7 +708,8 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
    * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
    * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
-   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
+   * printed ('contention' when bd reported another writer's lock, 'bd-timeout' when it reported
+   * the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
@@ -722,7 +723,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      const cause = ['bd-timeout', 'contention'].includes(r.view.cause) ? r.view.cause : 'other'
       return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
@@ -1177,6 +1178,8 @@ function stepUpstream(phaseId) {
  * while the inputs recorded for its files still match (artifactio.py plan, read now), so an
  * upstream rerun that produced the same files costs no rework downstream.
  */
+/** Why each step's saved files were found stale: the driver's resume ruling, then resumeFresh. */
+const staleWhy = new Map(((RESUME && RESUME.stale) || []).filter((e) => hasText(e.step)).map((e) => [e.step, e.reason]))
 async function resumeFresh(phaseId) {
   const hit = (RESUME && RESUME.phases[phaseId]) || null
   if (!hit) return null
@@ -1191,6 +1194,7 @@ async function resumeFresh(phaseId) {
     }
   }
   const reason = `built from ${redone.map((up) => `${up} (${artPhases[up] || 'not reached'})`).join(', ')}, which this run did not reuse, and its recorded inputs changed`
+  staleWhy.set(phaseId, reason)
   log(`STALE ${phaseId} (${hit.names.join(', ') || 'no file named'}): ${reason} — recreated, not reused`)
   runLedger.push({ phase: 'artifacts', event: 'stale', phaseId, artifacts: hit.names, reason })
   return null
@@ -1747,6 +1751,7 @@ function decompArgs(pair) {
     artifacts: artFor(`tasks:${slug}`, [...docs.map((d) => d.path), artPath(`story-${slug}.json`)], { slug }),
     beads: beadsArgs,
     ...(DESIGN_SYSTEM.packagesDir ? { packagesDir: DESIGN_SYSTEM.packagesDir } : {}),
+    ...(staleWhy.has(`tasks:${slug}`) ? { upstreamChange: staleWhy.get(`tasks:${slug}`) } : {}),
   }
 }
 /** Decomposes one Story and writes its Tasks, or writes the saved task set when the step is complete; returns { ok, artifact } or { ok: false, stage, reason }. */
@@ -1756,6 +1761,11 @@ async function decomposeStory(pair) {
   const tasksHit = await resumeFresh(tasksPhase)
   const replay = !!(tasksHit && ART_ON && tasksHit.names.includes(`tasks-${slug}.json`))
   const r = await settleWorkflow('agent-teams-workforce:task-decomposition', replay ? { ...decompArgs(pair), replay: true } : decompArgs(pair))
+  if (r && r.rerun && hasText(r.rerun.case)) {
+    // The rerun case is in the run ledger, so the dashboard shows which applied and why.
+    runLedger.push({ phase: 'tasks', event: 'task-rerun', phaseId: tasksPhase, repoPath: pair.repoPath, ...r.rerun })
+    log(`Tasks for ${pair.repoPath}: rerun case ${r.rerun.case} — ${r.rerun.reason}`)
+  }
   if (r && r.ok === true) {
     if (replay) reuseFrom(tasksPhase, tasksHit)
     await acceptPhase(tasksPhase, replay ? 'reused' : 'passed')

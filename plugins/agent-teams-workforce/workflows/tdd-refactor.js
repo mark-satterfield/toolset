@@ -484,7 +484,8 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
    * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
    * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
-   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
+   * printed ('contention' when bd reported another writer's lock, 'bd-timeout' when it reported
+   * the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
@@ -498,7 +499,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      const cause = ['bd-timeout', 'contention'].includes(r.view.cause) ? r.view.cause : 'other'
       return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }

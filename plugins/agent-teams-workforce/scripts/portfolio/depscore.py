@@ -86,6 +86,10 @@
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     add-tasks            merge a corrective pass into a Story's saved Tasks and detailing;
                          no `bd` call
+    tasks-inputs         whether a Story's saved Tasks were decomposed from the inputs they
+                         record, unchanged; no `bd` call
+    replace-tasks        delete a Story's unstarted Task beads before its Tasks are
+                         decomposed again (an input upstream of them changed)
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
@@ -156,6 +160,8 @@ from beadwrite import (
     closure_task_edges,
     plan_story_tasks,
     plan_task_edges,
+    replace_tasks,
+    tasks_inputs,
     write_all_task_edges,
     write_story,
     write_task,
@@ -711,7 +717,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tasks of other Epics this Task is blocked by, comma-separated, beside the "
         "ones its saved blockedByExternal names",
     )
-    for task_parser in (pta, adt, wta):
+    tin = sub.add_parser(
+        "tasks-inputs",
+        help="whether a Story's saved Tasks were decomposed from the inputs they record, "
+        "unchanged; runs no `bd` command",
+        parents=[common],
+    )
+    rpt = sub.add_parser(
+        "replace-tasks",
+        help="delete a Story's unstarted Task beads before its Tasks are decomposed again",
+        parents=[common],
+    )
+    rpt.add_argument(
+        "--epic",
+        required=True,
+        help="the Epic whose `story:<slug>` Story the Tasks sit under",
+    )
+    rpt.add_argument(
+        "--reason", required=True, help="which input upstream of the Tasks changed"
+    )
+    for task_parser in (pta, adt, wta, tin, rpt):
         task_parser.add_argument(
             "--dir", required=True, type=Path, help="the Epic's working directory"
         )
@@ -732,6 +757,7 @@ def build_parser() -> argparse.ArgumentParser:
             help="the root spec references are recorded relative to",
         )
     _dry_run_flag(wta)
+    _dry_run_flag(rpt)
 
     pte = sub.add_parser(
         "plan-task-edges",
@@ -1230,6 +1256,8 @@ def run(args: argparse.Namespace) -> dict:
             root=args.project_root,
             packages_dir=args.packages_dir,
         )
+    if command == "tasks-inputs":
+        return head | tasks_inputs(args.dir, slug=args.slug, root=args.project_root)
     if command == "add-tasks":
         return head | add_corrective_tasks(
             args.dir, slug=args.slug, correction=args.correction
@@ -1377,6 +1405,10 @@ def run(args: argparse.Namespace) -> dict:
             )
         return head | listing | {"summary": {"bundles": len(listing["bundles"])}}
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
+    if command == "replace-tasks":
+        return head | replace_tasks(
+            writer, args.epic, slug=args.slug, reason=args.reason
+        )
     if command == "write-task":
         return head | write_task(
             writer,

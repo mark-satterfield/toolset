@@ -15,6 +15,7 @@ import json
 import re
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import beadgraph
@@ -53,7 +54,6 @@ from scoring import JUDGED_HASH_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from beadgraph import Bead, Graph, Writer
 
@@ -484,9 +484,10 @@ def _again(label: str, attempt: int, exc: GraphError) -> bool:
         exc: Its error.
 
     Returns:
-        True when `bd` reported a beads server failure (BD_TIMEOUT) and an attempt remains.
+        True when `bd` reported a lock another writer held or a beads server failure
+        (beadgraph.RETRIED_CAUSES) and an attempt remains.
     """
-    if attempt > len(WRITE_BACKOFF) or exc.cause != beadgraph.BD_TIMEOUT:
+    if attempt > len(WRITE_BACKOFF) or exc.cause not in beadgraph.RETRIED_CAUSES:
         return False
     pause = WRITE_BACKOFF[attempt - 1]
     print(
@@ -1002,45 +1003,125 @@ def _match_tasks(
     return matched, [b for b in free if b.id not in used]
 
 
-def _retire(
-    writer: Writer,
-    leftover: list[Bead],
-    slug: str,
-    items: dict[str, dict[str, str]],
-    work: list[str] | None,
-) -> list[dict]:
-    """Close each open Task bead no Task matched whose work the detailing no longer asks for.
+#: The suffix of the input record the artifact script writes beside a saved file.
+META_SUFFIX = ".meta.json"
 
-    A bead is closed only when it is open (not started), cites at least one delta item, and
-    none of the items it cites is marked add, modify or remove any more; the reason names
-    the detailing change. Any other bead with no counterpart is left as it is.
+#: The statuses of a Task no one has started building.
+UNSTARTED = frozenset({"open", "blocked", "deferred"})
+
+
+def tasks_inputs(directory: Path, *, slug: str, root: Path | None) -> dict:
+    """Whether a Story's saved Tasks were decomposed from the inputs they record, unchanged.
+
+    The artifact script records, beside `tasks-<slug>.json`, the content hash of every input
+    it was decomposed from (`tasks-<slug>.json.meta.json`): the Spec documents and the Story,
+    which carry every change upstream of them (PRD, architecture, TRD, detailing). Each file
+    input is hashed again and compared. Runs no `bd` command.
 
     Args:
-        writer: The tracker writer.
-        leftover: The beads `_match_tasks` left over.
+        directory: The Epic's working directory.
         slug: The Story's repository slug.
-        items: Every detailed delta item of the Epic, as `detailed_items` returns them.
-        work: The ids the repository's detailing marks add, modify or remove, or None.
+        root: The project root the recorded input paths are relative to, or None.
 
     Returns:
-        One `{id, items, reason}` per bead closed.
+        `saved` (the file exists), `recorded` (its input record was read), `changedInputs`
+        (each recorded input that changed or is gone, with why), `unverified` (each recorded
+        input that could not be checked), and `unchanged`: True only when the file is saved,
+        its record names at least one input, and every input checks out unchanged.
     """
-    if work is None:
-        return []
-    marked = set(work)
-    closed: list[dict] = []
-    for b in leftover:
-        cited = [i for i in _cited_ids(b.metadata.get("requirement_ids")) if i in items]
-        if b.status != OPEN or not cited or any(i in marked for i in cited):
+    path = directory / f"tasks-{slug}.json"
+    meta_path = path.with_name(path.name + META_SUFFIX)
+    changed: list[dict] = []
+    unverified: list[str] = []
+    meta: object = None
+    if path.is_file() and meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text("utf-8"))
+        except (OSError, ValueError):
+            meta = None
+    inputs = meta.get("inputs") if isinstance(meta, dict) else None
+    for entry in inputs if isinstance(inputs, list) else []:
+        name = str(entry.get("path") or "") if isinstance(entry, dict) else ""
+        recorded = str(entry.get("sha256") or "") if isinstance(entry, dict) else ""
+        given = Path(name)
+        source = given if given.is_absolute() else (root / given if root else None)
+        if not name or not recorded or entry.get("kind") != "file" or source is None:
+            unverified.append(name or "(an entry naming no path)")
             continue
-        now = ", ".join(f"{i} is {items[i]['status'] or 'unmarked'}" for i in cited)
-        reason = (
-            f"recon-{slug}.json no longer marks the items this Task built add, modify or "
-            f"remove ({now}), and no Task of story:{slug} builds them"
+        if not source.is_file():
+            changed.append({"path": name, "why": "no longer exists"})
+        elif hashlib.sha256(source.read_bytes()).hexdigest() != recorded:
+            changed.append(
+                {"path": name, "why": "changed since the Tasks were decomposed"}
+            )
+    saved = path.is_file()
+    checked = bool(inputs) and not unverified
+    return {
+        "ok": True,
+        "saved": saved,
+        "recorded": isinstance(meta, dict),
+        "changedInputs": changed,
+        "unverified": unverified,
+        "unchanged": saved and checked and not changed,
+        "summary": {
+            "saved": saved,
+            "unchanged": saved and checked and not changed,
+            "changed": len(changed),
+            "unverified": len(unverified),
+        },
+    }
+
+
+def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> dict:
+    """Delete a Story's unstarted Task beads, before its Tasks are decomposed again.
+
+    Runs only when something upstream of the Story's Tasks changed. A Task elaboration wrote
+    (`elab_key` `task:...`) that no one has started (status in UNSTARTED, no `build_state`)
+    is deleted; a started or closed Task, or one elaboration did not write, is kept and
+    returned, so the new decomposition is told about it instead of duplicating it.
+
+    Args:
+        writer: The tracker writer; a dry-run writer records the deletion instead.
+        epic_id: The Epic whose `story:<slug>` Story the Tasks sit under.
+        slug: The Story's repository slug.
+        reason: Which input changed, recorded with the result.
+
+    Returns:
+        `story` (its id, or None when the Story has no bead yet), `deleted` and `kept`, each
+        `{id, title, elabKey, status}` (`kept` also with `requirementIds`), and `reason`.
+    """
+    stories = _keyed(
+        sorted(
+            (bead_of(r) for r in children(writer.repo, epic_id, "story")),
+            key=lambda b: b.id,
         )
-        writer.bd(["close", b.id, "--reason", reason])
-        closed.append({"id": b.id, "items": cited, "reason": reason})
-    return closed
+    )
+    story = stories.get(f"story:{slug}")
+    deleted: list[dict] = []
+    kept: list[dict] = []
+    if story is not None:
+        records = children(writer.repo, story.id, "task")
+        for b in sorted((bead_of(r) for r in records), key=lambda b: b.id):
+            key = str(b.metadata.get("elab_key") or "")
+            facts = {"id": b.id, "title": b.title, "elabKey": key, "status": b.status}
+            started = b.status not in UNSTARTED or bool(b.metadata.get("build_state"))
+            if started or not key.startswith("task:"):
+                ids = _cited_ids(b.metadata.get("requirement_ids"))
+                kept.append(facts | {"requirementIds": ids})
+            else:
+                deleted.append(facts)
+        if deleted:
+            writer.bd(["delete", *(d["id"] for d in deleted), "--force"])
+    return {
+        "ok": True,
+        "story": story.id if story is not None else None,
+        "deleted": deleted,
+        "kept": kept,
+        "reason": reason,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+        "summary": {"deleted": len(deleted), "kept": len(kept)},
+    }
 
 
 def _judged_hash(title: str, text: str, priority: object) -> str:
@@ -1123,9 +1204,9 @@ def _write_task(
 
     The Task sits under the Epic's Story whose `elab_key` is `story:<slug>`, found in beads.
     The Task is the bead `_match_tasks` matches it to (by `elab_key`, else by the items both
-    cite, else by title), updated when it is open, or a new bead when none matches. Before
-    it is written, `_retire` closes the Story's open Task beads that no Task matches and
-    whose items the detailing no longer marks add, modify or remove. Its blockers
+    cite, else by title), updated when it is open, or a new bead when none matches. It
+    never deletes or closes a bead: when the Story's inputs changed, `replace_tasks` removed
+    the unstarted Tasks before the new set was decomposed. Its blockers
     are the Tasks of the Story it depends on, which are written before it. One `bd list`
     finds the Story and one reads its Tasks; one `bd create`, or one `bd update` plus one
     `bd dep add` and a `bd dep remove` per blocker it no longer depends on, writes it.
@@ -1144,8 +1225,7 @@ def _write_task(
 
     Returns:
         The Task, what was done to it, its edge writes, the blockers it carries outside the
-        Story, the beads `_retire` closed, and `warnings`: a Task it depends on that is not
-        written yet is left out of
+        Story, and `warnings`: a Task it depends on that is not written yet is left out of
         its edges (the next run's refresh adds the edge), and an external blocker that is a
         Task of its own Story is taken as a Story edge.
 
@@ -1179,8 +1259,7 @@ def _write_task(
     beads = sorted((bead_of(r) for r in records), key=lambda b: b.id)
     keyed = _keyed(beads)
     items = detailed_items(directory)
-    matched, leftover = _match_tasks(tasks, beads, slug, items)
-    retired = _retire(writer, leftover, slug, items, work_items(directory, slug))
+    matched, _ = _match_tasks(tasks, beads, slug, items)
 
     def found(t: Task) -> Bead | None:
         return matched.get(t.key)
@@ -1270,7 +1349,6 @@ def _write_task(
             "outsideBlockers": outside,
         },
         "edges": edges,
-        "closed": retired,
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -1279,7 +1357,6 @@ def _write_task(
             "id": task_id,
             "action": action,
             **edges,
-            "closed": len(retired),
             "warnings": len(warnings),
         },
     }
