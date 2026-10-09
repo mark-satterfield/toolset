@@ -56,8 +56,10 @@ After a successful run, all of these are true:
    repository, cycles dropped); the bead that plans each `planned-elsewhere` item it needs; and
    each open Task of another Epic named in `blockedByExternal`.
 7. Every work item of `recon-<slug>.json` is cited in `requirementIds` by at least one Task, or is
-   recorded on `recon-<slug>.json` as `done` with the corrective pass's reason. If after the one
-   corrective pass any work item is still uncited, the run failed at stage `uncited-items` naming
+   named, with a reason, in an accepted `noWork` entry of `tasks-<slug>.correction.json`
+   (`recon-<slug>.json` itself is never edited by this flow). Every required work item that
+   `hierarchy.derive_prerequisites` finds without a Task is treated the same way. If after the one
+   corrective pass any such item is still uncited, the run failed at stage `uncited-items` naming
    them (CONTEXT 7.6).
 8. If the detailing has no work items and the maker returned no Tasks, the Story has no Tasks and
    the result says so (`tasks: []`); it then goes straight to deploy and verify.
@@ -76,7 +78,7 @@ From the caller (`prd-to-spec`, `decompArgs`), per Story:
 | `slug` | The Story's repository slug. |
 | `story` | `{id, key, title}` of the Story bead `spec-authoring` wrote (`elab_key` `story:<slug>`). |
 | `spec` | `{id, title, description, source}`: navigation text only (a summary); the contract is in the spec documents. |
-| `specDocs` | `[{path, ref}]`: `<work>/spec-<slug>.md`, `<work>/spec-<slug>.data-model.md`, `<work>/spec-<slug>.criteria.md`, plus any other artifact paths the Spec pair names (API spec, data model, event contracts, error spec); `ref` is the path relative to `<root>` that Tasks cite. |
+| `specDocs` | `[{path, ref}]`: the three documents `spec-authoring` returns as `specPaths`: `<work>/spec-<slug>.md`, `<work>/spec-<slug>.data-model.md`, `<work>/spec-<slug>.criteria.md`; `ref` is the path relative to `<root>` that Tasks cite. There are no other spec artifact paths. |
 | `detailingPath` | `<work>/recon-<slug>.json`. |
 | `packagesDir` | `$ATW_DESIGN_PACKAGES_DIR`: the directory every cited cds bundle must sit in. Optional. |
 | `pluginRoot` | Locates `<plugin>/skills/wsjf/SKILL.md` for the maker's sizing brief. |
@@ -86,7 +88,9 @@ Files read (all under `<work>` unless stated):
 
 - `story-<slug>.json`: the Story's saved document (title, description, acceptance criteria,
   `decisionIds`; a Task citing no `decisionIds` inherits the Story's).
-- `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md` and the other `specDocs`.
+- `spec-<slug>.md`, `spec-<slug>.data-model.md`, `spec-<slug>.criteria.md`.
+- `tasks-<slug>.correction.json` when an accepted corrective answer exists: its `noWork` entries
+  are an input of planning (step 9).
 - `recon-<slug>.json`: `items[]` (`id`, `status`, `element`, `from`, `to`, surface, evidence,
   `plannedBy`) and `uiAuthority.uiItems[]` (`item`, `designSource`, `bundle`, `buildSpec`,
   `sections`, `artifact {kind, slug}`).
@@ -112,13 +116,12 @@ Files:
 | Path | Format and key fields | Written by |
 |---|---|---|
 | `<work>/tasks-<slug>.context.json` | `existingTasks` (`elabKey`, `title`, description head, `status`, `requirementIds`) and `otherEpicTasks` (`id`, `title`, description head, `status`, `epic`), read from beads right before the maker runs; replaces the maker's use of `story-<slug>.written.json`. | step 5 |
-| `<work>/candidates/tasks-<slug>.json` (+ `.progress.json`) | The maker's candidate, schema below, bound to an input revision by `artifactcontract.py submit`. | step 6 (agent) |
-| `<work>/tasks-<slug>.json` | Accepted decomposition: `tasks[]` (`key`, `title`, `description`, `type`, `acceptanceCriteria[]`, `definitionOfDone[]`, `specPaths[]`, `specSections[]`, `requirementIds[]`, `decisionIds[]`, `reuses` (string or null), `blockedByExternal[]`, `surfaces` (list or null)), `testStrategy` (`pyramid`, `coverageThreshold`, `envMatrix[]`, `source`) or null, `rationale`, `edges[]` (`from`, `to`: local keys), `scores[]` (`key`, `jobSize`, `sizeLow`, `sizeHigh`, `sizeConfidence`, `rationale`), `notes`. Canonical JSON; a replaced accepted file is kept as `tasks-<slug>.json.prev` (`jsonartifact.py`). | step 7 |
+| `<work>/candidates/tasks-<slug>.json` | The maker's output file, schema below. Validated once by step 7; not a resume point. | step 6 (agent) |
+| `<work>/tasks-<slug>.json` | Accepted decomposition: `tasks[]` (`key`, `title`, `description`, `type`, `acceptanceCriteria[]`, `definitionOfDone[]`, `specPaths[]`, `specSections[]`, `requirementIds[]`, `decisionIds[]`, `reuses` (string or null), `blockedByExternal[]`, `surfaces` (list or null)), `testStrategy` (`pyramid`, `coverageThreshold`, `envMatrix[]`, `source`) or null, `rationale`, `edges[]` (`from`, `to`: local keys), `scores[]` (`key`, `jobSize`, `sizeLow`, `sizeHigh`, `sizeConfidence`, `rationale`), `notes`. Canonical JSON. | step 7 |
 | `<work>/tasks-<slug>.json.meta.json` | `artifactio.record`: `artifact`, `path` (relative to `<root>`), `epic_id`, `phase` (`tasks:<slug>`), `sha256`, `bytes`, `created_at`, `updated_at`, `inputs[]` (`path`, `kind` `file`, `sha256`). | step 8, again in step 11 |
-| `<work>/candidates/tasks-<slug>.correction.json` | Corrective candidate: `tasks[]` (same item schema, keys `N1`, `N2`, ...), `noWork[]` (`id`, `reason` citing file:line on main), `edges[]` (only into a new Task), `scores[]` (one per new Task). | step 10 (agent) |
-| `<work>/tasks-<slug>.correction.json` | The accepted corrective answer. | step 10 |
+| `<work>/candidates/tasks-<slug>.correction.json` | The corrective maker's output file: `tasks[]` (same item schema, keys `N1`, `N2`, ...), `noWork[]` (`id`, `reason` citing file:line on main), `edges[]` (only into a new Task), `scores[]` (one per new Task). Validated once by step 10. | step 10 (agent) |
+| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | The accepted corrective answer, recorded with `artifactio.record` (inputs: `tasks-<slug>.json` as it was before the merge, `recon-<slug>.json`). Its accepted `noWork` entries are read by planning (step 9) and are an input of `tasks:<slug>` (section 8). | step 10 |
 | `<work>/tasks-<slug>.json` (amended) | `add-tasks` appends the accepted new Tasks under fresh keys `T<n>` past the highest saved key, and their edges and scores. Saved Tasks are not changed. | step 11 |
-| `<work>/recon-<slug>.json` (amended) | `add-tasks` sets each accepted no-work item `status: done`, `doneReason`, `ruledBy: "task-decomposition corrective pass"`, and updates the sha256 recorded for `recon-<slug>.json` in every `*.meta.json` under `<work>` that names it. | step 11 |
 
 Bead writes (all through the beads writer in `beadwrite.py`; every write keyed by `elab_key`):
 
@@ -195,28 +198,31 @@ library functions directly (no `depscore.py` subprocess, no relay, no command-ru
    instead of a Task; `reuses` names the `elabKey` of the existing Task it is; in case `replaced`,
    the kept Tasks are existing work never to be duplicated; `surfaces` is a list or null; one
    artifact per `web-ui` Task; nothing to build -> empty `tasks`, `edges`, `scores` and the reason
-   in `rationale`. Output: `<work>/candidates/tasks-<slug>.json`, submitted with
-   `artifactcontract.py submit` against the decomposition schema and the input revision (step 2's
-   fingerprints plus the context file's sha256). No parallelism: one maker per Story; the composite
-   runs the Stories of an Epic in parallel.
-7. **Accept the candidate** (deterministic; `jsonartifact.py` acceptance as a Python call). Strict
-   JSON (no duplicate keys), schema-valid, revision matches; write canonical
-   `tasks-<slug>.json`, keeping the previous accepted file as `.prev`. On rejection: one new maker
-   session with the exact validation errors (CONTEXT 7.4, clarified instructions); a second
-   rejection fails at stage `decompose`, cause `other`.
+   in `rationale`. Output: the maker writes `<work>/candidates/tasks-<slug>.json` (the
+   decomposition schema is named in the brief by path). No submission helper, no revision
+   binding, no progress file. No parallelism: one maker per Story; the composite runs the Stories
+   of an Epic in parallel. The session runs inside the session runner's section 2 guard
+   (`driver-contract.md` §8).
+7. **Accept the candidate** (deterministic, Python, once). Strict JSON (no duplicate keys) and
+   schema-valid; write canonical `tasks-<slug>.json`. On rejection: one new maker session with the
+   exact validation errors (CONTEXT 7.4, clarified instructions); a second rejection fails at stage
+   `decompose`, cause `other`.
 8. **Record the inputs** (deterministic; `artifactio.record` as a Python call, phase
    `tasks:<slug>`, inputs = section 8's set). A failure fails the run at stage `task-record`, cause
    `other`: without the record the next run cannot prove "unchanged" and would delete and
    re-decompose.
 9. **Plan and write the Task beads** (deterministic; `beadwrite.plan_story_tasks` then
    `beadwrite.write_task` per Task in build order). Planning reads `story-<slug>.json`,
-   `tasks-<slug>.json`, `recon-*.json`, `delta-items.json` and the bundles, runs no `bd`, and:
+   `tasks-<slug>.json`, `recon-*.json`, `delta-items.json`, the bundles and, when it exists, the
+   accepted `tasks-<slug>.correction.json` (its `noWork` ids count as covered), runs no `bd`, and:
    makes repeated keys unique (`K`, `K-2`, ...; an edge on `K` applies to each copy; the n-th score
    on `K` to the n-th copy); drops edges that do not join two known Tasks; drops each edge that
    closes a cycle; derives in-repository `requires` edges and `planned-elsewhere` blockers
    (`hierarchy.derive_prerequisites`); settles each `web-ui` Task on one design source and one
    artifact (`hierarchy.check_cds_contract`); assigns `elab_key`s; computes `uncited` (work items no
-   Task cites) and their briefs. Writing reads the Story's Task beads once, matches every Task
+   Task cites and no accepted `noWork` entry names, plus every required work item
+   `derive_prerequisites` reports without a Task, which today it only warns about) and their
+   briefs. Writing reads the Story's Task beads once, matches every Task
    (`_match_tasks`: `elab_key`, then most delta items in common, then title; a bead matches one
    Task at most; only beads whose `elab_key` starts `task:<slug>:` and that are not closed are
    candidates for the second and third rules), then per Task in build order: create, update an
@@ -227,26 +233,27 @@ library functions directly (no `depscore.py` subprocess, no relay, no command-ru
 10. **One corrective pass** (agent `task-decomposer`, model `fable`, effort `medium`), only when
     step 9's plan has uncited work items. Input paths: `tasks-<slug>.json` (read-only),
     `recon-<slug>.json`, `specDocs`, `story-<slug>.json`, the repository; the brief lists the
-    uncited items exactly (`id`, `status`, `element`, `to`). Output: the corrective candidate,
-    accepted as in step 7 into `tasks-<slug>.correction.json` (revision = sha256 of
-    `tasks-<slug>.json`, `recon-<slug>.json` and the uncited list).
-11. **Merge the corrective answer** (deterministic; `beadwrite.add_corrective_tasks`). Take a new
-    Task only when every work item it cites is uncited; give it a fresh `T<n>` key; when two new
-    Tasks cite the same item the first keeps it, it is removed from the later ones' citations
-    (`trimmed`), and a later Task left citing none of them is dropped (`dropped`); take edges only
-    into a new Task; take a `noWork` entry only for an uncited item no new Task builds, with a
-    reason, and record it on `recon-<slug>.json` as `done`; everything else is `rejected` with why.
-    When Tasks were added, record the inputs again (step 8) and run step 9 again. Items still
-    uncited fail the Story at stage `uncited-items`, naming them, the answer file and the rejected
-    answers. No further pass runs.
+    uncited items exactly (`id`, `status`, `element`, `to`). Output: the maker writes
+    `<work>/candidates/tasks-<slug>.correction.json`; Python validates it once (strict JSON,
+    schema), writes the accepted `tasks-<slug>.correction.json` and records it (section 4).
+11. **Merge the corrective answer** (deterministic; `beadwrite.add_corrective_tasks`, changed so
+    it no longer edits the detailing). Take a new Task only when every work item it cites is
+    uncited; give it a fresh `T<n>` key; when two new Tasks cite the same item the first keeps it,
+    it is removed from the later ones' citations (`trimmed`), and a later Task left citing none of
+    them is dropped (`dropped`); take edges only into a new Task; take a `noWork` entry only for an
+    uncited item no new Task builds, with a reason, and keep it in the accepted correction file
+    (planning reads it, step 9); everything else is `rejected` with why. `recon-<slug>.json` and
+    every other step's `.meta.json` are left untouched. Record the inputs again (step 8, now with
+    the correction file) and run step 9 again. Items still uncited fail the Story at stage
+    `uncited-items`, naming them, the answer file and the rejected answers. No further pass runs.
 12. **Not in this flow: edges between Stories.** After every Story of the Epic is decomposed, the
     composite runs `depscore.py closure-edges` (`beadwrite.closure_task_edges`): for every saved
     Task building item X and every item Y that X requires and that ANOTHER repository's detailing
     marks as work, an edge from each Task of that Story building Y (ends named `S<i>-<key>`, `i` the
     repository's position in the span), and a warning for a required item no Task builds, that no
-    repository details and the span ruling does not record as having no code. It runs no `bd`. Its
-    edges are written with the cross-Story edges by `write-all-task-edges`. Spec:
-    `<orch>/specs/epic/prd-to-spec.md`.
+    repository details and the span ruling does not record as having no code, which fails the
+    composite's step 11. It runs no `bd`. Its edges are written with the cross-Story edges by
+    `write-all-task-edges`. Spec: `<orch>/specs/epic/prd-to-spec.md` steps 11 to 13.
 
 Agents: `task-decomposer` is kept (steps 6 and 10). No other agent is dispatched. The
 `workflow-command-runner` sessions the JS used for `tasks-inputs`, `replace-tasks`, the revision
@@ -257,9 +264,14 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
 
 **Kept**
 
-- Candidate acceptance (strict JSON, schema, revision): the planner normalizes instead of
+- Candidate acceptance (strict JSON, schema), once, in Python: the planner normalizes instead of
   refusing, so a malformed shape (an edge list of strings, a duplicate JSON key) would silently
   drop dependencies or contract fields on the beads, and nothing after it looks at the raw shape.
+- A required work item with no Task (`derive_prerequisites`) joins the uncited list: without it a
+  `blocks` dependency with no builder reaches beads, and nothing later catches it (S01h finding
+  24).
+- Section 2 hard limit: the session runner's guard around both maker sessions
+  (`driver-contract.md` §8); the `task-decomposer` holds Write.
 - Unique keys, edges only between known Tasks, cycle edges dropped: without them build order is
   undefined and a cyclic `blocks` set in beads deadlocks the build lane; nothing later repairs it.
 - Matching by `elab_key`, then cited items, then title, and never creating when a bead matches:
@@ -277,8 +289,9 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
   Story as changed and deletes its unstarted Tasks.
 - Normalizations kept as recorded `warnings`, not gates: a Task citing no work item; two artifacts
   in one `web-ui` Task (first kept, others named in its description); several bundles (newest
-  kept); an unknown design source (taken as `cds`); an invalid size (no size metadata written, so
-  `wsjf-scoring` judges it later and the Task stays unselectable until then, CONTEXT 7.8).
+  kept); an unknown design source (taken as `cds`); an invalid size (no size metadata written; the
+  Task then stays unscored and unselectable, CONTEXT 7.8, and nothing in the Epic pipeline or the
+  driver sizes it later: merged question Q10 in `wsjf-scoring.md`).
 
 **Dropped**
 
@@ -287,8 +300,13 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
   matching error text, which CONTEXT 7.4 forbids; the session runner returns a structured cause.
 - The relay: numbered relay files, `relayrun.py`, checksum-guarded commands and the receipt checks
   on relayed results; every call is direct.
-- The candidate "probe" and "recover" dance and the "revision binds the paths alone" fallback: the
-  orchestrator checks the candidate file and its bound revision itself.
+- The candidate protocol of the sandbox: `artifactcontract.py submit`, the input-revision binding,
+  `.progress.json` checkpoints, the "probe" and "recover" dance, the "revision binds the paths
+  alone" fallback and the `.prev` copy. They exist because the sandbox cannot read files; Python
+  reads the maker's output file and validates it once.
+- `add-tasks` editing `recon-<slug>.json` and re-binding its sha256 in every `*.meta.json` under
+  `<work>`: it rewrote another step's input records so their staleness checks could not see the
+  change; the accepted correction file is an input of planning instead.
 - The `replay` argument: the fingerprint decision (step 2) covers it; a composite resume that
   finds `tasks:<slug>` fresh and this flow's `unchanged` case are the same fact.
 - Rebuilding a Task list from the plan or the accepted file when no `write-task` result was relayed:
@@ -301,7 +319,7 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
 | Failure point | Stage | Cause | Retry reasonable? |
 |---|---|---|---|
 | No `repoPath`, or no Story `story:<slug>` in beads | `input` | `other` | No: an upstream fault; the composite reports it. |
-| `bd` lock held by another writer (beads read, delete, create, update, dep) | `decompose` (step 4), `task-write` (step 9) | `contention` (from `GraphError.cause`, set from `bd`'s stderr where it fails) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so an applied write is updated, never created twice. |
+| `bd` lock held by another writer (beads read, delete, create, update, dep) | `decompose` (step 4), `task-write` (step 9) | `contention` (today `GraphError.cause`, chosen from `bd`'s standard error, which CONTEXT 7.4 does not accept as structured; the structured fact is merged question Q5 in `driver-contract.md`) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so an applied write is updated, never created twice. |
 | Beads server or connection failure | same | `bd-timeout` | Yes, same backoff. |
 | Any other `bd` error | same | `other` | No. |
 | Maker session: API error | `decompose` | `api` | Yes, through the owner's breaker (`breaker.py`). |
@@ -312,7 +330,8 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
 | Items still uncited after the corrective pass | `uncited-items` | `other` | No: the incident-responder diagnoses it. |
 
 The cause is always taken from the structured fact at the failure point (exit status, exception
-type, `GraphError.cause`, the session runner's result), never from message text. `relay` has no
+type, the session runner's result; for `bd`, the fact merged question Q5 settles), never from
+message text. `relay` has no
 producer in this flow. When several Task writes fail, the result's cause is the first one's when
 every cause is retryable (`contention`, `bd-timeout`, `api`, `quota`), else `other`.
 
@@ -324,13 +343,13 @@ as `{path, kind: "file", sha256}`):
 1. `<work>/spec-<slug>.md`
 2. `<work>/spec-<slug>.data-model.md`
 3. `<work>/spec-<slug>.criteria.md`
-4. every other spec artifact path the Story's spec pair names (`specDocs` beyond the three above)
-5. `<work>/story-<slug>.json`
-6. `<work>/recon-<slug>.json` (the detailing; see Open question 1)
+4. `<work>/story-<slug>.json`
+5. `<work>/recon-<slug>.json` (the detailing; CONTEXT 7.5 names it, and the maker reads it)
+6. `<work>/tasks-<slug>.correction.json`, once an accepted corrective answer exists
 
-The PRD, the architecture and the TRD are covered through these: the composite's resume reruns the
-spec step when its recorded inputs (`trd.md`, `repo-scoping.json`, `recon-<slug>.json`, the PRD)
-change, which rewrites the spec files. "Unchanged" is true only when `tasks-<slug>.json` exists,
+This list is the single source; `prd-to-spec.md` refers here. The PRD, the architecture and the
+TRD are covered through these: the spec step reruns when its recorded inputs (`trd.md`,
+`repo-scoping.json`, `recon-<slug>.json`, the PRD) change, which rewrites the spec files. "Unchanged" is true only when `tasks-<slug>.json` exists,
 its record names at least one input, and every recorded input exists and hashes as recorded. An
 input recorded without a hash, or not of kind `file`, makes the decision "changed" (never "can't
 tell").
@@ -349,11 +368,13 @@ elaboration). See Open questions 2 and 3 for the edge cases.
 
 | Saved result | Fingerprinted by | A rerun after it redoes |
 |---|---|---|
-| `candidates/tasks-<slug>.json` complete at the current revision | revision = section 8 inputs + context file sha256 | Acceptance only; no maker session. |
 | `tasks-<slug>.json` + its `.meta.json` | section 8 inputs | Nothing upstream; case `unchanged`: plan and write only the missing or differing Task beads; no session. |
 | Deletion of unstarted Tasks (step 4) | not saved (beads are the record) | If the run stops before step 8, the next run still sees "changed", deletes any unstarted Tasks again (none, or ones this run created), recomputes `kept`, and decomposes. |
 | Task beads (step 9) | `elab_key` on each bead | Only beads missing or differing are written; started and closed ones are untouched. |
-| `tasks-<slug>.correction.json` accepted | sha256 of `tasks-<slug>.json`, `recon-<slug>.json`, the uncited list | The merge (idempotent: answers for items already cited are rejected) and the bead writes; no session. |
+| `tasks-<slug>.correction.json` accepted + its `.meta.json` | `tasks-<slug>.json` as it was before the merge, `recon-<slug>.json` | The merge (idempotent: answers for items already cited are rejected) and the bead writes; no session. |
+
+An interrupted maker session leaves at most a candidate file with no accepted result; the rerun
+starts that session again (no partial candidate is trusted).
 | `uncited-items` failure with unchanged inputs | the same accepted correction | Reproduces the failure without starting a session (CONTEXT 7.4: no retry with nothing changed). |
 
 Restart cost: a rerun with unchanged inputs starts no agent session and makes one beads read plus
@@ -372,7 +393,7 @@ writes only for what is missing or differs.
   retry of a rejected candidate with the validation errors; nothing reruns with nothing changed;
   causes are structured.
 - **7.8 Selection filters:** a Task gets size metadata only from a valid score; one without is not
-  selectable until `wsjf-scoring` sizes it.
+  selectable until something sizes it, and who does is merged question Q10 in `wsjf-scoring.md`.
 - **7.10 Repositories:** the Story's single repository only; this flow creates and places no
   repository.
 - **7.11 Deterministic over agentic:** only decomposition and the corrective answer are agent
@@ -385,34 +406,32 @@ writes only for what is missing or differs.
 
 ## 10. Open questions
 
-1. **Detailing in the fingerprint set.** The current record names only the spec documents and
-   `story-<slug>.json`, relying on the spec step to carry detailing changes. CONTEXT 7.5 lists the
-   detailing explicitly, and the maker reads `recon-<slug>.json` directly, so this spec adds it
-   (section 8, item 6). The corrective pass amends `recon-<slug>.json` and re-binds its hash in
-   every record, so this does not by itself cause a rerun. Confirm. Also confirm that other Epics'
-   open Tasks (`otherEpicTasks`) do not belong in the set.
-2. **Does a stopped or failed build count as started?** The build lane writes `build_stop_stage`
+1. **[S02] Other Epics' open Tasks in the fingerprint set.** The maker reads `otherEpicTasks` (in
+   `tasks-<slug>.context.json`) to avoid duplicating their work, but they are not an input of
+   section 8, so a new open Task of another Epic does not cause a rerun. Confirm they stay out.
+   (Adding the detailing, item 5, needs no confirmation: CONTEXT 7.5 names it, and the corrective
+   pass no longer edits it.)
+2. **[S02] Does a stopped or failed build count as started?** The build lane writes `build_stop_stage`
    (`red-unsatisfied`, `blocked-upstream`, `no-progress`, `cds-audit`), the `cds_audit_*` keys, and
    `build_state` only for some failed stages (`emission._STATE_BY_FAILED_STAGE`), then releases the
    Task to `open`. A Task stopped at `red-unsatisfied`, or failed at a stage with no
    `build_state`, therefore looks unstarted and is deleted on a `replaced` rerun, although its
    Story worktree may hold its work. Should any build-lifecycle metadata mark it started?
-3. **`blocked` and `deferred`.** `replace_tasks` treats them as unstarted (deleted), while
+3. **[S02] `blocked` and `deferred`.** `replace_tasks` treats them as unstarted (deleted), while
    `write_task` treats every non-`open` bead as started (never rewritten). Which is intended?
-4. **Deleting a Task other beads depend on.** `bd delete --force` removes the deleted Task's edges.
-   A Task of another Epic that named it in `blockedByExternal` loses that edge silently and nothing
-   re-points it. Refuse, re-point, or accept?
-5. **Warn or refuse.** The workflow description and the maker brief say `plan-tasks` refuses a plan
-   in which a required work item has no Task, and the agent definition says it refuses a `web-ui`
-   Task citing ui items of two artifacts; the code only warns in both cases (`derive_prerequisites`,
-   `check_cds_contract`). Which behavior?
-6. **`surfaces` when the spec does not settle it.** The agent definition tells the maker to emit the
-   literal `unknown`; the schema accepts a list or null, and the writer stores `unknown` for null.
-   This spec briefs null. Align the agent definition?
-7. **Agent `isolation: worktree`.** The `task-decomposer` frontmatter asks for a worktree, but the
-   maker writes only its candidate under `<work>`. S02 decides whether the new runner honors it.
-8. **`write-task`'s own retry** uses pauses of 2 s and 5 s (`WRITE_BACKOFF`), not CONTEXT 7.4's
-   30 s doubling to 30 minutes. S02 decides whether the backoff moves to the orchestrator and the
-   library retry goes.
-9. **Candidate retry.** The current code never re-runs the maker on a rejected candidate; this
-   spec allows one retry with the validation errors (CONTEXT 7.4). Confirm.
+4. **[S02] Deleting a Task other beads depend on.** `bd delete --force` removes the deleted Task's
+   edges. A Task of another Epic that named it in `blockedByExternal` loses that edge silently and
+   nothing re-points it. Refuse, re-point, or accept?
+5. **[S02] Two artifacts in one `web-ui` Task.** The agent definition says `plan-tasks` refuses a
+   `web-ui` Task citing ui items of two artifacts; the code only warns (`check_cds_contract`) and
+   keeps the first. Which behavior? (The other half of the old question, a required work item with
+   no Task, is settled: it joins the uncited list, S01h finding 24.)
+6. **[S02] `surfaces` when the spec does not settle it.** The agent definition tells the maker to
+   emit the literal `unknown`; the schema accepts a list or null, and the writer stores `unknown`
+   for null. This spec briefs null. Align the agent definition?
+- Agent `isolation: worktree`: merged question Q2 in `driver-contract.md`.
+- `write-task`'s own retry (`WRITE_BACKOFF`): merged question Q4 in `driver-contract.md`.
+- The single list of fingerprint inputs and whether the driver's resume ruling uses it: merged
+  question Q6 in `driver-contract.md`.
+- Candidate retry: settled; CONTEXT 7.4 allows a retry that carries the exact validation errors
+  (S01h merged question Q16).

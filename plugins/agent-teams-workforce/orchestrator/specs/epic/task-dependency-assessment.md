@@ -84,7 +84,9 @@ Files (under `<workDir>`):
   withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath, summary: {task,
   openTasks, standing, owned, handMade, withdrawn}}`.
 - `edges.json` (agent): `{edges: [{from, to, reason, confidence, answers?}], withdrawn: [{from,
-  to, reason}]}` plus (new) `inputs` stamped by Python. No `archCheck` at Task level.
+  to, reason}]}`; nothing is stamped into it. No `archCheck` at Task level.
+- `edges.json.meta.json` (new, step 5): `artifactio.record` with inputs `context.json` and the
+  `context/` directory, as in the Epic spec.
 - `reasoning.md` (agent): what the Task consumes and provides, per-edge and per-withdrawal
   reasoning, related Tasks read, findings, uncertainty.
 - `validation.json`: `edgeset.validate(level="task")` (as in the Epic spec, with `notTaskToTask`
@@ -109,8 +111,8 @@ edge outcome.
    Task, or a Task elaboration wrote (`elab_key`).
 2. `deterministic` **Context**: `assesscontext.task_context(graph, task, context_dir)` (today
    `depscore.py assess-context --task <id> --dir context --out context.json`).
-3. `deterministic` **Reuse**: input fingerprint = sha256 of `context.json` and every file under
-   `context/`; skip step 4 when `edges.json` carries the same `inputs`.
+3. `deterministic` **Reuse**: skip step 4 when `edges.json` exists and every input recorded in
+   its `.meta.json` (`context.json`, the `context/` directory) hashes as recorded.
 4. `agent` **Assess**: `task-dependency-mapper` (assignment: one Task created outside
    elaboration). Input paths: `context/task/<task>.md`, `context/task/`, `context/index.md`,
    `context.json`; `priorFailure` when given. Brief: THE TEST (consumes/provides; both ends are
@@ -120,8 +122,9 @@ edge outcome.
    `medium` (frontmatter and JS), `maxTurns` 100. Right-sized: reading a bounded set of Task
    descriptions for consume/provide matches is narrower than the Epic test; a missing edge is
    caught only at build time (a Task built before its provider), so a capable model is kept. One
-   session; nothing in parallel.
-5. `deterministic` **Stamp**: add `inputs` to `edges.json`.
+   session; nothing in parallel. It runs inside the session runner's section 2 guard
+   (`driver-contract.md` §8).
+5. `deterministic` **Record**: `artifactio.record` of `edges.json` with the step 3 inputs.
 6. `deterministic` **Validate**: `edgeset.validate(graph, edges, task, withdrawn, "task")`.
 7. `agent` **Correct** (only when step 6 is not ok, at most once): `task-dependency-mapper`, new
    session, with `validation.json` and the instruction to revise to THE TEST. Then 5 and 6 again.
@@ -183,11 +186,11 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
 ## 8. Resume points
 
 - Steps 1, 2: recomputed every run.
-- Step 4 (and 7): `edges.json` + `reasoning.md`, fingerprinted by `context.json` and the corpus and
-  index files; an unchanged fingerprint starts no session.
+- Step 4 (and 7): `edges.json` + `reasoning.md`, with `edges.json.meta.json` recording
+  `context.json` and the corpus and index files; unchanged recorded inputs start no session.
 - Step 8: idempotent. Step 9: idempotent (writes only changed Story edges and keys). Step 10:
   resumes as `wsjf-scoring` does.
-- A stable `workDir` is needed (shared open question with the other two specs).
+- A stable `workDir` is needed: merged question Q8 in `wsjf-scoring.md`.
 
 ## 9. Owner rules that apply
 
@@ -201,14 +204,14 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
 
 ## 10. Open questions
 
-1. **Keep or delete this flow.** It has no caller: no plugin command, no driver trigger, and the
-   Epic pipeline writes its own Tasks' edges. The commit that removed the triggers says Tasks come
-   only from `prd-to-spec`. If the owner never creates Tasks by hand, the flow (and the
+1. **[owner] Keep or delete this flow.** It has no caller: no plugin command, no driver trigger,
+   and the Epic pipeline writes its own Tasks' edges. The commit that removed the triggers says
+   Tasks come only from `prd-to-spec`. If the owner never creates Tasks by hand, the flow (and the
    `task-dependency-mapper`'s second assignment, and `assess-plan --level task` /
-   `assess-context --task`) can go; if the owner does, it needs a command. The owner decides; S08
-   or S15 acts on it.
-2. **Orphan Tasks are never scored.** A Task with no Epic has no value to inherit and so never
-   gets a `wsjf`, which keeps it out of the build lane even after this flow gives it edges. Is
-   that intended, or should such a Task be refused at step 1? The owner decides.
-3. **`task-dependency-mapper` model.** Its frontmatter says `model: fable`; S02 confirms that the
-   headless runner resolves that alias and that it is the intended model for this assignment.
+   `assess-context --task`) can go; if the owner does, it needs a command. S08 or S15 acts on the
+   answer.
+2. **[owner] Orphan Tasks are never scored.** A Task with no Epic has no value to inherit and so
+   never gets a `wsjf`, which keeps it out of the build lane even after this flow gives it edges.
+   Is that intended, or should such a Task be refused at step 1?
+- The `task-dependency-mapper`'s `fable` model: merged question Q1 in `driver-contract.md`.
+- A stable work directory: merged question Q8 in `wsjf-scoring.md`.

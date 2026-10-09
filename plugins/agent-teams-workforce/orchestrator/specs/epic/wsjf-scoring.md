@@ -97,13 +97,18 @@ Files (under `<workDir>`; JSON unless stated):
   refinedSize, tasks}` per Epic whose elaboration is done and whose Tasks are all sized),
   `summary: {items, toJudge, referenceJobs, ids (epic) | groups: [{key, epic, tasks}] (task)}`.
 - `prd/<epic-id>.md`: the PRD of each Epic to judge.
+- `judgments/<level>/<key>.input.json` (new, written by step 3): `{<id>: <judging fingerprint>}`
+  for every item the session covers, in canonical JSON. It is the session's resume input.
 - `judgments/epic/<epic-id>.json`: `{rubric: "epic-wsjf", scores: [{id, userBusinessValue,
   timeCriticality, confidence, jobSize?, sizeLow?, sizeHigh?, sizeConfidence?, rationale:
-  {userBusinessValue, timeCriticality, jobSize}}], unscored: [{id, reason}]}`, plus (new)
-  `inputs: {<id>: <judging fingerprint>}` for resume.
+  {userBusinessValue, timeCriticality, jobSize}}], unscored: [{id, reason}]}`, written by the
+  agent; nothing is stamped into it.
 - `judgments/task/<group-key>.json`: `{rubric: "task-wsjf", scores: [{id, jobSize, sizeLow,
-  sizeHigh, sizeConfidence, rationale: {jobSize}}], unscored: [{id, reason}], inputs: {...}}`;
-  group key = the Epic id, or the Task id for a Task with no Epic.
+  sizeHigh, sizeConfidence, rationale: {jobSize}}], unscored: [{id, reason}]}`; group key = the
+  Epic id, or the Task id for a Task with no Epic.
+- `judgments/<level>/<key>.json.meta.json` (new, step 6): `artifactio.record` of the judgment file
+  with the session's `<key>.input.json` and its other input files (`prd/<id>.md` for an Epic,
+  `judge-input-<level>.json`) as inputs: the one input-record format of every Epic flow.
 - `record.json`: `{dryRun, written: [ids], adopted: [ids], rejected: [{id, level, reason}],
   missing: [ids], unreadable: [{file, reason}], planned, summary: {dryRun, written, adopted,
   rejected, missing, unreadable}}`.
@@ -134,9 +139,11 @@ summary>, failures: [{step, cause, reason}]}`.
    `scoring.judge_input(graph, plan, level, prd_dir)` (today `depscore.py judge-input --plan
    score-plan.json --level epic|task [--prd-dir prd] --out judge-input-<level>.json`). The epic
    level writes `prd/<id>.md` for each Epic to judge. Skipped for a level with nothing to judge.
-3. `deterministic` **Reuse**: for each planned session (one per Epic id; one per Task group), if
-   `judgments/<level>/<key>.json` exists and its `inputs` equals the current plan fingerprints of
-   every item the session covers, the session is not started.
+3. `deterministic` **Reuse**: for each planned session (one per Epic id; one per Task group), write
+   `judgments/<level>/<key>.input.json` (the current plan fingerprints of every item the session
+   covers). If `judgments/<level>/<key>.json` exists and every input recorded in its `.meta.json`
+   hashes as recorded (so the fingerprints are the ones it was judged from), the session is not
+   started.
 4. `agent` **Judge Epic** (one session per Epic id still to judge): `wsjf-scorer`. Input paths:
    `prd/<id>.md`, `judge-input-epic.json` (its entry and `referenceJobs`), `archPath`,
    `projectRoot`. Brief: the facts the JavaScript states (judge UBV, TC, value confidence, and
@@ -151,9 +158,10 @@ summary>, failures: [{step, cause, reason}]}`.
    judged, with the split noted in its rationale. Output: `judgments/task/<key>.json`. Model
    `sonnet`, effort `medium`; right for the same reason.
    Steps 4 and 5 all run in parallel: every session reads only its own items, and no session's
-   result is another's input.
-6. `deterministic` **Stamp inputs**: after each session returns, Python adds `inputs` (the plan
-   fingerprints of the session's items) to its judgment file. The agent never writes it.
+   result is another's input. Each session runs inside the session runner's section 2 guard
+   (`driver-contract.md` §8): `wsjf-scorer` holds Write and Edit and reads `archPath`.
+6. `deterministic` **Record inputs**: after each session returns, Python records the judgment file
+   with `artifactio.record` (inputs in section 4). The agent never writes the record.
 7. `deterministic` **Record**: when the plan has anything to judge or adopt,
    `scoring.record(graph, plan, judgments, writer)` over every `*.json` under `judgments/epic/`
    and `judgments/task/` (today `depscore.py record --plan score-plan.json --epics-dir
@@ -193,8 +201,9 @@ Agents dispatched by the JavaScript, accounted for:
 - `score` writes a bead only when a non-volatile value changed (`scoring._write`, numbers compared
   as numbers): kept as the idempotence that makes a rerun cost nothing; without it every run
   rewrites every scored bead.
-- Reuse (step 3) compares the stored `inputs` with the current fingerprints: without it a judgment
-  of old content is recorded with a new fingerprint and never re-judged.
+- Reuse (step 3) compares the recorded input file with the current fingerprints: without it a
+  judgment of old content is recorded with a new fingerprint and never re-judged.
+- Section 2 hard limit: the session runner's guard around each judging session.
 
 **Checks dropped**
 - `resolveArgs` / `refuseArgs` (a Python script run through a relay to resolve paths from env
@@ -213,10 +222,12 @@ Agents dispatched by the JavaScript, accounted for:
 
 ## 7. Failure causes
 
-- `beads` read or write fails in steps 1, 2, 7, 8 (`beadgraph.GraphError`): `bd-timeout` or
-  `contention` when `beadgraph._bd`'s connection retry gave up on a retryable error, else
-  `other`. Retry reasonable for `bd-timeout`/`contention` (backoff 30 s doubling, cap 30 min);
-  not for `other`. See Open question 4: the cause is not a structured field today.
+- `beads` read or write fails in steps 1, 2, 7, 8 (`beadgraph.GraphError`): its `cause` field
+  (`beadgraph.py`: `CONTENTION`, `BD_TIMEOUT`, else `OTHER_CAUSE`) gives `contention`,
+  `bd-timeout` or `other`. Retry reasonable for `bd-timeout`/`contention` (backoff 30 s doubling,
+  cap 30 min); not for `other`. The field exists, but `beadgraph._bd` chooses it by reading `bd`'s
+  standard error, which CONTEXT 7.4 does not accept as a structured fact; merged question Q5 in
+  `driver-contract.md`.
 - `ScoringError` from the rubric or a malformed plan file: `other`; not retried (same input, same
   result); incident-responder.
 - A judging session fails: `api` or `quota` from the headless runner's structured result (the
@@ -229,14 +240,15 @@ Agents dispatched by the JavaScript, accounted for:
 ## 8. Resume points
 
 - Steps 1 and 2: not saved as resume points; recomputed every run from beads (cheap, no session).
-- Step 4/5 judgment files: saved; fingerprint = the judging fingerprint of each item the session
-  covers (`inputs`). A rerun starts no session whose items' fingerprints are unchanged.
+- Step 4/5 judgment files: saved, each with `.meta.json`; fingerprint = the session's
+  `<key>.input.json` (the judging fingerprint of each item the session covers) and its other input
+  files. A rerun starts no session whose recorded inputs are unchanged.
 - Step 7: its effect is in beads (`wsjf_content_hash` = plan fingerprint). A rerun after step 7
   plans none of those items, so it judges nothing again.
 - Step 8: idempotent; a rerun writes only what changed (nothing, if nothing changed).
 - A rerun after any point therefore redoes no session whose inputs are unchanged and starts no
-  session when nothing needs judging. This needs a `workDir` that survives between runs: see Open
-  question 1.
+  session when nothing needs judging. This needs a `workDir` that survives between runs: merged
+  question Q8.
 
 ## 9. Owner rules that apply
 
@@ -259,25 +271,33 @@ Agents dispatched by the JavaScript, accounted for:
 
 ## 10. Open questions
 
-1. **Work directory for resume.** The command creates a fresh `workDir` per run
-   (`.claude/workflow-runs/wsjf-scoring/<timestamp>`), so a crashed run's judgments are never
-   reused. Reuse needs a stable directory (for example
-   `<control>/.claude/workflow-runs/artifacts/_portfolio/wsjf-scoring/`). S02 decides.
-2. **Epic PRD source.** Judging reads the Epic's bead `description` as its PRD; `prd-to-spec`
-   reads the vault PRD it finds through `workitems.find_prd` / `$ATW_PRD_DIR`. If the two differ,
-   value is judged from a different text than the one elaborated. S02 or the owner decides which
-   is authoritative.
-3. **Who scores a new Epic.** With the triggers removed, a new Epic is never elaborated until the
-   owner runs this command (and `dependency-assessment`). Whether the owner wants that manual
-   step to stay, or wants the orchestrator to score new Epics itself, is the owner's call; commit
-   `64b4adbb` removed the automatic triggers on purpose.
-4. **Structured cause for `bd` failures.** `beadgraph._bd` decides retryable connection errors by
-   matching `bd`'s stderr (`connection_retryable`), and `GraphError` carries no cause field. CONTEXT
-   7.4 forbids classifying by error text. S02 decides how `bd` failures get a structured cause
-   (shared with every flow that writes beads).
-5. **`wsjf-scorer` frontmatter `isolation: worktree`.** A judging session that runs in its own
-   worktree must still write its judgment to `<workDir>` (absolute path outside the worktree).
-   S02 confirms the headless runner honours or ignores that field.
-6. **Leftover driver trigger vocabulary.** `ledger.EVENT_TYPES` `trigger_plan`/`trigger_dispatch`
-   and `failures.py`'s `trigger_dispatch` handling have no producer. Whether to keep them for old
-   ledgers or remove them is for `<orch>/specs/epic/driver-contract.md` / S05.
+**Q8 [S02] (merged; also asked in `dependency-assessment.md` and `task-dependency-assessment.md`).
+A stable work directory for the owner-run portfolio flows.** The commands create a fresh `workDir`
+per run (`.claude/workflow-runs/wsjf-scoring/<timestamp>`, and the same for the two assessment
+flows), so a crashed run's judgments and edges are never reused. Reuse needs a stable directory
+(for example `<control>/.claude/workflow-runs/artifacts/_portfolio/<flow>/`, or per Epic or Task
+for the assessments).
+
+**Q9 [S02] (merged; also asked in `dependency-assessment.md`). Which PRD text is authoritative for
+judging and assessment?** Judging and the assessment corpus read the Epic's bead `description` as
+its PRD; `prd-to-spec` reads the vault PRD it finds through `workitems.find_prd` /
+`$ATW_PRD_DIR`. If the two differ, value and edges are judged from a different text than the one
+elaborated. S02 checks whether the driver's PRD-to-Epic sync (`ATW_PRD_EPIC_SYNC`,
+`ATW_PRD_EPIC_VERIFY`) keeps them equal, and if not, picks the vault PRD or the description.
+
+**Q10 [owner] (merged; also asked in `dependency-assessment.md`, `task-decomposition.md` and
+`prd-to-spec.md`). Do new Epics, and Tasks left unsized, stay manual for scoring and dependency
+assessment, or does the orchestrator run them?** With the triggers removed (commit `64b4adbb`, on
+purpose), a new Epic has no `wsjf` and no `tracks` edges until the owner runs
+`/wsjf-scoring` and `/dependency-assessment`, so the driver never selects it. The same holds for a
+Task `task-decomposition` writes without a valid size: nothing in the Epic pipeline or the driver
+judges its size later, so it stays unselectable (CONTEXT 7.8) and the Epic's size roll-up is
+incomplete until the owner runs `/wsjf-scoring`. If the owner wants the orchestrator to do it, S02
+picks where (for unsized Tasks: `task-decomposition`'s one corrective pass with the exact Task keys,
+or Task-level judging for this Epic's unsized Tasks before `elaboration-finish`).
+
+1. **[S02] Leftover driver trigger vocabulary.** `ledger.EVENT_TYPES` `trigger_plan`/
+   `trigger_dispatch` and `failures.py`'s `trigger_dispatch` handling have no producer. Keep them
+   for old ledgers or remove them (S05)?
+- The structured cause for `bd` failures: merged question Q5 in `driver-contract.md`.
+- `wsjf-scorer` frontmatter `isolation: worktree`: merged question Q2 in `driver-contract.md`.

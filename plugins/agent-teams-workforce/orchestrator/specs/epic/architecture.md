@@ -83,20 +83,23 @@ After a successful run, all of the following are true:
    `docs(architecture): integrate the approved target for <subject>` or
    `docs(architecture): approve existing views for <subject>`.
 9. Section 2 (`<arch>/arc42/02-architecture-constraints/`) is byte-identical to the start of the run.
-   If any session changes it, it is restored from the copy taken at the start and the run fails
-   (hard limit).
+   If any session changes it, the session runner's guard (`driver-contract.md` §8) restores it from
+   the copy taken before that session and the run fails (hard limit).
 10. `<arch>/target/<subject>/closure.json` holds the checked prerequisite closure:
     - `prerequisites[]`: each has `element`, `state` (`absent` | `stale` | `planned`), `views`,
       `requiredBy`, `requires`, `evidence`, `deployedBy`, `plannedBy`, `repository` and `reason`.
     - `rootEdges[]`, `satisfied[]`, `version` and `roots`.
     - There is no cycle. Every `planned` prerequisite is planned by an open bead.
-    The path is `target/<subject>/closure.json`, not `delta/closure.json` (see Open question 1).
+    The path is `target/<subject>/closure.json` (beside `baseline.json`), not `delta/closure.json`:
+    the code writes it there (`archclosure.write_closure`) and every Epic spec reads it there. The
+    `meta.description` and PLAN S01a say `delta/`; see Open questions.
     `depscore.py arch-delta` later lists these entries as `prerequisite` items.
 11. The step returns a result. On success it has `ok: true`, `subject`, `subjectName`, `targetDir`,
     `deltaDir`, `architectureChange`, `closure {path, workPath, prerequisites}`, `targetPath`,
     `surveyPath`, `decisionPath`, `architectureUpdate` (counts), `architectureUpdatePath`,
     `ledgerPath`, `rounds`, `openItems` and `noArchitectureChange` (publication-only path). On failure
-    it has `{ok: false, stage, reason, cause}`, plus `requiredHumanActions` for `owner-concern`.
+    it has `{ok: false, stage, reason, cause}`, plus `requiredHumanActions` for the two owner-fact
+    stages, `owner-concern` and `no-arch-path`.
 12. The step writes nothing to beads. It only reads them: the survey and closure sessions read them
     through `atw-bd`, and `arch-closure` reads bead status.
 
@@ -138,7 +141,7 @@ Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. D
 | `draft/` | writers; `arch-target --seed` writes `draft/baseline.json` | arc42 section layout plus `delta/`; never `02-architecture-constraints/` | yes (the writers' views) |
 | `target-check.json` | `arch-target --dry-run --out` | full dry-run report (`subject`, `subjectRefusals`, `draftWritten`, …) | no (recomputed) |
 | `decision.json`, `decision.md` | architecture-decider, accepted | DECISION_SCHEMA: `round, verdict: approve\|return\|owner-concern, diligence[{check, present, where}], choices[{dispute, chosen, why}], returnTo[{agentType, missing}], ownerConcerns[{kind: business-conflict\|architecture-conflict, concern, evidence}], summary` | **yes** |
-| `target.json` | `arch-target --out` | full target report (`targetDir, deltaDir, files, deltaFiles, architectureChange, note, designChanged, documentationChanged, implementationWork, approvalFiles, draftWritten`) | read by the composite (`depscore.py saved-target`) |
+| `target.json` | `arch-target --out` | full target report (`targetDir, deltaDir, files, deltaFiles, architectureChange, note, designChanged, documentationChanged, implementationWork, approvalFiles, draftWritten`) | read by the composite (`depscore.py saved-target`, which also reports `ok` and `closureSaved`; the composite reuses the phase only when both are true) and by `prd-reconciliation`, `spec-authoring`, `trd-authoring` |
 | `integrate-before.json` | `snapshot_tree` | tree hashes before integration | yes (integration measurement baseline) |
 | `tree-last.json` | `arch-integration-files --save-last` | tree hashes after the last measurement | yes |
 | `integration-files.json` | `arch-integration-files --files-out` | `touched[]`, `deleted[]`, `all[]`, `unreported[]`, `section2[]`, `outside[]`, `changedSinceLast[]` | yes |
@@ -174,22 +177,28 @@ Python call named below. Agent sessions get file paths, never pasted data. Each 
 result file, and Python validates and accepts it.
 
 Model and effort: "current" is what the JS passes as `effort`. The model comes from the agent's
-frontmatter. Agents with `model: fable` are rerun on `opus` by the driver's fable recovery (see Open
-question 7).
+frontmatter. Agents with `model: fable` are rerun on `opus` by the driver's fable recovery today
+(merged question Q1 in `driver-contract.md`).
+
+Every agent session in this flow runs inside the session runner's section 2 guard
+(`driver-contract.md` §8): section 2 is fingerprinted and copied before the session and restored,
+with a failure at stage `constraints-written`, if the session changed it.
 
 **Preparation**
 
-1. *deterministic: refuse missing input.* No architecture root → `stage: input` (the composite holds
-   the Epic for the owner: `ATW_ARCH_PATH` is owner configuration). No PRD path or body, no Epic id,
-   no artifacts directory → `stage: input`.
+1. *deterministic: refuse missing input.* No architecture root → `stage: no-arch-path`, with one
+   `requiredHumanActions` entry naming `ATW_ARCH_PATH` (owner configuration; the composite returns it
+   and the driver holds the Epic for the owner). No PRD path or body, no Epic id, no artifacts
+   directory → `stage: input`, cause `other` (a driver defect for the incident-responder).
 2. *deterministic: bind saved work to arc42* with `archrevision.check(arch, work, stale_root=<art>)`.
    It returns `status: new | current | integrating | stale`.
    - `stale`: a view the saved survey, ledger or decision cites, or a draft copy, changed in `arc42/`.
-     Today everything in `<work>` is then moved to `<art>/stale-<timestamp>/architecture/` and the
-     step restarts from the survey (see Open question 2).
+     Everything in `<work>` is then moved to `<art>/stale-<timestamp>/architecture/` and the
+     step restarts from the survey (see Open question 2). This is the one mechanism that sets stale
+     architecture work aside; `prd-to-spec.md` §8 refers here.
    - `integrating`: this step's own interrupted integration. The work is current.
-3. *deterministic: fingerprint and copy section 2* with
-   `archstate.snapshot_constraints(arch, keep=True)` → `{digest, gitStatus, exists, kept}`.
+3. *(removed)* The section 2 fingerprint and copy at the start of the run is replaced by the
+   session runner's guard around each session (above).
 4. *deterministic: fold saved state* with `archresume.resume_facts(work, roster=ROSTER)`. This writes
    `ledger.json` and returns survey, baseline, coverage, rounds (`last`, `resumeRound`,
    `pendingPlan`, `openFindings`, `unreviewedClaims`, `writers`, `readyForDecision`), `decision`,
@@ -210,11 +219,11 @@ question 7).
    - the baseline schema;
    - `contextSha` = sha256 of `relay.canonical({prdBody: prd.body or "", schema: SURVEY_SCHEMA})`.
    The new code must reproduce this exactly or the three saved surveys (CONTEXT 7.13) read as stale
-   (see Open question 3).
+   (see Open questions 3 and Q7).
 6. *agent: polyrepo-steward*, list repositories `{name, path, role, lifecycle}`. Current: sonnet,
    effort `low`, inline schema. New: write `<work>/repositories.json`. Runs only when the survey must
-   be produced. Correctness of the agent choice: see Open question 4 (this may be deterministic from
-   the steward's manifest).
+   be produced. Correctness of the agent choice: see merged question Q17 (this may be deterministic
+   from the steward's manifest).
 7. *agent: prd-reality-reconciler (SURVEY mode).*
    - Inputs (paths): the PRD, `<arch>` (with MODEL, MENU and section 2), `repositories.json`, the
      beads database (read-only), the survey schema file, and the prior `survey.json` if any (retain
@@ -324,13 +333,17 @@ question 7).
       coordinator brief points at `ownerConcerns` in `decision.json`.
     - `return`: the agents in `returnTo` (and open repairs) go into the next coordinator brief.
     - `return` with no unresolved repair and nobody named: ask the decider once more, telling it that
-      the return was not actionable and where the resolution evidence is. If it repeats the same
-      return, take the target as approved.
+      the return was not actionable and where the resolution evidence is (CONTEXT 7.4, clarified
+      instructions). If it repeats a non-actionable return, fail at `stage: decide`, cause `other`,
+      for the incident-responder. The target is never taken as approved without the decider's
+      `approve`: neither the `meta.description` nor the `architecture-decider` definition provides
+      an approval the decider did not give.
 18. *Loop bounds.* At `lastRound >= maxRounds` (6) the decider rules on the target as the team left
     it. Past that, each return gets one more round. At `2 × maxRounds` → `stage: rounds`
-    failure.
-19. *deterministic: section 2 guard.* `snapshot_constraints` again. Any difference in digest, `exists`
-    or git status → `restore_constraints(arch, kept)`, then `stage: constraints-written` (hard limit).
+    failure. These bounds come from the JavaScript, not from the intent; they stay only with an
+    owner reason (Open question 6).
+19. *(removed)* The section 2 check after the rounds is the session runner's guard around each
+    session.
 
 **Target**
 
@@ -370,8 +383,8 @@ question 7).
     - Skipped when a saved update plus a conforming last review exist.
 24. *deterministic: measure* with `archfiles.integration_files(arch, before=integrate-before.json,
     report=architecture-update.json, files_out=integration-files.json, save_last=tree-last.json)`.
-    - `section2 > 0` → section 2 guard and restore, then `stage: integrate` (deterministic, hard
-      limit).
+    - `section2 > 0` → the runner guard has already restored and failed the session; any
+      remaining count fails `stage: integrate` (deterministic, hard limit).
     - `unreported` files are added to the review list.
     - `outside` (outside `arc42/`) is recorded as a note.
 25. *agent: architecture-conformance-reviewer.*
@@ -387,12 +400,11 @@ question 7).
 27. *Correction loop, at most 2 passes.* Each pass:
     - agent: architecture-maintainer (CORRECTING), with the review's findings by path, writing
       `architecture-update.json`;
-    - deterministic: measure with `accumulate=True` and `last=tree-last.json`, then the section 2
-      bound;
+    - deterministic: measure with `accumulate=True` and `last=tree-last.json` (the section 2
+      count as in step 24);
     - if `changedSinceLast == 0`: stop; the findings stand as residuals;
     - otherwise review again (steps 25 and 26).
 28. *deterministic:*
-    - Section 2 guard (step 19).
     - `promote(touched, reviewed=conformance.reviewedFiles)`. Any `refused` → `stage: approve`. Files
       in `unreviewed`/`failed` stay `in-review` and are reported.
     - `commit_integration(arc42, all, message=…)`, which commits and pushes. A failure →
@@ -448,9 +460,11 @@ question 7).
 **Kept**
 
 - *Missing architecture root, PRD or Epic → refuse.* Without them nothing can be assessed. The missing
-  architecture root is the one owner fact (configuration) the composite holds the Epic for.
-- *Section 2 fingerprint before and after Rounds and Integrate, restore from the copy, fail.* This is a
-  hard limit (CONTEXT 6). A session can write anywhere, and nothing later notices a changed constraint.
+  architecture root is the one owner fact (configuration): its own stage `no-arch-path`, so the
+  composite returns owner facts only in that case and never for a driver defect (`stage: input`).
+- *Section 2 unchanged by any session.* Hard limit (CONTEXT 6): the session runner's guard around
+  every session (`driver-contract.md` §8) replaces this flow's own before-and-after snapshot. A
+  session can write anywhere, and nothing later notices a changed constraint.
 - *`arch-target` refusals.*
   - A subject with no name left: it would create a mis-named `target/` folder that every later phase
     reads.
@@ -482,7 +496,7 @@ question 7).
 - *Decision owner-concern filter* (only `business-conflict` / `architecture-conflict` reach the
   owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
 - *Rounds bound (`maxRounds`, hard stop at 2×).* This is a stop condition for spend, not a quality
-  check (see Open question 6).
+  check, carried from the JavaScript; it stays only with an owner reason (Open question 6).
 
 **Dropped**
 
@@ -510,14 +524,19 @@ question 7).
   brief, and the owned skill contracts the fable block concatenates into every prompt.* They become
   references to the agent definition and its skills (`architecture-baseline`, `subagent-contract`),
   per CONTEXT 5 (minimal context, paths not pasted data). S02 decides what, if anything, stays inline.
+- *"A repeated non-actionable return is taken as approval."* No source in intent; a repeated
+  non-actionable return fails at `decide` for the incident-responder (step 17).
+- *This flow's own section 2 snapshot at the start (step 3) and check after the rounds (step 19).*
+  Replaced by the session runner's one guard around every session (`driver-contract.md` §8).
 
 ## 7. Failure causes
 
 | Failure point | `stage` | Cause | Retry? |
 |---|---|---|---|
-| Missing archPath, PRD, Epic or artifacts dir | `input` | `other` | No. Owner fact for archPath (composite holds the Epic); otherwise a driver bug |
+| Missing archPath | `no-arch-path` | none: owner facts (`requiredHumanActions`) | No; the driver holds the Epic for the owner |
+| Missing PRD, Epic or artifacts dir | `input` | `other` | No; a driver bug for the incident-responder |
 | `archrevision.check` cannot read `arc42/` | `survey` | `other` | No; incident |
-| Section 2 snapshot or copy fails | `survey` | `other` | No; incident |
+| Section 2 snapshot or copy fails (the runner's guard) | stage of the step | `other` | No; incident |
 | `resume_facts` raises `ResumeError` (saved file unreadable later) | `resume` | `other` | No (deterministic); incident |
 | Session ends with API error or overload (structured from the session runner) | stage of the step | `api` | Yes: the driver's breaker (`breaker.py`) |
 | Session hits usage or quota limit | stage of the step | `quota` | Yes: breaker |
@@ -528,6 +547,7 @@ question 7).
 | Round dispatch unfinished (interrupted) | `rounds`, `resumable: true` | from the session | Resume reruns only the missing dispatches (section 8) |
 | Decider writes no decision | `decide` | as above | As above |
 | Decider owner-concern (business or section 2) | `owner-concern` | none: an owner hold, not a failure | No; owner acts and deletes `decision.json` |
+| Decider repeats a non-actionable return after the one re-ask | `decide` | `other` | No; incident |
 | Rounds exceed 2× limit | `rounds` | `other` | No; incident |
 | Section 2 written by a session | `constraints-written` | `other` | No; restored, incident |
 | `write_target` refusal | `target` | `other` | No; incident (the approved draft is wrong) |
@@ -537,7 +557,7 @@ question 7).
 | Integration measurement fails | `integrate` | `other` | No; incident |
 | Integration wrote section 2 | `integrate` | `other` | No; restored, incident |
 | Conformance reviewer or review check gives no result | `integrate` | from the session, or `other` | As above |
-| `arch-closure` bead status read times out (`bd`/Dolt) | `closure` | `bd-timeout` | Yes: backoff as for contention |
+| `arch-closure` bead status read times out (`bd`/Dolt) | `closure` | `bd-timeout` (structured fact: merged question Q5 in `driver-contract.md`) | Yes: backoff as for contention |
 | Closure refused twice | `closure` | `other` | No; incident |
 
 `relay` has no producer in this flow after the rewrite.
@@ -545,8 +565,11 @@ question 7).
 ## 8. Resume points
 
 Rule: a rerun redoes no step whose saved result exists and whose input fingerprint is unchanged. It
-starts no session before the first step that needs one. Fingerprints are computed in Python, each
-stored beside its result as `<result>.inputs.json`, except where a stored seal already exists.
+starts no session before the first step that needs one. Fingerprints are computed in Python and
+stored beside each result as `<result>.meta.json` by `artifactio.record` (the one input-record
+format of every Epic flow), except the survey, whose existing seal
+(`survey.json.baseline-inputs.json`) stays because the saved surveys carry it (CONTEXT 7.13). The
+input lists below are the single source; `prd-to-spec.md` refers here.
 
 | Saved result | Fingerprint inputs | A rerun after it redoes |
 |---|---|---|
@@ -583,20 +606,23 @@ Open question 8). `relay/` is ignored.
   and Tasks. Writers run before reviewers in every round. The last listed writer reconciles. No
   `designOwner` is stored, and a legacy one is ignored.
 - **6 hard limits.**
-  - Section 2: the fingerprint, copy and restore guard; `promote` and `write_target` refusals; and
-    briefs that say nothing is written there.
+  - Section 2: the session runner's fingerprint, copy and restore guard (`driver-contract.md` §8);
+    the `integration_files` section 2 count; `promote` and `write_target` refusals; and briefs that
+    say nothing is written there.
   - No secret exposure: the sessions read code and views only.
   - No destructive operation other than replacing `target/<subject>/` (this step's own folder) and
     moving stale saved work aside (`stale-<timestamp>/`, kept, not deleted).
-  - Nothing in `apps/marketing/`: the polyrepo-steward's inventory is the source, and a placement
-    there is out of scope (see Open question 9).
+  - Nothing in `apps/marketing/`: the polyrepo-steward's inventory is the source; a closure entry
+    naming a marketing repository cannot become work, because `repo-scoping` rejects any placement
+    under `apps/marketing/`, prerequisites included (`repo-scoping.md` step 6).
 - **7.4 Retries.** Structured causes come from the session runner and the script results. There are
   no unchanged reruns. Clarified reruns are allowed: an unanswered finding is re-sent once with the
-  omission named, and the decider is re-asked once after a non-actionable return. Git push contention
-  backs off.
-- **7.9 Who gets asked what.** Only `business-conflict` and `architecture-conflict` reach the owner, as
-  `requiredHumanActions` (the composite writes them to the owner inbox). Every technical gap is decided
-  by the team or the decider.
+  omission named, and the decider is re-asked once after a non-actionable return (a repeat goes to
+  the incident-responder). Git push contention backs off.
+- **7.9 Who gets asked what.** Only `business-conflict` and `architecture-conflict` (stage
+  `owner-concern`) and a missing architecture root (stage `no-arch-path`) reach the owner, as
+  `requiredHumanActions`; the composite returns them and the driver writes the owner inbox and the
+  hold. Every technical gap is decided by the team or the decider.
 - **7.10 Repositories.** Repository facts come from the polyrepo-steward. The prd-reality-reconciler
   never looks for repositories itself.
 - **7.11 Deterministic over agentic.** Subject naming, case detection, target writing, approval,
@@ -607,42 +633,53 @@ Open question 8). `relay/` is ignored.
 
 ## 10. Open questions
 
-1. **Closure path.** The meta description and PLAN say `delta/closure.json`. `archclosure.write_closure`
-   writes `target/<subject>/closure.json` (beside `baseline.json`), and `merge_closure` reads that,
-   falling back to `delta/closure.json`. Which name does S02 fix as the contract?
-2. **Stale saved work.** `archrevision.check` moves all of `<work>`, including the about 850k-token
-   survey, aside when any arc42 view the survey, ledger, decision or draft cites changed. Should the
-   new flow instead re-run only the parts bound to the changed views? For example: keep the survey
-   when its own seal is still current, and drop only the rounds and decision.
-3. **Survey seal scope.**
-   - The seal binds the `main^{tree}` of every cited repository, so any commit on any of those
-     repositories' `main` invalidates the survey. Is that intended, or should code evidence be bound
-     per cited file?
-   - `contextSha` includes SURVEY_SCHEMA's canonical JSON. Must the new code reproduce the JS schema
-     byte-for-byte, or reuse the saved `contextSha`, to keep the three saved surveys current?
-4. **Repository listing.** Must the Survey's repository list come from a polyrepo-steward session, or
-   can Python read it from the steward's manifest (`.polyrepo/manifest.yaml` via the `polyrepo` tool)
-   with no session? The same question applies to the Closure's deployments inventory, which needs
-   reading code, so it likely stays an agent.
-5. **Deployments inventory binding.** Today it is fingerprinted only to `closure-roots.json`, yet its
-   content depends on every repository's `main`. What should invalidate it? Can it run in parallel with
-   the integration?
-6. **Round limits.** Are `maxRounds = 6` and the hard stop at 12 still wanted? So is "a repeated
-   non-actionable return is taken as approval".
-7. **Model and effort.**
-   - The code passes `medium` to architecture-conformance-reviewer, architecture-boundary-guardian
-     (Check) and operational-readiness-reviewer, whose frontmatter says `low`. Which wins?
-   - Proposers are `fable`, rerun on `opus` by the driver's fable recovery. Does the new session
-     runner keep that recovery?
-8. **`candidates/` in saved work.** Promote a complete, schema-valid candidate whose final file is
-   missing, or ignore `candidates/` entirely?
-9. **Marketing repositories.** Nothing in the step filters `apps/marketing/` repositories out of the
-   steward's lists or the closure's `deployedBy`/`repository`. Should the orchestrator filter them, or
-   is the steward's inventory trusted to exclude them?
-10. **Inline brief text.** Which of today's inline rule blocks (`ARCH_WHERE`, `DRAFT_RULES`,
+**Q7 [S02] (merged; also asked in `prd-reconciliation.md`). Is any commit on a cited repository's
+`main` meant to invalidate saved work, or should code evidence be bound per cited file?** The
+survey seal binds the `main^{tree}` of every repository the survey cites, and the detailing records
+`git-main:<repo>`, so any commit (including Tasks of the same Epic merged later) invalidates the
+about 850k-token survey or costs a fresh opus detailing session.
+
+**Q17 [S02] (merged; also asked in `repo-scoping.md`). Can repository facts come from the steward's
+manifest (`.polyrepo/manifest.yaml` through the `polyrepo` tool) deterministically instead of a
+polyrepo-steward session?** This covers the Survey's repository list (step 6), and in
+`repo-scoping` the creation of a repository the target names with name and template (`polyrepo.py
+create` still needs `--space` and `--purpose`); `repo-scoping.md` step 4 already takes the
+inventory in code. The Closure's deployments inventory (step 30) needs reading code and likely
+stays an agent.
+
+1. **[S02] Closure path fallback.** Settled: the contract is `target/<subject>/closure.json`
+   (`archclosure.write_closure` writes it there, `merge_closure` and `resumefacts.saved_target`
+   read it there, and every Epic spec agrees). The discrepancy: the architecture `meta.description`
+   ("writes those ... to delta/closure.json") and PLAN S01a ("Closure output (`delta/closure.json`)")
+   say `delta/`; S08 corrects the meta description. Open: does the `delta/closure.json` fallback
+   read (`merge_closure`, `resumefacts.saved_target`) stay for old saved targets?
+2. **[S02] Stale saved work.** `archrevision.check` moves all of `<work>`, including the about
+   850k-token survey, aside when any arc42 view the survey, ledger, decision or draft cites changed.
+   Should the new flow instead re-run only the parts bound to the changed views? For example: keep
+   the survey when its own seal is still current, and drop only the rounds and decision.
+3. **[S02] Survey `contextSha`.** `contextSha` includes SURVEY_SCHEMA's canonical JSON. Must the new
+   code reproduce the JS schema byte-for-byte, or reuse the saved `contextSha`, to keep the three
+   saved surveys current? (The `main^{tree}` half of the old question is Q7 above.)
+5. **[S02] Deployments inventory binding.** Today it is fingerprinted only to `closure-roots.json`,
+   yet its content depends on every repository's `main`. What should invalidate it? Can it run in
+   parallel with the integration?
+6. **[owner] Round limits.** `maxRounds = 6` and the hard stop at 12 rounds come from the
+   JavaScript, not from the `meta.description` or the agent definitions. They are a spend bound.
+   Are they wanted, and at what values? (A repeated non-actionable return is no longer taken as
+   approval: settled, S01h finding 30.)
+7. **[S02] Effort.** The code passes `medium` to architecture-conformance-reviewer,
+   architecture-boundary-guardian (Check) and operational-readiness-reviewer, whose frontmatter says
+   `low`. Which wins? (The `fable` half of the old question is merged question Q1 in
+   `driver-contract.md`.)
+8. **[S02] `candidates/` in saved work.** Promote a complete, schema-valid candidate whose final file
+   is missing, or ignore `candidates/` entirely?
+10. **[S02] Inline brief text.** Which of today's inline rule blocks (`ARCH_WHERE`, `DRAFT_RULES`,
     `COVERAGE_RULE`, `DESIGN_REVIEW_STANDARD`, the RECHECK block) are already covered by the agent
     definitions and skills, and which must move into them before the briefs shrink to paths?
-11. **Schemas defined only in the JS.** SURVEY, COORDINATOR, DECISION, MAINTAIN, CONFORMANCE,
-    REPOSITORIES, DEPLOYMENTS and CLOSURE are defined only in `architecture.js`. Where do they live in
-    the new code? Do they become files under `skills/artifact-handoff/schemas/` beside the writer,
-    review and baseline schemas?
+11. **[S02] Schemas defined only in the JS.** SURVEY, COORDINATOR, DECISION, MAINTAIN, CONFORMANCE,
+    REPOSITORIES, DEPLOYMENTS and CLOSURE are defined only in `architecture.js`. Where do they live
+    in the new code? Do they become files under `skills/artifact-handoff/schemas/` beside the
+    writer, review and baseline schemas?
+- Old question 4 (repository listing) is Q17 above.
+- Old question 9 (marketing repositories): settled by `repo-scoping.md` step 6, which rejects any
+  placement under `apps/marketing/`, prerequisites included.

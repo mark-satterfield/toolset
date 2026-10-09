@@ -119,12 +119,12 @@ No bead writes, no vault writes, no git commits.
 1. **deterministic** — Resolve paths: `<art>`, `<slug>`, `recon-<slug>.json`, the placed items,
    `uiRepo`, the target's three-case sentence (from `architectureChange`, `targetDir`,
    `deltaDir`). Python, no script.
-2. **deterministic** — Reuse check. When `recon-<slug>.json` and its `.meta.json` exist and the
-   step `recon:<slug>` is fresh (`artifactio.plan(<epic>)` `phases["recon:<slug>"].status ==
-   "fresh"`, or, when an upstream step re-ran in this run, its recorded input fingerprints still
-   match), run step 6 on the saved file. If its result is `ok: true`, return those facts with
-   `resumed: true`; no session starts. If the file is not usable, continue at step 3 (it is
-   detailed again).
+2. **deterministic** — Reuse check. The saved detailing is reusable when `recon-<slug>.json` and
+   its `.meta.json` exist and every input recorded in the `.meta.json` hashes as recorded now
+   (`artifactio.hashed_inputs`). Nothing else decides it: no upstream-rerun chain, no driver
+   ruling. When reusable, run step 6 on the saved file. If its result is `ok: true` with no
+   finding, return those facts with `resumed: true`; no session starts. Otherwise continue at
+   step 3 (it is detailed again).
 3. **deterministic** — When `uiRepo` and `packagesDir` are set: list the supplied bundles with
    `cdsbundles.list_bundles(packagesDir)` (today `depscore.py cds-bundles --packages-dir <dir>`).
    An absent or empty directory supplies none. Write the listing to
@@ -152,6 +152,8 @@ No bead writes, no vault writes, no git commits.
    - Runs in parallel with the detailing of the Epic's other span repositories (the composite
      runs one `prd-reconciliation` → `spec-authoring` chain per repository concurrently). Nothing
      inside this flow runs in parallel.
+   - Runs inside the session runner's section 2 guard (`driver-contract.md` §8): the agent holds
+     Write.
 5. **deterministic** — Record the file: `artifactio.record(<art>/recon-<slug>.json, epic=<epic>,
    phase="recon:<slug>", inputs=[<PRD path>, <art>/architecture/target.json,
    <art>/repo-scoping.json, <art>/architecture/survey.json, "git-main:<repo>"])` (today
@@ -159,22 +161,29 @@ No bead writes, no vault writes, no git commits.
 6. **deterministic** — Read the facts: `reconfacts.recon_facts(<file>, <placed ids>)` (today
    `depscore.py recon-facts --file <file> --items <ids>`). It normalizes rather than refuses: a
    placed item with no entry is `add`; a repeated entry keeps the first; an entry for an unplaced
-   id is ignored; an unknown status maps from a synonym, else `modify`; `planned-elsewhere`
-   without `plannedBy` is `done`; an unknown surface is `unknown`; an unknown design source is
-   `cds`; a `bundle` item whose bundle is not usable, superseded, or whose build spec is not the
-   one its `bundle.json` names is `cds`; a `bundle`/`cds` item with no artifact gets
-   `{kind: page, slug: <item id slugified>}`; a missing or non-boolean
-   `dependencyChanges.current` is taken as `true`. Each normalization is a warning. `ok: false`
-   (with `problem`) only when the file is not one JSON object or has no `items` list. A file that
-   is absent or not JSON raises `ReconError`.
-7. **deterministic** — When produced in this run and `ok: true`: record the step,
+   id is ignored; an unknown status maps from a synonym, else `modify`; an unknown surface is
+   `unknown`; an unknown design source is `cds`; a `bundle` item whose bundle is not usable,
+   superseded, or whose build spec is not the one its `bundle.json` names is `cds`; a
+   `bundle`/`cds` item with no artifact gets `{kind: page, slug: <item id slugified>}`; a missing
+   or non-boolean `dependencyChanges.current` is taken as `true`. Each normalization is a warning.
+   `ok: false` (with `problem`) only when the file is not one JSON object or has no `items` list. A
+   file that is absent or not JSON raises `ReconError`.
+   Two entries are **findings**, not normalizations, because each silently removes work: a `done`
+   item whose `evidence` cites no `file:line`, and a `planned-elsewhere` item with no `plannedBy`
+   (today `recon_facts` turns it into `done`). Python collects their exact ids from the file.
+   **One corrective pass:** a `ReconError`, an `ok: false`, or any finding re-dispatches step 4
+   once, in a new session, naming the exact problem (the missing path, the `problem` text, or the
+   finding ids and what each lacks), then runs steps 5 and 6 again. Still failing → stop the
+   repository at stage `detailing`, cause `other` (incident-responder).
+7. **deterministic** — When produced in this run and `ok: true` with no finding: record the step,
    `artifactio.record_step(<epic>, "recon:<slug>")` (today `python3 $ATW_ARTIFACT_SCRIPT step`).
    Return the facts and the ledger entry.
 
 Relay mapping (every relay call becomes a direct step): `relayKit.depscore ... cds-bundles` →
 step 3; `relayKit.depscore ... recon-facts` (fresh and replay) → step 6 (and step 2);
 `relayKit.run ... <artifact script> record` → step 5; the composite's `acceptPhase` →
-`artifactio.py step` → step 7; the composite's `resumeFresh` → `artifactio.py plan` → step 2.
+`artifactio.py step` → step 7; the composite's `resumeFresh` (`artifactio.py plan` and the
+upstream-rerun recheck) → dropped; step 2 checks this step's own recorded inputs.
 No `workflow-command-runner` session remains.
 
 Agents accounted for: `prd-reality-reconciler` (kept, step 4).
@@ -191,6 +200,11 @@ step above).
 - **Not-a-detailing (`ok: false`) and unreadable file (`ReconError`).** Without it, an empty or
   foreign file would be handed to `spec-authoring` and `task-decomposition` as the repository's
   detailing and the Epic would be marked done with no work; nothing later checks the shape.
+- **An uncited `done` and a `planned-elsewhere` with no bead are findings (step 6).** Each removes
+  an item from the work list: no Task is written for it, and `task-decomposition` checks coverage
+  of work items only, so a wrongly `done` item is never seen again. One corrective pass, then the
+  repository fails at `detailing`.
+- **Section 2 hard limit:** the session runner's guard around step 4 (`driver-contract.md` §8).
 - **Bundle usability inside `recon_facts`** (`cdsbundles.bundle_problem`: absolute path, usable
   `bundle.json`, newest of its kind and slug, build spec named by `bundle.json` and present).
   Without it, a stale or wrong build-spec path is written into `spec-<slug>.md`'s
@@ -224,10 +238,14 @@ step above).
 | Step 3, `list_bundles` raises (unreadable packages directory, `OSError`) | `other` | No; stop the repository with stage `detailing`. An absent or empty directory is not a failure. |
 | Step 4, session ends on an API error | `api` (from the runner's structured result) | Yes, by the owner's API handling (`breaker.py`). |
 | Step 4, session ends on quota exhaustion | `quota` | Yes, by `breaker.py`. |
-| Step 4, session ends without writing `recon-<slug>.json` | `other` | No as-is; stage `detailing`, handed to the incident-responder. |
+| Step 4, session ends without writing `recon-<slug>.json` (step 6 raises `ReconError`: absent) | `other` | One corrective re-dispatch of step 4 naming the missing path (CONTEXT 7.4, specific gap feedback); after that, stage `detailing`, incident-responder. |
 | Step 5, `artifactio.record` fails (file vanished, `git rev-parse main` fails for `git-main:<repo>`) | `other` | No. Non-fatal: the detailing is used; the cost is that a later run cannot reuse it. Logged as a warning in the result. |
-| Step 6, `ReconError` (absent or not JSON) | `other` | One corrective re-dispatch of step 4 carrying the exact error is reasonable (clarified feedback); after that, stage `detailing-read`, incident-responder. |
-| Step 6, `ok: false` (`problem`) | `other` | One corrective re-dispatch of step 4 carrying the `problem` text; after that, stage `detailing`, incident-responder. |
+| Step 6, `ReconError` (not JSON) | `other` | The same one corrective re-dispatch, carrying the exact error; after that, stage `detailing`, incident-responder. |
+| Step 6, `ok: false` (`problem`) | `other` | The same one corrective re-dispatch, carrying the `problem` text; after that, stage `detailing`, incident-responder. |
+| Step 6, findings (uncited `done`, `planned-elsewhere` with no `plannedBy`) | `other` | The same one corrective re-dispatch, carrying the exact ids; after that, stage `detailing`, incident-responder. |
+
+All four step 6 outcomes share one corrective re-dispatch per run: a run that already used it
+fails on the next.
 | Step 7, `artifactio.record_step` fails | `other` | No. Non-fatal warning (STEPS.md is resume bookkeeping). |
 
 `bd-timeout` and `contention` have no producer here (the flow runs no `bd`; the session's own
@@ -237,8 +255,8 @@ step above).
 
 - **R1, the saved detailing** (`recon-<slug>.json` + `.meta.json`, step `recon:<slug>`).
   Fingerprint inputs: the PRD file, `<art>/architecture/target.json`, `<art>/repo-scoping.json`,
-  `<art>/architecture/survey.json`, and `git-main:<repo>` (the commit `main` points at). Upstream
-  steps: `architecture`, `repo-scoping`. A rerun with all fingerprints unchanged starts no session
+  `<art>/architecture/survey.json`, and `git-main:<repo>` (the commit `main` points at). This list
+  is the single source; `prd-to-spec.md` refers here. A rerun with all fingerprints unchanged starts no session
   and runs only step 6 on the saved file (zero tokens). A rerun after any input changed runs
   steps 3 to 7 (one session). A saved file that fails step 6 is detailed again.
 - Nothing inside one detailing is resumable (one session, one file).
@@ -249,8 +267,8 @@ step above).
 ## Owner rules that apply
 
 - **7.4 Retries:** structured causes from the runner and from exception types; no text matching;
-  one corrective re-dispatch only when it carries the exact problem; a reused detailing is never
-  redone.
+  one corrective re-dispatch only when it carries the exact problem (CONTEXT 7.4 allows a retry
+  with specific gap feedback); a reused detailing is never redone.
 - **7.6 Done rule:** the `work` list is the contract for this repository: every `add`/`modify`/
   `remove` id must reach a Task or a recorded "nothing to build"; normalization makes a missing
   item `add` so it cannot vanish.
@@ -259,7 +277,10 @@ step above).
 - **7.9 Who gets asked:** the session decides technical gaps itself (`subagent-contract`); nothing
   in this flow goes to the owner.
 - **7.10 Repositories:** the repository and its placed items come from the `polyrepo-steward`'s
-  ruling (`repo-scoping`); the session reads only this repository.
+  ruling (`repo-scoping`); the session reads only this repository. CHECK 2 (upstream
+  dependencies) reports changes in what the repository's manifests already name; it creates no
+  repository-to-repository dependency and the flow writes none (see `repo-scoping.md` §9 for how
+  "repositories never depend on repositories" applies to the Epic flows).
 - **7.11 Deterministic over agentic:** bundle listing, normalization, recording and reuse are
   code; only the status judgment and dependency check are a session.
 - **7.13 Saved work:** the architecture survey is handed to the session as evidence to reuse.
@@ -270,26 +291,18 @@ step above).
 
 ## Open questions
 
-1. **Citation rule vs normalization.** The session brief says "An item with no citation fails the
-   run", but `recon_facts` only warns when a work or `done` status cites no `file:line`. Should an
-   uncited `done` (which suppresses a Task) fail, trigger the corrective re-dispatch, or stay a
-   warning?
-2. **`git-main:<repo>` as a fingerprint input.** Any commit to `<repo>`'s `main` (including Tasks
-   of this same Epic merged later) makes the detailing stale and costs a fresh opus session on the
-   next elaboration rerun. Is that intended, or should the fingerprint be narrowed (for example
-   to the files the evidence cites)?
-3. **Target and delta views are not fingerprinted directly.** Inputs cover
-   `architecture/target.json` but not the files under `targetDir`/`deltaDir`; a rewrite of a view
-   that leaves `target.json` byte-identical would not invalidate the detailing. Should the
-   directories be added as inputs (`artifactio` hashes a directory)?
-4. **`dependencies` input.** The driver never sends `dependencies` to `prd-to-spec` (no producer
-   in `<driver>`). Drop the input and always have the session discover dependencies, or add a
-   producer?
-5. **`isolation: worktree` in the agent frontmatter.** `prd-reality-reconciler` declares
-   `isolation: worktree` but must write `<art>/recon-<slug>.json` outside any worktree and read
-   `<repo>`'s `main`. How does the Python session runner treat this field (S02)?
-6. **Run ledger entry.** Is the per-step ledger object (`phase: "prd-reconciliation"`, counts)
-   still recorded anywhere after the rewrite, or replaced by driver ledger events? Settled in
-   `driver-contract.md`.
-7. **Corrective re-dispatch.** The current code never re-dispatches; this spec allows one
-   corrective re-dispatch carrying the exact `ReconError`/`problem`. Confirm in S02.
+1. **[S02] An uncited work status (`add`/`modify`/`remove`).** `recon_facts` only warns when a work
+   status cites no `file:line`. Such an item still gets a Task, so no work is lost; should it also
+   be a step 6 finding?
+- `git-main:<repo>` as a fingerprint input (any commit on `main` invalidates the detailing):
+  merged question Q7 in `architecture.md`.
+- Target and delta view directories as fingerprint inputs: merged question Q6 in
+  `driver-contract.md`.
+- The `dependencies` input with no producer: merged question Q13 in `prd-to-spec.md` (its Open
+  question 3).
+- `isolation: worktree` in the agent frontmatter: merged question Q2 in `driver-contract.md`.
+- The run ledger entry: merged question Q19 in `driver-contract.md`.
+- Citation rule vs normalization for `done`: settled; an uncited `done` is a step 6 finding (S01h
+  finding 23).
+- The corrective re-dispatch: settled; CONTEXT 7.4 allows a retry that carries specific gap
+  feedback (S01h merged question Q16).

@@ -77,10 +77,5 @@ Not called by the Epic pipeline.
 
 ## 10. Open questions
 
-1. **Driver `verdict` events without a gate.** The driver still records a `verdict` ledger event for
-   any agent whose result preview contains `"verdict"` or `"admissible"`
-   (`headless.py` `VERDICT_MARKER_KEYS`), and `observe.py` and `attemptview.py` read those events
-   into each attempt. In the Epic pipeline these come from reviewers and
-   deciders, not from `gate-enforce`. Whether the Python orchestrator keeps emitting `verdict` events
-   for its reviewer and decider steps is a driver-contract question; see
-   `<orch>/specs/epic/driver-contract.md`.
+- Driver `verdict` events without a gate (in the Epic pipeline they come from reviewers and
+  deciders, not from `gate-enforce`): merged question Q15 in `<orch>/specs/epic/driver-contract.md`.

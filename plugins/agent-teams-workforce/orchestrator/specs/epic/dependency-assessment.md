@@ -85,8 +85,10 @@ Files (under `<workDir>`):
   setAt}], withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath,
   summary: {epic, openEpics, standing, withdrawn, owned, handMade}}`.
 - `edges.json` (written by the agent): `{edges: [{from, to, reason, confidence: high|medium|low,
-  archCheck, answers?}], withdrawn: [{from, to, reason}]}`, plus (new) `inputs: <input
-  fingerprint>` stamped by Python for resume.
+  archCheck, answers?}], withdrawn: [{from, to, reason}]}`; nothing is stamped into it.
+- `edges.json.meta.json` (new, step 5): `artifactio.record` of `edges.json` with inputs
+  `context.json` and the `context/` directory (kind `dir`): the one input-record format of every
+  Epic flow.
 - `reasoning.md` (written by the agent): the foundation checklist answers, per-edge and
   per-withdrawal reasoning, related PRDs read, validation findings, uncertainty.
 - `validation.json`: `edgeset.validate` result: `{ok, level, edgeCount, withdrawnCount, scope,
@@ -121,8 +123,8 @@ validationFile, reasoning} | null, error?}`.
 2. `deterministic` **Context**: `assesscontext.assess_context(graph, epic, context_dir)` (today
    `depscore.py assess-context --epic <id> --dir context --out context.json`). Writes the corpus,
    the index and `context.json`.
-3. `deterministic` **Reuse**: compute the input fingerprint = sha256 over `context.json` and every
-   file under `context/`. If `edges.json` exists with the same `inputs`, skip step 4.
+3. `deterministic` **Reuse**: if `edges.json` exists and every input recorded in its `.meta.json`
+   (`context.json` and the `context/` directory) hashes as recorded, skip step 4.
 4. `agent` **Assess**: `epic-sequencer`. Input paths: `context/prd/<epic>.md`, `context/prd/`,
    `context/index.md`, `context.json`, `archPath`; `priorFailure` text when given. Brief: THE
    TEST and the nine foundation layers (network and egress; identity and authorization; data
@@ -133,8 +135,10 @@ validationFile, reasoning} | null, error?}`.
    `edges.json`, `reasoning.md`. Model `opus` (agent frontmatter), effort `medium` (frontmatter
    and JS), `maxTurns` 240. Opus is right: the session reads many full PRDs and makes the
    architecture judgments the edges encode, and a wrong or missing edge orders elaboration wrongly
-   with nothing downstream to catch it. One session; nothing runs in parallel.
-5. `deterministic` **Stamp**: Python adds `inputs` (step 3's fingerprint) to `edges.json`.
+   with nothing downstream to catch it. One session; nothing runs in parallel. It runs inside the
+   session runner's section 2 guard (`driver-contract.md` §8): `epic-sequencer` holds Write and
+   reads `archPath`.
+5. `deterministic` **Record**: `artifactio.record` of `edges.json` with the step 3 inputs.
 6. `deterministic` **Validate**: `edgeset.validate(graph, edges, epic, withdrawn, "epic")` (today
    `depscore.py validate --edges edges.json --epic <id>`). Writes `validation.json`.
 7. `agent` **Correct** (only when step 6 is not ok, at most once): `epic-sequencer` again, new
@@ -179,7 +183,8 @@ Agents dispatched by the JavaScript, accounted for:
 - Closed ends are filtered out before applying: without it an edge onto a closed Epic is written.
 - `apply_edges` writes ownership before adding an edge: without it a crash leaves an unowned edge
   no later assessment may withdraw.
-- Hard limit: no write to arc42 section 2; this flow writes nothing in the vault.
+- Hard limit: no write to arc42 section 2; this flow's own steps write nothing in the vault, and
+  the session runner's guard covers the agent session.
 
 **Checks the intent requires that the code does not enforce** (see Open question 1)
 - Missing `archCheck` (`missingArchCheck`) and re-adding a withdrawn edge without `answers`
@@ -199,10 +204,11 @@ Agents dispatched by the JavaScript, accounted for:
 
 ## 7. Failure causes
 
-- Steps 1, 2, 6, 8 `bd` read or write (`beadgraph.GraphError`): `bd-timeout` / `contention` when
-  the connection retry gave up on a retryable error, else `other` (Open question 4 of
-  `<orch>/specs/epic/wsjf-scoring.md`: not a structured field today). Retry reasonable for the
-  first two with backoff (30 s doubling, cap 30 min).
+- Steps 1, 2, 6, 8 `bd` read or write (`beadgraph.GraphError`): its `cause` field gives
+  `bd-timeout`, `contention` or `other`. The field exists, but `beadgraph._bd` chooses it from
+  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (merged question Q5 in
+  `driver-contract.md`). Retry reasonable for the first two with backoff (30 s doubling, cap 30
+  min).
 - Step 1 scope refused (not an open Epic) or `SequencingError`: `other`; not retried.
 - Step 4/7 session: `api` / `quota` from the headless runner's structured result (breaker);
   retry reasonable. Returned with no `edges.json`, or an unreadable one: `other`; not retried on
@@ -220,13 +226,13 @@ Agents dispatched by the JavaScript, accounted for:
 ## 8. Resume points
 
 - Steps 1 and 2: recomputed every run (cheap, no session).
-- Step 4 (and 7): `edges.json` + `reasoning.md`; fingerprint = sha256 of `context.json` and the
-  corpus and index files (the Epic's and every open Epic's PRD, the standing and withdrawn
-  edges). A rerun with an unchanged fingerprint starts no session.
+- Step 4 (and 7): `edges.json` + `reasoning.md`, with `edges.json.meta.json`; fingerprint =
+  `context.json` and the corpus and index files under `context/` (the Epic's and every open Epic's
+  PRD, the standing and withdrawn edges). A rerun with unchanged recorded inputs starts no session.
 - Step 8: idempotent (`apply_edges` writes nothing for an unchanged proposal). A rerun after it
   writes nothing again.
 - Step 9: resumes as `wsjf-scoring` does; after a scoring failure a rerun redoes only scoring.
-- A rerun needs the same `workDir`: see Open question 2.
+- A rerun needs the same `workDir`: merged question Q8 in `wsjf-scoring.md`.
 
 ## 9. Owner rules that apply
 
@@ -245,21 +251,15 @@ Agents dispatched by the JavaScript, accounted for:
 
 ## 10. Open questions
 
-1. **`archCheck` and `answers` enforcement.** `edgeset.validate` reports `missingArchCheck` and
-   `readdsWithdrawn` but excludes them from `ok`, while the brief, the command and `README.md` say
-   such edges are refused. Should `ok` include them? (`archCheck` is also not stored in
-   `seq_edge_reasons`; it lives only in `edges.json`.) S02 or the owner decides.
-2. **Work directory for resume.** The command creates a fresh `workDir` per run, so a saved
-   `edges.json` is never reused. S02 decides a stable location (shared decision with the
-   `wsjf-scoring` spec).
-3. **Corrective pass.** The JavaScript has no second session: the one session loops on `validate`
-   itself and the run stops if it still fails. Step 7 adds one corrective session under CONTEXT
-   7.4. S02 confirms or drops it.
-4. **PRD source.** The corpus is built from Epic bead descriptions, not the vault PRDs
-   `prd-to-spec` reads (same question as in the `wsjf-scoring` spec).
-5. **Architecture as an input to resume.** The session's verdict depends on which views are
+1. **[S02] `archCheck` and `answers` enforcement.** `edgeset.validate` reports `missingArchCheck`
+   and `readdsWithdrawn` but excludes them from `ok`, while the brief, the command and `README.md`
+   say such edges are refused. Should `ok` include them? (`archCheck` is also not stored in
+   `seq_edge_reasons`; it lives only in `edges.json`.)
+2. **[S02] Architecture as an input to resume.** The session's verdict depends on which views are
    `effective`, but the input fingerprint covers only the PRD corpus and edges. Should an arc42
-   revision (as `<orch>/specs/epic/architecture.md` records it) join the fingerprint? S02 decides.
-6. **Who assesses a new Epic.** With the triggers removed, a new Epic has no `tracks` edges until
-   the owner runs this command, and the driver elaborates it once it is scored. The owner decides
-   whether that stays manual.
+   revision (as `<orch>/specs/epic/architecture.md` records it) join the fingerprint?
+- Work directory for resume: merged question Q8 in `wsjf-scoring.md`.
+- PRD source (bead description vs vault PRD): merged question Q9 in `wsjf-scoring.md`.
+- Who assesses a new Epic: merged question Q10 in `wsjf-scoring.md`.
+- Corrective pass (step 7): settled; CONTEXT 7.4 allows a retry that carries the exact validation
+  findings (S01h merged question Q16).

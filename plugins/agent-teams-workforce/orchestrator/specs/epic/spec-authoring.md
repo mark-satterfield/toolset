@@ -26,9 +26,11 @@ IDs; `cds`: designed with the CDS design system; `none`: changes no design), and
 maker did not save carries a decision id. One more session authors the ONE Story the Spec pairs
 with (a container, single repository); the flow saves `story-<slug>.json` with its title,
 description and the decision ids, records every saved document, and writes that ONE Story bead
-with `depscore.py write-story`, keyed by its `elab_key`, whose full result lands in
-`story-<slug>.written.json`. When the saved spec set is reusable, no session runs and only the
-Story write is repeated.
+with `depscore.py write-story`, keyed by its `elab_key`. (The `meta.description` also has the
+write's full result land in `story-<slug>.written.json`; its only reader was
+`task-decomposition.js`, and the Python `task-decomposition` reads beads itself, so the file is
+dropped.) When the saved spec set is reusable, no session runs and only the Story write is
+repeated.
 
 ## Produces and decides
 
@@ -37,9 +39,10 @@ After a successful run:
 - `<art>/spec-<slug>.md` exists: the contracts document, one section each for `apiSpec`,
   `eventContracts`, `errorSpec`, and, when the repository has `ui` work items, one section per UI
   item headed by its id, ending with a `## UI design sources` section written by
-  `spec_ui_append`. YAML frontmatter `decisionIds:` lists the architecture views it rests on.
+  `spec_ui_append`. YAML frontmatter `decisionIds:` lists the architecture views it rests on;
+  every entry resolves to a file under `$ATW_ARCH_PATH` (step 5).
 - `<art>/spec-<slug>.data-model.md` exists: the data-model specification (stores, keys, indexes,
-  item shapes per access pattern), with YAML frontmatter `decisionIds:`.
+  item shapes per access pattern), with YAML frontmatter `decisionIds:` (checked the same way).
 - `<art>/spec-<slug>.criteria.md` exists: `acceptanceCriteria` (given/when/then, at most 120) and
   `definitionOfDone` (true/false verifiable items, at most 30), each traced to its delta/TRD
   obligation id and source section.
@@ -48,24 +51,23 @@ After a successful run:
   inputs.
 - A Story bead exists under the Epic with `elab_key = story:<slug>` (created, or updated when open
   and its title, description or metadata differ, or left unchanged when not open).
-- `<art>/story-<slug>.written.json` holds the full `write-story` result, including
-  `existingTasks` and `otherEpicTasks` (read by `task-decomposition`).
 - The step `spec:<slug>` is recorded as passed in `STEPS.md` when authored in this run.
 - Decided: the union of decision ids the contracts and data-model documents cite (deduplicated,
   in order).
 - Returned to the caller in-process: `story` (`key` = `S<n>` from the caller, `type: "story"`,
   `id` (bead id), `elabKey`, `title`, `descriptionPath` = `<art>/story-<slug>.json#/description`,
-  `repoPath`, `parentEpicKey`), `specPaths` (the three spec documents), `decisionIds`,
-  `writtenPath`, `summary` `{created, updated}`, `resumed`.
+  `repoPath`, `parentEpicKey`), `specPaths` (the three spec documents; the composite hands exactly
+  these to `task-decomposition`), `decisionIds`, `summary` `{created, updated}`, `resumed`.
 
 ## Inputs
 
 - **Epic:** Epic bead id (`beads.epicId`), its key/title.
 - **Repository:** `<repo>`; the Story key `S<n>` (the repository's index in the span, from the
   `prd-to-spec` flow).
-- **Spec header:** `{id, title, summary, service?, repoPath}`; default id/title from the PRD,
-  summary from the TRD's summary or "The PRD is the document at <PRD path>".
-- **TRD:** `<art>/trd.md` (`trd.trdPath`) and its summary (spec: `<orch>/specs/epic/trd-authoring.md`).
+- **Spec header:** `{id, title, summary, service?, repoPath}`; id and title from the PRD, summary
+  "The PRD is the document at <PRD path>".
+- **TRD:** `<art>/trd.md`, by path only; its summary is a section of the file, which the makers
+  read (spec: `<orch>/specs/epic/trd-authoring.md`).
 - **Approved target:** `targetDir`, `deltaDir`, `architectureChange` (`none | new | partial`) from
   `<art>/architecture/target.json` (CONTEXT 7.7 three cases, same sentence as in
   `prd-reconciliation.md`).
@@ -89,12 +91,12 @@ After a successful run:
   (list of strings). Written by the flow from the story maker's result file plus the computed
   decision ids. `read_story` also honours an optional `acceptanceCriteria` list (none is written
   today).
+- **`<art>/story-<slug>.draft.json`** (written by the `user-story-writer` session, step 10):
+  `{title, description}`; read only by step 11.
 - **`.meta.json`** beside each of the four files (`artifactio.record`, phase `spec:<slug>`).
-- **`<art>/story-<slug>.written.json`** (`write_story` result): `ok`, `epic`, `story` `{id,
-  elabKey, action (created|updated|unchanged), title, description, decisionIds}`,
-  `existingTasks[]` (`{elabKey, title, description (first 300 chars), status}` of keyed Tasks
-  under the Story), `otherEpicTasks[]` (open Tasks of other Epics built in `<repo>`), `summary`
-  `{id, elabKey, action, created, updated}`.
+- **`write_story` result** (in-process, not saved): `story` `{id, elabKey, action
+  (created|updated|unchanged)}` and `summary` `{created, updated}` feed the returned `story` and
+  `summary`.
 - **Story bead** (`write_story`): type `story`; parent the Epic; title; description; acceptance
   from `story-<slug>.json` `acceptanceCriteria` (empty today); notes `repoPath: <repo>`; metadata
   `elab_key = story:<slug>`, `repoPath = <repo>`, `decision_ids` (compact JSON list, when any),
@@ -121,12 +123,15 @@ No vault writes, no git commits.
    data-model makers, add the citation rule: cite the views read as `decisionIds` in YAML
    frontmatter; views with `lifecycle_state: effective` are settled, others are checked against
    the TRD.
-2. **deterministic** — Reuse check. When step `spec:<slug>` is fresh (`artifactio.plan`; or, when
-   an upstream step `trd`, `repo-scoping` or `recon:<slug>` re-ran, the recorded fingerprints of
-   its four files still match), skip to step 9 with `resumed: true`. Otherwise, per document:
-   a document whose `.meta.json` inputs still match is kept and its maker is not dispatched
-   (finer-grained reuse, see Resume points).
-3. **agent, in parallel with step 4** — `api-specification-author` (contracts maker).
+2. **deterministic** — Reuse check. The spec set is reusable when its four files and their
+   `.meta.json` exist and every input recorded in each `.meta.json` hashes as recorded now.
+   Nothing else decides it: no upstream-rerun chain, no driver ruling. When reusable, skip to
+   step 12 with `resumed: true`. Otherwise, per document: a document whose recorded inputs still
+   hash as recorded is kept and its maker is not dispatched (finer-grained reuse, see Resume
+   points).
+3. **agent, in parallel with step 4** — `api-specification-author` (contracts maker). Every maker
+   session in this flow (steps 3, 4, 7, 10) runs inside the session runner's section 2 guard
+   (`driver-contract.md` §8).
    Inputs: the step 1 context; for UI items, the instruction per design source (`bundle`: specify
    by reference to the build spec and Section IDs, no new CSS/tokens; `cds`: behaviour and content,
    design from CDS; `none`: the change, no design). Output: `<art>/spec-<slug>.md`. Model `sonnet`
@@ -136,8 +141,13 @@ No vault writes, no git commits.
    Model `fable` (frontmatter; the current shared `fable` block switches a recovered session to
    `opus`), effort `medium`. Kept; see Open questions on `fable`.
 5. **deterministic** — Check both documents exist, are non-empty UTF-8 (today
-   `jsonartifact.py --document`), then `artifactio.record` each with inputs `[<art>/trd.md,
-   <art>/repo-scoping.json, <recon>, <PRD path>]` and phase `spec:<slug>`.
+   `jsonartifact.py --document`). Then check their citations: every `decisionIds` entry in each
+   document's YAML frontmatter, with any `#<heading>` removed, must name an existing file relative
+   to `$ATW_ARCH_PATH/arc42/` (effective view) or `$ATW_ARCH_PATH/` (target or delta view); the
+   heading is not checked. A missing document or unresolved entries get one corrective
+   re-dispatch of that document's maker naming the missing path or the exact entries (CONTEXT
+   7.4); still failing → stage `author`, cause `other`. Then `artifactio.record` each with inputs
+   `[<art>/trd.md, <art>/repo-scoping.json, <recon>, <PRD path>]` and phase `spec:<slug>`.
 6. **deterministic** — When the repository has `ui` work items:
    `specui.spec_ui_append(<art>/spec-<slug>.md, <uiWork as JSON [{id, designSource, buildSpec,
    sections}]>)` (today `depscore.py spec-ui-append --doc ... --items ...`). It replaces any
@@ -154,10 +164,10 @@ No vault writes, no git commits.
    it with inputs `[<art>/trd.md, <art>/repo-scoping.json, <recon>, <PRD path>,
    <art>/spec-<slug>.md, <art>/spec-<slug>.data-model.md]`.
 9. **deterministic** — Compute `decisionIds`: read the YAML frontmatter `decisionIds` of
-   `spec-<slug>.md` and `spec-<slug>.data-model.md`; union, strip, deduplicate in order. (Today
-   they come from the makers' accepted metadata JSON; the `meta.description` makes the saved
-   documents decisive, so the documents are read.) Skipped on a reused spec set (the saved
-   `story-<slug>.json` already holds them).
+   `spec-<slug>.md` and `spec-<slug>.data-model.md` (checked in step 5); union, strip, deduplicate
+   in order. (Today they come from the makers' accepted metadata JSON; the `meta.description` makes
+   the saved documents decisive, so the documents are read.) Skipped on a reused spec set (the
+   saved `story-<slug>.json` already holds them).
 10. **agent** — `user-story-writer`, after step 8 (skipped on a reused spec set). Inputs: the
     three spec document paths, `<repo>`, the spec header. Task: title and description of the ONE
     Story, in terms of the spec set; a container, no task breakdown, WSJF or priority; runs no
@@ -170,12 +180,11 @@ No vault writes, no git commits.
     `artifactio.record` it with inputs `[<art>/spec-<slug>.md, <art>/spec-<slug>.data-model.md,
     <art>/spec-<slug>.criteria.md]`. Skipped on a reused spec set.
 12. **deterministic** — Write the Story bead: `beadwrite.write_story(graph, writer, <epic>, <art>,
-    slug=<slug>, repo=<repo>, root=<project root>)` and save its result to
-    `<art>/story-<slug>.written.json` (today `depscore.py write-story --epic <epic> --dir <art>
-    --slug <slug> --repo <repo> --project-root <root> --out <art>/story-<slug>.written.json`, run
-    with `-C <beads repo>`). Runs on every run, including a reused spec set, so the bead exists and
-    `existingTasks`/`otherEpicTasks` are current for `task-decomposition`. Idempotent: keyed by
-    `elab_key`.
+    slug=<slug>, repo=<repo>, root=<project root>)`, used in-process (today `depscore.py
+    write-story --epic <epic> --dir <art> --slug <slug> --repo <repo> --project-root <root> --out
+    <art>/story-<slug>.written.json`, run with `-C <beads repo>`; the `--out` file is not written).
+    Runs on every run, including a reused spec set, so the bead exists and carries the current
+    artifact metadata. Idempotent: keyed by `elab_key`.
 13. **deterministic** — When authored in this run: `artifactio.record_step(<epic>,
     "spec:<slug>")`. Return the result.
 
@@ -188,8 +197,9 @@ Relay mapping (every relay call becomes a direct step): `relay.revision` (`jsona
 steps 10 and 11; `relay.documents` (`jsonartifact.py --document`) → steps 5 and 8;
 `relay.record` (`<artifact script> record`) → steps 5, 6, 8, 11; `relay.depscore
 spec-ui-append` → step 6; `relay.ensure` (`story-<slug>.json`) → step 11; `relay.depscore
-write-story` → step 12; the composite's `acceptPhase` → step 13 and `resumeFresh` → step 2. No
-`workflow-command-runner` session remains.
+write-story` → step 12; the composite's `acceptPhase` → step 13; the composite's `resumeFresh`
+(`artifactio.py plan` and the upstream-rerun recheck) → dropped, step 2 checks the recorded
+inputs. No `workflow-command-runner` session remains.
 
 Agents accounted for: `api-specification-author` (kept, step 3),
 `data-model-specification-author` (kept, step 4), `acceptance-criteria-writer` (kept, step 7),
@@ -212,6 +222,11 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   closed Story's prose and metadata; nothing restores them.
 - **One repository per Story.** The Story's `repoPath` and its metadata come from the flow, never
   from a session (the agent's forbidden decisions).
+- **Citations resolve (step 5).** Without it a `decisionIds` entry naming no view reaches the
+  Story's `decision_ids` in beads and every Task inherits it (`task-decomposition.md`); nothing
+  later checks it.
+- **Section 2 hard limit:** the session runner's guard around every maker session
+  (`driver-contract.md` §8); the four makers hold Write.
 
 **Checks dropped:**
 
@@ -233,6 +248,10 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   `dispatchDeaths`, `dispatchOutcome` and text-matching failure classification: replaced by the
   runner's structured cause (CONTEXT 7.4).
 - The `replay: true` argument: replaced by the reuse check of step 2.
+- `story-<slug>.written.json`: its only reader was `task-decomposition.js`; the Python
+  `task-decomposition` reads the Story's Tasks from beads right before its maker runs
+  (`tasks-<slug>.context.json`), which is current even when this step was reused.
+- The `trd.summary` input: the TRD is read by path.
 
 ## Failure causes
 
@@ -241,11 +260,12 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 | Steps 3, 4, 7, 10: session ends on an API error | `api` | Yes, by `breaker.py`. Completed documents are kept; only the missing ones are redone. |
 | Steps 3, 4, 7, 10: quota exhausted | `quota` | Yes, by `breaker.py`, same reuse. |
 | Step 5 or 8: a document missing or empty after its session ended normally | `other` | One corrective re-dispatch of that maker naming the missing file is reasonable; then stage `author`, incident-responder. |
+| Step 5: `decisionIds` entries that name no file | `other` | One corrective re-dispatch of that maker naming the exact entries; then stage `author`, incident-responder. |
 | Step 5, 6, 8, 11: `artifactio.record` fails | `other` | No. Non-fatal warning; the cost is that the next run cannot reuse that file, and the Story's `artifact_<key>_sha256` is absent for it. |
 | Step 6: `SpecUiError` (items not a JSON list) | `other` | No (a programming error in the flow); stage `author`. |
 | Step 10: story draft missing or empty after a normal end | none | Not a failure: step 11 uses the default title and description. |
 | Step 11: `story-<slug>.json` cannot be written (`OSError`) | `other` | No; stage `story`. |
-| Step 12: `write_story` raises `GraphError` with cause `bd-timeout` or `contention` | that cause | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so a Story an interrupted attempt created is updated, not duplicated. |
+| Step 12: `write_story` raises `GraphError` with cause `bd-timeout` or `contention` | that cause (today `GraphError.cause` is chosen from `bd`'s standard error, which CONTEXT 7.4 does not accept as structured; the structured fact is merged question Q5 in `driver-contract.md`) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so a Story an interrupted attempt created is updated, not duplicated. |
 | Step 12: `write_story` raises any other `GraphError` / `bd` failure | `other` | No; stage `story-write`, incident-responder. |
 | Step 13: `record_step` fails | `other` | No; non-fatal warning. |
 
@@ -254,10 +274,11 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 ## Resume points
 
 - **R1, the whole spec set** (step `spec:<slug>`: `spec-<slug>.md`, `spec-<slug>.data-model.md`,
-  `spec-<slug>.criteria.md`, `story-<slug>.json`, each with `.meta.json`). Upstream steps: `trd`,
-  `repo-scoping`, `recon:<slug>`. Fingerprint inputs: `<art>/trd.md`, `<art>/repo-scoping.json`,
-  `<recon>`, the PRD file (the step's recorded inputs today). When fresh, a rerun starts no session
-  and runs only step 12 (the Story write) and returns.
+  `spec-<slug>.criteria.md`, `story-<slug>.json`, each with `.meta.json`). Fingerprint inputs:
+  `<art>/trd.md`, `<art>/repo-scoping.json`, `<recon>`, the PRD file (the step's recorded inputs
+  today; this list and R2's are the single source, `prd-to-spec.md` refers here). When every
+  recorded input hashes as recorded, a rerun starts no session and runs only step 12 (the Story
+  write) and returns.
 - **R2, per document inside the step** (new; the current code reaches the same effect through its
   candidate probe for an unchanged input revision):
   - contracts and data-model documents: inputs as R1; a document whose `.meta.json` matches is
@@ -287,33 +308,30 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 
 ## Open questions
 
-1. **A repository with no work items.** When the detailing's `work` list is empty, the current
-   flow still authors three documents and a Story ("no change to specify"). CONTEXT 7.6 allows a
-   recorded "nothing to build" instead. Should this flow skip all sessions and record "nothing to
-   build" for the repository (and write no Story)?
-2. **Is the `user-story-writer` session needed?** Step 11 already has a deterministic default
+1. **[S02] A repository with no work items.** When the detailing's `work` list is empty, the
+   current flow still authors three documents and a Story ("no change to specify"). CONTEXT 7.6
+   allows a recorded "nothing to build" instead. Should this flow skip all sessions and record
+   "nothing to build" for the repository (and write no Story)? The record itself is Open question
+   4 in `prd-to-spec.md`.
+2. **[S02] Is the `user-story-writer` session needed?** Step 11 already has a deterministic default
    title and description. Should the Story's title/description be deterministic (CONTEXT 7.11),
    dropping one session per repository?
-3. **`outOfRepoFindings`.** `user-story-writer.md` lists `outOfRepoFindings` as an output and an
-   acceptance criterion, but the workflow's schema allows only `title` and `description` and
-   always returns `outOfRepoFindings: []`. Keep the finding (and where does it go: owner inbox,
-   incident, a new placement?) or drop it from the agent?
-4. **No independent review.** `openapi-contract-reviewer` and `spec-decider` describe a maker,
-   checker, decider loop for Spec Authoring, but the current workflow dispatches neither. Keep the
-   flow without review, or add one review pass (with the check test applied)?
-5. **Skipping makers by surface.** The contracts and data-model makers always run, even when no
-   work item has a `service` or `data` surface. Skip a maker (and write a one-line "not
+3. **[S02] `outOfRepoFindings`.** `user-story-writer.md` lists `outOfRepoFindings` as an output
+   and an acceptance criterion, but the workflow's schema allows only `title` and `description`
+   and always returns `outOfRepoFindings: []`. Keep the finding (and where does it go: incident, a
+   new placement?) or drop it from the agent?
+4. **[S02] No independent review.** `openapi-contract-reviewer` and `spec-decider` describe a
+   maker, checker, decider loop for Spec Authoring, but the current workflow dispatches neither.
+   Keep the flow without review, or add one review pass (with the check test applied)?
+5. **[S02] Skipping makers by surface.** The contracts and data-model makers always run, even when
+   no work item has a `service` or `data` surface. Skip a maker (and write a one-line "not
    applicable" document) when the detailing gives it nothing to specify?
-6. **`fable` model.** `data-model-specification-author` declares `model: fable`, which the current
-   shared `fable` block resolves and escalates to `opus` on recovery. What model does the Python
-   runner pass for `fable` (S02)?
-7. **`isolation: worktree`** in all four makers' frontmatter, while they write into `<art>` and
-   read `<repo>`'s `main`. How does the Python session runner treat it (S02)?
-8. **`accessPatterns` input.** The driver never sends it. Drop it, or add a producer?
-9. **`write_story`'s internal retry.** `beadwrite.WRITE_BACKOFF = (2, 5)` seconds retries
-   `bd-timeout`/`contention` inside the script, shorter than CONTEXT 7.4's 30 s start. Keep the
-   inner retry, remove it in favour of the orchestrator's backoff, or align its values?
-10. **Recorded inputs of the spec step.** The current inputs omit the target and delta directories
-    and the TRD-independent architecture views the makers cite; a changed view that leaves
-    `trd.md`, `repo-scoping.json` and `<recon>` unchanged would not invalidate the spec set. Add
-    them?
+- The model for `fable` agents (`data-model-specification-author`): merged question Q1 in
+  `driver-contract.md`.
+- `isolation: worktree` in the makers' frontmatter: merged question Q2 in `driver-contract.md`.
+- The `accessPatterns` input with no producer: merged question Q13 in `prd-to-spec.md` (its Open
+  question 3).
+- `write_story`'s internal retry (`beadwrite.WRITE_BACKOFF`): merged question Q4 in
+  `driver-contract.md`.
+- Recorded inputs of the spec step (target and delta directories, cited views): merged question Q6
+  in `driver-contract.md`.

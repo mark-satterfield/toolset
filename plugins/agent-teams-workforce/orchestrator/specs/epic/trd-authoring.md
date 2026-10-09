@@ -27,10 +27,12 @@ After a successful run:
 - `<art>/trd.md` exists, is non-empty UTF-8 Markdown, and opens with YAML frontmatter whose
   `decisionIds` lists every view a requirement depends on (effective views relative to `arc42/`,
   target and delta views relative to the architecture directory, with `#<heading>` where a
-  requirement rests on one part).
+  requirement rests on one part). Every `decisionIds` entry resolves to a file under
+  `$ATW_ARCH_PATH` (step 5).
 - `<art>/trd.md.meta.json` records its sha256, bytes and input fingerprints.
 - The Epic bead carries `artifact_trd_path=<artRel>/trd.md` and `artifact_trd_sha256=<sha256>`.
-- arc42 section 2 (`arc42/02-architecture-constraints/`) is byte-identical to before the run.
+- arc42 section 2 (`arc42/02-architecture-constraints/`) is byte-identical to before the run (the
+  session runner's guard, `driver-contract.md` §8).
 - The flow's result carries `trdPath` (`<art>/trd.md`), `filingPath` (the vault destination, or
   null), and `decisionIds`.
 
@@ -55,7 +57,7 @@ this flow.
 
 | Output | Format and key fields |
 |---|---|
-| `<art>/trd.md` | Markdown; YAML frontmatter with `decisionIds: [...]`; at most 40 requirements, each under 60 words, each with a stable ID, its source (PRD requirement or view path), `appliesTo` (the element), its view citations; a summary section naming departures from effective views, non-effective files relied on, and requirement/view disagreements |
+| `<art>/trd.md` | Markdown; YAML frontmatter with `decisionIds: [...]`; at most 40 requirements, each under 60 words, each with a stable ID, its source (PRD requirement or view path), `appliesTo` (the element), its view citations; a summary section naming departures from effective views, non-effective files relied on, and requirement/view disagreements. The summary lives only here: no summary is returned or passed on, and spec authoring reads `trd.md` by path. |
 | `<art>/trd.md.meta.json` | `artifactio.py record <art>/trd.md --epic <epic> --phase trd --inputs <inputs>`: `sha256`, `bytes`, `inputs[]` |
 | Epic bead metadata | `artifact_trd_path`, `artifact_trd_sha256`, written with `<plugin>/skills/beads-contract/scripts/beads-contract.py metadata set <epic> artifact_trd_path=<artRel>/trd.md artifact_trd_sha256=<sha256>` |
 | Flow result to the composite | `{ok, trdPath, filingPath, decisionIds}`; on failure `{ok: false, stage, cause, reason}` |
@@ -71,11 +73,12 @@ No git commit. No vault write by this flow.
    `delta-items.json`, `decision.md`, `target.json`, `architecture-update.json`, `survey.json`,
    `targetDir`, `arc42/02-architecture-constraints`, and
    `arch-views:{"dir": "<archPath>/arc42", "elements": [sorted delta elements]}`, hashed as
-   `artifactio.hashed_inputs` does. If `<art>/trd.md.meta.json` inputs match, reuse `trd.md`: go to
-   step 6 with no session.
-3. **Fingerprint section 2** (deterministic). `depscore.py arch-constraints --keep` (hashes and
-   a copy of `arc42/02-architecture-constraints/`).
-4. **Author the TRD** (agent `trd-author`). Inputs, as paths only: the PRD file, `targetDir`,
+   `artifactio.hashed_inputs` does (this list is the single source; `prd-to-spec.md` refers here).
+   If every input recorded in `<art>/trd.md.meta.json` hashes as recorded, reuse `trd.md`: go to
+   step 4 with no session.
+3. **Author the TRD** (agent `trd-author`), inside the session runner's section 2 guard
+   (`driver-contract.md` §8): the runner fingerprints and copies section 2 before the session and
+   restores it and fails the step if the session changed it. Inputs, as paths only: the PRD file, `targetDir`,
    `deltaDir` and the `architectureChange` case with its documents (CONTEXT 7.7: partial = target
    plus the delta of the change; new = the target views are the delta, no delta folder; none = one
    set, the effective views `baseline.json` cites, build work from its `implementationWork` and
@@ -94,18 +97,23 @@ No git commit. No vault write by this flow.
    characters; the `decisionIds` frontmatter. The agent writes the file and nothing else. Model and
    effort: the agent definition's `fable` with `effort: medium`, which the workflow also passes.
    Keep them. Runs in parallel with `repo-scoping` (the composite starts both after Architecture).
-5. **Check section 2** (deterministic). `depscore.py arch-constraints` again; if any file differs,
-   `depscore.py arch-constraints-restore --kept <copy>` and fail at stage `trd`, cause `other`.
-6. **Verify and read the TRD** (deterministic, Python). Read `<art>/trd.md`: it must exist, be
+4. **Verify and read the TRD** (deterministic, Python). Read `<art>/trd.md`: it must exist, be
    non-empty and decode as UTF-8; compute sha256 and bytes. Parse the YAML frontmatter and take
-   `decisionIds` (empty list when absent, with a warning). Missing or empty file → fail at stage
-   `document`, cause `other`.
-7. **Record** (deterministic). `artifactio.record` the file with the step 2 inputs (one call,
-   same process as step 6, so the hash recorded is the hash verified).
-8. **Mark the Epic** (deterministic). `beads-contract.py metadata set` with `artifact_trd_path` and
+   `decisionIds` (empty list when absent, with a warning). A missing or empty file after a normal
+   session end gets one corrective re-dispatch of step 3 naming the missing path (CONTEXT 7.4,
+   specific gap feedback); still missing or empty → fail at stage `document`, cause `other`.
+5. **Check the citations** (deterministic, Python). Every `decisionIds` entry, with any
+   `#<heading>` removed, must name an existing file: relative to `$ATW_ARCH_PATH/arc42/` for an
+   effective view, or relative to `$ATW_ARCH_PATH/` for a target or delta view. The heading is not
+   checked. Unresolved entries get one corrective re-dispatch of step 3 naming the exact entries;
+   any still unresolved → fail at stage `document`, cause `other`. Runs on a reused `trd.md` too
+   (no session unless an entry no longer resolves).
+6. **Record** (deterministic). `artifactio.record` the file with the step 2 inputs (one call,
+   same process as step 4, so the hash recorded is the hash verified).
+7. **Mark the Epic** (deterministic). `beads-contract.py metadata set` with `artifact_trd_path` and
    `artifact_trd_sha256`. Skipped on reuse when the bead already carries the same sha256.
-9. **Return** `{ok: true, trdPath, filingPath, decisionIds}`. The composite records the `trd` step
-   (`artifactio.py step <epic> trd`) as its spec (S01b) says.
+8. **Return** `{ok: true, trdPath, filingPath, decisionIds}`. The composite records the `trd` step
+   (`artifactio.complete_step(<work>, "trd")`), as `prd-to-spec.md` says.
 
 **Agent dropped: `filing-clerk`.** The current script starts a filing-clerk session to name the
 TRD's vault path when the caller passes no `trdPath`. The driver already derives that path
@@ -115,9 +123,9 @@ not filed" as a visible lane failure, and no wrong file reaches the vault. So th
 outcome. (Open question 1.)
 
 The relay calls of the current script map as follows: `relayKit.documentReceipt` (jsonartifact.py
-`--document`) → step 6 in Python; `relayKit.inline` (`FRONTMATTER_IDS_PY`) → step 6 in Python;
-`relayKit.run ... artifactio.py record` → step 7 called directly; `relayKit.run ...
-beads-contract.py metadata set` → step 8 called directly. No `workflow-command-runner` session
+`--document`) → step 4 in Python; `relayKit.inline` (`FRONTMATTER_IDS_PY`) → step 4 in Python;
+`relayKit.run ... artifactio.py record` → step 6 called directly; `relayKit.run ...
+beads-contract.py metadata set` → step 7 called directly. No `workflow-command-runner` session
 remains.
 
 ## 6. Checks
@@ -126,16 +134,21 @@ remains.
 
 - No target → refuse (step 1). Without it the TRD carries no architecture obligations, and spec
   authoring builds from it; nothing later re-reads the architecture for obligations.
-- Section 2 unchanged (steps 3 and 5). Hard limit (CONTEXT 6). The `trd-author` holds Write and
-  Edit tools and reads section 2. This check is not in the current script; it is added because hard
-  limits always stay.
-- `trd.md` exists and is non-empty UTF-8 (step 6). Without it spec authoring and the vault filing
+- Section 2 unchanged: the session runner's guard around step 3 (`driver-contract.md` §8). Hard
+  limit (CONTEXT 6). The `trd-author` holds Write and Edit tools and reads section 2. The current
+  script has no such guard; the runner's one guard covers this flow, with no copy of its own.
+- `trd.md` exists and is non-empty UTF-8 (step 4). Without it spec authoring and the vault filing
   get an empty or missing TRD; spec authoring does not refuse one.
+- Every `decisionIds` entry resolves to a file (step 5). Without it a citation of a view that does
+  not exist reaches the vault with the TRD, and spec authoring and the Tasks inherit it; no later
+  step checks it.
 
 **Checks dropped**
 
-- "trd.md changed between its check and its record" sha comparison: steps 6 and 7 run in one
+- "trd.md changed between its check and its record" sha comparison: steps 4 and 6 run in one
   Python process on the same bytes.
+- The `summary` the author returned and the composite passed to spec authoring as `trd.summary`:
+  the summary is a section of `trd.md`.
 - Rejecting a run without `ART` or `RELAY_RUNNER`, `dispatchInterruption`, `dispatchOutcome`,
   `settleAgent` failure bookkeeping, relay-file sequencing: sandbox and relay workarounds.
 - The `feedback` argument ("Gate feedback from the previous run"): no caller passes it;
@@ -150,13 +163,13 @@ remains.
 | Failure point | Cause | Retry reasonable? |
 |---|---|---|
 | No PRD path or no `targetDir` | `other` | No; incident-responder. |
-| `arch-constraints` fails to fingerprint | `other` | No. |
 | `trd-author` session: API error or overload | `api` | Yes, through `breaker.py`. |
 | `trd-author` session: usage or quota limit | `quota` | Yes, through `breaker.py`. |
 | Session ends and `trd.md` is missing or empty | `other` | Once, with "the file at `<art>/trd.md` is missing or empty" as feedback; then no. |
-| Section 2 changed | `other` | No; restored, then incident-responder. |
+| `decisionIds` entries that name no file | `other` | Once, with the exact entries as feedback; then no. |
+| Section 2 changed (the runner's guard) | `other` | No; restored, then incident-responder. |
 | `artifactio.record` fails | `other` | No. |
-| `beads-contract.py metadata set` times out or hits a Dolt lock | `bd-timeout` (timeout exit) or `contention` (lock) | Yes, backoff from 30 s, doubling, capped at 30 minutes. |
+| `beads-contract.py metadata set` times out or hits a Dolt lock | `bd-timeout` or `contention`, from the structured fact merged question Q5 in `driver-contract.md` settles | Yes, backoff from 30 s, doubling, capped at 30 minutes. |
 
 Causes come from exit statuses, the session's structured result and exception types, never from
 error text. `relay` has no producer in this flow.
@@ -165,8 +178,7 @@ error text. `relay` has no producer in this flow.
 
 | Saved result | Fingerprint inputs | A rerun after it redoes |
 |---|---|---|
-| `<art>/trd.md` + `.meta.json` | PRD, `delta-items.json`, `decision.md`, `target.json`, `architecture-update.json`, `survey.json`, `targetDir`, section 2 folder, `arch-views` digest of the delta elements' effective views | only step 8 when the bead lacks the metadata; no session |
-| `arch-constraints --keep` copy | none (taken fresh each authoring run) | nothing; it exists only to restore |
+| `<art>/trd.md` + `.meta.json` | PRD, `delta-items.json`, `decision.md`, `target.json`, `architecture-update.json`, `survey.json`, `targetDir`, section 2 folder, `arch-views` digest of the delta elements' effective views | steps 4, 5 and 7 (deterministic; step 7 only when the bead lacks the metadata); no session |
 
 An interrupted session leaves no accepted `trd.md.meta.json`, so the rerun authors again; a
 partial `trd.md` without a matching `.meta.json` is overwritten. A rerun of `repo-scoping` alone
@@ -177,7 +189,7 @@ does not redo the TRD: the span is not a TRD input.
 - 7.7: the three cases decide which documents are the TRD's architecture source, and something
   reaches the TRD in every case (with no architecture change, the obligations on the gaps
   `baseline.json` and `closure.json` name).
-- Section 2 hard limit (CONTEXT 6): steps 3 and 5.
+- Section 2 hard limit (CONTEXT 6): the session runner's guard around step 3.
 - 7.13: the saved `survey.json` is handed to the author by path, so the survey is not redone.
 - 7.4: only API, quota and `bd` contention are retried; a missing file is retried once with the
   exact gap; structured causes.
@@ -187,20 +199,14 @@ does not redo the TRD: the span is not a TRD input.
 
 ## 10. Open questions
 
-1. **Filing path for a PRD outside a `prds/` folder.** Dropping the `filing-clerk` session leaves
-   such a TRD unfiled (a visible lane note). Does any PRD the pipeline elaborates live outside a
-   `prds/` folder? If so, should a rule in `trd_path_for` cover it, or should the filing-clerk run
-   for that case only?
-2. **Where the TRD summary goes.** Today the author returns a `summary` that becomes the default
-   `spec.summary` for spec authoring, and a resumed run passes an empty summary. This spec puts the
-   summary in the TRD itself and hands spec authoring the `trd.md` path. S01d must agree.
-3. **`decisionIds` that name no file.** A citation of a view that does not exist reaches the vault
-   with the TRD, and no later step checks it. Should a deterministic check (every `decisionIds`
-   path resolves under `$ATW_ARCH_PATH`) be added, with one corrective pass?
-4. **The 40-requirement and 25,000-character limits.** They are brief guidance and are not
+1. **[S02] Filing path for a PRD outside a `prds/` folder.** Dropping the `filing-clerk` session
+   leaves such a TRD unfiled (a visible lane note). Does any PRD the pipeline elaborates live
+   outside a `prds/` folder (S02 can list `$ATW_PRD_DIR`)? If so, should a rule in `trd_path_for`
+   cover it, or should the filing-clerk run for that case only?
+2. **[S02] The 40-requirement and 25,000-character limits.** They are brief guidance and are not
    checked. Keep them unchecked?
-5. **Driver resume ruling.** `artifactio.py plan` rules the `trd` step from the `.meta.json`
-   inputs. This spec adds `delta-items.json` to the list `prd-to-spec` passes today. S01g/S02
-   confirm.
-</content>
-</invoke>
+- Whether the driver's resume ruling uses this flow's input list (which adds `delta-items.json` to
+  the list `prd-to-spec.js` passes today): merged question Q6 in `driver-contract.md`.
+- Where the TRD summary goes: settled; it stays in `trd.md`, and `prd-to-spec.md` and
+  `spec-authoring.md` pass and read the path only (S01h finding 5).
+- `decisionIds` that name no file: settled; step 5 checks them (S01h finding 25).

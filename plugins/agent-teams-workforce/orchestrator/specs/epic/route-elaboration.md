@@ -75,7 +75,8 @@ door.
 **Is it still needed? Not as a workflow.** Its logic already exists in Python and is the one the
 pipeline uses. The rewrite keeps one router (`routing.route_elaboration`) and no
 `route-elaboration` flow. `route-elaboration.js` becomes deletable once `/work-bead` routes
-through the Python router (see Open questions 1 and 2). Differences between the two today, which
+through the Python router, or loses its elaboration branch (merged question Q12 and Open question
+1). Differences between the two today, which
 the Python version settles:
 - Infrastructure kinds: the JavaScript hardcodes `infra`/`infrastructure`; `routing.py` reads
   `infra-vocabulary.json`. The vocabulary is the one source.
@@ -122,13 +123,18 @@ None. The verdict is recomputed from the bead each time; it costs nothing and sa
 
 ## 10. Open questions
 
-1. **Where the router lives.** `routing.py` is in the driver (control repository) and imports
-   `pluginversion`; the `/work-bead` command runs from the installed plugin and cannot import the
-   driver. Either the router moves into `<orch>` and the driver imports it from the installed
-   plugin, or the command calls a driver CLI. S02 decides.
-2. **Whether `/work-bead` keeps an elaboration door.** If the owner wants manual elaboration, the
-   command needs a Python entry point that routes and starts the `prd-to-spec` flow; if not, step
-   3's elaboration branch and step 5 go. The owner or S02 decides; S08 (deletion) depends on it.
-3. **Feature verdict.** Both routers return `elaborate` for a feature, yet no door can dispatch
-   one (it has no Epic or PRD yet). Returning `skip` with "needs `/start-prd`" would match what
-   happens. S02 decides whether to change the verdict.
+**Q12 [owner] (merged; also asked in `prd-to-spec.md`). Which manual doors into the Epic
+pipeline survive?** Today three exist besides the driver: the `/work-bead` command's elaboration
+branch (step 3, "ELABORATION work", and step 5), the `/start-prd` command, and the inline PRD text
+(`prd.body`) those doors could pass. If the owner wants manual elaboration, each surviving door
+needs a Python entry point that routes and starts the `prd-to-spec` flow (which applies the
+selection filters of CONTEXT 7.8 at its entry, `prd-to-spec.md` step 2); if not, the branches go and S08
+deletes `route-elaboration.js`. Where the router then lives is Open question 1.
+
+1. **[S02] Where the router lives** (after Q12). `routing.py` is in the driver (control
+   repository) and imports `pluginversion`; the `/work-bead` command runs from the installed plugin
+   and cannot import the driver. Either the router moves into `<orch>` and the driver imports it
+   from the installed plugin, or the command calls a driver CLI.
+2. **[S02] Feature verdict.** Both routers return `elaborate` for a feature, yet no door can
+   dispatch one (it has no Epic or PRD yet). Returning `skip` with "needs `/start-prd`" would match
+   what happens. Change the verdict?

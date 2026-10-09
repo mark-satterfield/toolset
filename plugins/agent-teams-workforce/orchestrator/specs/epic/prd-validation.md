@@ -85,15 +85,13 @@ go to the owner) are why the PRD's readiness is the owner's `ready` ruling, not 
 
 ## 10. Open questions
 
-1. **Leftover `prd-validation` step entries.** Some Epic working folders under
-   `<control>/.claude/workflow-runs/artifacts/<bead>/STEPS.md` still list `prd-validation`. Should the
-   Python resume logic ignore unknown step names, or should S05 remove them from the saved folders
-   once? The sources do not say.
-2. **Any PRD check before architecture?** Since `b42c43d5` the Epic pipeline runs no structural PRD
-   check (neither `prd-validation` nor `depscore.py prd-parse`). Whether the Python pipeline needs a
-   deterministic PRD parse (file readable, not superseded, requirements present) before the first
-   agent step, or relies only on the owner's `ready` ruling, is for S02 or the owner to settle; it
-   belongs in `<orch>/specs/epic/prd-to-spec.md` if kept.
-3. **Fate of `prd-validation.js`.** Nothing in the Epic or Task pipelines, the commands, or the driver
-   calls it. Whether S08 or S15 deletes it (and `prd-validation-analyst`), or it stays as a manual
-   tool, is not settled by the sources.
+1. **[S02] Any PRD check before architecture?** Since `b42c43d5` the Epic pipeline runs no
+   structural PRD check (neither `prd-validation` nor `depscore.py prd-parse`). Whether the Python
+   pipeline needs a deterministic PRD parse (file readable, not superseded, requirements present)
+   before the first agent step, or relies only on the owner's `ready` ruling; it belongs in
+   `<orch>/specs/epic/prd-to-spec.md` if kept.
+2. **[owner] Fate of `prd-validation.js`.** Nothing in the Epic or Task pipelines, the commands, or
+   the driver calls it. Does it (with `prd-validation-analyst`) stay as a manual tool the owner
+   uses, or do S08/S15 delete it?
+- Leftover `prd-validation` step entries in saved `STEPS.md`: merged question Q14 in
+  `<orch>/specs/epic/driver-contract.md`.
