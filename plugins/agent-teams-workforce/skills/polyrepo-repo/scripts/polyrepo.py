@@ -31,6 +31,7 @@ Usage:
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
   polyrepo.py beads-fleet [--fix]
+  polyrepo.py deprecated-prs [--fix]
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
 
@@ -2930,9 +2931,17 @@ def rename(
 
 
 def _run_rename(
-    args: argparse.Namespace, cfg: Config, st: State, name: str, new: str
+    args: argparse.Namespace,
+    cfg: Config,
+    st: State,
+    name: str,
+    new: str,
+    after: Callable[[dict[str, Any]], bool] | None = None,
 ) -> int:
     """Run a rename for a command and report it.
+
+    `after`, when given, runs once the rename is done (or planned, on a dry run), adds its
+    own results to the report and steps, and returns False when it failed.
 
     Returns:
         0 on success, 1 when a step failed part way.
@@ -2944,6 +2953,7 @@ def _run_rename(
         res["error"] = str(exc)
         emit(args, res, lambda: f"{name}: stopped: {res['error']}")
         return 1
+    ok = after(res) if after else True
     finish_records(cfg, res)
     head = (
         f"dry run: rename {name} to {new}"
@@ -2957,7 +2967,7 @@ def _run_rename(
             [head, *[f"  {s}" for s in res["steps"]], *_records_line(res)]
         ),
     )
-    return 0
+    return 0 if ok else 1
 
 
 def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
@@ -2976,11 +2986,79 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     return _run_rename(args, cfg, st, name, args.new_name)
 
 
-def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation.
+DEPRECATED_PR_COMMENT = "Closed: this repository is deprecated."
+
+
+def open_prs(cfg: Config, repo: str) -> list[dict[str, Any]]:
+    """List a GitHub repo's open pull requests.
 
     Returns:
-        0 on success, 1 when a step failed part way.
+        One {number, title, url} per open pull request.
+
+    Raises:
+        GitFailedError: when gh cannot list them.
+    """
+    cp = run(
+        [
+            "gh", "pr", "list", "--repo", f"{cfg.owner}/{repo}", "--state", "open",
+            "--limit", "500", "--json", "number,title,url",
+        ],
+        timeout=120,
+    )  # fmt: skip
+    must(cp)
+    return json.loads(cp.stdout or "[]")
+
+
+def close_pr(cfg: Config, repo: str, number: int) -> str | None:
+    """Close one pull request with the deprecation comment; its branch is kept.
+
+    Returns:
+        None when it closed, else gh's error.
+    """
+    cp = run(
+        [
+            "gh", "pr", "close", str(number), "--repo", f"{cfg.owner}/{repo}",
+            "--comment", DEPRECATED_PR_COMMENT,
+        ],
+        timeout=120,
+    )  # fmt: skip
+    return None if cp.returncode == 0 else _last_line(cp)
+
+
+def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) -> bool:
+    """Close every open pull request of a repo, recording each in res["closed_prs"].
+
+    Returns:
+        False when the pull requests could not be listed or one did not close.
+    """
+    try:
+        prs = open_prs(cfg, repo)
+    except (GitFailedError, json.JSONDecodeError) as exc:
+        res["pr_error"] = f"could not list open pull requests: {exc}"
+        res["steps"].append(f"open pull requests NOT closed: {res['pr_error']}")
+        return False
+    ok = True
+    for pr in prs:
+        pr["status"] = "planned" if dry_run else "closed"
+        if not dry_run and (err := close_pr(cfg, repo, pr["number"])):
+            pr["status"], pr["error"], ok = "failed", err, False
+        verb = {"planned": "close", "closed": "closed", "failed": "FAILED to close"}
+        res["steps"].append(
+            f"{verb[pr['status']]} pull request #{pr['number']} {pr['title']}"
+            + (f": {pr['error']}" if pr.get("error") else "")
+        )
+    if not prs:
+        res["steps"].append("no open pull requests to close")
+    res["closed_prs"] = prs
+    return ok
+
+
+def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
+    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation,
+    then close every open pull request in it with the deprecation comment.
+
+    Returns:
+        0 on success, 1 when a step failed part way or a pull request did not close.
 
     Raises:
         PolyrepoError: when the repo is already deprecated.
@@ -2990,7 +3068,17 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     if name.startswith("deprecated-"):
         msg = f"{name} is already deprecated"
         raise PolyrepoError(msg)
-    return _run_rename(args, cfg, st, name, deprecated_name(name))
+    new = deprecated_name(name)
+    return _run_rename(
+        args,
+        cfg,
+        st,
+        name,
+        new,
+        after=lambda res: _close_repo_prs(
+            cfg, name if args.dry_run else new, args.dry_run, res
+        ),
+    )
 
 
 # agents-sync ----------------------------------------------------------------------------------
@@ -3582,6 +3670,78 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["open"] else 0
 
 
+def deprecated_open_prs(cfg: Config) -> list[dict[str, Any]]:
+    """Find every open pull request in a deprecated- repo of the owner on GitHub.
+
+    Returns:
+        One {repo, number, title, url} per open pull request.
+
+    Raises:
+        PolyrepoError: when gh cannot search.
+    """
+    cp = run(
+        [
+            "gh", "search", "prs", "--owner", cfg.owner, "--state", "open",
+            "--limit", "1000", "--json", "repository,number,title,url",
+        ],
+        timeout=120,
+    )  # fmt: skip
+    if cp.returncode != 0:
+        msg = f"gh search prs failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    return [
+        {
+            "repo": pr["repository"]["name"],
+            "number": pr["number"],
+            "title": pr["title"],
+            "url": pr["url"],
+        }
+        for pr in json.loads(cp.stdout or "[]")
+        if pr["repository"]["name"].startswith("deprecated-")
+    ]
+
+
+def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
+    """Check for open pull requests in deprecated- repos; with --fix, close them.
+
+    Returns:
+        0 when none is open (or every one was closed), else 1.
+    """
+    prs = deprecated_open_prs(cfg)
+    findings = [
+        Finding(
+            "deprecated-repo-open-pr",
+            pr["repo"],
+            f"#{pr['number']} {pr['title']} ({pr['url']}) is open in a deprecated repo",
+            fix=f"close #{pr['number']} with the comment {DEPRECATED_PR_COMMENT!r}",
+        )
+        for pr in prs
+    ]
+    if args.fix:
+        for pr, f in zip(prs, findings, strict=True):
+            err = close_pr(cfg, pr["repo"], pr["number"])
+            f.status, f.error = ("failed", err) if err else ("fixed", None)
+    data: dict[str, Any] = {
+        "findings": [f.as_dict() for f in findings],
+        "open": sum(f.status in {"open", "failed"} for f in findings),
+        "fixed": sum(f.status == "fixed" for f in findings),
+    }
+
+    def text() -> str:
+        lines = [
+            f"{len(findings)} open pull requests in deprecated repos ({data['fixed']} closed)"
+        ]
+        lines.extend(
+            f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})"
+            + (f": {f.error}" if f.error else "")
+            for f in findings
+        )
+        return "\n".join(lines)
+
+    emit(args, data, text)
+    return 1 if data["open"] else 0
+
+
 BEADS_AUDIT = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts" / "audit-fleet.sh"
 SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
@@ -3589,12 +3749,16 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
+    "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
-}
+    "deprecated-prs --fix": [
+        sys.executable, str(SELF), "deprecated-prs", "--fix", "--json",
+    ],
+}  # fmt: skip
 
 
 def _finding(check: str, subject: str, kind: str, detail: str) -> dict[str, Any]:
@@ -3627,7 +3791,7 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     if "error" in data:
         return [_finding(check, "-", "error", str(data["error"]))]
-    if check in {"reconcile", "beads-fleet"}:
+    if check in {"reconcile", "beads-fleet", "deprecated-prs"}:
         return [
             _finding(check, f["repo"], f["kind"], f["detail"])
             for f in data.get("findings") or []
@@ -3827,9 +3991,10 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
 def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
-    With --fix, first run the repairs (`reconcile --fix`, `agents-sync`, then
-    `beads-fleet --fix`), each of which commits and pushes its own changes. The checks are
-    reconcile, agents-sync --check, the beads fleet audit and the beads fleet list (in
+    With --fix, first run the repairs (`reconcile --fix`, `agents-sync`, `beads-fleet
+    --fix`, then `deprecated-prs --fix`), each of which commits and pushes its own changes
+    or closes the pull requests it finds. The checks are reconcile, agents-sync --check, the
+    beads fleet audit, the beads fleet list and open pull requests in deprecated repos (in
     parallel, each its own process), the governance
     entries, the knowledge-store pointers and the repository-naming document.
 
@@ -4030,7 +4195,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser(
         "deprecate",
         parents=[common],
-        help="rename a repo deprecated-*, here and on GitHub",
+        help="rename a repo deprecated-*, here and on GitHub, and close its open PRs",
     )
     s.add_argument("repo")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
@@ -4072,6 +4237,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_beads_fleet)
 
     s = sub.add_parser(
+        "deprecated-prs",
+        parents=[common],
+        help="report open pull requests in deprecated- repos",
+    )
+    s.add_argument("--fix", action="store_true", help="close them")
+    s.set_defaults(func=cmd_deprecated_prs)
+
+    s = sub.add_parser(
         "doctor",
         parents=[common],
         help="every health check as one report; --fix runs the repairs first",
@@ -4079,7 +4252,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--fix",
         action="store_true",
-        help="run reconcile --fix, agents-sync and beads-fleet --fix before the checks",
+        help="run every repair (reconcile, agents-sync, beads-fleet, deprecated-prs) first",
     )
     s.set_defaults(func=cmd_doctor)
 

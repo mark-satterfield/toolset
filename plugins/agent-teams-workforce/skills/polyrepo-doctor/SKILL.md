@@ -3,7 +3,8 @@ name: polyrepo-doctor
 description: >-
   Health check for the project's repositories and the steward's records of them: reconcile
   disk, GitHub and the manifest; check that every repo carries the current shared
-  `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that every governance entry and
+  `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
+  deprecated repo has an open pull request; check that every governance entry and
   knowledge-store pointer still resolves; check the repository-naming document against the
   naming patterns. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
@@ -23,6 +24,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `agents-sync` | `agents-sync --check` | every repo has the current shared `AGENTS.md` blocks |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every active repo on disk, in every app space | no anomaly |
 | `beads-fleet` | `beads-fleet`: the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`), which `com.skillspoke.beads-fleet-watch` watches | every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed |
+| `deprecated-prs` | `deprecated-prs`: every open pull request on GitHub in a repo of the owner whose name starts with `deprecated-` | no deprecated repo has an open pull request |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
 | `naming-doc` | the config's `naming.document` (the vault's `repository-naming.md`) against `naming.patterns` | every pattern has a section, every example matches its section's pattern, deprecation examples and the archive delay agree with the tool |
@@ -34,10 +36,12 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `agents-sync` and then `beads-fleet --fix` before the
-checks; each commits and pushes what it changed. `beads-fleet --fix` removes every listed
-path that is missing or not an active fleet repo and adds every unlisted active repo with a
-`.beads` folder. What stays open needs judgment:
+`doctor --fix` runs `reconcile --fix`, `agents-sync`, `beads-fleet --fix` and then
+`deprecated-prs --fix` before the checks; each commits and pushes what it changed.
+`beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
+and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
+every open pull request in a deprecated repo with the comment "Closed: this repository is
+deprecated." and keeps its branch. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.

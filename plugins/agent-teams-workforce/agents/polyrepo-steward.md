@@ -120,7 +120,8 @@ hand the facts back for the caller to act on.
 |---|---|
 | Create a repo from a template, locally and on GitHub | `create <name> --space S --template T --purpose TEXT` |
 | Rename a repo, locally and on GitHub | `rename <repo> <new-name>` |
-| Deprecate a repo | `deprecate <repo>` |
+| Deprecate a repo (renames it and closes its open pull requests) | `deprecate <repo>` |
+| Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `reconcile --fix` archives it `deprecation.archive_after_days` after `deprecated_on` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search across repos | `grep <pattern>` (rg over every in-scope repo) |
@@ -142,7 +143,8 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 A repository is never deleted. "Delete" means deprecate: the repo is renamed with a
 `deprecated-` prefix and the whole name lowercased
 (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`),
-on GitHub and locally together. It is archived on GitHub 60 days later. Deprecated and
+on GitHub and locally together, and every open pull request in it is closed with the
+comment "Closed: this repository is deprecated." It is archived on GitHub 60 days later. Deprecated and
 archived are separate states. The naming rules are the vault's `repository-naming.md`;
 `doctor` checks it against the tool's patterns.
 
@@ -176,7 +178,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, beads, the beads fleet list, governance, knowledge store, naming document | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, naming document | `polyrepo-doctor` |
 | Facts outside the manifest ("which repos contain a DynamoDB table?"), and the knowledge store | `polyrepo-info` |
 | Sweep repos and docs for durable "where things live" facts | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

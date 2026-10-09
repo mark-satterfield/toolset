@@ -45,11 +45,12 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `rebase <repo …\|--all>` | Fetch and rebase `main` on `origin/main`; stops and reports on a conflict or a dirty tree. |
 | `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry, and add the repo to the beads fleet list when it has a `.beads` folder. |
 | `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry, and replace the old path in the beads fleet list with the new one. Refuses an invalid or taken name, or a `main` not known to be pushed. |
-| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list. |
+| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list, then close every open pull request in the repo with the comment "Closed: this repository is deprecated." (branches are kept), reporting each one. `--dry-run` lists the pull requests it would close. |
 | `beads-fleet [--fix]` | Check the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`, config `beads.fleet_config`): every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed. `--fix` corrects the list. |
+| `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-fleet`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync` and `beads-fleet --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-fleet`, `deprecated-prs`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-fleet --fix` and `deprecated-prs --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
@@ -96,6 +97,9 @@ judgment, and each has an obvious next step:
   is `deprecated-` plus the old name, all lowercase
   (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`).
   The rename happens on GitHub and locally together, and the folder stays in its app space.
+  Every open pull request in the repo is then closed with the comment "Closed: this
+  repository is deprecated."; a deprecated repo never has an open pull request, and
+  `doctor` reports any that does.
   `reconcile --fix` archives the repo on GitHub `deprecation.archive_after_days` (60) after
   `deprecated_on`. Deprecated and archived are separate lifecycle states.
 - **beads fleet list** — `repos.additional` in the control repo's `.beads/config.yaml` is
