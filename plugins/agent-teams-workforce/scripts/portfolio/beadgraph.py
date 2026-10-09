@@ -70,8 +70,28 @@ OWNED_KEY = "seq_owned_blockers"
 OWNED_AT_KEY = "seq_owned_blockers_at"
 
 
+#: The cause of a failure the beads server or its connection made, not the command.
+BD_TIMEOUT = "bd-timeout"
+#: The cause of any other failure.
+OTHER_CAUSE = "other"
+
+
 class GraphError(RuntimeError):
-    """The tracker could not be read, or answered with something unusable."""
+    """The tracker could not be read, or answered with something unusable.
+
+    `cause` is BD_TIMEOUT when `bd` itself reported that the beads server or its connection
+    failed, else OTHER_CAUSE; it is set where `bd` fails, never from the message.
+    """
+
+    def __init__(self, message: str, cause: str = OTHER_CAUSE) -> None:
+        """Keep the message and the cause.
+
+        Args:
+            message: What failed.
+            cause: BD_TIMEOUT or OTHER_CAUSE.
+        """
+        super().__init__(message)
+        self.cause = cause
 
 
 @dataclass(frozen=True)
@@ -220,6 +240,27 @@ RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
 )
 
 
+#: What `bd` prints on standard error when the beads server or its connection failed.
+SERVER_FAILURE = re.compile(
+    r"i/o timeout|connection refused|deadline exceeded|database is locked|"
+    r"invalid connection|bad connection|failed to open database|"
+    r"write commit result indeterminate",
+    re.IGNORECASE,
+)
+
+
+def failure_cause(stderr: str) -> str:
+    """The cause of a failed `bd` command, from what `bd` printed on standard error.
+
+    Args:
+        stderr: `bd`'s standard error, without the command line.
+
+    Returns:
+        BD_TIMEOUT when the beads server or its connection failed, else OTHER_CAUSE.
+    """
+    return BD_TIMEOUT if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
+
+
 def connection_retryable(args: list[str], stderr: str) -> str:
     """The reason a failed `bd` command may be run again, or "" when it may not.
 
@@ -342,7 +383,7 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         if not why or attempt == attempts:
             if why:
                 msg += f" (failed {attempts} times to reach the beads server)"
-            raise GraphError(msg)
+            raise GraphError(msg, failure_cause(stderr))
         pause = CONNECTION_BACKOFF[attempt - 1]
         print(
             f"[beadgraph] attempt {attempt} of {attempts} failed: {msg}; "

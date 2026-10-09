@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; when a repository failed the run returns ok:false at stage repositories-incomplete with each repository\'s stage and cause: a transient cause (a dispatch that died, a beads timeout, an API or quota limit, a relay copy problem) releases the Epic so the next dispatch reruns only the failed steps after the supervisor\'s backoff, and any other cause holds the Epic for the incident-responder to diagnose; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; when a repository failed the run returns ok:false at stage repositories-incomplete. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay or other, set where the failure happens from structured fields (a dispatch interruption, the cause a depscore.py or relay result carries, a child workflow\'s failure.cause), never from a reason\'s text; the run\'s cause is transient (any but other) only when every failed repository\'s is. A transient cause releases the Epic so the next dispatch reruns only the failed steps after the supervisor\'s backoff; any other cause holds the Epic for the incident-responder to diagnose. A failed hold write is made again after backoff, and an Epic whose hold was attempted is never released; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -11,7 +11,7 @@ export const meta = {
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD from the target and delta views' },
     { title: 'Spec Authoring', detail: 'per repo: detail each placed delta item against the code on main, then author the Spec for its add, modify and remove items and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose its add, modify and remove items into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
-    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done once every span repository has its Story and Tasks, or nothing to build, else return ok:false at stage repositories-incomplete (transient causes released for a backoff retry, any other cause held for diagnosis); then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
+    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done once every span repository has its Story and Tasks, or nothing to build, else return ok:false at stage repositories-incomplete with failure.cause (a transient cause released for a backoff retry, any other cause held for diagnosis); then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
@@ -154,14 +154,15 @@ async function settleAgent(prompt, opts) {
     const plan = dispatchRetry(err, name, 1, 0, dispatchPolicy(o), false)
     if (plan.interruption) dispatchInterruption = plan.interruption
     const message = String((err && err.message) || err).slice(0, 300)
-    dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
+    const cause = plan.cause === 'exhausted' ? 'quota' : plan.cause === 'transient' ? 'api' : 'other'
+    dispatchFailures.push({ ...who, outcome: 'threw', cause, message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
   }
   return null
 }
 
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-if (!a.prd) return dispatchOutcome({ ok: false, stage: 'input', error: 'no prd supplied' })
+if (!a.prd) return dispatchOutcome({ ok: false, stage: 'input', error: 'no prd supplied', failure: { stage: 'input', cause: 'other', repositories: [] } })
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const shellq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
 const repoPath = a.repoPath || a.prd.repoPath || null
@@ -176,6 +177,43 @@ const CONTROL_REPO = normRepo(emitTarget)
 
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
 const HUMAN_ACTION_STAGE = 'requires-human-action'
+
+/**
+ * The cause every failure carries in failure: { stage, cause, repositories }. It is set where the
+ * failure happens, from structured fields (a dispatch interruption's stage, the cause a depscore.py
+ * or relay result carries, a child workflow's failure.cause), never from a reason's text. Every
+ * cause but 'other' is transient: a later dispatch, after backoff, can be expected to get past it.
+ */
+const CAUSES = ['api', 'quota', 'bd-timeout', 'relay', 'other']
+const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay']
+const causeOrOther = (c) => (CAUSES.includes(c) ? c : 'other')
+/** The cause of a dispatch interruption: 'quota' or 'api', from the stage it was set with. */
+const interruptionCause = (i) => (i && i.stage === 'account-quota-exhausted' ? 'quota' : i && i.stage === 'api-unavailable' ? 'api' : 'other')
+/** One cause for several failures: the first one's when every one is transient, else 'other'. */
+const combinedCause = (causes) => (causes.length && causes.every((c) => TRANSIENT_CAUSES.includes(c)) ? causes[0] : 'other')
+/**
+ * The cause a step's result carries: its failure.cause, else its own cause, else the dispatch
+ * interruption it stopped on, else the combined cause of the sessions that died in it, else 'other'.
+ */
+function causeOf(r) {
+  if (!r || typeof r !== 'object') return 'other'
+  if (r.failure && CAUSES.includes(r.failure.cause)) return r.failure.cause
+  if (CAUSES.includes(r.cause)) return r.cause
+  if (r.dispatchInterruption) return interruptionCause(r.dispatchInterruption)
+  const deaths = Array.isArray(r.dispatchFailures) ? r.dispatchFailures : []
+  return deaths.length ? combinedCause(deaths.map((d) => causeOrOther(d && d.cause))) : 'other'
+}
+/**
+ * Returns the failed result `out` with failure: { stage, cause, repositories }: the failure it
+ * already carries, else one at its stage with cause 'other'; a dispatch interruption makes the
+ * cause the interruption's.
+ */
+function withFailure(out) {
+  const o = out && typeof out === 'object' ? out : { ok: false, stage: 'unknown' }
+  const prior = o.failure && typeof o.failure === 'object' ? o.failure : {}
+  const cause = dispatchInterruption ? interruptionCause(dispatchInterruption) : causeOrOther(prior.cause)
+  return { ...o, failure: { stage: prior.stage || o.stage || 'unknown', cause, repositories: Array.isArray(prior.repositories) ? prior.repositories : [] } }
+}
 
 const produced = {}
 const runLedger = []
@@ -263,6 +301,7 @@ const partial = (stage, detail, extra) => {
     beadId: subjectId,
     headline: `${stage}: ${why}. ${keys.length ? `Produced before it stopped, in the run journal under \`partial\`: ${keys.join(', ')}.` : 'Nothing had been produced.'}`,
     partialProduced: keys,
+    failure: { stage, cause: causeOf(detail), repositories: [] },
   }
 }
 function handback(ok, stage, headline, detail) {
@@ -280,7 +319,7 @@ function handback(ok, stage, headline, detail) {
 const artPhases = {}
 const artReport = { dir: null, epicId: null, filing: {} }
 
-const lifecycle = { started: false, owner: null, pluginRoot: null, start: null, finish: null, release: null, held: false }
+const lifecycle = { started: false, owner: null, pluginRoot: null, start: null, finish: null, release: null, held: false, holdAttempted: false, holdWrite: null }
 const RESOLVE_PLUGIN_ROOT_PY = `import json, os, sys
 from pathlib import Path
 repo = os.path.normpath(ARGS[0]) if ARGS and ARGS[0] else ""
@@ -667,21 +706,24 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   /**
    * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
-   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
+   * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
+   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
     try {
       rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
     } catch (err) {
-      return { error: `${label}: ${String((err && err.message) || err)}` }
+      return { error: `${label}: ${String((err && err.message) || err)}`, cause: 'other' }
     }
     const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file, readRunner: script.replace(/[^/]+$/, 'relayrun.py') })
-    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult, cause: 'relay' }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
   }
@@ -689,13 +731,13 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
    * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
    * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
-   * or { ok: false, error }.
+   * or { ok: false, error, cause }: cause 'relay' when the result did not come back through the relay.
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
     const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file, readRunner: runner })
-    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
-    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult, cause: 'relay' }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`), cause: 'other' }
     return { ok: true, ...r.view, relayFile: file }
   }
   /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
@@ -865,64 +907,93 @@ function restoreStep(epicId, after = 'what it names has been settled') {
     : 'elabmark.py (in the SDLC automation directory)'
   return `After ${after}, set ${epicId} to elaboration_state=in_progress: ${elabmark} --set=in_progress --bead=${epicId} --apply — the next elaboration sweep resumes it from its last persisted step. Never set a partly-elaborated Epic to ready.`
 }
-/** Clears the Epic's elaboration_state with cause awaiting-human-action; returns whether the write succeeded. */
+/** The pauses, in ms, before the hold write is made again after it failed. */
+const HOLD_BACKOFF_MS = [10000, 30000, 90000]
+const pause = (ms) => (typeof setTimeout === 'function' ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
+/**
+ * Clears the Epic's elaboration_state with cause awaiting-human-action; returns whether the write
+ * succeeded. A failed hold write has a known cause, the relay ('relay') or bd ('bd-timeout'): the
+ * same write is made again after each pause in HOLD_BACKOFF_MS. Setting the same metadata twice
+ * changes nothing, so the write is safe to repeat. Once a hold is attempted the Epic is never
+ * released (lifecycle.holdAttempted): when every attempt fails it is left in_progress under this
+ * run's owner, and lifecycle.holdWrite says why.
+ */
 async function holdForPerson(epicId) {
-  const out = await runProgram('epic:hold', currentPhase || 'Architecture', ['python3', `${lifecycle.pluginRoot}/skills/beads-contract/scripts/beads-contract.py`, '-C', emitTarget, 'metadata', 'set', epicId, 'elaboration_state=', `elaboration_state_cause=${HOLD_CAUSE}`, 'elaboration_state_owner='])
-  lifecycle.held = !!(out && out.ok && out.exitCode === 0 && out.json && !out.json.error)
-  log(lifecycle.held ? `Epic ${epicId}: elaboration_state cleared (cause ${HOLD_CAUSE})` : `Epic ${epicId}: could NOT be held for a person — it stays in_progress`)
+  lifecycle.holdAttempted = true
+  const argv = ['python3', `${lifecycle.pluginRoot}/skills/beads-contract/scripts/beads-contract.py`, '-C', emitTarget, 'metadata', 'set', epicId, 'elaboration_state=', `elaboration_state_cause=${HOLD_CAUSE}`, 'elaboration_state_owner=']
+  for (let attempt = 1; ; attempt += 1) {
+    const out = await runProgram('epic:hold', currentPhase || 'Architecture', argv)
+    lifecycle.held = !!(out && out.ok && out.exitCode === 0 && out.json && !out.json.error)
+    if (lifecycle.held) {
+      lifecycle.holdWrite = { written: true, attempts: attempt }
+      break
+    }
+    const cause = out && out.ok === false ? causeOrOther(out.cause) : 'bd-timeout'
+    const error = String((out && (out.error || (out.json && out.json.error) || out.stderrTail)) || `exit ${out && out.exitCode}`).slice(0, 600)
+    lifecycle.holdWrite = { written: false, attempts: attempt, cause, error }
+    if (attempt > HOLD_BACKOFF_MS.length || dispatchInterruption) break
+    log(`Epic ${epicId}: the hold write failed (${cause}: ${error}); writing it again in ${HOLD_BACKOFF_MS[attempt - 1] / 1000}s`)
+    await pause(HOLD_BACKOFF_MS[attempt - 1])
+  }
+  log(lifecycle.held
+    ? `Epic ${epicId}: elaboration_state cleared (cause ${HOLD_CAUSE})`
+    : `Epic ${epicId}: could NOT be held for a person after ${lifecycle.holdWrite.attempts} attempt(s) — it stays in_progress under owner ${lifecycle.owner} and is NOT released`)
   return lifecycle.held
 }
+/** The required action naming a hold write that never landed. */
+const holdNotWritten = (epicId) =>
+  `The hold write on ${epicId} failed ${lifecycle.holdWrite.attempts} time(s) (${lifecycle.holdWrite.cause}: ${lifecycle.holdWrite.error}); the Epic was NOT released and stays elaboration_state=in_progress under owner ${lifecycle.owner}. Clear it for diagnosis: elaboration_state= elaboration_state_cause=${HOLD_CAUSE} elaboration_state_owner=`
 /** Holds the Epic for a person and returns the requires-human-action handback. */
 async function holdForHuman(stage, detail, actions, after) {
   await holdForPerson(epicBeadId)
   return {
     ...partial(stage, detail),
     stage: HUMAN_ACTION_STAGE,
-    requiredHumanActions: lifecycle.held ? [...actions, restoreStep(epicBeadId, after)] : actions,
+    requiredHumanActions: lifecycle.held ? [...actions, restoreStep(epicBeadId, after)] : [...actions, holdNotWritten(epicBeadId)],
   }
 }
 
 /** The stage of a run that left the Epic not done because span repositories failed. */
 const REPOS_INCOMPLETE_STAGE = 'repositories-incomplete'
-/** A cause a later dispatch can be expected to get past: a beads timeout or lock, an API or quota limit, a relay copy problem. */
-const TRANSIENT_CAUSE = /i\/o timeout|connection refused|deadline exceeded|database is locked|invalid connection|bad connection|failed to open database|indeterminate|quota|usage limit|rate limit|overloaded|api unavailable|returned no result|returned nothing|relay/i
-/** Whether a repository's failure has a transient cause: a dispatch that died, or a cause TRANSIENT_CAUSE names. */
-const transientFailure = (f) => !!(f && (f.dispatchFailed || TRANSIENT_CAUSE.test(String(f.reason || ''))))
 /**
- * The outcome of a run whose span repositories did not all get their Story and Tasks. Every
- * failure with a transient cause: ok:false at stage repositories-incomplete (agent-dispatch-failed
- * when every one is a dispatch that died), the Epic released so the next dispatch reruns only the
- * failed steps after the supervisor's backoff. Any other cause is not retried: the Epic is held,
- * and the run returns ok:false at stage repositories-incomplete with each repository's stage and
- * cause, for the incident-responder to diagnose.
+ * The outcome of a run whose span repositories did not all get their Story and Tasks: ok:false at
+ * stage repositories-incomplete, with failure: { stage, cause, repositories: [{ repository, stage,
+ * cause, headline }] }. Each repository's cause is the one its failed step carried; the run's cause
+ * is transient only when every repository's is (combinedCause). A transient cause releases the Epic
+ * so the next dispatch reruns only the failed steps after the supervisor's backoff; any other cause
+ * holds it for the incident-responder (the finally block decides, from failure.cause).
  */
-async function repositoriesIncomplete(specFails, decompFails, detail) {
+function repositoriesIncomplete(specFails, decompFails, detail) {
   const failures = [
     ...specFails.map((f) => ({ ...f, step: 'spec', stage: f.stage || 'spec-authoring' })),
     ...decompFails.map((f) => ({ ...f, step: 'tasks', stage: f.stage || 'task-decomposition' })),
   ]
+  const repositories = failures.map((f) => ({
+    repository: f.repoPath,
+    stage: f.stage,
+    cause: causeOrOther(f.cause),
+    headline: `${f.step === 'spec' ? 'Spec and Story' : 'Tasks'} not written: ${String(f.reason || 'no reason recorded').slice(0, 600)}`,
+  }))
+  const cause = combinedCause(repositories.map((r) => r.cause))
   const named = failures
-    .map((f) => `${f.repoPath} (${f.step} at ${f.stage}${Array.isArray(f.uncitedItems) && f.uncitedItems.length ? `: no Task cites ${f.uncitedItems.join(', ')}` : ''})`)
+    .map((f, i) => `${f.repoPath} (${f.step} at ${f.stage}, cause ${repositories[i].cause}${Array.isArray(f.uncitedItems) && f.uncitedItems.length ? `: no Task cites ${f.uncitedItems.join(', ')}` : ''})`)
     .join('; ')
-  const causes = failures.map((f) => `${f.repoPath} at ${f.stage}: ${String(f.reason || 'no cause recorded').slice(0, 600)}`)
-  causes.forEach((c) => log(`Repository not finished — ${c}`))
+  repositories.forEach((r) => log(`Repository not finished — ${r.repository} at ${r.stage} (${r.cause}): ${r.headline}`))
   runDetail = detail
-  if (failures.every(transientFailure)) {
-    const allDied = failures.every((f) => f.dispatchFailed)
-    return {
-      ...handback(false, REPOS_INCOMPLETE_STAGE, `transient: ${named} — the next dispatch reruns only these failed steps`, detail),
-      ...(allDied ? { stage: DISPATCH_FAILED_STAGE, dispatchFailed: true, dispatchFailures: failures.flatMap((f) => f.dispatchFailures || []) } : {}),
-      failures: causes,
-    }
-  }
-  await holdForPerson(epicBeadId)
+  const transient = TRANSIENT_CAUSES.includes(cause)
   return {
-    ...handback(false, REPOS_INCOMPLETE_STAGE, `not retried: ${named} — no known cause a rerun addresses; the Epic is held for diagnosis`, detail),
-    failures: causes,
-    requiredHumanActions: [
-      `Diagnose (incident-responder) why these repositories of ${epicBeadId} did not get their Story and Tasks: ${causes.join(' | ')}`.slice(0, 3000),
-      ...(lifecycle.held ? [restoreStep(epicBeadId, 'the cause is fixed')] : []),
-    ],
+    ...handback(
+      false,
+      REPOS_INCOMPLETE_STAGE,
+      transient
+        ? `transient (${cause}): ${named} — the next dispatch reruns only these failed steps after backoff`
+        : `not retried: ${named} — not every repository failed for a transient cause; the Epic is held for diagnosis`,
+      detail
+    ),
+    failure: { stage: REPOS_INCOMPLETE_STAGE, cause, repositories },
+    ...(transient
+      ? {}
+      : { requiredHumanActions: [`Diagnose (incident-responder) why these repositories of ${epicBeadId} did not get their Story and Tasks: ${repositories.map((r) => `${r.repository} at ${r.stage} (${r.cause}): ${r.headline}`).join(' | ')}`.slice(0, 3000)] }),
   }
 }
 
@@ -974,12 +1045,16 @@ if (started.noResult) {
     stage: DISPATCH_FAILED_STAGE,
     dispatchFailed: true,
     dispatchFailures: dispatchDeaths('Epic Lifecycle'),
+    failure: { stage: 'epic-lifecycle', cause: causeOrOther(started.cause), repositories: [] },
   }
 }
 lifecycle.start = started.error ? started.output || null : started
 const startOut = started.error ? { error: started.error } : started
 if (startOut.error) {
-  return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error}`)
+  return {
+    ...handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error}`),
+    failure: { stage: 'epic-lifecycle', cause: causeOrOther(started.cause), repositories: [] },
+  }
 }
 if (startOut.ok !== true) {
   const refusal = startOut.refusal || {}
@@ -1251,7 +1326,7 @@ if (!hasText(archArt.targetDir)) {
 if (!hasText(archArt.deltaDir)) archArt.deltaDir = `${archArt.targetDir.replace(/\/+$/, '')}/delta`
 const deltaList = await runScript('arch:delta', 'Architecture', `arch-delta --delta-dir ${shellq(archArt.deltaDir)}${ART_ON ? ` --save ${shellq(artPath('delta-items.json'))}` : ''}`)
 if (!deltaList || deltaList.error) {
-  return partial('architecture', { reason: `depscore.py arch-delta did not list the delta at ${archArt.deltaDir}: ${(deltaList && deltaList.error) || 'no result'}` })
+  return partial('architecture', { reason: `depscore.py arch-delta did not list the delta at ${archArt.deltaDir}: ${(deltaList && deltaList.error) || 'no result'}`, cause: causeOf(deltaList) })
 }
 if (deltaList.ok !== true) log(`Architecture: depscore.py arch-delta lists the delta at ${archArt.deltaDir} with refusals, carried on with the items it lists: ${(deltaList.refusals || []).join('; ') || 'none named'}`)
 const deltaItems = (Array.isArray(deltaList.items) ? deltaList.items : [])
@@ -1558,6 +1633,7 @@ async function authorSpecForRepo(repo, repoIndex) {
         ok: false,
         stage: (recon && hasText(recon.stage) && recon.stage !== 'input' ? recon.stage : 'detailing'),
         reason: why,
+        cause: causeOf(recon),
         ...(!recon || recon.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (recon && recon.dispatchFailures) || [] } : {}),
       },
     }
@@ -1572,6 +1648,7 @@ async function authorSpecForRepo(repo, repoIndex) {
         ok: false,
         stage: (r && r.stage) || null,
         reason: (r && (r.reason || r.error)) || (r ? 'spec-authoring returned no story' : 'spec-authoring returned nothing'),
+        cause: causeOf(r),
         ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || [] } : {}),
       }
   if (specAuthoring.ok && specHit) reuseFrom(specPhase, specHit)
@@ -1592,6 +1669,7 @@ for (const [repoIndex, repo] of repos.entries()) {
       repoPath: repo,
       stage: (specAuthoring && specAuthoring.stage) || null,
       reason: (specAuthoring && specAuthoring.reason) || 'the spec-authoring phase threw',
+      cause: causeOrOther(specAuthoring && specAuthoring.cause),
       dispatchFailed: !!(specAuthoring && specAuthoring.dispatchFailed),
       dispatchFailures: (specAuthoring && specAuthoring.dispatchFailures) || [],
     })
@@ -1687,6 +1765,7 @@ async function decomposeStory(pair) {
     ok: false,
     stage: (r && r.stage) || null,
     reason: (r && (r.reason || r.error)) || (r ? 'the decomposition produced no Task' : 'task-decomposition returned nothing'),
+    cause: causeOf(r),
     ...(r && Array.isArray(r.uncitedItems) ? { uncitedItems: r.uncitedItems } : {}),
     ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || [] } : {}),
   }
@@ -1700,6 +1779,7 @@ for (const [pairIndex, pair] of specPairs.entries()) {
       storyKey: pair.story.key || null,
       stage: (decomposition && decomposition.stage) || null,
       reason: (decomposition && decomposition.reason) || 'the task-decomposition phase threw',
+      cause: causeOrOther(decomposition && decomposition.cause),
       dispatchFailed: !!(decomposition && decomposition.dispatchFailed),
       dispatchFailures: (decomposition && decomposition.dispatchFailures) || [],
       ...(decomposition && Array.isArray(decomposition.uncitedItems) ? { uncitedItems: decomposition.uncitedItems } : {}),
@@ -1992,15 +2072,29 @@ return {
   log(`RUN ABORTED in ${where}: ${message.slice(0, 300)}`)
   result = partial(stage, { reason: `the run threw in ${where}: ${message.slice(0, 300)}`, dispatchFailed: deaths.length > 0, dispatchFailures: deaths })
 } finally {
+  // Every failure carries failure: { stage, cause, repositories }. The Epic is released only for
+  // a run that did not fail, or failed for a transient cause; any other failure holds it for
+  // diagnosis. An Epic whose hold was attempted is never released, even when the hold write failed.
+  const failed = !!dispatchInterruption || !result || result.ok === false
+  if (failed) result = withFailure(result)
   const finishedDone = !!(lifecycle.finish && !lifecycle.finish.error && lifecycle.finish.lifecycle)
-  if (lifecycle.started && !finishedDone && !lifecycle.held) {
-    lifecycle.release = await runScript(
-      'epic:release',
-      currentPhase || 'Epic Lifecycle',
-      `elaboration-release --epic ${shellq(epicBeadId)} --owner ${shellq(lifecycle.owner)}`
-    )
-    if (result) result.lifecycle = { ...(result.lifecycle || {}), owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, release: lifecycle.release, done: false }
+  if (lifecycle.started && !finishedDone && !lifecycle.held && !lifecycle.holdAttempted) {
+    if (!failed || TRANSIENT_CAUSES.includes(result.failure.cause)) {
+      lifecycle.release = await runScript(
+        'epic:release',
+        currentPhase || 'Epic Lifecycle',
+        `elaboration-release --epic ${shellq(epicBeadId)} --owner ${shellq(lifecycle.owner)}`
+      )
+      if (result) result.lifecycle = { ...(result.lifecycle || {}), owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, release: lifecycle.release, done: false }
+    } else {
+      await holdForPerson(epicBeadId)
+      result.requiredHumanActions = [
+        ...(Array.isArray(result.requiredHumanActions) ? result.requiredHumanActions : []),
+        lifecycle.held ? restoreStep(epicBeadId, 'the cause is diagnosed and fixed') : holdNotWritten(epicBeadId),
+      ]
+    }
   }
+  if (result && lifecycle.holdAttempted && !lifecycle.held) result.lifecycle = { ...(result.lifecycle || {}), owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, held: false, holdWrite: lifecycle.holdWrite, released: false, done: false }
   if (result && lifecycle.held) result.lifecycle = { ...(result.lifecycle || {}), owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, held: true, heldCause: HOLD_CAUSE, done: false }
   enterPhase('Run Ledger')
   const detailPath = persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. When the written Tasks leave a work item the detailing marks add, modify or remove cited by no Task, one corrective pass tells the maker exactly which items have no Task; it answers with new Tasks for them or, per item, why no work is needed, and depscore.py add-tasks merges the answer without changing the saved Tasks and records each no-work item on the detailing as done with its reason. Items still cited by no Task after that pass fail the Story at stage uncited-items, naming them and the maker\'s answer; no further pass runs. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. When the written Tasks leave a work item the detailing marks add, modify or remove cited by no Task, one corrective pass tells the maker exactly which items have no Task; it answers with new Tasks for them or, per item, why no work is needed, and depscore.py add-tasks merges the answer without changing the saved Tasks and records each no-work item on the detailing as done with its reason; when two new Tasks cite the same item, the first keeps it, it is removed from the later ones\' citations, and a later Task left citing none of those items is dropped, reported in coverage.dropped and coverage.trimmed. A Task bead is matched by elab_key, else by the delta items it cites, else by title, and updated in place; an open Task bead no Task matches whose items are no longer add, modify or remove is closed with a reason naming the detailing change. Every failure carries failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }, cause one of api, quota, bd-timeout, relay or other, set from the structured result of the step that failed. Items still cited by no Task after that pass fail the Story at stage uncited-items, naming them and the maker\'s answer; no further pass runs. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes; the script writes each Task bead with one depscore.py write-task command' },
   ],
@@ -453,21 +453,24 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   /**
    * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
-   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
+   * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
+   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
     try {
       rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
     } catch (err) {
-      return { error: `${label}: ${String((err && err.message) || err)}` }
+      return { error: `${label}: ${String((err && err.message) || err)}`, cause: 'other' }
     }
     const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file, readRunner: script.replace(/[^/]+$/, 'relayrun.py') })
-    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult, cause: 'relay' }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
   }
@@ -475,13 +478,13 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
    * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
    * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
-   * or { ok: false, error }.
+   * or { ok: false, error, cause }: cause 'relay' when the result did not come back through the relay.
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
     const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file, readRunner: runner })
-    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
-    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult, cause: 'relay' }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`), cause: 'other' }
     return { ok: true, ...r.view, relayFile: file }
   }
   /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
@@ -643,10 +646,31 @@ async function settleAgent(prompt, opts) {
   } catch (err) {
     captureDispatchInterruption(err, (opts && (opts.label || opts.agentType)) || 'agent')
     const message = String((err && err.message) || err).slice(0, 300)
-    dispatchFailures.push({ ...who, outcome: 'threw', message, note: `${name} ended without a structured result: ${message}` })
+    const kind = dispatchFailureCause(err)
+    const cause = kind === 'exhausted' ? 'quota' : kind === 'transient' ? 'api' : 'other'
+    dispatchFailures.push({ ...who, outcome: 'threw', cause, message, note: `${name} ended without a structured result: ${message}` })
     log(`${name}: ended without a structured result — ${message}`)
   }
   return null
+}
+
+/** The causes a failure may carry that a later dispatch can get past; any other is 'other'. */
+const TRANSIENT_CAUSES = ['api', 'quota', 'bd-timeout', 'relay']
+/** The cause of a dispatch interruption: 'quota' or 'api', from the stage it was set with. */
+const interruptionCause = (i) => (i && i.stage === 'account-quota-exhausted' ? 'quota' : i && i.stage === 'api-unavailable' ? 'api' : 'other')
+/** One cause for several failures: the first one's when every one is transient, else 'other'. */
+const combinedCause = (causes) => (causes.length && causes.every((c) => TRANSIENT_CAUSES.includes(c)) ? causes[0] : 'other')
+/**
+ * Returns `out` with `failure: { stage, cause, repositories: [{ repository, stage, cause, headline }] }`
+ * when it failed. The cause is the dispatch interruption's when the run was interrupted, else
+ * `cause`, which the caller took from the structured result of the step that failed.
+ */
+function withFailure(out, cause = 'other') {
+  if (!out || out.ok !== false) return out
+  const c = dispatchInterruption ? interruptionCause(dispatchInterruption) : TRANSIENT_CAUSES.includes(cause) ? cause : 'other'
+  const stage = out.stage || 'decompose'
+  const headline = String(out.reason || out.headline || stage).slice(0, 600)
+  return { ...out, failure: { stage, cause: c, repositories: [{ repository: repoPath, stage, cause: c, headline }] } }
 }
 
 // args: {
@@ -761,15 +785,17 @@ const depscore = (label, tail, repo) => relayKit.depscore(settleAgent, { label, 
  * Writes each Task bead from the saved tasks-<slug>.json: depscore.py plan-tasks lists the Tasks in
  * build order, then one depscore.py write-task per Task, in that order (write-task retries a beads
  * timeout itself). A Task whose write fails is reported and the next one is written. Returns
- * { plan, written, errors, error }: written holds each write-task result checked through the relay.
+ * { plan, written, errors, causes, error }: written holds each write-task result checked through
+ * the relay, and causes the cause each failed command reported.
  */
 async function writeTasks() {
   const plan = await depscore('beads:plan-tasks', `plan-tasks ${taskArgs}`, null)
-  if (plan.error) return { plan: null, written: [], errors: [], error: `depscore.py plan-tasks: ${plan.error}` }
-  if (!Array.isArray(plan.tasks)) return { plan: null, written: [], errors: [], error: 'depscore.py plan-tasks printed no task list' }
+  if (plan.error) return { plan: null, written: [], errors: [], causes: [plan.cause || 'other'], error: `depscore.py plan-tasks: ${plan.error}` }
+  if (!Array.isArray(plan.tasks)) return { plan: null, written: [], errors: [], causes: ['other'], error: 'depscore.py plan-tasks printed no task list' }
   if (Number(plan.summary && plan.summary.warnings)) log(`Story story:${artSlug}: depscore.py plan-tasks normalized the saved Tasks with ${plan.summary.warnings} warning(s) (in ${plan.relayFile})`)
   const written = []
   const errors = []
+  const causes = []
   for (const t of plan.tasks) {
     const key = t && hasText(t.key) ? t.key.trim() : ''
     const external = (Array.isArray(t.blockedByExternal) ? t.blockedByExternal : []).filter(hasText).map((x) => x.trim())
@@ -777,13 +803,15 @@ async function writeTasks() {
     const w = await depscore(`beads:write-task:${key}`, tail, BEADS.repo)
     if (w.error) {
       errors.push(`depscore.py write-task ${key}: ${w.error}`)
+      causes.push(w.cause || 'other')
       log(`Story story:${artSlug}: Task ${key} was not written (${w.error}); the next Task is written`)
       continue
     }
     if (w.task) written.push(w)
+    for (const c of Array.isArray(w.closed) ? w.closed : []) log(`Story story:${artSlug}: closed ${c.id} — ${c.reason}`)
   }
   const error = errors.length && !written.length ? errors.join('; ') : ''
-  return { plan, written, errors, error }
+  return { plan, written, errors, causes, error }
 }
 /** Records the saved tasks-<slug>.json with the artifact script's `record`; returns '' or why it was not recorded. */
 async function recordTasks() {
@@ -814,7 +842,7 @@ const WSJF_SKILL_DIR = typeof a.pluginRoot === 'string' && a.pluginRoot.startsWi
 const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, and upward); compare with the rubric's reference jobs. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. Value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A Task above 13 should have been split: say so in your notes, and record the size you judged.`
 
 if (!writable) {
-  return dispatchOutcome({ ok: false, stage: 'input', reason: 'no artifact directory, beads target or repository was supplied, so the Task beads cannot be written', spec: specRef })
+  return withFailure(dispatchOutcome({ ok: false, stage: 'input', reason: 'no artifact directory, beads target or repository was supplied, so the Task beads cannot be written', spec: specRef }))
 }
 const replayed = a.replay === true
 if (replayed) log(`Decompose replayed: the Tasks are written from the saved tasks-${artSlug}.json`)
@@ -842,7 +870,7 @@ const decompositionSchema = {
     }
 const candidateFile = `${ART.dir}/candidates/tasks-${artSlug}.json`
 const inputBinding = replayed ? null : await relayKit.artifactRevision(settleAgent, { label: 'decompose:inputs', phase: 'Decompose', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), ...specDocs.map(d => d.path), detailingPath, writtenPath].filter(hasText))], relayFile: relayFile('decompose-inputs'), context: { spec, story, repoPath } })
-if (inputBinding && !inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'decompose', reason: inputBinding.error })
+if (inputBinding && !inputBinding.ok) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', reason: inputBinding.error }), inputBinding.cause)
 const inputRevision = inputBinding ? inputBinding.revision : ''
 const makeTasks = () => settleAgent(
   `Three maker jobs on the Spec below, in order, one pass. Do NOT write code.
@@ -880,7 +908,7 @@ ${specBlock}${relayKit.artifactBrief(candidateFile, decompositionSchema, inputRe
     schema: relayKit.ARTIFACT_SCHEMA,
   }
 )
-if (dispatchInterruption) return dispatchOutcome({ ok: false, stage: 'decompose', spec: specRef })
+if (dispatchInterruption) return withFailure(dispatchOutcome({ ok: false, stage: 'decompose', spec: specRef }))
 let taskFacts = null
 let recordError = ''
 if (!replayed) {
@@ -888,13 +916,13 @@ if (!replayed) {
   taskFacts = saved.facts
   if (!saved.ok) {
     const deaths = dispatchDeaths('Decompose')
-    return dispatchOutcome({
+    return withFailure(dispatchOutcome({
       ok: false,
       stage: 'decompose',
       reason: `tasks-${artSlug}.json was not accepted as the authoritative decomposition, so no Task bead was written: ${saved.error || 'not saved'}`,
       spec: specRef,
       ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
-    })
+    }), saved.cause || combinedCause(deaths.map((d) => d.cause || 'other')))
   }
   recordError = await recordTasks()
   if (recordError) log(`tasks-${artSlug}.json was not recorded: ${recordError}`)
@@ -923,7 +951,9 @@ const correctionSchema = {
  * which items have no Task, and answers with Tasks for them or, per item, why no work is needed.
  * depscore.py add-tasks merges the answer: the saved Tasks are kept as they are, the new Tasks
  * are added, and a "no work needed" item is recorded on the detailing as done with its reason.
- * Returns { ok, added, noWork, rejected, uncited, answerFile } or { ok: false, error }.
+ * Two new Tasks citing the same item: the first keeps it (add-tasks reports the rest in dropped
+ * and trimmed). Returns { ok, added, noWork, rejected, dropped, trimmed, uncited, answerFile }
+ * or { ok: false, error, cause }.
  */
 async function correctUncited(plan) {
   const items = Array.isArray(plan.uncitedItems) && plan.uncitedItems.length ? plan.uncitedItems : plan.uncited.map((id) => ({ id }))
@@ -934,7 +964,7 @@ async function correctUncited(plan) {
   const candidate = `${ART.dir}/candidates/tasks-${artSlug}.correction.json`
   const answerFile = `${ART.dir}/tasks-${artSlug}.correction.json`
   const binding = await relayKit.artifactRevision(settleAgent, { label: 'correct:inputs', phase: 'Decompose', runner: RELAY_RUNNER, files: [tasksFile, detailingPath].filter(hasText), relayFile: relayFile('correct-inputs'), context: { uncited: plan.uncited } })
-  if (!binding.ok) return { ok: false, error: binding.error }
+  if (!binding.ok) return { ok: false, error: binding.error, cause: binding.cause || 'other' }
   const produce = () => settleAgent(
     `One corrective pass on the Tasks of Story ${storyRef}. Do NOT write code.
 
@@ -949,14 +979,20 @@ ${specBlock}${relayKit.artifactBrief(candidate, correctionSchema, binding.revisi
     { label: 'decompose:correct-uncited', effort: 'medium', phase: 'Decompose', agentType: 'task-decomposer', schema: relayKit.ARTIFACT_SCHEMA }
   )
   const accepted = await relayKit.authorArtifact(settleAgent, { label: 'save:correction', phase: 'Decompose', runner: RELAY_RUNNER, candidate, file: answerFile, schema: correctionSchema, revision: binding.revision, relayFile: relayFile('accepted-correction'), keys: ['tasks.key'] }, produce, () => !!dispatchInterruption)
-  if (!accepted.ok) return { ok: false, error: `the corrective pass was not accepted: ${accepted.error || 'not saved'}`, answerFile }
+  if (!accepted.ok) {
+    const deaths = dispatchDeaths('Decompose')
+    return { ok: false, error: `the corrective pass was not accepted: ${accepted.error || 'not saved'}`, cause: accepted.cause || combinedCause(deaths.map((d) => d.cause || 'other')), answerFile }
+  }
   const merged = await depscore('beads:add-tasks', `add-tasks ${taskArgs} --correction ${shq(answerFile)}`, null)
-  if (merged.error) return { ok: false, error: `depscore.py add-tasks: ${merged.error}`, answerFile }
+  if (merged.error) return { ok: false, error: `depscore.py add-tasks: ${merged.error}`, cause: merged.cause || 'other', answerFile }
+  const list = (x) => (Array.isArray(x) ? x : [])
   return {
     ok: true,
-    added: Array.isArray(merged.added) ? merged.added : [],
-    noWork: Array.isArray(merged.noWork) ? merged.noWork : [],
-    rejected: Array.isArray(merged.rejected) ? merged.rejected : [],
+    added: list(merged.added),
+    noWork: list(merged.noWork),
+    rejected: list(merged.rejected),
+    dropped: list(merged.dropped),
+    trimmed: list(merged.trimmed),
     uncited: Array.isArray(merged.uncited) ? merged.uncited : plan.uncited,
     answerFile,
   }
@@ -974,6 +1010,9 @@ if (firstUncited.length) {
     ran = await writeTasks()
     if (ran.error) log(`Story story:${artSlug}: the Task beads were not all written after the corrective pass — ${ran.error}`)
   }
+  const twice = (x) => `${x.task} (${x.items.join(', ')}, kept by ${x.keptBy.join(', ')})`
+  if (fix.ok && fix.dropped.length) log(`Story story:${artSlug}: corrective pass dropped Task(s) citing only items an earlier new Task builds: ${fix.dropped.map(twice).join('; ')}`)
+  if (fix.ok && fix.trimmed.length) log(`Story story:${artSlug}: corrective pass removed citations an earlier new Task builds from: ${fix.trimmed.map(twice).join('; ')}`)
   log(`Story story:${artSlug}: corrective pass ${fix.ok ? `added ${fix.added.length} Task(s), recorded ${fix.noWork.join(', ') || 'no item'} as needing no work` : `failed: ${fix.error}`}; ${coverage.uncited.length ? `still cited by no Task: ${coverage.uncited.join(', ')}` : 'every work item is cited'}`)
 }
 const plan = ran.plan
@@ -1005,7 +1044,9 @@ const coverageFailure = coverage.uncited.length
   ? `after one corrective pass no Task cites ${coverage.uncited.join(', ')}, which recon-${artSlug}.json marks add, modify or remove; ` +
     (fix && fix.ok ? `the maker's answer is ${fix.answerFile}${rejectedText}` : `the corrective pass did not complete: ${(fix && fix.error) || 'no result'}`)
   : ''
-return dispatchOutcome({
+// The cause comes from the structured results of the step that failed, never from the reason text.
+const failureCause = writeFailure ? combinedCause(ran.causes) : fix && !fix.ok ? fix.cause || 'other' : 'other'
+return withFailure(dispatchOutcome({
   ok: !writeFailure && !coverageFailure,
   ...(writeFailure
     ? { stage: 'task-write', reason: writeFailure, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
@@ -1013,7 +1054,18 @@ return dispatchOutcome({
       ? { stage: 'uncited-items', reason: coverageFailure.slice(0, 1500), uncitedItems: coverage.uncited, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
       : {}),
   ...(coverageFailure && fix && !fix.ok && dispatchDeaths('Decompose').length ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Decompose') } : {}),
-  ...(coverage.first.length ? { coverage: { uncitedBefore: coverage.first, uncitedAfter: coverage.uncited, added: fix && fix.ok ? fix.added : [], noWork: fix && fix.ok ? fix.noWork : [] } } : {}),
+  ...(coverage.first.length
+    ? {
+        coverage: {
+          uncitedBefore: coverage.first,
+          uncitedAfter: coverage.uncited,
+          added: fix && fix.ok ? fix.added : [],
+          noWork: fix && fix.ok ? fix.noWork : [],
+          dropped: fix && fix.ok ? fix.dropped : [],
+          trimmed: fix && fix.ok ? fix.trimmed : [],
+        },
+      }
+    : {}),
   ...(replayed ? { resumed: true } : {}),
   spec: specRef,
   repoPath,
@@ -1024,4 +1076,4 @@ return dispatchOutcome({
   ...(ran.error ? { writeError: ran.error } : {}),
   ...(ran.errors.length ? { writeErrors: ran.errors } : {}),
   ...(recordError ? { persistErrors: [`tasks-${artSlug}.json: ${recordError}`] } : {}),
-})
+}), failureCause)

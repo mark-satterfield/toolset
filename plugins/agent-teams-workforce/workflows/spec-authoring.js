@@ -454,21 +454,24 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   /**
    * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
-   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
+   * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
+   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
     try {
       rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
     } catch (err) {
-      return { error: `${label}: ${String((err && err.message) || err)}` }
+      return { error: `${label}: ${String((err && err.message) || err)}`, cause: 'other' }
     }
     const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file, readRunner: script.replace(/[^/]+$/, 'relayrun.py') })
-    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult, cause: 'relay' }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
   }
@@ -476,13 +479,13 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
    * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
    * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
-   * or { ok: false, error }.
+   * or { ok: false, error, cause }: cause 'relay' when the result did not come back through the relay.
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
     const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file, readRunner: runner })
-    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
-    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult, cause: 'relay' }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`), cause: 'other' }
     return { ok: true, ...r.view, relayFile: file }
   }
   /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
@@ -863,8 +866,13 @@ async function main(a) {
     hasText(beads.projectRoot) ? `--project-root ${shq(beads.projectRoot)}` : '',
     `--out ${shq(writtenPath)}`,
   ].filter(Boolean).join(' ')
-  /** Writes the Story bead from the saved story-<slug>.json with depscore.py write-story; returns its checked output, or { error }. */
+  /** Writes the Story bead from the saved story-<slug>.json with depscore.py write-story; returns its checked output, or { error, cause }. */
   const writeStory = () => relay.depscore('beads:write-story', 'Emit story', storyTail, beads.repo)
+  /** The failure of a Story write: its cause is the one depscore.py write-story or the relay reported. */
+  const storyWriteFailure = (w) => {
+    const cause = w.cause || 'other'
+    return { stage: 'story-write', cause, repositories: [{ repository: repoPath, stage: 'story-write', cause, headline: String(w.error).slice(0, 600) }] }
+  }
   /** Recording errors are reported with the result; they never fail the Spec. */
   const persistErrors = []
   const recordOrNote = async (name, label, phaseName) => {
@@ -900,7 +908,7 @@ async function main(a) {
   if (a && a.replay === true) {
     log(`Spec authoring replayed: the Story is written from the saved story-${artSlug}.json`)
     const w = await writeStory()
-    if (w.error) return { ok: false, stage: 'story-write', reason: w.error, writtenPath, artifactPath: `${ART.dir}/story-${artSlug}.json`, resumed: true }
+    if (w.error) return { ok: false, stage: 'story-write', reason: w.error, failure: storyWriteFailure(w), writtenPath, artifactPath: `${ART.dir}/story-${artSlug}.json`, resumed: true }
     return storyResult({
       resumed: true,
       spec: { id: s.id || null, title: s.title || null, service: s.service || null, repoPath },
@@ -1070,7 +1078,7 @@ Run no bd command and do not write the Story bead: the workflow writes it from t
   if (!storyFile.ok) return { ok: false, stage: 'story', reason: `story-${artSlug}.json could not be written: ${storyFile.error}` }
   await recordOrNote(`story-${artSlug}.json`, 'record:story', 'Emit story')
   const written = await writeStory()
-  if (written.error) return { ok: false, stage: 'story-write', reason: written.error, writtenPath, artifactPath: `${ART.dir}/story-${artSlug}.json` }
+  if (written.error) return { ok: false, stage: 'story-write', reason: written.error, failure: storyWriteFailure(written), writtenPath, artifactPath: `${ART.dir}/story-${artSlug}.json` }
   const relayed = written.error ? null : written.summary
   return storyResult({
     ...(persistErrors.length ? { persistErrors } : {}),

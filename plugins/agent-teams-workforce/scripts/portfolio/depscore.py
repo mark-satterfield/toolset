@@ -1615,7 +1615,11 @@ def main(argv: list[str] | None = None) -> int:
         ValueError,
         OSError,
     ) as exc:
-        payload, status = {"error": str(exc), "command": args.command}, 2
+        cause = getattr(exc, "cause", beadgraph.OTHER_CAUSE)
+        payload, status = (
+            {"error": str(exc), "cause": cause, "command": args.command},
+            2,
+        )
     if status == 0 and out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

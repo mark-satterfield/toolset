@@ -150,12 +150,19 @@ What comes back:
 `depscore.py elaboration-finish` sets the Epic `done` once every span repository has its
 Story and Tasks, or nothing to build. A work item no written Task cites gets one corrective
 pass (new Tasks for it, or why no work is needed, recorded on the detailing as `done`); the
-saved Tasks are never re-decomposed. A repository still failed returns `ok:false` at stage
-`repositories-incomplete`, naming each repository's stage and cause. A transient cause (a
-dispatch that died, a beads timeout, an API or quota limit, a relay copy problem) releases the
-Epic: the next dispatch, after the supervisor's backoff, reruns only the failed steps. Any
-other cause is not retried: the Epic is held and the handback names what the
-incident-responder diagnoses.
+saved Tasks are never re-decomposed; when two new Tasks cite the same item, the first keeps
+it. A Task bead is matched by `elab_key`, else by the items it cites, else by title, and
+updated in place, so a changed detailing never makes a second open bead for the same work. A
+repository still failed returns `ok:false` at stage `repositories-incomplete`.
+
+Every failure carries `failure: { stage, cause, repositories: [{ repository, stage, cause,
+headline }] }`. `cause` is `api`, `quota`, `bd-timeout`, `relay` or `other`, set where the
+failure happens from exit codes and structured fields, never by matching text. The run's cause
+is transient (anything but `other`) only when every failed repository's is. A transient cause
+releases the Epic: the next dispatch, after the supervisor's backoff, reruns only the failed
+steps. `other` is not retried: the Epic is held and the handback names what the
+incident-responder diagnoses. A failed hold write is made again after backoff, and the Epic is
+never released in its place.
 
 Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
 compose them from your own account of what you think landed.

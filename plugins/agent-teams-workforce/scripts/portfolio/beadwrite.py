@@ -474,14 +474,6 @@ def plan_tasks(
 #: write that did apply is updated, never created twice.
 WRITE_BACKOFF = (2, 5)
 
-#: A beads error the server or the connection caused, not the command.
-TRANSIENT = re.compile(
-    r"i/o timeout|connection refused|deadline exceeded|database is locked|"
-    r"invalid connection|bad connection|failed to open database|"
-    r"write commit result indeterminate",
-    re.IGNORECASE,
-)
-
 
 def _again(label: str, attempt: int, exc: GraphError) -> bool:
     """Whether a failed write is made again, pausing first when it is.
@@ -492,9 +484,9 @@ def _again(label: str, attempt: int, exc: GraphError) -> bool:
         exc: Its error.
 
     Returns:
-        True when the error is transient and an attempt remains.
+        True when `bd` reported a beads server failure (BD_TIMEOUT) and an attempt remains.
     """
-    if attempt > len(WRITE_BACKOFF) or not TRANSIENT.search(str(exc)):
+    if attempt > len(WRITE_BACKOFF) or exc.cause != beadgraph.BD_TIMEOUT:
         return False
     pause = WRITE_BACKOFF[attempt - 1]
     print(
@@ -803,7 +795,9 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dic
 
     The pass answers for the work items no saved Task cites: a Task for some, a reason no
     work is needed for others. A new Task is taken only when every work item it cites is
-    one of those; it gets a fresh local key, and the saved Tasks are left as they are. An
+    one of those; it gets a fresh local key, and the saved Tasks are left as they are. Two
+    new Tasks never build the same item: the first in order keeps it, it is removed from the
+    later Tasks' citations, and a later Task left citing none of those items is dropped. An
     edge is taken only into a new Task. A "no work needed" answer for one of those items
     that no new Task builds is recorded on `recon-<slug>.json` as `done` with its reason,
     and the hash recorded for the detailing as an input is updated to match.
@@ -816,8 +810,10 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dic
 
     Returns:
         `added` (the new local keys), `noWork` (the ids recorded done), `rejected`
-        (each answer not taken, with why) and `uncited` (the work items still cited by
-        no Task).
+        (each answer not taken, with why), `dropped` (each new Task dropped because an
+        earlier one builds every item it cites) and `trimmed` (each new Task taken without
+        the items an earlier one builds), both as `{task, items, keptBy}`, and `uncited`
+        (the work items still cited by no Task).
 
     Raises:
         HierarchyError: The saved Tasks or the corrective pass cannot be read.
@@ -835,7 +831,10 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dic
     gap = [i for i in work if i not in cited]
     rejected: list[dict] = []
     added: list[dict] = []
+    dropped: list[dict] = []
+    trimmed: list[dict] = []
     keymap: dict[str, str] = {}
+    taken_by: dict[str, str] = {}
     fresh = _local_keys(existing)
     for t in fix.get("tasks") or []:
         if not isinstance(t, dict):
@@ -850,9 +849,24 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dic
             )
             rejected.append({"task": str(t.get("title") or ""), "reason": why})
             continue
+        twice = [i for i in builds if i in taken_by]
+        if twice:
+            entry = {
+                "task": str(t.get("title") or ""),
+                "items": twice,
+                "keptBy": sorted({taken_by[i] for i in twice}),
+            }
+            if len(twice) == len(builds):
+                dropped.append(entry)
+                continue
+            trimmed.append(entry)
+            kept = [i for i in str_list(t.get("requirementIds")) if i not in taken_by]
+            t = t | {"requirementIds": kept}
         key = next(fresh)
         keymap[str(t.get("key") or key)] = key
         added.append(t | {"key": key})
+        for i in builds:
+            taken_by.setdefault(i, key)
     built = {i for t in added for i in str_list(t.get("requirementIds"))}
     no_work: dict[str, str] = {}
     for e in fix.get("noWork") or []:
@@ -891,8 +905,15 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dic
         "added": [t["key"] for t in added],
         "noWork": sorted(no_work, key=_item_order),
         "rejected": rejected,
+        "dropped": dropped,
+        "trimmed": trimmed,
         "uncited": [i for i in gap if i not in built and i not in no_work],
-        "summary": {"added": len(added), "noWork": len(no_work)},
+        "summary": {
+            "added": len(added),
+            "noWork": len(no_work),
+            "dropped": len(dropped),
+            "trimmed": len(trimmed),
+        },
     }
 
 
@@ -915,46 +936,111 @@ def _cited_ids(value: object) -> list[str]:
     return [str(v) for v in value if isinstance(v, str)]
 
 
-def _earlier_bead(
-    task: Task,
+def _match_tasks(
+    tasks: list[Task],
+    beads: list[Bead],
     slug: str,
-    keyed: dict[str, Bead],
-    claimed: set[str],
-    work: list[str] | None,
-) -> Bead | None:
-    """Return the Task bead written under an earlier key that this Task is, if any.
+    items: dict[str, dict[str, str]],
+) -> tuple[dict[str, Bead], list[Bead]]:
+    """Match each of a Story's Tasks to the Task bead it is, and return the beads left over.
 
-    Beads written before keys came from work items carry `task:<slug>:<title slug>`. Of the
-    Story's beads whose key no Task of the plan holds and that are not keyed by work items,
-    the one keyed by this Task's title is taken; otherwise the first, by id, whose recorded
-    `requirement_ids` cite the same work items as this Task.
+    A Task is the bead that carries its `elab_key`. Every other Task is matched against the
+    Story's Task beads that elaboration wrote (`elab_key` `task:<slug>:...`), that are not
+    closed and that no Task holds by key, whatever key they were written under: first by
+    the delta items both cite, the pair citing the most in common first (then build order,
+    then bead id), then by title. A bead is matched to one Task at most, so a Task whose
+    cited items changed keeps its bead instead of getting a second one.
 
     Args:
-        task: The Task, with its `elab_key`.
+        tasks: The Story's Tasks, in build order, each with its `elab_key`.
+        beads: The Story's Task beads, closed ones included, in id order.
         slug: The Story's repository slug.
-        keyed: The Story's Task beads by `elab_key`.
-        claimed: The keys the plan's Tasks hold.
+        items: Every detailed delta item of the Epic, as `detailed_items` returns them.
+
+    Returns:
+        Task local key -> its bead, and the candidate beads no Task matched, in id order.
+    """
+    keyed = _keyed(beads)
+    matched: dict[str, Bead] = {}
+    used: set[str] = set()
+    for t in tasks:
+        b = keyed.get(t.elab_key or "")
+        if b is not None and b.id not in used:
+            matched[t.key] = b
+            used.add(b.id)
+    prefix = f"task:{slug}:"
+    free = [
+        b
+        for b in beads
+        if b.id not in used
+        and not b.closed
+        and str(b.metadata.get("elab_key") or "").startswith(prefix)
+    ]
+    rest = [t for t in tasks if t.key not in matched]
+    pairs: list[tuple[int, int, str, Task, Bead]] = []
+    for n, t in enumerate(rest):
+        mine = {i for i in t.requirement_ids if i in items}
+        for b in free:
+            common = mine & set(_cited_ids(b.metadata.get("requirement_ids")))
+            if common:
+                pairs.append((-len(common), n, b.id, t, b))
+    for _, _, _, t, b in sorted(pairs, key=lambda p: p[:3]):
+        if t.key not in matched and b.id not in used:
+            matched[t.key] = b
+            used.add(b.id)
+    for t in rest:
+        if t.key in matched:
+            continue
+        titled = _title_key(t, slug)
+        for b in free:
+            if b.id not in used and (
+                _norm(b.title) == _norm(t.title) or b.metadata.get("elab_key") == titled
+            ):
+                matched[t.key] = b
+                used.add(b.id)
+                break
+    return matched, [b for b in free if b.id not in used]
+
+
+def _retire(
+    writer: Writer,
+    leftover: list[Bead],
+    slug: str,
+    items: dict[str, dict[str, str]],
+    work: list[str] | None,
+) -> list[dict]:
+    """Close each open Task bead no Task matched whose work the detailing no longer asks for.
+
+    A bead is closed only when it is open (not started), cites at least one delta item, and
+    none of the items it cites is marked add, modify or remove any more; the reason names
+    the detailing change. Any other bead with no counterpart is left as it is.
+
+    Args:
+        writer: The tracker writer.
+        leftover: The beads `_match_tasks` left over.
+        slug: The Story's repository slug.
+        items: Every detailed delta item of the Epic, as `detailed_items` returns them.
         work: The ids the repository's detailing marks add, modify or remove, or None.
 
     Returns:
-        The bead, or None.
+        One `{id, items, reason}` per bead closed.
     """
-    fresh = f"task:{slug}:items:"
-    free = sorted(
-        (b for k, b in keyed.items() if k not in claimed and not k.startswith(fresh)),
-        key=lambda b: b.id,
-    )
-    titled = _title_key(task, slug)
-    for b in free:
-        if b.metadata.get("elab_key") == titled:
-            return b
-    want = _work_cited(task.requirement_ids, work)
-    if not want:
-        return None
-    for b in free:
-        if _work_cited(_cited_ids(b.metadata.get("requirement_ids")), work) == want:
-            return b
-    return None
+    if work is None:
+        return []
+    marked = set(work)
+    closed: list[dict] = []
+    for b in leftover:
+        cited = [i for i in _cited_ids(b.metadata.get("requirement_ids")) if i in items]
+        if b.status != OPEN or not cited or any(i in marked for i in cited):
+            continue
+        now = ", ".join(f"{i} is {items[i]['status'] or 'unmarked'}" for i in cited)
+        reason = (
+            f"recon-{slug}.json no longer marks the items this Task built add, modify or "
+            f"remove ({now}), and no Task of story:{slug} builds them"
+        )
+        writer.bd(["close", b.id, "--reason", reason])
+        closed.append({"id": b.id, "items": cited, "reason": reason})
+    return closed
 
 
 def _judged_hash(title: str, text: str, priority: object) -> str:
@@ -1036,7 +1122,10 @@ def _write_task(
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
     The Task sits under the Epic's Story whose `elab_key` is `story:<slug>`, found in beads.
-    The Task is created, or updated when it is open, keyed by its `elab_key`. Its blockers
+    The Task is the bead `_match_tasks` matches it to (by `elab_key`, else by the items both
+    cite, else by title), updated when it is open, or a new bead when none matches. Before
+    it is written, `_retire` closes the Story's open Task beads that no Task matches and
+    whose items the detailing no longer marks add, modify or remove. Its blockers
     are the Tasks of the Story it depends on, which are written before it. One `bd list`
     finds the Story and one reads its Tasks; one `bd create`, or one `bd update` plus one
     `bd dep add` and a `bd dep remove` per blocker it no longer depends on, writes it.
@@ -1055,7 +1144,8 @@ def _write_task(
 
     Returns:
         The Task, what was done to it, its edge writes, the blockers it carries outside the
-        Story, and `warnings`: a Task it depends on that is not written yet is left out of
+        Story, the beads `_retire` closed, and `warnings`: a Task it depends on that is not
+        written yet is left out of
         its edges (the next run's refresh adds the edge), and an external blocker that is a
         Task of its own Story is taken as a Story edge.
 
@@ -1086,13 +1176,14 @@ def _write_task(
     story_id = story.id
     records = children(writer.repo, story_id, "task")
     priority = {str(r["id"]): r.get("priority") for r in records}
-    keyed = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id))
-    claimed = {t.elab_key for t in tasks if t.elab_key}
-    work = work_items(directory, slug)
+    beads = sorted((bead_of(r) for r in records), key=lambda b: b.id)
+    keyed = _keyed(beads)
+    items = detailed_items(directory)
+    matched, leftover = _match_tasks(tasks, beads, slug, items)
+    retired = _retire(writer, leftover, slug, items, work_items(directory, slug))
 
     def found(t: Task) -> Bead | None:
-        bead = keyed.get(t.elab_key or "")
-        return bead or _earlier_bead(t, slug, keyed, claimed, work)
+        return matched.get(t.key)
 
     blockers: list[str] = []
     warnings: list[str] = take_warnings()
@@ -1179,6 +1270,7 @@ def _write_task(
             "outsideBlockers": outside,
         },
         "edges": edges,
+        "closed": retired,
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -1187,6 +1279,7 @@ def _write_task(
             "id": task_id,
             "action": action,
             **edges,
+            "closed": len(retired),
             "warnings": len(warnings),
         },
     }

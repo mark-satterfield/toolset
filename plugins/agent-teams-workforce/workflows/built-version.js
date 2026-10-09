@@ -429,21 +429,24 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
   /**
    * Runs one depscore.py command. `tail` is its arguments as shell text (single-quoted words only),
    * `repo` the beads repository (-C), `file` the relay file its full result is saved in. Returns
-   * what it printed, checked, with relayFile; or { error, exception?, output? }.
+   * what it printed, checked, with relayFile; or { error, cause, exception?, output? }: cause is
+   * 'relay' when the result did not come back through the relay, else the `cause` depscore.py
+   * printed ('bd-timeout' when bd reported the beads server failed), else 'other'.
    */
   async function depscore(dispatch, { label, phase, script, repo, tail, file }) {
     let rest
     try {
       rest = [...(repo ? ['-C', repo] : []), '--relay', file, ...shellWords(tail)]
     } catch (err) {
-      return { error: `${label}: ${String((err && err.message) || err)}` }
+      return { error: `${label}: ${String((err && err.message) || err)}`, cause: 'other' }
     }
     const r = await exec(dispatch, { label, phase, command: pythonLine(script, rest), file, readRunner: script.replace(/[^/]+$/, 'relayrun.py') })
-    if (!r.ok) return { error: r.error, noResult: !!r.noResult }
+    if (!r.ok) return { error: r.error, noResult: !!r.noResult, cause: 'relay' }
     if (r.exit !== 0 || r.view.error) {
       const raw = String(r.view.error || `depscore.py exited ${r.exit}`)
       const exception = exceptionOf(raw)
-      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, exception, output: r.view, relayFile: file }
+      const cause = r.view.cause === 'bd-timeout' ? 'bd-timeout' : 'other'
+      return { error: exception ? `${exception} (depscore.py exited ${r.exit}; full output: ${raw})` : raw, cause, exception, output: r.view, relayFile: file }
     }
     return { ...r.view, relayFile: file }
   }
@@ -451,13 +454,13 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    * Runs `argv` (a program and its arguments, no shell) through relayrun.py at `runner`, in `cwd`.
    * Returns { ok: true, exitCode, json, stdoutBytes, stderrBytes, stdoutTail?, stderrTail?, relayFile }
    * — json is stdout parsed when it is one JSON object (reduced to `keys` when given), else null —
-   * or { ok: false, error }.
+   * or { ok: false, error, cause }: cause 'relay' when the result did not come back through the relay.
    */
   async function run(dispatch, { label, phase, runner, argv, cwd = null, file, keys = [], tail = 0, timeout = null }) {
     const rest = ['run', '--relay', file, ...(cwd ? ['--cwd', cwd] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(tail ? ['--tail', String(tail)] : []), ...(timeout ? ['--timeout', String(timeout)] : []), '--', ...argv.map(String)]
     const r = await exec(dispatch, { label, phase, command: pythonLine(runner, rest), file, readRunner: runner })
-    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult }
-    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`) }
+    if (!r.ok) return { ok: false, error: r.error, noResult: !!r.noResult, cause: 'relay' }
+    if (r.exit !== 0) return { ok: false, error: String(r.view.error || `relayrun.py exited ${r.exit}`), cause: 'other' }
     return { ok: true, ...r.view, relayFile: file }
   }
   /** Whether the JSON file `file` holds exactly `value`. Returns { ok: true, exists, parsed, match } or { ok: false, error }. */
