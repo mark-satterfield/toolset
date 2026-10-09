@@ -148,9 +148,14 @@ What comes back:
 - `beadsEmitted` — how many Stories and Tasks this run created or updated.
 
 `depscore.py elaboration-finish` sets the Epic `done` once every span repository has its
-Story and Tasks, or nothing to build. A repository that failed is named in the handback's
-DEGRADED line and keeps the Epic `in_progress`; the next dispatch reuses the saved steps of
-the other repositories and reruns only the failed ones.
+Story and Tasks, or nothing to build. A work item no written Task cites gets one corrective
+pass (new Tasks for it, or why no work is needed, recorded on the detailing as `done`); the
+saved Tasks are never re-decomposed. A repository still failed returns `ok:false` at stage
+`repositories-incomplete`, naming each repository's stage and cause. A transient cause (a
+dispatch that died, a beads timeout, an API or quota limit, a relay copy problem) releases the
+Epic: the next dispatch, after the supervisor's backoff, reruns only the failed steps. Any
+other cause is not retried: the Epic is held and the handback names what the
+incident-responder diagnoses.
 
 Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
 compose them from your own account of what you think landed.

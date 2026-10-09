@@ -84,6 +84,8 @@
                          a file that cannot be read or parsed is an error; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
+    add-tasks            merge a corrective pass into a Story's saved Tasks and detailing;
+                         no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
@@ -150,6 +152,7 @@ from assesscontext import assess_context, task_context
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
 from archclosure import write_closure
 from beadwrite import (
+    add_corrective_tasks,
     closure_task_edges,
     plan_story_tasks,
     plan_task_edges,
@@ -677,6 +680,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="one Story's saved Tasks in build order with their keys; runs no `bd` command",
         parents=[common],
     )
+    adt = sub.add_parser(
+        "add-tasks",
+        help="merge a corrective pass into a Story's saved Tasks and detailing; "
+        "runs no `bd` command",
+        parents=[common],
+    )
+    adt.add_argument(
+        "--correction",
+        required=True,
+        type=Path,
+        help="the accepted corrective pass: tasks, noWork, edges and scores",
+    )
     wta = sub.add_parser(
         "write-task",
         help="write ONE Task of a Story from its saved tasks-<slug>.json",
@@ -696,7 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tasks of other Epics this Task is blocked by, comma-separated, beside the "
         "ones its saved blockedByExternal names",
     )
-    for task_parser in (pta, wta):
+    for task_parser in (pta, adt, wta):
         task_parser.add_argument(
             "--dir", required=True, type=Path, help="the Epic's working directory"
         )
@@ -1214,6 +1229,10 @@ def run(args: argparse.Namespace) -> dict:
             repo=args.repo,
             root=args.project_root,
             packages_dir=args.packages_dir,
+        )
+    if command == "add-tasks":
+        return head | add_corrective_tasks(
+            args.dir, slug=args.slug, correction=args.correction
         )
     if command == "plan-task-edges":
         return head | plan_task_edges(args.dir, split_ids(args.repos))

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; a repository that failed keeps the Epic in_progress, and the next dispatch reruns only that repository; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on two business requirements no design can satisfy together, or section 2 constraints the owner wrote that contradict each other or that no design can meet together with the PRD, before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows, then one prerequisite item per element the delta\'s work rests on that the architecture step\'s Closure found absent, stale or planned by an open bead, every item with the items it requires), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item, a prerequisite in the repository that deploys it, and creates the new repositories the target or a prerequisite names; a prerequisite an open bead plans is placed nowhere; a placement in the control repository or the repository holding the architecture goes back to the steward once, and is then left unplaced; a span with no repository is no implementation work), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate, and with the edges the items\' requires relations make written by depscore.py plan-tasks and depscore.py closure-edges, which warn about a required item with no Task, no open bead and not done (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish once every span repository has its Story and Tasks, or nothing to build; when a repository failed the run returns ok:false at stage repositories-incomplete with each repository\'s stage and cause: a transient cause (a dispatch that died, a beads timeout, an API or quota limit, a relay copy problem) releases the Epic so the next dispatch reruns only the failed steps after the supervisor\'s backoff, and any other cause holds the Epic for the incident-responder to diagnose; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -11,7 +11,7 @@ export const meta = {
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD from the target and delta views' },
     { title: 'Spec Authoring', detail: 'per repo: detail each placed delta item against the code on main, then author the Spec for its add, modify and remove items and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose its add, modify and remove items into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
-    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done once every span repository has its Story and Tasks, or nothing to build; then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
+    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done once every span repository has its Story and Tasks, or nothing to build, else return ok:false at stage repositories-incomplete (transient causes released for a backoff retry, any other cause held for diagnosis); then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
@@ -882,6 +882,50 @@ async function holdForHuman(stage, detail, actions, after) {
   }
 }
 
+/** The stage of a run that left the Epic not done because span repositories failed. */
+const REPOS_INCOMPLETE_STAGE = 'repositories-incomplete'
+/** A cause a later dispatch can be expected to get past: a beads timeout or lock, an API or quota limit, a relay copy problem. */
+const TRANSIENT_CAUSE = /i\/o timeout|connection refused|deadline exceeded|database is locked|invalid connection|bad connection|failed to open database|indeterminate|quota|usage limit|rate limit|overloaded|api unavailable|returned no result|returned nothing|relay/i
+/** Whether a repository's failure has a transient cause: a dispatch that died, or a cause TRANSIENT_CAUSE names. */
+const transientFailure = (f) => !!(f && (f.dispatchFailed || TRANSIENT_CAUSE.test(String(f.reason || ''))))
+/**
+ * The outcome of a run whose span repositories did not all get their Story and Tasks. Every
+ * failure with a transient cause: ok:false at stage repositories-incomplete (agent-dispatch-failed
+ * when every one is a dispatch that died), the Epic released so the next dispatch reruns only the
+ * failed steps after the supervisor's backoff. Any other cause is not retried: the Epic is held,
+ * and the run returns ok:false at stage repositories-incomplete with each repository's stage and
+ * cause, for the incident-responder to diagnose.
+ */
+async function repositoriesIncomplete(specFails, decompFails, detail) {
+  const failures = [
+    ...specFails.map((f) => ({ ...f, step: 'spec', stage: f.stage || 'spec-authoring' })),
+    ...decompFails.map((f) => ({ ...f, step: 'tasks', stage: f.stage || 'task-decomposition' })),
+  ]
+  const named = failures
+    .map((f) => `${f.repoPath} (${f.step} at ${f.stage}${Array.isArray(f.uncitedItems) && f.uncitedItems.length ? `: no Task cites ${f.uncitedItems.join(', ')}` : ''})`)
+    .join('; ')
+  const causes = failures.map((f) => `${f.repoPath} at ${f.stage}: ${String(f.reason || 'no cause recorded').slice(0, 600)}`)
+  causes.forEach((c) => log(`Repository not finished — ${c}`))
+  runDetail = detail
+  if (failures.every(transientFailure)) {
+    const allDied = failures.every((f) => f.dispatchFailed)
+    return {
+      ...handback(false, REPOS_INCOMPLETE_STAGE, `transient: ${named} — the next dispatch reruns only these failed steps`, detail),
+      ...(allDied ? { stage: DISPATCH_FAILED_STAGE, dispatchFailed: true, dispatchFailures: failures.flatMap((f) => f.dispatchFailures || []) } : {}),
+      failures: causes,
+    }
+  }
+  await holdForPerson(epicBeadId)
+  return {
+    ...handback(false, REPOS_INCOMPLETE_STAGE, `not retried: ${named} — no known cause a rerun addresses; the Epic is held for diagnosis`, detail),
+    failures: causes,
+    requiredHumanActions: [
+      `Diagnose (incident-responder) why these repositories of ${epicBeadId} did not get their Story and Tasks: ${causes.join(' | ')}`.slice(0, 3000),
+      ...(lifecycle.held ? [restoreStep(epicBeadId, 'the cause is fixed')] : []),
+    ],
+  }
+}
+
 let result
 try {
   result = await (async () => {
@@ -1566,11 +1610,8 @@ produced.reconciliationByRepo = Array.from(reconByRepo, ([rp, recon]) => ({ repo
 produced.specPairs = specPairs
 produced.specFailures = specFailures
 if (!specPairs.length && !nothingToBuild) {
-  return partial('spec-authoring', {
-    reason: `no repo produced a spec — ${specFailures.map((x) => `${x.repoPath}: ${x.reason}`).join('; ')}`,
-    specFailures,
-    ...(specFailures.every((x) => x.dispatchFailed) ? { dispatchFailed: true, dispatchFailures: specFailures.flatMap((x) => x.dispatchFailures) } : {}),
-  })
+  recRuled(null, { status: 'failed', failure: { stage: 'spec-authoring', reason: 'no repo produced a spec' } })
+  return repositoriesIncomplete(specFailures, [], { stage: 'spec-authoring', partial: { ...produced } })
 }
 recRuled(`${specPairs.length} of ${repos.length} repo(s) specified.`, { status: 'done' })
 
@@ -1646,6 +1687,7 @@ async function decomposeStory(pair) {
     ok: false,
     stage: (r && r.stage) || null,
     reason: (r && (r.reason || r.error)) || (r ? 'the decomposition produced no Task' : 'task-decomposition returned nothing'),
+    ...(r && Array.isArray(r.uncitedItems) ? { uncitedItems: r.uncitedItems } : {}),
     ...(!r || r.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (r && r.dispatchFailures) || [] } : {}),
   }
 }
@@ -1660,6 +1702,7 @@ for (const [pairIndex, pair] of specPairs.entries()) {
       reason: (decomposition && decomposition.reason) || 'the task-decomposition phase threw',
       dispatchFailed: !!(decomposition && decomposition.dispatchFailed),
       dispatchFailures: (decomposition && decomposition.dispatchFailures) || [],
+      ...(decomposition && Array.isArray(decomposition.uncitedItems) ? { uncitedItems: decomposition.uncitedItems } : {}),
     })
     log(`Task Decomposition FAILED for ${pair.story.key || pair.repoPath}: ${(decomposition && decomposition.reason) || 'threw'}`)
     continue
@@ -1686,11 +1729,8 @@ produced.decompositions = decompositions
 produced.decompositionFailures = decompositionFailures
 produced.tasks = tasks
 if (!decompositions.length && !nothingToBuild) {
-  return partial('task-decomposition', {
-    reason: `no Story produced tasks — ${decompositionFailures.map((x) => `${x.storyKey || x.repoPath}: ${x.reason}`).join('; ')}`,
-    decompositionFailures,
-    ...(decompositionFailures.every((x) => x.dispatchFailed) ? { dispatchFailed: true, dispatchFailures: decompositionFailures.flatMap((x) => x.dispatchFailures) } : {}),
-  })
+  recRuled(null, { status: 'failed', failure: { stage: 'task-decomposition', reason: 'no Story produced tasks' } })
+  return repositoriesIncomplete(specFailures, decompositionFailures, { stage: 'task-decomposition', partial: { ...produced } })
 }
 
 const crossStory = { ran: false, reason: null, note: null, edges: [], rejected: 0, written: null }
@@ -1837,8 +1877,7 @@ recRuled(`${tasks.length} Task(s) across ${decompositions.length} Story/Stories;
 
 enterPhase('Finish')
 // Done once every span repository has its outcome: a Story decomposed into its Tasks, or none
-// to build. A repository that failed keeps the Epic in_progress; the next dispatch reuses the
-// saved steps of the others and reruns only the failed ones.
+// to build. A failed repository makes the run return ok:false (repositoriesIncomplete).
 const done = nothingToBuild || (!specFailures.length && !decompositionFailures.length)
 const finishArgs = [
   `elaboration-finish --epic ${shellq(epicBeadId)}`,
@@ -1921,6 +1960,9 @@ const common = {
   repoSpan: repos,
   targetRemoval,
   ...(createdRepos.length ? { createdRepos } : {}),
+}
+if (!nothingToBuild && (specFailures.length || decompositionFailures.length)) {
+  return { ...(await repositoriesIncomplete(specFailures, decompositionFailures, runJournal)), ...common }
 }
 return {
   ...handback(

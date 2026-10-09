@@ -782,6 +782,84 @@ def read_tasks(
 WORK_STATUSES = ("add", "modify", "remove")
 
 
+def work_items(directory: Path, slug: str) -> list[str] | None:
+    """Return the ids of the delta items a repository's detailing marks add, modify or remove.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The repository slug.
+
+    Returns:
+        The ids in the order `recon-<slug>.json` lists them; None when the detailing is not
+        saved or saves no `items` list.
+    """
+    path = directory / f"recon-{slug}.json"
+    if not path.is_file():
+        return None
+    items = _read_json(path).get("items")
+    if not isinstance(items, list):
+        return None
+    return list(
+        dict.fromkeys(
+            str(i.get("id")).strip()
+            for i in items
+            if isinstance(i, dict) and i.get("id") and i.get("status") in WORK_STATUSES
+        )
+    )
+
+
+def uncited_work(directory: Path, slug: str, tasks: list[Task]) -> list[str]:
+    """Return the work items of a repository that no Task cites in its `requirementIds`.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The repository slug.
+        tasks: The Story's Tasks.
+
+    Returns:
+        The ids the detailing marks add, modify or remove and no Task cites, in the
+        detailing's order; empty when every one is cited or there is none.
+    """
+    cited = {r for t in tasks for r in t.requirement_ids}
+    return [i for i in work_items(directory, slug) or [] if i not in cited]
+
+
+def item_briefs(directory: Path, slug: str, ids: list[str]) -> list[dict[str, str]]:
+    """Return what the detailing says of each named item: status, element and target.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The repository slug.
+        ids: The item ids.
+
+    Returns:
+        One `{id, status, element, to}` per id, in the order given; text is cut to 200
+        characters.
+    """
+    path = directory / f"recon-{slug}.json"
+    items = _read_json(path).get("items") if path.is_file() else None
+    by_id = {
+        str(i.get("id")).strip(): i
+        for i in (items if isinstance(items, list) else [])
+        if isinstance(i, dict) and i.get("id")
+    }
+
+    def text(value: object) -> str:
+        if value is None:
+            return ""
+        return (value if isinstance(value, str) else json.dumps(value))[:200]
+
+    return [
+        {
+            "id": i,
+            "status": text(by_id.get(i, {}).get("status")),
+            "element": text(by_id.get(i, {}).get("element")),
+            "to": text(by_id.get(i, {}).get("to")),
+        }
+        for i in ids
+    ]
+
+
 def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
     """Note Tasks that build no delta item the repository's detailing marks as work.
 
@@ -796,18 +874,10 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
         tasks: The Story's Tasks; each one citing no such item is noted in
             `take_warnings` and kept.
     """
-    path = directory / f"recon-{slug}.json"
-    if not path.is_file():
+    listed = work_items(directory, slug)
+    if listed is None:
         return
-    saved = _read_json(path)
-    items = saved.get("items")
-    if not isinstance(items, list):
-        return
-    work = {
-        str(i.get("id")).strip()
-        for i in items
-        if isinstance(i, dict) and i.get("status") in WORK_STATUSES
-    }
+    work = set(listed)
     idle = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
         _WARNINGS.append(

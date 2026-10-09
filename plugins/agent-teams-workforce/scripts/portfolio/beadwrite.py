@@ -10,6 +10,7 @@ writer, and a rerun repairs it, because every write is keyed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -37,16 +38,21 @@ from hierarchy import (
     derive_prerequisites,
     detailed_items,
     elab_slug,
+    item_briefs,
     planned_prerequisites,
     read_story,
     read_task_deps,
     read_tasks,
     repo_slugs,
+    str_list,
     take_warnings,
+    uncited_work,
+    work_items,
 )
 from scoring import JUDGED_HASH_KEY
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from beadgraph import Bead, Graph, Writer
@@ -358,22 +364,69 @@ def _story_of(graph: Graph, epic_id: str, slug: str) -> Bead | None:
     return _keyed(_children(graph, epic_id, "story")).get(f"story:{slug}")
 
 
-def _assign_keys(tasks: list[Task], slug: str) -> None:
+def _item_order(item: str) -> list:
+    """Return the natural sort key of a delta item id, so D2 sorts before D10.
+
+    Args:
+        item: The id.
+
+    Returns:
+        Its text and number runs, the numbers as ints.
+    """
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", item)]
+
+
+def _work_cited(ids: list[str], work: list[str] | None) -> list[str]:
+    """Return the work items among a Task's cited ids, naturally sorted.
+
+    Args:
+        ids: The ids the Task cites in `requirementIds`.
+        work: The ids the repository's detailing marks add, modify or remove, or None.
+
+    Returns:
+        The cited work item ids, each once, in natural order.
+    """
+    marked = set(work or [])
+    return sorted({i.strip() for i in ids if i.strip() in marked}, key=_item_order)
+
+
+def _title_key(task: Task, slug: str) -> str:
+    """Return the key a Task got from its title before keys came from its work items.
+
+    Args:
+        task: The Task.
+        slug: The Story's repository slug.
+
+    Returns:
+        `task:<slug>:<title slug>`.
+    """
+    return f"task:{slug}:{elab_slug(task.title)}"
+
+
+def _assign_keys(tasks: list[Task], slug: str, work: list[str] | None) -> None:
     """Give each Task its durable key, in build order.
 
-    A Task keeps the key its `reuses` names when no earlier Task took it; otherwise its key
-    is `task:<slug>:<title slug>`, suffixed `-2`, `-3` ... past the keys already taken.
+    A Task keeps the key its `reuses` names when no earlier Task took it. Otherwise its key
+    is `task:<slug>:items:<the work items it cites, naturally sorted>`, so a Task re-decomposed
+    under another title keeps its key; a Task citing no work item is keyed by its title.
+    Two Tasks with the same base key are suffixed `-2`, `-3` ... in build order.
 
     Args:
         tasks: The Tasks, in build order; each gains its `elab_key`.
         slug: The Story's repository slug.
+        work: The ids the repository's detailing marks add, modify or remove, or None.
     """
     taken: set[str] = set()
     for t in tasks:
         if t.reuses and t.reuses not in taken:
             key = t.reuses
         else:
-            base = f"task:{slug}:{elab_slug(t.title)}"
+            cited = _work_cited(t.requirement_ids, work)
+            base = (
+                f"task:{slug}:items:{'+'.join(elab_slug(i) for i in cited)}"
+                if cited
+                else _title_key(t, slug)
+            )
             key, n = base, 2
             while key in taken:
                 key = f"{base}-{n}"
@@ -412,7 +465,7 @@ def plan_tasks(
     check_detailed_work(directory, slug, tasks)
     tasks = derive_prerequisites(directory, slug, tasks)
     check_cds_contract(slug, tasks)
-    _assign_keys(tasks, slug)
+    _assign_keys(tasks, slug, work_items(directory, slug))
     return tasks
 
 
@@ -637,15 +690,19 @@ def plan_story_tasks(
         packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
-        Each Task's local key, `elab_key`, title and the local keys it depends on.
+        Each Task's local key, `elab_key`, title and the local keys it depends on, and
+        `uncited`: the work items of the repository's detailing no Task cites.
     """
     take_warnings()
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
     warnings = take_warnings()
+    uncited = uncited_work(directory, slug, tasks)
     return {
         "ok": True,
         "slug": slug,
         "warnings": warnings,
+        "uncited": uncited,
+        "uncitedItems": item_briefs(directory, slug, uncited),
         "tasks": [
             {
                 "key": t.key,
@@ -661,6 +718,243 @@ def plan_story_tasks(
         ],
         "summary": {"tasks": len(tasks), "warnings": len(warnings)},
     }
+
+
+#: Who records a work item as `done` when the corrective pass states no work is needed.
+NO_WORK_RULED_BY = "task-decomposition corrective pass"
+
+
+def _write_json(path: Path, value: dict) -> None:
+    """Write a JSON file whole, through a temporary file beside it.
+
+    Args:
+        path: The file.
+        value: Its content.
+    """
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    temp.replace(path)
+
+
+def _rebind_input(directory: Path, name: str) -> list[str]:
+    """Record a rewritten file's new content hash wherever it is a recorded input.
+
+    The saved files of the Epic's working directory record the hash of each input they
+    were built from (`<file>.meta.json`); a file amended in place would make them stale.
+
+    Args:
+        directory: The Epic's working directory.
+        name: The rewritten file's name in that directory.
+
+    Returns:
+        The records updated.
+    """
+    path = directory / name
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    updated: list[str] = []
+    for meta_path in sorted(directory.rglob("*.meta.json")):
+        try:
+            meta = json.loads(meta_path.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        changed = False
+        if meta_path.name == f"{name}.meta.json":
+            meta["sha256"], meta["bytes"] = digest, path.stat().st_size
+            changed = True
+        for entry in meta.get("inputs") or []:
+            recorded = str(entry.get("path") or "") if isinstance(entry, dict) else ""
+            if (
+                entry.get("kind") == "file"
+                and recorded.endswith(f"{directory.name}/{name}")
+                and entry.get("sha256") != digest
+            ):
+                entry["sha256"] = digest
+                changed = True
+        if changed:
+            _write_json(meta_path, meta)
+            updated.append(meta_path.name)
+    return updated
+
+
+def _local_keys(start: list[dict]) -> Iterator[str]:
+    """Yield fresh local Task keys `T<n>` past every key already in the file.
+
+    Args:
+        start: The Tasks already saved.
+
+    Yields:
+        The next unused key.
+    """
+    taken = {str(t.get("key") or "") for t in start}
+    n = 1 + max(
+        (int(k[1:]) for k in taken if re.fullmatch(r"T\d+", k)),
+        default=0,
+    )
+    while True:
+        if f"T{n}" not in taken:
+            yield f"T{n}"
+        n += 1
+
+
+def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> dict:
+    """Merge one corrective pass into a Story's saved Tasks and its detailing.
+
+    The pass answers for the work items no saved Task cites: a Task for some, a reason no
+    work is needed for others. A new Task is taken only when every work item it cites is
+    one of those; it gets a fresh local key, and the saved Tasks are left as they are. An
+    edge is taken only into a new Task. A "no work needed" answer for one of those items
+    that no new Task builds is recorded on `recon-<slug>.json` as `done` with its reason,
+    and the hash recorded for the detailing as an input is updated to match.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The Story's repository slug.
+        correction: The accepted corrective pass: `tasks`, `noWork` (`{id, reason}`),
+            `edges` and `scores`.
+
+    Returns:
+        `added` (the new local keys), `noWork` (the ids recorded done), `rejected`
+        (each answer not taken, with why) and `uncited` (the work items still cited by
+        no Task).
+
+    Raises:
+        HierarchyError: The saved Tasks or the corrective pass cannot be read.
+    """
+    tasks_path = directory / f"tasks-{slug}.json"
+    try:
+        saved = json.loads(tasks_path.read_text("utf-8"))
+        fix = json.loads(correction.read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        msg = f"the corrective pass for tasks-{slug}.json cannot be read: {exc}"
+        raise HierarchyError(msg) from exc
+    existing = [t for t in saved.get("tasks") or [] if isinstance(t, dict)]
+    work = work_items(directory, slug) or []
+    cited = {i for t in existing for i in str_list(t.get("requirementIds"))}
+    gap = [i for i in work if i not in cited]
+    rejected: list[dict] = []
+    added: list[dict] = []
+    keymap: dict[str, str] = {}
+    fresh = _local_keys(existing)
+    for t in fix.get("tasks") or []:
+        if not isinstance(t, dict):
+            continue
+        builds = [i for i in str_list(t.get("requirementIds")) if i in work]
+        outside = [i for i in builds if i not in gap]
+        if not builds or outside:
+            why = (
+                f"cites {', '.join(outside)}, which a saved Task already builds"
+                if outside
+                else "cites none of the items with no Task"
+            )
+            rejected.append({"task": str(t.get("title") or ""), "reason": why})
+            continue
+        key = next(fresh)
+        keymap[str(t.get("key") or key)] = key
+        added.append(t | {"key": key})
+    built = {i for t in added for i in str_list(t.get("requirementIds"))}
+    no_work: dict[str, str] = {}
+    for e in fix.get("noWork") or []:
+        item = str(e.get("id") or "").strip() if isinstance(e, dict) else ""
+        reason = str(e.get("reason") or "").strip() if isinstance(e, dict) else ""
+        if item in gap and item not in built and reason:
+            no_work[item] = reason
+        else:
+            why = "not an item with no Task, or no reason"
+            rejected.append({"item": item, "reason": why})
+    own = {str(t.get("key")) for t in existing}
+    for e in fix.get("edges") or []:
+        frm = keymap.get(str(e.get("from")), str(e.get("from")))
+        to = keymap.get(str(e.get("to")))
+        if to and (frm in keymap.values() or frm in own):
+            saved.setdefault("edges", []).append({"from": frm, "to": to})
+    for s in fix.get("scores") or []:
+        if isinstance(s, dict) and str(s.get("key")) in keymap:
+            saved.setdefault("scores", []).append(s | {"key": keymap[str(s["key"])]})
+    if added:
+        saved["tasks"] = [*existing, *added]
+        _write_json(tasks_path, saved)
+    if no_work:
+        recon_path = directory / f"recon-{slug}.json"
+        recon = json.loads(recon_path.read_text("utf-8"))
+        for item in recon.get("items") or []:
+            if isinstance(item, dict) and str(item.get("id") or "").strip() in no_work:
+                item["status"] = "done"
+                item["doneReason"] = no_work[str(item["id"]).strip()]
+                item["ruledBy"] = NO_WORK_RULED_BY
+        _write_json(recon_path, recon)
+        _rebind_input(directory, recon_path.name)
+    return {
+        "ok": True,
+        "slug": slug,
+        "added": [t["key"] for t in added],
+        "noWork": sorted(no_work, key=_item_order),
+        "rejected": rejected,
+        "uncited": [i for i in gap if i not in built and i not in no_work],
+        "summary": {"added": len(added), "noWork": len(no_work)},
+    }
+
+
+def _cited_ids(value: object) -> list[str]:
+    """Return the ids a bead's `requirement_ids` metadata holds.
+
+    Args:
+        value: The metadata value: a JSON list, as written, or a list.
+
+    Returns:
+        The ids; empty when the value holds none.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(value, list):
+        return []
+    return [str(v) for v in value if isinstance(v, str)]
+
+
+def _earlier_bead(
+    task: Task,
+    slug: str,
+    keyed: dict[str, Bead],
+    claimed: set[str],
+    work: list[str] | None,
+) -> Bead | None:
+    """Return the Task bead written under an earlier key that this Task is, if any.
+
+    Beads written before keys came from work items carry `task:<slug>:<title slug>`. Of the
+    Story's beads whose key no Task of the plan holds and that are not keyed by work items,
+    the one keyed by this Task's title is taken; otherwise the first, by id, whose recorded
+    `requirement_ids` cite the same work items as this Task.
+
+    Args:
+        task: The Task, with its `elab_key`.
+        slug: The Story's repository slug.
+        keyed: The Story's Task beads by `elab_key`.
+        claimed: The keys the plan's Tasks hold.
+        work: The ids the repository's detailing marks add, modify or remove, or None.
+
+    Returns:
+        The bead, or None.
+    """
+    fresh = f"task:{slug}:items:"
+    free = sorted(
+        (b for k, b in keyed.items() if k not in claimed and not k.startswith(fresh)),
+        key=lambda b: b.id,
+    )
+    titled = _title_key(task, slug)
+    for b in free:
+        if b.metadata.get("elab_key") == titled:
+            return b
+    want = _work_cited(task.requirement_ids, work)
+    if not want:
+        return None
+    for b in free:
+        if _work_cited(_cited_ids(b.metadata.get("requirement_ids")), work) == want:
+            return b
+    return None
 
 
 def _judged_hash(title: str, text: str, priority: object) -> str:
@@ -793,10 +1087,17 @@ def _write_task(
     records = children(writer.repo, story_id, "task")
     priority = {str(r["id"]): r.get("priority") for r in records}
     keyed = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id))
+    claimed = {t.elab_key for t in tasks if t.elab_key}
+    work = work_items(directory, slug)
+
+    def found(t: Task) -> Bead | None:
+        bead = keyed.get(t.elab_key or "")
+        return bead or _earlier_bead(t, slug, keyed, claimed, work)
+
     blockers: list[str] = []
     warnings: list[str] = take_warnings()
     for dep in task.depends_on:
-        blocker = keyed.get(by_key[dep].elab_key or "") if dep in by_key else None
+        blocker = found(by_key[dep]) if dep in by_key else None
         if blocker is None:
             warnings.append(
                 f"{key} depends on {dep}, which is not written under {story_id} yet; "
@@ -813,7 +1114,7 @@ def _write_task(
         )
         blockers = list(dict.fromkeys([*blockers, *inner]))
         outer = [b for b in outer if b not in story_ids]
-    bead = keyed.get(task.elab_key or "")
+    bead = found(task)
     text = task_text(task, root)
     meta = task_metadata(task)
     if task.sizes:

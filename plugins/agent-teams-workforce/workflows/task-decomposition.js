@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks warns about a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Task with the web-ui surface gets in its build contract the design source of the ui items it cites, from the detailing\'s uiAuthority (cds_design_source): bundle, with the supplied cds bundle and the build-spec.md citations (cds_bundle_path, cds_build_specs); cds, designed with the CDS design system; or none, a change with no design impact. A bundle or cds Task also records its artifact (cds_artifact: the kind and slug a bundle.json names), so task-to-deploy builds from a mockup supplied any time before the Task is built. plan-tasks takes a web-ui Task whose ui items are of two artifacts to the first artifact, and a bundle Task\'s build specs from its bundle, with a warning. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, and saves the result as tasks-<slug>.json; the script validates and accepts the authored candidate, records it, and writes each Task bead through the checked relay: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and drops each edge that closes a cycle); then the script runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. When the written Tasks leave a work item the detailing marks add, modify or remove cited by no Task, one corrective pass tells the maker exactly which items have no Task; it answers with new Tasks for them or, per item, why no work is needed, and depscore.py add-tasks merges the answer without changing the saved Tasks and records each no-work item on the detailing as done with its reason. Items still cited by no Task after that pass fail the Story at stage uncited-items, naming them and the maker\'s answer; no further pass runs. With replay: true the maker does not run, and the script runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes; the script writes each Task bead with one depscore.py write-task command' },
   ],
@@ -899,8 +899,83 @@ if (!replayed) {
   recordError = await recordTasks()
   if (recordError) log(`tasks-${artSlug}.json was not recorded: ${recordError}`)
 }
-const ran = await writeTasks()
+let ran = await writeTasks()
 if (ran.error) log(`Story story:${artSlug}: the Task beads were not all written — ${ran.error}`)
+
+const correctionSchema = {
+  type: 'object',
+  required: ['tasks', 'noWork'],
+  properties: {
+    tasks: { type: 'array', items: taskSchema },
+    noWork: {
+      type: 'array',
+      items: { type: 'object', required: ['id', 'reason'], properties: { id: { type: 'string' }, reason: { type: 'string' } } },
+    },
+    edges: {
+      type: 'array',
+      items: { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } },
+    },
+    scores: { type: 'array', items: wsjfTaskSchema },
+  },
+}
+/**
+ * The one corrective pass for the work items no written Task cites: the maker is told exactly
+ * which items have no Task, and answers with Tasks for them or, per item, why no work is needed.
+ * depscore.py add-tasks merges the answer: the saved Tasks are kept as they are, the new Tasks
+ * are added, and a "no work needed" item is recorded on the detailing as done with its reason.
+ * Returns { ok, added, noWork, rejected, uncited, answerFile } or { ok: false, error }.
+ */
+async function correctUncited(plan) {
+  const items = Array.isArray(plan.uncitedItems) && plan.uncitedItems.length ? plan.uncitedItems : plan.uncited.map((id) => ({ id }))
+  const listing = items
+    .map((i) => `${i.id} (${i.status || 'work'}${hasText(i.element) ? `: ${i.element}` : ''}${hasText(i.to) ? ` — to: ${i.to}` : ''})`)
+    .join('; ')
+  const tasksFile = `${ART.dir}/tasks-${artSlug}.json`
+  const candidate = `${ART.dir}/candidates/tasks-${artSlug}.correction.json`
+  const answerFile = `${ART.dir}/tasks-${artSlug}.correction.json`
+  const binding = await relayKit.artifactRevision(settleAgent, { label: 'correct:inputs', phase: 'Decompose', runner: RELAY_RUNNER, files: [tasksFile, detailingPath].filter(hasText), relayFile: relayFile('correct-inputs'), context: { uncited: plan.uncited } })
+  if (!binding.ok) return { ok: false, error: binding.error }
+  const produce = () => settleAgent(
+    `One corrective pass on the Tasks of Story ${storyRef}. Do NOT write code.
+
+These items have no Task: ${listing}. Write Tasks for them, or state for each why no work is needed.
+
+- The saved Tasks are in ${tasksFile}. Read them; never change, repeat, split or re-decompose them.
+- Return in \`tasks\` only new Tasks, each building one or more of the items above and citing them in \`requirementIds\`, with the same contract fields as the saved Tasks (specPaths, specSections, requirementIds, decisionIds, acceptanceCriteria, definitionOfDone, surfaces, blockedByExternal). Key them N1, N2, ….
+- Return in \`noWork\` one entry per item above that needs no work: its \`id\` and the \`reason\`, citing the file:line on main that already does what the item asks. It is recorded on the detailing as done with that reason.
+- Return in \`edges\` only edges into a new Task ("from" a saved Task's key or a new Task's key, "to" a new Task's key), and in \`scores\` one size per new Task, under "Job Size" as the saved Tasks are sized.
+
+${specBlock}${relayKit.artifactBrief(candidate, correctionSchema, binding.revision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
+    { label: 'decompose:correct-uncited', effort: 'medium', phase: 'Decompose', agentType: 'task-decomposer', schema: relayKit.ARTIFACT_SCHEMA }
+  )
+  const accepted = await relayKit.authorArtifact(settleAgent, { label: 'save:correction', phase: 'Decompose', runner: RELAY_RUNNER, candidate, file: answerFile, schema: correctionSchema, revision: binding.revision, relayFile: relayFile('accepted-correction'), keys: ['tasks.key'] }, produce, () => !!dispatchInterruption)
+  if (!accepted.ok) return { ok: false, error: `the corrective pass was not accepted: ${accepted.error || 'not saved'}`, answerFile }
+  const merged = await depscore('beads:add-tasks', `add-tasks ${taskArgs} --correction ${shq(answerFile)}`, null)
+  if (merged.error) return { ok: false, error: `depscore.py add-tasks: ${merged.error}`, answerFile }
+  return {
+    ok: true,
+    added: Array.isArray(merged.added) ? merged.added : [],
+    noWork: Array.isArray(merged.noWork) ? merged.noWork : [],
+    rejected: Array.isArray(merged.rejected) ? merged.rejected : [],
+    uncited: Array.isArray(merged.uncited) ? merged.uncited : plan.uncited,
+    answerFile,
+  }
+}
+const firstUncited = !ran.error && ran.plan && Array.isArray(ran.plan.uncited) ? ran.plan.uncited.filter(hasText) : []
+const coverage = { first: firstUncited, uncited: [], correction: null }
+if (firstUncited.length) {
+  log(`Story story:${artSlug}: no Task cites ${firstUncited.join(', ')}; one corrective pass runs for them`)
+  const fix = await correctUncited(ran.plan)
+  coverage.correction = fix
+  coverage.uncited = fix.ok ? fix.uncited : firstUncited
+  if (fix.ok && fix.added.length) {
+    const again = await recordTasks()
+    if (again) log(`tasks-${artSlug}.json was not recorded after the corrective pass: ${again}`)
+    ran = await writeTasks()
+    if (ran.error) log(`Story story:${artSlug}: the Task beads were not all written after the corrective pass — ${ran.error}`)
+  }
+  log(`Story story:${artSlug}: corrective pass ${fix.ok ? `added ${fix.added.length} Task(s), recorded ${fix.noWork.join(', ') || 'no item'} as needing no work` : `failed: ${fix.error}`}; ${coverage.uncited.length ? `still cited by no Task: ${coverage.uncited.join(', ')}` : 'every work item is cited'}`)
+}
 const plan = ran.plan
 const written = ran.written.filter((w) => w && w.task)
 const writtenTasks = written.length
@@ -921,11 +996,24 @@ const summary = written.length
 if (taskFacts && !taskFacts.tasks.length) log(`Story story:${artSlug}: no Tasks; rationale is in ${ART.dir}/tasks-${artSlug}.json`)
 log(`Story story:${artSlug}: ${written.length} write-task result(s) relayed${summary ? ` ${JSON.stringify(summary)}` : ''}; beads is read at finish`)
 
-// A Task not written leaves the Story unfinished: its repository is rerun, and every write is keyed by elab_key.
 const writeFailure = ran.error || ran.errors.join('; ')
+const fix = coverage.correction
+const rejectedText = fix && fix.ok && fix.rejected.length
+  ? `; answers not taken: ${fix.rejected.map((r) => `${r.task || r.item || '?'} (${r.reason})`).join('; ')}`
+  : ''
+const coverageFailure = coverage.uncited.length
+  ? `after one corrective pass no Task cites ${coverage.uncited.join(', ')}, which recon-${artSlug}.json marks add, modify or remove; ` +
+    (fix && fix.ok ? `the maker's answer is ${fix.answerFile}${rejectedText}` : `the corrective pass did not complete: ${(fix && fix.error) || 'no result'}`)
+  : ''
 return dispatchOutcome({
-  ok: !writeFailure,
-  ...(writeFailure ? { stage: 'task-write', reason: writeFailure, artifactPath: `${ART.dir}/tasks-${artSlug}.json` } : {}),
+  ok: !writeFailure && !coverageFailure,
+  ...(writeFailure
+    ? { stage: 'task-write', reason: writeFailure, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
+    : coverageFailure
+      ? { stage: 'uncited-items', reason: coverageFailure.slice(0, 1500), uncitedItems: coverage.uncited, artifactPath: `${ART.dir}/tasks-${artSlug}.json` }
+      : {}),
+  ...(coverageFailure && fix && !fix.ok && dispatchDeaths('Decompose').length ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Decompose') } : {}),
+  ...(coverage.first.length ? { coverage: { uncitedBefore: coverage.first, uncitedAfter: coverage.uncited, added: fix && fix.ok ? fix.added : [], noWork: fix && fix.ok ? fix.noWork : [] } } : {}),
   ...(replayed ? { resumed: true } : {}),
   spec: specRef,
   repoPath,
