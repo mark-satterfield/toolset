@@ -117,7 +117,7 @@ and does not belong to this command.
 
 Do not provision a tree here. **The composite establishes its own worktree.** Its first
 phase is `workspace` (`workflows/workspace.js`): it fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
+existing tree for this bead or cuts a new one at `<repo>/.worktrees/<bead>-<repo>`, inside the repository it belongs to
 on a feature branch, and returns the path that becomes `contract.repoPath` for every
 writing phase. When it establishes no tree, or the tree is on a default branch or a detached
 HEAD, the run stops before any writing phase.
@@ -152,7 +152,6 @@ your report.
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
-         worktreeRoot: "$ATW_WORKTREE_ROOT",
          projectRoot: "$ATW_PROJECT_ROOT",
          artifactScript: "$ATW_ARTIFACT_SCRIPT",
          pluginRoot: "$ROOT",

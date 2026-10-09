@@ -775,8 +775,6 @@ const DEPLOYED_RED_CRITERION =
 // args: { bead: { id, title, description, repoPath?, repoHints?, inventoryCommand? }, implementer?, maxLoops?, maxDeployIterations?, maxSecurityRepairs? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
 //   maxSecurityRepairs? — bounded Gate 4 finding -> Green fix -> re-certify cycles per run (default 2)
-//   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
-//   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
 //   prCommand — absolute path of the executable settle runs, inside the worktree, as
 //   `<prCommand> --title T --body B` to push the branch and open its pull request
 //   (ATW_PR_COMMAND). Absent, settle lands nothing and reports the run blocked.
@@ -2048,9 +2046,6 @@ const workspace = await settleWorkflow('agent-teams-workforce:workspace', {
   beadId: bead.id,
   branchPrefix: 'fix',
   purpose: bead.title || 'bug fix',
-  // Configuration, read from ATW_WORKTREE_ROOT by whoever dispatched this run.
-  // Absent, workspace falls back to a `.worktrees/` beside the repository.
-  worktreeRoot: a.worktreeRoot,
 })
 // workspace.js returns ok:true only with a worktree path, a non-default branch and
 // isLinkedWorktree/independentlyVerified set, so ok is the one fact to test.

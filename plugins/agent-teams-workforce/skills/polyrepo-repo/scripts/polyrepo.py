@@ -76,6 +76,7 @@ WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
 PURPOSE_NEUTRAL_FILES = ("AGENTS.md", "CLAUDE.md")
 ENTRY_LISTS = ("repos", "deprecations")
+WORKTREES_LINE = ".worktrees/"
 OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 
@@ -2448,6 +2449,17 @@ def _copier_render(
     return run([*argv, str(tdir), str(dest)], timeout=300)
 
 
+def _exclude_worktrees(repo: Path) -> None:
+    """Add `.worktrees/` to the repo's `.git/info/exclude`; its worktrees live there."""
+    exclude = repo / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    text = exclude.read_text() if exclude.exists() else ""
+    if WORKTREES_LINE in text.splitlines():
+        return
+    sep = "" if not text or text.endswith("\n") else "\n"
+    exclude.write_text(f"{text}{sep}{WORKTREES_LINE}\n")
+
+
 def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     """Validate a create request against the naming rules, the templates, disk and GitHub.
 
@@ -2517,7 +2529,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "steps": [
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md block",
-            f"git init on {b} and commit",
+            f"git init on {b}, exclude {WORKTREES_LINE} locally, and commit",
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
             "add it to the beads fleet list (repos.additional) when it has a .beads folder",
@@ -2558,6 +2570,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     )
     try:
         must(git(dest, "init", f"--initial-branch={b}"))
+        _exclude_worktrees(dest)
         must(git(dest, "add", "-A"))
         must(
             git(

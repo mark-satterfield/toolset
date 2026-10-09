@@ -17,7 +17,9 @@ Commands:
         that is origin/B, so nothing pushes to the default branch).
     provision --repo R --branch B --path P [--stash-label L]
         Reuse the worktree registered for branch B or at P, or cut one at P on B from
-        origin/<default>. With L, a reused tree's uncommitted changes are stashed under a
+        origin/<default>. A worktree lives inside its own repository: P must be
+        R/.worktrees/<name>, and a reused tree found anywhere else is moved to P.
+        With L, a reused tree's uncommitted changes are stashed under a
         message naming L. Reports the tree, its branch, whether it was reused, the default
         branch, the git-common-dir, the stash entry and what was worked around (`blocked`).
     hash-files --tree T [FILE ...]
@@ -45,6 +47,7 @@ import sys
 from pathlib import Path
 
 DOC_SUFFIXES = (".md", ".mdx", ".rst", ".adoc")
+WORKTREES_DIRNAME = ".worktrees"
 
 
 class GitError(Exception):
@@ -343,6 +346,10 @@ def cmd_provision(args: argparse.Namespace) -> dict:
     """
     repo, branch, path = args.repo, args.branch, args.path
     blocked: list[str] = []
+    home = Path(repo).resolve() / WORKTREES_DIRNAME
+    if Path(path).resolve().parent != home:
+        msg = f"{path} is not {home}/<name>; a worktree lives inside its own repository"
+        raise GitError(msg)
     default = default_branch(repo)
     if not default:
         raise GitError(
@@ -357,6 +364,14 @@ def cmd_provision(args: argparse.Namespace) -> dict:
         ),
         None,
     )
+    if reused_tree and Path(reused_tree).resolve().parent != home:
+        moved = git(repo, "worktree", "move", reused_tree, path, check=False)
+        if moved.returncode == 0:
+            reused_tree = path
+        else:
+            blocked.append(
+                f"{reused_tree} could not be moved to {path}: {moved.stderr.strip()}"
+            )
     tree = reused_tree or path
     if not reused_tree:
         cut_worktree(repo, branch, path, default, blocked)

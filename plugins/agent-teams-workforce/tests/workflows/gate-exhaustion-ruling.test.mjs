@@ -10,7 +10,7 @@ import { runWorkflowScript, journalPayload } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const BUG_FIX = path.join(WF, 'bug-fix.js')
-const WORKTREE = '/repos/.worktrees/ssbd-75nr-chassis'
+const WORKTREE = '/repos/chassis/.worktrees/ssbd-75nr-chassis'
 
 const LOOP_VERDICT = {
   verdict: 'loop',

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    "Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). The git work is mechanical and runs as gitfacts.py provision through relayrun.py, so the workflow receives its result checked; a second, separate gitfacts.py facts run verifies the tree independently (a git tree of the same repository, a linked worktree, on the branch reported). With stashUncommitted, a reused tree's uncommitted changes are stashed (`git stash push --include-untracked`) under a message naming the run, so the run starts from the branch head and the earlier work stays recoverable. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, provisioning fails, verification disagrees, or the tree is on a default branch or a detached HEAD. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { ok, applicable, repoPath, branch, reused, stashed, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.",
+    "Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <repo>/.worktrees/<bead>-<repo>, inside the repository it belongs to; no other location is used. The git work is mechanical and runs as gitfacts.py provision through relayrun.py, so the workflow receives its result checked; a second, separate gitfacts.py facts run verifies the tree independently (a git tree of the same repository, a linked worktree, on the branch reported). With stashUncommitted, a reused tree's uncommitted changes are stashed (`git stash push --include-untracked`) under a message naming the run, so the run starts from the branch head and the earlier work stays recoverable. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, provisioning fails, verification disagrees, or the tree is on a default branch or a detached HEAD. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { ok, applicable, repoPath, branch, reused, stashed, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.",
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -715,12 +715,11 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { repoPath: string, beadId: string, branchPrefix?: string, purpose?: string, worktreeRoot?: string,
+// args: { repoPath: string, beadId: string, branchPrefix?: string, purpose?: string,
 //         stashUncommitted?: boolean, stashLabel?: string, relay?: { runner, dir } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const repoPath = String(a.repoPath || '').trim().replace(/\/+$/, '')
 const beadId = String(a.beadId || '').trim()
-const worktreeRoot = String(a.worktreeRoot || '').trim().replace(/\/+$/, '')
 const prefix = String(a.branchPrefix || 'work').trim().replace(/[^a-zA-Z0-9._-]/g, '') || 'work'
 const stashUncommitted = a.stashUncommitted === true
 const stashLabel = String(a.stashLabel || beadId || '').replace(/[^a-zA-Z0-9._ -]/g, '').trim().slice(0, 120)
@@ -732,9 +731,7 @@ if (!repoPath) return dispatchOutcome({ ...refuse('no repoPath supplied'), appli
 if (!beadId) return dispatchOutcome({ ...refuse('no beadId supplied'), applicable: false })
 
 const repoBase = repoPath.slice(repoPath.lastIndexOf('/') + 1)
-const repoParent = repoPath.slice(0, repoPath.lastIndexOf('/')) || '/'
-const worktreeHome = worktreeRoot || `${repoParent === '/' ? '' : repoParent}/.worktrees`
-const plannedWorktreePath = `${worktreeHome}/${beadId}-${repoBase}`
+const plannedWorktreePath = `${repoPath}/.worktrees/${beadId}-${repoBase}`
 const BRANCH = `${prefix}/${beadId}`
 
 // ── Relay setup: relayrun.py (the plugin's scripts/portfolio/) runs every deterministic step, and

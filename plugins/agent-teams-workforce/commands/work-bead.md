@@ -79,7 +79,7 @@ a skip's reason names what the bead needs, and a new label is never it.
 
 Skip any thought of provisioning a tree here. **The composite establishes its own
 worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
+existing tree for this bead or cuts a new one at `<repo>/.worktrees/<bead>-<repo>`, inside the repository it belongs to
 on a feature branch. Its return value is the sole source of `contract.repoPath`, and every
 writing phase inherits it. When it establishes no tree, or the tree is on a default branch
 or a detached HEAD, the run stops before any writing phase.
@@ -120,7 +120,6 @@ name it in your report.
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
          prCommand: "$ATW_PR_COMMAND",
-         worktreeRoot: "$ATW_WORKTREE_ROOT",
          projectRoot: "$ATW_PROJECT_ROOT",
          artifactScript: "$ATW_ARTIFACT_SCRIPT",
          pluginRoot: "$ROOT",

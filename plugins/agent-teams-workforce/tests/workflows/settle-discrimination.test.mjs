@@ -15,7 +15,7 @@ import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const COMPOSITES = ['bug-fix.js', 'task-to-deploy.js']
-const WORKTREE = '/repos/.worktrees/ssbd-4q3x-chassis'
+const WORKTREE = '/repos/chassis/.worktrees/ssbd-4q3x-chassis'
 
 /** Run a composite to a clean early success, with a scripted settle result. */
 function run(file, settleImpl, args) {

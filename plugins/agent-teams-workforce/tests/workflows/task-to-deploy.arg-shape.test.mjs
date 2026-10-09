@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const T2D = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows', 'task-to-deploy.js')
-const WORKTREE = '/repos/.worktrees/ssbd-nhcx-web'
+const WORKTREE = '/repos/web/.worktrees/ssbd-nhcx-web'
 // The suite runner: a Red run shows the new test in Red's file failing; every other run is green.
 const suiteRun = (call) =>
   String(call.payload.label || '').startsWith('red')

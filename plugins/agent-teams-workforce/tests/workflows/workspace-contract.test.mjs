@@ -33,7 +33,7 @@ const suiteRun = (call) =>
 
 
 const CALLER_REPO = '/repos/shared-chassis'
-const WORKTREE = '/repos/.worktrees/ssbd-mz1w-shared-chassis'
+const WORKTREE = '/repos/shared-chassis/.worktrees/ssbd-mz1w-shared-chassis'
 
 /** Drive a composite with a scripted workspace result; everything else passes. */
 function run(file, { workspace, args } = {}) {

@@ -103,7 +103,7 @@ function makeRepos() {
   fs.writeFileSync(path.join(repo, 'seed.txt'), 'x');
   g(['add', '.']);
   g(['commit', '-m', 'seed']);
-  const wt = path.join(base, '.worktrees', 'ssbd-1-repo');
+  const wt = path.join(repo, '.worktrees', 'ssbd-1-repo');
   g(['worktree', 'add', '-b', 'fix/ssbd-1', wt]);
 
   const project = path.join(base, 'project');

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, readWorkflowSource } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
-const WORKTREE = '/repos/.worktrees/ssbd-mfza-web'
+const WORKTREE = '/repos/web/.worktrees/ssbd-mfza-web'
 const RULED = '/repos/SkillSpoke-web'
 const OTHER = '/repos/SkillSpoke-shared-chassis'
 

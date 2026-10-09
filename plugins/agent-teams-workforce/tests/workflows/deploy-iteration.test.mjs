@@ -28,7 +28,7 @@ const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'
 const COMPOSITES = ['task-to-deploy', 'bug-fix']
 // The composites that deploy and answer the deployment scalars.
 const DEPLOYING = ['bug-fix']
-const WORKTREE = '/repos/.worktrees/ssbd-dep-chassis'
+const WORKTREE = '/repos/chassis/.worktrees/ssbd-dep-chassis'
 
 // ── The iteration loop ────────────────────────────────────────────────────────
 
