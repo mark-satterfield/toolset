@@ -921,9 +921,11 @@ const summary = written.length
 if (taskFacts && !taskFacts.tasks.length) log(`Story story:${artSlug}: no Tasks; rationale is in ${ART.dir}/tasks-${artSlug}.json`)
 log(`Story story:${artSlug}: ${written.length} write-task result(s) relayed${summary ? ` ${JSON.stringify(summary)}` : ''}; beads is read at finish`)
 
+// A Task not written leaves the Story unfinished: its repository is rerun, and every write is keyed by elab_key.
+const writeFailure = ran.error || ran.errors.join('; ')
 return dispatchOutcome({
-  ok: !ran.error,
-  ...(ran.error ? { stage: 'task-write', reason: ran.error, artifactPath: `${ART.dir}/tasks-${artSlug}.json` } : {}),
+  ok: !writeFailure,
+  ...(writeFailure ? { stage: 'task-write', reason: writeFailure, artifactPath: `${ART.dir}/tasks-${artSlug}.json` } : {}),
   ...(replayed ? { resumed: true } : {}),
   spec: specRef,
   repoPath,

@@ -147,10 +147,10 @@ What comes back:
   is false the Epic's elaboration stays `in_progress` and the next run completes it.
 - `beadsEmitted` — how many Stories and Tasks this run created or updated.
 
-`depscore.py elaboration-finish` sets the Epic `done` once any Story has Tasks written, or
-when nothing is to be built. A repository or Story that produced nothing is named in the
-handback's DEGRADED line; re-dispatch the Epic to complete it, since every write is keyed by
-its `elab_key` and the rerun updates what landed.
+`depscore.py elaboration-finish` sets the Epic `done` once every span repository has its
+Story and Tasks, or nothing to build. A repository that failed is named in the handback's
+DEGRADED line and keeps the Epic `in_progress`; the next dispatch reuses the saved steps of
+the other repositories and reruns only the failed ones.
 
 Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
 compose them from your own account of what you think landed.
