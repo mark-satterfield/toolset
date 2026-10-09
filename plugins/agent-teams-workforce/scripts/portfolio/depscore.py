@@ -1042,6 +1042,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="names a subject never carries (the Epic, the PRD), comma-separated",
     )
+    atg.add_argument(
+        "--seed",
+        action="store_true",
+        help="write only the baseline handoff (baseline.json, delta/baseline.json) from "
+        "--baseline into the draft, so a review always has a target and a delta",
+    )
     _dry_run_flag(atg)
 
     ast = sub.add_parser(
@@ -1308,6 +1314,7 @@ def run(args: argparse.Namespace) -> dict:
             forbid=split_ids(args.forbid),
             dry_run=args.dry_run,
             baseline=args.baseline,
+            seed=args.seed,
         )
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)

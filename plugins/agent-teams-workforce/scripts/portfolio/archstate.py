@@ -52,6 +52,9 @@ EFFECTIVE_FOLDER = "arc42"
 CONSTRAINTS_FOLDER = "02-architecture-constraints"
 TARGET_FOLDER = "target"
 DELTA_FOLDER = "delta"
+# The baseline handoff the seed writes into a draft: the target cites the effective views each
+# capability relies on, and the delta lists the implementation gaps.
+SEED_FILES = ("baseline.json", f"{DELTA_FOLDER}/baseline.json")
 BUILT_FOLDER = "built"
 CATALOG_KEYS = ("view_type", "scope", "subject", "shows")
 SUBJECT_SEPARATOR = re.compile(r"[^a-z0-9]+")
@@ -633,6 +636,7 @@ def write_target(
     forbid: list[str],
     dry_run: bool = False,
     baseline: str = "",
+    seed: bool = False,
 ) -> dict:
     """Check an approved draft and write it to `target/<subject>/`, every view `in-review`.
 
@@ -652,6 +656,9 @@ def write_target(
         subject: The subject the target describes, as a display name or a folder name.
         forbid: Names a subject never carries (the Epic, the PRD, the bead prefix).
         dry_run: Check only; write nothing.
+        seed: Write only the baseline handoff (`baseline.json` and `delta/baseline.json`) into
+            the draft, so every review has a target and a delta to read, then stop. Seeded
+            files are not authored views: they do not count as a written draft.
 
     Returns:
         `ok`, the refusals, `subject` (the folder name every later step uses), `subjectName`
@@ -704,15 +711,52 @@ def write_target(
             }
         except (OSError, ValueError, TypeError, KeyError) as exc:
             baseline_refusals = [f"baseline unreadable or invalid: {exc}"]
+    if seed:
+        if manifest is None:
+            reasons = baseline_refusals or ["no baseline was given to seed the draft from"]
+            return {
+                "ok": False,
+                "refusals": reasons,
+                "seeded": [],
+                "summary": {"ok": False, "refusals": reasons, "seeded": 0},
+            }
+        content = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        seeded = []
+        for rel in SEED_FILES:
+            out = source / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(content, encoding="utf-8")
+            seeded.append(str(out))
+        return {
+            "ok": True,
+            "refusals": [],
+            "seeded": seeded,
+            "summary": {
+                "ok": True,
+                "refusals": [],
+                "seeded": len(seeded),
+                "implementationWork": len(manifest["implementationWork"]),
+            },
+        }
     # A writer's draft is never dropped: when the rounds wrote draft views, the draft is the
     # target even if the survey's assessment lists no design or documentation work.
-    draft_written = source.is_dir() and bool(_draft_files(source))
+    # The seeded baseline handoff is not authored: the manifest is rewritten from the survey below.
+    authored = (
+        [
+            p
+            for p in _draft_files(source)
+            if p.relative_to(source).as_posix() not in SEED_FILES
+        ]
+        if source.is_dir()
+        else []
+    )
+    draft_written = bool(authored)
     no_author = (
         bool(manifest)
         and not (manifest["designChanged"] or manifest["documentationChanged"])
         and not draft_written
     )
-    files = [] if no_author else (_draft_files(source) if source.is_dir() else [])
+    files = [] if no_author else authored
     draft_refusals = (
         _draft_refusals(source, files)
         if source.is_dir()

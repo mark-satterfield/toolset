@@ -804,6 +804,7 @@ const BUSINESS_CONFLICT_RULE = `List in \`businessConflicts\` only two BUSINESS 
 const DRAFT_RULES = `THE DRAFT TARGET is the folder ${DRAFT}. It has the arc42 section layout (\`05-building-block-view/…\`, \`06-runtime-view/…\`, \`07-deployment-view/…\`, \`08-crosscutting-concepts/…\`, and \`03-context-and-scope/\` or \`04-solution-strategy/\` only when the change reaches them) and a \`delta/\` folder beside them.
 - A target view is the view as it will read once approved: a changed copy of each effective view that shows a changed element, at every scope where the element appears, and coverage for new elements according to the applicable obligations in ${MODEL}. Extend a sufficient shared view when it answers the required reader question; create a new view only when no existing or shared view supplies the required coverage. Catalog every covered element in \`shows\`. Copy an effective view into the draft before you change it, at the same relative path.
 - \`delta/\` holds the views that show only what changes between the effective version and the target. Specs and Tasks are made from it.
+- \`baseline.json\` and \`delta/baseline.json\` are the baseline handoff the workflow writes from the survey (the effective views each capability relies on, and its implementation gaps). Read them; never edit or list them in \`files\`.
 - Every view is Markdown with catalog frontmatter (\`view_type\` from ${MENU}, \`scope\`, \`subject\`, \`shows\`, \`lifecycle_state: in-review\`), a Mermaid diagram where the view type has one, and prose.
 - Nothing goes under \`02-architecture-constraints/\`: section 2 holds the owner's constraints.
 - Name files and folders for their subject, never for the PRD, the Epic, a bead or a date. Write no history, decision record, rule or open item into a view.
@@ -1434,6 +1435,28 @@ async function decisionGaps(label) {
   return gaps
 }
 
+/**
+ * Makes the draft a target and a delta before any review reads it. depscore.py arch-target --seed
+ * writes the baseline handoff from the survey into the draft: baseline.json (the target: the
+ * effective views each capability relies on, cited by path) and delta/baseline.json (the delta: the
+ * implementation gaps, which depscore.py arch-delta lists as delta items). It is deterministic and
+ * rewritten from the current survey each time; views a writer authored sit beside it. Returns
+ * { draft: true } when the draft exists to review, { draft: false } when it could not be made (the
+ * reviewers then read the canonical views), or { error }.
+ */
+async function reviewTarget(label, phaseName) {
+  const seeded = await depscore(`${label}:seed`, phaseName, `arch-target --seed --draft ${shq(DRAFT)} --baseline ${shq(SURVEY_JSON)} --arch-root ${shq(archPath)} --subject ${shq(subject)} --forbid ${shq(FORBID.join(','))}`)
+  const seedOk = !!(seeded && !seeded.error && seeded.summary && seeded.summary.ok === true)
+  if (!seedOk) log(`${label}: the baseline handoff could not be seeded into the draft: ${(seeded && seeded.error) || listed(seeded && seeded.summary && seeded.summary.refusals).join('; ') || 'no result'}`)
+  const check = await checkDraft(label, phaseName, subject)
+  if (!check || check.error) return { error: `the draft could not be checked: ${(check && check.error) || 'no result'}` }
+  return { draft: seedOk || check.draftWritten === true, authored: check.draftWritten === true }
+}
+/** The design a reviewer or the decider reads, as one prompt line. */
+const reviewedDesign = (draft) => draft
+  ? `THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the change alone in \`delta/\`). Its \`baseline.json\` is the baseline handoff written from the survey: each capability with the effective views it relies on (\`entries[].documents\`, cited by path) and \`implementationWork\`, the capabilities whose implementation is not built on \`main\`; \`delta/baseline.json\` is the same handoff as the delta, from which each implementation gap becomes a delta item. Views a writer authored sit beside it; where there are none, the target is the existing design in the canonical views it cites (${ARC42}) and the delta is the implementation gaps alone. Review the target and its delta as they stand. Read it; write nothing in it and nothing in ${archPath}.`
+  : `THE DESIGN UNDER REVIEW is the existing design: the draft could not be written, so review the canonical arc42 views in ${ARC42} (the effective version, with the owner's constraints in section 2) and the open targets in ${archPath}/target/, against the survey. Read them; write nothing in ${archPath}.`
+
 /** The saved decision's facts: { verdict, round, returnTo: [agent], ownerConcerns: count, ownerConcernKinds, ownerOnly }. */
 const savedDecision = facts.decision && typeof facts.decision === 'object' && hasText(facts.decision.verdict) ? facts.decision : null
 const repairsPending = (value) => !!(listed(value.repairs && value.repairs.open).length || listed(value.repairs && value.repairs.checksNeeded).length)
@@ -1490,7 +1513,7 @@ if (savedDecision && savedDecision.verdict === 'owner-concern') {
 }
 
 /** Returns the prompt for one writer or reviewer dispatch. */
-function dispatchPrompt(n, d, file, revision, research = null) {
+function dispatchPrompt(n, d, file, revision, research = null, reviewsDraft = false) {
   const contractKind = WRITER_ROLES.includes(d.role) ? 'writer' : 'review'
   const contractRoot = DS.script.replace(/scripts\/portfolio\/[^/]+$/, 'skills/artifact-handoff')
   const contractTool = DS.script.replace(/[^/]+$/, 'artifactcontract.py')
@@ -1549,7 +1572,7 @@ Use claimId="" for a new claim or the existing ledger id for an explicit revisio
 
 ${taskLine}
 
-THE DRAFT TARGET is ${DRAFT} (target views in the arc42 section layout, the change alone in \`delta/\`). Read it; write nothing in it and nothing in ${archPath}.
+${reviewedDesign(reviewsDraft)}
 
 ${shared}
 
@@ -1680,6 +1703,8 @@ async function runRound(n, dispatches) {
   const reviewing = dispatches.filter((d) => REVIEW_ROLES.includes(d.role))
   const held = [...writing, ...reviewing].map((d, i) => ({ ...d, seq: d.seq || i + 1 }))
   let ordered = held.map((d) => ({ ...d, file: resultFile(n, d) }))
+  // Reviewers read the draft only when the rounds have written one; set after the writers run.
+  let reviewsDraft = false
   // A dispatch counts only after its referenced on-disk candidate is validated and recorded.
   const go = (d) => async () => {
     const label = `round${n}:${d.role}:${d.agentType}`
@@ -1687,11 +1712,11 @@ async function runRound(n, dispatches) {
     const schema = WRITER_ROLES.includes(d.role) ? WRITER_SCHEMA : REVIEW_SCHEMA
     const reviewing = REVIEW_ROLES.includes(d.role)
     const scopedReview = reviewing && hasText(d.reviewInputRevision)
-    const revision = await sourceRevision(`${label}:inputs`, 'Rounds', scopedReview ? [prd.path, MODEL, MENU, CONSTRAINTS] : [prd.path, archPath, SURVEY_JSON, ...(reviewing ? [DRAFT] : [])], scopedReview ? { round: n, agentType: d.agentType, assignedEvidence: d.reviewInputRevision, schema } : { round: n, assignment: d, schema })
+    const revision = await sourceRevision(`${label}:inputs`, 'Rounds', scopedReview ? [prd.path, MODEL, MENU, CONSTRAINTS] : [prd.path, archPath, SURVEY_JSON, ...(reviewing && reviewsDraft ? [DRAFT] : [])], scopedReview ? { round: n, agentType: d.agentType, assignedEvidence: d.reviewInputRevision, schema } : { round: n, assignment: d, schema })
     if (!revision) return null
     const prior = await probeArtifact(label, 'Rounds', candidate, d.file, schema, revision, '', REVIEW_ROLES.includes(d.role) ? d.agentType : '')
     if (!prior) return null
-    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision, prior.research), {
+    const got = prior.pending ? await run(dispatchPrompt(n, d, candidate, revision, prior.research, reviewing && reviewsDraft), {
       label,
       phase: 'Rounds',
       agentType: dispatchName(d.agentType),
@@ -1723,6 +1748,13 @@ async function runRound(n, dispatches) {
       ordered = mid.rounds.pendingPlan ? planDispatches(mid.rounds.pendingPlan) : ordered
       reviewers = ordered.filter((d) => REVIEW_ROLES.includes(d.role) && !d.complete)
     }
+    const target = await reviewTarget(`round${n}:review-target`, 'Rounds')
+    if (target.error) {
+      log(`round${n}: ${target.error}; reviewers remain undispatched, saved work retained`)
+      return { silent: reviewers.map((d) => d.agentType) }
+    }
+    reviewsDraft = target.draft
+    log(`round${n}: reviewers review ${reviewsDraft ? `the draft target ${DRAFT}${target.authored ? '' : ' (the baseline handoff alone: no authored views)'}` : `the existing design in ${ARC42} (the draft could not be written)`}`)
     const got = await parallel(reviewers.map(go))
     reviewers.forEach((d, i) => results.set(d.seq, got[i]))
   }
@@ -1742,20 +1774,22 @@ async function runRound(n, dispatches) {
 /** Runs the decider over the artifacts; returns its decision or null. */
 async function decide(n, correction = '') {
   phase('Decide')
-  const decisionRevision = await sourceRevision(`decide:round${n}:inputs`, 'Decide', [DRAFT, LEDGER_JSON, SURVEY_JSON, archPath, prd.path], { round: n, correction, schema: DECISION_SCHEMA })
+  const target = await reviewTarget(`decide:round${n}:target`, 'Decide')
+  if (target.error) { log(`decide:round${n}: ${target.error}`); return null }
+  const decisionRevision = await sourceRevision(`decide:round${n}:inputs`, 'Decide', [...(target.draft ? [DRAFT] : []), LEDGER_JSON, SURVEY_JSON, archPath, prd.path], { round: n, correction, schema: DECISION_SCHEMA })
   if (!decisionRevision) return null
   const candidate = `${WORK}/candidates/${decisionRevision}.json`
   const prior = await probeArtifact(`decide:round${n}`, 'Decide', candidate, DECISION_JSON, DECISION_SCHEMA, decisionRevision)
   if (!prior) return null
   const dec = prior.pending ? await run(
-    `You are the architecture-decider. Decide whether the draft target below is approved. You produced none of it, and you decide from the artifacts alone: read them.
+    `You are the architecture-decider. Decide whether the target below is approved. You produced none of it, and you decide from the artifacts alone: read them.
 ${correction}
 
 ARTIFACTS:
 - the PRD: ${hasText(prd.path) ? prd.path : '(inline — see the survey)'}
 - the survey: ${SURVEY_MD} and ${SURVEY_JSON}
 - every result of every round: the files in ${ROUNDS_DIR}, and the claim and finding ledger folded from them: ${LEDGER_JSON}
-- the draft target and its delta: ${DRAFT}
+- the target and its delta: ${reviewedDesign(target.draft)}
 - the effective version, with the owner's constraints in section 2: ${ARC42}; open targets: ${archPath}/target/
 
 ${PRD_RULE}
