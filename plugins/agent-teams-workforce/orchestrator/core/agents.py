@@ -242,8 +242,22 @@ class AgentRunner:
                 continue
             if step.final is not None:
                 write_json(final, result)
-            self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
+            self._record_output(step, final)
             return final
+
+    def _record_output(self, step: AgentStep, final: Path) -> None:
+        """Record validated output; selected flows treat missing receipts as warnings."""
+        try:
+            self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
+        except Exception as exc:
+            if step.receipt_required:
+                raise
+            self.emit(
+                "note",
+                kind="warning",
+                step=step.stage,
+                detail=f"artifact receipt: {type(exc).__name__}: {exc}",
+            )
 
     def _session(
         self,

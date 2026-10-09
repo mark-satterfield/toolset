@@ -48,6 +48,7 @@ class AgentStep:
     effort: str
     add_dirs: tuple[Path, ...] = ()
     corrective: bool = True
+    receipt_required: bool = True
 
 
 @dataclass
