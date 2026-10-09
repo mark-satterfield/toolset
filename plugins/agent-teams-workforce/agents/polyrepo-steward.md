@@ -135,7 +135,7 @@ hand the facts back for the caller to act on.
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Health check and every safe repair | `doctor --fix` |
 
-Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
 
 The beads fleet list is `repos.additional` in the control repo's `.beads/config.yaml`. The
 launchd agent `com.skillspoke.beads-fleet-watch` watches the `.beads` folder of every path

@@ -2608,7 +2608,10 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
     ]
     code = 0
-    if args.lifecycle not in LIFECYCLES_INACTIVE:
+    if (
+        args.lifecycle not in LIFECYCLES_INACTIVE
+        and args.space not in BEADS_SKIP_SPACES
+    ):
         try:
             done = beads_setup(
                 cfg, LocalRepo(name=name, path=dest, space=args.space), None
@@ -2656,6 +2659,7 @@ BEADS_TRACKED = (
     ".beads/README.md",
 )
 BEADS_REQUIRED = BEADS_TRACKED[:3]
+BEADS_SKIP_SPACES = ("marketing",)
 BEADS_SCRIPTS = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts"
 
 
@@ -2932,7 +2936,11 @@ def beads_setup_findings(st: State) -> list[Finding]:
     listed = fleet_paths(cfg)
     out: list[Finding] = []
     for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
-        if st.lifecycle(name) != "active" or os.path.normpath(r.path) == control:
+        if (
+            st.lifecycle(name) in LIFECYCLES_INACTIVE
+            or r.space in BEADS_SKIP_SPACES
+            or os.path.normpath(r.path) == control
+        ):
             continue
         missing = [p for p in BEADS_REQUIRED if not (r.path / p).is_file()]
         if missing:
@@ -3007,7 +3015,11 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
         gaps = {f.repo for f in findings}
         names = []
         for n, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
-            if st.lifecycle(n) != "active" or os.path.normpath(r.path) == control:
+            if (
+                st.lifecycle(n) in LIFECYCLES_INACTIVE
+                or r.space in BEADS_SKIP_SPACES
+                or os.path.normpath(r.path) == control
+            ):
                 continue
             try:
                 db = json.loads((r.path / ".beads" / "metadata.json").read_text())
@@ -3041,7 +3053,9 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
     if fleet_adds:
         # One write for the whole run: the fleet watcher restarts on each list change.
         try:
-            log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=fleet_adds))
+            log.extend(
+                f"beads fleet list: {c}" for c in fleet_edit(cfg, add=fleet_adds)
+            )
         except (PolyrepoError, OSError) as exc:
             results.append({"repo": "(beads fleet list)", "error": str(exc)})
     if log:

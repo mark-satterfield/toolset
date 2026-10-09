@@ -5,7 +5,7 @@
 # JSON object ({"checked", "versions", "anomalies": [{"repo", "detail"}]}) instead, which is
 # what `polyrepo doctor` reads. See references/canonical-repo-state.md.
 #
-# The repos are every active repo on disk, in every app space, as the polyrepo tool
+# The repos are every non-deprecated, non-archived repo on disk (marketing excluded), in every app space, as the polyrepo tool
 # (`polyrepo.py list`) reports them; deprecated and archived repos are not audited.
 #
 # Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
@@ -34,7 +34,7 @@ POLYREPO="$(cd "$(dirname "$0")/../../polyrepo-repo/scripts" && pwd)/polyrepo.py
 command -v uv >/dev/null 2>&1 || fatal "uv not on PATH (needed to reach the server)"
 PREFIX="$(cd "$ATW_CONTROL_REPO" && bd config get issue_prefix)" || fatal "could not read issue_prefix from the beads config in $ATW_CONTROL_REPO"
 [ -n "$PREFIX" ] || fatal "the beads config in $ATW_CONTROL_REPO sets no issue_prefix"
-REPOS_JSON="$(uv run --quiet "$POLYREPO" list --lifecycle active --json)" || fatal "polyrepo list failed: $REPOS_JSON"
+REPOS_JSON="$(uv run --quiet "$POLYREPO" list --json)" || fatal "polyrepo list failed: $REPOS_JSON"
 
 BEADS_REPOS="$REPOS_JSON" BEADS_CONTROL="$ATW_CONTROL_REPO" BEADS_SHARED_PORT="$PORT" \
 BEADS_PREFIX="$PREFIX" BEADS_JSON="$JSON" \
@@ -47,7 +47,9 @@ port    = int(os.environ["BEADS_SHARED_PORT"])
 prefix  = os.environ["BEADS_PREFIX"]
 control = os.path.realpath(os.environ["BEADS_CONTROL"])
 paths   = {r["name"]: r["path"] for r in json.loads(os.environ["BEADS_REPOS"])["repos"]
-           if r.get("path") and os.path.realpath(r["path"]) != control}
+           if r.get("path") and os.path.realpath(r["path"]) != control
+           and r.get("lifecycle") not in ("deprecated", "archived")
+           and r.get("space") != "marketing"}
 if as_json:
     sys.stdout = io.StringIO()
 

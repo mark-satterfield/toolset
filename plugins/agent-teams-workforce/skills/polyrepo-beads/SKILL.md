@@ -29,7 +29,7 @@ mechanic who keeps the tracking machine running across the whole fleet.
 - **Audit** — "are all the repos' beads healthy / configured the same?" Before a release,
   after a mass change, after another tool (or another agent) has been fighting with beads, or
   on request. → `scripts/audit-fleet.sh` (read-only; `--json` for one JSON object). It audits
-  every active repo on disk in every app space, as `polyrepo list` reports them, and
+  every non-deprecated, non-archived repo on disk in every app space except marketing, as `polyrepo list` reports them, and
   `polyrepo doctor` runs it as its `beads` check.
 - **Repair one repo** — a repo whose `bd` commands fail, whose database is stuck, or that
   drifted off the canonical state. → `references/troubleshooting.md` to identify the failure,
@@ -47,7 +47,7 @@ problem.
 
 ## A complete repo
 
-Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. A complete active repo has: `.beads/config.yaml`, `.beads/metadata.json` and `.beads/.gitignore` committed; its database on the shared server with the fleet prefix and a `project_id` that matches `metadata.json`; its entry in `repos.additional`; and a `.gitignore` that covers the beads runtime and database files (`.dolt/`, `*.db`, `.beads-credential-key`, `.beads/proxieddb/`, `.beads/issues.jsonl`, `*.gate.lock*`) and the standard ignores for its template kind. `polyrepo create` and `polyrepo beads-setup` produce it. A database is never made with `bd init`: `bd bootstrap` creates a fresh one only as an embedded store, so it is bootstrapped embedded, given the prefix with `bd rename-prefix <prefix>- --repair`, pushed with `bd dolt push`, and cloned into the shared server by a second `bd bootstrap` in shared-server mode; then `bd doctor --fix --yes` creates the project identity, `bd vc commit` commits it (so `converge-repo.sh` does not reset it), and `converge-repo.sh` aligns `metadata.json`.
+Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. A complete repo (any lifecycle except deprecated and archived; `apps/marketing/` is exempt) has: `.beads/config.yaml`, `.beads/metadata.json` and `.beads/.gitignore` committed; its database on the shared server with the fleet prefix and a `project_id` that matches `metadata.json`; its entry in `repos.additional`; and a `.gitignore` that covers the beads runtime and database files (`.dolt/`, `*.db`, `.beads-credential-key`, `.beads/proxieddb/`, `.beads/issues.jsonl`, `*.gate.lock*`) and the standard ignores for its template kind. `polyrepo create` and `polyrepo beads-setup` produce it. A database is never made with `bd init`: `bd bootstrap` creates a fresh one only as an embedded store, so it is bootstrapped embedded, given the prefix with `bd rename-prefix <prefix>- --repair`, pushed with `bd dolt push`, and cloned into the shared server by a second `bd bootstrap` in shared-server mode; then `bd doctor --fix --yes` creates the project identity, `bd vc commit` commits it (so `converge-repo.sh` does not reset it), and `converge-repo.sh` aligns `metadata.json`.
 
 ## The canonical state, in one screen
 
