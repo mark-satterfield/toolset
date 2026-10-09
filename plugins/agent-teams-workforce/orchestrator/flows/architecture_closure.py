@@ -42,7 +42,8 @@ def closure(flow: Architecture, target: dict) -> dict:
         "delta_items",
         target["deltaDir"],
         with_closure=False,
-        matrix_snapshot=flow.matrix_data,
+        # Walk the entire future set so matrix-only changes never omit new build roots.
+        matrix_snapshot={"elements": {}},
         stage="closure",
     )
     roots_path = flow.work / "closure-roots.json"
@@ -57,13 +58,28 @@ def closure(flow: Architecture, target: dict) -> dict:
             inputs,
             "Walk architecture prerequisites from the build roots.",
         )
-        elements = [element_id(row["element"]) for row in walk["elements"]]
+        elements = sorted(
+            {
+                element_id(row["element"])
+                for row in walk["elements"] + roots.get("items", [])
+            }
+        )
         binding = "matrix-rows:" + json.dumps(
             {"matrix": str(flow.matrix), "elements": elements},
             sort_keys=True,
             separators=(",", ":"),
         )
-        classified = classify(walk, flow.matrix_data)
+        from .architecture_projection import project
+
+        current_roots = flow.call(
+            "archstate",
+            "delta_items",
+            target["deltaDir"],
+            with_closure=False,
+            matrix_snapshot=flow.matrix_data,
+            stage="closure",
+        )
+        classified = project(walk, roots, current_roots, flow.matrix_data)
         path = flow.work / "closure.json"
         write_json(path, classified)
         result = flow.call(

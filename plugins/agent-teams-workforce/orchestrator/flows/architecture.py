@@ -12,6 +12,13 @@ from ..core.models import RunContext, StepError
 from ..core.tools import Tools
 from .architecture_closure import closure
 from .architecture_integration import integrate
+from .architecture_resume import (
+    approved,
+    completed,
+    refresh_closure,
+    save_approval,
+    save_completion,
+)
 from .architecture_rounds import owner_actions, run_rounds
 from .architecture_support import Architecture
 from .architecture_survey import prepare_survey
@@ -41,15 +48,27 @@ def run(
     runner.emit("phase", phase="architecture", step="survey")
     matrix_path = matrix_path or snapshot(context, tools)
     flow = Architecture(context, store, runner, tools, matrix_path)
-    prepare_survey(flow)
-    decision = run_rounds(flow)
-    actions = owner_actions(decision, flow.work / "decision.json")
-    if actions:
-        return {"ok": False, "stage": "owner-concern", "requiredHumanActions": actions}
-    target = flow.checked(flow.target(), "target")
+    saved = completed(flow)
+    if saved is not None:
+        return refresh_closure(flow, saved)
+    checkpoint = approved(flow)
+    if checkpoint is not None:
+        decision, target = checkpoint["decision"], checkpoint["target"]
+    else:
+        prepare_survey(flow)
+        decision = run_rounds(flow)
+        actions = owner_actions(decision, flow.work / "decision.json")
+        if actions:
+            return {
+                "ok": False,
+                "stage": "owner-concern",
+                "requiredHumanActions": actions,
+            }
+        target = flow.checked(flow.target(), "target")
+        save_approval(flow, target, decision)
     update = integrate(flow, target)
     result = closure(flow, target)
-    return {
+    result = {
         "ok": True,
         "subject": flow.subject,
         "subjectName": target.get("subjectName", flow.subject),
@@ -67,3 +86,4 @@ def run(
         "openItems": update.get("openItems", {}),
         "noArchitectureChange": target["architectureChange"] == "none",
     }
+    return save_completion(flow, result)

@@ -9,6 +9,7 @@ from pathlib import Path
 import jsonschema
 
 from ..core.io import write_json
+from .architecture_resume import retire_generation
 from .architecture_support import Architecture, read
 
 SURVEY_FILES = (
@@ -26,13 +27,10 @@ def current_survey(flow: Architecture, *, adopt: bool = True) -> bool:
     seal = read(flow.work / "survey.json.baseline-inputs.json")
     form = seal.get("form")
     schema = read(flow.schemas / "survey.schema.json")
-    context_sha = (
-        hashlib.sha256(
-            json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        if form == "v2"
-        else seal.get("contextSha")
-    )
+    schema_sha = hashlib.sha256(
+        json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    context_sha = schema_sha if form in {"v2", "adopted"} else seal.get("contextSha")
     freshness = flow.call(
         "archbaseline",
         "survey_freshness",
@@ -55,7 +53,7 @@ def current_survey(flow: Architecture, *, adopt: bool = True) -> bool:
                 survey,
                 seal=True,
                 form="adopted",
-                context_sha=context_sha,
+                context_sha=schema_sha,
                 stage="survey",
             ),
             "survey",
@@ -81,6 +79,8 @@ def prepare_survey(flow: Architecture) -> None:
             source = moved / name
             if source.exists():
                 source.rename(flow.work / name)
+    if not current:
+        retire_generation(flow)
     flow.draft.mkdir(parents=True, exist_ok=True)
     write_json(flow.context_path, context_facts)
     if not current_survey(flow):
