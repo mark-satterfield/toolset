@@ -46,7 +46,7 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry, and add the repo to the beads fleet list when it has a `.beads` folder. |
 | `clone <repo>` | Clone an existing GitHub repo into the one folder its name gives it (app space, then the template placement folder for its kind). A repo already at that folder is reported, not re-cloned. It refuses, exiting 2, when the repo already exists at any other path or is on disk twice. Anything that needs a local checkout of a repo uses this command; no session or script picks a folder or runs `git clone` itself. |
 | `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry, and replace the old path in the beads fleet list with the new one. Refuses an invalid or taken name, or a `main` not known to be pushed. |
-| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list, then close every open pull request in the repo with the comment "Closed: this repository is deprecated." (branches are kept), reporting each one. `--dry-run` lists the pull requests it would close. |
+| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list, then close every open pull request in the repo with the comment "Closed: this repository is deprecated." (branches are kept), reporting each one, then delete the local clone and its linked worktrees. The clone is deleted (`shutil.rmtree`, only on a path under the repository root whose name starts with `deprecated-`) only when it holds no work that exists only on this machine: no uncommitted changes or untracked files outside ignored paths in the clone or any linked worktree, no stash, and no local branch or worktree `HEAD` with commits on no remote branch. Otherwise the clone is left, the rest of the deprecation stands, the reasons and the exact path to delete by hand are reported, and the command exits 1. `--dry-run` lists the pull requests it would close and whether it would delete the clone. |
 | `beads-fleet [--fix]` | Check the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`, config `beads.fleet_config`): every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed. `--fix` corrects the list. |
 | `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
@@ -80,7 +80,7 @@ judgment, and each has an obvious next step:
 | `naming-violation`, `space-mismatch` | Choose the correct name or space from the naming patterns, then `rename <repo> <new-name>`. |
 | `dependency-unconfirmed`, `owns-unconfirmed` | Read the dependent repo's code; correct the edge or `owns` item, or remove it. |
 | `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
-| `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `github-only`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. |
+| `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `github-only`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. `not-cloned` is raised only for an active repo; a deprecated or archived repo is expected to have no local clone. |
 
 ## Operations (CUDLS)
 
@@ -94,13 +94,16 @@ judgment, and each has an obvious next step:
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
   dependencies, `role`, `owner`: edit the manifest (below).
 - **rename** — `rename <repo> <new-name>`, on GitHub and locally together.
-- **delete / deprecate** — `deprecate <repo>`. A repository is never deleted. The new name
-  is `deprecated-` plus the old name, all lowercase
+- **delete / deprecate** — `deprecate <repo>`. A repository is never deleted from GitHub.
+  The new name is `deprecated-` plus the old name, all lowercase
   (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`).
-  The rename happens on GitHub and locally together, and the folder stays in its app space.
-  Every open pull request in the repo is then closed with the comment "Closed: this
-  repository is deprecated."; a deprecated repo never has an open pull request, and
-  `doctor` reports any that does.
+  The rename happens on GitHub and locally together. Every open pull request in the repo is
+  then closed with the comment "Closed: this repository is deprecated."; a deprecated repo
+  never has an open pull request, and `doctor` reports any that does. Last, the local clone
+  is deleted, unless it holds work that exists only on this machine (see the command
+  table); a deprecated repo normally has no local clone. `reconcile`, `list` and `doctor`
+  treat a deprecated or archived repo with no local clone as normal, never as a finding;
+  `clone <repo>` brings one back when it is needed.
   `reconcile --fix` archives the repo on GitHub `deprecation.archive_after_days` (60) after
   `deprecated_on`. Deprecated and archived are separate lifecycle states.
 - **beads fleet list** — `repos.additional` in the control repo's `.beads/config.yaml` is

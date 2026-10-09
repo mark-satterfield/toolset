@@ -120,7 +120,7 @@ hand the facts back for the caller to act on.
 |---|---|
 | Create a repo from a template, locally and on GitHub | `create <name> --space S --template T --purpose TEXT` |
 | Rename a repo, locally and on GitHub | `rename <repo> <new-name>` |
-| Deprecate a repo (renames it and closes its open pull requests) | `deprecate <repo>` |
+| Deprecate a repo (renames it, closes its open pull requests, deletes its local clone) | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `reconcile --fix` archives it `deprecation.archive_after_days` after `deprecated_on` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
@@ -140,12 +140,17 @@ the one entry, so a concurrent edit to another entry is kept. The doctor's `bead
 check reports any listed path that is missing or not an active fleet repo, and any active
 repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
-A repository is never deleted. "Delete" means deprecate: the repo is renamed with a
-`deprecated-` prefix and the whole name lowercased
+A repository is never deleted from GitHub. "Delete" means deprecate: the repo is renamed
+with a `deprecated-` prefix and the whole name lowercased
 (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`),
-on GitHub and locally together, and every open pull request in it is closed with the
-comment "Closed: this repository is deprecated." It is archived on GitHub 60 days later. Deprecated and
-archived are separate states. The naming rules are the vault's `repository-naming.md`;
+on GitHub and locally together, every open pull request in it is closed with the
+comment "Closed: this repository is deprecated.", and then its local clone and linked
+worktrees are deleted. The clone is kept, and the path to delete by hand is reported, when
+it holds work that exists only on this machine (uncommitted or untracked files, a stash,
+commits on no remote branch, or such work in a linked worktree); the rest of the
+deprecation stands. A deprecated or archived repo with no local clone is normal, never a
+finding. It is archived on GitHub 60 days later. Deprecated and archived are separate
+states. The naming rules are the vault's `repository-naming.md`;
 `doctor` checks it against the tool's patterns.
 
 Local and GitHub always move together. A repo created here is created on GitHub and

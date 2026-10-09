@@ -57,6 +57,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1650,7 +1651,9 @@ def _check_local(
                     manifest_change=True,
                 )
             )
-        if not e.get("purpose"):
+        if st.lifecycle(name) in LIFECYCLES_INACTIVE:
+            pass
+        elif not e.get("purpose"):
             out.append(
                 Finding("purpose-missing", name, "manifest entry has no purpose")
             )
@@ -3155,12 +3158,170 @@ def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) 
     return ok
 
 
-def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation,
-    then close every open pull request in it with the deprecation comment.
+def _worktrees(repo: Path) -> list[dict[str, Any]]:
+    """List a clone's linked worktrees (not its main one).
 
     Returns:
-        0 on success, 1 when a step failed part way or a pull request did not close.
+        One {path, locked, prunable} per linked worktree.
+
+    Raises:
+        GitFailedError: when git cannot list them.
+    """
+    cp = git(repo, "worktree", "list", "--porcelain")
+    must(cp)
+    out: list[dict[str, Any]] = []
+    for block in cp.stdout.strip().split("\n\n")[1:]:
+        lines = block.splitlines()
+        path = next(
+            (ln[len("worktree ") :] for ln in lines if ln.startswith("worktree ")), None
+        )
+        if path:
+            out.append(
+                {
+                    "path": Path(path),
+                    "locked": any(ln.startswith("locked") for ln in lines),
+                    "prunable": any(ln.startswith("prunable") for ln in lines),
+                }
+            )
+    return out
+
+
+def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
+    """Find work in a clone that exists only on this machine.
+
+    Checks the clone and every linked worktree for uncommitted changes and untracked files
+    outside ignored paths, the clone for a stash, and every local branch and every
+    worktree's HEAD for commits that no remote-tracking branch contains.
+
+    Returns:
+        The reasons not to delete it (empty when nothing would be lost), and the linked
+        worktrees that hold no such work, which may be removed.
+    """
+    reasons: list[str] = []
+    try:
+        wts = _worktrees(repo)
+    except GitFailedError as exc:
+        return [f"cannot list worktrees: {exc}"], []
+    trees = [repo] + [w["path"] for w in wts if not w["prunable"]]
+    for t in trees:
+        cp = git(t, "status", "--porcelain=v1", "--untracked-files=normal")
+        if cp.returncode != 0:
+            reasons.append(f"{t}: git status failed: {_last_line(cp)}")
+        elif files := [ln[3:] for ln in cp.stdout.splitlines() if ln.strip()]:
+            reasons.append(
+                f"{t}: {len(files)} uncommitted or untracked file(s): "
+                + ", ".join(files[:5])
+                + (" ..." if len(files) > 5 else "")
+            )
+        cp = git(t, "rev-list", "--count", "HEAD", "--not", "--remotes")
+        if cp.returncode == 0 and cp.stdout.strip() not in {"", "0"}:
+            reasons.append(
+                f"{t}: HEAD has {cp.stdout.strip()} commit(s) on no remote branch"
+            )
+    cp = git(repo, "stash", "list")
+    if cp.returncode != 0:
+        reasons.append(f"git stash list failed: {_last_line(cp)}")
+    elif stashes := [ln for ln in cp.stdout.splitlines() if ln.strip()]:
+        reasons.append(f"stash entries: {len(stashes)}")
+    cp = git(
+        repo,
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/heads",
+    )
+    if cp.returncode != 0:
+        reasons.append(f"cannot list local branches: {_last_line(cp)}")
+    for b in cp.stdout.split() if cp.returncode == 0 else []:
+        n = git(repo, "rev-list", "--count", f"refs/heads/{b}", "--not", "--remotes")
+        if n.returncode != 0:
+            reasons.append(f"branch {b}: rev-list failed: {_last_line(n)}")
+        elif n.stdout.strip() != "0":
+            reasons.append(
+                f"branch {b} has {n.stdout.strip()} commit(s) on no remote branch"
+            )
+    removable = [] if reasons else [w["path"] for w in wts]
+    return reasons, removable
+
+
+def delete_clone(
+    cfg: Config, clone: Path, final: Path, dry_run: bool, res: dict[str, Any]
+) -> bool:
+    """Delete a deprecated repo's local clone and its linked worktrees, when no work
+    exists only in them; otherwise leave it and name the path to delete by hand.
+
+    `clone` is where the clone is now and `final` where it is after the rename (the same
+    path once the rename is done). `final` must be under the repository root and its name
+    must start with `deprecated-`. Records the outcome in res["clone"] and res["steps"].
+
+    Returns:
+        False when the clone was left in place or could not be deleted.
+    """
+    path, final = clone.resolve(), final.resolve()
+    bad = (
+        f"{final} is not under {cfg.root}"
+        if not final.is_relative_to(cfg.root) or final == cfg.root
+        else f"{final.name} does not start with deprecated-"
+        if not final.name.startswith("deprecated-")
+        else None
+    )
+    reasons = [bad] if bad else []
+    worktrees: list[Path] = []
+    if not bad:
+        reasons, worktrees = clone_local_work(path)
+    if reasons:
+        res["clone"] = {"path": str(final), "status": "refused", "reasons": reasons}
+        res["steps"].append(
+            f"local clone NOT {'to be ' if dry_run else ''}deleted: {'; '.join(reasons)}; "
+            f"once resolved, delete it by hand: {final}"
+        )
+        return False
+    if dry_run:
+        res["clone"] = {
+            "path": str(final),
+            "status": "planned",
+            "worktrees": [str(w) for w in worktrees],
+        }
+        res["steps"].extend(f"remove linked worktree {w}" for w in worktrees)
+        res["steps"].append(f"delete the local clone {final}")
+        return True
+    done: list[str] = []
+    try:
+        for w in worktrees:
+            must(git(path, "worktree", "remove", "--force", "--force", str(w)))
+            done.append(f"removed linked worktree {w}")
+        must(git(path, "worktree", "prune"))
+        shutil.rmtree(path)
+    except (GitFailedError, OSError) as exc:
+        res["clone"] = {"path": str(path), "status": "failed", "error": str(exc)}
+        res["steps"].extend(done)
+        res["steps"].append(
+            f"local clone NOT deleted: {exc}; delete it by hand: {path}"
+        )
+        return False
+    done.append(f"deleted the local clone {path}")
+    res["clone"] = {
+        "path": str(path),
+        "status": "deleted",
+        "worktrees": [str(w) for w in worktrees],
+    }
+    res["steps"].extend(done)
+    append_changelog(cfg, f"polyrepo deprecate {path.name}: local clone", done)
+    return True
+
+
+def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
+    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation,
+    close every open pull request in it with the deprecation comment, then delete its
+    local clone.
+
+    The clone is deleted only when it holds no work that exists only on this machine
+    (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
+    a linked worktree); otherwise it is left, the rest of the deprecation stands, and the
+    path to delete by hand is reported. Its linked worktrees are removed with it.
+
+    Returns:
+        0 on success, 1 when a step failed part way, a pull request did not close, or the
+        local clone was left in place.
 
     Raises:
         PolyrepoError: when the repo is already deprecated.
@@ -3171,16 +3332,18 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
         msg = f"{name} is already deprecated"
         raise PolyrepoError(msg)
     new = deprecated_name(name)
-    return _run_rename(
-        args,
-        cfg,
-        st,
-        name,
-        new,
-        after=lambda res: _close_repo_prs(
-            cfg, name if args.dry_run else new, args.dry_run, res
-        ),
-    )
+    r = st.local.get(name) or st.local.get(new)
+
+    def after(res: dict[str, Any]) -> bool:
+        ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res)
+        if r is None:
+            res["steps"].append("no local clone to delete")
+            return ok
+        final = r.path.with_name(new)
+        clone = r.path if args.dry_run else final
+        return delete_clone(cfg, clone, final, args.dry_run, res) and ok
+
+    return _run_rename(args, cfg, st, name, new, after=after)
 
 
 # agents-sync ----------------------------------------------------------------------------------
@@ -4297,7 +4460,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser(
         "deprecate",
         parents=[common],
-        help="rename a repo deprecated-*, here and on GitHub, and close its open PRs",
+        help="rename a repo deprecated-*, here and on GitHub, close its open PRs, "
+        "and delete its local clone when no work exists only there",
     )
     s.add_argument("repo")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
