@@ -172,6 +172,7 @@ class AgentRunner:
         )
         row = {
             "sessionId": session_id,
+            "cwd": str(directory),
             "phase": self.context.stage,
             "step": step.stage,
             "agent": step.agent,
@@ -277,7 +278,10 @@ class AgentRunner:
         row: dict,
         model: str,
     ) -> dict:
-        details = {key: row[key] for key in ("sessionId", "agent", "step", "effort")}
+        details = {
+            key: row[key]
+            for key in ("sessionId", "agent", "step", "effort", "cwd", "phase")
+        }
         details["model"] = model
         pid = None
         facts = None
@@ -286,6 +290,8 @@ class AgentRunner:
         def started(value: int) -> None:
             nonlocal pid
             pid = value
+            row.update(pid=pid, pgid=pid, startedAt=time.time(), endedAt=None)
+            record_session(self.context, self.store, row)
             self.emit("session", state="started", pid=pid, pgid=pid, **details)
 
         try:
@@ -318,6 +324,12 @@ class AgentRunner:
         finally:
             if pid is not None:
                 cause = failure_cause or (self._cause(facts) if facts else "other")
+                row.update(
+                    endedAt=time.time(),
+                    exit=facts["exit"] if facts else None,
+                    cause=cause,
+                )
+                record_session(self.context, self.store, row)
                 self.emit(
                     "session",
                     state="ended",
