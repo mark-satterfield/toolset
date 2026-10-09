@@ -13,15 +13,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import beadgraph
 from beadgraph import (
     SCOPE_JUDGING,
-    GraphError,
     bead_of,
     children,
     fingerprints,
@@ -469,35 +465,6 @@ def plan_tasks(
     return tasks
 
 
-#: The pauses, in seconds, before a Story or Task write is made again after a transient
-#: beads error. Each attempt re-reads beads first and finds the bead by its `elab_key`, so a
-#: write that did apply is updated, never created twice.
-WRITE_BACKOFF = (2, 5)
-
-
-def _again(label: str, attempt: int, exc: GraphError) -> bool:
-    """Whether a failed write is made again, pausing first when it is.
-
-    Args:
-        label: What was written, for the log line.
-        attempt: The attempt that failed, from 1.
-        exc: Its error.
-
-    Returns:
-        True when `bd` reported a lock another writer held or a beads server failure
-        (beadgraph.RETRIED_CAUSES) and an attempt remains.
-    """
-    if attempt > len(WRITE_BACKOFF) or exc.cause not in beadgraph.RETRIED_CAUSES:
-        return False
-    pause = WRITE_BACKOFF[attempt - 1]
-    print(
-        f"[beadwrite] {label} failed ({exc}); writing it again in {pause}s",
-        file=sys.stderr,
-    )
-    time.sleep(pause)
-    return True
-
-
 def write_story(  # noqa: PLR0913 - the caller's facts, one each
     graph: Graph,
     writer: Writer,
@@ -508,28 +475,10 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
     repo: str,
     root: Path | None,
 ) -> dict:
-    """Write one repository's Story, again after a transient beads error (WRITE_BACKOFF).
-
-    Each attempt after the first reads beads again, so a Story an interrupted attempt
-    created is updated, not created twice.
-
-    Returns:
-        What `_write_story` returns.
-
-    Raises:
-        GraphError: A non-transient error, or a transient one on the last attempt.
-    """
-    attempt = 1
-    while True:
-        try:
-            return _write_story(
-                graph, writer, epic_id, directory, slug=slug, repo=repo, root=root
-            )
-        except GraphError as exc:
-            if not _again(f"story:{slug}", attempt, exc):
-                raise
-        attempt += 1
-        graph = beadgraph.load(writer.repo, with_description=True)
+    """Write one Story once; the orchestrator owns retries with a fresh graph."""
+    return _write_story(
+        graph, writer, epic_id, directory, slug=slug, repo=repo, root=root
+    )
 
 
 def _write_story(
@@ -1186,35 +1135,18 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     external: list[str] | None = None,
     packages_dir: str | None = None,
 ) -> dict:
-    """Write ONE Task, again after a transient beads error (WRITE_BACKOFF).
-
-    Each attempt reads the Story's Tasks from beads, so a Task an interrupted attempt
-    created is updated, not created twice.
-
-    Returns:
-        What `_write_task` returns.
-
-    Raises:
-        GraphError: A non-transient error, or a transient one on the last attempt.
-    """
-    attempt = 1
-    while True:
-        try:
-            return _write_task(
-                writer,
-                epic_id,
-                directory,
-                slug=slug,
-                repo=repo,
-                key=key,
-                root=root,
-                external=external,
-                packages_dir=packages_dir,
-            )
-        except GraphError as exc:
-            if not _again(f"Task {key} of story:{slug}", attempt, exc):
-                raise
-        attempt += 1
+    """Write one Task once; the keyed implementation reads the current Story's Tasks."""
+    return _write_task(
+        writer,
+        epic_id,
+        directory,
+        slug=slug,
+        repo=repo,
+        key=key,
+        root=root,
+        external=external,
+        packages_dir=packages_dir,
+    )
 
 
 def _write_task(

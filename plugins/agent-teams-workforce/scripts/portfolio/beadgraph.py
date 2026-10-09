@@ -3,10 +3,8 @@
 
 The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
 export is never read: `bd` exports only after a state-changing command, at most once per
-`export.interval`, and the export can be blocked, so it can lag the tracker by hours. A live
-`bd` command that could not reach the beads server is retried with bounded exponential
-backoff, each failed attempt printed to stderr; any other failure raises at once with the
-`bd` command and its error.
+`export.interval`, and the export can be blocked, so it can lag the tracker by hours. Every live `bd` command holds the shared driver gate and has a timeout.
+Failures carry structured causes; the orchestrator owns retries of keyed operations.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
 edge: it orders ELABORATION, and `tracks` is non-blocking in beads, so it never removes an
@@ -18,13 +16,12 @@ as a dependency.
 
 from __future__ import annotations
 
+import argparse
 import functools
 import importlib.util
 import json
-import re
 import subprocess
 import sys
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,9 +80,8 @@ OTHER_CAUSE = "other"
 class GraphError(RuntimeError):
     """The tracker could not be read, or answered with something unusable.
 
-    `cause` is CONTENTION when `bd` reported a lock another writer held, BD_TIMEOUT when it
-    reported that the beads server or its connection failed, else OTHER_CAUSE; it is set where
-    `bd` fails, from `bd`'s standard error, never from the message.
+    `cause` is CONTENTION when acquiring the shared lock timed out, BD_TIMEOUT when the
+    subprocess timed out, and OTHER_CAUSE for other failures. No message text is classified.
     """
 
     def __init__(self, message: str, cause: str = OTHER_CAUSE) -> None:
@@ -199,97 +195,18 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     return ",".join(sorted(set(ids)))
 
 
-#: The pause before each retry of a `bd` command that could not reach the beads server, in
-#: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
-CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
-
-#: The `bd` subcommands that only read; any other subcommand without `--readonly` writes.
-READ_COMMANDS = frozenset(
-    {"list", "ready", "show", "search", "count", "stats", "blocked"}
-)
-
-#: A write whose commit `bd` reports as indeterminate may have applied; it is never retried.
-NEVER_RETRIED = re.compile(
-    r"write commit result indeterminate|not retried to avoid double-apply",
-    re.IGNORECASE,
-)
-
-#: (pattern, retried for a write too, reason). A write is retried only on an error that
-#: shows the command never reached the database; a read is retried on every entry.
-RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
-    (
-        re.compile(r"failed to open database", re.IGNORECASE),
-        True,
-        "bd failed opening the database (schema skew check included), before the command ran",
-    ),
-    (
-        re.compile(r"connection refused", re.IGNORECASE),
-        True,
-        "the beads server refused the connection, so the command never reached it",
-    ),
-    (
-        re.compile(r"dial tcp[^\n]*i/o timeout", re.IGNORECASE),
-        True,
-        "opening the connection timed out, so the command never reached the server",
-    ),
-    (
-        re.compile(r"i/o timeout", re.IGNORECASE),
-        False,
-        "the beads server did not answer in time; a read is safe to run again",
-    ),
-    (
-        re.compile(r"invalid connection|bad connection", re.IGNORECASE),
-        False,
-        "the connection to the beads server dropped; a read is safe to run again",
-    ),
-)
+# The orchestrator installs this callable; direct portfolio commands use the same gate.
+BD_GATE = None
 
 
-#: What `bd` prints on standard error when another writer held a lock.
-LOCK_CONTENTION = re.compile(
-    r"database is locked|lock wait timeout|deadlock", re.IGNORECASE
-)
-#: What `bd` prints on standard error when the beads server or its connection failed.
-SERVER_FAILURE = re.compile(
-    r"i/o timeout|connection refused|deadline exceeded|"
-    r"invalid connection|bad connection|failed to open database|"
-    r"write commit result indeterminate",
-    re.IGNORECASE,
-)
+def _gate_module():
+    """Load the shared lock implementation for direct portfolio CLI invocations."""
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from orchestrator.core import tool_locks
 
-
-def failure_cause(stderr: str) -> str:
-    """The cause of a failed `bd` command, from what `bd` printed on standard error.
-
-    Args:
-        stderr: `bd`'s standard error, without the command line.
-
-    Returns:
-        CONTENTION when another writer held a lock, BD_TIMEOUT when the beads server or
-        its connection failed, else OTHER_CAUSE.
-    """
-    if LOCK_CONTENTION.search(stderr):
-        return CONTENTION
-    return BD_TIMEOUT if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
-
-
-def connection_retryable(args: list[str], stderr: str) -> str:
-    """The reason a failed `bd` command may be run again, or "" when it may not.
-
-    Args:
-        args: The `bd` arguments.
-        stderr: What `bd` printed on standard error.
-
-    Returns:
-        The reason from RETRYABLE_CONNECTION, or "".
-    """
-    if NEVER_RETRIED.search(stderr):
-        return ""
-    is_read = "--readonly" in args or (bool(args) and args[0] in READ_COMMANDS)
-    for pattern, safe_for_write, reason in RETRYABLE_CONNECTION:
-        if pattern.search(stderr) and (safe_for_write or is_read):
-            return reason
-    return ""
+    return tool_locks
 
 
 @functools.cache
@@ -341,77 +258,50 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
         return central
     key = str(central or "")
     if key not in _HOMES:
-        try:
-            rows = _bd_json(
-                ["--readonly", "sql", "--json", contract.FLEET_QUERY], central
-            )
-        except GraphError as exc:
-            print(
-                f"[beadgraph] could not list the fleet beads ({exc}); "
-                f"{bead_id} is written in the central database",
-                file=sys.stderr,
-            )
-            rows = []
+        rows = _bd_json(["--readonly", "sql", "--json", contract.FLEET_QUERY], central)
         _HOMES[key] = contract.fleet_homes(rows, key)
     home = _HOMES[key].get(bead_id)
     return Path(home) if home else central
 
 
 def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
-    """Run `bd`, with `stdin` on its standard input, and return stdout.
+    """Make one serialized, bounded bd call with a cause from structured facts.
 
-    It runs in the repository `_target` names: the central database, or a fleet-filed
-    bead's own for a write to it. A command that could not reach the beads server is run
-    again after each pause in CONNECTION_BACKOFF, as connection_retryable allows; every
-    failed attempt is printed to stderr with the command and its error.
-
-    Raises:
-        GraphError: `bd` is not on PATH, or exited nonzero with an error that is not
-            retried or on its last attempt.
+    The orchestrator retries the enclosing keyed operation, which rereads existing beads.
+    No command output is interpreted to guess whether a failed write is safe to repeat.
     """
     command = ["bd", *args]
     where = _target(args, repo)
     if where is not None:
         command += ["-C", str(where)]
-    attempts = len(CONNECTION_BACKOFF) + 1
-    for attempt in range(1, attempts + 1):
-        try:
+    locks = _gate_module()
+    gate = BD_GATE or locks.bd_gate
+    try:
+        with gate(write=not _contract().is_read(args)):
             done = subprocess.run(
-                command, input=stdin, capture_output=True, text=True, check=False
+                command,
+                input=stdin,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=locks.seconds("ATW_BD_TIMEOUT", 180),
             )
-        except FileNotFoundError as exc:  # pragma: no cover - environment, not logic
-            msg = "`bd` is not on PATH"
-            raise GraphError(msg) from exc
-        if done.returncode == 0:
-            if attempt > 1:
-                print(
-                    f"[beadgraph] `{' '.join(command)}` succeeded on attempt {attempt}",
-                    file=sys.stderr,
-                )
-            return done.stdout
-        stderr = done.stderr.strip()
-        msg = f"`{' '.join(command)}` exited {done.returncode}: {stderr}"
-        why = connection_retryable(args, stderr)
-        if not why or attempt == attempts:
-            if why:
-                msg += f" (failed {attempts} times to reach the beads server)"
-            raise GraphError(msg, failure_cause(stderr))
-        pause = CONNECTION_BACKOFF[attempt - 1]
-        print(
-            f"[beadgraph] attempt {attempt} of {attempts} failed: {msg}; "
-            f"retrying in {pause}s because {why}",
-            file=sys.stderr,
-        )
-        time.sleep(pause)
-    msg = f"`{' '.join(command)}` was never run"
-    raise GraphError(msg)
+    except locks.LockTimeout as exc:
+        raise GraphError(str(exc), CONTENTION) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GraphError(str(exc), BD_TIMEOUT) from exc
+    except (OSError, ValueError) as exc:
+        raise GraphError(str(exc), OTHER_CAUSE) from exc
+    if done.returncode:
+        msg = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
+        raise GraphError(msg, OTHER_CAUSE)
+    return done.stdout
 
 
 def _bd_json(args: list[str], repo: Path | None) -> object:
     """Run a read-only `bd` command and parse its JSON stdout.
 
-    A connection failure is retried with backoff by `_bd`, each attempt printed; any other
-    failure is raised at once, naming the command and the error `bd` printed.
+    A failed read raises its structured cause to the caller, which owns retry policy.
 
     Args:
         args: The `bd` arguments.
@@ -501,7 +391,7 @@ def _metadata_text(value: object) -> str:
 
 
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
-    """Write pipeline metadata through the beads-contract CLI.
+    """Write pipeline metadata through the beads-contract functions and the shared transport.
 
     Args:
         bead_id: The bead to write.
@@ -509,17 +399,23 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         repo: The central repository, or None for `$ATW_CONTROL_REPO`.
 
     Raises:
-        GraphError: The CLI exited nonzero.
+        GraphError: The contract refused the write or the shared bd transport failed.
     """
-    command = [sys.executable, str(CONTRACT)]
-    if repo is not None:
-        command += ["-C", str(repo)]
-    command += ["metadata", "set", bead_id]
-    command += [f"{key}={value}" for key, value in pairs.items()]
-    done = subprocess.run(command, capture_output=True, text=True, check=False)
-    if done.returncode != 0:
-        msg = f"metadata set on {bead_id} failed: {done.stdout.strip()} {done.stderr.strip()}"
-        raise GraphError(msg)
+    contract = _contract()
+
+    class LockedReader(contract.Reader):
+        def _bd(self, args, repo=None, stdin=None):
+            where = self.route(args) if repo is None else repo
+            return _bd(args, Path(where) if where else None, stdin)
+
+    reader = LockedReader(str(repo) if repo else "")
+    arguments = argparse.Namespace(
+        op="set", id=bead_id, pairs=[f"{key}={value}" for key, value in pairs.items()]
+    )
+    try:
+        contract.cmd_metadata(arguments, reader)
+    except (contract.ContractError, contract.BeadsError) as exc:
+        raise GraphError(str(exc)) from exc
 
 
 @dataclass
@@ -584,7 +480,7 @@ SCOPE_READINESS = "readiness"
 
 
 def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str, str]:
-    """The content fingerprint of every record, from the beads-contract CLI in one call.
+    """The content fingerprint of every record, from the shared contract function.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
     exactly the sweep the caller reasons about.
@@ -601,27 +497,12 @@ def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str,
     Raises:
         GraphError: The CLI refused or answered with something unusable.
     """
-    command = [
-        sys.executable,
-        str(CONTRACT),
-        "--records",
-        "-",
-        "fingerprint-batch",
-        "--scope",
-        scope,
-    ]
-    done = subprocess.run(
-        command, input=json.dumps(records), capture_output=True, text=True, check=False
-    )
-    if done.returncode != 0:
-        msg = f"fingerprint-batch failed: {done.stdout.strip()} {done.stderr.strip()}"
-        raise GraphError(msg)
-    payload = json.loads(done.stdout or "{}")
-    table = payload.get("fingerprints")
-    if not isinstance(table, dict):
-        msg = "fingerprint-batch returned no `fingerprints` map"
-        raise GraphError(msg)
-    return {str(k): str(v) for k, v in table.items()}
+    contract = _contract()
+    latest = {str(record.get("id") or ""): record for record in records}
+    return {
+        bead_id: contract.fingerprint_of(bead_id, record, scope=scope)["fingerprint"]
+        for bead_id, record in latest.items()
+    }
 
 
 def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]:
