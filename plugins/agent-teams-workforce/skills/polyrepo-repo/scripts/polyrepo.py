@@ -66,7 +66,6 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-import tomllib
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
@@ -188,81 +187,16 @@ def main_vs_origin(
     return main, om, int(a), int(b)
 
 
-def package_names(repo: Path) -> set[str]:
-    """Read the names a repo publishes under: pyproject.toml's project or Poetry name and
-    package.json's name, at the repo's root.
+def mentions(repo: Path, item: str) -> bool:
+    """Tell whether a repo's tracked files name an item it claims to own.
 
-    Returns:
-        The names found (possibly none).
-    """
-    out: set[str] = set()
-    try:
-        py = tomllib.loads((repo / "pyproject.toml").read_text())
-        names = [
-            (py.get("project") or {}).get("name"),
-            ((py.get("tool") or {}).get("poetry") or {}).get("name"),
-        ]
-        out |= {str(n) for n in names if n}
-    except (OSError, tomllib.TOMLDecodeError):
-        pass
-    try:
-        pkg = json.loads((repo / "package.json").read_text())
-        if isinstance(pkg, dict) and pkg.get("name"):
-            out.add(str(pkg["name"]))
-    except (OSError, json.JSONDecodeError):
-        pass
-    return out
-
-
-_PUBLISHED_PARAMETER = re.compile(
-    r"""(?:parameter_name\s*=\s*|\b[A-Z_]*(?:PARAM|SSM)[A-Z_]*\s*=\s*)f?["'](/[A-Za-z0-9]+/[A-Za-z0-9]+/)"""
-)
-
-
-def consumed_names(repo: Path) -> set[str]:
-    """Read the names a dependent uses to reach a repo without naming it: the Python import
-    packages under `src/`, and the SSM Parameter Store namespaces (`/{project}/{domain}/`)
-    of the parameters its CDK stacks publish, which a consumer reads instead of a stack export.
-
-    Returns:
-        The import package names and parameter namespaces found (possibly none).
-    """
-    out: set[str] = set()
-    src = repo / "src"
-    if src.is_dir():
-        # A one-word package (`event`, `chat`) would match ordinary prose in any repo.
-        out |= {
-            p.parent.name for p in src.glob("*/__init__.py") if "_" in p.parent.name
-        }
-    stacks = repo / "cdk" / "stacks"
-    if stacks.is_dir():
-        for f in stacks.glob("*.py"):
-            try:
-                out |= set(_PUBLISHED_PARAMETER.findall(f.read_text()))
-            except OSError:
-                continue
-    return out
-
-
-def mentions(repo: Path, target: str, aliases: Iterable[str] = ()) -> bool:
-    """Tell whether a repo's tracked files name another repo or an item it claims to own.
-
-    The target and each alias (for a repo, the package names it publishes) are matched
-    case-insensitively as written and with `-` as `_`; a repo name is also matched without
-    its application prefix when what is left still has a `-` (`shared-runtime-common` also
-    matches `runtime-common`).
+    The item is matched case-insensitively as written and with `-` as `_`.
 
     Returns:
         True when a tracked file contains one of the forms.
     """
-    forms: set[str] = set()
-    for t in (target, *aliases):
-        forms |= {t, t.replace("-", "_")}
-    core = re.sub(r"(?i)^(skillspoke|shared|marketing|employer)-", "", target)
-    if core != target and "-" in core:
-        forms |= {core, core.replace("-", "_")}
     argv = ["grep", "-q", "-i", "-F", "-I"]
-    for f in sorted(forms):
+    for f in sorted({item, item.replace("-", "_")}):
         argv += ["-e", f]
     return git(repo, *argv).returncode == 0
 
@@ -856,8 +790,10 @@ class State:
         rec = self.gh.resolve(name)
         return f"renamed:{rec['name']}" if rec else "missing"
 
-    def confirm(self, src: str, target: str) -> bool | None:
-        """Check live whether a repo's code names another repo or an item it owns.
+    def confirm(self, src: str, item: str) -> bool | None:
+        """Check live whether a repo's code names an item it claims to own.
+
+        Dependencies are never checked this way: they are not derived from repository code.
 
         Returns:
             True or False from the repo's tracked files; None when src is not on disk.
@@ -865,11 +801,9 @@ class State:
         r = self.local.get(src)
         if r is None:
             return None
-        key = (src, target)
+        key = (src, item)
         if key not in self.confirmed:
-            t = self.local.get(target)
-            aliases = (package_names(t.path) | consumed_names(t.path)) if t else set()
-            self.confirmed[key] = mentions(r.path, target, aliases)
+            self.confirmed[key] = mentions(r.path, item)
         return self.confirmed[key]
 
     def dependency_pairs(self) -> list[tuple[str, str, str]]:
@@ -888,12 +822,8 @@ class State:
         return [(s, d, k) for (s, d), k in seen.items()]
 
     def confirm_all(self, names: set[str] | None = None) -> None:
-        """Run every live dependency and `owns` check touching the names (all when None), in parallel."""
-        pairs = {
-            (s, d)
-            for s, d, _ in self.dependency_pairs()
-            if names is None or s in names or d in names
-        }
+        """Run every live `owns` check touching the names (all when None), in parallel."""
+        pairs: set[tuple[str, str]] = set()
         for n, e in self.manifest.entries().items():
             if names is None or n in names:
                 pairs |= {(n, str(o)) for o in e.get("owns") or []}
@@ -969,9 +899,10 @@ class State:
     def record(self, name: str, deep: bool = True) -> dict[str, Any]:
         """Build a repo's full record: live facts plus the manifest's purpose, owns, groups, dependencies.
 
-        Groups are reported only for a repo that exists and is active. Each dependency and
-        each `owns` item carries `confirmed`, checked live against the dependent repo's
-        tracked files (None when that repo is not on disk, or when deep is False).
+        Groups are reported only for a repo that exists and is active. Each `owns` item
+        carries `confirmed`, checked live against the repo's tracked files (None when the
+        repo is not on disk, or when deep is False). Dependencies are as the manifest
+        records them and are never checked against repository code.
 
         Returns:
             The record.
@@ -983,10 +914,6 @@ class State:
         purpose_head = e.get("purpose_head")
         lifecycle = self.lifecycle(name)
         deps = self.manifest.dependencies(name)
-        for d in deps["depends_on"]:
-            d["confirmed"] = self.confirm(name, d["repo"]) if deep else None
-        for d in deps["depended_on_by"]:
-            d["confirmed"] = self.confirm(d["repo"], name) if deep else None
         live = r is not None or g is not None
         rec: dict[str, Any] = {
             "name": name,
@@ -1306,7 +1233,8 @@ def reconcile(st: State) -> list[Finding]:
 
 def _check_relationships(st: State) -> list[Finding]:
     """Check group members and dependency edges against disk and GitHub, and each
-    dependency and `owns` claim against the dependent repo's code.
+    `owns` claim against the owning repo's code. Dependency edges are never checked
+    against repository code.
 
     Returns:
         The findings.
@@ -1404,16 +1332,6 @@ def _check_relationships(st: State) -> list[Finding]:
             )
 
     st.confirm_all()
-    for s, d, kind in st.dependency_pairs():
-        if live(s) != "active" or live(d) != "active" or st.confirm(s, d) is not False:
-            continue
-        out.append(
-            Finding(
-                "dependency-unconfirmed",
-                s,
-                f"the manifest says {s} depends on {d} ({kind}), but no tracked file in {s} names {d}",
-            )
-        )
     for n, e in man.entries().items():
         for o in e.get("owns") or []:
             if st.confirm(n, str(o)) is False:

@@ -73,8 +73,12 @@ live on every call. The manifest (`.polyrepo/manifest.yaml` in the SkillSpoke
 command-and-control repo, `$SKILLSPOKE_CC`) is your own private cache plus the few facts
 neither holds — purpose, owns, groups, dependencies, deprecation dates. Nobody else reads
 or edits it; they ask you. The tool checks those facts live too: a group member must exist
-and be active, and each dependency and `owns` claim carries `confirmed`, read from the
-dependent repo's tracked files.
+and be active, and each `owns` claim carries `confirmed`, read from the owning repo's
+tracked files. Dependencies are never derived from repository code and never checked
+against it: most are not in code yet, and will not be until every PRD has become Tasks and
+those Tasks are built. A dependency comes from the effective arc42 architecture in the
+`skillspoke-docs` vault (`docs/tech/architecture/arc42/`); where it states none, record
+none.
 
 Every command that changes your files (manifest, changelog, knowledge store) commits and
 pushes them itself and reports it under `records`. After you edit one by hand, run
@@ -108,7 +112,7 @@ checked it against the repository or GitHub in the same invocation.
 | When a repo was last updated | `status <repo>` → `last_commit.date` and `github.pushed_at` |
 | Whether a repo is up to date with GitHub `main` | `status <repo>` → `main.ahead`, `main.behind`, `main.up_to_date` |
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
-| What depends on what | `status <repo>` or `inventory` → `dependencies`; report an edge whose `confirmed` is false as claimed, not confirmed |
+| What depends on what | `status <repo>` or `inventory` → `dependencies` (recorded from the effective arc42 architecture, never from code); for a repo with no recorded edge, say none is recorded |
 | Which repo owns a piece of functionality | Judgment — see below |
 
 ## Doing the work
@@ -172,9 +176,13 @@ Your judgment is for what a script cannot decide, and only that:
   `grep`. Answer only what the code confirms. Record a durable finding through
   `polyrepo-info`.
 - **Grouping and dependencies.** Which group a repo belongs to and which repos depend on
-  it. A `dependency-unconfirmed` or `owns-unconfirmed` finding means the dependent repo's
-  code does not name the other: read the code, then correct or remove the claim. Edit
-  these in the manifest yourself (see the `polyrepo-repo` skill for how).
+  it. A dependency edge is sourced only from the effective arc42 architecture in the
+  `skillspoke-docs` vault; when it states none, the manifest records none. Never derive,
+  add, keep or reject an edge because repository code does or does not name another repo
+  (not by `grep`, GitNexus, GraphRAG or reading source), and remove any edge whose only
+  source is repository code. An `owns-unconfirmed` finding means the owning repo's code
+  does not name the item: read the code, then correct or remove the claim. Edit these in
+  the manifest yourself (see the `polyrepo-repo` skill for how).
 - **Questions.** The manifest holds no question or open item. Put a question to the user
   in your reply.
 

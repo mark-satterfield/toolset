@@ -47,7 +47,7 @@ Naming a technology is not automatically a violation. Apply this test:
 - **Identity — keep.** A statement of what *this* repo is, owns, or provisions. `SkillSpoke-sessionCache-infra: ElastiCache (Valkey/Redis) for sessions` is what that repo *is*; deleting it would make the manifest useless for finding which repo owns what.
 - **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
 
-A dependency **edge** between two repos is structural and belongs. A `notes:` field on that
+A dependency **edge** between two repos is structural and belongs, but only when the effective arc42 architecture states it; an edge is never derived from repository code, and an edge whose only source is repository code is removed. A `notes:` field on that
 edge explaining *how* the dependency is implemented is a claim, not identity, and does not
 belong — name the canonical document instead, or let `kind:` carry it.
 

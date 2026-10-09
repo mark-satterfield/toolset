@@ -121,6 +121,8 @@ tree and the optional scan commands.
 
 ### Phase 3: relationships
 
+- Dependencies are never derived from repository code. Take them from the effective
+  arc42 architecture, or from the human; record none where neither states one.
 - Which repos depend on which? (build-time, runtime, type-only,
   data-contract, deployment-order) — and does any dependency hold for a
   whole *group* rather than a single repo? "Every backend service

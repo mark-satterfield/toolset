@@ -36,7 +36,7 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | Command | What it does |
 |---|---|
 | `reconcile [--fix] [--dry-run] [--no-fetch]` | Compare disk, GitHub and the manifest. `--fix` repairs every mechanical finding (manifest, push, GitHub rename, archive) and appends the changelog. |
-| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted` and `uncommitted_files`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, `archived`, and dependencies with `confirmed`. |
+| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted` and `uncommitted_files`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, `archived`, and dependencies (as recorded, never checked against code). |
 | `list [--group G] [--lifecycle L] [--space S]` | Repos, filtered. |
 | `search attr=value [attr~regex …] [--fetch]` | Repos by any record attribute, dotted keys (`github.archived=false`, `main.behind=0`, `space=shared`). |
 | `inventory [--all] [--no-fetch]` | Every repo's full record; `--all` adds every repo the manifest or GitHub has that is not on disk. |
@@ -58,9 +58,11 @@ A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, 
 manifest), `naming`, `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
 `origin_url`, `github`, `purpose`, `purpose_head`, `purpose_stale`, `owns` (`item`,
 `confirmed`), `groups` (only for a repo that exists and is active), `dependencies`
-(`depends_on`, `depended_on_by`, each `repo`, `kind`, `confirmed`). `confirmed` is read
-live from the dependent repo's tracked files (the other repo's name or the package name it
-publishes); it is null when that repo is not on disk.
+(`depends_on`, `depended_on_by`, each `repo`, `kind`). `owns[].confirmed` is read live from
+the owning repo's tracked files; it is null when that repo is not on disk. Dependencies are
+never derived from repository code and carry no `confirmed`: they come from the effective
+arc42 architecture in the `skillspoke-docs` vault (`docs/tech/architecture/arc42/`), or are
+recorded as none.
 
 ### Reconcile findings
 
@@ -78,7 +80,7 @@ judgment, and each has an obvious next step:
 | `purpose-missing`, `purpose-recheck` | Read the repo, then `purpose <repo> --text "<one line>"` (or `purpose <repo>` to confirm the current one). |
 | `deprecation-not-renamed` | `deprecate <repo>` if it is deprecated; otherwise set its `lifecycle` to `active` in the manifest. |
 | `naming-violation`, `space-mismatch` | Choose the correct name or space from the naming patterns, then `rename <repo> <new-name>`. |
-| `dependency-unconfirmed`, `owns-unconfirmed` | Read the dependent repo's code; correct the edge or `owns` item, or remove it. |
+| `owns-unconfirmed` | Read the owning repo's code; correct the `owns` item or remove it. |
 | `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
 | `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `github-only`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. `not-cloned` is raised only for an active repo; a deprecated or archived repo is expected to have no local clone. |
 
@@ -129,6 +131,9 @@ sections, examples, deprecation examples and archive delay agree with the patter
 ## Editing the manifest by judgment
 
 For the fields the tool does not write (groups, `owns`, dependencies, `role`, `owner`):
+a dependency edge is recorded only from the effective arc42 architecture in the
+`skillspoke-docs` vault, never from repository code; with no architecture source, record
+none.
 
 1. Edit `$SKILLSPOKE_CC/.polyrepo/manifest.yaml` preserving its comments — with an editor
    tool for a small change, or `uv run --with ruamel.yaml python3 …` (round-trip mode) for a

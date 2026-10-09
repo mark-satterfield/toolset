@@ -22,7 +22,8 @@ approval step for a manifest change.
 Anything the steward learns that changes one of the judgment fields:
 
 - What a repo is for (its purpose), or what it owns.
-- A new or removed dependency between two repos, or a change in its kind.
+- A new or removed dependency between two repos, or a change in its kind. The source is
+  the effective arc42 architecture in the `skillspoke-docs` vault, never repository code.
 - A repo joining or leaving a group; a group added or removed.
 - A change of a repo's role or owner.
 
