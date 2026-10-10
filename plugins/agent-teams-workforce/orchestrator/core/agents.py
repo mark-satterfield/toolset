@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Callable, Generator
+from collections.abc import Generator  # ruff: ignore[typing-only-standard-library-import] - Runtime decorator resolves generator annotations.
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from uuid import uuid4
@@ -25,7 +25,7 @@ from .agent_process import SessionProcesses, SessionRequest
 from .artifacts import ArtifactStore
 from .constraints import Section2Guard
 from .driver_contracts import child_environment, exhausted_reset, is_refusal, reset_of
-from .events import EventWriter
+from .events import EventSink, EventWriter
 from .handback import failure_for
 from .io import JsonValue, json_object, write_json
 from .manifest import record_session
@@ -116,7 +116,7 @@ class AgentRunner:
         store: ArtifactStore,
         *,
         plugin: Path | None = None,
-        emit: Callable[..., None] | None = None,
+        emit: EventSink | None = None,
         executable: str = "claude",
     ) -> None:
         """Bind dispatch state, artifact storage and the session executable."""

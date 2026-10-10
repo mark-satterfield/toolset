@@ -6,6 +6,9 @@ import json
 import time
 from pathlib import Path
 
+import archclosure
+import archrevision
+import archstate
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -23,8 +26,16 @@ def completion_inputs(flow: Architecture, result: dict[str, JsonValue]) -> tuple
     Returns:
         The validated architecture artifact result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    paths = [
+    element: dict[str, JsonValue]
+    view: str
+    if not (isinstance(flow, Architecture)) or not (isinstance(result, dict)):
+        argument_error: str = "completion_inputs: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    paths: list[Path] = [
         flow.prd,
         flow.arch / "reference/architecture-documentation-model.md",
         flow.arch / "reference/diagram-and-model-types.md",
@@ -40,7 +51,7 @@ def completion_inputs(flow: Architecture, result: dict[str, JsonValue]) -> tuple
         flow.work / "closure-roots.json",
         Path(check_type(result["targetDir"], str)),
     ]
-    revision = read(flow.work / "arc42-revision.json")
+    revision: dict[str, JsonValue] = read(flow.work / "arc42-revision.json")
     paths.extend(flow.arch / "arc42" / name for name in json_object(revision.get("views", {})))
     for element in check_type(
         read(flow.work / "closure-walk.json").get("elements", []),
@@ -52,11 +63,11 @@ def completion_inputs(flow: Architecture, result: dict[str, JsonValue]) -> tuple
             list[str],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ):
-            path = Path(view)
+            path: Path = Path(view)
             if not path.is_absolute():
                 path = flow.arch / path if path.parts[0] == "arc42" else flow.arch / "arc42" / path
             paths.append(path)
-    seal = read(flow.work / "survey.json.baseline-inputs.json")
+    seal: dict[str, JsonValue] = read(flow.work / "survey.json.baseline-inputs.json")
     paths.extend(
         Path(path)
         for path in check_type(
@@ -75,8 +86,14 @@ def save_completion(flow: Architecture, result: dict[str, JsonValue]) -> dict[st
     Returns:
         The validated architecture artifact result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    path = flow.work / "architecture-result.json"
+    if not (isinstance(flow, Architecture)) or not (isinstance(result, dict)):
+        argument_error: str = "save_completion: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    path: Path = flow.work / "architecture-result.json"
     write_json(path, result)
     flow.store.accept("architecture:complete", completion_inputs(flow, result), (path,))
     return result
@@ -89,9 +106,15 @@ def completed(flow: Architecture) -> dict[str, JsonValue] | None:
     Returns:
         The validated architecture artifact result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    path = flow.work / "architecture-result.json"
-    result = read(path)
+    if not (isinstance(flow, Architecture)):
+        argument_error: str = "completed: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    path: Path = flow.work / "architecture-result.json"
+    result: dict[str, JsonValue] = read(path)
     if not result.get("ok") or not result.get("targetDir"):
         return None
     if not flow.store.reusable(completion_inputs(flow, result), (path,)):
@@ -103,8 +126,17 @@ def completed(flow: Architecture) -> dict[str, JsonValue] | None:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def retire_generation(flow: Architecture) -> None:
-    """Retain evidence but remove every downstream result of a stale survey."""
-    destination = flow.work.parent / f"stale-survey-{time.time_ns()}" / "architecture"
+    """Retain evidence but remove every downstream result of a stale survey.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    path: Path
+    if not (isinstance(flow, Architecture)):
+        argument_error: str = "retire_generation: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    destination: Path = flow.work.parent / f"stale-survey-{time.time_ns()}" / "architecture"
     destination.mkdir(parents=True)
     for path in tuple(flow.work.iterdir()):
         path.rename(destination / path.name)
@@ -123,37 +155,41 @@ def refresh_closure(flow: Architecture, result: dict[str, JsonValue]) -> dict[st
     Returns:
         The completed architecture result with refreshed closure evidence.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    walk_path = flow.work / "closure-walk.json"
-    walk = read(walk_path)
-    target = read(flow.work / "target.json")
-    roots = read(flow.work / "closure-roots.json")
-    current_roots = json_object(
+    if not (isinstance(flow, Architecture)) or not (isinstance(result, dict)):
+        argument_error: str = "refresh_closure: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    walk_path: Path = flow.work / "closure-walk.json"
+    walk: dict[str, JsonValue] = read(walk_path)
+    target: dict[str, JsonValue] = read(flow.work / "target.json")
+    roots: dict[str, JsonValue] = read(flow.work / "closure-roots.json")
+    current_roots: dict[str, JsonValue] = json_object(
         flow.call(
-            "archstate",
-            "delta_items",
-            target["deltaDir"],
+            "closure",
+            archstate.delta_items,
+            check_type(target["deltaDir"], str),
             with_closure=False,
             matrix_snapshot=flow.matrix_data,
-            stage="closure",
         ),
     )
-    classified = project(walk, roots, current_roots, flow.matrix_data)
+    classified: dict[str, JsonValue] = project(walk, roots, current_roots, flow.matrix_data)
     flow.checked(
         flow.call(
-            "archclosure",
-            "write_closure",
+            "closure",
+            archclosure.write_closure,
             classified,
-            target["deltaDir"],
+            check_type(target["deltaDir"], str),
             matrix_snapshot=flow.matrix_data,
-            stage="closure",
         ),
         "closure",
     )
-    path = flow.work / "closure.json"
-    canonical = Path(check_type(result["targetDir"], str)) / "closure.json"
+    path: Path = flow.work / "closure.json"
+    canonical: Path = Path(check_type(result["targetDir"], str)) / "closure.json"
     write_json(path, classified)
-    binding = "matrix-rows:" + json.dumps(
+    binding: str = "matrix-rows:" + json.dumps(
         {
             "matrix": str(flow.matrix),
             "elements": sorted(
@@ -203,10 +239,16 @@ def approval_inputs(flow: Architecture) -> tuple[str, ...]:
     Returns:
         The validated architecture artifact result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    target = read(flow.work / "target.json")
+    if not (isinstance(flow, Architecture)):
+        argument_error: str = "approval_inputs: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    target: dict[str, JsonValue] = read(flow.work / "target.json")
     # Closure is a downstream output: its publication cannot revoke approval.
-    target_inputs = tuple(sorted(json_object(target.get("targetHashes", {}))))
+    target_inputs: tuple[str, ...] = tuple(sorted(json_object(target.get("targetHashes", {}))))
     if target.get("targetDir"):
         target_inputs = tuple(
             sorted(
@@ -239,8 +281,16 @@ def approval_inputs(flow: Architecture) -> tuple[str, ...]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def save_approval(flow: Architecture, target: dict[str, JsonValue], decision: dict[str, JsonValue]) -> None:
-    """Save approval."""
-    path = flow.work / "architecture-approved.json"
+    """Save approval.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not (isinstance(flow, Architecture)) or not (isinstance(target, dict)) or not (isinstance(decision, dict)):
+        argument_error: str = "save_approval: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    path: Path = flow.work / "architecture-approved.json"
     write_json(path, {"target": target, "decision": decision, "subject": flow.subject})
     flow.store.accept("architecture:approved", approval_inputs(flow), (path,))
 
@@ -252,21 +302,21 @@ def approved(flow: Architecture) -> dict[str, JsonValue] | None:
     Returns:
         The validated architecture artifact result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    path = flow.work / "architecture-approved.json"
+    if not (isinstance(flow, Architecture)):
+        argument_error: str = "approved: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    path: Path = flow.work / "architecture-approved.json"
     if not flow.store.reusable(approval_inputs(flow), (path,)):
         return None
     # While integrating, this record explicitly permits the maintainer's own writes.
     # After integration, it again checks cited canonical views against accepted hashes.
-    problem = flow.call(
-        "archrevision",
-        "record_problem",
-        str(flow.work),
-        str(flow.arch),
-        stage="resume",
-    )
+    problem: str | None = flow.call("resume", archrevision.record_problem, str(flow.work), str(flow.arch))
     if problem:
         return None
-    result = read(path)
+    result: dict[str, JsonValue] = read(path)
     flow.subject = check_type(result["subject"], str)
     return result

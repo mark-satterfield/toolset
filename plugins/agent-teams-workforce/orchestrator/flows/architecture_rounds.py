@@ -25,8 +25,14 @@ def owner_actions(decision: dict[str, JsonValue], path: Path) -> list[str]:
     Returns:
         The validated round outcome.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    concerns = _objects(decision.get("ownerConcerns", []))
+    if not (isinstance(decision, dict)) or not (isinstance(path, Path)):
+        argument_error: str = "owner_actions: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    concerns: list[dict[str, JsonValue]] = _objects(decision.get("ownerConcerns", []))
     if (
         decision.get("verdict") != "owner-concern"
         or not concerns
@@ -50,19 +56,37 @@ def settle_plan(
     Returns:
         The validated round outcome.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    findings = {check_type(f["id"], str): f for f in _objects(json_object(facts["rounds"])["openFindings"])}
+    entry: dict[str, JsonValue]
+    fid: str
+    finding: dict[str, JsonValue]
+    if (
+        not (isinstance(flow, Architecture))
+        or not (isinstance(plan, dict))
+        or not (isinstance(number, int))
+        or not (isinstance(facts, dict))
+    ):
+        argument_error: str = "settle_plan: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    dispatches: dict[str, dict[str, JsonValue]]
+    assignments: dict[str, str]
+    findings: dict[str, dict[str, JsonValue]] = {
+        check_type(f["id"], str): f for f in _objects(json_object(facts["rounds"])["openFindings"])
+    }
     dispatches, assignments = _normalize_dispatches(plan, findings)
     _ensure_authors(flow, facts, dispatches)
-    ordered = sorted(
+    ordered: list[dict[str, JsonValue]] = sorted(
         dispatches.values(),
         key=lambda row: row["role"] not in {"proposer", "diagram"},
     )
     # One clarified resend for an unanswered owned finding; the ledger persists the count.
-    previous = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
+    previous: list[dict[str, JsonValue]] = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
     for entry in ordered:
         for fid, finding in findings.items():
-            attempts = sum(
+            attempts: int = sum(
                 fid in _strings(d.get("answers", []))
                 for p in previous
                 for d in _objects(p.get("dispatches", []))
@@ -94,15 +118,32 @@ def settle_plan(
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def execute_plan(flow: Architecture, plan: dict[str, JsonValue]) -> None:
-    """Execute the normalized writer and reviewer dispatches."""
-    number = plan["round"]
-    path = flow.work / "plans" / f"round{number}-plan-0.json"
-    writers = [d for d in _objects(plan["dispatches"]) if d["role"] in {"proposer", "diagram"}]
+    """Execute the normalized writer and reviewer dispatches.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    entry: dict[str, JsonValue]
+    if not (isinstance(flow, Architecture)) or not (isinstance(plan, dict)):
+        argument_error: str = "execute_plan: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    number: JsonValue = plan["round"]
+    path: Path = flow.work / "plans" / f"round{number}-plan-0.json"
+    writers: list[dict[str, JsonValue]] = [
+        d for d in _objects(plan["dispatches"]) if d["role"] in {"proposer", "diagram"}
+    ]
 
     def dispatch(entry: dict[str, JsonValue]) -> None:
+        if not (isinstance(entry, dict)):
+            argument_error: str = "dispatch: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
+        seq: JsonValue
+        role: JsonValue
+        name: JsonValue
         role, name, seq = entry["role"], entry["agentType"], entry["seq"]
-        final = flow.work / "rounds" / f"r{number}-{seq}-{role}-{name}.json"
-        canonical = next(
+        final: Path = flow.work / "rounds" / f"r{number}-{seq}-{role}-{name}.json"
+        canonical: dict[str, JsonValue] = next(
             (
                 d
                 for d in _objects(read(path).get("dispatches", []))
@@ -110,7 +151,7 @@ def execute_plan(flow: Architecture, plan: dict[str, JsonValue]) -> None:
             ),
             entry,
         )
-        identity = {
+        identity: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
             key: value
             for key, value in canonical.items()
             if key
@@ -123,16 +164,16 @@ def execute_plan(flow: Architecture, plan: dict[str, JsonValue]) -> None:
                 "assignedClaimCount",
             }
         }
-        inputs = (*flow.base_inputs(), str(path), value_input("plan-entry", identity))
-        writer = role in {"proposer", "diagram"}
+        inputs: tuple[str, ...] = (*flow.base_inputs(), str(path), value_input("plan-entry", identity))
+        writer: bool = role in {"proposer", "diagram"}
         if not writer:
             inputs += (str(flow.draft),)
-        ledger = flow.ledger_input(f"r{number}-{seq}")
+        ledger: Path = flow.ledger_input(f"r{number}-{seq}")
         inputs += (str(ledger),)
         if writer:
             adopt_result(flow, final, inputs, check_type(name, str))
         # Plan order communicates reconciliation through the shared contract skill.
-        outcome = (
+        outcome: str = (
             "Write and reconcile the round's architecture views."
             if writer and entry == writers[-1]
             else "Write the assigned architecture views."
@@ -154,7 +195,7 @@ def execute_plan(flow: Architecture, plan: dict[str, JsonValue]) -> None:
         flow.facts()
     flow.target(seed=True)
     flow.target(dry_run=True)
-    reviewers = [d for d in _objects(plan["dispatches"]) if d not in writers]
+    reviewers: list[dict[str, JsonValue]] = [d for d in _objects(plan["dispatches"]) if d not in writers]
     # Freeze the ledger inputs before threads start; shared ledger folding is sequential.
     for entry in reviewers:
         flow.ledger_input(
@@ -175,21 +216,27 @@ def decide(flow: Architecture, number: int) -> dict[str, JsonValue]:
     Returns:
         The validated round outcome.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    stage = "decide"
+    if not (isinstance(flow, Architecture)) or not (isinstance(number, int)):
+        argument_error: str = "decide: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    stage: str = "decide"
     flow.target(seed=True)
-    path = flow.work / "decision.json"
-    ledger = flow.ledger_input(
+    path: Path = flow.work / "decision.json"
+    ledger: Path = flow.ledger_input(
         f"decision-{number}",
         refresh=any(p.name.startswith(f"r{number}-") for p in flow.ran),
     )
-    inputs = (
+    inputs: tuple[str, ...] = (
         *flow.base_inputs(),
         str(flow.draft),
         str(ledger),
         value_input("round", number),
     )
-    result = flow.agent(
+    result: dict[str, JsonValue] = flow.agent(
         ArchitectureStep(
             "architecture-decider",
             path,
@@ -198,9 +245,11 @@ def decide(flow: Architecture, number: int) -> dict[str, JsonValue]:
             "Decide the architecture round.",
         ),
     )
-    actionable = result.get("returnTo") or json_object(flow.facts().get("repairs", {})).get("open")
+    actionable: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = result.get(
+        "returnTo",
+    ) or json_object(flow.facts().get("repairs", {})).get("open")
     if result["verdict"] == "return" and not actionable:
-        error = flow.work / f"decision-{number}.errors.json"
+        error: Path = flow.work / f"decision-{number}.errors.json"
         write_json(
             error,
             {
@@ -229,7 +278,7 @@ def decide(flow: Architecture, number: int) -> dict[str, JsonValue]:
             "other",
             {"expectedRound": number, "decision": result},
         )
-    companion = flow.work / "decision.md"
+    companion: Path = flow.work / "decision.md"
     companion.write_text(
         f"# Architecture decision\n\n{result['verdict']}\n\n{result['summary']}\n",
         encoding="utf-8",
@@ -245,10 +294,17 @@ def run_rounds(flow: Architecture) -> dict[str, JsonValue]:
     Returns:
         The validated round outcome.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    stage = "rounds"
-    facts = flow.facts()
-    decision = read(flow.work / "decision.json")
+    number: int
+    if not (isinstance(flow, Architecture)):
+        argument_error: str = "run_rounds: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    stage: str = "rounds"
+    facts: dict[str, JsonValue] = flow.facts()
+    decision: dict[str, JsonValue] = read(flow.work / "decision.json")
     if (
         check_type(decision.get("round", 0), int) >= ROUND_LIMIT
         and decision.get("verdict") != "approve"
@@ -259,23 +315,25 @@ def run_rounds(flow: Architecture) -> dict[str, JsonValue]:
             "other",
             {"decision": decision, "roundLimit": ROUND_LIMIT},
         )
-    baseline = json_object(facts["baseline"])
-    check_only = not (baseline["designWork"] or baseline["docWork"] or baseline["unknowns"])
-    plans = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
-    last = max(
+    baseline: dict[str, JsonValue] = json_object(facts["baseline"])
+    check_only: bool = not (baseline["designWork"] or baseline["docWork"] or baseline["unknowns"])
+    plans: list[dict[str, JsonValue]] = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
+    last: int = max(
         [check_type(json_object(facts["rounds"])["last"], int), *[check_type(p["round"], int) for p in plans]],
         default=0,
     )
     if _decision_current(flow, decision, facts, last):
         return decision
-    pending = json_object(facts["rounds"]).get("pendingRound") or json_object(facts["rounds"]).get("resumeRound")
-    start = (
+    pending: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = json_object(facts["rounds"]).get(
+        "pendingRound",
+    ) or json_object(facts["rounds"]).get("resumeRound")
+    start: int | float | str | list[JsonValue] | dict[str, JsonValue] = (
         pending
         or (last if decision.get("verdict") == "approve" and last else 0)
         or max(1, last if check_type(decision.get("round", 0), int) < last else last + 1)
     )
     for number in range(check_type(start, int), ROUND_LIMIT + 1):
-        plan = _round_plan(flow, number, plans, check_only=check_only)
+        plan: dict[str, JsonValue] = _round_plan(flow, number, plans, check_only=check_only)
         flow.facts(plan=json.dumps(plan))
         execute_plan(flow, plan)
         facts = flow.facts()
@@ -304,7 +362,7 @@ def run_rounds(flow: Architecture) -> dict[str, JsonValue]:
                     kind="rounds-warning",
                     phase="architecture",
                     rounds=number,
-                    drivers=_objects(json_object(facts["rounds"])["openFindings"]),
+                    drivers=list(_objects(json_object(facts["rounds"])["openFindings"])),
                 )
             return decision
         plans = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
@@ -323,29 +381,32 @@ def _normalize_dispatches(
     plan: dict[str, JsonValue],
     findings: dict[str, dict[str, JsonValue]],
 ) -> tuple[dict[str, dict[str, JsonValue]], dict[str, str]]:
+    entry: dict[str, JsonValue]
+    fid: str
+    field: str | str | str | str | str | str
     dispatches: dict[str, dict[str, JsonValue]] = {}
-    assignments = {}
+    assignments: dict[str, str] = {}
     for entry in _objects(plan.get("dispatches", [])):
-        name = check_type(entry.get("agentType", ""), str).removeprefix("agent-teams-workforce:")
+        name: str = check_type(entry.get("agentType", ""), str).removeprefix("agent-teams-workforce:")
         if name not in ROLES:
             continue
-        role = ROLES[name]
-        files = _strings(entry.get("files", []))
+        role: str = ROLES[name]
+        files: list[str] = _strings(entry.get("files", []))
         if role in {"proposer", "diagram"} and any(
             Path(f).is_absolute() or ".." in Path(f).parts or "02-architecture-constraints" in Path(f).parts
             for f in files
         ):
             continue
-        answers = []
+        answers: list[str] = []
         for fid in _strings(entry.get("answers", [])):
-            finding = findings.get(fid)
+            finding: dict[str, JsonValue] | None = findings.get(fid)
             if finding and finding.get("owner") in {None, "", name}:
                 answers.append(fid)
                 if not finding.get("owner"):
                     assignments[fid] = name
-        normalized = json_object({**entry, "agentType": name, "role": role, "answers": answers})
+        normalized: dict[str, JsonValue] = json_object({**entry, "agentType": name, "role": role, "answers": answers})
         if name in dispatches:
-            existing = dispatches[name]
+            existing: dict[str, JsonValue] = dispatches[name]
             for field in (
                 "files",
                 "answers",
@@ -370,26 +431,29 @@ def _ensure_authors(
     facts: dict[str, JsonValue],
     dispatches: dict[str, dict[str, JsonValue]],
 ) -> None:
-    baseline = json_object(facts["baseline"])
-    scope = (
+    capability: str
+    baseline: dict[str, JsonValue] = json_object(facts["baseline"])
+    scope: set[str] = (
         set(_strings(baseline["designWork"])) | set(_strings(baseline["docWork"])) | set(_strings(baseline["unknowns"]))
     )
-    authored = {
+    authored: set[str] = {
         cid
         for prior in _objects(read(flow.work / "ledger.json").get("roundPlans", []))
         for item in _objects(prior.get("dispatches", []))
         if item.get("role") in {"proposer", "diagram"} and item.get("complete")
         for cid in _strings(item.get("coverageIds", []))
     }
-    missing = scope - authored
+    missing: set[str] = scope - authored
     if missing and not any(d["role"] in {"proposer", "diagram"} for d in dispatches.values()):
         for capability in sorted(missing):
-            kind = json_object(baseline["kindOf"]).get(capability)
-            name = {
+            kind: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = json_object(
+                baseline["kindOf"],
+            ).get(capability)
+            name: str = {
                 "infrastructure": "cdk-infrastructure-designer",
                 "documentation": "architecture-diagram-author",
             }.get(check_type(kind, str | None), "integration-pattern-architect")
-            entry = dispatches.setdefault(
+            entry: dict[str, JsonValue] = dispatches.setdefault(
                 name,
                 {
                     "agentType": name,
@@ -416,11 +480,11 @@ def _round_plan(
     *,
     check_only: bool,
 ) -> dict[str, JsonValue]:
-    saved = next((p for p in plans if p["round"] == number), None)
+    saved: dict[str, JsonValue] | None = next((p for p in plans if p["round"] == number), None)
     if saved:
-        plan = saved
-        saved_path = flow.work / "plans" / f"round{number}-plan-0.json"
-        saved_inputs = (
+        plan: dict[str, JsonValue] = saved
+        saved_path: Path = flow.work / "plans" / f"round{number}-plan-0.json"
+        saved_inputs: tuple[str, ...] = (
             *flow.base_inputs(),
             str(flow.ledger_input(f"plan-{number}")),
             value_input("round", number),
@@ -448,16 +512,16 @@ def _round_plan(
             "overlaps": [],
         }
     else:
-        ledger = flow.ledger_input(f"plan-{number}")
-        path = flow.work / "plans" / f"round{number}-plan-0.json"
-        inputs = (*flow.base_inputs(), str(ledger), value_input("round", number))
+        ledger: Path = flow.ledger_input(f"plan-{number}")
+        path: Path = flow.work / "plans" / f"round{number}-plan-0.json"
+        inputs: tuple[str, ...] = (*flow.base_inputs(), str(ledger), value_input("round", number))
         adopt_result(
             flow,
             path,
             inputs,
             "architecture-decision-workflow-coordinator",
         )
-        raw = flow.agent(
+        raw: dict[str, JsonValue] = flow.agent(
             ArchitectureStep(
                 "architecture-decision-workflow-coordinator",
                 path,
@@ -470,7 +534,7 @@ def _round_plan(
     path = flow.work / "plans" / f"round{number}-plan-0.json"
     if not saved:
         write_json(path, plan)
-        plan_inputs = (
+        plan_inputs: tuple[str, ...] = (
             *flow.base_inputs(),
             str(flow.ledger_input(f"plan-{number}")),
             value_input("round", number),
@@ -494,8 +558,8 @@ def _decision_current(
         if owner_actions(decision, flow.work / "decision.json"):
             return True
         if decision.get("verdict") == "approve":
-            ledger = flow.work / "inputs" / f"decision-{decision['round']}.ledger.json"
-            inputs = (
+            ledger: Path = flow.work / "inputs" / f"decision-{decision['round']}.ledger.json"
+            inputs: tuple[str, ...] = (
                 *flow.base_inputs(),
                 str(flow.draft),
                 str(ledger),

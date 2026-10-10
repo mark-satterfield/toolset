@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import traceback
+from collections.abc import Mapping
 from pathlib import Path
 from subprocess import TimeoutExpired  # ruff: ignore[suspicious-subprocess-import] - exception classification only; no process is launched
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict
 
 from jsonschema import Draft202012Validator
-from typeguard import CollectionCheckStrategy, TypeCheckError, typechecked
+from jsonschema.exceptions import ValidationError  # ruff: ignore[typing-only-third-party-import] - Typeguard validates annotated local assignments at runtime.
+from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from orchestrator.core.agent_context import PipelineStoppedError, SessionCleanupError, SessionSetupError
 from orchestrator.core.models import RetryExhaustedError, StepError
@@ -122,7 +124,7 @@ class HandbackValidationError(ValueError):
     def __init__(self, message: str, payload: object) -> None:
         """Retain the rejected payload for separate failure evidence."""
         super().__init__(message)
-        self.payload = payload
+        self.payload: object = payload
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -145,30 +147,59 @@ def validate(payload: object, schema: Path | None = None) -> HandbackDocument:
 
     Raises:
         HandbackValidationError: A field violates the plugin schema.
+        TypeError: The schema argument is not a path.
 
     """
-    definition = json.loads((schema or schema_path()).read_text(encoding="utf-8"))
-    validator = Draft202012Validator(definition)
-    errors = sorted(validator.iter_errors(payload), key=lambda error: str(list(error.absolute_path)))
+    if schema is not None and not isinstance(schema, Path):
+        argument_error: str = "schema must be a Path or None"
+        raise TypeError(argument_error)
+    raw_definition: object = json.loads((schema or schema_path()).read_text(encoding="utf-8"))
+    definition: dict[str, JsonValue] = check_type(
+        raw_definition,
+        dict[str, JsonValue],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+    validator: Draft202012Validator = Draft202012Validator(definition)
+    errors: list[ValidationError] = sorted(
+        validator.iter_errors(payload),
+        key=lambda error: str(list(error.absolute_path)),
+    )
     if errors:
-        error = errors[0]
-        field = ".".join(map(str, error.absolute_path)) or "$"
-        expected = error.schema.get("type", error.validator_value)
-        actual = type(error.instance).__name__
-        message = f"handback.{field}: expected {expected}, actual {actual}: {error.message}"
+        error: ValidationError = errors[0]
+        field: str = ".".join(map(str, error.absolute_path)) or "$"
+        error_schema: object = error.schema
+        expected: object = error.validator_value
+        if isinstance(error_schema, dict):
+            schema_fields: dict[str, JsonValue] = check_type(
+                error_schema,
+                dict[str, JsonValue],
+                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+            )
+            expected = schema_fields.get("type", expected)
+        actual: str = type(error.instance).__name__
+        message: str = f"handback.{field}: expected {expected}, actual {actual}: {error.message}"
         raise HandbackValidationError(message, payload)
-    return cast("HandbackDocument", payload)
+    try:
+        return check_type(payload, HandbackDocument, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    except TypeCheckError as exc:
+        raise HandbackValidationError(str(exc), payload) from exc
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def wire_result(result: dict[str, object]) -> HandbackDocument:
+def wire_result(result: Mapping[str, JsonValue]) -> HandbackDocument:
     """Project the internal run report to the sole supported handback shape.
 
     Returns:
         A validated wire document.
 
+    Raises:
+        TypeError: The report is not a mapping.
+
     """
-    fields = (
+    if not isinstance(result, Mapping):
+        message: str = "wire_result requires a JSON report mapping"
+        raise TypeError(message)
+    fields: tuple[str, ...] = (
         "ok",
         "stage",
         "beadId",
@@ -182,7 +213,7 @@ def wire_result(result: dict[str, object]) -> HandbackDocument:
         "requiredHumanActions",
         "refusal",
     )
-    payload = {key: result[key] for key in fields if key in result}
+    payload: dict[str, JsonValue] = {key: result[key] for key in fields if key in result}
     payload["version"] = 1
     return validate(payload)
 
@@ -195,6 +226,9 @@ def diagnostic(exc: BaseException, *, agent_started: bool) -> Diagnostic:
         The original exception facts.
 
     """
+    original: BaseException
+    frames: traceback.StackSummary
+    frame: traceback.FrameSummary | None
     original = exc
     while original.__cause__ is not None:
         original = original.__cause__
@@ -225,6 +259,7 @@ def _classification(
     agent_started: bool,
     setup: bool,
 ) -> tuple[FailureClass, str]:
+    cause: str
     cause = step.cause if step else "other"
     classification: FailureClass
     if any(isinstance(item, SessionCleanupError) for item in chain):
@@ -266,6 +301,10 @@ def failure_for(stage: str, exc: BaseException, *, agent_started: bool, setup: b
         The single failure class and original diagnostic.
 
     """
+    chain: list[BaseException]
+    step: StepError | None
+    classification: FailureClass
+    cause: str
     chain = _exception_chain(exc)
     step = next((item for item in chain if isinstance(item, StepError)), None)
     classification, cause = _classification(chain, step, agent_started=agent_started, setup=setup)
@@ -290,21 +329,28 @@ def rejected(payload: object, exc: BaseException, bead: str, detail: str) -> Han
     Returns:
         A failed handback preserving the original step headline and evidence.
 
+    Raises:
+        TypeError: Identifiers or the exception do not match the input contract.
+
     """
-    raw = payload if isinstance(payload, dict) else {}
-    original_stage = raw.get("stage")
-    original_headline = raw.get("headline")
-    stage = original_stage if isinstance(original_stage, str) else "handback-validation"
-    headline = original_headline if isinstance(original_headline, str) else "Handback failed schema validation"
+    if not isinstance(exc, BaseException) or not isinstance(bead, str) or not isinstance(detail, str):
+        argument_error: str = "rejected requires an exception and string bead/detail identifiers"
+        raise TypeError(argument_error)
+    checked: JsonValue = check_type(payload, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    raw: dict[str, JsonValue] = checked if isinstance(checked, dict) else {}
+    original_stage: JsonValue = raw.get("stage")
+    original_headline: JsonValue = raw.get("headline")
+    stage: str = original_stage if isinstance(original_stage, str) else "handback-validation"
+    headline: str = original_headline if isinstance(original_headline, str) else "Handback failed schema validation"
     failure: Failure = {
         "stage": stage,
         "cause": "other",
         "repositories": [],
         "classification": "pipeline-code-defect",
-        "originalFailure": cast("JsonValue", raw.get("failure")),
+        "originalFailure": raw.get("failure"),
         "handbackDefect": diagnostic(exc, agent_started=False),
     }
-    original_detail = raw.get("detailPath")
+    original_detail: JsonValue = raw.get("detailPath")
     return {
         "version": 1,
         "ok": False,

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import tempfile
 from pathlib import Path
-from typing import override
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -29,23 +29,6 @@ from orchestrator.flows.architecture_resume import (
 from orchestrator.flows.architecture_support import Architecture
 
 
-class CompletionFlow(Architecture):
-    """Use real flow state while controlling the cited-view freshness response."""
-
-    problem: str | None = None
-
-    @override
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def call(self, module: str, function: str, *args: object, stage: str, **kwargs: object) -> object:
-        """Return the selected cited-view freshness result.
-
-        Returns:
-            The fixture's current problem, if any.
-
-        """
-        return self.problem
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
     """Evaluate the existing isolated check contract."""
@@ -57,7 +40,7 @@ def main() -> None:
     _projection()
 
 
-def _flow(root: Path, artifact_script: Path) -> CompletionFlow:
+def _flow(root: Path, artifact_script: Path) -> Architecture:
     context = RunContext(
         "example",
         "architecture",
@@ -69,7 +52,7 @@ def _flow(root: Path, artifact_script: Path) -> CompletionFlow:
     runner = AgentRunner(context, store)
     matrix = root / "matrix.json"
     write_json(matrix, {"elements": {}})
-    return CompletionFlow(context, store, runner, Tools(root / "evidence"), matrix)
+    return Architecture(context, store, runner, Tools(root / "evidence"), matrix)
 
 
 def _completion_inputs(artifact_script: Path, survey_dir: Path) -> None:
@@ -119,9 +102,16 @@ def _completion_inputs(artifact_script: Path, survey_dir: Path) -> None:
         require(saved_seal.read_bytes() == original_seal, "saved_seal.read_bytes() == original_seal")
 
 
-def _approval(flow: CompletionFlow, target: Path, view: Path) -> None:
+def _approval(flow: Architecture, target: Path, view: Path) -> None:
     flow.subject = "example"
-    flow.problem = None
+    write_json(
+        flow.work / "arc42-revision.json",
+        {
+            "archRoot": str(flow.arch),
+            "files": {"view.md": hashlib.sha256(view.read_bytes()).hexdigest()},
+            "integrating": True,
+        },
+    )
     write_json(flow.work / "target.json", {"targetDir": str(target)})
     target_view = target / "view.md"
     target_view.write_text("approved")
@@ -137,10 +127,15 @@ def _approval(flow: CompletionFlow, target: Path, view: Path) -> None:
     require(approved(flow), "Closure publication revoked architecture approval")
     view.write_text("interrupted maintainer write", encoding="utf-8")
     require(approved(flow), "owned canonical writes invalidated integration recovery")
-    flow.problem = "cited view changed"
+    (flow.work / "draft").mkdir(exist_ok=True)
+    (flow.work / "draft/view.md").write_text("cited canonical view")
+    write_json(
+        flow.work / "arc42-revision.json",
+        {"archRoot": str(flow.arch), "files": {"view.md": "previous fingerprint"}, "integrating": False},
+    )
     require(approved(flow) is None, "approved(flow) is None")
     require((flow.work / "architecture-approved.json").exists(), "read-only check moved work")
-    flow.problem = None
+    write_json(flow.work / "arc42-revision.json", {"archRoot": str(flow.arch), "files": {}, "integrating": True})
     flow.prd.write_text("new PRD during integration")
     require(approved(flow) is None, "upstream change reused integration recovery")
     write_json(flow.work / "decision.json", {"round": 3, "verdict": "deny"})

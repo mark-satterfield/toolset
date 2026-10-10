@@ -13,6 +13,9 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .io import JsonValue
 
+type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
+type OutputValidator = Callable[[Path], ValidationResult]
+
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class StepError(Exception):
@@ -69,7 +72,7 @@ class AgentStep:
     inputs: tuple[str, ...]
     output: Path
     outcome: str
-    validate: Path | Callable[[Path], object]
+    validate: Path | OutputValidator
     final: Path | None
     model: str
     effort: str
@@ -87,7 +90,7 @@ class AgentStep:
         check_type(self.outcome, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(
             self.validate,
-            Path | Callable[[Path], object],
+            Path | OutputValidator,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
         check_type(self.final, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

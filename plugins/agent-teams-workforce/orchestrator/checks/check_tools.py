@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
 import io
 import json
 import os
@@ -13,8 +12,7 @@ import tempfile
 import unittest
 from functools import partial
 from pathlib import Path
-from types import ModuleType
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from unittest.mock import patch
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -22,11 +20,16 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 
+import beadgraph as graph
+import beads_contract as contract
 from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.events import EventWriter
 from orchestrator.core.models import RetryExhaustedError, StepError
 from orchestrator.core.tool_locks import bd_gate
 from orchestrator.core.tools import Tools, retry_call
+
+if TYPE_CHECKING:
+    from contracts import JsonObject
 
 
 @runtime_checkable
@@ -39,17 +42,6 @@ class CauseFailure(Protocol):
 def _raise_step(cause: str) -> None:
     stage = "x"
     raise StepError(stage, cause)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def _contract_module(path: Path) -> ModuleType:
-    spec = importlib.util.spec_from_file_location("check_beads_contract", path)
-    if spec is None or spec.loader is None:
-        message = f"contract module cannot load: {path}"
-        raise ImportError(message)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 class ToolChecks(unittest.TestCase):
@@ -86,7 +78,6 @@ class ToolChecks(unittest.TestCase):
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def test_bd_lock_timeout_exit_and_metadata_transport() -> None:
         """Check the existing tool boundary without an external invocation."""
-        graph = importlib.import_module("beadgraph")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             central = root / "central.lock"
@@ -111,7 +102,7 @@ class ToolChecks(unittest.TestCase):
                         "database is locked",
                     )
 
-                with patch.object(graph.subprocess, "run", side_effect=run):
+                with patch.object(subprocess, "run", side_effect=run):
                     with expected_error(graph.GraphError) as caught:
                         graph.children(root, "example", "task")
                     require(
@@ -120,7 +111,7 @@ class ToolChecks(unittest.TestCase):
                     )
                 require(not (central.exists()), "tool boundary check failed")
                 with patch.object(
-                    graph.subprocess,
+                    subprocess,
                     "run",
                     side_effect=subprocess.TimeoutExpired("bd", 3),
                 ):
@@ -130,7 +121,7 @@ class ToolChecks(unittest.TestCase):
                         check_type(check_type(caught[0], CauseFailure).cause, str) == "bd-timeout",
                         "tool boundary check failed",
                     )
-                with bd_gate(write=False), patch.object(graph.subprocess, "run") as run:
+                with bd_gate(write=False), patch.object(subprocess, "run") as run:
                     with expected_error(graph.GraphError) as caught:
                         graph.children(root, "example", "task")
                     require(
@@ -138,13 +129,11 @@ class ToolChecks(unittest.TestCase):
                         "tool boundary check failed",
                     )
                     run.assert_not_called()
-                contract = _contract_module(check_type(graph.CONTRACT, Path))
                 with (
-                    patch.object(graph, "_contract", return_value=contract),
                     patch.object(contract.Reader, "route", return_value=directory),
                     patch.object(
                         graph,
-                        "_bd",
+                        "run_bd",
                         side_effect=[
                             "",
                             '[{"id":"example","metadata":{"state":"ready"}}]',
@@ -157,7 +146,7 @@ class ToolChecks(unittest.TestCase):
                         call.call_args_list[0].args[0] == ["update", "example", "--set-metadata", "state=ready"],
                         "tool boundary check failed",
                     )
-                record = {"id": "example", "title": "Example", "issue_type": "task"}
+                record: JsonObject = {"id": "example", "title": "Example", "issue_type": "task"}
                 require(
                     graph.fingerprints([record])["example"]
                     == contract.fingerprint_of("example", record)["fingerprint"],

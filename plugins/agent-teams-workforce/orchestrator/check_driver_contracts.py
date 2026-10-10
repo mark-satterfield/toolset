@@ -1,4 +1,4 @@
-"""Statically verify the actual control producers against plugin contracts."""
+"""Check real driver contracts and every statically imported pipeline producer."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-PROBE = """import headlessenv
+PROBE: str = """import headlessenv
 import fablewall
 import breaker
 import childproc
@@ -26,7 +26,7 @@ quota: Breaker = breaker
 process: ChildProcess = childproc
 artifacts: ArtifactProducer = artifactio.ArtifactProducer()
 """
-DEPENDENCIES = (
+DEPENDENCIES: tuple[str, ...] = (
     "typeguard",
     "types-PyYAML",
     "types-jsonschema",
@@ -34,7 +34,7 @@ DEPENDENCIES = (
     "chromadb==1.5.2",
     "ollama==0.6.1",
 )
-CHECK_TIMEOUT = 300
+CHECK_TIMEOUT: int = 300
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -46,33 +46,59 @@ def check_contracts(control_root: Path, plugin_root: Path) -> int:
 
     Raises:
         FileNotFoundError: A required checkout or the uv executable is unavailable.
+        TypeError: A checkout argument is not a path.
 
     """
+    if not isinstance(control_root, Path) or not isinstance(plugin_root, Path):
+        message: str = "Contract checking requires concrete checkout paths"
+        raise TypeError(message)
     control_root = control_root.resolve()
     plugin_root = plugin_root.resolve()
-    drivers = control_root / "ops" / "sdlc-automation"
-    required = [drivers / f"{name}.py" for name in ("headlessenv", "fablewall", "breaker", "childproc", "artifactio")]
+    drivers: Path = control_root / "ops" / "sdlc-automation"
+    required: list[Path] = [
+        drivers / f"{name}.py" for name in ("headlessenv", "fablewall", "breaker", "childproc", "artifactio")
+    ]
     required.extend(
         plugin_root / "orchestrator" / "core" / name for name in ("driver_contracts.py", "artifact_contract.py")
     )
+    path: Path
     for path in required:
         if not path.is_file():
             message = f"Driver contract check requires source file: {path}"
             raise FileNotFoundError(message)
-    uv = shutil.which("uv")
+    uv: str | None = shutil.which("uv")
     if uv is None:
         message = "Driver contract check requires uv on PATH"
         raise FileNotFoundError(message)
-    command = [uv, "tool", "run"]
+    command: list[str] = [uv, "tool", "run"]
+    dependency: str
     for dependency in DEPENDENCIES:
         command.extend(["--with", dependency])
-    command.extend(["mypy", "--strict", "--follow-imports=normal", "--no-incremental", "--python-version=3.14"])
-    environment = dict(os.environ)
-    environment["MYPYPATH"] = os.pathsep.join((str(drivers), str(plugin_root)))
+    command.extend([
+        "mypy",
+        "--strict",
+        "--disallow-any-explicit",
+        "--disallow-any-unimported",
+        "--disallow-any-decorated",
+        "--follow-imports=normal",
+        "--no-incremental",
+        "--python-version=3.14",
+    ])
+    environment: dict[str, str] = dict(os.environ)
+    environment["MYPYPATH"] = os.pathsep.join(
+        (
+            str(drivers),
+            str(plugin_root),
+            str(plugin_root / "scripts" / "portfolio"),
+            str(plugin_root / "skills" / "beads-contract" / "scripts"),
+            str(plugin_root / "skills" / "wsjf" / "scripts"),
+        ),
+    )
+    temporary: str
     with tempfile.TemporaryDirectory(prefix="atw-driver-contract-") as temporary:
-        probe = Path(temporary) / "producer_conformance.py"
+        probe: Path = Path(temporary) / "producer_conformance.py"
         probe.write_text(PROBE, encoding="utf-8")
-        command.append(str(probe))
+        command.extend((str(probe), str(plugin_root / "orchestrator")))
         # ruff: ignore[subprocess-without-shell-equals-true] - Resolved uv and fixed static mypy argv; no shell.
         return subprocess.run(command, cwd=control_root, env=environment, check=False, timeout=CHECK_TIMEOUT).returncode
 
@@ -85,7 +111,7 @@ def main() -> int:
         Zero on conformance, or a nonzero diagnostic status.
 
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--control-root",
         type=Path,
@@ -93,7 +119,7 @@ def main() -> int:
         help="Control checkout (defaults to ATW_CONTROL_REPO, then SKILLSPOKE_CC)",
     )
     parser.add_argument("--plugin-root", type=Path, default=Path(__file__).resolve().parents[1])
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
     if args.control_root is None:
         parser.error(
             "set ATW_CONTROL_REPO or SKILLSPOKE_CC, or pass --control-root for the real control checkout",

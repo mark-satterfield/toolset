@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+import beadgraph
+import beadwrite
+import cdsbundles
+import specui
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner, strict_json
@@ -25,17 +29,22 @@ from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.spec_authoring_ui import normalize_ui
 from orchestrator.flows.trd_authoring import document
 
+_ARGUMENT_ERROR: str = "Arguments violate the spec_authoring input contract"
+
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def nonempty(path: Path) -> None:
     """Require a nonempty authored document.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         ValueError: The document contains no text.
 
     """
+    if not (isinstance(path, Path)):
+        raise TypeError(_ARGUMENT_ERROR)
     if not path.read_text(encoding="utf-8").strip():
-        message = f"missing or empty document: {path}"
+        message: str = f"missing or empty document: {path}"
         raise ValueError(message)
 
 
@@ -47,7 +56,7 @@ class SpecRequest:
     output: Path
     inputs: tuple[str, ...]
     outcome: str
-    validate: Path | Callable[[Path], object]
+    validate: Path | Callable[[Path], tuple[list[str], list[str]] | None]
     model: str = "sonnet"
     effort: str = "medium"
 
@@ -58,13 +67,34 @@ class SpecRequest:
         check_type(self.output, Path)
         check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.outcome, str)
-        check_type(self.validate, Path | Callable[[Path], object])
+        check_type(self.validate, Path | Callable[[Path], tuple[list[str], list[str]] | None])
         check_type(self.model, str)
         check_type(self.effort, str)
 
 
 class SpecAuthoring:
     """Per-repository state; safe to use alongside other repository flow instances."""
+
+    context: RunContext
+    store: ArtifactStore
+    runner: AgentRunner
+    tools: Tools
+    work: Path
+    slug: str
+    repo: Path
+    arch: Path
+    prd: Path
+    stage: str
+    ran: bool
+    items: list[dict[str, JsonValue]]
+    frontend: bool
+    design: dict[str, JsonValue]
+    inputs: tuple[str, ...]
+    docs: tuple[Path, Path, Path]
+    ui: Path
+    bundles: Path
+    story: Path
+    facts: Path
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(
@@ -77,9 +107,18 @@ class SpecAuthoring:
         """Bind the placed items and specification artifact paths.
 
         Raises:
+            TypeError: An argument violates the declared input contract.
             StepError: The slug is invalid or no items are placed here.
 
         """
+        args: dict[str, JsonValue]
+        if (
+            not (isinstance(context, RunContext))
+            or not (isinstance(store, ArtifactStore))
+            or not (isinstance(runner, AgentRunner))
+            or not (isinstance(tools, Tools))
+        ):
+            raise TypeError(_ARGUMENT_ERROR)
         self.context, self.store, self.runner, self.tools = (
             context,
             store,
@@ -88,7 +127,7 @@ class SpecAuthoring:
         )
         args, self.work = context.args, context.work
         self.slug = str(args["slug"])
-        stage = "input"
+        stage: str = "input"
         if not re.fullmatch(r"[A-Za-z0-9._-]+", self.slug) or self.slug in {".", ".."}:
             raise StepError(stage, "other", ("invalid repository artifact slug",))
         self.repo = Path(check_type(args["repoPath"], str)).resolve()
@@ -97,15 +136,15 @@ class SpecAuthoring:
         self.stage = f"spec:{self.slug}"
         self.warnings: list[str] = []
         self.ran = False
-        placement = check_type(
+        placement: list[dict[str, JsonValue]] = check_type(
             strict_json(self.work / "repo-scoping.json")["placements"],
             list[dict[str, JsonValue]],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
-        selected = [
+        selected: list[dict[str, JsonValue]] = [
             p for p in placement if p.get("repoPath") and Path(check_type(p["repoPath"], str)).resolve() == self.repo
         ]
-        ids = {
+        ids: set[str] = {
             item
             for p in selected
             for item in check_type(p["itemIds"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -147,7 +186,15 @@ class SpecAuthoring:
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def record(self, inputs: tuple[str, ...], outputs: tuple[Path, ...]) -> None:
-        """Record artifact receipts and retain expected failure warnings."""
+        """Record artifact receipts and retain expected failure warnings.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
+        """
+        output: Path
+        if not (isinstance(inputs, tuple)) or not (isinstance(outputs, tuple)):
+            raise TypeError(_ARGUMENT_ERROR)
         try:
             self.store.invalidate(outputs)
             for output in outputs:
@@ -196,17 +243,16 @@ class SpecAuthoring:
         """Normalize UI source selections against supplied bundles."""
         if self.store.reusable((*self.inputs, str(self.bundles)), (self.ui,)):
             return
-        listed = json_object(
+        listed: dict[str, JsonValue] = json_object(
             self.tools.portfolio(
-                "cdsbundles",
-                "list_bundles",
-                self.design.get("packagesDir"),
-                stage="author",
+                "author",
+                cdsbundles.list_bundles,
+                check_type(self.design.get("packagesDir"), str | None),
             ),
         )
         write_json(self.bundles, listed)
-        candidate = self.work / "candidates" / self.ui.name
-        inputs = (*self.inputs, str(self.bundles))
+        candidate: Path = self.work / "candidates" / self.ui.name
+        inputs: tuple[str, ...] = (*self.inputs, str(self.bundles))
         self.author(
             SpecRequest(
                 "api-specification-author",
@@ -216,7 +262,7 @@ class SpecAuthoring:
                 self.runner.plugin / "skills/artifact-handoff/schemas/spec-ui.schema.json",
             ),
         )
-        normalized = normalize_ui(
+        normalized: dict[str, JsonValue] = normalize_ui(
             strict_json(candidate),
             {check_type(i["id"], str) for i in self.items},
             listed,
@@ -232,6 +278,7 @@ class SpecAuthoring:
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def documents(self) -> None:
         """Produce repository specification documents."""
+        future: Future[None]
         write_json(
             self.facts,
             {
@@ -245,11 +292,12 @@ class SpecAuthoring:
                 "designSystem": self.design,
             },
         )
+        pool: ThreadPoolExecutor
         if self.frontend:
             self.ui_sources()
-        contract_inputs = self.inputs + ((str(self.ui),) if self.frontend else ())
+        contract_inputs: tuple[str, ...] = self.inputs + ((str(self.ui),) if self.frontend else ())
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [
+            futures: list[Future[None]] = [
                 pool.submit(
                     self.author,
                     SpecRequest(
@@ -275,28 +323,22 @@ class SpecAuthoring:
             for future in futures:
                 future.result()
         if self.frontend:
-            ui = strict_json(self.ui)
+            ui: dict[str, JsonValue] = strict_json(self.ui)
             self.tools.portfolio(
-                "specui",
-                "spec_ui_append",
+                "author",
+                specui.spec_ui_append,
                 self.docs[0],
-                json.dumps(
-                    [
-                        {
-                            "id": row["item"],
-                            **{k: row[k] for k in ("designSource", "buildSpec", "sections") if k in row},
-                        }
-                        for row in check_type(
-                            ui["uiItems"],
-                            list[dict[str, JsonValue]],
-                            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                        )
-                    ],
-                ),
-                stage="author",
+                json.dumps([
+                    {"id": row["item"], **{k: row[k] for k in ("designSource", "buildSpec", "sections") if k in row}}
+                    for row in check_type(
+                        ui["uiItems"],
+                        list[dict[str, JsonValue]],
+                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                    )
+                ]),
             )
             self.record(contract_inputs, (self.docs[0],))
-        criteria_inputs = self.inputs + tuple(map(str, self.docs[:2]))
+        criteria_inputs: tuple[str, ...] = self.inputs + tuple(map(str, self.docs[:2]))
         self.author(
             SpecRequest(
                 "acceptance-criteria-writer",
@@ -316,14 +358,14 @@ class SpecAuthoring:
             The validated specification result.
 
         """
-        inputs = tuple(map(str, self.docs))
+        inputs: tuple[str, ...] = tuple(map(str, self.docs))
         if not self.store.reusable(inputs, (self.story,)):
-            ids = list(
+            ids: list[str] = list(
                 dict.fromkeys(
                     value.strip() for path in self.docs[:2] for value in document(path, self.arch)[0] if value.strip()
                 ),
             )
-            body = {
+            body: dict[str, Sequence[str]] = {
                 "title": f"{self.repo.name}: {json_object(self.context.args['prd']).get('title') or self.context.bead}",
                 "description": "\n".join(
                     [
@@ -350,26 +392,15 @@ class SpecAuthoring:
             The validated specification result.
 
         """
-        control = env_path("ATW_CONTROL_REPO")
+        control: Path = env_path("ATW_CONTROL_REPO")
 
         def attempt() -> dict[str, JsonValue]:
-            graph = self.tools.portfolio(
-                "beadgraph",
-                "load",
-                control,
-                with_description=True,
-                stage="story-write",
-            )
-            writer = self.tools.portfolio(
-                "beadgraph",
-                "Writer",
-                control,
-                stage="story-write",
-            )
+            graph: beadgraph.Graph = self.tools.portfolio("story-write", beadgraph.load, control, with_description=True)
+            writer: beadgraph.Writer = self.tools.portfolio("story-write", beadgraph.Writer, control)
             return json_object(
                 self.tools.portfolio(
-                    "beadwrite",
-                    "write_story",
+                    "story-write",
+                    beadwrite.write_story,
                     graph,
                     writer,
                     self.context.bead,
@@ -377,7 +408,6 @@ class SpecAuthoring:
                     slug=self.slug,
                     repo=str(self.repo),
                     root=self.store.root,
-                    stage="story-write",
                 ),
             )
 
@@ -396,12 +426,22 @@ def run(
     Returns:
         Story, specification paths, UI path, decision IDs, and write summary.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    flow = SpecAuthoring(context, store, runner, tools)
+    if (
+        not (isinstance(context, RunContext))
+        or not (isinstance(store, ArtifactStore))
+        or not (isinstance(runner, AgentRunner))
+        or not (isinstance(tools, Tools))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    flow: SpecAuthoring = SpecAuthoring(context, store, runner, tools)
     context.stage = "spec-authoring"
     flow.documents()
-    body = flow.story_document()
-    written = flow.write_story()
+    body: dict[str, JsonValue] = flow.story_document()
+    written: dict[str, JsonValue] = flow.write_story()
     if flow.ran:
         try:
             store.module.complete_step(context.work, flow.stage)

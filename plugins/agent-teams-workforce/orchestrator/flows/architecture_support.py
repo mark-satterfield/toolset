@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
+import archmatrix
+import archresume
+import archstate
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner, strict_json
@@ -13,6 +18,9 @@ from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
+
+if TYPE_CHECKING:
+    from contracts import TargetResult
 
 PROPOSERS = (
     "integration-pattern-architect",
@@ -46,6 +54,10 @@ ROSTER = ";".join(
 )
 
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def value_input(name: str, value: object) -> str:
     """Encode a validated JSON value as a stable artifact input.
@@ -53,7 +65,13 @@ def value_input(name: str, value: object) -> str:
     Returns:
         The validated result for this operation.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(name, str)):
+        argument_error: str = "value_input: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
     return "value:" + json.dumps(
         json_object({"name": name, "value": value}),
         sort_keys=True,
@@ -68,7 +86,13 @@ def read(path: Path) -> dict[str, JsonValue]:
     Returns:
         The validated result for this operation.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(path, Path)):
+        argument_error: str = "read: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
     return strict_json(path) if path.is_file() else {}
 
 
@@ -79,7 +103,13 @@ def model_for(agent: str) -> tuple[str, str]:
     Returns:
         The validated result for this operation.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(agent, str)):
+        argument_error: str = "model_for: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
     if agent in PROPOSERS:
         return "fable", "high"
     if agent in {
@@ -130,32 +160,44 @@ class Architecture:
         tools: Tools,
         matrix: Path,
     ) -> None:
-        """Bind architecture paths and write the shared agent context."""
-        self.context, self.store, self.runner, self.tools = (
-            context,
-            store,
-            runner,
-            tools,
-        )
-        self.work = context.work / "architecture"
+        """Bind architecture paths and write the shared agent context.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
+        """
+        if (
+            not (isinstance(context, RunContext))
+            or not (isinstance(store, ArtifactStore))
+            or not (isinstance(runner, AgentRunner))
+            or not (isinstance(tools, Tools))
+            or not (isinstance(matrix, Path))
+        ):
+            argument_error: str = "__init__: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
+        self.context: RunContext = context
+        self.store: ArtifactStore = store
+        self.runner: AgentRunner = runner
+        self.tools: Tools = tools
+        self.work: Path = context.work / "architecture"
         self.work.mkdir(parents=True, exist_ok=True)
-        self.arch = Path(check_type(context.args["archPath"], str)).expanduser().resolve()
-        prd = json_object(context.args["prd"])
-        self.prd = Path(check_type(prd["path"], str)).expanduser().resolve()
-        self.matrix = matrix
-        self.matrix_data = read(matrix)
-        self.draft = self.work / "draft"
+        self.arch: Path = Path(check_type(context.args["archPath"], str)).expanduser().resolve()
+        prd: dict[str, JsonValue] = json_object(context.args["prd"])
+        self.prd: Path = Path(check_type(prd["path"], str)).expanduser().resolve()
+        self.matrix: Path = matrix
+        self.matrix_data: dict[str, JsonValue] = read(matrix)
+        self.draft: Path = self.work / "draft"
         self.draft.mkdir(exist_ok=True)
-        self.schemas = runner.plugin / "skills/artifact-handoff/schemas"
-        self.subject = str(context.args.get("architectureSubject") or "")
-        self.forbid = [
+        self.schemas: Path = runner.plugin / "skills/artifact-handoff/schemas"
+        self.subject: str = str(context.args.get("architectureSubject") or "")
+        self.forbid: list[str] = [
             context.bead,
             str(prd.get("id", "")),
             self.prd.stem,
         ]
         self.ran: set[Path] = set()
-        self.adopted = False
-        self.context_path = self.work / "architecture-context.json"
+        self.adopted: bool = False
+        self.context_path: Path = self.work / "architecture-context.json"
         write_json(
             self.context_path,
             {
@@ -174,19 +216,25 @@ class Architecture:
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def call(
         self,
-        module: str,
-        function: str,
-        *args: object,
         stage: str,
-        **kwargs: object,
-    ) -> object:
+        operation: Callable[P, R],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> R:
         """Dispatch a portfolio function through the typed tool boundary.
 
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: The dispatch arguments have invalid types.
+
         """
-        return self.tools.portfolio(module, function, *args, stage=stage, **kwargs)
+        if not isinstance(stage, str) or not callable(operation):
+            message: str = "Portfolio dispatch requires a string stage and a callable operation"
+            raise TypeError(message)
+        return self.tools.portfolio(stage, operation, *args, **kwargs)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def checked(self, result: object, stage: str) -> dict[str, JsonValue]:
@@ -195,29 +243,44 @@ class Architecture:
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(stage, str)):
+            argument_error: str = "checked: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
         result = json_object(result)
         if result.get("error") or result.get("refused") or result.get("ok") is False:
             raise self.tools.failure(stage, "other", result)
         return result
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def facts(self, **kwargs: object) -> dict[str, JsonValue]:
+    def facts(self, *, assign: str = "", team: str = "", plan: str = "") -> dict[str, JsonValue]:
         """Read and validate the current resume facts.
 
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(assign, str)) or not (isinstance(team, str)) or not (isinstance(plan, str)):
+            argument_error: str = "facts: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
         return json_object(
             self.call(
-                "archresume",
-                "resume_facts",
+                "resume",
+                archresume.resume_facts,
                 str(self.work),
-                roster=ROSTER,
-                matrix_snapshot=self.matrix_data,
-                stage="resume",
-                **kwargs,
+                archresume.ResumeOptions(
+                    roster=ROSTER,
+                    matrix_snapshot=self.matrix_data,
+                    assign=assign,
+                    team=team,
+                    plan=plan,
+                ),
             ),
         )
 
@@ -228,9 +291,15 @@ class Architecture:
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: A target policy has an invalid type.
+
         """
-        target_path = self.work / "target.json"
-        docs = [
+        if not isinstance(seed, bool) or not isinstance(dry_run, bool):
+            message: str = "Target policies must be boolean"
+            raise TypeError(message)
+        target_path: Path = self.work / "target.json"
+        docs: list[dict[str, JsonValue]] = [
             document
             for entry in check_type(
                 read(self.work / "survey.json").get("baseline", []),
@@ -244,22 +313,18 @@ class Architecture:
             )
         ]
         docs += [{"path": str(path)} for path in self.draft.rglob("*.md")]
-        elements = check_type(
-            self.call("archmatrix", "catalog_elements", docs, stage="target"),
-            list[str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        binding = "matrix-rows:" + json.dumps(
+        elements: dict[str, list[str]] = self.call("target", archmatrix.catalog_elements, docs)
+        binding: str = "matrix-rows:" + json.dumps(
             {
                 "matrix": str(self.matrix),
                 "elements": [" ".join(name.split()).casefold() for name in elements],
             },
             sort_keys=True,
         )
-        inputs = (*self.base_inputs(), str(self.draft), binding)
-        previous = read(target_path)
+        inputs: tuple[str, ...] = (*self.base_inputs(), str(self.draft), binding)
+        previous: dict[str, JsonValue] = read(target_path)
         if not seed and not dry_run and self.store.reusable(inputs, (target_path,)):
-            hashes = check_type(
+            hashes: dict[str, str] = check_type(
                 previous.get("targetHashes", {}),
                 dict[str, str],
                 collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
@@ -269,11 +334,11 @@ class Architecture:
                 for path, digest in hashes.items()
             ):
                 return previous
-        result = json_object(
-            self.call(
-                "archstate",
-                "write_target",
-                str(self.draft),
+        target_result: TargetResult = self.call(
+            "target",
+            archstate.write_target,
+            str(self.draft),
+            archstate.TargetOptions(
                 arch_root=str(self.arch),
                 subject=self.subject,
                 forbid=self.forbid,
@@ -281,12 +346,12 @@ class Architecture:
                 matrix_snapshot=self.matrix_data,
                 seed=seed,
                 dry_run=dry_run,
-                stage="target",
             ),
         )
+        result: dict[str, JsonValue] = json_object(target_result)
         if not seed and not dry_run and result.get("targetDir") and result.get("ok") is True:
             result["targetHashes"] = {
-                str(path): check_type(self.store.module.sha256_file(path), str)
+                str(path): self.store.module.sha256_file(path)
                 for path in Path(check_type(result["targetDir"], str)).rglob("*")
                 if path.is_file() and path.name != "closure.json" and not path.name.endswith(".meta.json")
             }
@@ -305,9 +370,17 @@ class Architecture:
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(request, ArchitectureStep)):
+            argument_error: str = "agent: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
+        model: str
+        effort: str
         model, effort = model_for(request.agent)
-        step = AgentStep(
+        step: AgentStep = AgentStep(
             stage=request.stage or f"architecture:{request.output.stem}",
             agent=request.agent,
             inputs=(*request.inputs, str(self.context_path)),
@@ -322,9 +395,9 @@ class Architecture:
         if not self.store.reusable(step.inputs, (request.output,)):
             self.ran.add(request.output)
         self.runner.run(step)
-        result = read(request.output)
+        result: dict[str, JsonValue] = read(request.output)
         if request.agent == "architecture-decider":
-            verdict = result["verdict"]
+            verdict: JsonValue = result["verdict"]
         elif request.schema in {"architecture-review", "conformance"}:
             verdict = (
                 "pass"
@@ -367,8 +440,14 @@ class Architecture:
         Returns:
             The validated result for this operation.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
-        path = self.work / "inputs" / f"{name}.ledger.json"
+        if not (isinstance(name, str)) or not (isinstance(refresh, bool)):
+            argument_error: str = "ledger_input: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
+        path: Path = self.work / "inputs" / f"{name}.ledger.json"
         if refresh or not path.exists():
             self.facts()
             write_json(path, read(self.work / "ledger.json"))

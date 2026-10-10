@@ -24,7 +24,8 @@ they and their Tasks are named; every other Story's edges are written as usual. 
 cycle detection does not catch this: a Story edge against a Task edge freezes both Stories
 without any single edge closing a loop.
 
-Ownership is recorded on the later Story as `story_owned_blockers`, with the reasons as `story_edge_reasons`, so an edge drawn
+Ownership is recorded on the later Story as `story_owned_blockers`, with reasons as
+`story_edge_reasons`, so an edge drawn
 by hand is never removed and an edge the sources no longer derive is.
 """
 
@@ -33,14 +34,19 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import NotRequired, TypedDict
 
-from beadgraph import join_ids, now_iso, split_ids
-
-if TYPE_CHECKING:
-    from beadgraph import Bead, Graph, Writer
+import beadgraph
+import contracts
+from beadcontracts import PlannedWrite
+from beadgraph import Bead, Graph, Writer, join_ids, now_iso, split_ids
+from contracts import JsonObject
+from typeguard import CollectionCheckStrategy, typechecked
 
 #: Metadata key on the later Story listing the Story edges this script created.
+_ARGUMENT_ERROR: str = "Arguments violate the storyedges input contract"
+
+
 OWNED_KEY = "story_owned_blockers"
 OWNED_AT_KEY = "story_owned_blockers_at"
 
@@ -53,8 +59,90 @@ REPO_KEY = "repoPath"
 _REPO_LINE = re.compile(r"^\s*repoPath:\s*(\S.*?)\s*$", re.MULTILINE)
 
 
-def repository_of(bead: Bead, record: dict) -> str | None:
-    """The repository a Story is scoped to, normalized to an absolute path when it is one.
+class EdgeReason(TypedDict):
+    """Describe the edge reason wire record."""
+
+    source: str
+    detail: str
+    epics: NotRequired[list[str]]
+    tasks: NotRequired[list[str]]
+
+
+class DerivedEdges(TypedDict):
+    """Describe the derived edges wire record."""
+
+    required: dict[tuple[str, str], list[EdgeReason]]
+    repos: dict[str, str]
+
+
+class EdgeConflict(TypedDict):
+    """Describe the edge conflict wire record."""
+
+    stories: list[str]
+    tasks: list[str]
+    epics: list[str]
+    reasons: dict[str, str]
+
+
+class EdgePair(TypedDict):
+    """Describe the edge pair wire record."""
+
+    later: str
+    earlier: str
+    reasons: NotRequired[str]
+
+
+class EdgeCycle(TypedDict):
+    """Describe the edge cycle wire record."""
+
+    stories: list[str]
+    edges: list[EdgePair]
+    tasks: list[str]
+
+
+class DerivedEdge(TypedDict):
+    """Describe the derived edge wire record."""
+
+    later: str
+    earlier: str
+    repo: str
+    reasons: list[EdgeReason]
+
+
+class StoryEdgeSummary(TypedDict):
+    """Describe the story edge summary wire record."""
+
+    ok: bool
+    derived: int
+    added: int
+    removed: int
+    unchanged: int
+    conflicts: int
+    cycles: int
+    refusedStories: list[str]
+
+
+class StoryEdges(TypedDict):
+    """Describe the story edges wire record."""
+
+    ok: bool
+    refused: bool
+    reason: NotRequired[str]
+    refusedStories: list[str]
+    conflicts: list[EdgeConflict]
+    cycles: list[EdgeCycle]
+    edges: list[DerivedEdge]
+    added: list[EdgePair]
+    removed: list[EdgePair]
+    unchanged: int
+    dryRun: bool
+    planned: list[PlannedWrite]
+    summary: StoryEdgeSummary
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def repository_of(bead: Bead, record: JsonObject) -> str | None:
+    """Return the repository a Story is scoped to, normalized to an absolute path when it is one.
 
     Args:
         bead: The Story.
@@ -62,10 +150,16 @@ def repository_of(bead: Bead, record: dict) -> str | None:
 
     Returns:
         The repository, or None when the Story records none.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    value = bead.metadata.get(REPO_KEY, "").strip()
+    if not (isinstance(bead, Bead)):
+        raise TypeError(_ARGUMENT_ERROR)
+    value: str = bead.metadata.get(REPO_KEY, "").strip()
     if not value:
-        match = _REPO_LINE.search(str(record.get("notes") or ""))
+        match: re.Match[str] | None = _REPO_LINE.search(str(record.get("notes") or ""))
         value = match.group(1).strip() if match else ""
     if not value:
         return None
@@ -80,14 +174,17 @@ def _earlier_epics(graph: Graph) -> dict[str, set[str]]:
 
     Returns:
         Epic id -> the Epics that come before it.
+
     """
-    direct = {b.id: set(b.tracked) for b in graph.of_kind("epic")}
+    epic: str
+    prerequisites: set[str]
+    direct: dict[str, set[str]] = {b.id: set(b.tracked) for b in graph.of_kind("epic")}
     reach: dict[str, set[str]] = {}
-    for epic in direct:
+    for epic, prerequisites in direct.items():
         seen: set[str] = set()
-        stack = list(direct[epic])
+        stack: list[str] = list(prerequisites)
         while stack:
-            current = stack.pop()
+            current: str = stack.pop()
             if current in seen or current == epic:
                 continue
             seen.add(current)
@@ -97,7 +194,7 @@ def _earlier_epics(graph: Graph) -> dict[str, set[str]]:
 
 
 def _story_of(graph: Graph, bead_id: str) -> str | None:
-    """The nearest Story above a bead.
+    """Return the nearest Story above a bead.
 
     Args:
         graph: The tracker graph.
@@ -105,31 +202,52 @@ def _story_of(graph: Graph, bead_id: str) -> str | None:
 
     Returns:
         The Story id, or None.
+
     """
     return next((b.id for b in graph.ancestors(bead_id) if b.kind == "story"), None)
 
 
-def derive(graph: Graph) -> dict:
-    """The Story edges Epic order within a repository and Task edges between Stories require.
+def _story_repositories(graph: Graph, records: dict[str, JsonObject]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    story: Bead
+    for story in graph.of_kind("story"):
+        if story.closed:
+            continue
+        repository: str | None = repository_of(story, records.get(story.id, {}))
+        if repository:
+            result[story.id] = repository
+    return result
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def derive(graph: Graph) -> DerivedEdges:
+    """Return the Story edges Epic order within a repository and Task edges between Stories require.
 
     Args:
         graph: The tracker graph.
 
     Returns:
         `required`: (later, earlier) -> the reasons; `repos`: Story id -> repository.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    records = {str(r.get("id")): r for r in graph.records}
-    repos = {
-        b.id: repo
-        for b in graph.of_kind("story")
-        if not b.closed and (repo := repository_of(b, records.get(b.id, {})))
-    }
-    earlier = _earlier_epics(graph)
-    epic_of = {
-        story: (graph.epic_of(story).id if graph.epic_of(story) else None)
-        for story in repos
-    }
-    required: dict[tuple[str, str], list[dict]] = {}
+    later: str
+    repo: str | None
+    first: str
+    other_repo: str
+    a: str | None
+    b: str | None
+    task: Bead
+    blocker: str
+    if not (isinstance(graph, Graph)):
+        raise TypeError(_ARGUMENT_ERROR)
+    records: dict[str, dict[str, contracts.JsonValue]] = {str(r.get("id")): r for r in graph.records}
+    repos: dict[str, str] = _story_repositories(graph, records)
+    earlier: dict[str, set[str]] = _earlier_epics(graph)
+    epic_of: dict[str, str | None] = {story: (epic.id if (epic := graph.epic_of(story)) else None) for story in repos}
+    required: dict[tuple[str, str], list[EdgeReason]] = {}
     for later, repo in repos.items():
         for first, other_repo in repos.items():
             if first == later or other_repo != repo:
@@ -141,30 +259,28 @@ def derive(graph: Graph) -> dict:
                         "source": "epic-order",
                         "epics": [a, b],
                         "detail": f"Epic {b} follows Epic {a} by `tracks` edges",
-                    }
+                    },
                 )
-    for task in graph.of_kind("task"):
-        if task.closed:
-            continue
-        later = _story_of(graph, task.id)
-        if later not in repos:
+    for task in (bead for bead in graph.of_kind("task") if not bead.closed):
+        task_story: str | None = _story_of(graph, task.id)
+        if task_story is None or task_story not in repos:
             continue
         for blocker in task.blockers:
-            first = _story_of(graph, blocker)
-            if first is None or first == later or first not in repos:
+            blocker_story: str | None = _story_of(graph, blocker)
+            if blocker_story is None or blocker_story == task_story or blocker_story not in repos:
                 continue
-            required.setdefault((later, first), []).append(
+            required.setdefault((task_story, blocker_story), []).append(
                 {
                     "source": "task-edge",
                     "tasks": [blocker, task.id],
                     "detail": f"Task {task.id} depends on Task {blocker}",
-                }
+                },
             )
     return {"required": required, "repos": repos}
 
 
 def _hand_made(graph: Graph, repos: dict[str, str]) -> set[tuple[str, str]]:
-    """The Story -> Story `blocks` edges standing between open Stories that this script does not own.
+    """Return the Story -> Story `blocks` edges standing between open Stories that this script does not own.
 
     Args:
         graph: The tracker graph.
@@ -172,17 +288,19 @@ def _hand_made(graph: Graph, repos: dict[str, str]) -> set[tuple[str, str]]:
 
     Returns:
         The (later, earlier) pairs.
+
     """
+    story: str
     pairs: set[tuple[str, str]] = set()
     for story in repos:
-        bead = graph.beads[story]
-        owned = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
+        bead: beadgraph.Bead = graph.beads[story]
+        owned: set[str] = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
         pairs |= {(story, b) for b in bead.blockers if b in repos and b not in owned}
     return pairs
 
 
 def _in_progress_holds(graph: Graph, repos: dict[str, str]) -> set[tuple[str, str]]:
-    """The waits the one-Story-per-repository rule imposes: each other open Story after an in-progress one.
+    """Return the waits the one-Story-per-repository rule imposes: each other open Story after an in-progress one.
 
     Args:
         graph: The tracker graph.
@@ -190,27 +308,47 @@ def _in_progress_holds(graph: Graph, repos: dict[str, str]) -> set[tuple[str, st
 
     Returns:
         The (later, earlier) pairs.
+
     """
     return {
         (other, story)
         for story, repo in repos.items()
         if graph.beads[story].status == "in_progress"
         for other, other_repo in repos.items()
-        if other != story
-        and other_repo == repo
-        and graph.beads[other].status != "in_progress"
+        if other != story and other_repo == repo and graph.beads[other].status != "in_progress"
     }
 
 
+def _pop_group(stack: list[str], on_stack: set[str], node: str) -> list[str]:
+    """Pop a strongly connected group through its root node.
+
+    Returns:
+        All members removed from the Tarjan stack.
+
+    """
+    group: list[str] = []
+    while True:
+        member: str = stack.pop()
+        on_stack.discard(member)
+        group.append(member)
+        if member == node:
+            break
+    return group
+
+
 def _cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
-    """The strongly connected groups of two or more Stories in a directed edge set.
+    """Return the strongly connected groups of two or more Stories in a directed edge set.
 
     Args:
         edges: (later, earlier) pairs.
 
     Returns:
         Each cycle's Stories, sorted.
+
     """
+    later: str
+    first: str
+    node: str
     graph: dict[str, set[str]] = {}
     for later, first in edges:
         graph.setdefault(later, set()).add(first)
@@ -220,9 +358,10 @@ def _cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
     stack: list[str] = []
     on_stack: set[str] = set()
     found: list[list[str]] = []
-    counter = [0]
+    counter: list[int] = [0]
 
     def visit(node: str) -> None:
+        succ: str
         index[node] = low[node] = counter[0]
         counter[0] += 1
         stack.append(node)
@@ -234,13 +373,7 @@ def _cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
             elif succ in on_stack:
                 low[node] = min(low[node], index[succ])
         if low[node] == index[node]:
-            group: list[str] = []
-            while True:
-                member = stack.pop()
-                on_stack.discard(member)
-                group.append(member)
-                if member == node:
-                    break
+            group: list[str] = _pop_group(stack, on_stack, node)
             if len(group) > 1:
                 found.append(sorted(group))
 
@@ -250,122 +383,57 @@ def _cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
     return found
 
 
-def _reasons_text(reasons: list[dict]) -> str:
-    """The recorded reasons of one edge.
+def _reasons_text(reasons: list[EdgeReason]) -> str:
+    """Return the recorded reasons of one edge.
 
     Args:
         reasons: The derivations of the edge.
 
     Returns:
         The reasons, `; `-joined.
+
     """
     return "; ".join(r["detail"] for r in reasons)
 
 
-def story_edges(graph: Graph, writer: Writer) -> dict:
-    """Derive every Story edge and write the difference, except for refused Stories.
-
-    Args:
-        graph: The tracker graph, read after the Task edges were written.
-        writer: The tracker writer; a dry-run writer records the writes instead.
+def _write_story_edges(
+    graph: Graph,
+    writer: Writer,
+    required: dict[tuple[str, str], list[EdgeReason]],
+    repos: dict[str, str],
+    refused: list[str],
+) -> tuple[list[EdgePair], list[EdgePair], int]:
+    """Write the approved difference between owned and required Story edges.
 
     Returns:
-        `ok` (false when a Story was refused), the derived `edges` with their reasons, the
-        `conflicts` and `cycles` and the `refusedStories` they name, the `added`, `removed`
-        and `unchanged` edges, and a `summary`.
+        Added edges, removed edges, and the unchanged count.
+
     """
-    derived = derive(graph)
-    required, repos = derived["required"], derived["repos"]
-    conflicts = [
-        {
-            "stories": [first, later],
-            "tasks": sorted(
-                {
-                    t
-                    for r in [*reasons, *required[(first, later)]]
-                    for t in r.get("tasks", [])
-                }
-            ),
-            "epics": sorted(
-                {
-                    e
-                    for r in [*reasons, *required[(first, later)]]
-                    for e in r.get("epics", [])
-                }
-            ),
-            "reasons": {
-                f"{later} after {first}": _reasons_text(reasons),
-                f"{first} after {later}": _reasons_text(required[(first, later)]),
-            },
-        }
-        for (later, first), reasons in sorted(required.items())
-        if (first, later) in required and later < first
-    ]
-    cycles = []
-    standing = _hand_made(graph, repos)
-    holds = _in_progress_holds(graph, repos)
-    for group in _cycles(set(required) | standing | holds):
-        members = set(group)
-        cycles.append(
-            {
-                "stories": group,
-                "edges": [
-                    {
-                        "later": later,
-                        "earlier": first,
-                        "reasons": _reasons_text(required.get((later, first), []))
-                        or (
-                            "drawn by hand"
-                            if (later, first) in standing
-                            else f"{first} is in progress in the repository"
-                        ),
-                    }
-                    for later, first in sorted(set(required) | standing | holds)
-                    if later in members and first in members
-                ],
-                "tasks": sorted(
-                    {
-                        t
-                        for (lt, ft), rs in required.items()
-                        if lt in members and ft in members
-                        for r in rs
-                        for t in r.get("tasks", [])
-                    }
-                ),
-            }
-        )
-    edges = [
-        {"later": later, "earlier": first, "repo": repos[later], "reasons": reasons}
-        for (later, first), reasons in sorted(required.items())
-    ]
-    refused = sorted(
-        {x for c in conflicts for x in c["stories"]}
-        | {x for c in cycles for x in c["stories"]}
-    )
-    added: list[dict] = []
-    removed: list[dict] = []
-    unchanged = 0
+    story: str
+    first: str
+    added: list[EdgePair] = []
+    removed: list[EdgePair] = []
+    unchanged: int = 0
     for story in sorted(set(repos) - set(refused)):
-        bead = graph.beads[story]
-        wanted = {
-            first: reasons
-            for (later, first), reasons in required.items()
-            if later == story
+        bead: beadgraph.Bead = graph.beads[story]
+        wanted: dict[str, list[EdgeReason]] = {
+            first: reasons for (later, first), reasons in required.items() if later == story
         }
-        owned = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
-        standing = set(bead.blockers)
-        adds = sorted(set(wanted) - standing)
-        drops = sorted((owned - set(wanted)) & standing)
+        owned: set[str] = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
+        standing: set[str] = set(bead.blockers)
+        adds: list[str] = sorted(set(wanted) - standing)
+        drops: list[str] = sorted((owned - set(wanted)) & standing)
         unchanged += len(set(wanted) & standing)
-        reasons = json.dumps(
+        reasons: str = json.dumps(
             {b: _reasons_text(r) for b, r in sorted(wanted.items())},
             sort_keys=True,
             separators=(",", ":"),
         )
-        final = join_ids(set(wanted))
+        final: str = join_ids(set(wanted))
         if adds:
             writer.metadata(
-                story, {OWNED_KEY: join_ids(owned | set(adds)), OWNED_AT_KEY: now_iso()}
+                story,
+                {OWNED_KEY: join_ids(owned | set(adds)), OWNED_AT_KEY: now_iso()},
             )
         for first in adds:
             writer.bd(["dep", "add", story, first, "--type", "blocks"])
@@ -374,7 +442,7 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
                     "later": story,
                     "earlier": first,
                     "reasons": _reasons_text(wanted[first]),
-                }
+                },
             )
         for first in drops:
             writer.bd(["dep", "remove", story, first])
@@ -386,20 +454,100 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
             or (wanted and reasons != bead.metadata.get(REASONS_KEY, ""))
         ):
             writer.metadata(
-                story, {OWNED_KEY: final, OWNED_AT_KEY: now_iso(), REASONS_KEY: reasons}
+                story,
+                {OWNED_KEY: final, OWNED_AT_KEY: now_iso(), REASONS_KEY: reasons},
             )
-    return {
+    return added, removed, unchanged
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
+    """Derive every Story edge and write the difference, except for refused Stories.
+
+    Args:
+        graph: The tracker graph, read after the Task edges were written.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+
+    Returns:
+        `ok` (false when a Story was refused), the derived `edges` with their reasons, the
+        `conflicts` and `cycles` and the `refusedStories` they name, the `added`, `removed`
+        and `unchanged` edges, and a `summary`.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    required: dict[tuple[str, str], list[EdgeReason]]
+    repos: dict[str, str]
+    group: list[str]
+    added: list[EdgePair]
+    removed: list[EdgePair]
+    unchanged: int
+    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)):
+        raise TypeError(_ARGUMENT_ERROR)
+    derived: DerivedEdges = derive(graph)
+    required, repos = derived["required"], derived["repos"]
+    conflicts: list[EdgeConflict] = [
+        {
+            "stories": [first, later],
+            "tasks": sorted(
+                {t for r in [*reasons, *required[first, later]] for t in r.get("tasks", [])},
+            ),
+            "epics": sorted(
+                {e for r in [*reasons, *required[first, later]] for e in r.get("epics", [])},
+            ),
+            "reasons": {
+                f"{later} after {first}": _reasons_text(reasons),
+                f"{first} after {later}": _reasons_text(required[first, later]),
+            },
+        }
+        for (later, first), reasons in sorted(required.items())
+        if (first, later) in required and later < first
+    ]
+    cycles: list[EdgeCycle] = []
+    standing_edges: set[tuple[str, str]] = _hand_made(graph, repos)
+    holds: set[tuple[str, str]] = _in_progress_holds(graph, repos)
+    for group in _cycles(set(required) | standing_edges | holds):
+        members: set[str] = set(group)
+        cycles.append(
+            {
+                "stories": group,
+                "edges": [
+                    {
+                        "later": later,
+                        "earlier": first,
+                        "reasons": _reasons_text(required.get((later, first), []))
+                        or (
+                            "drawn by hand"
+                            if (later, first) in standing_edges
+                            else f"{first} is in progress in the repository"
+                        ),
+                    }
+                    for later, first in sorted(set(required) | standing_edges | holds)
+                    if later in members and first in members
+                ],
+                "tasks": sorted(
+                    {
+                        t
+                        for (lt, ft), rs in required.items()
+                        if lt in members and ft in members
+                        for r in rs
+                        for t in r.get("tasks", [])
+                    },
+                ),
+            },
+        )
+    edges: list[DerivedEdge] = [
+        {"later": later, "earlier": first, "repo": repos[later], "reasons": reasons}
+        for (later, first), reasons in sorted(required.items())
+    ]
+    refused: list[str] = sorted(
+        {x for c in conflicts for x in c["stories"]} | {x for c in cycles for x in c["stories"]},
+    )
+    added, removed, unchanged = _write_story_edges(graph, writer, required, repos, refused)
+    result: StoryEdges = {
         "ok": not refused,
         "refused": bool(refused),
-        **(
-            {
-                "reason": "the Story order of "
-                + ", ".join(refused)
-                + " is contradictory, so their Story edges were not written"
-            }
-            if refused
-            else {}
-        ),
         "refusedStories": refused,
         "conflicts": conflicts,
         "cycles": cycles,
@@ -420,3 +568,9 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
             "refusedStories": refused,
         },
     }
+
+    if refused:
+        result["reason"] = (
+            "the Story order of " + ", ".join(refused) + " is contradictory, so their Story edges were not written"
+        )
+    return result

@@ -11,11 +11,11 @@ repos:
         name: Orchestrator strict typing
         entry: uvx --with typeguard --with types-PyYAML --with types-jsonschema --with boto3-stubs[cognito-idp,ssm] --with chromadb==1.5.2 --with ollama==0.6.1 mypy --strict plugins/agent-teams-workforce/orchestrator
         language: system
-        files: ^plugins/agent-teams-workforce/orchestrator/.*\.py$
+        files: ^plugins/agent-teams-workforce/(orchestrator|scripts/portfolio|skills/(beads-contract|wsjf)/scripts)/.*\.py$
         pass_filenames: false
       - id: driver-producer-contracts
-        name: Real driver producer contracts
+        name: Real pipeline producer contracts
         entry: uv run --no-project --python 3.14 --with typeguard python plugins/agent-teams-workforce/orchestrator/check_driver_contracts.py
         language: system
-        files: ^(plugins/agent-teams-workforce/orchestrator/(core/(driver_contracts|artifact_contract|artifacts|agent_context|agents|agent_process)\.py|check_driver_contracts\.py)|\.pre-commit-config\.yaml)$
+        files: ^(plugins/agent-teams-workforce/(orchestrator|scripts/portfolio|skills/(beads-contract|wsjf)/scripts)/.*\.py|\.pre-commit-config\.yaml|mypy\.ini)$
         pass_filenames: false

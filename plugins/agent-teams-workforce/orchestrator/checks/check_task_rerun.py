@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import sys
 import tempfile
@@ -17,15 +16,14 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import beadwrite
+from beadgraph import Bead
+from beadgraph import Writer as TrackerWriter
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.tools import Tools
 from orchestrator.flows import task_state
 from orchestrator.flows.task_decomposition import task_inputs
-from orchestrator.flows.task_state import BeadRecord
-
-beadwrite = importlib.import_module("beadwrite")
-Bead = importlib.import_module("beadgraph").Bead
 
 
 def _objects(value: object) -> list[dict[str, JsonValue]]:
@@ -45,32 +43,24 @@ class FixtureGraph:
     """Mutable graph used only by the existing replacement-journal check."""
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __init__(self, beads: dict[str, BeadRecord]) -> None:
+    def __init__(self, beads: dict[str, Bead]) -> None:
         """Bind the graph records used by the isolated fixture."""
         self.beads = beads
 
 
-class Writer:
+class Writer(TrackerWriter):
     """Record requested tracker operations without executing them."""
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(self, work: Path) -> None:
         """Bind the isolated repository and a fresh operation log."""
-        self.repo = work
-        self.dry_run = False
-        self.planned: list[list[str]] = []
+        super().__init__(work, False)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def bd(self, args: list[str], stdin: str | None = None) -> str:
-        """Record a tracker operation.
-
-        Returns:
-            Empty command output.
-
-        """
+    def bd(self, args: list[str], stdin: str | None = None) -> None:
+        """Record a tracker operation."""
         require(stdin is None, "fixture does not expect stdin")
-        self.planned.append(args)
-        return ""
+        self.planned.append({"op": "bd", "args": args})
 
 
 class CreatingWriter(Writer):
@@ -85,7 +75,7 @@ class CreatingWriter(Writer):
 
         """
         require(bool(key), "creation must carry its idempotency key")
-        self.planned.append(args)
+        self.planned.append({"op": "bd", "args": args})
         return "task-missing"
 
 
@@ -364,12 +354,8 @@ def _journal(work: Path) -> None:
 
         @override
         @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        def portfolio(self, module: str, function: str, *args: object, stage: str, **kwargs: object) -> object:
-            if function == "task_started":
-                return check_type(beadwrite.task_started(args[0]), bool)
-            if function == "replace_tasks":
-                graph.beads.pop("old", None)
-            return None
+        def portfolio[**P, R](self, stage: str, operation: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
+            return operation(*args, **kwargs)
 
         @override
         @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -381,6 +367,7 @@ def _journal(work: Path) -> None:
     tools = FakeTools(work / "evidence")
     with (
         patch.object(task_state, "env_path", return_value=work),
+        patch.object(beadwrite, "replace_tasks", side_effect=lambda *_args, **_kwargs: graph.beads.pop("old", None)),
         patch.object(
             task_state,
             "snapshot",

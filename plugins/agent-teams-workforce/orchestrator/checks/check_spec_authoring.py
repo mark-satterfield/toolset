@@ -77,8 +77,8 @@ def main() -> None:
         require(items[0]["artifact"] == {"kind": "page", "slug": "ui-1"}, "UI artifact default changed")
         events: list[dict[str, object]] = []
 
-        def emit(_event: str, **fields: object) -> None:
-            events.append(fields)
+        def emit(event: str, **fields: object) -> None:
+            events.append({"event": event, **fields})
 
         context = RunContext("epic", "prd-to-spec", {}, root, "receipt-probe")
         store = UnavailableReceiptStore(load_artifactio(), root, root, "epic", "receipt-probe")

@@ -1,7 +1,9 @@
 """Publish terminal target removal under the shared architecture writer lock."""
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import archstate
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.handback import failure_for
@@ -9,6 +11,10 @@ from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import LockTimeoutError, control_repo, file_lock, seconds
 from orchestrator.core.tools import Tools
+
+if TYPE_CHECKING:
+    from orchestrator.core.handback import Failure
+    from orchestrator.core.tools import CommandResult
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -20,9 +26,13 @@ def remove(context: RunContext, tools: Tools) -> dict[str, JsonValue]:
 
     Raises:
         StepError: A systemic defect prevents safe continuation.
+        TypeError: The context or tools have an invalid type.
 
     """
-    stage = "target-removal"
+    if not isinstance(context, RunContext) or not isinstance(tools, Tools):
+        message: str = "Target removal requires a run context and tool boundary"
+        raise TypeError(message)
+    stage: str = "target-removal"
     latest: dict[str, JsonValue] = {"removed": False, "commit": None}
 
     def attempt() -> dict[str, JsonValue]:
@@ -38,7 +48,7 @@ def remove(context: RunContext, tools: Tools) -> dict[str, JsonValue]:
     try:
         return tools.operation(stage, attempt)
     except StepError as exc:
-        failure = failure_for(stage, exc, agent_started=False)
+        failure: Failure = failure_for(stage, exc, agent_started=False)
         if failure.get("classification") in {"setup", "pipeline-code-defect"}:
             raise
         return json_object({
@@ -52,22 +62,21 @@ def remove(context: RunContext, tools: Tools) -> dict[str, JsonValue]:
 
 
 def _remove_locked(context: RunContext, tools: Tools, latest: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    stage = "target-removal"
-    arch = Path(check_type(context.args["archPath"], str))
-    result = json_object(
+    stage: str = "target-removal"
+    arch: Path = Path(check_type(context.args["archPath"], str))
+    result: dict[str, JsonValue] = json_object(
         tools.portfolio(
-            "archstate",
-            "remove_target",
+            stage,
+            archstate.remove_target,
             str(arch),
             check_type(context.args["targetDir"], str),
             message="docs(architecture): remove target after Specs and Tasks are written",
             execution_id=context.run_id,
-            stage=stage,
         ),
     )
     latest.update(result)
     if not result.get("ok") and result.get("subcommand"):
-        lock = tools.command(
+        lock: CommandResult = tools.command(
             ["git", "rev-parse", "--git-path", "index.lock"],
             cwd=arch,
             stage=stage,
@@ -76,7 +85,7 @@ def _remove_locked(context: RunContext, tools: Tools, latest: dict[str, JsonValu
             raise tools.failure(stage, "contention", result)
     if result.get("ok"):
         tools.git(arch, ["push", "origin", "main"], stage=stage)
-    refusals = check_type(
+    refusals: list[str] = check_type(
         result.get("refusals", []),
         list[str],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,

@@ -9,17 +9,26 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Concatenate, ParamSpec, TypeVar
 
+import beadgraph
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.handback import failure_for
+from orchestrator.core.handback import Failure, failure_for
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import RunContext
 from orchestrator.core.tools import Tools
 
+_ARGUMENT_ERROR: str = "Arguments violate the elaboration_support input contract"
+
+
 _LOGGER = logging.getLogger(__name__)
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -29,10 +38,20 @@ def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: b
     Returns:
         The phase result with the complete original diagnostic.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    failure = failure_for(stage, exc, agent_started=agent_started)
+    if (
+        not (isinstance(stage, str))
+        or not (isinstance(exc, Exception))
+        or not (isinstance(repository, str))
+        or not (isinstance(agent_started, bool))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    failure: Failure = failure_for(stage, exc, agent_started=agent_started)
     if failure.get("classification") in {"setup", "pipeline-code-defect"}:
-        marker = os.environ.get("ATW_STOP_FILE")
+        marker: str | None = os.environ.get("ATW_STOP_FILE")
         if marker:
             Path(marker).touch(mode=0o600)
     if failure["cause"] == "shutdown":
@@ -67,18 +86,28 @@ class PhaseRunner:
     def call(
         self,
         name: str,
-        function: Callable[..., dict[str, JsonValue]],
+        function: Callable[Concatenate[RunContext, ArtifactStore, AgentRunner, Tools, P], dict[str, JsonValue]],
         additions: dict[str, JsonValue] | None = None,
-        **kwargs: object,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> dict[str, JsonValue]:
         """Execute one phase with shared cleanup and private stage/arguments.
 
         Returns:
             The successful phase result or its classified failure.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
-        local = replace(self.context, stage=name, args={**self.context.args, **(additions or {})})
-        child = AgentRunner(
+        if (
+            not (isinstance(name, str))
+            or not (callable(function))
+            or not (isinstance(additions, dict) or additions is None)
+        ):
+            raise TypeError(_ARGUMENT_ERROR)
+        local: RunContext = replace(self.context, stage=name, args={**self.context.args, **(additions or {})})
+        child: AgentRunner = AgentRunner(
             local,
             self.store,
             plugin=self.runner.plugin,
@@ -88,7 +117,7 @@ class PhaseRunner:
         child.share_processes(self.runner)
         self.runner.emit("phase", phase=name, step=name, repository=local.args.get("repoPath"))
         try:
-            result = function(local, self.store, child, self.tools, **kwargs)
+            result: dict[str, JsonValue] = function(local, self.store, child, self.tools, *args, **kwargs)
             if result.get("resumed"):
                 self.runner.emit("note", kind="reused", phase=name, repository=local.args.get("repoPath"))
         except Exception as exc:
@@ -111,19 +140,23 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
         Job results in the original submission order.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         InterruptedError: The owner sent a termination signal.
         KeyboardInterrupt: The owner interrupted the process.
         SystemExit: The process requested immediate termination.
 
     """
+    cleanup: Callable[[], None]
+    if not (isinstance(context, RunContext)) or not (isinstance(jobs, list)):
+        raise TypeError(_ARGUMENT_ERROR)
 
     def invoke(job: Callable[[], T]) -> T:
         try:
             return job()
         except Exception as exc:
-            failure = failure_for(context.stage, exc, agent_started=bool(context.sessions))
+            failure: Failure = failure_for(context.stage, exc, agent_started=bool(context.sessions))
             if failure["classification"] in {"setup", "pipeline-code-defect"}:
-                marker = os.environ.get("ATW_STOP_FILE")
+                marker: str | None = os.environ.get("ATW_STOP_FILE")
                 if marker:
                     try:
                         Path(marker).touch(mode=0o600)
@@ -131,9 +164,9 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
                         exc.add_note(f"Stop marker also failed: {marker_error}")
             raise
 
-    pool = ThreadPoolExecutor(max_workers=max(1, len(jobs)))
+    pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=max(1, len(jobs)))
     try:
-        futures = [pool.submit(invoke, job) for job in jobs]
+        futures: list[Future[T]] = [pool.submit(invoke, job) for job in jobs]
         return _parallel_results(context, futures)
     except InterruptedError, KeyboardInterrupt, SystemExit:
         for cleanup in reversed(context.cleanup):
@@ -144,10 +177,16 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
 
 
 def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[T]:
+    error: BaseException | None
     wait(futures)
-    errors = [error for future in futures if (error := future.exception()) is not None]
+    errors: list[BaseException] = []
+    future: Future[T]
+    for future in futures:
+        error = future.exception()
+        if error is not None:
+            errors.append(error)
     if errors:
-        dominant = max(
+        dominant: BaseException = max(
             errors,
             key=lambda error: {"item": 0, "transient": 1, "setup": 2, "pipeline-code-defect": 3}[
                 failure_for(context.stage, error, agent_started=bool(context.sessions))["classification"]
@@ -161,32 +200,48 @@ def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def lifecycle(context: RunContext, tools: Tools, operation: str, **kwargs: object) -> dict[str, JsonValue]:
+def lifecycle(  # ruff: ignore[non-pep695-generic-function] - Typeguard requires runtime ParamSpec identity on Python 3.14.
+    context: RunContext,
+    tools: Tools,
+    stage: str,
+    operation: Callable[Concatenate[beadgraph.Graph, beadgraph.Writer, str, P], R],
+    /,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> R:
     """Apply one tracker lifecycle operation through the deterministic boundary.
 
     Returns:
         The validated portfolio operation result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if (
+        not (isinstance(context, RunContext))
+        or not (isinstance(tools, Tools))
+        or not (isinstance(stage, str))
+        or not (callable(operation))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
 
-    def attempt() -> dict[str, JsonValue]:
-        repo = Path(check_type(context.args["beadsRepoPath"], str))
-        graph = tools.portfolio("beadgraph", "load", repo, with_description=True, stage=operation)
-        writer = tools.portfolio("beadgraph", "Writer", repo, stage=operation)
-        return json_object(
-            tools.portfolio("elaboration", operation, graph, writer, context.bead, stage=operation, **kwargs),
-        )
+    def attempt() -> R:
+        repo: Path = Path(check_type(context.args["beadsRepoPath"], str))
+        graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo, with_description=True)
+        writer: beadgraph.Writer = tools.portfolio(stage, beadgraph.Writer, repo)
+        return tools.portfolio(stage, operation, graph, writer, context.bead, *args, **kwargs)
 
-    return tools.operation(operation, attempt)
+    return tools.operation(stage, attempt)
 
 
 def _repository_gap(row: dict[str, JsonValue]) -> dict[str, JsonValue] | None:
-    spec = json_object(row.get("spec", {}))
-    tasks = json_object(row.get("tasks", {}))
-    story = json_object(spec.get("story", {}))
+    spec: dict[str, JsonValue] = json_object(row.get("spec", {}))
+    tasks: dict[str, JsonValue] = json_object(row.get("tasks", {}))
+    story: dict[str, JsonValue] = json_object(spec.get("story", {}))
     if not spec.get("ok") or not story.get("id"):
         return {"repository": row["repository"], "reason": "missing Story", "result": spec}
-    task_rows = check_type(
+    task_rows: list[dict[str, JsonValue]] = check_type(
         tasks.get("tasks", []),
         list[dict[str, JsonValue]],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
@@ -209,12 +264,18 @@ def done_rule(
     Returns:
         Completion status and the exact unmet requirements.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    row: dict[str, JsonValue]
+    if not (isinstance(repositories, list)) or not (isinstance(edges_ok, bool)) or not (isinstance(unscored, list)):
+        raise TypeError(_ARGUMENT_ERROR)
     gaps: list[JsonValue] = []
     if not repositories:
         gaps.append({"repository": "", "reason": "empty repository span"})
     for row in repositories:
-        gap = _repository_gap(row)
+        gap: dict[str, JsonValue] | None = _repository_gap(row)
         if gap is not None:
             gaps.append(gap)
     return {
@@ -226,17 +287,20 @@ def done_rule(
 
 
 def _repository_failures(rows: list[dict[str, JsonValue]]) -> tuple[list[dict[str, JsonValue]], list[float]]:
+    row: dict[str, JsonValue]
+    value: dict[str, JsonValue]
+    field: str | str
     failures: list[dict[str, JsonValue]] = []
     resets: list[float] = []
     for row in rows:
         for value in (json_object(row.get("spec", {})), json_object(row.get("tasks", {}))):
             if not value or value.get("ok"):
                 continue
-            fact = json_object(value.get("failure", {}))
-            reset = fact.get("resumeAt")
+            fact: dict[str, JsonValue] = json_object(value.get("failure", {}))
+            reset: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = fact.get("resumeAt")
             if reset is not None:
                 resets.append(check_type(reset, float))
-            failure = {
+            failure: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
                 "repository": row["repository"],
                 "stage": fact.get("stage", value.get("stage", "repositories-incomplete")),
                 "cause": fact.get("cause", "other"),
@@ -256,17 +320,31 @@ def repository_failure(rows: list[dict[str, JsonValue]]) -> dict[str, JsonValue]
     Returns:
         Repository evidence, dominant cause and any fatal diagnostic.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    failures: list[dict[str, JsonValue]]
+    resets: list[float]
+    if not (isinstance(rows, list)):
+        raise TypeError(_ARGUMENT_ERROR)
     failures, resets = _repository_failures(rows)
-    causes = {check_type(row["cause"], str) for row in failures}
-    transient = {"quota", "api", "bd-timeout", "contention"}
-    cause = (
+    causes: set[str] = {check_type(row["cause"], str) for row in failures}
+    transient: set[str] = {"quota", "api", "bd-timeout", "contention"}
+    cause: str = (
         next((value for value in ("quota", "api", "bd-timeout", "contention") if value in causes), "other")
         if causes and causes <= transient
         else "other"
     )
-    result = json_object({"stage": "repositories-incomplete", "cause": cause, "repositories": failures})
-    fatal = next((row for row in failures if row.get("classification") in {"setup", "pipeline-code-defect"}), None)
+    result: dict[str, JsonValue] = json_object({
+        "stage": "repositories-incomplete",
+        "cause": cause,
+        "repositories": failures,
+    })
+    fatal: dict[str, JsonValue] | None = next(
+        (row for row in failures if row.get("classification") in {"setup", "pipeline-code-defect"}),
+        None,
+    )
     if fatal is not None:
         result.update(classification=fatal["classification"], diagnostic=fatal["diagnostic"])
     if resets and cause == "quota":
@@ -286,10 +364,20 @@ def record(
     Returns:
         The result with its saved detail path and session manifest.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    path = context.work / "run.json"
+    if (
+        not (isinstance(context, RunContext))
+        or not (isinstance(result, dict))
+        or not (isinstance(phases, dict))
+        or not (isinstance(notes, list))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    path: Path = context.work / "run.json"
     result.update(json_object({"beadId": context.bead, "detailPath": str(path), "sessions": context.sessions}))
-    prd = json_object(context.args.get("prd", {}))
+    prd: dict[str, JsonValue] = json_object(context.args.get("prd", {}))
     write_json(
         path,
         {

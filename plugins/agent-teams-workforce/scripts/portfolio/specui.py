@@ -12,17 +12,46 @@ run wrote. The build Tasks carry the same sources in their contracts.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+import contracts
+from beadcontracts import UiAppendResult
+from contracts import JsonValue
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 #: The heading of the section this module writes.
+_ARGUMENT_ERROR: str = "Arguments violate the specui input contract"
+
+
 HEADING = "## UI design sources"
+
+
+MAX_SECTION_LEVEL = 2
 
 
 class SpecUiError(Exception):
     """The items argument is not a list of UI items."""
 
 
-def _items(raw: str) -> list[dict]:
+@dataclass(frozen=True)
+class _UiSource:
+    id: str
+    design_source: Literal["bundle", "cds", "none"]
+    build_spec: str | None
+    sections: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.id, str) or self.design_source not in {"bundle", "cds", "none"}:
+            raise TypeError(_ARGUMENT_ERROR)
+        if self.build_spec is not None and not isinstance(self.build_spec, str):
+            raise TypeError(_ARGUMENT_ERROR)
+        if not isinstance(self.sections, tuple) or any(not isinstance(value, str) for value in self.sections):
+            raise TypeError(_ARGUMENT_ERROR)
+
+
+def _items(raw: str) -> list[_UiSource]:
     """Parse the UI items argument.
 
     Returns:
@@ -31,53 +60,67 @@ def _items(raw: str) -> list[dict]:
 
     Raises:
         SpecUiError: The argument is not a JSON list; an entry with no id is left out.
+
     """
+    x: JsonValue
     try:
-        value = json.loads(raw)
+        value: object = json.loads(raw)
     except ValueError as exc:
-        msg = f"--items is not JSON: {exc}"
+        msg: str = f"--items is not JSON: {exc}"
         raise SpecUiError(msg) from exc
     if not isinstance(value, list):
         msg = "--items is not a JSON list"
         raise SpecUiError(msg)
-    items = []
-    for x in value:
+    items: list[_UiSource] = []
+    entries: list[contracts.JsonValue] = check_type(
+        value,
+        list[JsonValue],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+    for x in entries:
         if not isinstance(x, dict) or not str(x.get("id") or "").strip():
             continue
-        sections = x.get("sections") if isinstance(x.get("sections"), list) else []
-        spec = str(x.get("buildSpec") or "").strip() or None
-        source = str(x.get("designSource") or "").strip() or (
-            "bundle" if spec else "cds"
+        raw_sections: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = x.get(
+            "sections",
+        )
+        sections: list[str] = (
+            check_type(raw_sections, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+            if raw_sections is not None
+            else []
+        )
+        spec: str | None = check_type(x.get("buildSpec") or "", str).strip() or None
+        source: Literal["bundle", "cds", "none"] = check_type(
+            check_type(x.get("designSource") or "", str).strip() or ("bundle" if spec else "cds"),
+            Literal["bundle", "cds", "none"],
         )
         items.append(
-            {
-                "id": str(x["id"]).strip(),
-                "designSource": source,
-                "buildSpec": spec,
-                "sections": [str(s).strip() for s in sections if str(s).strip()],
-            }
+            _UiSource(
+                id=check_type(x["id"], str).strip(),
+                design_source=source,
+                build_spec=spec,
+                sections=tuple(item.strip() for item in sections if item.strip()),
+            ),
         )
     return items
 
 
-def _line(item: dict) -> str:
+def _line(item: _UiSource) -> str:
     """One item of the section, as a markdown list entry.
 
     Returns:
         The entry.
+
     """
-    if item["designSource"] == "bundle":
-        sections = ", ".join(item["sections"]) or "none resolved"
-        return (
-            f"- `{item['id']}`: bundle; build spec `{item['buildSpec'] or 'not resolved'}`; "
-            f"Section IDs {sections}"
-        )
-    if item["designSource"] == "none":
-        return f"- `{item['id']}`: none; it changes no design"
-    return f"- `{item['id']}`: cds; designed with the CDS design system"
+    if item.design_source == "bundle":
+        sections: str = ", ".join(item.sections) or "none resolved"
+        return f"- `{item.id}`: bundle; build spec `{item.build_spec or 'not resolved'}`; Section IDs {sections}"
+    if item.design_source == "none":
+        return f"- `{item.id}`: none; it changes no design"
+    return f"- `{item.id}`: cds; designed with the CDS design system"
 
 
-def spec_ui_append(doc: Path, raw_items: str) -> dict:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def spec_ui_append(doc: Path, raw_items: str) -> UiAppendResult:
     """Write the UI design sources section at the end of the saved spec document.
 
     Args:
@@ -90,31 +133,33 @@ def spec_ui_append(doc: Path, raw_items: str) -> dict:
         saved document, nothing is written and `appended` is 0.
 
     Raises:
-        SpecUiError: The items argument is not a JSON list.
+        TypeError: An argument violates the declared input contract.
+
     """
-    items = _items(raw_items)
+    if not (isinstance(doc, Path)) or not (isinstance(raw_items, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    items: list[_UiSource] = _items(raw_items)
     if not items or not doc.is_file():
         return {
             "ok": True,
             "appended": 0,
             "summary": {"ok": True, "appended": 0, "saved": doc.is_file()},
         }
-    text = doc.read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines()
-    start = next((i for i, line in enumerate(lines) if line.strip() == HEADING), None)
+    text: str = doc.read_text(encoding="utf-8", errors="replace")
+    lines: list[str] = text.splitlines()
+    start: int | None = next((i for i, line in enumerate(lines) if line.strip() == HEADING), None)
     if start is not None:
-        end = next(
+        end: int = next(
             (
                 j
                 for j in range(start + 1, len(lines))
-                if lines[j].startswith("#")
-                and len(lines[j]) - len(lines[j].lstrip("#")) <= 2
+                if lines[j].startswith("#") and len(lines[j]) - len(lines[j].lstrip("#")) <= MAX_SECTION_LEVEL
             ),
             len(lines),
         )
         lines = lines[:start] + lines[end:]
-    body = "\n".join(lines).rstrip("\n")
-    section = "\n".join([HEADING, "", *(_line(i) for i in items)])
+    body: str = "\n".join(lines).rstrip("\n")
+    section: str = "\n".join([HEADING, "", *(_line(i) for i in items)])
     doc.write_text(f"{body}\n\n{section}\n", encoding="utf-8")
     return {
         "ok": True,

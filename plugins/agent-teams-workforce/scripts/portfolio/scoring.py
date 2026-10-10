@@ -28,22 +28,39 @@ rubric's `wsjf.py`, which this module calls. Only values that changed are writte
 
 from __future__ import annotations
 
-import importlib.util
+import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TypedDict
 
-from beadgraph import SCOPE_JUDGING, fingerprints
+import beadgraph
+import scoringcontracts
+import wsjf as rubric
+import wsjf_types  # ruff: ignore[typing-only-third-party-import] - Typeguard checks local declarations at runtime.
+from beadgraph import SCOPE_JUDGING, Bead, Graph, Writer, fingerprints
+from contracts import JsonObject, JsonValue
 from prds import write_prds
-
-if TYPE_CHECKING:
-    from beadgraph import Bead, Graph, Writer
-
-#: The WSJF rubric's own implementation, loaded from the skill that owns it.
-WSJF_PATH = (
-    Path(__file__).resolve().parents[2] / "skills" / "wsjf" / "scripts" / "wsjf.py"
+from scoringcontracts import (
+    Applied,
+    Group,
+    JudgeEntry,
+    JudgeInput,
+    JudgeItem,
+    JudgeSummary,
+    LevelUnscored,
+    Plan,
+    PlanSummary,
+    Recorded,
+    ReferenceJob,
+    ScoreResult,
 )
+from typeguard import CollectionCheckStrategy, typechecked
+from wsjf_types import Item, Unscored  # ruff: ignore[typing-only-third-party-import] - Runtime imports preserve typeguard local-assignment validation.
+from wsjf_types import ScoreResult as RubricResult  # ruff: ignore[typing-only-third-party-import] - Runtime import preserves typeguard local-assignment validation.
 
 #: The metadata key holding the fingerprint of the content a judged value was judged from.
+_ARGUMENT_ERROR: str = "Arguments violate the scoring input contract"
+
+
 JUDGED_HASH_KEY = "wsjf_content_hash"
 
 #: Metadata that changes on every write and so never, by itself, justifies one.
@@ -67,32 +84,20 @@ ELABORATION_KEY = "elaboration_state"
 ELABORATION_DONE = "done"
 
 
+class SizeInputs(TypedDict, total=False):
+    """Describe the size inputs wire record."""
+
+    jobSize: int
+    sizeLow: int
+    sizeHigh: int
+    sizeConfidence: int
+
+
 class ScoringError(RuntimeError):
     """A judgment file the recorder cannot work from."""
 
 
-def _load_wsjf():  # noqa: ANN202
-    """Load the WSJF module from the skill that owns the arithmetic.
-
-    Returns:
-        The imported module.
-
-    Raises:
-        ImportError: The module could not be loaded from `WSJF_PATH`.
-    """
-    spec = importlib.util.spec_from_file_location("wsjf", WSJF_PATH)
-    if spec is None or spec.loader is None:
-        msg = f"cannot load the WSJF rubric from {WSJF_PATH}"
-        raise ImportError(msg)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-rubric = _load_wsjf()
-
-
-def _int(value: Any) -> int | None:
+def _int(value: JsonValue) -> int | None:
     """Parse a metadata integer, returning None when it is absent or unusable.
 
     Args:
@@ -100,10 +105,11 @@ def _int(value: Any) -> int | None:
 
     Returns:
         The integer, or None when there is not one.
+
     """
     try:
         return int(float(str(value).strip()))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -119,13 +125,14 @@ def _same(stored: str | None, fresh: str) -> bool:
 
     Returns:
         True when writing `fresh` would change nothing.
+
     """
     if stored is None:
         return False
     if stored == fresh:
         return True
     try:
-        return float(stored) == float(fresh)
+        return math.isclose(float(stored), float(fresh), rel_tol=0.0, abs_tol=0.0)
     except ValueError:
         return False
 
@@ -140,12 +147,9 @@ def _write(bead: Bead, pairs: dict[str, str], writer: Writer) -> bool:
 
     Returns:
         True when the bead is written, or would be in a dry run.
+
     """
-    changed = any(
-        not _same(bead.metadata.get(k), v)
-        for k, v in pairs.items()
-        if k not in VOLATILE_KEYS
-    )
+    changed: bool = any(not _same(bead.metadata.get(k), v) for k, v in pairs.items() if k not in VOLATILE_KEYS)
     if changed:
         writer.metadata(bead.id, pairs)
     return changed
@@ -160,6 +164,7 @@ def _open(graph: Graph, kind: str) -> list[Bead]:
 
     Returns:
         The beads.
+
     """
     return [b for b in graph.of_kind(kind) if not b.closed]
 
@@ -173,12 +178,15 @@ def _tasks_of(graph: Graph, epic: Bead) -> list[Bead]:
 
     Returns:
         The Tasks. Closed Tasks count toward the roll-up: the cost is the whole job.
+
     """
     return [b for b in graph.descendants(epic.id) if b.kind == "task"]
 
 
 def _sized_from_tasks(
-    graph: Graph, epic: Bead, rollup: frozenset[str] | set[str] = frozenset()
+    graph: Graph,
+    epic: Bead,
+    rollup: frozenset[str] | set[str] = frozenset(),
 ) -> bool:
     """Whether an Epic's job size is the sum of its Tasks' sizes.
 
@@ -194,8 +202,9 @@ def _sized_from_tasks(
 
     Returns:
         True when the Epic has Tasks and its elaboration is done.
+
     """
-    done = epic.metadata.get(ELABORATION_KEY) == ELABORATION_DONE or epic.id in rollup
+    done: bool = epic.metadata.get(ELABORATION_KEY) == ELABORATION_DONE or epic.id in rollup
     return done and bool(_tasks_of(graph, epic))
 
 
@@ -205,7 +214,7 @@ def _sized_from_tasks(
 
 
 def _judged_state(bead: Bead, required: tuple[str, ...], current: str) -> str:
-    """The state of a bead's judged inputs.
+    """Return the state of a bead's judged inputs.
 
     Args:
         bead: The bead.
@@ -216,10 +225,11 @@ def _judged_state(bead: Bead, required: tuple[str, ...], current: str) -> str:
         `missing` when a judged value is absent, `changed` when the fingerprint recorded
         with the values no longer matches the bead, `unfingerprinted` when values are
         present with no fingerprint beside them, and `current` otherwise.
+
     """
-    if any(bead.metadata.get(k) in (None, "") for k in required):
+    if any(bead.metadata.get(k) in {None, ""} for k in required):
         return "missing"
-    stored = bead.metadata.get(JUDGED_HASH_KEY)
+    stored: str | None = bead.metadata.get(JUDGED_HASH_KEY)
     if not stored:
         return "unfingerprinted"
     if stored != current:
@@ -237,7 +247,7 @@ JUDGE_REASONS = {
 
 
 def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
-    """What this run does with an item's judged inputs.
+    """Return what this run does with an item's judged inputs.
 
     Missing and changed values are always judged. Values that are present and not known
     to be stale — unfingerprinted or current — are left alone unless `include_all`
@@ -251,8 +261,9 @@ def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
 
     Returns:
         `judge`, `adopt` or `keep`.
+
     """
-    if state in ("missing", "changed"):
+    if state in {"missing", "changed"}:
         return "judge"
     if not include_all:
         return "keep"
@@ -261,13 +272,21 @@ def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
     return "adopt" if state == "unfingerprinted" else "keep"
 
 
+def _required_judgments(graph: Graph, bead: Bead, level: str) -> tuple[str, ...]:
+    if level != "epics":
+        return SIZE_JUDGED_KEYS
+    required: tuple[str, ...] = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
+    return required if _sized_from_tasks(graph, bead) else required + SIZE_JUDGED_KEYS
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def plan(
     graph: Graph,
     *,
     include_all: bool,
     rejudge: bool,
     only: list[str] | None = None,
-) -> dict:
+) -> Plan:
     """Decide which judged inputs this run judges, and which stored ones it adopts.
 
     Args:
@@ -282,37 +301,46 @@ def plan(
         The Epics and Tasks to judge with a reason each, the judged values to adopt,
         every open Epic's and Task's fingerprint, and a summary of counts. An id in
         `only` that is not an open Epic or Task is ignored.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    prints = fingerprints(graph.records, SCOPE_JUDGING)
-    epics = _open(graph, "epic")
-    tasks = _open(graph, "task")
-    ids = {e.id for e in epics} | {t.id for t in tasks}
-    wanted = None if only is None else set(only) & ids
+    level: str
+    beads: list[Bead]
+    bead: Bead
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(include_all, bool))
+        or not (isinstance(rejudge, bool))
+        or not (isinstance(only, list) or only is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    prints: dict[str, str] = fingerprints(graph.records, SCOPE_JUDGING)
+    epics: list[beadgraph.Bead] = _open(graph, "epic")
+    tasks: list[beadgraph.Bead] = _open(graph, "task")
+    ids: set[str] = {e.id for e in epics} | {t.id for t in tasks}
+    wanted: set[str] | None = None if only is None else set(only) & ids
     adopt: list[str] = []
     states: dict[str, int] = {}
-    judge: dict[str, list[dict]] = {"epics": [], "tasks": []}
+    judge: dict[str, list[JudgeEntry]] = {"epics": [], "tasks": []}
     for level, beads in (("epics", epics), ("tasks", tasks)):
         for bead in beads:
             if wanted is not None and bead.id not in wanted:
                 continue
-            if level == "epics":
-                required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
-                if not _sized_from_tasks(graph, bead):
-                    required += SIZE_JUDGED_KEYS
-            else:
-                required = SIZE_JUDGED_KEYS
-            state = _judged_state(bead, required, prints.get(bead.id, ""))
+            required: tuple[str, ...] = _required_judgments(graph, bead, level)
+            state: str = _judged_state(bead, required, prints.get(bead.id, ""))
             states[state] = states.get(state, 0) + 1
-            action = _disposition(state, include_all=include_all, rejudge=rejudge)
+            action: str = _disposition(state, include_all=include_all, rejudge=rejudge)
             if action == "adopt":
                 adopt.append(bead.id)
             elif action == "judge":
-                entry = {"id": bead.id, "reason": JUDGE_REASONS[state]}
+                entry: JudgeEntry = {"id": bead.id, "reason": JUDGE_REASONS[state]}
                 if level == "tasks":
-                    epic = graph.epic_of(bead.id)
+                    epic: beadgraph.Bead | None = graph.epic_of(bead.id)
                     entry["epic"] = epic.id if epic else None
                 judge[level].append(entry)
-    summary: dict[str, Any] = {
+    summary: PlanSummary = {
         "includeAll": include_all,
         "rejudge": rejudge,
         "openEpics": len(epics),
@@ -332,7 +360,7 @@ def plan(
     }
 
 
-def _size(value: Any) -> int | None:
+def _size(value: JsonValue) -> int | None:
     """Parse a stored size, returning None when it is absent, unusable or not positive.
 
     The rubric refuses a non-positive size by raising, which would abort the arithmetic
@@ -344,19 +372,21 @@ def _size(value: Any) -> int | None:
 
     Returns:
         The positive integer, or None.
+
     """
-    parsed = _int(value)
+    parsed: int | None = _int(value)
     return parsed if parsed is not None and parsed > 0 else None
 
 
 def _size_of(bead: Bead) -> dict[str, int | None]:
-    """A bead's judged size estimate with its range and confidence.
+    """Return a bead's judged size estimate with its range and confidence.
 
     Args:
         bead: The bead.
 
     Returns:
         `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, None where absent.
+
     """
     return {
         "jobSize": _size(bead.metadata.get(ESTIMATE_KEY)),
@@ -366,8 +396,9 @@ def _size_of(bead: Bead) -> dict[str, int | None]:
     }
 
 
-def reference_jobs(graph: Graph) -> list[dict]:
-    """The elaborated Epics: each one's original estimate beside its refined size.
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reference_jobs(graph: Graph) -> list[ReferenceJob]:
+    """Return the elaborated Epics: each one's original estimate beside its refined size.
 
     An Epic is a reference job once its elaboration is done and every one of its Tasks is
     sized. Its
@@ -379,16 +410,23 @@ def reference_jobs(graph: Graph) -> list[dict]:
 
     Returns:
         One record per reference job, in id order.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    jobs = []
+    epic: Bead
+    if not (isinstance(graph, Graph)):
+        raise TypeError(_ARGUMENT_ERROR)
+    jobs: list[ReferenceJob] = []
     for epic in graph.of_kind("epic"):
         if not _sized_from_tasks(graph, epic):
             continue
-        tasks = _tasks_of(graph, epic)
-        sizes = [_size(t.metadata.get("wsjf_size")) for t in tasks]
+        tasks: list[beadgraph.Bead] = _tasks_of(graph, epic)
+        sizes: list[int | None] = [_size(t.metadata.get("wsjf_size")) for t in tasks]
         if any(size is None for size in sizes):
             continue
-        estimate = _size_of(epic)
+        estimate: dict[str, int | None] = _size_of(epic)
         jobs.append(
             {
                 "id": epic.id,
@@ -398,15 +436,19 @@ def reference_jobs(graph: Graph) -> list[dict]:
                 "high": estimate["sizeHigh"],
                 "refinedSize": sum(s for s in sizes if s is not None),
                 "tasks": len(tasks),
-            }
+            },
         )
     return jobs
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def judge_input(
-    graph: Graph, the_plan: dict, level: str, prd_dir: Path | None = None
-) -> dict:
-    """The material the judging sessions at one level read: the items to judge, and no other.
+    graph: Graph,
+    the_plan: Plan,
+    level: str,
+    prd_dir: Path | None = None,
+) -> JudgeInput:
+    """Return the material the judging sessions at one level read: the items to judge, and no other.
 
     Each Epic is judged in a session of its own, from its own full PRD, against the
     rubric's rungs and the reference jobs; each Epic's Tasks are sized together in a
@@ -428,14 +470,26 @@ def judge_input(
         the sessions: `ids`, one Epic per session, or `groups`, a session each, every
         group `{key, epic, tasks}` — an Epic's Tasks keyed by the Epic, or one Task with no
         Epic keyed by itself with `epic` null.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    wanted = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
-    beads = [b for b in _open(graph, level) if b.id in wanted]
-    paths = write_prds(beads, prd_dir) if level == "epic" and prd_dir else {}
-    items = []
-    groups: dict[str, dict[str, Any]] = {}
+    bead: Bead
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(the_plan, dict))
+        or not (isinstance(level, str))
+        or not (isinstance(prd_dir, Path) or prd_dir is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    wanted: dict[str, str] = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
+    beads: list[beadgraph.Bead] = [b for b in _open(graph, level) if b.id in wanted]
+    paths: dict[str, str] = write_prds(beads, prd_dir) if level == "epic" and prd_dir else {}
+    items: list[JudgeItem] = []
+    groups: dict[str, Group] = {}
     for bead in beads:
-        entry: dict[str, Any] = {
+        entry: JudgeItem = {
             "id": bead.id,
             "title": bead.title,
             "reason": wanted[bead.id],
@@ -445,16 +499,17 @@ def judge_input(
             entry["sizedFromTasks"] = _sized_from_tasks(graph, bead)
         else:
             entry["description"] = bead.description
-            epic = graph.epic_of(bead.id)
+            epic: beadgraph.Bead | None = graph.epic_of(bead.id)
             entry["epic"] = {"id": epic.id, "title": epic.title} if epic else None
-            key = epic.id if epic else bead.id
-            group = groups.setdefault(
-                key, {"key": key, "epic": epic.id if epic else None, "tasks": []}
+            key: str = epic.id if epic else bead.id
+            group: scoringcontracts.Group = groups.setdefault(
+                key,
+                {"key": key, "epic": epic.id if epic else None, "tasks": []},
             )
             group["tasks"].append(bead.id)
         items.append(entry)
-    jobs = reference_jobs(graph)
-    summary: dict[str, Any] = {
+    jobs: list[scoringcontracts.ReferenceJob] = reference_jobs(graph)
+    summary: JudgeSummary = {
         "items": len(items),
         "toJudge": len(items),
         "referenceJobs": len(jobs),
@@ -476,7 +531,7 @@ def judge_input(
 # ------------------------------------------------------------------------------------
 
 
-def _positive(record: dict, key: str, bead_id: str) -> int:
+def _positive(record: JsonObject, key: str, bead_id: str) -> int:
     """Read one judged value as a positive integer.
 
     Args:
@@ -489,15 +544,16 @@ def _positive(record: dict, key: str, bead_id: str) -> int:
 
     Raises:
         ScoringError: The value is missing or not a positive integer.
+
     """
-    value = _int(record.get(key))
+    value: int | None = _int(record.get(key))
     if value is None or value <= 0:
-        msg = f"{bead_id}: `{key}` must be a positive integer, got {record.get(key)!r}"
+        msg: str = f"{bead_id}: `{key}` must be a positive integer, got {record.get(key)!r}"
         raise ScoringError(msg)
     return value
 
 
-def _percent(record: dict, key: str, bead_id: str) -> int:
+def _percent(record: JsonObject, key: str, bead_id: str) -> int:
     """Read one judged confidence as an integer percent, a value above 100 taken as 100.
 
     Args:
@@ -508,14 +564,12 @@ def _percent(record: dict, key: str, bead_id: str) -> int:
     Returns:
         The value.
 
-    Raises:
-        ScoringError: The value is missing or not a positive integer.
     """
     return min(_positive(record, key, bead_id), 100)
 
 
-def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
-    """The judged size estimate, its plausible range and its confidence, validated.
+def _size_pairs(one: JsonObject, bead_id: str) -> dict[str, str]:
+    """Return the judged size estimate, its plausible range and its confidence, validated.
 
     Args:
         one: The judgment for one item.
@@ -524,13 +578,10 @@ def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
     Returns:
         The size keys and their values.
 
-    Raises:
-        ScoringError: A value is missing or not a positive integer. A range that does not
-            contain the estimate is widened to contain it.
     """
-    size = _positive(one, "jobSize", bead_id)
-    low = min(_positive(one, "sizeLow", bead_id), size)
-    high = max(_positive(one, "sizeHigh", bead_id), size)
+    size: int = _positive(one, "jobSize", bead_id)
+    low: int = min(_positive(one, "sizeLow", bead_id), size)
+    high: int = max(_positive(one, "sizeHigh", bead_id), size)
     return {
         ESTIMATE_KEY: str(size),
         "wsjf_size_low": str(low),
@@ -539,7 +590,7 @@ def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
     }
 
 
-def _value(record: dict, key: str, bead_id: str) -> int:
+def _value(record: JsonObject, key: str, bead_id: str) -> int:
     """Read one judged UBV or TC as an integer on the rubric's scale.
 
     Args:
@@ -550,15 +601,12 @@ def _value(record: dict, key: str, bead_id: str) -> int:
     Returns:
         The value.
 
-    Raises:
-        ScoringError: The value is missing or not a positive integer. A value above the
-            rubric's top rung is taken as the top rung.
     """
     return min(_positive(record, key, bead_id), VALUE_TOP)
 
 
-def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, str]:
-    """The metadata one judgment writes, with every judged value validated.
+def _judged_pairs(graph: Graph, level: str, bead: Bead, one: JsonObject) -> dict[str, str]:
+    """Return the metadata one judgment writes, with every judged value validated.
 
     Args:
         graph: The tracker graph.
@@ -569,8 +617,6 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, 
     Returns:
         The judged keys and their values, without the fingerprint.
 
-    Raises:
-        ScoringError: A judged value is missing or off the rubric's scale.
     """
     pairs: dict[str, str] = {}
     if level == "epic":
@@ -584,9 +630,13 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, 
     return pairs
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def record(
-    graph: Graph, the_plan: dict, judgments: dict[str, list[dict]], writer: Writer
-) -> dict:
+    graph: Graph,
+    the_plan: Plan,
+    judgments: dict[str, list[JsonObject]],
+    writer: Writer,
+) -> Recorded:
     """Write judged values, each with the fingerprint of the content it was judged from.
 
     The plan's adopted values get their fingerprint recorded beside them. Only items the
@@ -607,14 +657,27 @@ def record(
         What was written, what was rejected and why, what the plan asked for and did not
         receive, a summary, and — in a dry run — every write in order.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    prints = the_plan["fingerprints"]
+    level: str | str
+    one: JsonObject
+    bead_id: str
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(the_plan, dict))
+        or not (isinstance(judgments, dict))
+        or not (isinstance(writer, Writer))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    prints: dict[str, str] = the_plan["fingerprints"]
     missing: list[str] = []
     rejected: list[dict[str, str]] = []
     pending: list[tuple[Bead, dict[str, str]]] = []
     for level in ("epic", "task"):
-        asked = {j["id"] for j in the_plan["judge"][f"{level}s"]}
-        got: dict[str, dict] = {}
+        asked: set[str] = {j["id"] for j in the_plan["judge"][f"{level}s"]}
+        got: dict[str, JsonObject] = {}
         for one in judgments.get(level, []):
             got[str(one.get("id"))] = one
         for bead_id in sorted(set(got) - asked):
@@ -624,16 +687,16 @@ def record(
                     "id": bead_id,
                     "level": level,
                     "reason": "the plan did not name it for judging",
-                }
+                },
             )
         missing += sorted(asked - set(got))
         for bead_id in sorted(asked & set(got)):
-            bead = graph.beads.get(bead_id)
+            bead: beadgraph.Bead | None = graph.beads.get(bead_id)
             if bead is None:
                 missing.append(bead_id)
                 continue
             try:
-                judged = _judged_pairs(graph, level, bead, got[bead_id])
+                judged: dict[str, str] = _judged_pairs(graph, level, bead, got[bead_id])
             except ScoringError as exc:
                 rejected.append({"id": bead_id, "level": level, "reason": str(exc)})
                 continue
@@ -642,11 +705,11 @@ def record(
             # `unfingerprinted` rather than `changed`, so the item is never re-judged
             # again without `--all --rejudge` — staleness masked permanently. The adopt
             # path below already skips on a falsy fingerprint; so does this one.
-            stamp = prints.get(bead_id)
+            stamp: str | None = prints.get(bead_id)
             pending.append(
-                (bead, {JUDGED_HASH_KEY: stamp} | judged if stamp else judged)
+                (bead, {JUDGED_HASH_KEY: stamp} | judged if stamp else judged),
             )
-    written = [bead.id for bead, pairs in pending if _write(bead, pairs, writer)]
+    written: list[str] = [bead.id for bead, pairs in pending if _write(bead, pairs, writer)]
     adopted: list[str] = []
     for bead_id in the_plan.get("adopt", []):
         bead = graph.beads.get(bead_id)
@@ -676,7 +739,7 @@ def record(
 
 
 def _edges(beads: list[Bead]) -> list[dict[str, str]]:
-    """The dependency edges among a set of beads, as the rubric takes them.
+    """Return the dependency edges among a set of beads, as the rubric takes them.
 
     Each bead's edges are read from the type its level is stored as: `tracks` between
     Epics, `blocks` between Tasks.
@@ -686,18 +749,14 @@ def _edges(beads: list[Bead]) -> list[dict[str, str]]:
 
     Returns:
         `from` must come before `to`.
+
     """
-    ids = {b.id for b in beads}
-    return [
-        {"from": upstream, "to": b.id}
-        for b in beads
-        for upstream in b.depends_on
-        if upstream in ids
-    ]
+    ids: set[str] = {b.id for b in beads}
+    return [{"from": upstream, "to": b.id} for b in beads for upstream in b.depends_on if upstream in ids]
 
 
-def _scoring_size(bead: Bead, *, rolls_up: bool) -> dict[str, int]:
-    """The judged size inputs a bead hands the rubric.
+def _scoring_size(bead: Bead, *, rolls_up: bool) -> SizeInputs:
+    """Return the judged size inputs a bead hands the rubric.
 
     The estimate is `wsjf_size_estimate`. A bead with no stored estimate whose size does
     not roll up from Tasks is sized by the `wsjf_size` it carries.
@@ -708,15 +767,29 @@ def _scoring_size(bead: Bead, *, rolls_up: bool) -> dict[str, int]:
 
     Returns:
         `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, each only when present.
+
     """
-    size = _size_of(bead)
+    size: dict[str, int | None] = _size_of(bead)
     if size["jobSize"] is None and not rolls_up:
         size["jobSize"] = _size(bead.metadata.get("wsjf_size"))
-    return {key: value for key, value in size.items() if value is not None}
+    result: SizeInputs = {}
+    for_key: int | None = size.get("jobSize")
+    if for_key is not None:
+        result["jobSize"] = for_key
+    for_key = size.get("sizeLow")
+    if for_key is not None:
+        result["sizeLow"] = for_key
+    for_key = size.get("sizeHigh")
+    if for_key is not None:
+        result["sizeHigh"] = for_key
+    for_key = size.get("sizeConfidence")
+    if for_key is not None:
+        result["sizeConfidence"] = for_key
+    return result
 
 
 def _task_size(task: Bead) -> int | None:
-    """The size a Task scores at in THIS run, not the one it was written with last run.
+    """Return the size a Task scores at in THIS run, not the one it was written with last run.
 
     `wsjf_size` is written by `_apply`, at the END of a run, so on the run that first
     judges a decomposed Epic's Tasks it is absent or holds the previous run's number. An
@@ -730,17 +803,20 @@ def _task_size(task: Bead) -> int | None:
 
     Returns:
         The size, or None when the Task carries neither a judged estimate nor a size.
+
     """
-    estimate = _size(task.metadata.get(ESTIMATE_KEY))
+    estimate: int | None = _size(task.metadata.get(ESTIMATE_KEY))
     if estimate is not None:
         return rubric.snap_size(estimate)
     return _size(task.metadata.get("wsjf_size"))
 
 
 def _epic_items(
-    graph: Graph, epics: list[Bead], rollup: frozenset[str] | set[str] = frozenset()
-) -> tuple[list[dict], list[dict]]:
-    """The rubric input for every open Epic, and what is missing from it.
+    graph: Graph,
+    epics: list[Bead],
+    rollup: frozenset[str] | set[str] = frozenset(),
+) -> tuple[list[Item], list[Unscored]]:
+    """Return the rubric input for every open Epic, and what is missing from it.
 
     Only an Epic whose elaboration is done hands the rubric its Tasks' sizes to sum; every
     other Epic is sized by its judged estimate.
@@ -752,38 +828,48 @@ def _epic_items(
 
     Returns:
         The items, and the incomplete records.
+
     """
-    items: list[dict] = []
-    incomplete: list[dict] = []
+    epic: Bead
+    items: list[Item] = []
+    incomplete: list[Unscored] = []
     for epic in epics:
-        rolls_up = _sized_from_tasks(graph, epic, rollup)
-        tasks = _tasks_of(graph, epic) if rolls_up else []
-        item: dict[str, Any] = {
+        rolls_up: bool = _sized_from_tasks(graph, epic, rollup)
+        tasks: list[beadgraph.Bead] = _tasks_of(graph, epic) if rolls_up else []
+        item: Item = {
             "id": epic.id,
             "userBusinessValue": _int(epic.metadata.get("wsjf_ubv")),
             "timeCriticality": _int(epic.metadata.get("wsjf_tc")),
             "confidence": _int(epic.metadata.get("wsjf_confidence")),
-            **_scoring_size(epic, rolls_up=rolls_up),
         }
-        sizes = [_task_size(t) for t in tasks]
+        size_inputs: SizeInputs = _scoring_size(epic, rolls_up=rolls_up)
+        if "jobSize" in size_inputs:
+            item["jobSize"] = size_inputs["jobSize"]
+        if "sizeLow" in size_inputs:
+            item["sizeLow"] = size_inputs["sizeLow"]
+        if "sizeHigh" in size_inputs:
+            item["sizeHigh"] = size_inputs["sizeHigh"]
+        if "sizeConfidence" in size_inputs:
+            item["sizeConfidence"] = size_inputs["sizeConfidence"]
+        sizes: list[int | None] = [_task_size(t) for t in tasks]
         if tasks and all(s is not None for s in sizes):
-            item["childSizes"] = sizes
+            item["childSizes"] = list(sizes)
         else:
-            unsized = [t.id for t, s in zip(tasks, sizes, strict=True) if s is None]
+            unsized: list[str] = [t.id for t, s in zip(tasks, sizes, strict=True) if s is None]
             if unsized:
                 incomplete.append(
                     {
                         "id": epic.id,
                         "reason": "Tasks carry neither a judged size estimate nor a "
                         "wsjf_size, so no roll-up: " + ", ".join(unsized),
-                    }
+                    },
                 )
         items.append(item)
     return items, incomplete
 
 
-def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
-    """The rubric input for every open Task, with value inherited from its Epic.
+def _task_items(graph: Graph, tasks: list[Bead]) -> list[Item]:
+    """Return the rubric input for every open Task, with value inherited from its Epic.
 
     Args:
         graph: The tracker graph.
@@ -792,27 +878,39 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
     Returns:
         The items. A Task with no Epic, or under an unjudged one, carries no value and
         comes back unscored from the rubric.
+
     """
-    items = []
+    task: Bead
+    items: list[Item] = []
     for task in tasks:
-        epic = graph.epic_of(task.id)
-        meta = epic.metadata if epic else {}
-        items.append(
-            {
-                "id": task.id,
-                "userBusinessValue": _int(meta.get("wsjf_ubv")),
-                "timeCriticality": _int(meta.get("wsjf_tc")),
-                "confidence": _int(meta.get("wsjf_confidence")),
-                "valueFrom": epic.id if epic else None,
-                **_scoring_size(task, rolls_up=False),
-            }
-        )
+        epic: beadgraph.Bead | None = graph.epic_of(task.id)
+        meta: dict[str, str] = epic.metadata if epic else {}
+        item: Item = {
+            "id": task.id,
+            "userBusinessValue": _int(meta.get("wsjf_ubv")),
+            "timeCriticality": _int(meta.get("wsjf_tc")),
+            "confidence": _int(meta.get("wsjf_confidence")),
+            "valueFrom": epic.id if epic else None,
+        }
+        size_inputs: SizeInputs = _scoring_size(task, rolls_up=False)
+        if "jobSize" in size_inputs:
+            item["jobSize"] = size_inputs["jobSize"]
+        if "sizeLow" in size_inputs:
+            item["sizeLow"] = size_inputs["sizeLow"]
+        if "sizeHigh" in size_inputs:
+            item["sizeHigh"] = size_inputs["sizeHigh"]
+        if "sizeConfidence" in size_inputs:
+            item["sizeConfidence"] = size_inputs["sizeConfidence"]
+        items.append(item)
     return items
 
 
 def _apply(
-    graph: Graph, result: dict, writer: Writer, scope: set[str] | None
-) -> list[dict]:
+    graph: Graph,
+    result: RubricResult,
+    writer: Writer,
+    scope: set[str] | None,
+) -> list[Applied]:
     """Write every scored item in scope whose values changed.
 
     Args:
@@ -823,16 +921,16 @@ def _apply(
 
     Returns:
         One record per scored item in scope, marked with whether it is written.
+
     """
-    rows = []
+    scored: wsjf_types.ScoreRow
+    rows: list[Applied] = []
     for scored in result["scores"]:
         if scope is not None and scored["id"] not in scope:
             continue
-        bead = graph.beads[scored["id"]]
-        computed = {
-            key: value
-            for key, value in scored["metadata"].items()
-            if key not in SIZE_JUDGED_KEYS
+        bead: beadgraph.Bead = graph.beads[scored["id"]]
+        computed: dict[str, str] = {
+            key: value for key, value in scored["metadata"].items() if key not in SIZE_JUDGED_KEYS
         }
         rows.append(
             {
@@ -845,17 +943,18 @@ def _apply(
                 "sizeSource": scored["sizeSource"],
                 "sizeOutsideRange": scored.get("sizeOutsideRange"),
                 "written": _write(bead, computed, writer),
-            }
+            },
         )
     return rows
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def score(
     graph: Graph,
     writer: Writer,
     scope: set[str] | None = None,
     rollup: frozenset[str] | set[str] = frozenset(),
-) -> dict:
+) -> ScoreResult:
     """Recompute every open Epic's and every open Task's WSJF, and write what changed.
 
     The edge lists handed to the rubric are the whole graph at each level, so a level
@@ -875,23 +974,42 @@ def score(
         The Epic and Task scores, everything that could not be scored and why, size
         faults, the Epics whose refined size falls outside their estimate's range, any
         cycle, a summary, and — in a dry run — every write in order.
-    """
-    epics = _open(graph, "epic")
-    tasks = _open(graph, "task")
-    epic_items, incomplete = _epic_items(graph, epics, rollup)
-    epic_result = rubric.score({"edges": _edges(epics), "items": epic_items}, "epic")
-    task_result = rubric.score(
-        {"edges": _edges(tasks), "items": _task_items(graph, tasks)}, "task"
-    )
-    epic_rows = _apply(graph, epic_result, writer, scope)
-    task_rows = _apply(graph, task_result, writer, scope)
 
-    def wanted(entry: dict) -> bool:
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    epic_items: list[Item]
+    incomplete: list[Unscored]
+    level: str
+    outcome: RubricResult
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(writer, Writer))
+        or not (isinstance(scope, set) or scope is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    epics: list[beadgraph.Bead] = _open(graph, "epic")
+    tasks: list[beadgraph.Bead] = _open(graph, "task")
+    epic_items, incomplete = _epic_items(graph, epics, rollup)
+    epic_result: RubricResult = rubric.score({"edges": _edges(epics), "items": epic_items}, "epic")
+    task_result: RubricResult = rubric.score(
+        {"edges": _edges(tasks), "items": _task_items(graph, tasks)},
+        "task",
+    )
+    epic_rows: list[scoringcontracts.Applied] = _apply(graph, epic_result, writer, scope)
+    task_rows: list[scoringcontracts.Applied] = _apply(graph, task_result, writer, scope)
+
+    def wanted(entry: Unscored) -> bool:
         return scope is None or entry["id"] in scope
 
-    unscored = [
-        {"level": "epic", **u} for u in epic_result["unscored"] if wanted(u)
-    ] + [{"level": "task", **u} for u in task_result["unscored"] if wanted(u)]
+    unscored: list[LevelUnscored] = []
+    for level, outcome in (("epic", epic_result), ("task", task_result)):
+        unscored.extend(
+            LevelUnscored(level=level, id=entry["id"], reason=entry["reason"])
+            for entry in outcome["unscored"]
+            if wanted(entry)
+        )
     incomplete = [i for i in incomplete if wanted(i)]
     return {
         "epics": epic_rows,

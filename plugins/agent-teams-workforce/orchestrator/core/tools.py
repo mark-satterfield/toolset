@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
 import json
 import logging
 import os
@@ -17,20 +16,23 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import ParamSpec, TypeVar
 
+import beadgraph
+from contracts import JsonInput, JsonObject, json_value
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from .models import RetryExhaustedError, StepError
-from .tool_locks import bd_gate, control_repo, seconds
-
-if TYPE_CHECKING:
-    from types import ModuleType
+from .tool_locks import bd_gate, seconds
 
 RETRY_CAUSES = frozenset({"contention", "bd-timeout", "tool-timeout", "network"})
 _LOG = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _IMPORT_LOCK = threading.RLock()
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -48,9 +50,14 @@ def retry_call[T](
         StepError: A non-retryable step failure occurred.
         RetryExhaustedError: All transient attempts failed.
         RuntimeError: The retry configuration allowed no attempts.
+        TypeError: The action or sleeper is not callable.
 
     """
-    delay = 30.0
+    attempt: int
+    if not callable(action) or not callable(sleep):
+        message: str = "Retry action and sleeper must be callable"
+        raise TypeError(message)
+    delay: float = 30.0
     for attempt in range(_MAX_ATTEMPTS):
         try:
             return action()
@@ -75,10 +82,14 @@ def env_path(name: str) -> Path:
 
     Raises:
         StepError: The required variable is absent.
+        TypeError: The variable name is not a string.
 
     """
-    value = os.environ.get(name, "").strip()
-    stage = "input"
+    if not isinstance(name, str):
+        message: str = "Environment variable name must be a string"
+        raise TypeError(message)
+    value: str = os.environ.get(name, "").strip()
+    stage: str = "input"
     if not value:
         raise StepError(stage, "other", (f"{name} is required",))
     return Path(value).expanduser().resolve()
@@ -93,11 +104,15 @@ def vault_path(relative: str) -> Path:
 
     Raises:
         StepError: The requested path escapes the architecture root.
+        TypeError: The relative path is not a string.
 
     """
-    root = env_path("ATW_ARCH_PATH")
-    result = (root / relative).resolve()
-    stage = "input"
+    if not isinstance(relative, str):
+        message: str = "Vault relative path must be a string"
+        raise TypeError(message)
+    root: Path = env_path("ATW_ARCH_PATH")
+    result: Path = (root / relative).resolve()
+    stage: str = "input"
     if not result.is_relative_to(root):
         raise StepError(stage, "other", (f"path escapes ATW_ARCH_PATH: {relative}",))
     return result
@@ -114,11 +129,32 @@ class CommandResult:
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
+        """Validate every constructed field, including nested collection entries.
+
+        Raises:
+            TypeError: A field violates its declared type.
+
+        """
+        if not isinstance(self.argv, tuple) or any(not isinstance(argument, str) for argument in self.argv):
+            message: str = "Command arguments must be a tuple of strings"
+            raise TypeError(message)
+        if not isinstance(self.exit, int) or not isinstance(self.stdout, str) or not isinstance(self.stderr, str):
+            message = "Command exit and output fields violate their declared types"
+            raise TypeError(message)
         check_type(self.argv, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.exit, int, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.stdout, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.stderr, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def to_json(self) -> JsonObject:
+        """Preserve command evidence as its exact JSON fields.
+
+        Returns:
+            The argument vector, exit code and captured output.
+
+        """
+        return {"argv": json_value(self.argv), "exit": self.exit, "stdout": self.stdout, "stderr": self.stderr}
 
 
 @dataclass(frozen=True)
@@ -130,33 +166,55 @@ class DeploymentTarget:
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
+        """Validate every constructed field, including nested collection entries.
+
+        Raises:
+            TypeError: A field violates its declared type.
+
+        """
+        if not isinstance(self.repository, Path) or not isinstance(self.profile, str):
+            message: str = "Deployment target requires a repository Path and profile string"
+            raise TypeError(message)
         check_type(self.repository, Path, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.profile, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 class Tools:
-    """One run's deterministic tool boundary and private incident evidence directory."""
+    """One run's deterministic tool boundary and private operation evidence directory."""
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(self, evidence: Path) -> None:
-        """Bind the evidence directory for deterministic operation failures."""
-        self.evidence = evidence
-        self.plugin = Path(__file__).resolve().parents[2]
+        """Bind the evidence directory for deterministic operation failures.
+
+        Raises:
+            TypeError: The evidence directory is not a Path.
+
+        """
+        if not isinstance(evidence, Path):
+            message: str = "Tool evidence directory must be a Path"
+            raise TypeError(message)
+        self.evidence: Path = evidence
+        self.plugin: Path = Path(__file__).resolve().parents[2]
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def failure(self, stage: str, cause: str, facts: Mapping[str, object]) -> StepError:
+    def failure(self, stage: str, cause: str, facts: Mapping[str, JsonInput]) -> StepError:
         """Persist evidence off stdout and return the structured step failure.
 
         Returns:
             The failure referencing its evidence file.
 
+        Raises:
+            TypeError: Identifiers or evidence violate the declared contract.
+
         """
+        if not isinstance(stage, str) or not isinstance(cause, str) or not isinstance(facts, Mapping):
+            message: str = "Failure evidence requires string identifiers and a JSON mapping"
+            raise TypeError(message)
         self.evidence.mkdir(parents=True, exist_ok=True)
-        path = self.evidence / f"tool-{uuid.uuid4().hex}.json"
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        path: Path = self.evidence / f"tool-{uuid.uuid4().hex}.json"
+        descriptor: int = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(dict(facts), handle, ensure_ascii=False, default=str)
+            json.dump(json_value(facts), handle, ensure_ascii=False)
         return StepError(stage, cause, (str(path),))
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -175,14 +233,24 @@ class Tools:
             The executable result.
 
         Raises:
+            TypeError: An argument violates the declared input contract.
             ValueError: The timeout is invalid.
             FileNotFoundError: The executable cannot be resolved.
 
         """
+        if (
+            not (isinstance(argv, Sequence))
+            or not (isinstance(stage, str))
+            or not (isinstance(cwd, Path) or cwd is None)
+            or not (isinstance(timeout, float))
+            or not (isinstance(check, bool))
+        ):
+            argument_error: str = "command: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
         if not 0 < timeout < float("inf"):
-            message = "command timeout must be positive and finite"
+            message: str = "command timeout must be positive and finite"
             raise ValueError(message)
-        resolved = shutil.which(argv[0]) if argv else None
+        resolved: str | None = shutil.which(argv[0]) if argv else None
         if resolved is None:
             message = f"executable not found: {argv[0] if argv else '<empty argv>'}"
             raise FileNotFoundError(message)
@@ -204,59 +272,50 @@ class Tools:
             except OSError as exc:
                 raise self.failure(stage, "other", {"argv": list(argv), "exception": repr(exc)}) from exc
 
-        done = retry_call(attempt)
-        result = CommandResult(tuple(argv), done.returncode, done.stdout, done.stderr)
+        done: subprocess.CompletedProcess[str] = retry_call(attempt)
+        result: CommandResult = CommandResult(tuple(argv), done.returncode, done.stdout, done.stderr)
         if check and result.exit:
-            raise self.failure(stage, "other", vars(result))
+            raise self.failure(stage, "other", result.to_json())
         return result
-
-    def _portfolio_module(self, module: str) -> ModuleType:
-        with _IMPORT_LOCK:
-            directory = str(self.plugin / "scripts/portfolio")
-            if directory not in sys.path:
-                sys.path.insert(0, directory)
-            with contextlib.redirect_stdout(sys.stderr):
-                imported = importlib.import_module(module)
-                graph = importlib.import_module("beadgraph")
-            vars(graph)["BD_GATE"] = bd_gate
-        return imported
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def portfolio(
         self,
-        module: str,
-        function: str,
-        *args: object,
         stage: str,
-        **kwargs: object,
-    ) -> object:
-        """Import a portfolio function and make one attempt.
+        operation: Callable[P, R],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> R:
+        """Call a statically selected portfolio operation with its actual signature.
 
         Returns:
-            The unparsed result, validated by the caller at its contract boundary.
+            The actual producer result with its statically declared return type preserved.
 
         Raises:
             StepError: The portfolio operation failed.
             TypeCheckError: A runtime contract failed.
+            TypeError: The dispatch arguments have invalid types.
 
         """
+        if not isinstance(stage, str) or not callable(operation):
+            message: str = "Portfolio dispatch requires a string stage and a callable operation"
+            raise TypeError(message)
         try:
-            imported = self._portfolio_module(module)
             # redirect_stdout is process-global. Serializing imported calls avoids one
             # worker restoring stdout while another is still printing diagnostics.
             with _IMPORT_LOCK, contextlib.redirect_stdout(sys.stderr):
-                return check_type(getattr(imported, function), Callable[..., object])(*args, **kwargs)
+                beadgraph.BD_GATE = bd_gate
+                return operation(*args, **kwargs)
         except StepError, TypeCheckError:
             raise
         except Exception as exc:
-            loaded_graph = sys.modules.get("beadgraph")
-            cause = check_type(exc.cause, str) if loaded_graph and isinstance(exc, loaded_graph.GraphError) else "other"
+            cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else "other"
             raise self.failure(
                 stage,
                 cause,
                 {
-                    "module": module,
-                    "function": function,
+                    "operation": repr(operation),
                     "traceback": traceback.format_exc(),
                 },
             ) from exc
@@ -268,15 +327,24 @@ class Tools:
         Returns:
             The validated command output.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if (
+            not (isinstance(args, list))
+            or not (isinstance(stage, str))
+            or not (isinstance(stdin, str) or stdin is None)
+        ):
+            argument_error: str = "bd: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
         return check_type(
             self.portfolio(
-                "beadgraph",
-                "_bd",
+                stage,
+                beadgraph.run_bd,
                 args,
                 env_path("ATW_CONTROL_REPO"),
                 stdin,
-                stage=stage,
             ),
             str,
         )
@@ -296,10 +364,22 @@ class Tools:
         Returns:
             The successful Git command result.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if (
+            not (isinstance(repo, Path))
+            or not (isinstance(args, list))
+            or not (isinstance(stage, str))
+            or not (isinstance(branch, str))
+            or not (isinstance(remote, str))
+        ):
+            argument_error: str = "git: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
 
         def attempt() -> CommandResult:
-            result = self.command(
+            result: CommandResult = self.command(
                 ["git", *args],
                 stage=stage,
                 cwd=repo,
@@ -308,13 +388,13 @@ class Tools:
             )
             if not result.exit:
                 return result
-            lock = self.command(
+            lock: CommandResult = self.command(
                 ["git", "rev-parse", "--git-path", "index.lock"],
                 stage=stage,
                 cwd=repo,
             )
             if (repo / lock.stdout.strip()).exists():
-                raise self.failure(stage, "contention", vars(result))
+                raise self.failure(stage, "contention", result.to_json())
             if args and args[0] == "push":
                 self.command(
                     ["git", "fetch", remote],
@@ -322,7 +402,7 @@ class Tools:
                     cwd=repo,
                     timeout=seconds("ATW_GIT_TIMEOUT", 120),
                 )
-                ancestor = self.command(
+                ancestor: CommandResult = self.command(
                     [
                         "git",
                         "merge-base",
@@ -336,41 +416,12 @@ class Tools:
                 )
                 if ancestor.exit == 1:
                     self.git(repo, ["pull", "--rebase", remote, branch], stage=stage)
-                    raise self.failure(stage, "contention", vars(result))
+                    raise self.failure(stage, "contention", result.to_json())
                 if ancestor.exit:
-                    raise self.failure(stage, "other", vars(ancestor))
-            raise self.failure(stage, "other", vars(result))
+                    raise self.failure(stage, "other", ancestor.to_json())
+            raise self.failure(stage, "other", result.to_json())
 
         return retry_call(attempt)
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def owner_need(self, epic: str, title: str, need: object, *, run: str) -> Path:
-        """Use the driver's owner-inbox writer and configured destination.
-
-        Returns:
-            The created owner-inbox artifact path.
-
-        Raises:
-            TypeCheckError: The writer returned a value outside its contract.
-
-        """
-        stage = "owner-inbox"
-        env_path("ATW_OWNER_INBOX")
-        try:
-            with _IMPORT_LOCK, contextlib.redirect_stdout(sys.stderr):
-                directory = str(control_repo() / "ops/sdlc-automation")
-                if directory not in sys.path:
-                    sys.path.insert(0, directory)
-                module = importlib.import_module("ownerinbox")
-                return check_type(module.write_need(epic, title, need, beads=[epic], run=run), Path)
-        except TypeCheckError:
-            raise
-        except Exception as exc:
-            raise self.failure(
-                stage,
-                "other",
-                {"traceback": traceback.format_exc()},
-            ) from exc
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def operation[T](self, stage: str, action: Callable[[], T]) -> T:
@@ -382,7 +433,13 @@ class Tools:
         Returns:
             The successful operation result.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(stage, str)) or not (callable(action)):
+            argument_error: str = "operation: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
 
         def attempt() -> T:
             try:
@@ -390,8 +447,7 @@ class Tools:
             except StepError, TypeCheckError:
                 raise
             except Exception as exc:
-                loaded_graph = sys.modules.get("beadgraph")
-                cause = exc.cause if loaded_graph and isinstance(exc, loaded_graph.GraphError) else "other"
+                cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else "other"
                 raise self.failure(
                     stage,
                     cause,
@@ -413,8 +469,14 @@ class Tools:
         Returns:
             The repository CLI result.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
-        script = self.plugin / "skills/polyrepo-repo/scripts/polyrepo.py"
+        if not (isinstance(args, Sequence)) or not (isinstance(stage, str)) or not (isinstance(timeout, float)):
+            argument_error: str = "polyrepo: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
+        script: Path = self.plugin / "skills/polyrepo-repo/scripts/polyrepo.py"
         return self.command(
             ["uv", "run", str(script), *args, "--json"],
             stage=stage,
@@ -436,7 +498,18 @@ class Tools:
         Returns:
             The CDK command result.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if (
+            not (isinstance(subcommand, str))
+            or not (isinstance(args, Sequence))
+            or not (isinstance(stage, str))
+            or not (isinstance(timeout, float))
+        ):
+            argument_error: str = "cdk: arguments do not satisfy the declared input contract"
+            raise TypeError(argument_error)
         return self.command(
             ["cdk", subcommand, "--profile", target.profile, *args],
             cwd=target.repository,

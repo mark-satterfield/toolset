@@ -35,14 +35,43 @@ always null.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
+import math
+import pathlib
 import sys
 from collections import deque
-from datetime import datetime, timezone
-from typing import Any
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal, Protocol, assert_never
+
+import wsjf_types
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+from wsjf_types import (
+    Estimate,
+    Fault,
+    Item,
+    Level,
+    LevelBase,
+    OutsideRange,
+    Payload,
+    ReachResult,
+    ReachRow,
+    Reason,
+    Rroe,
+    Scales,
+    ScoreData,
+    ScoreResult,
+    ScoreRow,
+    Size,
+    Unscored,
+)
 
 #: Per-level parameters. `rroeBands` are (reach ceiling, RR-OE rung) pairs, ascending.
-LEVELS: dict[str, dict[str, Any]] = {
+_ARGUMENT_ERROR: str = "Arguments violate the wsjf input contract"
+
+
+LEVELS: dict[str, LevelBase] = {
     "epic": {
         "rubric": "epic-wsjf",
         "rroeBands": ((0, 1), (1, 3), (3, 5), (9, 8), (19, 13)),
@@ -69,12 +98,13 @@ class WsjfError(Exception):
 
 
 def now_iso() -> str:
-    """The current time as an ISO 8601 timestamp in UTC.
+    """Return the current time as an ISO 8601 timestamp in UTC.
 
     Returns:
         The timestamp, to whole seconds, with a trailing `Z`.
+
     """
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def band(count: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
@@ -87,7 +117,15 @@ def band(count: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
 
     Returns:
         The rung the count lands on.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    ceiling: int
+    rung: int
+    if not (isinstance(count, int)) or not (isinstance(bands, tuple)) or not (isinstance(top, int)):
+        raise TypeError(_ARGUMENT_ERROR)
     for ceiling, rung in bands:
         if count <= ceiling:
             return rung
@@ -95,15 +133,21 @@ def band(count: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
 
 
 def fibonacci(count: int) -> list[int]:
-    """The first rungs of the size scale.
+    """Return the first rungs of the size scale.
 
     Args:
         count: How many rungs.
 
     Returns:
         1, 2, 3, 5, 8, ... — `count` of them.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    rungs = [1, 2]
+    if not (isinstance(count, int)):
+        raise TypeError(_ARGUMENT_ERROR)
+    rungs: list[int] = [1, 2]
     while len(rungs) < count:
         rungs.append(rungs[-1] + rungs[-2])
     return rungs[:count]
@@ -117,7 +161,15 @@ def snap_size(value: float) -> int:
 
     Returns:
         The rung; 1 for any value at or below 1.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    low: int
+    high: int
+    if not (isinstance(value, float)):
+        raise TypeError(_ARGUMENT_ERROR)
     low, high = 1, 2
     if value <= low:
         return low
@@ -135,7 +187,16 @@ def build_successors(edges: list[dict[str, str]], ids: set[str]) -> dict[str, se
 
     Returns:
         Blocker id -> the ids it blocks.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    edge: dict[str, str]
+    source: str | None
+    target: str | None
+    if not (isinstance(edges, list)) or not (isinstance(ids, set)):
+        raise TypeError(_ARGUMENT_ERROR)
     successors: dict[str, set[str]] = {}
     for edge in edges:
         source, target = edge.get("from"), edge.get("to")
@@ -153,11 +214,17 @@ def reachable_count(start: str, successors: dict[str, set[str]]) -> int:
 
     Returns:
         The size of the forward reachable set.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(start, str)) or not (isinstance(successors, dict)):
+        raise TypeError(_ARGUMENT_ERROR)
     seen: set[str] = set()
-    pending = deque(successors.get(start, set()))
+    pending: collections.deque[str] = deque(successors.get(start, set()))
     while pending:
-        node = pending.popleft()
+        node: str = pending.popleft()
         if node in seen or node == start:
             continue
         seen.add(node)
@@ -165,7 +232,7 @@ def reachable_count(start: str, successors: dict[str, set[str]]) -> int:
     return len(seen)
 
 
-def _as_int(value: Any) -> int | None:
+def _as_int(value: object) -> int | None:
     """Read a value as an integer, or None when it is absent or unusable.
 
     Args:
@@ -173,16 +240,17 @@ def _as_int(value: Any) -> int | None:
 
     Returns:
         The integer, or None.
+
     """
-    if value is None or isinstance(value, bool):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
-def _as_number(value: Any) -> int | float | None:
+def _as_number(value: object) -> int | float | None:
     """Read a value as a number, keeping a fraction, or None when it is absent or unusable.
 
     A judged size may fall between rungs, and snapping it up needs the fraction intact.
@@ -192,19 +260,20 @@ def _as_number(value: Any) -> int | float | None:
 
     Returns:
         The number, as an integer when it is whole, or None.
+
     """
-    if value is None or isinstance(value, bool):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
         return None
     try:
-        number = float(value)
-    except (TypeError, ValueError):
+        number: float = float(value)
+    except TypeError, ValueError:
         return None
-    if number != number or number in (float("inf"), float("-inf")):
+    if not math.isfinite(number):
         return None
     return int(number) if number.is_integer() else number
 
 
-def _resolve_level(payload: dict[str, Any], override: str | None) -> dict[str, Any]:
+def _resolve_level(payload: Payload, override: str | None) -> Level:
     """Pick the level parameters for this run.
 
     Args:
@@ -216,33 +285,61 @@ def _resolve_level(payload: dict[str, Any], override: str | None) -> dict[str, A
 
     Raises:
         WsjfError: No level was named, or the name is not one this module defines.
+
     """
-    name = override or payload.get("level")
-    if name not in LEVELS:
-        msg = f"level must be one of {sorted(LEVELS)}, got {name!r}"
+    name: str | None = override or payload.get("level")
+    if name is None or name not in LEVELS:
+        msg: str = f"level must be one of {sorted(LEVELS)}, got {name!r}"
         raise WsjfError(msg)
     return {"level": name, **LEVELS[name]}
 
 
-def _estimate(item: dict[str, Any]) -> dict[str, Any]:
-    """The judged size estimate an item carries, with its range and confidence.
+def _estimate(item: Item) -> Estimate:
+    """Return the judged size estimate an item carries, with its range and confidence.
 
     Args:
         item: The item being scored.
 
     Returns:
         `sizeEstimate`, `sizeLow`, `sizeHigh` and `sizeConfidence`, each only when given.
+
     """
-    fields = {
-        "sizeEstimate": _as_number(item.get("jobSize")),
-        "sizeLow": _as_number(item.get("sizeLow")),
-        "sizeHigh": _as_number(item.get("sizeHigh")),
-        "sizeConfidence": _as_int(item.get("sizeConfidence")),
-    }
-    return {key: value for key, value in fields.items() if value is not None}
+    result: Estimate = {}
+    estimate: int | float | None = _as_number(item.get("jobSize"))
+    low: int | float | None = _as_number(item.get("sizeLow"))
+    high: int | float | None = _as_number(item.get("sizeHigh"))
+    confidence: int | None = _as_int(item.get("sizeConfidence"))
+    if estimate is not None:
+        result["sizeEstimate"] = estimate
+    if low is not None:
+        result["sizeLow"] = low
+    if high is not None:
+        result["sizeHigh"] = high
+    if confidence is not None:
+        result["sizeConfidence"] = confidence
+    return result
 
 
-def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+def _sized_estimate(estimate: Estimate, size: int, source: str) -> Size:
+    """Attach the judged range and confidence to a resolved size.
+
+    Returns:
+        A sized record preserving every supplied estimate field.
+
+    """
+    record: Size = {"jobSize": size, "sizeSource": source}
+    if "sizeEstimate" in estimate:
+        record["sizeEstimate"] = estimate["sizeEstimate"]
+    if "sizeLow" in estimate:
+        record["sizeLow"] = estimate["sizeLow"]
+    if "sizeHigh" in estimate:
+        record["sizeHigh"] = estimate["sizeHigh"]
+    if "sizeConfidence" in estimate:
+        record["sizeConfidence"] = estimate["sizeConfidence"]
+    return record
+
+
+def _resolve_size(item: Item, params: Level) -> Size | Reason:
     """Settle one item's job size: the sum of its positive child sizes, or its judged estimate.
 
     At a level that rolls up, positive integer `childSizes` are summed and a sum outside the
@@ -255,39 +352,36 @@ def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any
     Returns:
         A record carrying `jobSize`, `sizeSource` and the estimate's fields, or `reason`
         when the size is missing.
+
     """
-    estimate = _estimate(item)
-    children = (
-        [c for c in (_as_int(x) for x in item.get("childSizes") or []) if c and c > 0]
-        if params["rollup"]
-        else []
+    estimate: wsjf_types.Estimate = _estimate(item)
+    children: list[int] = (
+        [c for c in (_as_int(x) for x in item.get("childSizes") or []) if c and c > 0] if params["rollup"] else []
     )
     if children:
-        total = sum(children)
-        record = {"jobSize": total, "sizeSource": "child-rollup", **estimate}
+        total: int = sum(children)
+        record: Size = _sized_estimate(estimate, total, "child-rollup")
         if "sizeLow" in estimate and "sizeHigh" in estimate:
-            record["sizeOutsideRange"] = not (
-                estimate["sizeLow"] <= total <= estimate["sizeHigh"]
-            )
+            record["sizeOutsideRange"] = not (estimate["sizeLow"] <= total <= estimate["sizeHigh"])
         return record
-    supplied = estimate.get("sizeEstimate")
+    supplied: int | float | None = estimate.get("sizeEstimate")
     if supplied is None:
         return {"reason": "no jobSize supplied and no childSizes to roll up"}
-    rung = snap_size(supplied)
-    threshold = params["decompositionFaultAbove"]
-    over = threshold is not None and rung > threshold
-    record = {"jobSize": rung, "sizeSource": "supplied", **estimate}
+    rung: int = snap_size(supplied)
+    threshold: int | None = params["decompositionFaultAbove"]
+    over: bool = threshold is not None and rung > threshold
+    record = _sized_estimate(estimate, rung, "supplied")
     if over or rung != supplied:
         record["sizeFault"] = {"supplied": supplied, "rung": rung, "aboveScale": over}
     return record
 
 
 def _resolve_rroe(
-    item: dict[str, Any],
-    params: dict[str, Any],
+    item: Item,
+    params: Level,
     successors: dict[str, set[str]],
     has_edges: bool,
-) -> dict[str, Any]:
+) -> Rroe | Reason:
     """Settle one item's RR-OE, from a supplied value, a supplied count, or the graph.
 
     Args:
@@ -298,9 +392,10 @@ def _resolve_rroe(
 
     Returns:
         A record carrying `riskReductionOpportunityEnablement` and `reaches`, or `reason`.
+
     """
-    supplied = _as_int(item.get("riskReductionOpportunityEnablement"))
-    reaches = _as_int(item.get("reaches"))
+    supplied: int | None = _as_int(item.get("riskReductionOpportunityEnablement"))
+    reaches: int | None = _as_int(item.get("reaches"))
     if supplied is not None:
         return {
             "riskReductionOpportunityEnablement": supplied,
@@ -310,29 +405,32 @@ def _resolve_rroe(
     if reaches is None:
         if not has_edges:
             return {
-                "reason": "RR-OE needs a dependency graph: supply edges, reaches, or RR-OE"
+                "reason": "RR-OE needs a dependency graph: supply edges, reaches, or RR-OE",
             }
         reaches = reachable_count(str(item["id"]), successors)
-        source = "graph"
+        source: str = "graph"
     else:
         source = "supplied-count"
     return {
         "riskReductionOpportunityEnablement": band(
-            reaches, params["rroeBands"], params["rroeTop"]
+            reaches,
+            params["rroeBands"],
+            params["rroeTop"],
         ),
         "reaches": reaches,
         "rroeSource": source,
     }
 
 
-def _confidence(item: dict[str, Any]) -> int | None:
-    """The value confidence supplied with UBV and TC.
+def _confidence(item: Item) -> int | None:
+    """Return the value confidence supplied with UBV and TC.
 
     Args:
         item: The item being scored.
 
     Returns:
         The integer percent, or None when none was supplied.
+
     """
     return _as_int(item.get("confidence"))
 
@@ -347,7 +445,7 @@ SIZE_KEYS = {
 }
 
 
-def _render(value: Any) -> str:
+def _render(value: object) -> str:
     """Render one metadata value: booleans as `true`/`false`, numbers without a `.0`.
 
     Args:
@@ -355,6 +453,7 @@ def _render(value: Any) -> str:
 
     Returns:
         Its stored form.
+
     """
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -363,8 +462,8 @@ def _render(value: Any) -> str:
     return str(value)
 
 
-def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
-    """The metadata a caller may store for one scored item.
+def _metadata(record: ScoreData, params: Level) -> dict[str, str]:
+    """Return the metadata a caller may store for one scored item.
 
     Args:
         record: The scored item.
@@ -372,8 +471,11 @@ def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
 
     Returns:
         Keys to string values, carrying no character a shell would mis-split.
+
     """
-    pairs = {
+    field: str
+    key: str
+    pairs: dict[str, str] = {
         "wsjf": f"{record['wsjf']:.2f}",
         "wsjf_calculated_at": now_iso(),
         "wsjf_rubric": params["rubric"],
@@ -386,9 +488,10 @@ def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
     }
     if record.get("reaches") is not None:
         pairs[params["reachKey"]] = str(record["reaches"])
+    fields: dict[str, object] = dict(record)
     for field, key in SIZE_KEYS.items():
-        if record.get(field) is not None:
-            pairs[key] = _render(record[field])
+        if fields.get(field) is not None:
+            pairs[key] = _render(fields[field])
     if record.get("valueFrom"):
         pairs["wsjf_value_from"] = str(record["valueFrom"])
     if record.get("confidence") is not None:
@@ -396,7 +499,8 @@ def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
     return pairs
 
 
-def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def score(payload: Payload, level: str | None = None) -> ScoreResult:
     """Score every item in one document.
 
     Args:
@@ -408,36 +512,45 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
         (always None).
 
     Raises:
-        WsjfError: The level is unusable.
-    """
-    params = _resolve_level(payload, level)
-    items = payload.get("items") or []
-    ids = {str(i.get("id")) for i in items}
-    has_graph = payload.get("edges") is not None
-    successors = build_successors(payload.get("edges") or [], ids)
+        TypeError: An argument violates the declared input contract.
 
-    scores: list[dict[str, Any]] = []
-    unscored: list[dict[str, Any]] = []
-    faults: list[dict[str, Any]] = []
-    outside: list[dict[str, Any]] = []
+    """
+    item: Item
+    if not (isinstance(payload, dict)) or not (isinstance(level, str) or level is None):
+        raise TypeError(_ARGUMENT_ERROR)
+    params: wsjf_types.Level = _resolve_level(payload, level)
+    items: list[wsjf_types.Item] = payload.get("items") or []
+    successors: dict[str, set[str]] = build_successors(payload.get("edges") or [], {item["id"] for item in items})
+
+    scores: list[ScoreRow] = []
+    unscored: list[Unscored] = []
+    faults: list[Fault] = []
+    outside: list[OutsideRange] = []
     for item in items:
-        item_id = str(item.get("id"))
-        ubv = _as_int(item.get("userBusinessValue"))
-        tc = _as_int(item.get("timeCriticality"))
+        item_id: str = str(item.get("id"))
+        ubv: int | None = _as_int(item.get("userBusinessValue"))
+        tc: int | None = _as_int(item.get("timeCriticality"))
         if ubv is None or tc is None:
             unscored.append(
-                {"id": item_id, "reason": "no userBusinessValue or timeCriticality"}
+                {"id": item_id, "reason": "no userBusinessValue or timeCriticality"},
             )
             continue
-        rroe = _resolve_rroe(item, params, successors, has_graph)
+        rroe: wsjf_types.Rroe | wsjf_types.Reason = _resolve_rroe(
+            item,
+            params,
+            successors,
+            payload.get("edges") is not None,
+        )
         if "reason" in rroe:
-            unscored.append({"id": item_id, "reason": rroe["reason"]})
+            unscored.append({"id": item_id, "reason": check_type(rroe, Reason)["reason"]})
             continue
-        size = _resolve_size(item, params)
+        rroe = check_type(rroe, Rroe, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        size: wsjf_types.Size | wsjf_types.Reason = _resolve_size(item, params)
         if "reason" in size:
-            unscored.append({"id": item_id, "reason": size["reason"]})
+            unscored.append({"id": item_id, "reason": check_type(size, Reason)["reason"]})
             continue
-        fault = size.pop("sizeFault", None)
+        size = check_type(size, Size, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        fault: wsjf_types.SizeFault | None = size.pop("sizeFault", None)
         if fault:
             faults.append({"id": item_id, **fault})
         if size.get("sizeOutsideRange"):
@@ -448,10 +561,10 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
                     "estimate": size.get("sizeEstimate"),
                     "low": size["sizeLow"],
                     "high": size["sizeHigh"],
-                }
+                },
             )
-        cod = ubv + tc + rroe["riskReductionOpportunityEnablement"]
-        record: dict[str, Any] = {
+        cod: int = ubv + tc + rroe["riskReductionOpportunityEnablement"]
+        record: ScoreData = {
             "id": item_id,
             "userBusinessValue": ubv,
             "timeCriticality": tc,
@@ -462,8 +575,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
             "wsjf": round(cod / size["jobSize"], 2),
             "confidence": _confidence(item),
         }
-        record["metadata"] = _metadata(record, params)
-        scores.append(record)
+        scores.append({**record, "metadata": _metadata(record, params)})
     return {
         "ok": not unscored,
         "level": params["level"],
@@ -475,7 +587,8 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
     }
 
 
-def reach(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reach(payload: Payload, level: str | None = None) -> ReachResult:
     """Report the reachability count and RR-OE band for every item, and nothing else.
 
     Args:
@@ -486,28 +599,35 @@ def reach(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
         One record per item, and `cycle` (always None).
 
     Raises:
-        WsjfError: The level is unusable.
+        TypeError: An argument violates the declared input contract.
+
     """
-    params = _resolve_level(payload, level)
-    items = payload.get("items") or []
-    ids = {str(i.get("id")) for i in items}
-    successors = build_successors(payload.get("edges") or [], ids)
-    rows = []
+    item_id: str
+    if not (isinstance(payload, dict)) or not (isinstance(level, str) or level is None):
+        raise TypeError(_ARGUMENT_ERROR)
+    params: wsjf_types.Level = _resolve_level(payload, level)
+    items: list[wsjf_types.Item] = payload.get("items") or []
+    ids: set[str] = {str(i.get("id")) for i in items}
+    successors: dict[str, set[str]] = build_successors(payload.get("edges") or [], ids)
+    rows: list[ReachRow] = []
     for item_id in sorted(ids):
-        count = reachable_count(item_id, successors)
+        count: int = reachable_count(item_id, successors)
         rows.append(
             {
                 "id": item_id,
                 "reaches": count,
                 "riskReductionOpportunityEnablement": band(
-                    count, params["rroeBands"], params["rroeTop"]
+                    count,
+                    params["rroeBands"],
+                    params["rroeTop"],
                 ),
-            }
+            },
         )
     return {"ok": True, "level": params["level"], "reaches": rows, "cycle": None}
 
 
-def scales(level: str) -> dict[str, Any]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def scales(level: str) -> Scales:
     """Report the computed tables for one level.
 
     Args:
@@ -518,10 +638,13 @@ def scales(level: str) -> dict[str, Any]:
         the roll-up rule.
 
     Raises:
-        WsjfError: The level is not one this module defines.
+        TypeError: An argument violates the declared input contract.
+
     """
-    params = _resolve_level({}, level)
-    rungs = fibonacci(LISTED_RUNGS)
+    if not (isinstance(level, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    params: wsjf_types.Level = _resolve_level({}, level)
+    rungs: list[int] = fibonacci(LISTED_RUNGS)
     return {
         "level": params["level"],
         "rubric": params["rubric"],
@@ -535,14 +658,12 @@ def scales(level: str) -> dict[str, Any]:
             "continuesUpward": True,
             "decompositionFaultAbove": params["decompositionFaultAbove"],
         },
-        "childSizeRollup": (
-            "the plain sum of the children's sizes" if params["rollup"] else None
-        ),
+        "childSizeRollup": ("the plain sum of the children's sizes" if params["rollup"] else None),
         "reachMetadataKey": params["reachKey"],
     }
 
 
-def _read_payload(path: str | None) -> dict[str, Any]:
+def _read_payload(path: str | None) -> Payload:
     """Read the input document from a file or stdin.
 
     Args:
@@ -553,16 +674,19 @@ def _read_payload(path: str | None) -> dict[str, Any]:
 
     Raises:
         WsjfError: The input is not valid JSON.
+
     """
-    raw = (
-        sys.stdin.read() if path in (None, "-") else open(path, encoding="utf-8").read()
-    )
+    raw: str = sys.stdin.read() if path in {None, "-"} else pathlib.Path(path).read_text(encoding="utf-8")
     try:
-        payload = json.loads(raw)
+        payload: object = json.loads(raw)
     except json.JSONDecodeError as exc:
-        msg = f"input is not valid JSON: {exc}"
+        msg: str = f"input is not valid JSON: {exc}"
         raise WsjfError(msg) from exc
-    return payload
+    return check_type(payload, Payload, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+
+class _Subcommands(Protocol):
+    def add_parser(self, name: str, *, help: str) -> argparse.ArgumentParser: ...  # ruff: ignore[builtin-argument-shadowing] - Exact argparse keyword contract.
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -570,11 +694,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     Returns:
         The parser.
+
     """
-    parser = argparse.ArgumentParser(
-        description="WSJF arithmetic over supplied inputs."
+    name: str
+    help_text: str
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="WSJF arithmetic over supplied inputs.",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub: _Subcommands = parser.add_subparsers(dest="command", required=True)
 
     for name, help_text in (
         (
@@ -583,13 +710,84 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         ("reach", "report the reachability count and RR-OE band, and nothing else"),
     ):
-        cmd = sub.add_parser(name, help=help_text)
+        cmd: argparse.ArgumentParser = sub.add_parser(name, help=help_text)
         cmd.add_argument("--level", choices=sorted(LEVELS), help="epic or task")
         cmd.add_argument("--input", help="a JSON file; omit for stdin")
 
-    tables = sub.add_parser("scales", help="print the computed tables for one level")
+    tables: argparse.ArgumentParser = sub.add_parser("scales", help="print the computed tables for one level")
     tables.add_argument("--level", choices=sorted(LEVELS), required=True)
     return parser
+
+
+@dataclass(frozen=True)
+class CommandOptions:
+    """Hold one validated arithmetic CLI request."""
+
+    command: Literal["score", "reach", "scales"]
+    level: str | None
+    input: str | None
+
+    def __post_init__(self) -> None:
+        """Reject invalid command values.
+
+        Raises:
+            TypeError: A field violates the CLI request contract.
+
+        """
+        if self.command not in {"score", "reach", "scales"}:
+            raise TypeError(_ARGUMENT_ERROR)
+        if self.level is not None and not isinstance(self.level, str):
+            raise TypeError(_ARGUMENT_ERROR)
+        if self.input is not None and not isinstance(self.input, str):
+            raise TypeError(_ARGUMENT_ERROR)
+
+
+def _command_options(argv: list[str] | None) -> CommandOptions:
+    """Parse command-line values into their explicit immutable contract.
+
+    Returns:
+        Validated command options.
+
+    Raises:
+        TypeError: Parser output violates the command contract.
+
+    """
+    args: argparse.Namespace = build_parser().parse_args(argv)
+    command: object = args.command
+    level: object = args.level
+    source: object = getattr(args, "input", None)
+    if command not in {"score", "reach", "scales"}:
+        message: str = "Unknown WSJF command"
+        raise TypeError(message)
+    if level is not None and not isinstance(level, str):
+        message = "WSJF level must be a string"
+        raise TypeError(message)
+    if source is not None and not isinstance(source, str):
+        message = "WSJF input must be a path string"
+        raise TypeError(message)
+    return CommandOptions(check_type(command, Literal["score", "reach", "scales"]), level, source)
+
+
+def _execute_command(options: CommandOptions) -> ScoreResult | ReachResult | Scales:
+    """Evaluate one parsed arithmetic command.
+
+    Returns:
+        The selected operation's exact result.
+
+    Raises:
+        ValueError: The scales command names no level.
+
+    """
+    if options.command == "score":
+        return score(_read_payload(options.input), options.level)
+    if options.command == "reach":
+        return reach(_read_payload(options.input), options.level)
+    if options.command == "scales":
+        if options.level is None:
+            message: str = "scales requires an explicit level"
+            raise ValueError(message)
+        return scales(options.level)
+    assert_never(options.command)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -600,21 +798,21 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         The process exit status.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    args = build_parser().parse_args(argv)
+    if not (isinstance(argv, list) or argv is None):
+        raise TypeError(_ARGUMENT_ERROR)
+    options: CommandOptions = _command_options(argv)
+    result: ScoreResult | ReachResult | Scales
     try:
-        if args.command == "score":
-            result = score(_read_payload(args.input), args.level)
-        elif args.command == "reach":
-            result = reach(_read_payload(args.input), args.level)
-        else:
-            result = scales(args.level)
+        result = _execute_command(options)
     except (WsjfError, OSError) as exc:
-        print(
-            json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False)
-        )
+        sys.stdout.write(json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False) + "\n")
         return 2
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    sys.stdout.write(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     return 0
 
 

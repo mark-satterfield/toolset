@@ -24,10 +24,20 @@ A ui delta item takes one design source:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
+
+import beadcontracts
+from beadcontracts import BuildSelection, Bundle, BundleListing, DesignArtifact
+from contracts import JsonObject, JsonValue, json_object
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 #: The kinds of artifact a bundle packages.
+_ARGUMENT_ERROR: str = "Arguments violate the cdsbundles input contract"
+
+
 KINDS = ("page", "shell", "view")
 
 #: The design sources a ui delta item, and a web-ui Task, takes.
@@ -37,7 +47,7 @@ DESIGN_SOURCES = ("bundle", "cds", "none")
 BUNDLE_FILE = "bundle.json"
 
 
-def _created(value: object) -> datetime | None:
+def _created(value: JsonValue) -> datetime | None:
     """Return an ISO-8601 timestamp as an aware datetime, or None when it is not one.
 
     Args:
@@ -45,17 +55,54 @@ def _created(value: object) -> datetime | None:
 
     Returns:
         The datetime, or None.
+
     """
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        stamp = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        stamp: datetime = datetime.fromisoformat(value.strip())
     except ValueError:
         return None
     return stamp if stamp.tzinfo else None
 
 
-def read_bundle(path: Path) -> dict | None:
+@dataclass(frozen=True)
+class _BundleManifest:
+    kind: Literal["page", "shell", "view"]
+    slug: str
+    build_spec: str
+    created: datetime
+    shell: JsonObject | None
+
+    def __post_init__(self) -> None:
+        if self.kind not in KINDS or not isinstance(self.slug, str) or not isinstance(self.build_spec, str):
+            raise TypeError(_ARGUMENT_ERROR)
+        if not isinstance(self.created, datetime):
+            raise TypeError(_ARGUMENT_ERROR)
+        check_type(self.shell, JsonObject | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+
+def _manifest(body: JsonObject) -> _BundleManifest | None:
+    kind: JsonValue = body.get("kind")
+    slug: JsonValue = body.get("slug")
+    spec: JsonValue = body.get("build_spec")
+    created: datetime | None = _created(body.get("created_at"))
+    if not isinstance(kind, str) or not isinstance(slug, str) or not isinstance(spec, str):
+        return None
+    if kind.strip() not in KINDS or not slug.strip() or not spec.strip() or created is None:
+        return None
+    shell: JsonObject | None = json_object(body["shell"]) if isinstance(body.get("shell"), dict) else None
+    return _BundleManifest(
+        check_type(kind.strip(), Literal["page", "shell", "view"]),
+        slug.strip(),
+        spec.strip(),
+        created,
+        shell,
+    )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def read_bundle(path: Path) -> Bundle | None:
     """Return a bundle's facts, or None when the directory holds no usable `bundle.json`.
 
     Args:
@@ -64,41 +111,44 @@ def read_bundle(path: Path) -> dict | None:
     Returns:
         `path`, `kind`, `slug`, `shell`, `createdAt`, `buildSpec` (absolute), `design`
         (absolute `design/<kind>.html`) and `styles` (absolute `styles/`), or None.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    marker = path / BUNDLE_FILE
+    if not (isinstance(path, Path)):
+        raise TypeError(_ARGUMENT_ERROR)
+    marker: Path = path / BUNDLE_FILE
     if not marker.is_file():
         return None
     try:
-        body = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
+        body: object = json.loads(marker.read_text(encoding="utf-8"))
+    except OSError, UnicodeDecodeError, ValueError:
         return None
     if not isinstance(body, dict):
         return None
-    kind = str(body.get("kind") or "").strip()
-    slug = str(body.get("slug") or "").strip()
-    spec = str(body.get("build_spec") or "").strip()
-    created = _created(body.get("created_at"))
-    if kind not in KINDS or not slug or not spec or created is None:
+    manifest: _BundleManifest | None = _manifest(json_object(body))
+    if manifest is None:
         return None
-    root = path.resolve()
-    build_spec = (root / spec).resolve()
+    root: Path = path.resolve()
+    build_spec: Path = (root / manifest.build_spec).resolve()
     if not build_spec.is_relative_to(root):
         return None
-    shell = body.get("shell") if isinstance(body.get("shell"), dict) else None
     return {
         "path": str(root),
-        "kind": kind,
-        "slug": slug,
-        "shell": shell,
-        "createdAt": created.astimezone(timezone.utc).isoformat(),
+        "kind": manifest.kind,
+        "slug": manifest.slug,
+        "shell": manifest.shell,
+        "createdAt": manifest.created.astimezone(UTC).isoformat(),
         "buildSpec": str(build_spec),
         "buildSpecExists": build_spec.is_file(),
-        "design": str(root / "design" / f"{kind}.html"),
+        "design": str(root / "design" / f"{manifest.kind}.html"),
         "styles": str(root / "styles"),
     }
 
 
-def list_bundles(packages_dir: str | Path | None) -> dict:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def list_bundles(packages_dir: str | Path | None) -> BundleListing:
     """Return the supplied bundles in a packages directory, newest per kind and slug.
 
     An absent, empty or unset directory supplies no bundle.
@@ -110,10 +160,17 @@ def list_bundles(packages_dir: str | Path | None) -> dict:
         `packagesDir`, `bundles` (the supplied ones, by kind then slug), `superseded`
         (older bundles of a kind and slug) and `ignored` (directories with no usable
         `bundle.json`).
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    text = str(packages_dir or "").strip()
-    root = Path(text).expanduser().resolve() if text else None
-    out: dict = {
+    child: Path
+    if not (isinstance(packages_dir, (str, Path)) or packages_dir is None):
+        raise TypeError(_ARGUMENT_ERROR)
+    text: str = str(packages_dir or "").strip()
+    root: Path | None = Path(text).expanduser().resolve() if text else None
+    out: BundleListing = {
         "packagesDir": str(root) if root else None,
         "bundles": [],
         "superseded": [],
@@ -121,14 +178,14 @@ def list_bundles(packages_dir: str | Path | None) -> dict:
     }
     if root is None or not root.is_dir():
         return out
-    newest: dict[tuple[str, str], dict] = {}
+    newest: dict[tuple[str, str], Bundle] = {}
     for child in sorted(p for p in root.iterdir() if p.is_dir()):
-        bundle = read_bundle(child)
+        bundle: beadcontracts.Bundle | None = read_bundle(child)
         if bundle is None:
             out["ignored"].append(str(child))
             continue
-        key = (bundle["kind"], bundle["slug"])
-        held = newest.get(key)
+        key: tuple[str, str] = (bundle["kind"], bundle["slug"])
+        held: beadcontracts.Bundle | None = newest.get(key)
         if held is None or bundle["createdAt"] > held["createdAt"]:
             if held is not None:
                 out["superseded"].append(held["path"])
@@ -139,6 +196,7 @@ def list_bundles(packages_dir: str | Path | None) -> dict:
     return out
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def bundle_problem(bundle_dir: str, build_spec: str | None) -> str | None:
     """Return why a cited bundle and build spec cannot be built from, or None when they can.
 
@@ -152,41 +210,39 @@ def bundle_problem(bundle_dir: str, build_spec: str | None) -> str | None:
 
     Returns:
         The problem, or None.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(bundle_dir, str)) or not (isinstance(build_spec, str) or build_spec is None):
+        raise TypeError(_ARGUMENT_ERROR)
     if not bundle_dir or not Path(bundle_dir).is_absolute():
         return f"the bundle {bundle_dir or '(none)'} is not an absolute path"
-    path = Path(bundle_dir).resolve()
-    bundle = read_bundle(path)
+    path: Path = Path(bundle_dir).resolve()
+    bundle: beadcontracts.Bundle | None = read_bundle(path)
     if bundle is None:
         return f"{path} holds no usable {BUNDLE_FILE}"
-    supplied = next(
-        (
-            b
-            for b in list_bundles(path.parent)["bundles"]
-            if (b["kind"], b["slug"]) == (bundle["kind"], bundle["slug"])
-        ),
+    supplied: beadcontracts.Bundle | None = next(
+        (b for b in list_bundles(path.parent)["bundles"] if (b["kind"], b["slug"]) == (bundle["kind"], bundle["slug"])),
         None,
     )
     if supplied and supplied["path"] != bundle["path"]:
-        return (
-            f"{path} is superseded by the newer bundle of {bundle['kind']} "
-            f"{bundle['slug']}: {supplied['path']}"
-        )
-    if build_spec is None:
-        return None
-    if Path(build_spec).resolve() != Path(bundle["buildSpec"]):
+        return f"{path} is superseded by the newer bundle of {bundle['kind']} {bundle['slug']}: {supplied['path']}"
+    if build_spec is not None and Path(build_spec).resolve() != Path(bundle["buildSpec"]):
         return f"{build_spec} is not the build spec {path}/{BUNDLE_FILE} names ({bundle['buildSpec']})"
-    if not bundle["buildSpecExists"]:
+    if build_spec is not None and not bundle["buildSpecExists"]:
         return f"the build spec {bundle['buildSpec']} does not exist"
     return None
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def select_build(
     packages_dir: str | Path | None,
     design_source: str,
-    artifact: dict | None,
+    artifact: DesignArtifact | None,
     recorded_bundle: str | None = None,
-) -> dict:
+) -> BuildSelection:
     """Return the design source a web-ui Task builds with now, from the bundles supplied today.
 
     A mockup can arrive any time before its Task is built. A `cds` Task whose artifact now has
@@ -204,16 +260,29 @@ def select_build(
         `designSource` (`bundle`, `cds` or `none`), `recordedSource`, `artifact`, `bundle`,
         `buildSpec`, `switched` (true when the source or the bundle differs from the
         recorded one), and `blocked` (why the build cannot proceed) or None.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    recorded = str(recorded_bundle or "").strip() or None
-    art = artifact if isinstance(artifact, dict) else {}
+    kind: str
+    slug: str
+    if (
+        not (isinstance(packages_dir, (str, Path)) or packages_dir is None)
+        or not (isinstance(design_source, str))
+        or not (isinstance(artifact, dict) or artifact is None)
+        or not (isinstance(recorded_bundle, str) or recorded_bundle is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    recorded: str | None = str(recorded_bundle or "").strip() or None
+    art: DesignArtifact = artifact if artifact is not None else {"kind": "", "slug": ""}
     kind = str(art.get("kind") or "").strip()
     slug = str(art.get("slug") or "").strip()
     if (not kind or not slug) and recorded:
-        held = read_bundle(Path(recorded))
+        held: beadcontracts.Bundle | None = read_bundle(Path(recorded))
         if held:
             kind, slug = held["kind"], held["slug"]
-    out = {
+    out: BuildSelection = {
         "designSource": design_source,
         "recordedSource": design_source,
         "artifact": {"kind": kind, "slug": slug} if kind and slug else None,
@@ -222,24 +291,9 @@ def select_build(
         "switched": False,
         "blocked": None,
     }
-    if design_source not in ("bundle", "cds"):
+    if design_source not in {"bundle", "cds"}:
         return out
-    roots = [packages_dir] if str(packages_dir or "").strip() else []
-    if recorded:
-        roots.append(Path(recorded).parent)
-    found = None
-    if kind and slug:
-        for root in roots:
-            found = next(
-                (
-                    b
-                    for b in list_bundles(root)["bundles"]
-                    if (b["kind"], b["slug"]) == (kind, slug)
-                ),
-                None,
-            )
-            if found:
-                break
+    found: beadcontracts.Bundle | None = _find_bundle(packages_dir, recorded, kind, slug)
     if found is None:
         if design_source == "bundle":
             out["blocked"] = (
@@ -249,16 +303,35 @@ def select_build(
             )
         return out
     if not found["buildSpecExists"]:
-        out["blocked"] = (
-            f"the cds bundle {found['path']} has no build spec at {found['buildSpec']}"
-        )
+        out["blocked"] = f"the cds bundle {found['path']} has no build spec at {found['buildSpec']}"
         return out
     out |= {
         "designSource": "bundle",
         "bundle": found["path"],
         "buildSpec": found["buildSpec"],
-        "switched": design_source != "bundle"
-        or not recorded
-        or Path(recorded).resolve() != Path(found["path"]),
+        "switched": design_source != "bundle" or not recorded or Path(recorded).resolve() != Path(found["path"]),
     }
     return out
+
+
+def _find_bundle(packages_dir: str | Path | None, recorded: str | None, kind: str, slug: str) -> Bundle | None:
+    """Find the newest matching supplied bundle across recorded roots.
+
+    Returns:
+        The matching bundle, or None.
+
+    """
+    root: str | Path | None
+    roots: list[str | Path | None] = [packages_dir] if str(packages_dir or "").strip() else []
+    if recorded:
+        roots.append(Path(recorded).parent)
+    found: Bundle | None = None
+    if kind and slug:
+        for root in roots:
+            found = next(
+                (b for b in list_bundles(root)["bundles"] if (b["kind"], b["slug"]) == (kind, slug)),
+                None,
+            )
+            if found:
+                break
+    return found

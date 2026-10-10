@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
+import beadcontracts
+import beadgraph
+import beadwrite
+import hierarchy
+from beadcontracts import PlannedTask, TaskPlan
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
@@ -14,6 +21,12 @@ from orchestrator.core.models import AgentStep, RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.task_state import replace, repoint, snapshot, task_facts
 
+_ARGUMENT_ERROR: str = "Arguments violate the task_decomposition input contract"
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
@@ -22,8 +35,13 @@ def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
     Returns:
         The validated task result.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    names = [
+    if not (isinstance(work, Path)) or not (isinstance(slug, str)) or not (isinstance(ui, bool)):
+        raise TypeError(_ARGUMENT_ERROR)
+    names: list[str] = [
         f"spec-{slug}.md",
         f"spec-{slug}.data-model.md",
         f"spec-{slug}.criteria.md",
@@ -39,6 +57,19 @@ def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
 class TaskDecomposition:
     """Author and preserve tasks for one repository Story."""
 
+    context: RunContext
+    store: ArtifactStore
+    runner: AgentRunner
+    tools: Tools
+    work: Path
+    slug: str
+    repo: str
+    output: Path
+    facts: Path
+    items: Path
+    inputs: tuple[str, ...]
+    packages: str | None
+
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(
         self,
@@ -50,9 +81,17 @@ class TaskDecomposition:
         """Bind one repository and its task artifact contracts.
 
         Raises:
+            TypeError: An argument violates the declared input contract.
             StepError: The artifact slug or repository path is invalid.
 
         """
+        if (
+            not (isinstance(context, RunContext))
+            or not (isinstance(store, ArtifactStore))
+            or not (isinstance(runner, AgentRunner))
+            or not (isinstance(tools, Tools))
+        ):
+            raise TypeError(_ARGUMENT_ERROR)
         self.context, self.store, self.runner, self.tools = (
             context,
             store,
@@ -61,7 +100,7 @@ class TaskDecomposition:
         )
         self.work = context.work
         self.slug = str(context.args["slug"])
-        stage = "input"
+        stage: str = "input"
         if not re.fullmatch(r"[A-Za-z0-9._-]+", self.slug) or self.slug in {".", ".."}:
             raise StepError(stage, "other", ("invalid Task artifact slug",))
         if not context.args.get("repoPath"):
@@ -75,22 +114,26 @@ class TaskDecomposition:
             self.slug,
             ui=bool(context.args.get("uiPath")),
         )
-        self.packages = context.args.get("packagesDir")
+        self.packages = check_type(context.args.get("packagesDir"), str | None)
         self.warnings: list[str] = []
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def portfolio(self, function: str, *args: object, **kwargs: object) -> object:
+    def portfolio(self, function: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
         """Dispatch a task portfolio operation.
 
         Returns:
             The validated task result.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (callable(function)):
+            raise TypeError(_ARGUMENT_ERROR)
         return self.tools.portfolio(
-            "beadwrite",
+            "decompose",
             function,
             *args,
-            stage="decompose",
             **kwargs,
         )
 
@@ -102,7 +145,7 @@ class TaskDecomposition:
             TypeCheckError: An artifact contract is invalid.
 
         """
-        stage = "task-record"
+        stage: str = "task-record"
         try:
             self.store.accept(f"tasks:{self.slug}", self.inputs, (self.output,))
         except TypeCheckError:
@@ -124,7 +167,20 @@ class TaskDecomposition:
         *,
         corrective: bool = True,
     ) -> None:
-        """Run task authoring against the requested schema."""
+        """Run task authoring against the requested schema.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
+        """
+        if (
+            not (isinstance(output, Path))
+            or not (isinstance(inputs, tuple))
+            or not (isinstance(outcome, str))
+            or not (isinstance(schema, str))
+            or not (isinstance(corrective, bool))
+        ):
+            raise TypeError(_ARGUMENT_ERROR)
         self.runner.run(
             AgentStep(
                 stage="decompose" if corrective else "uncited-items",
@@ -142,45 +198,46 @@ class TaskDecomposition:
         )
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def plan(self) -> dict[str, JsonValue]:
+    def plan(self) -> TaskPlan:
         """Read the current task plan.
 
         Returns:
             The validated task result.
 
         """
-        return json_object(
-            self.portfolio(
-                "plan_story_tasks",
-                self.work,
-                slug=self.slug,
-                repo=self.repo,
-                root=self.store.root,
-                packages_dir=self.packages,
-            ),
+        return self.portfolio(
+            beadwrite.plan_story_tasks,
+            self.work,
+            slug=self.slug,
+            repo=self.repo,
+            root=self.store.root,
+            packages_dir=self.packages,
         )
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def correction(self, plan: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    def correction(self, plan: TaskPlan) -> dict[str, JsonValue]:
         """Correct recorded task coverage and sizing gaps.
 
         Returns:
             The validated task result.
 
         Raises:
+            TypeError: An argument violates the declared input contract.
             StepError: Coverage or sizing remains incomplete.
 
         """
-        gaps = self.work / f"tasks-{self.slug}.gaps.json"
+        if not (isinstance(plan, dict)):
+            raise TypeError(_ARGUMENT_ERROR)
+        gaps: Path = self.work / f"tasks-{self.slug}.gaps.json"
         write_json(
             gaps,
             {
                 "uncitedItems": plan["uncitedItems"],
-                "unsized": plan["unsized"],
+                "unsized": list(plan["unsized"]),
                 "empty": not plan["tasks"],
             },
         )
-        output = self.work / f"tasks-{self.slug}.correction.json"
+        output: Path = self.work / f"tasks-{self.slug}.correction.json"
         self.author(
             output,
             (*self.inputs, str(self.output), str(self.items), str(gaps)),
@@ -188,35 +245,35 @@ class TaskDecomposition:
             "tasks-correction.schema.json",
             corrective=False,
         )
-        merged = json_object(
+        merged: dict[str, JsonValue] = json_object(
             self.portfolio(
-                "add_corrective_tasks",
+                beadwrite.add_corrective_tasks,
                 self.work,
                 slug=self.slug,
                 correction=output,
             ),
         )
         self.record()
-        after = self.plan()
+        after: beadcontracts.TaskPlan = self.plan()
         if not after["tasks"] or after["uncited"] or after["unsized"]:
-            stage = "decompose" if not after["tasks"] else "uncited-items"
+            stage: str = "decompose" if not after["tasks"] else "uncited-items"
             raise StepError(
                 stage,
                 "other",
                 (str(gaps), str(output), str(merged)),
             )
         return {
-            "uncitedBefore": plan["uncited"],
-            "uncitedAfter": after["uncited"],
-            "unsizedBefore": plan["unsized"],
-            "unsizedAfter": after["unsized"],
+            "uncitedBefore": list(plan["uncited"]),
+            "uncitedAfter": list(after["uncited"]),
+            "unsizedBefore": list(plan["unsized"]),
+            "unsizedAfter": list(after["unsized"]),
             **merged,
         }
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def write(
         self,
-        plan: dict[str, JsonValue],
+        plan: TaskPlan,
         *,
         missing_only: bool,
     ) -> tuple[list[dict[str, JsonValue]], dict[str, int]]:
@@ -225,26 +282,28 @@ class TaskDecomposition:
         Returns:
             The validated task result.
 
-        """
-        written = []
-        edges = {"added": 0, "removed": 0, "standing": 0}
-        for task in check_type(
-            plan["tasks"],
-            list[dict[str, JsonValue]],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ):
+        Raises:
+            TypeError: An argument violates the declared input contract.
 
-            def attempt(task: dict[str, JsonValue] = task) -> dict[str, JsonValue]:
-                writer = self.tools.portfolio(
-                    "beadgraph",
-                    "Writer",
+        """
+        task: PlannedTask
+        key: str
+        if not (isinstance(plan, dict)) or not (isinstance(missing_only, bool)):
+            raise TypeError(_ARGUMENT_ERROR)
+        written: list[dict[str, JsonValue]] = []
+        edges: dict[str, int] = {"added": 0, "removed": 0, "standing": 0}
+        for task in plan["tasks"]:
+
+            def attempt(task: PlannedTask = task) -> dict[str, JsonValue]:
+                writer: beadgraph.Writer = self.tools.portfolio(
+                    "task-write",
+                    beadgraph.Writer,
                     env_path("ATW_CONTROL_REPO"),
-                    stage="task-write",
                 )
                 return json_object(
                     self.tools.portfolio(
-                        "beadwrite",
-                        "write_task",
+                        "task-write",
+                        beadwrite.write_task,
                         writer,
                         self.context.bead,
                         self.work,
@@ -254,11 +313,10 @@ class TaskDecomposition:
                         root=self.store.root,
                         packages_dir=self.packages,
                         missing_only=missing_only,
-                        stage="task-write",
                     ),
                 )
 
-            result = self.tools.operation("task-write", attempt)
+            result: dict[str, JsonValue] = self.tools.operation("task-write", attempt)
             written.append(json_object(result["task"]))
             self.warnings.extend(
                 check_type(result["warnings"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
@@ -280,22 +338,39 @@ def run(
     Returns:
         The recorded task, dependency, and replacement outcome.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    graph: beadgraph.Graph
+    story: beadgraph.Bead
+    tasks: list[beadgraph.Bead]
+    written: list[dict[str, JsonValue]]
+    edges: dict[str, int]
+    if (
+        not (isinstance(context, RunContext))
+        or not (isinstance(store, ArtifactStore))
+        or not (isinstance(runner, AgentRunner))
+        or not (isinstance(tools, Tools))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
     context.stage = "task-decomposition"
-    flow = TaskDecomposition(context, store, runner, tools)
+    flow: TaskDecomposition = TaskDecomposition(context, store, runner, tools)
     graph, story, tasks = tools.operation(
         "input",
         lambda: snapshot(tools, context.bead, flow.slug),
     )
-    fresh = json_object(flow.portfolio("tasks_inputs", flow.work, slug=flow.slug, root=store.root))
-    unchanged = check_type(fresh["unchanged"], bool) and store.reusable(flow.inputs, (flow.output,))
-    facts = json_object({
+    fresh: dict[str, JsonValue] = json_object(
+        flow.portfolio(beadwrite.tasks_inputs, flow.work, slug=flow.slug, root=store.root),
+    )
+    unchanged: bool = check_type(fresh["unchanged"], bool) and store.reusable(flow.inputs, (flow.output,))
+    facts: dict[str, JsonValue] = json_object({
         "deleted": [],
         "kept": [task_facts(b) for b in tasks],
         "reason": "unchanged inputs",
     })
     if not unchanged:
-        reason = check_type(context.args.get("upstreamChange") or "", str) or str(
+        reason: str = check_type(context.args.get("upstreamChange") or "", str) or str(
             fresh["changedInputs"] or "no current Task receipt",
         )
         facts = replace(tools, context.bead, flow.slug, flow.work, reason)
@@ -308,7 +383,7 @@ def run(
             {
                 "existingTasks": facts["kept"],
                 "otherEpicTasks": flow.portfolio(
-                    "other_epic_tasks",
+                    beadwrite.other_epic_tasks,
                     graph,
                     context.bead,
                     flow.repo,
@@ -317,13 +392,8 @@ def run(
                 "slug": flow.slug,
             },
         )
-        items = json_object(
-            tools.portfolio(
-                "hierarchy",
-                "placed_items",
-                flow.work,
-                stage="decompose",
-            ),
+        items: dict[str, JsonValue] = json_object(
+            tools.portfolio("decompose", hierarchy.placed_items, flow.work),
         )
         write_json(
             flow.items,
@@ -336,8 +406,8 @@ def run(
             "tasks.schema.json",
         )
         flow.record()
-    plan = flow.plan()
-    coverage = {}
+    plan: beadcontracts.TaskPlan = flow.plan()
+    coverage: dict[str, JsonValue] = {}
     if not plan["tasks"] or plan["uncited"] or plan["unsized"]:
         coverage = flow.correction(plan)
         plan = flow.plan()
@@ -346,14 +416,14 @@ def run(
     flow.warnings.extend(
         check_type(plan["warnings"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
     )
-    rerun = {
+    rerun: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
         "case": "unchanged" if unchanged else "replaced" if facts["deleted"] or facts["kept"] else "new",
         "reason": facts["reason"],
         "changedInputs": fresh["changedInputs"],
         "deleted": facts["deleted"],
         "kept": facts["kept"],
     }
-    result = json_object({
+    result: dict[str, JsonValue] = json_object({
         "ok": True,
         "rerun": rerun,
         "repoPath": flow.repo,

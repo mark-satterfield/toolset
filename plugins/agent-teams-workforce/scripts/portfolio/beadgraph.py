@@ -17,26 +17,37 @@ as a dependency.
 
 from __future__ import annotations
 
-import argparse
 import functools
-import importlib
-import importlib.util
 import json
 import math
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
-import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
+
+import contracts
+
+# isort: split
+import portfolio_path  # ruff: ignore[unused-import] - Standalone imports need the bundled plugin path before orchestrator imports.
+
+# isort: split
+
+import beads_contract
+from beadcontracts import PlannedWrite
+from contracts import JsonObject, JsonValue, json_object
+from orchestrator.core import tool_locks as locks
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+_ARGUMENT_ERROR: str = "Arguments violate the beadgraph input contract"
+
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from contextlib import AbstractContextManager
 
 #: The `beads-contract` CLI — the one writer of this pipeline's bead metadata. Going
 #: through it is what keeps ONE statement of which keys exist and how they merge; a
 #: hand-rolled `bd update --metadata` here would be a second, silently divergent one.
-CONTRACT = Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts" / "beads-contract.py"
 
 #: The dependency type of a Task-to-Task edge: a build prerequisite `bd ready` enforces.
 BLOCKS = "blocks"
@@ -46,6 +57,7 @@ BLOCKS = "blocks"
 TRACKS = "tracks"
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def edge_type(kind: str) -> str:
     """Return the dependency type for an edge onto this issue type.
 
@@ -55,7 +67,12 @@ def edge_type(kind: str) -> str:
     Returns:
         `tracks` for an Epic, `blocks` for everything else.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(kind, str)):
+        raise TypeError(_ARGUMENT_ERROR)
     return TRACKS if kind == "epic" else BLOCKS
 
 
@@ -93,11 +110,17 @@ class GraphError(RuntimeError):
             message: What failed.
             cause: CONTENTION, BD_TIMEOUT or OTHER_CAUSE.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(message, str)) or not (isinstance(cause, str)):
+            raise TypeError(_ARGUMENT_ERROR)
         super().__init__(message)
-        self.cause = cause
+        self.cause: str = cause
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class Bead:
     """One tracker record, reduced to the fields sequencing reasons about."""
@@ -111,6 +134,18 @@ class Bead:
     blockers: tuple[str, ...]
     tracked: tuple[str, ...] = ()
     description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate every constructor field, including all collection entries."""
+        check_type(self.id, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.title, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.kind, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.status, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.parent, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.metadata, dict[str, str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.blockers, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.tracked, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.description, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     @property
     def closed(self) -> bool:
@@ -132,14 +167,22 @@ class Bead:
         return tuple(split_ids(self.metadata.get(OWNED_KEY, "")))
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class Graph:
     """Every bead in the tracker, indexed, plus the source it was read from."""
 
     beads: dict[str, Bead]
     source: str
-    records: list[dict] = field(default_factory=list)
+    records: list[JsonObject] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate every constructor field, including all collection entries."""
+        check_type(self.beads, dict[str, Bead], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.source, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.records, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.warnings, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def of_kind(self, *kinds: str) -> list[Bead]:
         """Select beads of the given issue types.
@@ -148,7 +191,7 @@ class Graph:
             Matching beads in id order.
 
         """
-        wanted = set(kinds)
+        wanted: set[str] = set(kinds)
         return [b for _, b in sorted(self.beads.items()) if b.kind in wanted]
 
     def ancestors(self, bead_id: str) -> list[Bead]:
@@ -157,15 +200,20 @@ class Graph:
         Returns:
             Ancestors nearest first.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(bead_id, str)):
+            raise TypeError(_ARGUMENT_ERROR)
         chain: list[Bead] = []
-        seen = {bead_id}
-        current = self.beads.get(bead_id)
+        seen: set[str] = {bead_id}
+        current: Bead | None = self.beads.get(bead_id)
         while current is not None and current.parent:
             if current.parent in seen:
                 break
             seen.add(current.parent)
-            parent = self.beads.get(current.parent)
+            parent: Bead | None = self.beads.get(current.parent)
             if parent is None:
                 break
             chain.append(parent)
@@ -178,7 +226,13 @@ class Graph:
         Returns:
             The closest Epic ancestor, or None.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        ancestor: Bead
+        if not (isinstance(bead_id, str)):
+            raise TypeError(_ARGUMENT_ERROR)
         for ancestor in self.ancestors(bead_id):
             if ancestor.kind == "epic":
                 return ancestor
@@ -190,13 +244,19 @@ class Graph:
         Returns:
             Descendants in id order.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        bead: Bead
+        if not (isinstance(bead_id, str)):
+            raise TypeError(_ARGUMENT_ERROR)
         children: dict[str, list[Bead]] = {}
         for bead in self.beads.values():
             if bead.parent:
                 children.setdefault(bead.parent, []).append(bead)
         out: list[Bead] = []
-        stack = list(children.get(bead_id, []))
+        stack: list[Bead] = list(children.get(bead_id, []))
         seen: set[str] = set()
         while stack:
             bead = stack.pop()
@@ -208,55 +268,48 @@ class Graph:
         return sorted(out, key=lambda b: b.id)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def split_ids(raw: str) -> list[str]:
     """Parse a comma-separated bead-id list.
 
     Returns:
         Nonempty stripped bead identifiers.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not (isinstance(raw, str)):
+        raise TypeError(_ARGUMENT_ERROR)
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     """Render identifiers in the comma-separated metadata form.
 
     Returns:
         Sorted unique identifiers separated by commas.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
+    if not isinstance(ids, (list, set, tuple)):
+        raise TypeError(_ARGUMENT_ERROR)
     return ",".join(sorted(set(ids)))
 
 
-# The orchestrator installs this callable; direct portfolio commands use the same gate.
-BD_GATE = None
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class BdGate(Protocol):
+    """Acquire the shared tracker gate using the requested access mode."""
+
+    def __call__(self, *, write: bool) -> AbstractContextManager[None]:
+        """Return the bounded tracker lock context."""
+        ...
 
 
-def _gate_module() -> ModuleType:
-    """Load the shared lock implementation for direct portfolio CLI invocations.
-
-    Returns:
-        The shared lock module.
-
-    """
-    root = str(Path(__file__).resolve().parents[2])
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    return importlib.import_module("orchestrator.core.tool_locks")
-
-
-@functools.cache
-def _contract() -> object:
-    """Load the beads-contract module that selects the database for `bd`.
-
-    Returns:
-        The loaded module.
-
-    """
-    spec = importlib.util.spec_from_file_location("beads_contract", CONTRACT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+BD_GATE: BdGate | None = None
 
 
 @functools.cache
@@ -267,7 +320,7 @@ def _central() -> Path | None:
         The repository, or None.
 
     """
-    central = _contract().central_repo("")
+    central: str = beads_contract.central_repo("")
     return Path(central) if central else None
 
 
@@ -290,20 +343,21 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
         The repository, or None for the working directory.
 
     """
-    contract = _contract()
-    central = repo if repo is not None else _central()
-    bead_id = contract.bead_operand(args)
-    if not bead_id or contract.is_read(args):
+    rows: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
+    central: Path | None = repo if repo is not None else _central()
+    bead_id: str = beads_contract.bead_operand(args)
+    if not bead_id or beads_contract.is_read(args):
         return central
-    key = str(central or "")
+    key: str = str(central or "")
     if key not in _HOMES:
-        rows = _bd_json(["--readonly", "sql", "--json", contract.FLEET_QUERY], central)
-        _HOMES[key] = contract.fleet_homes(rows, key)
-    home = _HOMES[key].get(bead_id)
+        rows = _bd_json(["--readonly", "sql", "--json", beads_contract.FLEET_QUERY], central)
+        _HOMES[key] = beads_contract.fleet_homes(rows, key)
+    home: str | None = _HOMES[key].get(bead_id)
     return Path(home) if home else central
 
 
-def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     """Make one serialized, bounded bd call with a cause from structured facts.
 
     The orchestrator retries the enclosing keyed operation, which rereads existing beads.
@@ -313,18 +367,25 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         The command stdout.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         GraphError: The lock, process, or tracker command failed.
 
     """
-    command = ["bd", *args]
-    where = _target(args, repo)
+    if (
+        not (isinstance(args, list))
+        or not (isinstance(repo, Path) or repo is None)
+        or not (isinstance(stdin, str) or stdin is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    command: list[str] = ["bd", *args]
+    where: Path | None = _target(args, repo)
     if where is not None:
         command += ["-C", str(where)]
-    locks = _gate_module()
-    gate = BD_GATE or locks.bd_gate
+
+    gate: BdGate = BD_GATE or locks.bd_gate
     try:
-        with gate(write=not _contract().is_read(args)):
-            done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
+        with gate(write=not beads_contract.is_read(args)):
+            done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
                 command,
                 input=stdin,
                 capture_output=True,
@@ -339,12 +400,12 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     except (OSError, ValueError) as exc:
         raise GraphError(str(exc), OTHER_CAUSE) from exc
     if done.returncode:
-        msg = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
+        msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
         raise GraphError(msg, OTHER_CAUSE)
     return done.stdout
 
 
-def _bd_json(args: list[str], repo: Path | None) -> object:
+def _bd_json(args: list[str], repo: Path | None) -> JsonValue:
     """Run a read-only `bd` command and parse its JSON stdout.
 
     A failed read raises its structured cause to the caller, which owns retry policy.
@@ -360,14 +421,17 @@ def _bd_json(args: list[str], repo: Path | None) -> object:
         GraphError: `bd` failed or printed no JSON.
 
     """
-    out = _bd(args, repo)
+    out: str = run_bd(args, repo)
     try:
-        return json.loads(out or "null")
+        value: object = json.loads(out or "null")
     except json.JSONDecodeError as exc:
-        msg = f"`bd {' '.join(args)}` printed no JSON: {exc}: {out.strip()[:400]}"
+        msg: str = f"`bd {' '.join(args)}` printed no JSON: {exc}: {out.strip()[:400]}"
         raise GraphError(msg) from exc
+    checked: JsonValue = check_type(value, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    return checked
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def now_iso() -> str:
     """Format the current instant in UTC.
 
@@ -378,7 +442,8 @@ def now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def same_value(stored: object, wanted: str) -> bool:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def same_value(stored: JsonValue, wanted: str) -> bool:
     """Whether a value read back from the tracker is the value that was written.
 
     `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
@@ -392,14 +457,19 @@ def same_value(stored: object, wanted: str) -> bool:
     Returns:
         True when the read-back holds the written value.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    structured = _structured(stored)
+    if not (isinstance(wanted, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    structured: contracts.JsonObject | list[contracts.JsonValue] | None = _structured(stored)
     if structured is not None:
         return structured == _structured(wanted)
     # `bd` hands a `true`/`false` value back as a JSON boolean.
     if isinstance(stored, bool):
         return str(stored).lower() == wanted.strip().lower()
-    text = "" if stored is None else str(stored)
+    text: str = "" if stored is None else str(stored)
     if text == wanted:
         return True
     try:
@@ -408,7 +478,7 @@ def same_value(stored: object, wanted: str) -> bool:
         return False
 
 
-def _structured(value: object) -> dict | list | None:
+def _structured(value: JsonValue) -> JsonObject | list[JsonValue] | None:
     """Parse a value as a JSON object or list when possible.
 
     Args:
@@ -419,17 +489,26 @@ def _structured(value: object) -> dict | list | None:
 
     """
     if isinstance(value, (dict, list)):
-        return value
+        checked: JsonObject | list[JsonValue] = check_type(
+            value,
+            JsonObject | list[JsonValue],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        return checked
     if not isinstance(value, str):
         return None
     try:
-        parsed = json.loads(value)
+        parsed: object = json.loads(value)
     except ValueError:
         return None
-    return parsed if isinstance(parsed, (dict, list)) else None
+    return (
+        check_type(parsed, JsonObject | list[JsonValue], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        if isinstance(parsed, (dict, list))
+        else None
+    )
 
 
-def _metadata_text(value: object) -> str:
+def _metadata_text(value: JsonValue) -> str:
     """Render a metadata value as the string a Bead holds.
 
     Args:
@@ -445,6 +524,7 @@ def _metadata_text(value: object) -> str:
     return value if isinstance(value, str) else str(value)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
     """Write pipeline metadata through the beads-contract functions and the shared transport.
 
@@ -454,28 +534,28 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         repo: The central repository, or None for `$ATW_CONTROL_REPO`.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         GraphError: The contract refused the write or the shared bd transport failed.
 
     """
-    contract = _contract()
+    if not (isinstance(bead_id, str)) or not (isinstance(pairs, dict)) or not (isinstance(repo, Path) or repo is None):
+        raise TypeError(_ARGUMENT_ERROR)
 
-    class LockedReader(contract.Reader):
+    class LockedReader(beads_contract.Reader):
+        """Describe the locked reader wire record."""
+
         def _bd(self, args: list[str], repo: str | None = None, stdin: str | None = None) -> str:
-            where = self.route(args) if repo is None else repo
-            return _bd(args, Path(where) if where else None, stdin)
+            where: str = self.route(args) if repo is None else repo
+            return run_bd(args, Path(where) if where else None, stdin)
 
-    reader = LockedReader(str(repo) if repo else "")
-    arguments = argparse.Namespace(
-        op="set",
-        id=bead_id,
-        pairs=[f"{key}={value}" for key, value in pairs.items()],
-    )
+    reader: LockedReader = LockedReader(str(repo) if repo else "")
     try:
-        contract.cmd_metadata(arguments, reader)
-    except (contract.ContractError, contract.BeadsError) as exc:
+        beads_contract.metadata(reader, bead_id, "set", [f"{key}={value}" for key, value in pairs.items()])
+    except (beads_contract.ContractError, beads_contract.BeadsError) as exc:
         raise GraphError(str(exc)) from exc
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class Writer:
     """The one path for tracker writes; a dry-run writer records each write instead.
@@ -489,7 +569,13 @@ class Writer:
 
     repo: Path | None
     dry_run: bool = False
-    planned: list[dict] = field(default_factory=list)
+    planned: list[PlannedWrite] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate every constructor field, including all collection entries."""
+        check_type(self.repo, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.dry_run, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.planned, list[PlannedWrite], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def bd(self, args: list[str], stdin: str | None = None) -> None:
         """Run a `bd` command that changes the tracker, or record it in a dry run.
@@ -498,11 +584,16 @@ class Writer:
             args: The `bd` arguments.
             stdin: The text the command reads on its standard input, or None.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(args, list)) or not (isinstance(stdin, str) or stdin is None):
+            raise TypeError(_ARGUMENT_ERROR)
         if self.dry_run:
             self.planned.append({"op": "bd", "args": list(args), "stdin": stdin})
             return
-        _bd(args, self.repo, stdin)
+        run_bd(args, self.repo, stdin)
 
     def create(self, args: list[str], key: str) -> str:
         """Run a `bd create`, or record it in a dry run.
@@ -514,11 +605,16 @@ class Writer:
         Returns:
             The new bead's id, or `(new:<key>)` in a dry run.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(args, list)) or not (isinstance(key, str)):
+            raise TypeError(_ARGUMENT_ERROR)
         if self.dry_run:
             self.planned.append({"op": "bd", "args": list(args)})
             return f"(new:{key})"
-        return _bd(args, self.repo).strip().splitlines()[-1].strip()
+        return run_bd(args, self.repo).strip().splitlines()[-1].strip()
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.
@@ -527,7 +623,12 @@ class Writer:
             bead_id: The bead to write.
             pairs: The keys and values to merge onto its metadata.
 
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
         """
+        if not (isinstance(bead_id, str)) or not (isinstance(pairs, dict)):
+            raise TypeError(_ARGUMENT_ERROR)
         if self.dry_run:
             self.planned.append({"op": "metadata", "id": bead_id, "set": dict(pairs)})
             return
@@ -536,12 +637,13 @@ class Writer:
 
 #: The fingerprint scope a caller asks for. `judging` covers only the material a judging
 #: or assessing session is handed; `readiness` also covers the build contract. The scopes
-#: themselves are defined once, in `beads-contract.py`; this is only how a caller names one.
+#: themselves are defined once, in `beads_contract.py`; this is only how a caller names one.
 SCOPE_JUDGING = "judging"
 SCOPE_READINESS = "readiness"
 
 
-def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str, str]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def fingerprints(records: list[JsonObject], scope: str = SCOPE_READINESS) -> dict[str, str]:
     """Compute every record fingerprint through the shared contract.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
@@ -556,17 +658,20 @@ def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str,
     Returns:
         Bead id -> content fingerprint.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
 
     """
-    contract = _contract()
-    latest = {str(record.get("id") or ""): record for record in records}
+    if not (isinstance(records, list)) or not (isinstance(scope, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    latest: dict[str, dict[str, contracts.JsonValue]] = {str(record.get("id") or ""): record for record in records}
     return {
-        bead_id: contract.fingerprint_of(bead_id, record, scope=scope)["fingerprint"]
+        bead_id: beads_contract.fingerprint_of(bead_id, record, scope=scope)["fingerprint"]
         for bead_id, record in latest.items()
     }
 
 
-def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]:
+def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[JsonObject]:
     """Read every issue, including closed ones.
 
     Returns:
@@ -576,17 +681,18 @@ def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]
         GraphError: The tracker response was not an array.
 
     """
-    args = ["list", "--all", "--json", "-n", "0", "--readonly"]
+    args: list[str] = ["list", "--all", "--json", "-n", "0", "--readonly"]
     if not with_description:
         args.append("--brief")
-    payload = _bd_json(args, repo)
+    payload: JsonValue = _bd_json(args, repo)
     if not isinstance(payload, list):
-        msg = "`bd list --json` did not return an array"
+        msg: str = "`bd list --json` did not return an array"
         raise GraphError(msg)
-    return payload
+    return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
     """Return every record of one issue type directly under a parent, from one `bd list` call.
 
     Args:
@@ -598,32 +704,46 @@ def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
         The records, closed ones included, as `bd list --json` returns them.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         GraphError: `bd` failed or did not return an array.
 
     """
-    args = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
-    payload = _bd_json([*args, "--readonly"], repo)
+    if not (isinstance(repo, Path) or repo is None) or not (isinstance(parent, str)) or not (isinstance(kind, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    args: list[str] = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
+    payload: JsonValue = _bd_json([*args, "--readonly"], repo)
     if not isinstance(payload, list):
-        msg = "`bd list --json` did not return an array"
+        msg: str = "`bd list --json` did not return an array"
         raise GraphError(msg)
-    return payload
+    return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-def bead_of(record: dict) -> Bead:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def bead_of(record: JsonObject) -> Bead:
     """Normalize one tracker record, allowing omitted unset fields.
 
     Returns:
         The normalized bead.
 
     """
-    metadata = record.get("metadata") or {}
+    metadata: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] = (
+        record.get("metadata") or {}
+    )
     if isinstance(metadata, str):
-        metadata = json.loads(metadata or "{}")
+        raw_metadata: object = json.loads(metadata or "{}")
+        metadata = json_object(raw_metadata)
+
+    metadata = json_object(metadata)
+    dependencies: list[contracts.JsonObject] = check_type(
+        record.get("dependencies") or [],
+        list[JsonObject],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
 
     def targets(kind: str) -> list[str]:
         return [
             str(dep.get("depends_on_id"))
-            for dep in record.get("dependencies") or []
+            for dep in dependencies
             if dep.get("type") == kind and dep.get("depends_on_id")
         ]
 
@@ -640,16 +760,23 @@ def bead_of(record: dict) -> Bead:
     )
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
     """Read the whole tracker live through `bd` and normalize it.
 
     Returns:
         The normalized graph and its source records.
 
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    records = _records_from_bd(repo, with_description=with_description)
-    beads = {}
+    record: JsonObject
+    if not (isinstance(repo, Path) or repo is None) or not (isinstance(with_description, bool)):
+        raise TypeError(_ARGUMENT_ERROR)
+    records: list[contracts.JsonObject] = _records_from_bd(repo, with_description=with_description)
+    beads: dict[str, Bead] = {}
     for record in records:
-        bead = bead_of(record)
+        bead: Bead = bead_of(record)
         beads[bead.id] = bead
     return Graph(beads=beads, source="bd list --all --json", records=records)

@@ -36,15 +36,20 @@ cleared and the Epic stays `in_progress`, so the next run takes it up without a 
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import Unpack
 
-from beadgraph import now_iso
+import beadgraph
+import scoringcontracts  # ruff: ignore[typing-only-third-party-import] - Typeguard validates the annotated score assignment at runtime.
+from beadgraph import Bead, Graph, Writer, now_iso
+from contracts import JsonValue
+from elaborationcontracts import EpicValue, Finished, FinishOptions, Refusal, Refused, Released, Started
 from scoring import score
-
-if TYPE_CHECKING:
-    from beadgraph import Bead, Graph, Writer
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 #: The Epic's elaboration lifecycle and its companions.
+_ARGUMENT_ERROR: str = "Arguments violate the elaboration input contract"
+
+
 STATE_KEY = "elaboration_state"
 STATE_AT_KEY = "elaboration_state_at"
 CAUSE_KEY = "elaboration_state_cause"
@@ -63,7 +68,8 @@ class LifecycleError(RuntimeError):
     """The command cannot proceed and the caller must fix its input."""
 
 
-def _int(value: object) -> int | None:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def _int(value: JsonValue) -> int | None:
     """Parse a metadata integer, returning None when it is absent or unusable.
 
     Args:
@@ -71,41 +77,47 @@ def _int(value: object) -> int | None:
 
     Returns:
         The integer, or None when there is not one.
+
     """
     try:
         return int(float(str(value).strip()))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
-def _refusal(code: str, reason: str, epic: Bead | None, **extra: object) -> dict:
-    """A refusal to start elaboration, named by code.
+def _refusal(code: str, reason: str, epic: Bead | None, *, owner: str | None = None) -> Refused:
+    """Return a refusal to start elaboration, named by code.
 
     Args:
         code: The condition that failed.
         reason: What a person reads.
         epic: The Epic, when it exists.
-        **extra: Detail the caller may report.
+        owner: The currently recorded owner token.
 
     Returns:
         The payload.
+
     """
+    refusal: Refusal = {"code": code, "reason": reason}
+    if owner is not None:
+        refusal["owner"] = owner
     return {
         "ok": False,
-        "refusal": {"code": code, "reason": reason, **extra},
+        "refusal": refusal,
         "epic": {"id": epic.id, "title": epic.title} if epic else None,
         "summary": {"ok": False, "refusal": code},
     }
 
 
-def _epic_value(epic: Bead) -> dict:
-    """The Epic's scored values, as a Task inherits them.
+def _epic_value(epic: Bead) -> EpicValue:
+    """Return the Epic's scored values, as a Task inherits them.
 
     Args:
         epic: The Epic.
 
     Returns:
         Its id, title, value, criticality and value confidence.
+
     """
     return {
         "id": epic.id,
@@ -117,6 +129,7 @@ def _epic_value(epic: Bead) -> dict:
     }
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def start(
     graph: Graph,
     writer: Writer,
@@ -124,7 +137,7 @@ def start(
     *,
     owner: str | None,
     reclaim: bool,
-) -> dict:
+) -> Started | Refused:
     """Judge whether an Epic may be elaborated now and, when it may, mark it in progress.
 
     Args:
@@ -137,17 +150,29 @@ def start(
 
     Returns:
         `ok` with the Epic's inherited values and the owner token, or a named refusal.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    epic = graph.beads.get(epic_id)
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(writer, Writer))
+        or not (isinstance(epic_id, str))
+        or not (isinstance(owner, str) or owner is None)
+        or not (isinstance(reclaim, bool))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    epic: beadgraph.Bead | None = graph.beads.get(epic_id)
     if epic is None or epic.kind != "epic" or epic.closed:
         return _refusal(
             "not-an-open-epic",
             f"{epic_id} is not an open Epic in this tracker",
             epic,
         )
-    state = epic.metadata.get(STATE_KEY) or None
-    recorded = epic.metadata.get(OWNER_KEY) or None
-    warnings = []
+    state: str | None = epic.metadata.get(STATE_KEY) or None
+    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
+    warnings: list[str] = []
     if state == DONE:
         return _refusal(
             "epic-done",
@@ -156,10 +181,9 @@ def start(
             "which resumes from its persisted artifacts",
             epic,
         )
-    if state is not None and state not in (READY, IN_PROGRESS):
+    if state is not None and state not in {READY, IN_PROGRESS}:
         warnings.append(
-            f"{epic_id} carries {STATE_KEY}={state}, which is not a lifecycle state; "
-            f"taken as {READY}"
+            f"{epic_id} carries {STATE_KEY}={state}, which is not a lifecycle state; taken as {READY}",
         )
         state = READY
     if state == IN_PROGRESS and recorded and recorded != owner and not reclaim:
@@ -171,8 +195,8 @@ def start(
             epic,
             owner=recorded,
         )
-    resumed = recorded if state == IN_PROGRESS and not reclaim else None
-    token = owner or resumed or uuid.uuid4().hex
+    resumed: str | None = recorded if state == IN_PROGRESS and not reclaim else None
+    token: str = owner or resumed or uuid.uuid4().hex
     writer.metadata(
         epic.id,
         {
@@ -204,45 +228,54 @@ def _task_ids_under(graph: Graph, epic: Bead) -> set[str]:
 
     Returns:
         The Task ids.
+
     """
     return {b.id for b in graph.descendants(epic.id) if b.kind == "task"}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def finish(
     graph: Graph,
     writer: Writer,
     epic_id: str,
-    *,
-    owner: str | None,
-    done: bool,
-    scope: str = "epic-and-tasks",
-) -> dict:
+    **options: Unpack[FinishOptions],
+) -> Finished:
     """Score this Epic and its Tasks, and mark it done.
 
     Args:
         graph: The tracker graph, read with descriptions.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        owner: The owner token `start` returned.
-        done: Set the Epic's `elaboration_state` to `done`.
+        **options: Owner token, done transition, and optional score scope.
 
     Returns:
         The scoring result and the lifecycle write.
 
     Raises:
+        TypeError: An argument violates the declared input contract.
         LifecycleError: The Epic is owned by another run.
+        ValueError: The finish scope is unknown.
+
     """
-    epic = graph.beads[epic_id]
-    recorded = epic.metadata.get(OWNER_KEY) or None
+    owner: str | None
+    done: bool
+    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    check_type(options, FinishOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    owner, done = options["owner"], options["done"]
+    scope: str = options.get("scope", "epic-and-tasks")
+    epic: beadgraph.Bead = graph.beads[epic_id]
+    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
     if recorded and owner and recorded != owner:
-        msg = f"{epic_id} is owned by run {recorded}, not {owner}"
+        msg: str = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
-    under = _task_ids_under(graph, epic)
+    under: set[str] = _task_ids_under(graph, epic)
     if scope not in {"epic-and-tasks", "epic-tasks"}:
-        raise ValueError(f"unknown finish scope: {scope}")
-    task_only = scope == "epic-tasks"
-    finishing = done
-    scored = score(
+        message: str = f"unknown finish scope: {scope}"
+        raise ValueError(message)
+    task_only: bool = scope == "epic-tasks"
+    finishing: bool = done
+    scored: scoringcontracts.ScoreResult = score(
         graph,
         writer,
         scope=under if task_only else {epic.id} | under,
@@ -252,7 +285,7 @@ def finish(
         scored["unscored"] = [row for row in scored["unscored"] if row["id"] in under]
         scored["summary"]["unscored"] = len(scored["unscored"])
         finishing = finishing and bool(under) and not scored["unscored"]
-    lifecycle = None
+    lifecycle: dict[str, str] | None = None
     if finishing:
         lifecycle = {
             STATE_KEY: DONE,
@@ -265,16 +298,13 @@ def finish(
         "ok": True,
         "epic": epic.id,
         "score": {
-            key: scored[key]
-            for key in (
-                "epics",
-                "tasks",
-                "unscored",
-                "incomplete",
-                "sizeFaults",
-                "outsideRange",
-                "cycles",
-            )
+            "epics": scored["epics"],
+            "tasks": scored["tasks"],
+            "unscored": scored["unscored"],
+            "incomplete": scored["incomplete"],
+            "sizeFaults": scored["sizeFaults"],
+            "outsideRange": scored["outsideRange"],
+            "cycles": scored["cycles"],
         },
         "lifecycle": lifecycle,
         "dryRun": writer.dry_run,
@@ -291,7 +321,8 @@ def finish(
     }
 
 
-def release(graph: Graph, writer: Writer, epic_id: str, *, owner: str) -> dict:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def release(graph: Graph, writer: Writer, epic_id: str, *, owner: str) -> Released:
     """Clear a run's owner token from an Epic it started and did not finish.
 
     The Epic stays `in_progress`. A token that is not this run's is left alone.
@@ -304,10 +335,21 @@ def release(graph: Graph, writer: Writer, epic_id: str, *, owner: str) -> dict:
 
     Returns:
         Whether the token was cleared.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
     """
-    epic = graph.beads[epic_id]
-    recorded = epic.metadata.get(OWNER_KEY) or None
-    released = recorded == owner
+    if (
+        not (isinstance(graph, Graph))
+        or not (isinstance(writer, Writer))
+        or not (isinstance(epic_id, str))
+        or not (isinstance(owner, str))
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    epic: beadgraph.Bead = graph.beads[epic_id]
+    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
+    released: bool = recorded == owner
     if released:
         writer.metadata(epic.id, {OWNER_KEY: ""})
     return {
