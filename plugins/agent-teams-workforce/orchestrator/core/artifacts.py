@@ -9,11 +9,12 @@ import os
 import sys
 import threading
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from .artifact_contract import ArtifactProducer
 from .io import JsonValue, json_object
 from .models import DeterministicStep, StepError
 
@@ -29,7 +30,7 @@ REQUIRED_KINDS = {
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def load_artifactio(path: Path | None = None) -> ModuleType:
+def load_artifactio(path: Path | None = None) -> ArtifactProducer:
     """Load the configured receipt implementation and verify its public contract.
 
     Returns:
@@ -51,26 +52,16 @@ def load_artifactio(path: Path | None = None) -> ModuleType:
     sys.modules[spec.name] = module
     with contextlib.redirect_stdout(sys.stderr):
         spec.loader.exec_module(module)
-    missing = [
-        name
-        for name in (
-            "record",
-            "RecordOptions",
-            "hashed_inputs",
-            "input_problem",
-            "complete_step",
-            "working_dir",
-        )
-        if not callable(getattr(module, name, None))
-    ]
-    missing.extend(sorted(REQUIRED_KINDS - set(getattr(module, "INPUT_KINDS", ()))))
+    factory: Callable[[], object] = check_type(module.ArtifactProducer, Callable[[], object])
+    producer: ArtifactProducer = check_type(factory(), ArtifactProducer)
+    missing = sorted(REQUIRED_KINDS - producer.INPUT_KINDS)
     if missing:
         raise StepError(
             stage,
             "other",
             tuple(f"artifactio lacks {name}" for name in missing),
         )
-    return module
+    return producer
 
 
 class ArtifactStore:
@@ -79,7 +70,7 @@ class ArtifactStore:
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(
         self,
-        module: ModuleType,
+        module: ArtifactProducer,
         root: Path,
         work: Path,
         epic: str,
@@ -151,7 +142,8 @@ class ArtifactStore:
         with self._lock:
             try:
                 for output in outputs:
-                    options = self.module.RecordOptions(
+                    self.module.record(
+                        output,
                         epic=self.epic,
                         phase=step,
                         inputs=list(inputs),
@@ -159,7 +151,6 @@ class ArtifactStore:
                         run_id=self.run_id,
                         root=self.root,
                     )
-                    self.module.record(output, options)
                 self.module.complete_step(self.work, step)
             except BaseException:
                 self.invalidate(outputs)

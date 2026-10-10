@@ -151,7 +151,8 @@ class SpecAuthoring:
         try:
             self.store.invalidate(outputs)
             for output in outputs:
-                options = self.store.module.RecordOptions(
+                self.store.module.record(
+                    output,
                     epic=self.context.bead,
                     phase=self.stage,
                     inputs=list(inputs),
@@ -159,7 +160,6 @@ class SpecAuthoring:
                     run_id=self.context.run_id,
                     root=self.store.root,
                 )
-                self.store.module.record(output, options)
         except Exception as exc:
             if failure_for(self.stage, exc, agent_started=False).get("classification") in {
                 "setup",

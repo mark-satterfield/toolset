@@ -18,7 +18,7 @@ from typing import IO
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .agent_context import driver_module
+from .driver_contracts import terminate_grace
 from .io import json_object
 from .models import SessionFacts, StepError
 
@@ -167,7 +167,7 @@ class SessionProcesses:
         except PermissionError:
             # macOS briefly reports EPERM while a signalled child is exiting.
             pass
-        grace = check_type(driver_module("childproc").TERMINATE_GRACE, int | float)
+        grace = terminate_grace()
         deadline = time.monotonic() + grace
         while time.monotonic() < deadline:
             process.poll()

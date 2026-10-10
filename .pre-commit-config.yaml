@@ -13,3 +13,9 @@ repos:
         language: system
         files: ^plugins/agent-teams-workforce/orchestrator/.*\.py$
         pass_filenames: false
+      - id: driver-producer-contracts
+        name: Real driver producer contracts
+        entry: uv run --no-project --python 3.14 --with typeguard python plugins/agent-teams-workforce/orchestrator/check_driver_contracts.py
+        language: system
+        files: ^(plugins/agent-teams-workforce/orchestrator/(core/(driver_contracts|artifact_contract|artifacts|agent_context|agents|agent_process)\.py|check_driver_contracts\.py)|\.pre-commit-config\.yaml)$
+        pass_filenames: false

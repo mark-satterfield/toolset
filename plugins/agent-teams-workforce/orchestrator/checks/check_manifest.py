@@ -7,13 +7,12 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from types import ModuleType
 
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from orchestrator.checks.check_support import report, require
-from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.manifest import record_session
 from orchestrator.core.models import RunContext, SessionRecord
 
@@ -23,7 +22,7 @@ def main() -> None:
     """Evaluate the existing isolated check contract."""
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        store = ArtifactStore(ModuleType("unused"), root, root, "epic", "run-one")
+        store = ArtifactStore(load_artifactio(), root, root, "epic", "run-one")
         context = RunContext("epic", "prd-to-spec", {}, root, "run-one")
         rows: list[SessionRecord] = [
             {

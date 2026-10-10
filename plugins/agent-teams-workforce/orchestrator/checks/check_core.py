@@ -7,20 +7,20 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from orchestrator.checks.check_support import report, require
+from orchestrator.core.artifact_contract import ArtifactProducer
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import DeterministicStep
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def check_resume(module: ModuleType, root: Path) -> None:
+def check_resume(module: ArtifactProducer, root: Path) -> None:
     """Evaluate the existing isolated check contract."""
     source, output = root / "input.txt", root / "output.txt"
     source.write_text("one")
@@ -59,7 +59,7 @@ def check_resume(module: ModuleType, root: Path) -> None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def check_matrix(module: ModuleType, root: Path) -> None:
+def check_matrix(module: ArtifactProducer, root: Path) -> None:
     """Evaluate the existing isolated check contract."""
     matrix = root / "matrix.json"
     data: dict[str, JsonValue] = {

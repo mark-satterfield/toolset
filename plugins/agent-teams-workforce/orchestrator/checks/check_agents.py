@@ -11,7 +11,6 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
 from typing import TypedDict
 from unittest.mock import patch
 
@@ -20,9 +19,10 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from orchestrator.checks.check_support import report, require
-from orchestrator.core.agent_context import driver_module
 from orchestrator.core.agents import AgentRunner
+from orchestrator.core.artifact_contract import ArtifactProducer
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
+from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.events import EventWriter
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import AgentStep, RunContext, StepError
@@ -109,7 +109,7 @@ def records(root: Path) -> list[Capture]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def fixture(root: Path, module: ModuleType) -> tuple[AgentRunner, AgentStep, io.StringIO]:
+def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentStep, io.StringIO]:
     """Evaluate the existing isolated check contract.
 
     Returns:

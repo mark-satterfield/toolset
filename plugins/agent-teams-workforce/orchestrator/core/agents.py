@@ -20,10 +20,11 @@ from uuid import uuid4
 import jsonschema
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .agent_context import PipelineStoppedError, SessionCleanupError, SessionSetupError, brief, driver_module, prepare
+from .agent_context import PipelineStoppedError, SessionCleanupError, SessionSetupError, brief, prepare
 from .agent_process import SessionProcesses, SessionRequest
 from .artifacts import ArtifactStore
 from .constraints import Section2Guard
+from .driver_contracts import child_environment, exhausted_reset, is_refusal, reset_of
 from .events import EventWriter
 from .handback import failure_for
 from .io import JsonValue, json_object, write_json
@@ -166,7 +167,7 @@ class AgentRunner:
         return [
             (
                 Path(check_type(item["path"], str)).stem,
-                check_type(self.store.module.from_record(item["path"], self.store.root), Path),
+                check_type(self.store.module.from_record(check_type(item["path"], str), self.store.root), Path),
             )
             for item in facts
             if item["kind"] not in {"value", "git-main"}
@@ -231,7 +232,7 @@ class AgentRunner:
     ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], str, SessionRecord]:
         scratch = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
         env = check_type(
-            driver_module("headlessenv").child_env(scratch),
+            child_environment(scratch),
             dict[str, str],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
@@ -308,11 +309,9 @@ class AgentRunner:
                 row=row,
             )
             info = facts["rate"]
-            if info is not None and driver_module("fablewall").is_refusal(info) and model == "fable":
+            if info is not None and is_refusal(info) and model == "fable":
                 with self._lock:
-                    self.context.model_policy["fable_until"] = (
-                        driver_module("fablewall").reset_of(info) or driver_module("breaker").exhausted_reset(info) or 0
-                    )
+                    self.context.model_policy["fable_until"] = reset_of(info) or exhausted_reset(info) or 0
                     self.context.model_policy["fable_blocked"] = not bool(self.context.model_policy["fable_until"])
                 self.emit(
                     "fable-wall",
@@ -436,7 +435,7 @@ class AgentRunner:
     @staticmethod
     def _cause(facts: SessionFacts) -> str | None:
         if facts["rate"] is not None:
-            return None if driver_module("fablewall").is_refusal(facts["rate"]) else "quota"
+            return None if is_refusal(facts["rate"]) else "quota"
         result = facts["result"]
         if result and (
             result.get("terminal_reason") == "api_error"
@@ -464,7 +463,7 @@ class AgentRunner:
             cause = "other"  # A second Fable refusal on Opus is not another retry.
         if cause:
             reset = (
-                driver_module("breaker").exhausted_reset(facts["rate"])
+                exhausted_reset(facts["rate"])
                 if cause == "quota" and facts["rate"] is not None
                 else facts.get("cancelledResumeAt")
             )

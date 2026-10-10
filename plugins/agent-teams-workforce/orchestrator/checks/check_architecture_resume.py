@@ -8,7 +8,6 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
 from typing import override
 
 from typeguard import CollectionCheckStrategy, typechecked
@@ -17,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.io import write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
@@ -72,7 +71,7 @@ def main() -> None:
             root,
             "survey-check",
         )
-        store = ArtifactStore(ModuleType("unused"), root, work, "epic", "survey-check")
+        store = ArtifactStore(load_artifactio(), root, work, "epic", "survey-check")
         runner = NoAgentRunner(context, store, emit=emit)
         matrix = root / "matrix.json"
         write_json(matrix, {"elements": {}})

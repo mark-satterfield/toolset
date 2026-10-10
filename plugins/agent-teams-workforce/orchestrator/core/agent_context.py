@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import os
 import shlex
 import sys
 from pathlib import Path
-from types import ModuleType
 
 import yaml
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from .driver_contracts import denied_tools
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
 
@@ -34,20 +33,6 @@ class SessionCleanupError(RuntimeError):
 
 class SessionSetupError(RuntimeError):
     """Required session configuration or preparation failed before agent launch."""
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def driver_module(name: str) -> ModuleType:
-    """Load the configured control repository's named driver module.
-
-    Returns:
-        The imported module.
-
-    """
-    directory = Path(os.environ["ATW_CONTROL_REPO"]) / "ops" / "sdlc-automation"
-    if str(directory) not in sys.path:
-        sys.path.insert(0, str(directory))
-    return importlib.import_module(name)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -248,7 +233,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, model:
         "--permission-mode",
         "bypassPermissions",
         "--disallowedTools",
-        *list_field(driver_module("headlessenv").DENIED_TOOLS),
+        *denied_tools(),
         "Agent",
         "AskUserQuestion",
     ])

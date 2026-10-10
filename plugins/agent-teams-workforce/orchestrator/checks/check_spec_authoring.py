@@ -6,7 +6,6 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
 from typing import override
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -14,7 +13,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.io import JsonValue
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
@@ -82,7 +81,7 @@ def main() -> None:
             events.append(fields)
 
         context = RunContext("epic", "prd-to-spec", {}, root, "receipt-probe")
-        store = UnavailableReceiptStore(ModuleType("unused"), root, root, "epic", "receipt-probe")
+        store = UnavailableReceiptStore(load_artifactio(), root, root, "epic", "receipt-probe")
         runner = ReceiptRunner(context, store, emit=emit)
         step = AgentStep(
             "spec",
