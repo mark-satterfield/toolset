@@ -32,6 +32,7 @@ Usage:
   polyrepo.py templates-check
   polyrepo.py beads-setup [repo ...] [--all] [--check] [--dry-run] [--trailer TEXT]
   polyrepo.py beads-fleet [--fix]
+  polyrepo.py environment [repo ...] [--fix]
   polyrepo.py deprecated-prs [--fix]
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
@@ -91,14 +92,24 @@ class PolyrepoError(Exception):
 
 
 def run(
-    argv: list[str], cwd: Path | None = None, timeout: int = GIT_TIMEOUT
+    argv: list[str],
+    cwd: Path | None = None,
+    timeout: int = GIT_TIMEOUT,
+    env: dict[str, str | None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command with captured text output and no shell.
+
+    `env` overrides variables of the inherited environment; a value of None removes one.
 
     Returns:
         The completed process; a timeout comes back as returncode 124.
     """
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    base: dict[str, str] = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    for k, v in (env or {}).items():
+        if v is None:
+            base.pop(k, None)
+        else:
+            base[k] = v
     try:
         return subprocess.run(
             argv,
@@ -107,7 +118,7 @@ def run(
             text=True,
             timeout=timeout,
             check=False,
-            env=env,
+            env=base,
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(argv, 124, "", f"timed out after {timeout}s")
@@ -2530,7 +2541,12 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "steps": [
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md block",
-            f"git init on {b}, exclude {WORKTREES_LINE} locally, and commit",
+            f"git init on {b}, exclude {WORKTREES_LINE} locally",
+            (
+                "run the template's setup task (task install) and verify .venv/bin/python, "
+                "every declared dependency, and for an infra template cdk synth --profile dev; "
+                "then commit"
+            ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
@@ -2573,6 +2589,14 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     try:
         must(git(dest, "init", f"--initial-branch={b}"))
         _exclude_worktrees(dest)
+        # Before the first commit, so the lockfile the setup task writes is committed too.
+        if env_applicable(dest):
+            tspec = (_templates(cfg)[1].get("kinds") or {}).get(args.template) or {}
+            synth = bool(tspec.get("synth", args.template in ENV_SYNTH_KINDS))
+            env_res = setup_environment(dest, synth)
+            res["environment"] = env_res
+            if env_res["problems"]:
+                res["environment_error"] = "; ".join(env_res["problems"])
         must(git(dest, "add", "-A"))
         must(
             git(
@@ -2608,6 +2632,11 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
     ]
     code = 0
+    if res.get("environment_error"):
+        log.append(f"environment setup FAILED: {res['environment_error']}")
+        code = 1
+    elif res.get("environment"):
+        log.append(f"environment set up: {'; '.join(res['environment']['steps'])}")
     if (
         args.lifecycle not in LIFECYCLES_INACTIVE
         and args.space not in BEADS_SKIP_SPACES
@@ -2631,12 +2660,290 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         lambda: "\n".join(
             [
                 f"{name}: created at {dest} and pushed to GitHub"
-                + (f"; beads setup failed: {res['beads_error']}" if code else ""),
+                + (
+                    f"; environment setup failed: {res['environment_error']}"
+                    if res.get("environment_error")
+                    else ""
+                )
+                + (
+                    f"; beads setup failed: {res['beads_error']}"
+                    if res.get("beads_error")
+                    else ""
+                ),
                 *_records_line(res),
             ]
         ),
     )
     return code
+
+
+# development environment -------------------------------------------------------------------------
+# Creating a repo ends with a working environment: the template's setup task has run,
+# `.venv/bin/python` runs, every declared dependency is installed and importable, and for an
+# infra template `cdk synth --profile dev` succeeds. `doctor` reports a repo that lost any of it.
+
+ENV_SKIP_SPACES = ("marketing",)
+ENV_SYNTH_KINDS = ("infra",)
+ENV_SETUP_TIMEOUT = 1800
+ENV_SYNTH_TIMEOUT = 900
+ENV_PROBE = r"""
+import importlib, importlib.metadata as md, json, os, re, sys, tomllib
+
+repo = sys.argv[1]
+JUNK = {"dist", "build", "tests", "test", "docs", "examples"}
+out = {"missing": [], "failed": [], "needs_cdk": False, "cdk_ok": True}
+
+
+def norm(n):
+    return re.sub(r"[-_.]+", "-", n).lower()
+
+
+try:
+    with open(os.path.join(repo, "pyproject.toml"), "rb") as f:
+        py = tomllib.load(f)
+except Exception as exc:
+    out["error"] = f"cannot read pyproject.toml: {exc}"
+    print(json.dumps(out))
+    sys.exit(0)
+proj = py.get("project", {})
+reqs = list(proj.get("dependencies", []))
+for v in (proj.get("optional-dependencies") or {}).values():
+    reqs += v
+for v in (py.get("dependency-groups") or {}).values():
+    reqs += [x for x in v if isinstance(x, str)]
+reqs += py.get("tool", {}).get("uv", {}).get("dev-dependencies") or []
+own = norm(proj.get("name", ""))
+try:
+    from packaging.requirements import Requirement
+except Exception:
+    Requirement = None
+names = []
+for r in reqs:
+    if Requirement is not None:
+        try:
+            q = Requirement(r)
+        except Exception:
+            continue
+        if q.marker is not None and not q.marker.evaluate({"extra": ""}):
+            continue
+        n = q.name
+    else:
+        if ";" in r:
+            continue
+        m = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", r.strip())
+        if not m:
+            continue
+        n = m.group(0)
+    if norm(n) != own and norm(n) not in names:
+        names.append(norm(n))
+mods = {}
+for mod, dists in md.packages_distributions().items():
+    for d in dists:
+        mods.setdefault(norm(d), []).append(mod)
+for n in names:
+    try:
+        md.distribution(n)
+    except md.PackageNotFoundError:
+        out["missing"].append(n)
+        continue
+    for mod in sorted(mods.get(n, [])):
+        if mod.startswith("_") or not mod.isidentifier() or mod in JUNK:
+            continue
+        try:
+            importlib.import_module(mod)
+        except BaseException as exc:
+            out["failed"].append(f"{mod}: {type(exc).__name__}: {exc}"[:200])
+skip = {".venv", "node_modules", "cdk.out", ".git", ".worktrees", "dist", "build"}
+pat = re.compile(r"^\s*(import aws_cdk|from aws_cdk)", re.M)
+for root, dirs, files in os.walk(repo):
+    dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".")]
+    for f in files:
+        if f.endswith(".py"):
+            try:
+                with open(os.path.join(root, f), encoding="utf-8", errors="ignore") as fh:
+                    if pat.search(fh.read()):
+                        out["needs_cdk"] = True
+            except OSError:
+                pass
+    if out["needs_cdk"]:
+        break
+if out["needs_cdk"]:
+    try:
+        importlib.import_module("aws_cdk")
+    except BaseException as exc:
+        out["cdk_ok"] = False
+        out["cdk_error"] = f"{type(exc).__name__}: {exc}"[:200]
+print(json.dumps(out))
+"""
+
+
+def _tail(cp: subprocess.CompletedProcess[str], n: int = 4) -> str:
+    lines = [ln for ln in (cp.stderr + "\n" + cp.stdout).splitlines() if ln.strip()]
+    return " | ".join(ln.strip() for ln in lines[-n:]) or f"exit {cp.returncode}"
+
+
+def env_applicable(path: Path) -> bool:
+    """Tell whether the repo is a Python repo whose Taskfile declares an `install` task.
+
+    Returns:
+        True when it has a `pyproject.toml` and an `install` task.
+    """
+    if not (path / "pyproject.toml").is_file():
+        return False
+    for name in ("Taskfile.yml", "Taskfile.yaml"):
+        tasks = _read_yaml(path / name).get("tasks")
+        if isinstance(tasks, dict) and "install" in tasks:
+            return True
+    return False
+
+
+def probe_environment(path: Path) -> list[str]:
+    """Check a repo's environment without changing anything.
+
+    Returns:
+        One line per problem: a missing or broken `.venv/bin/python`, declared dependencies
+        not installed or not importable, `aws_cdk` imported by the code but not importable.
+    """
+    py = path / ".venv" / "bin" / "python"
+    if not py.is_file():
+        return [".venv/bin/python is missing"]
+    ver = run([str(py), "--version"], timeout=30)
+    if ver.returncode != 0:
+        return [f".venv/bin/python does not run: {_tail(ver)}"]
+    cp = run([str(py), "-I", "-c", ENV_PROBE, str(path)], timeout=600)
+    try:
+        data = json.loads(cp.stdout.strip().splitlines()[-1])
+    except IndexError, ValueError:
+        return [f"environment probe failed: {_tail(cp)}"]
+    problems: list[str] = []
+    if data.get("error"):
+        problems.append(data["error"])
+    if data["missing"]:
+        problems.append(
+            "declared dependencies not installed: " + ", ".join(data["missing"])
+        )
+    if data["failed"]:
+        problems.append("installed but not importable: " + "; ".join(data["failed"]))
+    if data["needs_cdk"] and not data["cdk_ok"]:
+        problems.append(
+            f"aws_cdk is imported by the code but not importable: {data.get('cdk_error')}"
+        )
+    return problems
+
+
+def setup_environment(path: Path, synth: bool) -> dict[str, Any]:
+    """Run the repo's `install` task, then verify the environment (and `cdk synth --profile dev`).
+
+    Returns:
+        {"steps": [...], "problems": [...]}; empty problems means the environment holds.
+    """
+    steps: list[str] = []
+    problems: list[str] = []
+    if shutil.which("task") is None:
+        return {"steps": steps, "problems": ["the task binary is not on PATH"]}
+    cp = run(
+        ["task", "--dir", str(path), "install"],
+        timeout=ENV_SETUP_TIMEOUT,
+        env={"VIRTUAL_ENV": None},
+    )
+    if cp.returncode != 0:
+        problems.append(f"task install failed: {_tail(cp)}")
+    else:
+        steps.append("ran task install")
+    problems.extend(probe_environment(path))
+    if not problems:
+        steps.append("verified .venv/bin/python, dependencies and imports")
+    if synth and not problems:
+        cp = run(
+            ["npx", "cdk", "synth", "--profile", "dev", "--quiet"],
+            cwd=path,
+            timeout=ENV_SYNTH_TIMEOUT,
+            env={"VIRTUAL_ENV": None},
+        )
+        if cp.returncode != 0:
+            problems.append(f"cdk synth --profile dev failed: {_tail(cp)}")
+        else:
+            steps.append("cdk synth --profile dev succeeded")
+    return {"steps": steps, "problems": problems}
+
+
+def _env_kind(cfg: Config, r: LocalRepo) -> str | None:
+    _troot, tset = _templates(cfg)
+    kind, _how, _answers = _template_for(r, tset.get("kinds") or {})
+    return kind
+
+
+def _env_synth(cfg: Config, r: LocalRepo) -> bool:
+    kind = _env_kind(cfg, r)
+    if not kind:
+        return False
+    _troot, tset = _templates(cfg)
+    spec = (tset.get("kinds") or {}).get(kind) or {}
+    return bool(spec.get("synth", kind in ENV_SYNTH_KINDS))
+
+
+def environment_findings(st: State, only: list[str] | None = None) -> list[Finding]:
+    """Check that every active Python repo has a working environment.
+
+    Returns:
+        One finding per repo with a problem.
+    """
+    cfg = st.cfg
+    control = os.path.normpath(fleet_file(cfg).parent.parent)
+    todo = [
+        r
+        for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower())
+        if (only is None or name in only)
+        and st.lifecycle(name) not in LIFECYCLES_INACTIVE
+        and r.space not in ENV_SKIP_SPACES
+        and os.path.normpath(r.path) != control
+        and env_applicable(r.path)
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        probed = list(ex.map(lambda r: probe_environment(r.path), todo))
+    return [
+        Finding("environment-missing", r.name, "; ".join(problems))
+        for r, problems in zip(todo, probed, strict=True)
+        if problems
+    ]
+
+
+def cmd_environment(args: argparse.Namespace, cfg: Config) -> int:
+    """Check every active repo's development environment; with --fix, run the setup task of
+    each repo that has a gap and verify it again.
+
+    Returns:
+        0 when no repo has a gap left, else 1.
+    """
+    st = gather(cfg, fetch=False, use_cache=not args.no_cache)
+    only = st.resolve(args.repos) if args.repos else None
+    findings = environment_findings(st, only)
+    if args.fix:
+        for f in findings:
+            r = st.local[f.repo]
+            res = setup_environment(r.path, _env_synth(cfg, r))
+            if res["problems"]:
+                f.status, f.error = "failed", "; ".join(res["problems"])
+            else:
+                f.status = "fixed"
+    data: dict[str, Any] = {
+        "findings": [f.as_dict() for f in findings],
+        "open": sum(f.status in {"open", "failed"} for f in findings),
+        "fixed": sum(f.status == "fixed" for f in findings),
+    }
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            [f"{len(findings)} repos with an environment gap ({data['fixed']} fixed)"]
+            + [
+                f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})"
+                + (f": {f.error}" if f.error else "")
+                for f in findings
+            ]
+        ),
+    )
+    return 1 if data["open"] else 0
 
 
 # beads setup -------------------------------------------------------------------------------------
@@ -2789,7 +3096,7 @@ def _beads_files(
         meta.update(dolt_mode="embedded")
     try:
         old = json.loads((beads / "metadata.json").read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         old = {}
     if shared and old.get("project_id"):
         meta["project_id"] = old["project_id"]
@@ -2867,7 +3174,7 @@ def beads_setup(
         db = json.loads((path / ".beads" / "metadata.json").read_text()).get(
             "dolt_database"
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         db = None
     db = db or name.replace("-", "_")
     steps: list[str] = []
@@ -2876,7 +3183,7 @@ def beads_setup(
     def project_id() -> str | None:
         try:
             return json.loads(meta_f.read_text()).get("project_id")
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
 
     on_server = db in _server_databases()
@@ -3024,7 +3331,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
             try:
                 db = json.loads((r.path / ".beads" / "metadata.json").read_text())
                 db = db.get("dolt_database")
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 db = None
             if n in gaps or (db or n.replace("-", "_")) not in dbs:
                 names.append(n)
@@ -3897,7 +4204,7 @@ def _read_yaml(f: Path) -> dict[str, Any]:
         return {}
     try:
         d = YAML(typ="safe").load(f.read_text())
-    except (OSError, YAMLError):
+    except OSError, YAMLError:
         return {}
     return d if isinstance(d, dict) else {}
 
@@ -4300,6 +4607,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
+    "environment": [sys.executable, str(SELF), "environment", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
@@ -4343,7 +4651,13 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     if "error" in data:
         return [_finding(check, "-", "error", str(data["error"]))]
-    if check in {"reconcile", "beads-fleet", "beads-setup", "deprecated-prs"}:
+    if check in {
+        "reconcile",
+        "beads-fleet",
+        "beads-setup",
+        "deprecated-prs",
+        "environment",
+    }:
         return [
             _finding(check, f["repo"], f["kind"], f["detail"])
             for f in data.get("findings") or []
@@ -4814,6 +5128,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--trailer", help="a line to end each commit message body with")
     s.set_defaults(func=cmd_beads_setup)
+
+    s = sub.add_parser(
+        "environment",
+        parents=[common],
+        help="check every active repo's development environment; --fix runs its setup task",
+    )
+    s.add_argument("repos", nargs="*", help="only these repos (default: all active)")
+    s.add_argument(
+        "--fix", action="store_true", help="run the setup task of each repo with a gap"
+    )
+    s.set_defaults(func=cmd_environment)
 
     s = sub.add_parser(
         "deprecated-prs",

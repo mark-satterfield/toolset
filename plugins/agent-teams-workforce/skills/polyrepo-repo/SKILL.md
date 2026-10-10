@@ -52,7 +52,8 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `deprecated-prs`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and `deprecated-prs --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `environment [repo…] [--fix]` | Check every active Python repo (a `pyproject.toml` and an `install` task in its Taskfile; `apps/marketing/` excluded): `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports where the code uses it. `--fix` runs the repo's `task install` for each gap and checks again; for an infra repo it also runs `cdk synth --profile dev`. `create` runs the same setup and checks. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `deprecated-prs`, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and `deprecated-prs --fix`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
@@ -97,6 +98,11 @@ judgment, and each has an obvious next step:
   Creating a repo includes its beads setup, its entry in the control repo's beads repository
   list, and a correct `.gitignore`; `create` does all three, and fails (exit 1) when beads setup
   fails, after the repo and manifest entry exist. `beads-setup` repairs it.
+  Creating a repo also ends with a working development environment: `create` runs the
+  template's setup task (`task install`) before the first commit (so the lockfile is committed),
+  then verifies `.venv/bin/python`, every declared dependency, and for an infra template
+  `cdk synth --profile dev`. It exits 1 with `environment_error` when any of them does not
+  hold; `environment <repo> --fix` repairs it.
 - **update** — Mechanical fields (`remote_url`, `lifecycle`, archived state) are kept true
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
   `role`, `owner`: edit the manifest (below).
