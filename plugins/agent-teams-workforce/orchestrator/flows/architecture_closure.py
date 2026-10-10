@@ -5,120 +5,131 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..core.io import write_json
-from ..core.matrix import element_id, row_for, satisfied
-from .architecture_support import Architecture, read
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.matrix import element_id
+from orchestrator.flows.architecture_projection import project
+from orchestrator.flows.architecture_support import Architecture, ArchitectureStep, read
 
 
-def classify(walk: dict, matrix: dict) -> dict:
-    prerequisites, complete = [], []
-    for element in walk["elements"]:
-        row = row_for(matrix, element["element"])
-        if satisfied(matrix, row):
-            complete.append(
-                {
-                    "element": element["element"],
-                    "state": row["state"],
-                    "repository": row.get("repository"),
-                    "task": row.get("task"),
-                    "commit": row.get("commit"),
-                }
-            )
-        else:
-            prerequisites.append(
-                {**element, "state": "unknown", "repository": row.get("repository")}
-            )
-    return {
-        "prerequisites": prerequisites,
-        "satisfied": complete,
-        "rootEdges": walk["rootEdges"],
-        "summary": walk["summary"],
-    }
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def closure(flow: Architecture, target: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """Closure.
 
+    Returns:
+        The validated architecture result.
 
-def closure(flow: Architecture, target: dict) -> dict:
-    roots = flow.call(
-        "archstate",
-        "delta_items",
-        target["deltaDir"],
-        with_closure=False,
-        # Walk the entire future set so matrix-only changes never omit new build roots.
-        matrix_snapshot={"elements": {}},
-        stage="closure",
+    """
+    stage = "closure"
+    roots = json_object(
+        flow.call(
+            "archstate",
+            "delta_items",
+            target["deltaDir"],
+            with_closure=False,
+            # Walk the entire future set so matrix-only changes never omit new build roots.
+            matrix_snapshot={"elements": {}},
+            stage="closure",
+        ),
     )
     roots_path = flow.work / "closure-roots.json"
     write_json(roots_path, roots)
     walk_path = flow.work / "closure-walk.json"
-    inputs = (str(roots_path), str(flow.arch / "arc42"), str(flow.prd))
-    for attempt in range(2):
+    inputs: tuple[str, ...] = (str(roots_path), str(flow.arch / "arc42"), str(flow.prd))
+    for _ in range(2):
         walk = flow.agent(
-            "prd-reality-reconciler",
-            walk_path,
-            "closure-walk",
-            inputs,
-            "Walk architecture prerequisites from the build roots.",
+            ArchitectureStep(
+                "prd-reality-reconciler",
+                walk_path,
+                "closure-walk",
+                inputs,
+                "Walk architecture prerequisites from the build roots.",
+            ),
         )
         elements = sorted(
             {
-                element_id(row["element"])
-                for row in walk["elements"] + roots.get("items", [])
-            }
+                element_id(check_type(row["element"], str))
+                for row in [
+                    *check_type(
+                        walk["elements"],
+                        list[dict[str, JsonValue]],
+                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                    ),
+                    *check_type(
+                        roots.get("items", []),
+                        list[dict[str, JsonValue]],
+                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                    ),
+                ]
+            },
         )
         binding = "matrix-rows:" + json.dumps(
             {"matrix": str(flow.matrix), "elements": elements},
             sort_keys=True,
             separators=(",", ":"),
         )
-        from .architecture_projection import project
 
-        current_roots = flow.call(
-            "archstate",
-            "delta_items",
-            target["deltaDir"],
-            with_closure=False,
-            matrix_snapshot=flow.matrix_data,
-            stage="closure",
+        current_roots = json_object(
+            flow.call(
+                "archstate",
+                "delta_items",
+                target["deltaDir"],
+                with_closure=False,
+                matrix_snapshot=flow.matrix_data,
+                stage="closure",
+            ),
         )
         classified = project(walk, roots, current_roots, flow.matrix_data)
         path = flow.work / "closure.json"
         write_json(path, classified)
-        result = flow.call(
-            "archclosure",
-            "write_closure",
-            classified,
-            target["deltaDir"],
-            dry_run=True,
-            matrix_snapshot=flow.matrix_data,
-            stage="closure",
+        result = json_object(
+            flow.call(
+                "archclosure",
+                "write_closure",
+                classified,
+                target["deltaDir"],
+                dry_run=True,
+                matrix_snapshot=flow.matrix_data,
+                stage="closure",
+            ),
         )
-        if (
-            not result.get("refused")
-            and not result.get("error")
-            and result.get("ok") is not False
-        ):
+        if not result.get("refused") and not result.get("error") and result.get("ok") is not False:
             result = flow.checked(
-                flow.call(
-                    "archclosure",
-                    "write_closure",
-                    classified,
-                    target["deltaDir"],
-                    matrix_snapshot=flow.matrix_data,
-                    stage="closure",
+                json_object(
+                    flow.call(
+                        "archclosure",
+                        "write_closure",
+                        classified,
+                        target["deltaDir"],
+                        matrix_snapshot=flow.matrix_data,
+                        stage="closure",
+                    ),
                 ),
                 "closure",
             )
-            canonical = Path(target["targetDir"]) / "closure.json"
+            canonical = Path(check_type(target["targetDir"], str)) / "closure.json"
             flow.store.accept(
-                "architecture:closure", (str(walk_path), binding), (path, canonical)
+                "architecture:closure",
+                (str(walk_path), binding),
+                (path, canonical),
             )
             return {
                 "path": str(canonical),
                 "workPath": str(path),
-                "prerequisites": len(classified["prerequisites"]),
+                "prerequisites": len(
+                    check_type(
+                        classified["prerequisites"],
+                        list[JsonValue],
+                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                    ),
+                ),
             }
         errors = flow.work / "closure.errors.json"
         write_json(errors, result)
         inputs += (str(errors),)
     raise flow.tools.failure(
-        "closure", "other", read(flow.work / "closure.errors.json")
+        stage,
+        "other",
+        read(flow.work / "closure.errors.json"),
     )

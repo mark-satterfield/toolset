@@ -8,80 +8,163 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import Any
+from types import ModuleType
 
 import yaml
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .io import write_json
+from .io import JsonValue, json_object, write_json
 from .models import AgentStep
 
-SAFETY_HOOKS = frozenset(
-    {
-        "no-verify-blocker.sh",
-        "pipeline-run-blocker.sh",
-        "bd-init-blocker.sh",
-        "aws-profile-required.sh",
-    }
-)
+SAFETY_HOOKS = frozenset({
+    "no-verify-blocker.sh",
+    "pipeline-run-blocker.sh",
+    "bd-init-blocker.sh",
+    "aws-profile-required.sh",
+})
 
 
-def driver_module(name: str) -> Any:
+class PipelineStoppedError(RuntimeError):
+    """The supervisor requested cooperative shutdown between agent steps."""
+
+
+class SessionCleanupError(RuntimeError):
+    """Session finalization failed; original execution evidence remains attached."""
+
+
+class SessionSetupError(RuntimeError):
+    """Required session configuration or preparation failed before agent launch."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def driver_module(name: str) -> ModuleType:
+    """Load the configured control repository's named driver module.
+
+    Returns:
+        The imported module.
+
+    """
     directory = Path(os.environ["ATW_CONTROL_REPO"]) / "ops" / "sdlc-automation"
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
     return importlib.import_module(name)
 
 
-def read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def read_json(path: Path) -> dict[str, JsonValue]:
+    """Read and validate a JSON object, allowing absent optional configuration.
+
+    Returns:
+        The JSON object, or an empty object for an absent file.
+
+    """
+    return json_object(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else {}
 
 
-def list_field(value: Any) -> list:
-    return (
-        [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, str)
-        else list(value or [])
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def list_field(value: object) -> list[str]:
+    """Read a string-list field from authored agent frontmatter.
+
+    Returns:
+        The validated string list, or comma-separated string entries.
+
+    """
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return check_type(
+        value if value is not None else [],
+        list[str],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
 
 
-def definition(plugin: Path, step: AgentStep, model: str) -> dict:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def definition(plugin: Path, step: AgentStep, model: str) -> dict[str, JsonValue]:
+    """Build a selected agent definition from validated frontmatter.
+
+    Returns:
+        A Claude agent definition.
+
+    Raises:
+        ValueError: The agent file has no frontmatter.
+
+    """
     text = (plugin / "agents" / f"{step.agent}.md").read_text(encoding="utf-8")
     if not text.startswith("---\n"):
-        raise ValueError(f"agent {step.agent} has no frontmatter")
+        message = f"agent {step.agent} has no frontmatter"
+        raise ValueError(message)
     front, body = text[4:].split("\n---", 1)
-    metadata = yaml.safe_load(front)
-    result = {
-        key: metadata[key] for key in ("description", "maxTurns") if key in metadata
-    }
+    metadata = json_object(yaml.safe_load(front))
+    result: dict[str, JsonValue] = {key: metadata[key] for key in ("description", "maxTurns") if key in metadata}
     for key in ("tools", "disallowedTools", "skills", "mcpServers"):
         if key in metadata:
-            result[key] = list_field(metadata[key])
+            result[key] = list(list_field(metadata[key]))
     result.update(prompt=body.strip(), model=model, effort=step.effort)
     return result
 
 
-def safety_settings(config: Path) -> dict:
-    hooks = read_json(config / "settings.json").get("hooks", {}).get("PreToolUse", [])
-    selected = []
-    for group in hooks:
-        keep = []
-        for hook in group.get("hooks", []):
-            command = hook.get("command", "")
-            if hook.get("type") == "command" and any(
-                Path(word).name in SAFETY_HOOKS for word in shlex.split(command)
-            ):
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def safety_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
+    """Select safety hooks and add the mandatory Python edit checks.
+
+    Returns:
+        Session settings containing selected pre-tool and post-tool hooks.
+
+    """
+    hooks = json_object(read_json(config / "settings.json").get("hooks", {})).get("PreToolUse", [])
+    selected: list[JsonValue] = []
+    for group in check_type(
+        hooks,
+        list[dict[str, JsonValue]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    ):
+        keep: list[JsonValue] = []
+        for hook in check_type(
+            group.get("hooks", []),
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        ):
+            command = check_type(hook.get("command", ""), str)
+            if hook.get("type") == "command" and any(Path(word).name in SAFETY_HOOKS for word in shlex.split(command)):
                 keep.append(hook)
         if keep:
             selected.append({**group, "hooks": keep})
-    return {"hooks": {"PreToolUse": selected}}
-
-
-def plugin_paths(config: Path, plugin: Path, skills: list[str]) -> list[Path]:
-    wanted = {skill.split(":", 1)[0] for skill in skills if ":" in skill} - {
-        "agent-teams-workforce"
+    quality_hook = plugin.resolve() / "orchestrator" / "hooks" / "python-quality.py"
+    return {
+        "hooks": {
+            "PreToolUse": selected,
+            "PostToolUse": [
+                {
+                    "matcher": "Write|Edit",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"{shlex.quote(sys.executable)} {shlex.quote(str(quality_hook))}",
+                            "timeout": 400,
+                        },
+                    ],
+                },
+            ],
+        },
     }
-    installed = read_json(config / "plugins" / "installed_plugins.json").get(
-        "plugins", {}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def plugin_paths(config: Path, plugin: Path, skills: list[str]) -> list[Path]:
+    """Resolve the installed plugins required by a selected agent.
+
+    Returns:
+        The current plugin followed by required skill plugins.
+
+    Raises:
+        ValueError: A required skill plugin is absent.
+
+    """
+    wanted = {skill.split(":", 1)[0] for skill in skills if ":" in skill} - {"agent-teams-workforce"}
+    installed = check_type(
+        read_json(config / "plugins" / "installed_plugins.json").get("plugins", {}),
+        dict[str, list[dict[str, JsonValue]]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
     paths = [plugin]
     for name in sorted(wanted):
@@ -93,37 +176,48 @@ def plugin_paths(config: Path, plugin: Path, skills: list[str]) -> list[Path]:
             if entry.get("installPath")
         ]
         if not matches:
-            raise ValueError(f"required skill plugin is not installed: {name}")
-        paths.append(Path(matches[0]["installPath"]))
+            message = f"required skill plugin is not installed: {name}"
+            raise ValueError(message)
+        paths.append(Path(check_type(matches[0]["installPath"], str)))
     return paths
 
 
-def mcp_servers(control: Path, config: Path, names: list[str]) -> dict:
-    global_file = (
-        config / ".claude.json"
-        if os.environ.get("CLAUDE_CONFIG_DIR")
-        else Path.home() / ".claude.json"
-    )
-    found = {}
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def mcp_servers(control: Path, config: Path, names: list[str]) -> dict[str, JsonValue]:
+    """Select configured MCP servers required by the agent.
+
+    Returns:
+        Server definitions keyed by requested name.
+
+    Raises:
+        ValueError: Required servers are absent.
+
+    """
+    global_file = config / ".claude.json" if os.environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude.json"
+    found: dict[str, JsonValue] = {}
     for source in (control / ".mcp.json", global_file):
-        for name, value in read_json(source).get("mcpServers", {}).items():
+        for name, value in json_object(read_json(source).get("mcpServers", {})).items():
             if name in names and name not in found:
                 found[name] = value
     missing = set(names) - found.keys()
     if missing:
-        raise ValueError(f"required MCP servers are not configured: {sorted(missing)}")
+        message = f"required MCP servers are not configured: {sorted(missing)}"
+        raise ValueError(message)
     return found
 
 
-def prepare(
-    plugin: Path, config: Path, directory: Path, step: AgentStep, model: str
-) -> list[str]:
-    if any((parent / ".git").exists() for parent in (directory, *directory.parents)):
-        raise ValueError(f"session directory must be outside repositories: {directory}")
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, model: str) -> list[str]:
+    """Write private session configuration and construct Claude CLI arguments.
+
+    Returns:
+        Explicit arguments selecting the agent, settings and MCP configuration.
+
+    """
     agent = definition(plugin, step, model)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(directory / "agents.json", {f"atw-{step.agent}": agent})
-    write_json(directory / "settings.json", safety_settings(config))
+    write_json(directory / "settings.json", safety_settings(config, plugin))
     command = [
         "--agents",
         str(directory / "agents.json"),
@@ -139,36 +233,31 @@ def prepare(
         str(directory / "settings.json"),
         "--strict-mcp-config",
     ]
-    names = agent.get("mcpServers", [])
+    names = list_field(agent.get("mcpServers", []))
     if names:
         path = directory / "mcp.json"
         write_json(
             path,
-            {
-                "mcpServers": mcp_servers(
-                    Path(os.environ["ATW_CONTROL_REPO"]), config, names
-                )
-            },
+            {"mcpServers": mcp_servers(Path(os.environ["ATW_CONTROL_REPO"]), config, names)},
         )
         path.chmod(0o600)
         command.extend(["--mcp-config", str(path)])
-    for path in plugin_paths(config, plugin, agent.get("skills", [])):
+    for path in plugin_paths(config, plugin, list_field(agent.get("skills", []))):
         command.extend(["--plugin-dir", str(path)])
-    command.extend(
-        [
-            "--permission-mode",
-            "bypassPermissions",
-            "--disallowedTools",
-            *driver_module("headlessenv").DENIED_TOOLS,
-            "Agent",
-            "AskUserQuestion",
-        ]
-    )
+    command.extend([
+        "--permission-mode",
+        "bypassPermissions",
+        "--disallowedTools",
+        *list_field(driver_module("headlessenv").DENIED_TOOLS),
+        "Agent",
+        "AskUserQuestion",
+    ])
     for path in step.add_dirs:
         command.extend(["--add-dir", str(path.resolve())])
     return command
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def brief(
     bead: str,
     step: AgentStep,
@@ -176,17 +265,23 @@ def brief(
     *,
     corrective: bool = False,
 ) -> str:
-    outcome = (
-        "Correct the output named in the errors file." if corrective else step.outcome
-    )
+    """Serialize the one-line outcome and selected inputs for an agent.
+
+    Returns:
+        A JSON brief containing paths and the expected outcome.
+
+    Raises:
+        ValueError: The outcome contains multiple lines.
+
+    """
+    outcome = "Correct the output named in the errors file." if corrective else step.outcome
     if "\n" in outcome:
-        raise ValueError("an outcome must be one line")
+        message = "an outcome must be one line"
+        raise ValueError(message)
     return json.dumps(
         {
             "bead": bead,
-            "inputs": [
-                {"label": label, "path": str(path.resolve())} for label, path in inputs
-            ],
+            "inputs": [{"label": label, "path": str(path.resolve())} for label, path in inputs],
             "output": str(step.output.resolve()),
             "outcome": outcome,
         },

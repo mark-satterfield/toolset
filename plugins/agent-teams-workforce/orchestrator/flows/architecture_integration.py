@@ -5,23 +5,30 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..core.io import write_json
-from ..core.models import StepError
-from ..core.tool_locks import LockTimeout, control_repo, file_lock, seconds
-from .architecture_support import Architecture, read
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.models import StepError
+from orchestrator.core.tool_locks import LockTimeoutError, control_repo, file_lock, seconds
+from orchestrator.flows.architecture_support import Architecture, ArchitectureStep, read
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def commit(flow: Architecture, files: list[str], message: str) -> None:
+    """Commit and publish the reviewed architecture files."""
+    stage = "commit"
     if not files:
         return
-    result = flow.call(
-        "archstate",
-        "commit_integration",
-        str(flow.arch / "arc42"),
-        files,
-        message=message,
-        execution_id=flow.context.run_id,
-        stage="commit",
+    result = json_object(
+        flow.call(
+            "archstate",
+            "commit_integration",
+            str(flow.arch / "arc42"),
+            files,
+            message=message,
+            execution_id=flow.context.run_id,
+            stage="commit",
+        ),
     )
     if result.get("ok"):
         return
@@ -30,41 +37,50 @@ def commit(flow: Architecture, files: list[str], message: str) -> None:
         flow.tools.git(flow.arch, ["push", "origin", "main"], stage="commit")
         return
     lock = flow.tools.command(
-        ["git", "rev-parse", "--git-path", "index.lock"], cwd=flow.arch, stage="commit"
+        ["git", "rev-parse", "--git-path", "index.lock"],
+        cwd=flow.arch,
+        stage="commit",
     )
     cause = "contention" if (flow.arch / lock.stdout.strip()).exists() else "other"
-    raise flow.tools.failure("commit", cause, result)
+    raise flow.tools.failure(stage, cause, result)
 
 
-def integrate(flow: Architecture, target: dict) -> dict:
-    def operation() -> dict:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def integrate(flow: Architecture, target: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """Integrate an approved target while holding the shared writer lock.
+
+    Returns:
+        The validated integration outcome.
+
+    """
+    stage = "integrate"
+
+    def operation() -> dict[str, JsonValue]:
         try:
             with file_lock(
                 control_repo() / "ops/sdlc-automation/state/arch-integrate.lock",
                 seconds("ATW_ARCH_LOCK_WAIT", 120),
             ):
                 return _integrate_locked(flow, target)
-        except LockTimeout as exc:
-            raise StepError("integrate", "contention", (str(exc),)) from exc
+        except LockTimeoutError as exc:
+            raise StepError(stage, "contention", (str(exc),)) from exc
 
     return flow.tools.operation("integrate", operation)
 
 
-def _integrate_locked(flow: Architecture, target: dict) -> dict:
+def _integrate_locked(flow: Architecture, target: dict[str, JsonValue]) -> dict[str, JsonValue]:
     update = flow.work / "architecture-update.json"
     inputs = (
         flow.base_inputs()
-        + tuple(sorted(target.get("targetHashes", {})))
+        + tuple(sorted(json_object(target.get("targetHashes", {}))))
         + (str(flow.work / "decision.json"),)
     )
     receipt = flow.work / "integration-result.json"
     if flow.store.reusable(inputs, (receipt, update)):
         flow.runner.emit("note", kind="reused", step="architecture:integration")
-        return read(receipt)
+        return json_object(read(receipt))
     if receipt.exists():
-        stale = flow.work / (
-            "stale-integration-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        )
+        stale = flow.work / ("stale-integration-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"))
         stale.mkdir()
         names = {
             "integrate-before.json",
@@ -81,47 +97,48 @@ def _integrate_locked(flow: Architecture, target: dict) -> dict:
                 or path.name.startswith("conformance-")
             ):
                 path.rename(stale / path.name)
-    flow.checked(
-        flow.call(
-            "archrevision",
-            "mark",
-            str(flow.arch),
-            str(flow.work),
-            "integrating",
-            stage="integrate",
-        ),
-        "integrate",
-    )
-    if (
-        not target.get("designChanged")
-        and not target.get("documentationChanged")
-        and not target.get("draftWritten")
-    ):
-        files = target.get("approvalFiles", [])
-        promoted = flow.checked(
+    json_object(
+        flow.checked(
             flow.call(
-                "archstate",
-                "promote",
-                files,
-                arch_root=str(flow.arch / "arc42"),
-                reviewed=files,
-                stage="approve",
+                "archrevision",
+                "mark",
+                str(flow.arch),
+                str(flow.work),
+                "integrating",
+                stage="integrate",
             ),
-            "approve",
+            "integrate",
+        ),
+    )
+    if not target.get("designChanged") and not target.get("documentationChanged") and not target.get("draftWritten"):
+        files = check_type(
+            target.get("approvalFiles", []),
+            list[str],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        promoted = json_object(
+            flow.checked(
+                flow.call(
+                    "archstate",
+                    "promote",
+                    files,
+                    arch_root=str(flow.arch / "arc42"),
+                    reviewed=files,
+                    stage="approve",
+                ),
+                "approve",
+            ),
         )
         commit(
             flow,
             files,
             f"docs(architecture): approve existing views for {flow.subject}",
         )
-        result = {
-            "changedFiles": files,
+        result: dict[str, JsonValue] = {
+            "changedFiles": list(files),
             "createdFiles": [],
             "deletedFiles": [],
-            "viewsChecked": [
-                {"element": flow.subject, "view": path, "action": "updated"}
-                for path in files
-            ],
+            "viewsChecked": [{"element": flow.subject, "view": path, "action": "updated"} for path in files],
             "constraintIssues": [],
             "contradictions": [],
             "summary": "Existing views approved.",
@@ -130,57 +147,65 @@ def _integrate_locked(flow: Architecture, target: dict) -> dict:
         write_json(update, result)
         flow.store.accept("architecture:integration", inputs, (update,))
     else:
-        result = _full_integration(flow, target, inputs)
-    flow.checked(
-        flow.call(
-            "archrevision",
-            "mark",
-            str(flow.arch),
-            str(flow.work),
-            "integrated",
-            stage="integrate",
+        result = _full_integration(flow, inputs)
+    json_object(
+        flow.checked(
+            flow.call(
+                "archrevision",
+                "mark",
+                str(flow.arch),
+                str(flow.work),
+                "integrated",
+                stage="integrate",
+            ),
+            "integrate",
         ),
-        "integrate",
     )
     write_json(receipt, result)
     flow.store.accept("architecture:integration", inputs, (receipt, update))
     return result
 
 
-def _measure(flow: Architecture, update: Path, *, accumulate: bool) -> dict:
+def _measure(flow: Architecture, update: Path, *, accumulate: bool) -> dict[str, JsonValue]:
+    stage = "integrate"
     last = flow.work / "tree-last.json"
-    result = flow.checked(
-        flow.call(
-            "archfiles",
-            "integration_files",
-            str(flow.arch),
-            before=flow.work / "integrate-before.json",
-            report=update,
-            files_out=flow.work / "integration-files.json",
-            last=last if last.exists() else None,
-            save_last=last,
-            accumulate=accumulate,
-            stage="integrate",
+    result = json_object(
+        flow.checked(
+            flow.call(
+                "archfiles",
+                "integration_files",
+                str(flow.arch),
+                before=flow.work / "integrate-before.json",
+                report=update,
+                files_out=flow.work / "integration-files.json",
+                last=last if last.exists() else None,
+                save_last=last,
+                accumulate=accumulate,
+                stage="integrate",
+            ),
+            "integrate",
         ),
-        "integrate",
     )
     if result.get("section2"):
-        raise flow.tools.failure("integrate", "other", result)
+        raise flow.tools.failure(stage, "other", result)
     if result.get("outside"):
         flow.runner.emit("note", kind="integration-outside", files=result["outside"])
-    for name in result["touched"]:
+    for name in check_type(result["touched"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS):
         path = Path(name)
         if path.is_file() and path.is_relative_to(flow.arch / "arc42"):
-            text, status = flow.call(
-                "archstate",
-                "_set_state",
-                path.read_text(encoding="utf-8"),
-                "in-review",
-                stage="integrate",
+            text, status = check_type(
+                flow.call(
+                    "archstate",
+                    "_set_state",
+                    path.read_text(encoding="utf-8"),
+                    "in-review",
+                    stage="integrate",
+                ),
+                tuple[str, str],
             )
             if status == "no-frontmatter":
                 raise flow.tools.failure(
-                    "integrate",
+                    stage,
                     "other",
                     {
                         "file": name,
@@ -190,120 +215,169 @@ def _measure(flow: Architecture, update: Path, *, accumulate: bool) -> dict:
             path.write_text(text, encoding="utf-8")
     write_json(
         last,
-        flow.checked(
-            flow.call("archstate", "snapshot_tree", str(flow.arch), stage="integrate"),
-            "integrate",
+        json_object(
+            flow.checked(
+                flow.call("archstate", "snapshot_tree", str(flow.arch), stage="integrate"),
+                "integrate",
+            ),
         ),
     )
     return result
 
 
 def _full_integration(
-    flow: Architecture, target: dict, inputs: tuple[str, ...]
-) -> dict:
+    flow: Architecture,
+    inputs: tuple[str, ...],
+) -> dict[str, JsonValue]:
     before = flow.work / "integrate-before.json"
     update = flow.work / "architecture-update.json"
     if not before.exists():
         write_json(
             before,
-            flow.checked(
-                flow.call(
-                    "archstate", "snapshot_tree", str(flow.arch), stage="integrate"
+            json_object(
+                flow.checked(
+                    flow.call(
+                        "archstate",
+                        "snapshot_tree",
+                        str(flow.arch),
+                        stage="integrate",
+                    ),
+                    "integrate",
                 ),
-                "integrate",
             ),
         )
     coverage = flow.work / "approved-coverage.json"
     if not coverage.exists():
         write_json(coverage, {"result": flow.facts()})
-    ledger = flow.ledger_input("integration")
-    maint_inputs = inputs + (str(ledger),)
+    maint_inputs = (*inputs, str(flow.ledger_input("integration")))
     prior = sorted(flow.work.glob("conformance-*.json"))
     latest = prior[-1] if prior else None
     conforming = (
-        latest
-        and read(latest).get("conforms") is True
-        and flow.store.reusable(maint_inputs, (update,))
+        latest and json_object(read(latest)).get("conforms") is True and flow.store.reusable(maint_inputs, (update,))
     )
     if not conforming:
         extra = (str(latest),) if latest else ()
-        flow.agent(
-            "architecture-maintainer",
-            update,
-            "maintain",
-            maint_inputs + extra,
-            "Resume integration of the approved architecture."
-            if update.exists()
-            else "Integrate the approved architecture into effective views.",
+        json_object(
+            flow.agent(
+                ArchitectureStep(
+                    "architecture-maintainer",
+                    update,
+                    "maintain",
+                    maint_inputs + extra,
+                    "Resume integration of the approved architecture."
+                    if update.exists()
+                    else "Integrate the approved architecture into effective views.",
+                ),
+            ),
         )
     measured = _measure(flow, update, accumulate=bool(prior))
-    checked = {}
-    review = {}
-    for correction in range(3):
+    checked: dict[str, JsonValue] = {}
+    review: dict[str, JsonValue] = {}
+    correction_limit = 3
+    for correction in range(correction_limit):
         path = flow.work / f"conformance-{correction}.json"
-        review_inputs = inputs + (
+        review_inputs = (
+            *inputs,
             str(update),
             str(flow.work / "integration-files.json"),
             str(coverage),
             str(flow.arch / "arc42"),
         )
-        review = flow.agent(
-            "architecture-conformance-reviewer",
-            path,
-            "conformance",
-            review_inputs,
-            "Check the integrated architecture against the approved target.",
-        )
-        checked = flow.checked(
-            flow.call(
-                "archfiles",
-                "review_check",
-                path,
-                files=flow.work / "integration-files.json",
-                coverage_from=coverage,
-                stage="integrate",
+        review = json_object(
+            flow.agent(
+                ArchitectureStep(
+                    "architecture-conformance-reviewer",
+                    path,
+                    "conformance",
+                    review_inputs,
+                    "Check the integrated architecture against the approved target.",
+                ),
             ),
-            "integrate",
         )
-        if (
-            checked["conforms"]
-            and not checked["missed"]
-            and not checked["coverageUnverified"]
-        ):
+        checked = json_object(
+            flow.checked(
+                flow.call(
+                    "archfiles",
+                    "review_check",
+                    path,
+                    files=flow.work / "integration-files.json",
+                    coverage_from=coverage,
+                    stage="integrate",
+                ),
+                "integrate",
+            ),
+        )
+        if checked["conforms"] and not checked["missed"] and not checked["coverageUnverified"]:
             break
         errors = flow.work / f"conformance-{correction}.errors.json"
         write_json(errors, checked)
-        if correction == 2:
+        if correction == correction_limit - 1:
             break
-        flow.agent(
-            "architecture-maintainer",
-            update,
-            "maintain",
-            maint_inputs + (str(path), str(errors)),
-            "Correct the integration findings.",
-            stage=f"architecture:integration-correction-{correction + 1}",
+        json_object(
+            flow.agent(
+                ArchitectureStep(
+                    "architecture-maintainer",
+                    update,
+                    "maintain",
+                    (*maint_inputs, str(path), str(errors)),
+                    "Correct the integration findings.",
+                    stage=f"architecture:integration-correction-{correction + 1}",
+                ),
+            ),
         )
         measured = _measure(flow, update, accumulate=True)
         if not measured["changedSinceLast"]:
             break
-    bad = {f["file"] for f in review.get("findings", [])}
-    reviewed = [p for p in review.get("reviewedFiles", []) if p not in bad]
+    return _publish_integration(flow, measured, review, checked, maint_inputs)
+
+
+def _publish_integration(
+    flow: Architecture,
+    measured: dict[str, JsonValue],
+    review: dict[str, JsonValue],
+    checked: dict[str, JsonValue],
+    maint_inputs: tuple[str, ...],
+) -> dict[str, JsonValue]:
+    update = flow.work / "architecture-update.json"
+    bad = {
+        check_type(f["file"], str)
+        for f in check_type(
+            review.get("findings", []),
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+    }
+    reviewed = [
+        p
+        for p in check_type(
+            review.get("reviewedFiles", []),
+            list[str],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        if p not in bad
+    ]
     if checked.get("coverageUnverified"):
         reviewed = []
-    promoted = flow.checked(
-        flow.call(
-            "archstate",
-            "promote",
-            measured["touched"],
-            arch_root=str(flow.arch / "arc42"),
-            reviewed=reviewed,
-            stage="approve",
+    promoted = json_object(
+        flow.checked(
+            flow.call(
+                "archstate",
+                "promote",
+                measured["touched"],
+                arch_root=str(flow.arch / "arc42"),
+                reviewed=reviewed,
+                stage="approve",
+            ),
+            "approve",
         ),
-        "approve",
     )
     commit(
         flow,
-        [p for p in measured["all"] if Path(p).is_relative_to(flow.arch / "arc42")],
+        [
+            p
+            for p in check_type(measured["all"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+            if Path(p).is_relative_to(flow.arch / "arc42")
+        ],
         f"docs(architecture): integrate the approved target for {flow.subject}",
     )
     flow.store.accept("architecture:integration", maint_inputs, (update,))
@@ -314,6 +388,10 @@ def _full_integration(
             "missed": checked.get("missed", []),
             "coverageUnverified": checked.get("coverageUnverified", []),
         },
-        "changed": len(measured["touched"]),
-        "deleted": len(measured["deleted"]),
+        "changed": len(
+            check_type(measured["touched"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
+        ),
+        "deleted": len(
+            check_type(measured["deleted"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
+        ),
     }

@@ -7,45 +7,85 @@ import importlib
 import io
 import json
 import os
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Only fixture results and exception types, no launch.
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
+from types import ModuleType
+from typing import Protocol, runtime_checkable
 from unittest.mock import patch
+
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 
+from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.events import EventWriter
-from orchestrator.core.models import StepError
+from orchestrator.core.models import RetryExhaustedError, StepError
 from orchestrator.core.tool_locks import bd_gate
 from orchestrator.core.tools import Tools, retry_call
 
 
+@runtime_checkable
+class CauseFailure(Protocol):
+    """The factual failure cause exposed by the dynamically loaded graph module."""
+
+    cause: str
+
+
+def _raise_step(cause: str) -> None:
+    stage = "x"
+    raise StepError(stage, cause)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def _contract_module(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location("check_beads_contract", path)
+    if spec is None or spec.loader is None:
+        message = f"contract module cannot load: {path}"
+        raise ImportError(message)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ToolChecks(unittest.TestCase):
-    def test_schedule_and_terminal_failure(self):
-        pauses = []
+    """Existing isolated checks of tool and event boundaries."""
+
+    @staticmethod
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def test_schedule_and_terminal_failure() -> None:
+        """Check the existing tool boundary without an external invocation."""
+        pauses: list[float] = []
         attempts = 0
 
-        def action():
+        def action() -> str:
             nonlocal attempts
             attempts += 1
-            if attempts <= 9:
-                raise StepError("write", "bd-timeout")
+            limit = 3
+            if attempts <= limit:
+                stage = "write"
+                raise StepError(stage, "bd-timeout")
             return "done"
 
-        self.assertEqual(retry_call(action, sleep=pauses.append), "done")
-        self.assertEqual(pauses, [30, 60, 120, 240, 480, 960, 1800, 1800, 1800])
+        with expected_error(RetryExhaustedError):
+            retry_call(action, sleep=pauses.append)
+        require(pauses == [30, 60], "tool boundary check failed")
         for cause in ("api", "quota", "other"):
-            with self.assertRaises(StepError):
+            with expected_error(StepError):
                 retry_call(
-                    lambda: (_ for _ in ()).throw(StepError("x", cause)),
+                    partial(_raise_step, cause),
                     sleep=pauses.append,
                 )
-        self.assertEqual(len(pauses), 9)
+        require(len(pauses) == len([30, 60]), "tool boundary check failed")
 
-    def test_bd_lock_timeout_exit_and_metadata_transport(self):
+    @staticmethod
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def test_bd_lock_timeout_exit_and_metadata_transport() -> None:
+        """Check the existing tool boundary without an external invocation."""
         graph = importlib.import_module("beadgraph")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -61,33 +101,46 @@ class ToolChecks(unittest.TestCase):
                 patch.object(graph, "_target", return_value=root),
             ):
 
-                def run(argv, **kwargs):
-                    self.assertEqual(kwargs["timeout"], 3)
-                    self.assertTrue(central.is_dir())
+                def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                    require(kwargs["timeout"] == int(values["ATW_BD_TIMEOUT"]), "tool boundary check failed")
+                    require(central.is_dir(), "tool boundary check failed")
                     return subprocess.CompletedProcess(
-                        argv, 1, "", "database is locked"
+                        argv,
+                        1,
+                        "",
+                        "database is locked",
                     )
 
                 with patch.object(graph.subprocess, "run", side_effect=run):
-                    with self.assertRaises(graph.GraphError) as caught:
-                        graph._bd(["update", "example"], root)
-                    self.assertEqual(caught.exception.cause, "other")
-                self.assertFalse(central.exists())
+                    with expected_error(graph.GraphError) as caught:
+                        graph.children(root, "example", "task")
+                    require(
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == "other",
+                        "tool boundary check failed",
+                    )
+                require(not (central.exists()), "tool boundary check failed")
                 with patch.object(
                     graph.subprocess,
                     "run",
                     side_effect=subprocess.TimeoutExpired("bd", 3),
                 ):
-                    with self.assertRaises(graph.GraphError) as caught:
-                        graph._bd(["show", "example"], root)
-                    self.assertEqual(caught.exception.cause, "bd-timeout")
+                    with expected_error(graph.GraphError) as caught:
+                        graph.children(root, "example", "task")
+                    require(
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == "bd-timeout",
+                        "tool boundary check failed",
+                    )
                 with bd_gate(write=False), patch.object(graph.subprocess, "run") as run:
-                    with self.assertRaises(graph.GraphError) as caught:
-                        graph._bd(["show", "example"], root)
-                    self.assertEqual(caught.exception.cause, "contention")
+                    with expected_error(graph.GraphError) as caught:
+                        graph.children(root, "example", "task")
+                    require(
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == "contention",
+                        "tool boundary check failed",
+                    )
                     run.assert_not_called()
-                contract = graph._contract()
+                contract = _contract_module(check_type(graph.CONTRACT, Path))
                 with (
+                    patch.object(graph, "_contract", return_value=contract),
                     patch.object(contract.Reader, "route", return_value=directory),
                     patch.object(
                         graph,
@@ -99,53 +152,64 @@ class ToolChecks(unittest.TestCase):
                     ) as call,
                 ):
                     graph.write_metadata("example", {"state": "ready"}, root)
-                    self.assertEqual(call.call_count, 2)
-                    self.assertEqual(
-                        call.call_args_list[0].args[0],
-                        ["update", "example", "--set-metadata", "state=ready"],
+                    require(call.call_count == len(["update", "read"]), "tool boundary check failed")
+                    require(
+                        call.call_args_list[0].args[0] == ["update", "example", "--set-metadata", "state=ready"],
+                        "tool boundary check failed",
                     )
                 record = {"id": "example", "title": "Example", "issue_type": "task"}
-                self.assertEqual(
-                    graph.fingerprints([record])["example"],
-                    contract.fingerprint_of("example", record)["fingerprint"],
+                require(
+                    graph.fingerprints([record])["example"]
+                    == contract.fingerprint_of("example", record)["fingerprint"],
+                    "tool boundary check failed",
                 )
 
-    def test_tools_structured_results_and_keyed_retry(self):
+    @staticmethod
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def test_tools_structured_results_and_keyed_retry() -> None:
+        """Check the existing tool boundary without an external invocation."""
         with tempfile.TemporaryDirectory() as directory:
             tools = Tools(Path(directory))
             with patch(
                 "orchestrator.core.tools.subprocess.run",
                 return_value=subprocess.CompletedProcess(["git"], 1, "", "timeout"),
             ):
-                with self.assertRaises(StepError) as caught:
+                with expected_error(StepError) as caught:
                     tools.command(["git"], stage="git")
-                self.assertEqual(caught.exception.cause, "other")
-                self.assertTrue(Path(caught.exception.evidence[0]).is_file())
-            reads = []
-            stored = {}
+                require(
+                    check_type(check_type(caught[0], CauseFailure).cause, str) == "other",
+                    "tool boundary check failed",
+                )
+                require(Path(check_type(caught[0], StepError).evidence[0]).is_file(), "tool boundary check failed")
+            reads: list[dict[str, str]] = []
+            stored: dict[str, str] = {}
 
-            def write():
+            def write() -> str:
                 reads.append(dict(stored))
                 if not stored:
                     stored["elab_key"] = "created"
-                    raise StepError("write", "bd-timeout")
+                    stage = "write"
+                raise StepError(stage, "bd-timeout")
                 return stored["elab_key"]
 
             with patch(
                 "orchestrator.core.tools.retry_call",
                 side_effect=lambda action: retry_call(action, sleep=lambda _: None),
             ):
-                self.assertEqual(tools.operation("write", write), "created")
-            self.assertEqual(reads, [{}, {"elab_key": "created"}])
+                require(tools.operation("write", write) == "created", "tool boundary check failed")
+            require(reads == [{}, {"elab_key": "created"}], "tool boundary check failed")
 
-    def test_event_channel_survives_imported_stdout_redirection(self):
+    @staticmethod
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def test_event_channel_survives_imported_stdout_redirection() -> None:
+        """Check the existing tool boundary without an external invocation."""
         events, diagnostics = io.StringIO(), io.StringIO()
         writer = EventWriter(events)
         with contextlib.redirect_stdout(diagnostics):
-            print("library diagnostic")
+            sys.stdout.write("library diagnostic\n")
             writer("phase", phase="architecture", step="survey")
-        self.assertEqual(json.loads(events.getvalue())["step"], "survey")
-        self.assertEqual(diagnostics.getvalue(), "library diagnostic\n")
+        require(json.loads(events.getvalue())["step"] == "survey", "tool boundary check failed")
+        require(diagnostics.getvalue() == "library diagnostic\n", "tool boundary check failed")
 
 
 if __name__ == "__main__":

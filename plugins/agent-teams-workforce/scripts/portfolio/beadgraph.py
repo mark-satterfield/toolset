@@ -3,7 +3,8 @@
 
 The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
 export is never read: `bd` exports only after a state-changing command, at most once per
-`export.interval`, and the export can be blocked, so it can lag the tracker by hours. Every live `bd` command holds the shared driver gate and has a timeout.
+`export.interval`, and the export can be blocked, so it can lag the tracker by hours.
+Every live `bd` command holds the shared driver gate and has a timeout.
 Failures carry structured causes; the orchestrator owns retries of keyed operations.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
@@ -18,24 +19,24 @@ from __future__ import annotations
 
 import argparse
 import functools
+import importlib
 import importlib.util
 import json
-import subprocess
+import math
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 #: The `beads-contract` CLI — the one writer of this pipeline's bead metadata. Going
 #: through it is what keeps ONE statement of which keys exist and how they merge; a
 #: hand-rolled `bd update --metadata` here would be a second, silently divergent one.
-CONTRACT = (
-    Path(__file__).resolve().parents[2]
-    / "skills"
-    / "beads-contract"
-    / "scripts"
-    / "beads-contract.py"
-)
+CONTRACT = Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts" / "beads-contract.py"
 
 #: The dependency type of a Task-to-Task edge: a build prerequisite `bd ready` enforces.
 BLOCKS = "blocks"
@@ -46,13 +47,14 @@ TRACKS = "tracks"
 
 
 def edge_type(kind: str) -> str:
-    """The dependency type an edge onto a bead of this issue type is stored as.
+    """Return the dependency type for an edge onto this issue type.
 
     Args:
         kind: The issue type of the dependent bead.
 
     Returns:
         `tracks` for an Epic, `blocks` for everything else.
+
     """
     return TRACKS if kind == "epic" else BLOCKS
 
@@ -90,6 +92,7 @@ class GraphError(RuntimeError):
         Args:
             message: What failed.
             cause: CONTENTION, BD_TIMEOUT or OTHER_CAUSE.
+
         """
         super().__init__(message)
         self.cause = cause
@@ -139,12 +142,22 @@ class Graph:
     warnings: list[str] = field(default_factory=list)
 
     def of_kind(self, *kinds: str) -> list[Bead]:
-        """Every bead of the given issue types, in id order."""
+        """Select beads of the given issue types.
+
+        Returns:
+            Matching beads in id order.
+
+        """
         wanted = set(kinds)
         return [b for _, b in sorted(self.beads.items()) if b.kind in wanted]
 
     def ancestors(self, bead_id: str) -> list[Bead]:
-        """The parent chain above a bead, nearest first, stopping at a cycle."""
+        """Walk the parent chain, stopping at a cycle.
+
+        Returns:
+            Ancestors nearest first.
+
+        """
         chain: list[Bead] = []
         seen = {bead_id}
         current = self.beads.get(bead_id)
@@ -160,14 +173,24 @@ class Graph:
         return chain
 
     def epic_of(self, bead_id: str) -> Bead | None:
-        """The nearest Epic above a bead, walking Story -> Epic."""
+        """Find the nearest Epic above a bead.
+
+        Returns:
+            The closest Epic ancestor, or None.
+
+        """
         for ancestor in self.ancestors(bead_id):
             if ancestor.kind == "epic":
                 return ancestor
         return None
 
     def descendants(self, bead_id: str) -> list[Bead]:
-        """Every bead beneath a bead, at any depth."""
+        """Find every descendant at any depth.
+
+        Returns:
+            Descendants in id order.
+
+        """
         children: dict[str, list[Bead]] = {}
         for bead in self.beads.values():
             if bead.parent:
@@ -186,12 +209,22 @@ class Graph:
 
 
 def split_ids(raw: str) -> list[str]:
-    """Parse a comma-separated bead-id list, tolerating spaces and empties."""
+    """Parse a comma-separated bead-id list.
+
+    Returns:
+        Nonempty stripped bead identifiers.
+
+    """
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
 def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
-    """Render a bead-id set as the comma-separated form metadata stores."""
+    """Render identifiers in the comma-separated metadata form.
+
+    Returns:
+        Sorted unique identifiers separated by commas.
+
+    """
     return ",".join(sorted(set(ids)))
 
 
@@ -199,22 +232,26 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
 BD_GATE = None
 
 
-def _gate_module():
-    """Load the shared lock implementation for direct portfolio CLI invocations."""
+def _gate_module() -> ModuleType:
+    """Load the shared lock implementation for direct portfolio CLI invocations.
+
+    Returns:
+        The shared lock module.
+
+    """
     root = str(Path(__file__).resolve().parents[2])
     if root not in sys.path:
         sys.path.insert(0, root)
-    from orchestrator.core import tool_locks
-
-    return tool_locks
+    return importlib.import_module("orchestrator.core.tool_locks")
 
 
 @functools.cache
 def _contract() -> object:
-    """The beads-contract module, which holds the one rule for which database `bd` runs in.
+    """Load the beads-contract module that selects the database for `bd`.
 
     Returns:
         The loaded module.
+
     """
     spec = importlib.util.spec_from_file_location("beads_contract", CONTRACT)
     module = importlib.util.module_from_spec(spec)
@@ -224,10 +261,11 @@ def _contract() -> object:
 
 @functools.cache
 def _central() -> Path | None:
-    """The central repository, `$ATW_CONTROL_REPO`, or None for the working directory.
+    """Resolve the central repository or use the working directory.
 
     Returns:
         The repository, or None.
+
     """
     central = _contract().central_repo("")
     return Path(central) if central else None
@@ -238,7 +276,7 @@ _HOMES: dict[str, dict[str, str]] = {}
 
 
 def _target(args: list[str], repo: Path | None) -> Path | None:
-    """The repository a `bd` command runs in, by the beads-contract rule.
+    """Resolve the repository for a `bd` command by the beads-contract rule.
 
     Every command runs against the central database (`repo`, else `$ATW_CONTROL_REPO`),
     except a write to a bead filed in a fleet repository's own database, which runs there:
@@ -250,6 +288,7 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
 
     Returns:
         The repository, or None for the working directory.
+
     """
     contract = _contract()
     central = repo if repo is not None else _central()
@@ -269,6 +308,13 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
 
     The orchestrator retries the enclosing keyed operation, which rereads existing beads.
     No command output is interpreted to guess whether a failed write is safe to repeat.
+
+    Returns:
+        The command stdout.
+
+    Raises:
+        GraphError: The lock, process, or tracker command failed.
+
     """
     command = ["bd", *args]
     where = _target(args, repo)
@@ -278,7 +324,7 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     gate = BD_GATE or locks.bd_gate
     try:
         with gate(write=not _contract().is_read(args)):
-            done = subprocess.run(
+            done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
                 command,
                 input=stdin,
                 capture_output=True,
@@ -286,7 +332,7 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
                 check=False,
                 timeout=locks.seconds("ATW_BD_TIMEOUT", 180),
             )
-    except locks.LockTimeout as exc:
+    except locks.LockTimeoutError as exc:
         raise GraphError(str(exc), CONTENTION) from exc
     except subprocess.TimeoutExpired as exc:
         raise GraphError(str(exc), BD_TIMEOUT) from exc
@@ -312,6 +358,7 @@ def _bd_json(args: list[str], repo: Path | None) -> object:
 
     Raises:
         GraphError: `bd` failed or printed no JSON.
+
     """
     out = _bd(args, repo)
     try:
@@ -322,8 +369,13 @@ def _bd_json(args: list[str], repo: Path | None) -> object:
 
 
 def now_iso() -> str:
-    """The current instant, ISO 8601 UTC, to the second."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Format the current instant in UTC.
+
+    Returns:
+        The ISO 8601 timestamp to the second.
+
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def same_value(stored: object, wanted: str) -> bool:
@@ -339,6 +391,7 @@ def same_value(stored: object, wanted: str) -> bool:
 
     Returns:
         True when the read-back holds the written value.
+
     """
     structured = _structured(stored)
     if structured is not None:
@@ -350,19 +403,20 @@ def same_value(stored: object, wanted: str) -> bool:
     if text == wanted:
         return True
     try:
-        return float(text) == float(wanted)
+        return math.isclose(float(text), float(wanted), rel_tol=0.0, abs_tol=0.0)
     except ValueError:
         return False
 
 
 def _structured(value: object) -> dict | list | None:
-    """A value as a JSON object or list, or None when it is neither.
+    """Parse a value as a JSON object or list when possible.
 
     Args:
         value: A parsed object or list, or a string that may hold one.
 
     Returns:
         The object or list, or None.
+
     """
     if isinstance(value, (dict, list)):
         return value
@@ -376,7 +430,7 @@ def _structured(value: object) -> dict | list | None:
 
 
 def _metadata_text(value: object) -> str:
-    """A metadata value as the string a Bead holds.
+    """Render a metadata value as the string a Bead holds.
 
     Args:
         value: The value as `bd` returned it.
@@ -384,6 +438,7 @@ def _metadata_text(value: object) -> str:
     Returns:
         An object or list as compact JSON with sorted keys; a string unchanged; anything
         else as `str`.
+
     """
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -400,17 +455,20 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
 
     Raises:
         GraphError: The contract refused the write or the shared bd transport failed.
+
     """
     contract = _contract()
 
     class LockedReader(contract.Reader):
-        def _bd(self, args, repo=None, stdin=None):
+        def _bd(self, args: list[str], repo: str | None = None, stdin: str | None = None) -> str:
             where = self.route(args) if repo is None else repo
             return _bd(args, Path(where) if where else None, stdin)
 
     reader = LockedReader(str(repo) if repo else "")
     arguments = argparse.Namespace(
-        op="set", id=bead_id, pairs=[f"{key}={value}" for key, value in pairs.items()]
+        op="set",
+        id=bead_id,
+        pairs=[f"{key}={value}" for key, value in pairs.items()],
     )
     try:
         contract.cmd_metadata(arguments, reader)
@@ -426,6 +484,7 @@ class Writer:
         repo: The central repository, or None for `$ATW_CONTROL_REPO`.
         dry_run: True to record each write in `planned` and change nothing.
         planned: The writes a dry run would have made, in order.
+
     """
 
     repo: Path | None
@@ -438,6 +497,7 @@ class Writer:
         Args:
             args: The `bd` arguments.
             stdin: The text the command reads on its standard input, or None.
+
         """
         if self.dry_run:
             self.planned.append({"op": "bd", "args": list(args), "stdin": stdin})
@@ -453,6 +513,7 @@ class Writer:
 
         Returns:
             The new bead's id, or `(new:<key>)` in a dry run.
+
         """
         if self.dry_run:
             self.planned.append({"op": "bd", "args": list(args)})
@@ -465,6 +526,7 @@ class Writer:
         Args:
             bead_id: The bead to write.
             pairs: The keys and values to merge onto its metadata.
+
         """
         if self.dry_run:
             self.planned.append({"op": "metadata", "id": bead_id, "set": dict(pairs)})
@@ -480,7 +542,7 @@ SCOPE_READINESS = "readiness"
 
 
 def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str, str]:
-    """The content fingerprint of every record, from the shared contract function.
+    """Compute every record fingerprint through the shared contract.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
     exactly the sweep the caller reasons about.
@@ -494,8 +556,7 @@ def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str,
     Returns:
         Bead id -> content fingerprint.
 
-    Raises:
-        GraphError: The CLI refused or answered with something unusable.
+
     """
     contract = _contract()
     latest = {str(record.get("id") or ""): record for record in records}
@@ -506,7 +567,15 @@ def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str,
 
 
 def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]:
-    """Every issue, closed ones included, from one live `bd list` call."""
+    """Read every issue, including closed ones.
+
+    Returns:
+        The tracker records.
+
+    Raises:
+        GraphError: The tracker response was not an array.
+
+    """
     args = ["list", "--all", "--json", "-n", "0", "--readonly"]
     if not with_description:
         args.append("--brief")
@@ -530,6 +599,7 @@ def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
 
     Raises:
         GraphError: `bd` failed or did not return an array.
+
     """
     args = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
     payload = _bd_json([*args, "--readonly"], repo)
@@ -540,7 +610,12 @@ def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
 
 
 def bead_of(record: dict) -> Bead:
-    """Normalize one tracker record, tolerating every field `bd` omits when unset."""
+    """Normalize one tracker record, allowing omitted unset fields.
+
+    Returns:
+        The normalized bead.
+
+    """
     metadata = record.get("metadata") or {}
     if isinstance(metadata, str):
         metadata = json.loads(metadata or "{}")
@@ -568,8 +643,9 @@ def bead_of(record: dict) -> Bead:
 def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
     """Read the whole tracker live through `bd` and normalize it.
 
-    Raises:
-        GraphError: The live read failed on every retry.
+    Returns:
+        The normalized graph and its source records.
+
     """
     records = _records_from_bd(repo, with_description=with_description)
     beads = {}

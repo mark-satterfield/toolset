@@ -5,19 +5,28 @@ from __future__ import annotations
 import json
 import sys
 import threading
-from typing import Any, TextIO
+from typing import TextIO
+
+from typeguard import CollectionCheckStrategy, typechecked
+
+from .io import json_object
 
 
 class EventWriter:
     """Write complete JSON lines to the original stream, even during redirection."""
 
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(self, stream: TextIO | None = None) -> None:
+        """Bind the original event stream and its line-write lock."""
         self.stream = stream if stream is not None else sys.stdout
         self.lock = threading.Lock()
 
-    def __call__(self, event: str, **facts: Any) -> None:
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def __call__(self, event: str, **facts: object) -> None:
+        """Emit one validated JSON event without interleaving concurrent writers."""
+        payload = json_object({"event": event, **facts})
         with self.lock:
             self.stream.write(
-                json.dumps({"event": event, **facts}, ensure_ascii=False) + "\n"
+                json.dumps(payload, ensure_ascii=False) + "\n",
             )
             self.stream.flush()

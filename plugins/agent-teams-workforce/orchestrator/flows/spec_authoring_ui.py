@@ -4,18 +4,41 @@ from __future__ import annotations
 
 import re
 
-from ..core.tools import Tools
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.tools import Tools
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def normalize_ui(
-    candidate: dict, placed: set[str], bundles: dict, tools: Tools
-) -> dict:
-    """Keep only placed items and downgrade unusable bundle references to CDS."""
+    candidate: dict[str, JsonValue],
+    placed: set[str],
+    bundles: dict[str, JsonValue],
+    tools: Tools,
+) -> dict[str, JsonValue]:
+    """Keep placed items and downgrade unusable bundle references to CDS.
+
+    Returns:
+        Normalized UI items and visible fallback warnings.
+
+    """
     warnings, rows = [], []
-    supplied = {row["path"]: row for row in bundles["bundles"]}
-    for original in candidate["uiItems"]:
+    supplied = {
+        check_type(row["path"], str): row
+        for row in check_type(
+            bundles["bundles"],
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+    }
+    for original in check_type(
+        candidate["uiItems"],
+        list[dict[str, JsonValue]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    ):
         row = dict(original)
-        item = row["item"]
+        item = check_type(row["item"], str)
         if item not in placed:
             warnings.append(f"{item}: not a placed item; removed")
             continue
@@ -23,29 +46,31 @@ def normalize_ui(
         if source not in {"bundle", "cds", "none"}:
             warnings.append(f"{item}: unknown design source; using cds")
             source = "cds"
-        artifact = row.get("artifact")
+        artifact_value = row.get("artifact")
+        artifact = json_object(artifact_value) if artifact_value is not None else None
         if source in {"bundle", "cds"} and (
-            not artifact
-            or artifact.get("kind") not in {"page", "shell", "view"}
-            or not artifact.get("slug")
+            not artifact or artifact.get("kind") not in {"page", "shell", "view"} or not artifact.get("slug")
         ):
             artifact = {
                 "kind": "page",
                 "slug": re.sub(r"[^a-z0-9]+", "-", item.lower()).strip("-") or "item",
             }
             warnings.append(
-                f"{item}: missing artifact; assigned page {artifact['slug']}"
+                f"{item}: missing artifact; assigned page {artifact['slug']}",
             )
         if source == "bundle":
-            bundle = supplied.get(row.get("bundle"))
+            bundle = supplied.get(check_type(row.get("bundle"), str | None))
             problem = "not a supplied matching bundle"
             if bundle and artifact == {"kind": bundle["kind"], "slug": bundle["slug"]}:
-                problem = tools.portfolio(
-                    "cdsbundles",
-                    "bundle_problem",
-                    row["bundle"],
-                    row.get("buildSpec") or "",
-                    stage="author",
+                problem = check_type(
+                    tools.portfolio(
+                        "cdsbundles",
+                        "bundle_problem",
+                        row["bundle"],
+                        row.get("buildSpec") or "",
+                        stage="author",
+                    ),
+                    str | None,
                 )
             if problem:
                 warnings.append(f"{item}: {problem}; using cds")
@@ -57,4 +82,4 @@ def normalize_ui(
             row.pop("buildSpec", None)
             row.pop("sections", None)
         rows.append(row)
-    return {"uiItems": rows, "warnings": warnings}
+    return json_object({"uiItems": rows, "warnings": warnings})

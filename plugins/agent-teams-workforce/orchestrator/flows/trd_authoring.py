@@ -7,30 +7,50 @@ import json
 from pathlib import Path
 
 import yaml
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from ..core.agents import AgentRunner, strict_json
-from ..core.artifacts import ArtifactStore
-from ..core.io import write_json
-from ..core.models import AgentStep, RunContext, StepError
-from ..core.tools import Tools, env_path
+from orchestrator.core.agents import AgentRunner, strict_json
+from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.models import AgentStep, RunContext, StepError
+from orchestrator.core.tools import Tools, env_path
 
 
+class DocumentValidationError(ValueError):
+    """An authored document fails its content contract."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def document(path: Path, arch: Path) -> tuple[list[str], list[str]]:
+    """Validate document frontmatter and resolve architecture citations.
+
+    Returns:
+        The validated document result.
+
+    Raises:
+        DocumentValidationError: Frontmatter or architecture citations are invalid.
+
+    """
     arch = arch.resolve()
     text = path.read_text(encoding="utf-8")
     if not text.strip():
-        raise ValueError(f"missing or empty document: {path}")
+        message = f"missing or empty document: {path}"
+        raise DocumentValidationError(message)
     if not text.startswith("---\n") or "\n---" not in text[4:]:
-        raise ValueError(f"{path}: YAML frontmatter is missing")
+        message = f"{path}: YAML frontmatter is missing"
+        raise DocumentValidationError(message)
     try:
         front = yaml.safe_load(text[4:].split("\n---", 1)[0]) or {}
     except yaml.YAMLError as exc:
-        raise ValueError(f"{path}: invalid YAML frontmatter: {exc}") from exc
+        message = f"{path}: invalid YAML frontmatter: {exc}"
+        raise DocumentValidationError(message) from exc
     if not isinstance(front, dict):
-        raise ValueError(f"{path}: frontmatter must be an object")
+        message = f"{path}: frontmatter must be an object"
+        raise DocumentValidationError(message)
     ids = front.get("decisionIds", [])
     if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
-        raise ValueError(f"{path}: decisionIds must be a list of strings")
+        message = f"{path}: decisionIds must be a list of strings"
+        raise DocumentValidationError(message)
     unresolved = []
     for entry in ids:
         relative = entry.split("#", 1)[0]
@@ -41,54 +61,47 @@ def document(path: Path, arch: Path) -> tuple[list[str], list[str]]:
         if (
             not relative
             or Path(relative).is_absolute()
-            or not any(
-                candidate.is_relative_to(arch) and candidate.is_file()
-                for candidate in candidates
-            )
+            or not any(candidate.is_relative_to(arch) and candidate.is_file() for candidate in candidates)
         ):
             unresolved.append(entry)
     if unresolved:
-        raise ValueError(f"unresolved decisionIds: {unresolved}")
+        message = f"unresolved decisionIds: {unresolved}"
+        raise DocumentValidationError(message)
     warnings = [] if ids else ["decisionIds is absent or empty"]
     return ids, warnings
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run(
-    context: RunContext, store: ArtifactStore, runner: AgentRunner, tools: Tools
-) -> dict:
+    context: RunContext,
+    store: ArtifactStore,
+    runner: AgentRunner,
+    tools: Tools,
+) -> dict[str, JsonValue]:
+    """Produce the TRD and mark its accepted digest on the Epic.
+
+    Returns:
+        The validated document result.
+
+    Raises:
+        StepError: The PRD path or architecture target is missing.
+
+    """
+    stage = "input"
     args, work = context.args, context.work
     context.stage = "trd-authoring"
-    prd_value, target = args.get("prd", {}).get("path"), args.get("targetDir")
+    prd_value, target = json_object(args.get("prd", {})).get("path"), args.get("targetDir")
     if not prd_value or not target:
-        raise StepError("input", "other", ("PRD path and targetDir are required",))
-    prd, arch = Path(prd_value).resolve(), Path(args["archPath"]).resolve()
-    item_path = work / "delta-items.json"
-    elements = sorted({item["element"] for item in strict_json(item_path)["items"]})
-    inputs = tuple(
-        map(
-            str,
-            (
-                prd,
-                item_path,
-                work / "architecture/decision.md",
-                work / "architecture/target.json",
-                work / "architecture/architecture-update.json",
-                work / "architecture/survey.json",
-                target,
-                arch / "arc42/02-architecture-constraints",
-            ),
-        )
-    ) + (
-        "arch-views:"
-        + json.dumps(
-            {"dir": str(arch / "arc42"), "elements": elements}, sort_keys=True
-        ),
-    )
+        raise StepError(stage, "other", ("PRD path and targetDir are required",))
+    prd, arch = Path(check_type(prd_value, str)).resolve(), Path(check_type(args["archPath"], str)).resolve()
+    inputs = _trd_inputs(prd, arch, check_type(target, str), work)
     output = work / "trd.md"
     reused = store.reusable(inputs, (output,))
     facts = work / "trd.context.json"
     feedback = work / "trd.feedback.json"
-    ids, warnings, errors = [], [], []
+    ids: list[str] = []
+    warnings: list[str] = []
+    errors: list[str] = []
     if reused:
         try:
             ids, warnings = document(output, arch)
@@ -112,7 +125,7 @@ def run(
             AgentStep(
                 stage="trd",
                 agent="trd-author",
-                inputs=inputs + (str(facts), str(feedback)),
+                inputs=(*inputs, str(facts), str(feedback)),
                 output=output,
                 final=None,
                 validate=lambda path: document(path, arch),
@@ -121,32 +134,73 @@ def run(
                 effort="medium",
                 add_dirs=(work, arch, prd.parent),
                 corrective=not bool(errors),
-            )
+            ),
         )
         ids, warnings = document(output, arch)
     store.accept("trd", inputs, (output,))
-    digest = hashlib.sha256(output.read_bytes()).hexdigest()
-    relative = str(output.resolve().relative_to(env_path("SKILLSPOKE_ROOT")))
-    control = env_path("ATW_CONTROL_REPO")
-
-    def mark() -> None:
-        raw = json.loads(tools.bd(["show", context.bead, "--json"], stage="trd"))
-        bead = raw[0] if isinstance(raw, list) else raw
-        metadata = bead.get("metadata") or {}
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-        pairs = {"artifact_trd_path": relative, "artifact_trd_sha256": digest}
-        if all(metadata.get(key) == value for key, value in pairs.items()):
-            return
-        tools.portfolio(
-            "beadgraph", "write_metadata", context.bead, pairs, control, stage="trd"
-        )
-
-    tools.operation("trd", mark)
-    return {
+    _mark_trd(context, tools, output)
+    return json_object({
         "ok": True,
         "trdPath": str(output),
         "filingPath": args.get("trdPath"),
         "decisionIds": ids,
         "warnings": warnings,
-    }
+    })
+
+
+def _mark_trd(context: RunContext, tools: Tools, output: Path) -> None:
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    relative = str(output.resolve().relative_to(env_path("SKILLSPOKE_ROOT")))
+    control = env_path("ATW_CONTROL_REPO")
+
+    def mark() -> None:
+        raw: object = json.loads(tools.bd(["show", context.bead, "--json"], stage="trd"))
+        bead = json_object(raw[0] if isinstance(raw, list) else raw)
+        metadata = bead.get("metadata") or {}
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        pairs = {"artifact_trd_path": relative, "artifact_trd_sha256": digest}
+        if all(json_object(metadata).get(key) == value for key, value in pairs.items()):
+            return
+        tools.portfolio(
+            "beadgraph",
+            "write_metadata",
+            context.bead,
+            pairs,
+            control,
+            stage="trd",
+        )
+
+    tools.operation("trd", mark)
+
+
+def _trd_inputs(prd: Path, arch: Path, target: str, work: Path) -> tuple[str, ...]:
+    item_path = work / "delta-items.json"
+    elements = sorted({
+        check_type(item["element"], str)
+        for item in check_type(
+            strict_json(item_path)["items"],
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+    })
+    return (
+        *map(
+            str,
+            (
+                prd,
+                item_path,
+                work / "architecture/decision.md",
+                work / "architecture/target.json",
+                work / "architecture/architecture-update.json",
+                work / "architecture/survey.json",
+                target,
+                arch / "arc42/02-architecture-constraints",
+            ),
+        ),
+        "arch-views:"
+        + json.dumps(
+            {"dir": str(arch / "arc42"), "elements": elements},
+            sort_keys=True,
+        ),
+    )

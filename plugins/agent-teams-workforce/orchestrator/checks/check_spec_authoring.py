@@ -3,64 +3,108 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType
+from typing import override
+
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
+from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.models import AgentStep
+from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.io import JsonValue
+from orchestrator.core.models import AgentStep, RunContext
+from orchestrator.core.tools import Tools
 from orchestrator.flows.spec_authoring_ui import normalize_ui
 
 
+class UnavailableReceiptStore(ArtifactStore):
+    """A typed store whose receipt destination is unavailable."""
+
+    @override
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def accept(self, step: str, inputs: tuple[str, ...], outputs: tuple[Path, ...], producer: str = "python") -> None:
+        """Fail the existing receipt probe without writing an artifact.
+
+        Raises:
+            OSError: The fixture destination is unavailable.
+
+        """
+        message = "receipt destination unavailable"
+        raise OSError(message)
+
+
+class ReceiptRunner(AgentRunner):
+    """Expose the receipt operation to the existing isolated check."""
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def record_output(self, step: AgentStep) -> None:
+        """Record one already validated output without dispatching an agent."""
+        self._record_output(step, step.output)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
-    rows = normalize_ui(
-        {
-            "uiItems": [
-                {"item": "UI-1", "designSource": "unknown"},
-                {"item": "UI-2", "designSource": "bundle", "bundle": "/missing"},
-                {"item": "outside", "designSource": "none"},
-            ]
-        },
-        {"UI-1", "UI-2"},
-        {"bundles": []},
-        None,
-    )
-    assert len(rows["uiItems"]) == 2
-    assert all(row["designSource"] == "cds" for row in rows["uiItems"])
-    assert rows["uiItems"][0]["artifact"] == {"kind": "page", "slug": "ui-1"}
-    events = []
+    """Evaluate UI defaults and required versus optional receipts.
 
-    def failed_receipt(*_args, **_kwargs) -> None:
-        raise OSError("receipt destination unavailable")
+    Raises:
+        AssertionError: A required receipt failure was swallowed.
 
-    runner = SimpleNamespace(
-        store=SimpleNamespace(accept=failed_receipt),
-        emit=lambda *args, **kwargs: events.append((args, kwargs)),
-    )
-    step = AgentStep(
-        "spec",
-        "author",
-        (),
-        Path("document"),
-        "Document.",
-        Path("schema"),
-        None,
-        "sonnet",
-        "medium",
-    )
-    try:
-        AgentRunner._record_output(runner, step, step.output)
-    except OSError:
-        pass
-    else:
-        raise AssertionError("default receipt failure must propagate")
-    AgentRunner._record_output(
-        runner, replace(step, receipt_required=False), step.output
-    )
-    assert len(events) == 1 and events[0][1]["kind"] == "warning"
-    print("PASS: UI scope/default/downgrade and required/optional receipt checks")
+    """
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        rows = normalize_ui(
+            {
+                "uiItems": [
+                    {"item": "UI-1", "designSource": "unknown"},
+                    {"item": "UI-2", "designSource": "bundle", "bundle": "/missing"},
+                    {"item": "outside", "designSource": "none"},
+                ],
+            },
+            {"UI-1", "UI-2"},
+            {"bundles": []},
+            Tools(root / "evidence"),
+        )
+        items = check_type(
+            rows["uiItems"],
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        require(len(items) == len({"UI-1", "UI-2"}), "UI scope changed")
+        require(all(row["designSource"] == "cds" for row in items), "invalid bundles did not use CDS")
+        require(items[0]["artifact"] == {"kind": "page", "slug": "ui-1"}, "UI artifact default changed")
+        events: list[dict[str, object]] = []
+
+        def emit(_event: str, **fields: object) -> None:
+            events.append(fields)
+
+        context = RunContext("epic", "prd-to-spec", {}, root, "receipt-probe")
+        store = UnavailableReceiptStore(ModuleType("unused"), root, root, "epic", "receipt-probe")
+        runner = ReceiptRunner(context, store, emit=emit)
+        step = AgentStep(
+            "spec",
+            "author",
+            (),
+            root / "document",
+            "Document.",
+            root / "schema",
+            None,
+            "sonnet",
+            "medium",
+        )
+        try:
+            runner.record_output(step)
+        except OSError:
+            pass
+        else:
+            message = "default receipt failure must propagate"
+            raise AssertionError(message)
+        runner.record_output(replace(step, receipt_required=False))
+        require(len(events) == 1 and events[0]["kind"] == "warning", "optional receipt must warn")
+    report("PASS: UI scope/default/downgrade and required/optional receipt checks")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 {
   "description": "Orchestrator role enforcement. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
+  "modules": ["./register.js"],
   "hooks": {
     "PreToolUse": [
       {

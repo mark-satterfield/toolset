@@ -3,19 +3,35 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
 from pathlib import Path
 
-PLUGIN = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PLUGIN / "scripts/portfolio"))
-sys.path.insert(0, str(PLUGIN))
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from archmatrix import element_id
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts/portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import write_seed
 from orchestrator.core.tools import Tools, retry_call
+
+archmatrix = importlib.import_module("archmatrix")
+
+
+def _element_id(value: object) -> str:
+    return check_type(archmatrix.element_id(check_type(value, str)), str)
+
+
+def _objects(value: object) -> list[dict[str, JsonValue]]:
+    return check_type(value, list[dict[str, JsonValue]], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+
+def _strings(value: object) -> list[str]:
+    return check_type(value, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
 
 BUILD_FIELDS = (
     "state",
@@ -29,15 +45,21 @@ BUILD_FIELDS = (
 )
 
 
-def row(name: str, kind: str, repository: str, stack: str | None = None) -> dict:
-    """IDs identify inventory records, not physical AWS resource names."""
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def row(name: str, kind: str, repository: str, stack: str | None = None) -> dict[str, JsonValue]:
+    """IDs identify inventory records, not physical AWS resource names.
+
+    Returns:
+        The validated inventory record or compiled matrix.
+
+    """
     prefix = {
         "repository": "repository:",
         "stack": f"stack:{repository}/",
         "element": f"element:{repository}/{stack or '@repository'}/",
     }[kind]
     return {
-        "id": element_id(prefix + name),
+        "id": _element_id(prefix + name),
         "name": name,
         "kind": kind,
         "repository": repository,
@@ -53,23 +75,34 @@ def row(name: str, kind: str, repository: str, stack: str | None = None) -> dict
     }
 
 
-def add_row(rows: dict, item: dict, spec: dict) -> None:
-    """Reject duplicate identities and undocumented intended contents."""
-    key = item["id"]
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def add_row(rows: dict[str, dict[str, JsonValue]], item: dict[str, JsonValue], spec: dict[str, JsonValue]) -> None:
+    """Reject duplicate identities and undocumented intended contents.
+
+    Raises:
+        ValueError: Required inventory identity or evidence is missing.
+
+    """
+    key = check_type(item["id"], str)
     if key in rows:
-        raise ValueError(f"duplicate intended identity: {key}")
+        message = f"duplicate intended identity: {key}"
+        raise ValueError(message)
     purpose = spec.get("purpose") or spec.get("expected")
     if not isinstance(purpose, str) or not purpose.strip():
-        raise ValueError(f"missing purpose: {key}")
-    evidence = spec.get("evidence", [])
+        message = f"missing purpose: {key}"
+        raise ValueError(message)
+    evidence = _objects(spec.get("evidence", []))
     if not evidence or any(not e.get("path") or not e.get("quote") for e in evidence):
-        raise ValueError(f"missing source evidence: {key}")
+        message = f"missing source evidence: {key}"
+        raise ValueError(message)
     item.update(
-        purpose=purpose,
-        expected=spec.get("expected", purpose),
-        evidence=evidence,
-        views=sorted({e["path"] for e in evidence}),
-        aliases=spec.get("aliases", []),
+        json_object({
+            "purpose": purpose,
+            "expected": spec.get("expected", purpose),
+            "evidence": evidence,
+            "views": sorted({check_type(e["path"], str) for e in evidence}),
+            "aliases": spec.get("aliases", []),
+        }),
     )
     for field in (
         "status",
@@ -86,17 +119,21 @@ def add_row(rows: dict, item: dict, spec: dict) -> None:
     rows[key] = item
 
 
-def preserve_build_facts(rows: dict, previous: dict) -> None:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def preserve_build_facts(rows: dict[str, dict[str, JsonValue]], previous: dict[str, JsonValue]) -> None:
     """Migrate only unique legacy identities; retain all unmatched build evidence."""
-    for key, old in previous.get("elements", {}).items():
+    for key, old in check_type(
+        previous.get("elements", {}),
+        dict[str, dict[str, JsonValue]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    ).items():
         target = rows.get(key)
         if target is None and old.get("kind") == "element":
             candidates = [
                 r
                 for r in rows.values()
                 if r["kind"] == "element"
-                and element_id(old.get("name", key))
-                in {element_id(n) for n in [r["name"], *r["aliases"]]}
+                and _element_id(old.get("name", key)) in {_element_id(n) for n in [r["name"], *_strings(r["aliases"])]}
                 and (not old.get("repository") or old["repository"] == r["repository"])
                 and (not old.get("stack") or old["stack"] == r["stack"])
             ]
@@ -122,41 +159,47 @@ def preserve_build_facts(rows: dict, previous: dict) -> None:
             )
 
 
-def seed(sources: dict, previous: dict) -> dict:
-    """Compile explicit, cited repository → stack → expected-component records."""
-    if sources.get("version") != 1 or not isinstance(sources.get("repositories"), list):
-        raise ValueError("expected a version 1 expected-inventory source manifest")
-    rows: dict = {}
-    for repo in sources["repositories"]:
-        name = repo["repository"]
+def _inventory_rows(sources: dict[str, JsonValue]) -> dict[str, dict[str, JsonValue]]:
+    rows: dict[str, dict[str, JsonValue]] = {}
+    for repo in _objects(sources["repositories"]):
+        name = check_type(repo["repository"], str)
         add_row(rows, row(name, "repository", name), repo)
-        for stack in repo.get("stacks", []):
-            stack_name = stack["name"]
+        for stack in _objects(repo.get("stacks", [])):
+            stack_name = check_type(stack["name"], str)
             add_row(rows, row(stack_name, "stack", name, stack_name), stack)
-            for component in stack.get("elements", []):
+            for component in _objects(stack.get("elements", [])):
                 add_row(
-                    rows, row(component["name"], "element", name, stack_name), component
+                    rows,
+                    row(check_type(component["name"], str), "element", name, stack_name),
+                    component,
                 )
-        for component in repo.get("elements", []):
-            add_row(rows, row(component["name"], "element", name), component)
-    preserve_build_facts(rows, previous)
+        for component in _objects(repo.get("elements", [])):
+            add_row(rows, row(check_type(component["name"], str), "element", name), component)
+    return rows
+
+
+def _index_rows(rows: dict[str, dict[str, JsonValue]]) -> dict[str, list[str]]:
     aliases: dict[str, list[str]] = {}
     for key, item in rows.items():
         if item["kind"] in {"repository", "stack"}:
             item["contains"] = []
         if item.get("inventoryStatus") != "retained-build-evidence":
-            for name in [item["name"], *item.get("aliases", [])]:
-                aliases.setdefault(element_id(name), []).append(key)
+            for name in [item["name"], *_strings(item.get("aliases", []))]:
+                aliases.setdefault(_element_id(name), []).append(key)
     for key, item in rows.items():
-        owner = rows.get(element_id(f"repository:{item.get('repository')}"))
+        owner = rows.get(_element_id(f"repository:{item.get('repository')}"))
         if owner and item["kind"] != "repository":
-            owner["contains"].append(key)
+            _strings(owner["contains"]).append(key)
         if item["kind"] == "element" and item.get("stack"):
-            stack = rows.get(element_id(f"stack:{item['repository']}/{item['stack']}"))
+            stack = rows.get(_element_id(f"stack:{item['repository']}/{item['stack']}"))
             if stack:
-                stack["contains"].append(key)
+                _strings(stack["contains"]).append(key)
     for item in rows.values():
-        item["contains"] = sorted(set(item.get("contains", [])))
+        item["contains"] = json_object({"contains": sorted(set(_strings(item.get("contains", []))))})["contains"]
+    return aliases
+
+
+def _prefer_aliases(rows: dict[str, dict[str, JsonValue]], aliases: dict[str, list[str]]) -> None:
     # Catalog names denote a stack/component, not its repository container.
     # Prefer the stack aggregate only within its own repository; equally named
     # resources in different stacks or repositories remain ambiguous.
@@ -166,20 +209,37 @@ def seed(sources: dict, previous: dict) -> dict:
             item = rows[key]
             peers = [rows[c] for c in candidates if c != key]
             if item["kind"] == "repository" and any(
-                p["repository"] == item["repository"] and p["kind"] != "repository"
-                for p in peers
+                p["repository"] == item["repository"] and p["kind"] != "repository" for p in peers
             ):
                 continue
             if item["kind"] == "element" and any(
-                p["kind"] == "stack"
-                and p["repository"] == item["repository"]
-                and p["stack"] == item["stack"]
+                p["kind"] == "stack" and p["repository"] == item["repository"] and p["stack"] == item["stack"]
                 for p in peers
             ):
                 continue
             preferred.append(key)
         aliases[name] = preferred
-    return {
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def seed(sources: dict[str, JsonValue], previous: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """Compile explicit, cited repository → stack → expected-component records.
+
+    Returns:
+        The validated inventory record or compiled matrix.
+
+    Raises:
+        ValueError: Required inventory identity or evidence is missing.
+
+    """
+    if sources.get("version") != 1 or not isinstance(sources.get("repositories"), list):
+        message = "expected a version 1 expected-inventory source manifest"
+        raise ValueError(message)
+    rows = _inventory_rows(sources)
+    preserve_build_facts(rows, previous)
+    aliases = _index_rows(rows)
+    _prefer_aliases(rows, aliases)
+    return json_object({
         "version": 2,
         "seededAt": previous.get("seededAt") or sources["acquiredAt"],
         "intentUpdatedAt": sources["acquiredAt"],
@@ -192,9 +252,10 @@ def seed(sources: dict, previous: dict) -> dict:
         "resolutions": sources.get("resolutions", []),
         "namingStandard": sources.get("namingStandard", {}),
         "architectureCommit": sources.get("architectureCommit"),
-    }
+    })
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def publish(path: Path, root: Path) -> None:
     """Publish only the matrix while its write lock is held."""
     relative = str(path.relative_to(root))
@@ -221,11 +282,14 @@ def publish(path: Path, root: Path) -> None:
             stage="matrix",
         )
     elif changed.exit:
-        raise tools.failure("matrix", "other", vars(changed))
+        stage = "matrix"
+        raise tools.failure(stage, "other", vars(changed))
     tools.git(root, ["push", "origin", "main"], stage="matrix")
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
+    """Compile and publish the explicitly reviewed inventory."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--control",
@@ -239,7 +303,9 @@ def main() -> None:
         help="Reviewed expected-inventory.json; architecture changes require review",
     )
     parser.add_argument(
-        "--output", type=Path, default=os.environ.get("ATW_ELEMENT_MATRIX")
+        "--output",
+        type=Path,
+        default=os.environ.get("ATW_ELEMENT_MATRIX"),
     )
     parser.add_argument(
         "--no-publish",
@@ -248,7 +314,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     source = args.source or args.control / "ops/sdlc-automation/expected-inventory.json"
-    sources = json.loads(source.read_text(encoding="utf-8"))
+    sources = json_object(json.loads(source.read_text(encoding="utf-8")))
     output = args.output or args.control / "ops/sdlc-automation/element-matrix.json"
     result = retry_call(
         lambda: write_seed(
@@ -256,9 +322,9 @@ def main() -> None:
             args.control,
             lambda old: seed(sources, old),
             None if args.no_publish else lambda: publish(output, args.control),
-        )
+        ),
     )
-    print(json.dumps({"rows": len(result["elements"]), "output": str(output)}))
+    sys.stdout.write(json.dumps({"rows": len(json_object(result["elements"])), "output": str(output)}) + "\n")
 
 
 if __name__ == "__main__":

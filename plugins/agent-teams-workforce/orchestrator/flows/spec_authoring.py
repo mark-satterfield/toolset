@@ -11,25 +11,62 @@ import json
 import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.agents import AgentRunner, strict_json
-from ..core.artifacts import ArtifactStore
-from ..core.io import write_json
-from ..core.models import AgentStep, RunContext, StepError
-from ..core.tools import Tools, env_path
-from .spec_authoring_ui import normalize_ui
-from .trd_authoring import document
+from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+from orchestrator.core.agents import AgentRunner, strict_json
+from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.handback import failure_for
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.models import AgentStep, RunContext, StepError
+from orchestrator.core.tools import Tools, env_path
+from orchestrator.flows.spec_authoring_ui import normalize_ui
+from orchestrator.flows.trd_authoring import document
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def nonempty(path: Path) -> None:
+    """Require a nonempty authored document.
+
+    Raises:
+        ValueError: The document contains no text.
+
+    """
     if not path.read_text(encoding="utf-8").strip():
-        raise ValueError(f"missing or empty document: {path}")
+        message = f"missing or empty document: {path}"
+        raise ValueError(message)
+
+
+@dataclass(frozen=True)
+class SpecRequest:
+    """One specification author request and its validator."""
+
+    agent: str
+    output: Path
+    inputs: tuple[str, ...]
+    outcome: str
+    validate: Path | Callable[[Path], object]
+    model: str = "sonnet"
+    effort: str = "medium"
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def __post_init__(self) -> None:
+        """Validate the request fields before dispatch."""
+        check_type(self.agent, str)
+        check_type(self.output, Path)
+        check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.outcome, str)
+        check_type(self.validate, Path | Callable[[Path], object])
+        check_type(self.model, str)
+        check_type(self.effort, str)
 
 
 class SpecAuthoring:
     """Per-repository state; safe to use alongside other repository flow instances."""
 
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __init__(
         self,
         context: RunContext,
@@ -37,6 +74,12 @@ class SpecAuthoring:
         runner: AgentRunner,
         tools: Tools,
     ) -> None:
+        """Bind the placed items and specification artifact paths.
+
+        Raises:
+            StepError: The slug is invalid or no items are placed here.
+
+        """
         self.context, self.store, self.runner, self.tools = (
             context,
             store,
@@ -45,30 +88,41 @@ class SpecAuthoring:
         )
         args, self.work = context.args, context.work
         self.slug = str(args["slug"])
+        stage = "input"
         if not re.fullmatch(r"[A-Za-z0-9._-]+", self.slug) or self.slug in {".", ".."}:
-            raise StepError("input", "other", ("invalid repository artifact slug",))
-        self.repo = Path(args["repoPath"]).resolve()
-        self.arch = Path(args["archPath"]).resolve()
-        self.prd = Path(args["prd"]["path"]).resolve()
+            raise StepError(stage, "other", ("invalid repository artifact slug",))
+        self.repo = Path(check_type(args["repoPath"], str)).resolve()
+        self.arch = Path(check_type(args["archPath"], str)).resolve()
+        self.prd = Path(check_type(json_object(args["prd"])["path"], str)).resolve()
         self.stage = f"spec:{self.slug}"
         self.warnings: list[str] = []
         self.ran = False
-        placement = strict_json(self.work / "repo-scoping.json")["placements"]
+        placement = check_type(
+            strict_json(self.work / "repo-scoping.json")["placements"],
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
         selected = [
-            p
-            for p in placement
-            if p.get("repoPath") and Path(p["repoPath"]).resolve() == self.repo
+            p for p in placement if p.get("repoPath") and Path(check_type(p["repoPath"], str)).resolve() == self.repo
         ]
-        ids = {item for p in selected for item in p["itemIds"]}
+        ids = {
+            item
+            for p in selected
+            for item in check_type(p["itemIds"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        }
         self.items = [
             item
-            for item in strict_json(self.work / "delta-items.json")["items"]
-            if item["id"] in ids
+            for item in check_type(
+                strict_json(self.work / "delta-items.json")["items"],
+                list[dict[str, JsonValue]],
+                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+            )
+            if check_type(item["id"], str) in ids
         ]
         if not self.items:
-            raise StepError("input", "other", (f"no placed items for {self.repo}",))
+            raise StepError(stage, "other", (f"no placed items for {self.repo}",))
         self.frontend = any(p.get("frontend", False) for p in selected)
-        self.design = args.get("designSystem") or {}
+        self.design = json_object(args.get("designSystem") or {})
         self.inputs = tuple(
             map(
                 str,
@@ -77,9 +131,9 @@ class SpecAuthoring:
                     self.work / "repo-scoping.json",
                     self.work / "delta-items.json",
                     self.prd,
-                    Path(args["targetDir"]),
+                    Path(check_type(args["targetDir"], str)),
                 ),
-            )
+            ),
         )
         self.docs = (
             self.work / f"spec-{self.slug}.md",
@@ -91,12 +145,13 @@ class SpecAuthoring:
         self.story = self.work / f"story-{self.slug}.json"
         self.facts = self.work / f"spec-{self.slug}.context.json"
 
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def record(self, inputs: tuple[str, ...], outputs: tuple[Path, ...]) -> None:
+        """Record artifact receipts and retain expected failure warnings."""
         try:
             self.store.invalidate(outputs)
             for output in outputs:
-                self.store.module.record(
-                    output,
+                options = self.store.module.RecordOptions(
                     epic=self.context.bead,
                     phase=self.stage,
                     inputs=list(inputs),
@@ -104,65 +159,79 @@ class SpecAuthoring:
                     run_id=self.context.run_id,
                     root=self.store.root,
                 )
-        except Exception as exc:  # noqa: BLE001 - receipt failure is explicitly nonfatal
+                self.store.module.record(output, options)
+        except Exception as exc:
+            if failure_for(self.stage, exc, agent_started=False).get("classification") in {
+                "setup",
+                "pipeline-code-defect",
+            }:
+                raise
             self.warnings.append(f"artifact receipt: {type(exc).__name__}: {exc}")
 
-    def author(
-        self,
-        agent: str,
-        output: Path,
-        inputs: tuple[str, ...],
-        outcome: str,
-        validate: Path | Callable[[Path], object],
-        *,
-        model: str = "sonnet",
-        effort: str = "medium",
-    ) -> None:
-        if self.store.reusable(inputs, (output,)):
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def author(self, request: SpecRequest) -> None:
+        """Run one specification author against its declared contract."""
+        if self.store.reusable(request.inputs, (request.output,)):
             return
         self.ran = True
         self.runner.run(
             AgentStep(
-                stage=f"{self.stage}:{output.name}",
+                stage=f"{self.stage}:{request.output.name}",
                 receipt_required=False,
-                agent=agent,
-                inputs=inputs + (str(self.facts),),
-                output=output,
+                agent=request.agent,
+                inputs=(*request.inputs, str(self.facts)),
+                output=request.output,
                 final=None,
-                validate=validate,
-                outcome=outcome,
-                model=model,
-                effort=effort,
+                validate=request.validate,
+                outcome=request.outcome,
+                model=request.model,
+                effort=request.effort,
                 add_dirs=(self.work, self.arch, self.prd.parent, self.repo),
-            )
+            ),
         )
-        self.record(inputs, (output,))
+        self.record(request.inputs, (request.output,))
 
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def ui_sources(self) -> None:
-        if self.store.reusable(self.inputs + (str(self.bundles),), (self.ui,)):
+        """Normalize UI source selections against supplied bundles."""
+        if self.store.reusable((*self.inputs, str(self.bundles)), (self.ui,)):
             return
-        listed = self.tools.portfolio(
-            "cdsbundles", "list_bundles", self.design.get("packagesDir"), stage="author"
+        listed = json_object(
+            self.tools.portfolio(
+                "cdsbundles",
+                "list_bundles",
+                self.design.get("packagesDir"),
+                stage="author",
+            ),
         )
         write_json(self.bundles, listed)
         candidate = self.work / "candidates" / self.ui.name
-        inputs = self.inputs + (str(self.bundles),)
+        inputs = (*self.inputs, str(self.bundles))
         self.author(
-            "api-specification-author",
-            candidate,
-            inputs,
-            "UI design sources for this repository's placed items.",
-            self.runner.plugin / "skills/artifact-handoff/schemas/spec-ui.schema.json",
+            SpecRequest(
+                "api-specification-author",
+                candidate,
+                inputs,
+                "UI design sources for this repository's placed items.",
+                self.runner.plugin / "skills/artifact-handoff/schemas/spec-ui.schema.json",
+            ),
         )
         normalized = normalize_ui(
-            strict_json(candidate), {i["id"] for i in self.items}, listed, self.tools
+            strict_json(candidate),
+            {check_type(i["id"], str) for i in self.items},
+            listed,
+            self.tools,
         )
         normalized["mocksDir"] = self.design.get("mocksDir")
         write_json(self.ui, normalized)
-        self.warnings.extend(normalized["warnings"])
+        self.warnings.extend(
+            check_type(normalized["warnings"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
+        )
         self.record(inputs, (self.ui,))
 
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def documents(self) -> None:
+        """Produce repository specification documents."""
         write_json(
             self.facts,
             {
@@ -183,20 +252,24 @@ class SpecAuthoring:
             futures = [
                 pool.submit(
                     self.author,
-                    "api-specification-author",
-                    self.docs[0],
-                    contract_inputs,
-                    "API, event and error contracts for this repository's placed items.",
-                    lambda path: document(path, self.arch),
+                    SpecRequest(
+                        "api-specification-author",
+                        self.docs[0],
+                        contract_inputs,
+                        "API, event and error contracts for this repository's placed items.",
+                        lambda path: document(path, self.arch),
+                    ),
                 ),
                 pool.submit(
                     self.author,
-                    "data-model-specification-author",
-                    self.docs[1],
-                    self.inputs,
-                    "Data model specification for this repository's placed items.",
-                    lambda path: document(path, self.arch),
-                    model="fable",
+                    SpecRequest(
+                        "data-model-specification-author",
+                        self.docs[1],
+                        self.inputs,
+                        "Data model specification for this repository's placed items.",
+                        lambda path: document(path, self.arch),
+                        model="fable",
+                    ),
                 ),
             ]
             for future in futures:
@@ -211,41 +284,47 @@ class SpecAuthoring:
                     [
                         {
                             "id": row["item"],
-                            **{
-                                k: row[k]
-                                for k in ("designSource", "buildSpec", "sections")
-                                if k in row
-                            },
+                            **{k: row[k] for k in ("designSource", "buildSpec", "sections") if k in row},
                         }
-                        for row in ui["uiItems"]
-                    ]
+                        for row in check_type(
+                            ui["uiItems"],
+                            list[dict[str, JsonValue]],
+                            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                        )
+                    ],
                 ),
                 stage="author",
             )
             self.record(contract_inputs, (self.docs[0],))
         criteria_inputs = self.inputs + tuple(map(str, self.docs[:2]))
         self.author(
-            "acceptance-criteria-writer",
-            self.docs[2],
-            criteria_inputs,
-            "Acceptance criteria and definition of done for the saved specifications.",
-            nonempty,
-            effort="low",
+            SpecRequest(
+                "acceptance-criteria-writer",
+                self.docs[2],
+                criteria_inputs,
+                "Acceptance criteria and definition of done for the saved specifications.",
+                nonempty,
+                effort="low",
+            ),
         )
 
-    def story_document(self) -> dict:
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def story_document(self) -> dict[str, JsonValue]:
+        """Read or construct the Story document.
+
+        Returns:
+            The validated specification result.
+
+        """
         inputs = tuple(map(str, self.docs))
         if not self.store.reusable(inputs, (self.story,)):
             ids = list(
                 dict.fromkeys(
-                    value.strip()
-                    for path in self.docs[:2]
-                    for value in document(path, self.arch)[0]
-                    if value.strip()
-                )
+                    value.strip() for path in self.docs[:2] for value in document(path, self.arch)[0] if value.strip()
+                ),
             )
             body = {
-                "title": f"{self.repo.name}: {self.context.args['prd'].get('title') or self.context.bead}",
+                "title": f"{self.repo.name}: {json_object(self.context.args['prd']).get('title') or self.context.bead}",
                 "description": "\n".join(
                     [
                         f"Repository: {self.repo}",
@@ -255,7 +334,7 @@ class SpecAuthoring:
                         "",
                         "Specifications:",
                         *(f"- {path}" for path in self.docs),
-                    ]
+                    ],
                 ),
                 "decisionIds": ids,
             }
@@ -263,36 +342,61 @@ class SpecAuthoring:
             self.record(inputs, (self.story,))
         return strict_json(self.story)
 
-    def write_story(self) -> dict:
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def write_story(self) -> dict[str, JsonValue]:
+        """Write the Story container through the portfolio boundary.
+
+        Returns:
+            The validated specification result.
+
+        """
         control = env_path("ATW_CONTROL_REPO")
 
-        def attempt() -> dict:
+        def attempt() -> dict[str, JsonValue]:
             graph = self.tools.portfolio(
-                "beadgraph", "load", control, with_description=True, stage="story-write"
+                "beadgraph",
+                "load",
+                control,
+                with_description=True,
+                stage="story-write",
             )
             writer = self.tools.portfolio(
-                "beadgraph", "Writer", control, stage="story-write"
-            )
-            return self.tools.portfolio(
-                "beadwrite",
-                "write_story",
-                graph,
-                writer,
-                self.context.bead,
-                self.work,
-                slug=self.slug,
-                repo=str(self.repo),
-                root=self.store.root,
+                "beadgraph",
+                "Writer",
+                control,
                 stage="story-write",
+            )
+            return json_object(
+                self.tools.portfolio(
+                    "beadwrite",
+                    "write_story",
+                    graph,
+                    writer,
+                    self.context.bead,
+                    self.work,
+                    slug=self.slug,
+                    repo=str(self.repo),
+                    root=self.store.root,
+                    stage="story-write",
+                ),
             )
 
         return self.tools.operation("story-write", attempt)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run(
-    context: RunContext, store: ArtifactStore, runner: AgentRunner, tools: Tools
-) -> dict:
-    """Return story/specPaths/uiPath/decisionIds/summary/resumed for the composite."""
+    context: RunContext,
+    store: ArtifactStore,
+    runner: AgentRunner,
+    tools: Tools,
+) -> dict[str, JsonValue]:
+    """Produce specifications and the Story for one repository.
+
+    Returns:
+        Story, specification paths, UI path, decision IDs, and write summary.
+
+    """
     flow = SpecAuthoring(context, store, runner, tools)
     context.stage = "spec-authoring"
     flow.documents()
@@ -301,15 +405,20 @@ def run(
     if flow.ran:
         try:
             store.module.complete_step(context.work, flow.stage)
-        except Exception as exc:  # noqa: BLE001 - final step receipt is nonfatal
+        except Exception as exc:
+            if failure_for(flow.stage, exc, agent_started=False).get("classification") in {
+                "setup",
+                "pipeline-code-defect",
+            }:
+                raise
             flow.warnings.append(f"step receipt: {type(exc).__name__}: {exc}")
-    return {
+    return json_object({
         "ok": True,
         "story": {
             "key": context.args["storyKey"],
             "type": "story",
-            "id": written["story"]["id"],
-            "elabKey": written["story"]["elabKey"],
+            "id": json_object(written["story"])["id"],
+            "elabKey": json_object(written["story"])["elabKey"],
             "title": body["title"],
             "descriptionPath": f"{flow.story}#/description",
             "repoPath": str(flow.repo),
@@ -321,4 +430,4 @@ def run(
         "summary": written["summary"],
         "resumed": not flow.ran,
         "warnings": flow.warnings,
-    }
+    })

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --python 3.14 --with typeguard python \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use/python-quality.py\"",
+            "timeout": 400
+          }
+        ]
+      }
+    ]
+  }
+}

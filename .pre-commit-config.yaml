@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      - id: ruff
+      - id: ruff-format
+        args: [--check]
+  - repo: local
+    hooks:
+      - id: orchestrator-mypy
+        name: Orchestrator strict typing
+        entry: uvx --with typeguard --with types-PyYAML --with types-jsonschema --with boto3-stubs[cognito-idp,ssm] --with chromadb==1.5.2 --with ollama==0.6.1 mypy --strict plugins/agent-teams-workforce/orchestrator
+        language: system
+        files: ^plugins/agent-teams-workforce/orchestrator/.*\.py$
+        pass_filenames: false

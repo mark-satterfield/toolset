@@ -1,0 +1,378 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "beadId": {
+      "type": "string"
+    },
+    "headline": {
+      "type": "string"
+    },
+    "detailPath": {
+      "type": "string"
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/session"
+      }
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifacts"
+    },
+    "failure": {
+      "$ref": "#/$defs/failure"
+    },
+    "lifecycleDone": {
+      "type": "boolean"
+    },
+    "beadsEmitted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requiredHumanActions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "refusal": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "ok",
+    "stage",
+    "beadId",
+    "headline",
+    "detailPath",
+    "sessions"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillspoke.local/orchestrator/handback.schema.json",
+  "title": "Orchestrator handback v1",
+  "$defs": {
+    "session": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "pgid": {
+          "type": "integer"
+        },
+        "startedAt": {
+          "type": "number"
+        },
+        "endedAt": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "exit": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cause": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "cwd",
+        "phase",
+        "step",
+        "agent",
+        "model",
+        "effort"
+      ],
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "epicId": {
+          "type": "string"
+        },
+        "phases": {
+          "type": "object",
+          "patternProperties": {
+            "^(trd|spec:[a-zA-Z0-9][a-zA-Z0-9_-]*)$": {
+              "enum": [
+                "passed",
+                "reused"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "filing": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "dir",
+        "epicId",
+        "phases",
+        "filing"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "type": "string"
+        },
+        "cause": {
+          "type": "string"
+        },
+        "repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "repository": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "cause": {
+                "type": "string"
+              },
+              "headline": {
+                "type": "string"
+              },
+              "diagnostic": {
+                "type": "object",
+                "properties": {
+                  "exceptionType": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "traceback": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "file",
+                      "line"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "agentStarted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "exceptionType",
+                  "message",
+                  "traceback",
+                  "location",
+                  "agentStarted"
+                ],
+                "additionalProperties": false
+              },
+              "classification": {
+                "enum": [
+                  "setup",
+                  "transient",
+                  "item",
+                  "pipeline-code-defect"
+                ]
+              }
+            },
+            "required": [
+              "repository",
+              "stage",
+              "cause",
+              "headline"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "resumeAt": {
+          "type": "number"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unscored": {
+          "type": "array",
+          "items": {}
+        },
+        "classification": {
+          "enum": [
+            "setup",
+            "transient",
+            "item",
+            "pipeline-code-defect"
+          ]
+        },
+        "diagnostic": {
+          "type": "object",
+          "properties": {
+            "exceptionType": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "traceback": {
+              "type": "string"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "file",
+                "line"
+              ],
+              "additionalProperties": false
+            },
+            "agentStarted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "exceptionType",
+            "message",
+            "traceback",
+            "location",
+            "agentStarted"
+          ],
+          "additionalProperties": false
+        },
+        "handbackDefect": {
+          "type": "object",
+          "properties": {
+            "exceptionType": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "traceback": {
+              "type": "string"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "file",
+                "line"
+              ],
+              "additionalProperties": false
+            },
+            "agentStarted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "exceptionType",
+            "message",
+            "traceback",
+            "location",
+            "agentStarted"
+          ],
+          "additionalProperties": false
+        },
+        "originalFailure": {}
+      },
+      "required": [
+        "stage",
+        "cause",
+        "repositories"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
