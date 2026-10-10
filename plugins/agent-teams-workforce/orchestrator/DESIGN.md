@@ -343,7 +343,7 @@ Added in S03a (in `artifactio.py`, committed in `<control>` with `rewrite-step: 
 
 | Kind | Fingerprint |
 |---|---|
-| `matrix-rows` | `{"matrix": <path>, "elements": [<element ids>]}`; the sha256 of the canonical JSON of, per element id in sorted order, `{id, satisfied, repository}` read from the run's matrix snapshot (section 10.4): `satisfied` is the flag of section 10.5, `repository` the row's repository. `task`, `commit`, `state` beyond the flag, and the timestamps are not hashed. An element with no row hashes as `{id, satisfied: false, repository: null}`. |
+| `matrix-rows` | `{"matrix": <path>, "elements": [<element ids>]}`; the sha256 of the canonical JSON of, per element id in sorted order, `{id, satisfied, repository, resolvedIds, stack, expected, purpose, contents}` read from the run's matrix snapshot (section 10.4): `satisfied` is the flag of section 10.5, `repository` the row's repository. `task`, `commit`, `state` beyond the flag, and the timestamps are not hashed. Missing rows hash as unsatisfied with no resolved IDs and null ownership/intent fields; ambiguous aliases retain candidate IDs and remain unsatisfied. `contents` binds sorted contained identities and their ownership/expected/purpose, so changes to a stack's intended children invalidate a stack-name input. Stack/component aliases take precedence over their same-owner repository container; cross-stack or cross-repository ambiguity is preserved. |
 | `value` | `{"name": <fact name>, "value": <JSON value>}`; the sha256 of the canonical JSON of the value. For facts that are not files: the round number of a plan (`architecture.md` §8 "+ n"), a writer's plan entry (the entry object taken from the plan file), the decider's round and correction text. |
 
 Two further fingerprints PLAN item 3 names are defined, and used by no Epic step:
@@ -369,7 +369,7 @@ additions and settlements:
   read it record kind `matrix-rows` against that snapshot: `repo-scoping.json` (the rows of the build
   items' elements) and `<work>/architecture/closure.json` (the rows of the elements in
   `closure-walk.json`). The survey does not record them (section 3.6).
-- A change of an element's satisfied flag or repository **is meant to reach the Tasks** (CONTEXT 7.5:
+- A change of an element's satisfied flag, resolved identity, repository, stack, expected contents or purpose **is meant to reach the Tasks** (CONTEXT 7.5:
   an upstream change "in a way that affects Tasks"). It changes the Closure's prerequisites and the
   `partial` case's build items, so `delta-items.json` changes, and every step that records it reruns:
   the TRD, repo scoping, the spec sets, and the Task sets (whose unstarted Tasks are replaced). A
@@ -1065,60 +1065,49 @@ working tree also pushes any of the owner's own local commits that are not yet p
 single-user rule accepts. Git history is the matrix's change history; no separate change log is
 kept.
 
-### 10.2 Format
+### 10.2 Format and intended containment
 
-```
-{
-  "version": 1,
-  "seededAt": "<iso>",
-  "elements": {
-    "<element id>": {
-      "id": "<element id>",
-      "name": "<name as the arc42 views write it>",
-      "kind": "element | repository | stack",
-      "repository": "<repository name> | null",
-      "repositorySource": "seed | build | null",
-      "stack": "<CDK stack name> | null",
-      "views": ["<arc42-relative view path>", ...],
-      "expected": "<what the architecture says it should contain>",
-      "contains": ["<element id>", ...],
-      "state": "unknown | built | deployed",
-      "task": "<Task bead id> | null",
-      "story": "<Story bead id> | null",
-      "pr": "<pull request URL> | null",
-      "commit": "<commit sha on origin/main> | null",
-      "deployedCommit": "<commit sha whose deploy was verified> | null",
-      "changedAt": "<iso> | null",
-      "changedBy": "<step that last set state> | null"
-    }
-  }
-}
-```
+The matrix is version 2 JSON with `elements`, `aliases`, `seededAt`, `intentUpdatedAt`,
+`ownerOverrides`, `resolutions` and `unresolved`. Each repository and intended stack has a
+substantive `purpose`, source `evidence` (path, section and exact quote), and `contains` IDs.
+A component records its source label in `name`, its intended behavior in `expected`, its
+`repository` and `stack`, and its resource category in `resourceType`. `physicalName: null`
+means the source provides a logical component label, not an assigned AWS resource name.
+Never turn a descriptive label into a physical resource name: the canonical Resource Naming
+Standard and the domain's explicit naming inputs govern those names.
 
-`contains` is filled on `repository:` and `stack:` rows only: the element ids seeding placed in
-that repository or stack (section 10.7). The file is written sorted by key with an indent of 2,
-atomically (temporary file, then replace), so a diff reads row by row.
+The owner clarified on 2026-10-09 that services are self-contained: their non-shared tables,
+buckets, queues, topics, APIs, functions and other components deploy in the service's stack.
+There is no mandatory service/data split. Shared infrastructure stays with its explicitly
+assigned owner. Existing split-stack declarations are implementation evidence, not desired
+architecture; they appear under `declaredStacks` on repository rows, not as invented target
+stack requirements. Retired and explicitly deferred repositories remain recorded with their
+purpose/disposition. Unknown component requirements are stated as source gaps, never invented.
 
-### 10.3 Element identifier, matching rule, reading and failures
+The build evidence fields remain `state`, `task`, `story`, `pr`, `commit`, `deployedCommit`,
+`changedAt` and `changedBy`. The seed never asserts built or deployed. Only build writers may
+set that evidence. `repositorySource` distinguishes seed placement from build-confirmed placement.
 
-An element's id is its name with whitespace collapsed to single spaces and `str.casefold()`
-applied. This is the rule `archstate` already uses to compare element names from catalog
-frontmatter (`archstate._effective_elements` and the partial-change test compare
-`e.casefold()`). A view names elements in its catalog frontmatter `shows` (and `subject`), read by
-`archstate._catalog`; a build item's `element` in `delta-items.json` is a name from that frontmatter,
-so the same function maps both to a row. A repository row's id is `repository:<repository name>`
-(casefolded) and a stack row's id is `stack:<repository name>/<stack name>` (casefolded), so they
-never collide with element names.
+### 10.3 Identity, aliases and readers
 
-`<orch>/core/matrix.py` is the one module that reads and writes the file:
-- **Lock**: a shared `fcntl.flock` (`LOCK_SH`) on `<file>.lock` (an ignored lock file in `state/`:
-  `<driver>/state/element-matrix.lock`) for reads; exclusive (`LOCK_EX`) for a write, held through
-  the commit and push. Lock wait `ATW_MATRIX_LOCK_WAIT`, default 120 s.
-- **Read failure facts**: lock not acquired in time → `contention` (backoff, section 6.3); file
-  missing → `other` (the seeded file must exist; a missing file would silently pull every built
-  element back into scope); not valid JSON or no `elements` object → `other`. Stage `matrix` in the
-  step that read it.
-- **Unknown element**: no row reads as state `unknown` (CONTEXT 7.25).
+Repository IDs are `repository:<repository>` and stack IDs are
+`stack:<repository>/<stack>`, whitespace-normalized and casefolded. Concrete component IDs are
+`element:<repository>/<stack-or-@repository>/<source-label>`. These are internal inventory keys,
+not AWS names. Identical component labels in different stacks never share build state.
+
+`aliases` maps a normalized source label to all matching IDs. Both portfolio `archmatrix.row_of`
+and orchestrator `matrix.row_for` first resolve exact IDs (including version 1 records), then
+accept an alias only when it identifies one record. Ambiguous aliases return state `unknown`
+and explicit candidate IDs; they may expose a repository only when every candidate has that
+same owner. No generic label such as Amazon DynamoDB proves a specific service table exists.
+Repository scoping and matrix fingerprints use this same resolved meaning. A build writer must
+use the concrete ID, or resolve using its known repository/stack and reject remaining ambiguity;
+it must not update every record sharing a label.
+
+`<orch>/core/matrix.py` retains shared/exclusive `fcntl.flock` on the driver's ignored
+`state/element-matrix.lock`, atomic writes, and the write lock through publication. Lock timeout
+is `contention`; unreadable or invalid JSON is `other`. Missing element is unknown; missing matrix
+is a source error, not an empty inventory.
 
 ### 10.4 One snapshot per dispatch
 
@@ -1164,51 +1153,33 @@ Readers (elaboration only reads, from the snapshot): `archbaseline.baseline_fact
 `implementationWork` (section 3.6), the architecture Closure's classification (`architecture.md`
 step 32), and repo scoping's placement facts (`repo-scoping.md` steps 3, 5, 6).
 
-### 10.7 Seeding (PLAN S05a)
+### 10.7 Seeding and source maintenance (corrected S05a)
 
-`<orch>/seed_matrix.py`, deterministic, no agent session. Sources:
+`<orch>/seed_matrix.py` compiles the reviewed machine input
+`<control>/ops/sdlc-automation/expected-inventory.json` into the status matrix. The source contains
+one record for every eligible steward repository, intended stacks with purpose, intended
+components/services, and precise architecture citations. It is runtime inventory input rather
+than a parallel narrative architecture document. Architecture prose and diagrams are read through
+the pinned Obsidian vault; changes to intent are reviewed into this explicit input.
 
-1. **Repositories**: `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py inventory --json
-   --no-fetch`. One `repository:` row per repository with a path on disk, `lifecycle` not
-   `archived`, and a path not under `$SKILLSPOKE_ROOT/apps/marketing/`; `repository` = its name,
-   `expected` = its manifest `purpose`.
-2. **CDK stacks**: in each such repository that has a `cdk.json`, `cdk ls --profile dev --output
-   <scratch dir>` run in the repository, so the cloud assembly is written to a scratch folder, not
-   the repository. `cdk.context.json` is read before the run and put back byte for byte after it (or
-   deleted when it did not exist), so the repository's working tree is left as it was. Context
-   lookups read AWS dev with the `dev` profile, which is read-only. One `stack:` row per stack
-   listed, with its repository. A repository whose `cdk ls` exits non-zero gets `stacksError` (the
-   exit status and the command) on its row and no stack rows; S05a's verifier reports those.
-3. **Elements**: every effective view under `<arch>/arc42/` (excluding `02-architecture-constraints/`),
-   read with `archstate._catalog`: one row per name in `shows` (and `subject` when `shows` is
-   empty), `views` = every view that names it, `expected` = the views' titles joined.
-4. **What each repository should contain** (owner, fourth round): an element row takes a
-   repository from, in order:
-   - the catalog frontmatter key `repository` of a view whose `subject` is that element (the
-     review standard of section 2.4 makes every view the architecture step writes from now on state
-     it);
-   - an element id equal to a repository name or a stack name (same casefold rule), which also sets
-     `stack`.
-   The element's id is then added to that repository row's `contains` (and the stack row's).
-   `repositorySource` is `seed`.
+CDK source declarations may establish observed stack identities without executing the app.
+They cannot establish expected contents. CDK execution is not a prerequisite for seeding.
+Generic catalog headers, technologies, data entities and document titles are not automatically
+materialized as deployable components. Source relationships establish ownership and containment.
+Retired/out-of-scope repositories carry explicit dispositions; genuinely unspecified components
+are reported in `unresolved`, not assigned from source code or guessed from repository names.
 
-**The gap, stated.** The arc42 baseline written before the pipeline carries no `repository`
-frontmatter, so on the first seeding most element rows have `repository: null` and the repository
-rows' `contains` lists only the elements matched by name. Two later steps fill it: each Epic's
-architecture integration writes `repository` on the views it adds or changes (section 2.4), and a
-re-seed then picks it up; and every merge writes the repository from the Story (section 10.6). Repo
-scoping does not depend on it: the steward places every build item from the inventory and its own
-records (`repo-scoping.md` step 5). S05a's verifier reports how many element rows have no
-repository.
+Usage: `seed_matrix.py --control <control>`; optional `--source <reviewed-input>` and `--output`.
+`--no-publish` prepares the concrete result for independent review. The default publishes under
+the existing matrix lock. Source-input edits and their generated matrix are committed and pushed
+by the actor making the change. No live pipeline is run to verify the seed.
 
-Every seeded row has `state: unknown` and no `task`, `story`, `pr`, `commit` or `deployedCommit`.
-The script commits and pushes the file (section 10.1).
-
-**Re-seeding** never changes `state`, `task`, `story`, `pr`, `commit`, `deployedCommit`,
-`changedAt`, `changedBy`, or a `repository` whose `repositorySource` is `build`. It adds rows that
-are new, and refreshes `views`, `expected`, `stack`, `contains` and a seed-sourced `repository`. A row
-whose element no view names any more is kept (the build pipeline may have built it) and gets
-`views: []`.
+Rerunning against unchanged reviewed input is deterministic. Existing exact-ID build evidence is
+preserved. Version 1 labels migrate only where the name, known repository and known stack identify
+one component. Any unmatched/ambiguous record carrying build evidence remains as a retained evidence
+record instead of being dropped or copied onto unrelated resources. Old guessed catalog rows with
+no build evidence are replaced by the intended inventory. Build-confirmed ownership is preserved.
+Source acquisition failures from the old executable-CDK inventory do not become intended content.
 
 ## 11. Flow-level decisions
 

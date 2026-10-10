@@ -12,7 +12,23 @@ def element_id(name: str) -> str:
 
 def row_of(snapshot: dict | None, name: str) -> dict:
     """Return a recorded element, without treating a missing row as built."""
-    return (snapshot or {}).get("elements", {}).get(element_id(name), {})
+    value = snapshot or {}
+    rows = value.get("elements", {})
+    key = element_id(name)
+    if key in rows and rows[key].get("inventoryStatus") != "retained-build-evidence":
+        return rows[key]
+    candidates = value.get("aliases", {}).get(key, [])
+    if len(candidates) == 1:
+        return rows.get(candidates[0], {})
+    if candidates:
+        owners = {rows[c].get("repository") for c in candidates if c in rows}
+        return {
+            "name": name,
+            "state": "unknown",
+            "ambiguousCandidates": candidates,
+            "repository": next(iter(owners)) if len(owners) == 1 else None,
+        }
+    return {}
 
 
 def satisfied(snapshot: dict, row: dict) -> bool:

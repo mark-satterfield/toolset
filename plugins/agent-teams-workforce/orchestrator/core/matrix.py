@@ -29,7 +29,9 @@ def read_snapshot(path: Path) -> dict:
 
 
 def row_for(snapshot: dict, name: str) -> dict:
-    return snapshot["elements"].get(element_id(name), {})
+    return Tools(Path(".")).portfolio(
+        "archmatrix", "row_of", snapshot, name, stage="matrix"
+    )
 
 
 def satisfied(snapshot: dict, row: dict) -> bool:

@@ -11,7 +11,7 @@ import yaml
 from ..core.agents import AgentRunner, strict_json
 from ..core.artifacts import ArtifactStore
 from ..core.io import write_json
-from ..core.matrix import read_snapshot, snapshot
+from ..core.matrix import read_snapshot, row_for, snapshot
 from ..core.models import AgentStep, RunContext, StepError
 from ..core.tools import Tools, env_path
 from .repo_placement import accept_placement, app_space
@@ -131,8 +131,9 @@ def run(
     config_path = control / ".polyrepo/config.yaml"
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     matrix = matrix_path or snapshot(context, tools)
-    rows = read_snapshot(matrix)["elements"]
+    matrix_data = read_snapshot(matrix)
     elements = sorted({" ".join(item["element"].split()).casefold() for item in items})
+    rows = {name: row_for(matrix_data, name) for name in elements}
     binding = "matrix-rows:" + json.dumps(
         {"matrix": str(matrix), "elements": elements}, sort_keys=True
     )
