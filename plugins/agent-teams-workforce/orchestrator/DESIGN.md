@@ -1,5 +1,7 @@
 # DESIGN: the Python orchestrator for the Epic pipeline
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Step S02 of the pipeline rewrite. This document decides how the Epic (elaboration) pipeline runs
 once the Workflow scripts are gone: where the code lives, how a step is declared, how saved work is
 reused, how agent sessions are started and costed, how failures get a structured cause, what runs
@@ -782,7 +784,7 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   (`harnesspaths.project_dir` rule).
 - **Stream reading.** The runner reads stdout line by line for three things only: `rate_limit_event`
   (section 6), the final `result` event (section 6), and liveness. It writes the raw stream to
-  `<run scratch>/<step>-<n>.stream.jsonl` for the incident-responder.
+  `<run scratch>/<step>-<n>.stream.jsonl` in the failure record.
 - **Timeouts.** A session with no stream line for `ATW_SESSION_IDLE` seconds (default 1800) or
   running longer than `ATW_SESSION_LIMIT` seconds (default 7200) is killed; the step fails at its
   stage, cause `other` (a stuck session is not a transient fault).
@@ -835,8 +837,7 @@ orchestrator creates the facts itself at the call site:
 - **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s,
   as `beadsio.BD_GATE_WAIT`).
 - **`bd-timeout`** = `subprocess.TimeoutExpired` on the `bd` call.
-- **`other`** = any other non-zero exit, with the command and `bd`'s output as evidence for the
-  incident-responder.
+- **`other`** = any other non-zero exit, with the command and `bd`'s output as evidence in the failure record.
 
 `beadgraph._bd` is changed in place (S03b): it takes the gate from the orchestrator (a callable the
 orchestrator installs), passes a timeout, and stops classifying `bd`'s standard error
@@ -846,7 +847,7 @@ above. The owner-run portfolio commands use the same function and get the same b
 ### 6.3 Retry policy
 
 - **`contention` and `bd-timeout`**: retried at the call site, the same call again, with backoff
-  starting at 30 s, doubling, capped at 1800 s, until it succeeds or the run is stopped. Each
+  starting at 30 s and doubling, with at most three attempts. Exhaustion records an item failure. Each
   attempt re-reads what it needs, so an applied write is updated, never created twice (the writers
   are keyed by `elab_key`).
 - **`api` and `quota`**: not retried in the orchestrator. Every live session of the run is stopped,
@@ -863,7 +864,7 @@ above. The owner-run portfolio commands use the same function and get the same b
   decomposition's uncited items, the closure refusal, the decider's re-ask) follow the same rule:
   their feedback is a file Python writes, listed as an input.
 - **Never**: rerunning a step with nothing changed. `other` fails the run with the step, its cause
-  and the evidence paths, for the incident-responder.
+  and the evidence paths, in the failure record.
 
 ### 6.4 `beadwrite.WRITE_BACKOFF` (QUESTIONS 7)
 
@@ -963,10 +964,10 @@ Rules, each under `guard.lock`:
 
 **Reason.** Sessions of one run and of concurrent Epic runs overlap, so a per-session or per-run
 before-and-after cannot attribute a change and two runs would restore from different copies. One
-shared snapshot under one lock gives one answer; the outcome (restore, fail, incident) does not
+shared snapshot under one lock gives one answer; the outcome (restore and record the failure) does not
 depend on which session is blamed. The owner's way to change section 2 while the pipeline runs is to
 commit the change: a committed change by the owner is accepted, and an uncommitted change made
-while sessions run is restored but kept as a copy and named in the incident.
+while sessions run is restored but kept as a copy and named in the failure record.
 
 ### 7.4 Integrating into arc42 across runs
 
@@ -992,8 +993,7 @@ the handback and the driver acts on them exactly as today (`driver-contract.md` 
 Only owner facts become `requiredHumanActions` (CONTEXT 7.9): the architecture decider's
 `business-conflict` and `architecture-conflict` concerns, a missing architecture root
 (`no-arch-path`), and the repository-creation owner facts of section 11.3. Every other failure
-returns a `failure.cause`; `other` opens an incident whose hold keeps the Epic out of dispatch until
-the incident-responder resolves it. The orchestrator releases the Epic's lifecycle owner
+returns a `failure.cause`; `other` records an item failure and excludes it from selection for the current invocation. Fatal classifications stop new dispatch. The orchestrator releases the Epic's lifecycle owner
 (`elaboration-release`) on every exit after a successful claim unless the Epic was marked done
 (`prd-to-spec.md` step 16, and section 6.7).
 
@@ -1263,8 +1263,7 @@ exit statuses and JSON fields:
    than `active` → owner fact: "the signed-in GitHub account is not an active member of
    `<github_owner>`".
 Either returns `requiredHumanActions` and stops repo scoping at stage `repo-creation` with no cause
-(section 8). A `polyrepo.py create` that fails after a passing preflight is cause `other` for the
-incident-responder (its result carries only error text, section 6.1).
+(section 8). A `polyrepo.py create` that fails after a passing preflight is a recorded failure with cause `other` (its result carries only error text, section 6.1).
 
 ### 11.4 TRD authoring
 
@@ -1327,7 +1326,7 @@ incident-responder (its result carries only error text, section 6.1).
   the orchestrator records every `blocks` edge from a Task outside the Story onto a Task it is about
   to delete, with the deleted Task's cited work items. After the new set is written, each recorded
   edge is added onto every new Task that cites at least one of the same work items. An edge with no
-  such new Task is recorded as a warning in `run.json` and the incident evidence, not re-added.
+  such new Task is recorded as a warning in `run.json` and the failure evidence, not re-added.
 - **A `web-ui` Task citing UI items of two artifacts (QUESTIONS 46): warn and keep the first**, as
   `hierarchy.check_cds_contract` does. `task-decomposer.md` is aligned to that (S03e). Reason: the
   planner can settle it deterministically; refusing would fail the Story for a normalization.

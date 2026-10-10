@@ -1,5 +1,7 @@
 # Net-effect spec: `architecture`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Source of intent: `export const meta` of `<plugin>/workflows/architecture.js`, the agent
 definitions under `<plugin>/agents/`, the `architecture-baseline` and `artifact-handoff` skills,
 and `CONTEXT.md`. The JavaScript was read only for contracts (file names, JSON shapes, script
@@ -212,7 +214,7 @@ with a failure at stage `constraints-written`, if the session changed it.
 1. *deterministic: refuse missing input.* No architecture root → `stage: no-arch-path`, with one
    `requiredHumanActions` entry naming `ATW_ARCH_PATH` (owner configuration; the composite returns it
    and the driver holds the Epic for the owner). No PRD path or body, no Epic id, no artifacts
-   directory → `stage: input`, cause `other` (a driver defect for the incident-responder).
+   directory → `stage: input`, cause `other` (a driver defect in the failure record).
 2. *deterministic: bind saved work to arc42* with `archrevision.check(arch, work, stale_root=<art>)`.
    It returns `status: new | current | integrating | stale`.
    - `stale`: a view the saved survey, ledger or decision cites, or a draft copy, changed in `arc42/`.
@@ -372,7 +374,7 @@ with a failure at stage `constraints-written`, if the session changed it.
     - `return` with no unresolved repair and nobody named: ask the decider once more, telling it that
       the return was not actionable and where the resolution evidence is (CONTEXT 7.4, clarified
       instructions). If it repeats a non-actionable return, fail at `stage: decide`, cause `other`,
-      for the incident-responder. The target is never taken as approved without the decider's
+      in the failure record. The target is never taken as approved without the decider's
       `approve`: neither the `meta.description` nor the `architecture-decider` definition provides
       an approval the decider did not give.
 18. *Round bound: at most 3 review rounds, then a hard stop (CONTEXT 7.7).* A round is steps 13 to
@@ -380,7 +382,7 @@ with a failure at stage `constraints-written`, if the session changed it.
     the last ruling (with at most the one re-ask step 17 allows after a non-actionable return; no
     further decider session follows it). A round-3 verdict other than `approve` (or an
     owner-concern of the owner kinds) fails the run at `stage: rounds`, cause `other`, for the
-    incident-responder: no fourth round, no extension per return, no implicit approval. The goal is approval in round 1.
+    recorded failure: no fourth round, no extension per return, no implicit approval. The goal is approval in round 1.
     A run that needs a second or third round records a `rounds-warning` note in the result and the
     run ledger (rounds used and the findings that drove each extra round): repeated rounds signal a
     mismatch between what writers and reviewers expect, or a pipeline defect, not normal operation.
@@ -552,8 +554,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
 - *Decision owner-concern filter* (only `business-conflict` / `architecture-conflict` reach the
   owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
 - *Round bound: 3 review rounds, then a hard stop* (step 18). Owner requirement (CONTEXT 7.7), not a
-  quality check: rounds beyond 3 spend without converging and point at a defect for the
-  incident-responder.
+  quality check: rounds beyond 3 spend without converging and produce a recorded failure with diagnostic evidence.
 
 **Dropped**
 
@@ -569,7 +570,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
   runner's structured result (exit status and fields) sets the cause.
 - *Re-sending a dispatch that returned nothing, unchanged ("twice"), and saving a placeholder
   "NO RESULT" file.* Rerunning with nothing changed is not a reasonable retry (CONTEXT 7.4). `api` and
-  `quota` causes pause for the driver's breaker. Any other cause goes to the incident-responder. A
+  `quota` causes pause for the driver's breaker. Any other cause is classified and recorded; fatal defects stop new dispatch. A
   missing result is not papered over.
 - *Tree snapshot after the rounds that only logs a diff count* (`tree-start.json` diff). It changes
   nothing. Dropped.
@@ -582,7 +583,7 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
   references to the agent definition and its skills (`architecture-baseline`, `subagent-contract`),
   per CONTEXT 5 (minimal context, paths not pasted data). S02 decides what, if anything, stays inline.
 - *"A repeated non-actionable return is taken as approval."* No source in intent; a repeated
-  non-actionable return fails at `decide` for the incident-responder (step 17).
+  non-actionable return fails at `decide` in the failure record (step 17).
 - *This flow's own section 2 snapshot at the start (step 3) and check after the rounds (step 19).*
   Replaced by the session runner's one guard around every session (`driver-contract.md` §8).
 - *The Closure's code search and its states `absent`, `stale` and `planned`* (the steward's
@@ -600,31 +601,31 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
 | Failure point | `stage` | Cause | Retry? |
 |---|---|---|---|
 | Missing archPath | `no-arch-path` | none: owner facts (`requiredHumanActions`) | No; the driver holds the Epic for the owner |
-| Missing PRD, Epic or artifacts dir | `input` | `other` | No; a driver bug for the incident-responder |
-| `archrevision.check` cannot read `arc42/` | `survey` | `other` | No; incident |
-| Section 2 snapshot or copy fails (the runner's guard) | stage of the step | `other` | No; incident |
-| `resume_facts` raises `ResumeError` (saved file unreadable later) | `resume` | `other` | No (deterministic); incident |
+| Missing PRD, Epic or artifacts dir | `input` | `other` | No; a driver bug in the failure record |
+| `archrevision.check` cannot read `arc42/` | `survey` | `other` | No; record failure |
+| Section 2 snapshot or copy fails (the runner's guard) | stage of the step | `other` | No; record failure |
+| `resume_facts` raises `ResumeError` (saved file unreadable later) | `resume` | `other` | No (deterministic); record failure |
 | Session ends with API error or overload (structured from the session runner) | stage of the step | `api` | Yes: the driver's breaker (`breaker.py`) |
 | Session hits usage or quota limit | stage of the step | `quota` | Yes: breaker |
-| Session ends without a valid result file (schema invalid or absent), not api/quota | stage of the step | `other` | No unchanged rerun. One rerun is reasonable only with the specific validation errors in the brief (clarified instructions); then incident |
-| Survey has no assessment after acceptance | `survey` | `other` | One rerun with the seal's `errors` in the brief; then incident |
+| Session ends without a valid result file (schema invalid or absent), not api/quota | stage of the step | `other` | No unchanged rerun. One rerun is reasonable only with the specific validation errors in the brief (clarified instructions); then record failure |
+| Survey has no assessment after acceptance | `survey` | `other` | One rerun with the seal's `errors` in the brief; then record failure |
 | Subject refused | `survey` | `other` | No. Deterministic; the composite reports it (an owner `subject` override fixes it) |
 | Coordinator writes no plan | `rounds` | `other` / `api` / `quota` | As above |
 | Round dispatch unfinished (interrupted) | `rounds`, `resumable: true` | from the session | Resume reruns only the missing dispatches (section 8) |
 | Decider writes no decision | `decide` | as above | As above |
 | Decider owner-concern (business or section 2) | `owner-concern` | none: an owner hold, not a failure | No; owner acts and deletes `decision.json` |
-| Decider repeats a non-actionable return after the one re-ask | `decide` | `other` | No; incident |
-| No `approve` after round 3 (the hard stop) | `rounds` | `other` | No; incident |
-| Section 2 written by a session | `constraints-written` | `other` | No; restored, incident |
-| `write_target` refusal | `target` | `other` | No; incident (the approved draft is wrong) |
-| `promote` refused files | `approve` | `other` | No; incident |
+| Decider repeats a non-actionable return after the one re-ask | `decide` | `other` | No; record failure |
+| No `approve` after round 3 (the hard stop) | `rounds` | `other` | No; record failure |
+| Section 2 written by a session | `constraints-written` | `other` | No; restore and record failure |
+| `write_target` refusal | `target` | `other` | No; record failure (the approved draft is wrong) |
+| `promote` refused files | `approve` | `other` | No; record failure |
 | `commit_integration` fails on a git lock or non-fast-forward push | `commit` | `contention` | Yes: backoff 30 s doubling, cap 30 min |
-| `commit_integration` fails otherwise | `commit` | `other` | No; incident |
-| Integration measurement fails | `integrate` | `other` | No; incident |
-| Integration wrote section 2 | `integrate` | `other` | No; restored, incident |
+| `commit_integration` fails otherwise | `commit` | `other` | No; record failure |
+| Integration measurement fails | `integrate` | `other` | No; record failure |
+| Integration wrote section 2 | `integrate` | `other` | No; restore and record failure |
 | Conformance reviewer or review check gives no result | `integrate` | from the session, or `other` | As above |
-| Reading the element status matrix fails | `closure` | from the structured fact of its storage (QUESTIONS.md item 32e); otherwise `other` | Contention: yes, backoff as above. Otherwise no; incident |
-| Closure refused twice | `closure` | `other` | No; incident |
+| Reading the element status matrix fails | `closure` | from the structured fact of its storage (QUESTIONS.md item 32e); otherwise `other` | Contention: yes, backoff as above. Otherwise no; record failure |
+| Closure refused twice | `closure` | `other` | No; record failure |
 
 `relay` has no producer in this flow after the rewrite.
 
@@ -700,8 +701,7 @@ QUESTIONS.md). `relay/` is ignored.
     (`repo-scoping.md` step 6).
 - **7.4 Retries.** Structured causes come from the session runner and the script results. There are
   no unchanged reruns. Clarified reruns are allowed: an unanswered finding is re-sent once with the
-  omission named, and the decider is re-asked once after a non-actionable return (a repeat goes to
-  the incident-responder). Git push contention backs off.
+  omission named, and the decider is re-asked once after a non-actionable return (a repeat fails the item and records the diagnostic). Git push contention backs off.
 - **7.9 Who gets asked what.** Only `business-conflict` and `architecture-conflict` (stage
   `owner-concern`) and a missing architecture root (stage `no-arch-path`) reach the owner, as
   `requiredHumanActions`; the composite returns them and the driver writes the owner inbox and the

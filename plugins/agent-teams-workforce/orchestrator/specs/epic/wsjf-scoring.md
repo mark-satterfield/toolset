@@ -1,5 +1,7 @@
 # Net-effect spec: `wsjf-scoring`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 **Status: not part of the Epic pipeline rewrite.** This flow judges and scores Epics. Epic WSJF
 scoring belongs to the future readiness process, which is not yet built (CONTEXT 7.17; the owner's
 answer 6 of 2026-10-09); elaboration assumes it is done and no Epic flow runs this one. The only
@@ -239,7 +241,7 @@ Agents dispatched by the JavaScript, accounted for:
   cap 30 min); not for `other`. The field exists, but `beadgraph._bd` chooses it by reading `bd`'s
   standard error, which CONTEXT 7.4 does not accept as a structured fact (QUESTIONS.md item 6).
 - `ScoringError` from the rubric or a malformed plan file: `other`; not retried (same input, same
-  result); incident-responder.
+  result); record the failed item.
 - A judging session fails: `api` or `quota` from the headless runner's structured result (the
   breaker handles them); retry reasonable. A session that returns but writes no judgment file, or
   one `record` lists as `unreadable`/`rejected`/`missing`: `other`; not retried in this run; its

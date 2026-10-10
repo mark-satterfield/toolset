@@ -1,5 +1,7 @@
 # Net-effect spec: `gate-enforce` (Epic pipeline)
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Step S01g. Scope: `gate-enforce` only at its call sites in the Epic pipeline (`prd-to-spec` and the
 workflows it calls). **The Epic pipeline has no call site.** Every heading below except Purpose and
 Open items therefore reads "not called by the Epic pipeline". Its call sites in `bug-fix.js` belong

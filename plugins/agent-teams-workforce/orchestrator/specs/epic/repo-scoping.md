@@ -1,5 +1,7 @@
 # Net-effect spec: `repo-scoping`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Source: `<plugin>/workflows/repo-scoping.js` (`meta.description`), its call site and replay in
 `<plugin>/workflows/prd-to-spec.js` (`runRepoScoping`, `misplaced`, `readSavedSpan`), agent
 `<plugin>/agents/polyrepo-steward.md`, skill `<plugin>/skills/polyrepo-repo/SKILL.md`, CONTEXT
@@ -86,7 +88,7 @@ No bead write and no vault write.
 1. **Refuse a missing target** (deterministic, Python). No `targetDir` → fail at stage `input`,
    cause `other`. An empty item list → fail at stage `input`, cause `other`, with no session: the
    architecture step lists build items in every case (CONTEXT 7.7), so an empty list is a defect
-   for the incident-responder, not a "nothing to build" result.
+   in the failure record, not a "nothing to build" result.
 2. *(removed)* **No-implementation short cut.** Today, when the `arch-delta` result has
    `baselineValidated`, `implementationComplete`, `implementationWork == 0` and no prerequisite
    item, every item goes to `noCode` and the span is empty. There is no "nothing to build" outcome
@@ -159,7 +161,7 @@ No bead write and no vault write.
 9. **Settle the span** (deterministic, Python). Any `failures` entry: an owner fact (for example
    missing GitHub credentials or organisation permission) is returned as `requiredHumanActions`
    (CONTEXT 7.9), and the run stops at stage `repo-creation` with no cause; any other failure
-   fails the run at stage `repo-creation`, cause `other` (incident-responder). Otherwise fill every
+   fails the run at stage `repo-creation`, cause `other` (recorded failure). Otherwise fill every
    placement's `repoPath` from `repo-creation.json`, build `repos` in first-placement order,
    `frontend` defaulting to false, `repoName` defaulting to the path basename, and return the
    flow result. The composite takes this span as final: it runs no placement check of its own.
@@ -212,7 +214,7 @@ of this flow. Repository creation, which the steward did inside its session toda
   the composite's `readSavedSpan`): replaced by the step 6 corrective pass and then a failure,
   because it hid dropped work.
 - The steward's own retry of a failed creation inside its session: creation is part B, a script;
-  a failure that is not an owner fact goes to the incident-responder.
+  a failure that is not an owner fact is classified and recorded.
 - Template existence at placement: not added; `polyrepo.py create` fails loudly with the template
   named, and part B stops the run.
 - The candidate-with-revision-sidecar resume (`jsonartifact.py --candidate` with an input
@@ -231,15 +233,15 @@ of this flow. Repository creation, which the steward did inside its session toda
 
 | Failure point | Cause | Retry reasonable? |
 |---|---|---|
-| No `targetDir`, or an empty item list | `other` | No (the composite's Architecture result is wrong; incident-responder). |
+| No `targetDir`, or an empty item list | `other` | No (the composite's Architecture result is wrong; record failure). |
 | `polyrepo.py inventory` exits non-zero | `contention` when the tool's structured result reports a git lock (the field is S02's to name; never matched from error text); otherwise `other` | Contention: yes, backoff from 30 s. Otherwise no. |
 | Steward session: API error or overload | `api` | Yes, through `breaker.py`. |
 | Steward session: usage or quota limit | `quota` | Yes, through `breaker.py`. |
 | Steward session ends with no candidate file, or a candidate that fails the schema | `other` | Once, with the parse error as feedback (clarified instruction); then no. |
-| Placement findings remain after the corrective pass (incl. an empty span) | `other` | No; incident-responder. |
+| Placement findings remain after the corrective pass (incl. an empty span) | `other` | No; record the failed item. |
 | `polyrepo.py create` fails for want of an owner fact (GitHub credentials, organisation permission) | none: `requiredHumanActions` | No; the driver holds the Epic for the owner (CONTEXT 7.9). |
 | `polyrepo.py create` fails on a git lock | `contention` (structured fact as for the inventory) | Yes, backoff from 30 s. |
-| `polyrepo.py create` fails otherwise | `other` | No; incident-responder. |
+| `polyrepo.py create` fails otherwise | `other` | No; record the failed item. |
 | `artifactio.py record` fails | `other` | No. |
 
 Causes are set from the exit status, the session's structured result, the tool's JSON result or
@@ -284,14 +286,13 @@ change confined to other Epics' files is not an input and redoes nothing.
 - 7.6: there is no "nothing to build" outcome; the span always names at least one repository, and
   the no-implementation short cut is gone (steps 1, 2, 6).
 - 7.20: a missing repository, like any missing prerequisite, is created as part of the Epic's work
-  (part B); a creation failure stops the run, as an owner fact or for the incident-responder.
+  (part B); a creation failure stops the run, as an owner fact or in the failure record.
 - 7.4: one corrective pass with exact findings; contention retried with backoff; structured causes.
 - 7.11: inventory, fingerprinting, acceptance, every check and repository creation are code; only
   the placement judgment is a session.
 - 7.14: the brief gives the steward paths and rules, not a theory of where items belong.
 - 7.9: a repository creation that fails for want of GitHub credentials or organisation permission
-  is an owner fact, returned as `requiredHumanActions`; every other failure goes to the
-  incident-responder.
+  is an owner fact, returned as `requiredHumanActions`; every other failure is classified and recorded; fatal defects stop new dispatch.
 
 ## 10. Open items
 

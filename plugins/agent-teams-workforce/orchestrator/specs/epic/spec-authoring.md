@@ -1,5 +1,7 @@
 # Net-effect spec: `spec-authoring` (one repository's Spec set and its Story bead)
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Source of intent: `workflows/spec-authoring.js` `meta.description`; agents
 `agents/api-specification-author.md`, `data-model-specification-author.md`,
 `acceptance-criteria-writer.md`, `user-story-writer.md`; skills `subagent-contract`,
@@ -328,15 +330,15 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 | Step 2b, `list_bundles` raises (unreadable packages directory, `OSError`) | `other` | No; stage `author`. An absent or empty directory is not a failure. |
 | Steps 3, 4, 7, 10: session ends on an API error | `api` | Yes, by `breaker.py`. Completed documents are kept; only the missing ones are redone. |
 | Steps 3, 4, 7, 10: quota exhausted | `quota` | Yes, by `breaker.py`, same reuse. |
-| Step 5 or 8: a document missing or empty after its session ended normally | `other` | One corrective re-dispatch of that maker naming the missing file is reasonable; then stage `author`, incident-responder. |
-| Step 5: `decisionIds` entries that name no file | `other` | One corrective re-dispatch of that maker naming the exact entries; then stage `author`, incident-responder. |
-| Step 6: candidate UI file missing or not JSON | `other` | One corrective re-dispatch of the contracts maker naming the problem; then stage `author`, incident-responder. |
+| Step 5 or 8: a document missing or empty after its session ended normally | `other` | One corrective re-dispatch of that maker naming the missing file is reasonable; then stage `author`, record failure. |
+| Step 5: `decisionIds` entries that name no file | `other` | One corrective re-dispatch of that maker naming the exact entries; then stage `author`, record failure. |
+| Step 6: candidate UI file missing or not JSON | `other` | One corrective re-dispatch of the contracts maker naming the problem; then stage `author`, record failure. |
 | Step 5, 6, 8, 11: `artifactio.record` fails | `other` | No. Non-fatal warning; the cost is that the next run cannot reuse that file, and the Story's `artifact_<key>_sha256` is absent for it. |
 | Step 6: `SpecUiError` (items not a JSON list) | `other` | No (a programming error in the flow); stage `author`. |
 | Step 10: story draft missing or empty after a normal end | none | Not a failure: step 11 uses the default title and description. |
 | Step 11: `story-<slug>.json` cannot be written (`OSError`) | `other` | No; stage `story`. |
 | Step 12: `write_story` raises `GraphError` with cause `bd-timeout` or `contention` | that cause (today `GraphError.cause` is chosen from `bd`'s standard error, which CONTEXT 7.4 does not accept as structured; the structured fact is an open item in QUESTIONS.md) | Yes: backoff from about 30 s, doubling, capped at 30 minutes (CONTEXT 7.4). Each attempt re-reads beads, so a Story an interrupted attempt created is updated, not duplicated. |
-| Step 12: `write_story` raises any other `GraphError` / `bd` failure | `other` | No; stage `story-write`, incident-responder. |
+| Step 12: `write_story` raises any other `GraphError` / `bd` failure | `other` | No; stage `story-write`, record failure. |
 | Step 13: `record_step` fails | `other` | No; non-fatal warning. |
 
 `relay` has no producer in this flow.

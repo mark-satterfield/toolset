@@ -40,7 +40,10 @@ def load_artifactio(path: Path | None = None) -> ModuleType:
 
     """
     stage = "input"
-    source = path or Path(os.environ["ATW_ARTIFACT_SCRIPT"])
+    source = (path or Path(os.environ["ATW_ARTIFACT_SCRIPT"])).resolve()
+    parent = str(source.parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
     spec = importlib.util.spec_from_file_location("atw_artifactio", source)
     if spec is None or spec.loader is None:
         raise StepError(stage, "other", (f"cannot load artifact script: {source}",))

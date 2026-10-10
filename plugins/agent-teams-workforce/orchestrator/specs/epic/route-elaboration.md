@@ -1,5 +1,7 @@
 # Net-effect spec: `route-elaboration`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Source: `<plugin>/workflows/route-elaboration.js` (`meta.description`), `<plugin>/workflows/ROUTING.md`,
 and the driver's `<driver>/routing.py` and `<driver>/selection.py`. `<driver>` is
 `$ATW_CONTROL_REPO/ops/sdlc-automation`.

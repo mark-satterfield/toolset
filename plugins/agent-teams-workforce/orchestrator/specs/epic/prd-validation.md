@@ -1,5 +1,7 @@
 # Net-effect spec: `prd-validation` (Epic pipeline)
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 **Status: to be deleted in S08; not rewritten.** `prd-validation.js` and its agent dispatch are
 deleted in S08 (CONTEXT 7.17, 7.18; the owner's answer 9 of 2026-10-09). PRD validation belongs to
 the future readiness process and will be written then, not ported. Elaboration assumes the PRD is

@@ -1,5 +1,7 @@
 # Net-effect spec: `task-dependency-assessment`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 **Status: to be deleted in S08; not rewritten.** It assesses a Task created outside elaboration,
 and no such Task legitimately exists: every Task is created by elaboration under a Story of an
 Epic (CONTEXT 7.16; the owner's answers 7 and 8 of 2026-10-09). Elaboration sets every Task's
@@ -189,7 +191,7 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
   rerun of step 9 alone is reasonable for the transient causes. `elaboration-finish` also re-runs
   `story_edges`, which repairs the Story order later.
 - A cycle through a hand-made Task edge goes to the owner inbox (owner fact); other validation
-  failures go to the incident-responder.
+  failures are recorded without failed-run repair dispatch.
 
 ## 8. Resume points
 

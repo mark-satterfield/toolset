@@ -1,5 +1,7 @@
 # Net-effect spec: `prd-to-spec` (the Epic pipeline's top level)
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Sources, in order of authority: the `meta.description` of `<plugin>/workflows/prd-to-spec.js`;
 the agent definition `<plugin>/agents/task-dependency-mapper.md` (the one agent this composite
 dispatches itself); CONTEXT section 7; then, for contracts only, the code of `prd-to-spec.js`,
@@ -47,8 +49,7 @@ edges between Stories, computes every Task's WSJF score, and marks the Epic
 `elaboration_state=done` once every span repository has its Story and Tasks and every Task has its
 edges and its score, after which it deletes the Epic's `target/<subject>/`
 (`depscore.py arch-target-remove`). A failed run returns `ok:false` with `failure: { stage, cause,
-repositories[] }` and releases the Epic; the driver backs off a transient cause and opens an
-incident for any other.
+repositories[] }` and releases the Epic; the driver applies bounded transient retry or quota pause, records ordinary item failures, and stops new dispatch for fatal defects.
 
 ## 2. Produces and decides
 
@@ -275,7 +276,7 @@ section 2 guard (`driver-contract.md` §8).
     code, and that the Closure does not list as satisfied fails the run at stage `task-edges`,
     cause `other`: repo
     scoping places every item and task decomposition covers every placed item, so such an item is
-    a defect for the incident-responder, and a `blocks` dependency
+    a defect in the failure record, and a `blocks` dependency
     with no builder would otherwise reach beads unnoticed. `closure-edges` failing to run fails the
     run at the same stage with the cause its result carries.
 12. `agent` **Cross-Story Task dependencies.** Runs when the span has two or more repositories
@@ -329,9 +330,7 @@ section 2 guard (`driver-contract.md` §8).
     Epic done): `depscore.py elaboration-release`. The Epic stays `in_progress` with no owner. The
     driver acts on the handback: a transient `failure.cause` (`api`, `quota`, `bd-timeout`,
     `contention`; `relay` while it has a producer, an open item in QUESTIONS.md) backs off and redispatches,
-    and the rerun redoes only the failed steps (section 8); `other` opens an incident, whose hold
-    (`incidents.IncidentBook.held_ids`) keeps the Epic out of dispatch until the
-    incident-responder resolves it; `requiredHumanActions` holds it for the owner. A release that
+    and the rerun redoes only the failed steps (section 8); `other` records an item failure and excludes it for the current invocation; fatal classifications stop new dispatch; `requiredHumanActions` holds it for the owner. A release that
     fails with `bd-timeout` or `contention` is retried with backoff (30 s, doubling, cap 30 min,
     CONTEXT 7.4); any other failure is recorded in `lifecycle.release`, and the driver reclaims the
     Epic later (`reclaim`, no live execution owns it).
@@ -355,7 +354,7 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | `steps:record:<step>` (`artifactio.py step`) | in-process `artifactio.complete_step` after each step |
 | `arch:delta` | step 7, `depscore.py arch-delta --save` |
 | `replay:read-saved-span` | moved into the repo-scoping phase (its reuse step) |
-| `epic:hold` | dropped; the driver holds (`elabstate.hold_for_person`, incident hold) |
+| `epic:hold` | dropped; the driver holds (`elabstate.hold_for_person` for owner facts) |
 | `beads:closure-edges` | step 11, `depscore.py closure-edges` |
 | `sequence:inputs` (`artifactRevision`) | step 12, in-process sha256 of the input files |
 | `sequence:accept-cross-story` (`jsonartifact.py` acceptance) | step 12, in-process schema validation and write |
@@ -413,8 +412,7 @@ Relay and command-runner calls of the JavaScript, each mapped:
   dropped (CONTEXT 7.6).
 - The flow's own hold write (`beads-contract.py metadata set ... awaiting-human-action`), its
   owner inbox write, and the rule "hold attempted means never released": the driver holds from
-  `requiredHumanActions` (owner facts) and from an open incident (every other non-transient
-  cause), so the redispatch loop the rule prevented cannot happen; a second writer of the same
+  `requiredHumanActions` (owner facts). Ordinary item failures are excluded for the invocation, so failed items are not immediately redispatched; a second writer of the same
   hold is removed (CONTEXT 7.9).
 - Bounded dispatch policy (`dispatchInterruption`, `settleWorkflow`, `settleAgent`,
   `dispatchRetry`, the 5 s x 3^n backoff): replaced by the runner's structured session result and
@@ -440,21 +438,21 @@ Relay and command-runner calls of the JavaScript, each mapped:
 | An agent session ends on an API error or quota | the phase's stage | `api` / `quota`, from the session's structured result (stream event / exit status), never from text | Yes, through `breaker.py`. |
 | Architecture `owner-concern` / `no-arch-path` | `requires-human-action` | none (owner facts) | No: the driver holds for the owner. |
 | Other architecture failure | `architecture` | the phase's `failure.cause` | Per that cause. |
-| Repo scoping fails (incl. placement findings left after its corrective pass) | `repo-scoping` | the phase's cause | Per cause; `other`: incident-responder. |
+| Repo scoping fails (incl. placement findings left after its corrective pass) | `repo-scoping` | the phase's cause | Per cause; `other`: record failure. |
 | A missing repository cannot be created for want of an owner fact (GitHub credentials, organisation permission) | `requires-human-action` | none (owner facts) | No: the driver holds for the owner. |
-| A missing repository cannot be created otherwise | `repo-creation` | the phase's cause | `contention`: yes, with backoff; otherwise incident-responder. |
+| A missing repository cannot be created otherwise | `repo-creation` | the phase's cause | `contention`: yes, with backoff; otherwise record the failed item. |
 | TRD authoring fails | `trd-authoring` | the phase's cause | Per cause. |
-| One repository's spec authoring fails | per repository: the phase's stage; run: `repositories-incomplete` | per repository from its phase's `failure.cause`; the run's cause is transient only when every failed repository's is | Transient: yes, rerun only the failed steps. Otherwise: incident-responder. |
+| One repository's spec authoring fails | per repository: the phase's stage; run: `repositories-incomplete` | per repository from its phase's `failure.cause`; the run's cause is transient only when every failed repository's is | Transient: yes, rerun only the failed steps. Otherwise record the failed item. |
 | One Story's decomposition fails (incl. `uncited-items` after the one corrective pass) | per repository: the phase's stage; run: `repositories-incomplete` | as above; `uncited-items` is `other` | `uncited-items`: no, it already had its one corrective pass. |
 | A span repository has no Story, or a Story has no Task | `repositories-incomplete` | combined, as above | as above. |
-| `closure-edges` fails, or warns of a required item with no builder | `task-edges` | from its result; a warning is `other` | Contention: yes. A warning: no, incident-responder. |
-| task-dependency-mapper ends without an accepted file | `task-edges` | the session's cause; a file rejected twice is `other` | `api`/`quota`: yes, through `breaker.py`. Otherwise no: incident-responder. |
+| `closure-edges` fails, or warns of a required item with no builder | `task-edges` | from its result; a warning is `other` | Contention: yes. A warning: no, record failure. |
+| task-dependency-mapper ends without an accepted file | `task-edges` | the session's cause; a file rejected twice is `other` | `api`/`quota`: yes, through `breaker.py`. Otherwise record the failed item without retry. |
 | `write-all-task-edges` fails | `task-edges` | from its result | Contention: yes. |
-| A Task of the Epic is left unscored (step 14b) | `task-scores` | `other` | No: incident-responder. |
+| A Task of the Epic is left unscored (step 14b) | `task-scores` | `other` | No; record the failed item. |
 | Task scoring or the done write fails (step 14a, 14c) | `finish` | from its structured result | `bd-timeout`/`contention`: yes, with backoff; the rerun redoes only step 14. Otherwise no. |
 | `arch-target-remove` refused | none; `targetRemoval.reason` | `other` | No. |
 | Release write fails | recorded in `lifecycle.release` | `bd-timeout` / `contention` / `other` | `bd-timeout`/`contention`: yes, with backoff; else no (the driver reclaims). |
-| Unexpected exception | the current phase's name | `other` | No: incident-responder. |
+| Unexpected exception | the current phase's name | `other` | No; record the failed item. |
 
 Every failure returns `failure: { stage, cause, repositories: [{ repository, stage, cause,
 headline }] }`. `relay` is produced today only by relay plumbing; after the rewrite nothing in this
@@ -493,7 +491,7 @@ phase's resume points when their inputs are unchanged.
 
 - **7.4 Retries:** structured causes only (section 7); transient causes release the Epic for a
   later rerun of the failed steps; succeeded steps are never redone (section 8); the same step with
-  nothing changed is not retried but diagnosed (the driver's incident for the incident-responder).
+  nothing changed is not retried; the failed item is recorded.
 - **7.5 Rerunning Task creation:** delegated to the task-decomposition phase; this flow passes the
   stale reason and records `task-rerun`.
 - **7.6 Done:** step 14b's done rule: every span repository has its Story and Tasks, every Task's
@@ -513,8 +511,7 @@ phase's resume points when their inputs are unchanged.
   what lets the build lane consider the Tasks.
 - **7.9 Who gets asked what:** only `owner-concern`, the missing architecture path and a
   repository creation that needs an owner fact (credentials, organisation permission) become
-  `requiredHumanActions` (the driver writes the owner inbox and the hold); every other failure goes
-  to the incident-responder through the driver's incident.
+  `requiredHumanActions` (the driver writes the owner inbox and the hold); every other failure is classified and recorded, with fatal defects stopping new dispatch.
 - **7.10 Repositories:** the order is fixed: the elements come from the approved delta (step 7),
   the polyrepo-steward places them and names missing repositories, and a separate deterministic
   step then creates those repositories (step 8a, `repo-scoping.md`). The `prd-reconciliation`

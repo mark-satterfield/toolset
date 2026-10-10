@@ -1,5 +1,7 @@
 # Net-effect spec: `trd-authoring`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Source: `<plugin>/workflows/trd-authoring.js` (`meta.description`), its call site and replay in
 `<plugin>/workflows/prd-to-spec.js` (`runTrdAuthoring`, `TRD_INPUTS`), agents
 `<plugin>/agents/trd-author.md` and `<plugin>/agents/filing-clerk.md`, the driver's TRD filing
@@ -162,12 +164,12 @@ remains.
 
 | Failure point | Cause | Retry reasonable? |
 |---|---|---|
-| No PRD path or no `targetDir` | `other` | No; incident-responder. |
+| No PRD path or no `targetDir` | `other` | No; record the failed item. |
 | `trd-author` session: API error or overload | `api` | Yes, through `breaker.py`. |
 | `trd-author` session: usage or quota limit | `quota` | Yes, through `breaker.py`. |
 | Session ends and `trd.md` is missing or empty | `other` | Once, with "the file at `<art>/trd.md` is missing or empty" as feedback; then no. |
 | `decisionIds` entries that name no file | `other` | Once, with the exact entries as feedback; then no. |
-| Section 2 changed (the runner's guard) | `other` | No; restored, then incident-responder. |
+| Section 2 changed (the runner's guard) | `other` | No; restore and record failure. |
 | `artifactio.record` fails | `other` | No. |
 | `beads-contract.py metadata set` times out or hits a Dolt lock | `bd-timeout` or `contention`, from the structured fact S02 settles (QUESTIONS.md) | Yes, backoff from 30 s, doubling, capped at 30 minutes. |
 

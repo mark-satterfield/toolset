@@ -1,5 +1,7 @@
 # Net-effect spec: `dependency-assessment`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 **Status: not part of the Epic pipeline rewrite.** This flow assesses an Epic's dependencies and
 re-scores Epics. Epic dependency assessment and Epic WSJF scoring belong to the future readiness
 process, which is not yet built (CONTEXT 7.17; the owner's answer 6 of 2026-10-09); elaboration
@@ -218,11 +220,11 @@ Agents dispatched by the JavaScript, accounted for:
 - Step 1 scope refused (not an open Epic) or `SequencingError`: `other`; not retried.
 - Step 4/7 session: `api` / `quota` from the headless runner's structured result (breaker);
   retry reasonable. Returned with no `edges.json`, or an unreadable one: `other`; not retried on
-  unchanged input; incident-responder.
+  unchanged input; record the failed item.
 - Step 6 not ok after the one corrective pass: `other`; not retried; the run stops with `stop`.
   When the cycle runs through a hand-made edge (`owned: false`), that is an owner fact (the owner
   made the edge): the finding goes to the owner inbox (`ownerinbox.py`, `$ATW_OWNER_INBOX`).
-  Otherwise the incident-responder diagnoses.
+  Otherwise record the failure.
 - Step 8 refused (the graph changed between 6 and 8 and validation now fails): `contention`;
   rerun from step 1 is reasonable (the tracker moved).
 - Step 9 fails: as in the `wsjf-scoring` spec; the applied edges stand; `ok` false at stage

@@ -1,5 +1,7 @@
 # Net-effect spec: `task-decomposition`
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Step S01e of the pipeline rewrite. Sources, in order of authority: the `meta.description` of
 `<plugin>/workflows/task-decomposition.js`; the agent definition `<plugin>/agents/task-decomposer.md`
 and the skills it loads (`subagent-contract`, `validation-protocol`, `beads-contract`,
@@ -381,11 +383,11 @@ fingerprint, candidate acceptance (probe and accept), `record`, `plan-tasks`, ea
 | Maker session: API error | `decompose` | `api` | Yes, through the owner's breaker (`breaker.py`). |
 | Maker session: quota | `decompose` | `quota` | Yes, through the breaker. |
 | Maker returned no candidate, or a candidate rejected twice | `decompose` | `other` | One retry with the validation errors (step 7); then no. |
-| No Task after the corrective pass | `decompose` | `other` | No: incident-responder. |
+| No Task after the corrective pass | `decompose` | `other` | No; record the failed item. |
 | A Task write fails (step 9) | `task-write` | the write's cause | `bd-timeout`/`contention`: yes, with backoff; otherwise no. |
 | Reading or writing a file in `<work>` (`OSError`, unreadable JSON) | `decompose`, `task-record` | `other` | No. |
 | Corrective session: API / quota / no answer | `uncited-items` | `api` / `quota` / `other` | API and quota through the breaker; otherwise no. |
-| Items still uncited, or Tasks still unsized, after the corrective pass | `uncited-items` | `other` | No: the incident-responder diagnoses it. |
+| Items still uncited, or Tasks still unsized, after the corrective pass | `uncited-items` | `other` | No: record the failure. |
 
 The cause is always taken from the structured fact at the failure point (exit status, exception
 type, the session runner's result; for `bd`, the fact S02 settles, QUESTIONS.md), never from

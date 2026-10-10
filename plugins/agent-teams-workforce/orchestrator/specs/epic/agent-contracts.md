@@ -1,5 +1,7 @@
 # Epic agent contracts
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 S03e; DESIGN.md supersedes pre-design spec wording. Every contract lives in artifact-handoff;
 architecture authors, reviewers and deciders also load architecture-baseline. Python-produced
 artifacts have no fictional agent reviewer. Legacy and owner-run portfolio rows are explicitly

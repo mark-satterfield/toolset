@@ -1,5 +1,7 @@
 # Driver contract for the Epic pipeline (elaboration lane)
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Step S01g. What the driver at `<control>/ops/sdlc-automation` (`<driver>`) sends to an elaboration
 dispatch, what it reads back, which ledger events and phase names its readers depend on, and how it
 attributes cost to a run. Extracted from the driver's Python on 2026-10-09; code comments were not
@@ -109,28 +111,28 @@ journal `<control>/.claude/workflow-runs/<composite>-<runId>.jsonl` when the wor
 
 ### Fields the elaboration lane actually uses
 
-Readers: `healing.py` (turns a handback into an `Outcome`), `failurecause.py`, `refusal.py`,
+Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, `refusal.py`,
 `humanq.py`, `breaker.py`, `headless.py`; the files the plan names (`lane.py`, `outcomes.py`,
-`elabstate.py`, `elabmark.py`, `failures.py`, `incidents.py`) read no `handback.` attribute directly:
+`elabstate.py`, `elabmark.py`, `failures.py`) read no `handback.` attribute directly:
 `lane.py` reads the `Outcome`, and `outcomes.py` / `failures.py` read the ledger `handback` event.
 
 | Field | Used for |
 |---|---|
-| `ok` | completed vs failed routing (`healing._resolved`); quota clear; `runcost` `completed` |
-| `stage` | `interrupted`/`shutdown` -> halted; `requires-human-action` -> needs person; `epic-lifecycle` + `refusal.code` -> refusal; `account-quota-exhausted` -> pause; environment stages (`no-handback`, `session-quit-early`, `budget-exhausted`, `spawn-failed`, `session-exit`, `no-workflow-tool`, `unparsable-handback`, ...) -> `failure_origin=environment`; fallback incident stage |
-| `failure.stage`, `failure.cause`, `failure.repositories` | the structured cause (`api`, `quota`, `bd-timeout`, `relay`, `contention`, `other`; `failurecause.stated_cause`); transient causes back off and retry, `other` opens an incident with signature `<bead>|<stage>|<cause>` and evidence `repositories` |
+| `ok` | completed vs failed routing (`AttemptRunner._resolved`); quota clear; `runcost` `completed` |
+| `stage` | `interrupted`/`shutdown` -> halted; `requires-human-action` -> needs person; `epic-lifecycle` + `refusal.code` -> refusal; `account-quota-exhausted` -> pause; environment stages (`no-handback`, `session-quit-early`, `budget-exhausted`, `spawn-failed`, `session-exit`, `no-workflow-tool`, `unparsable-handback`, ...) -> `failure_origin=environment`; fallback failure stage |
+| `failure.stage`, `failure.cause`, `failure.repositories` | the structured cause (`api`, `quota`, `bd-timeout`, `relay`, `contention`, `other`; `failurecause.stated_cause`); transient causes back off and retry, `other` records the failure with evidence `repositories`; `failure.classification` decides item failure versus fatal stop |
 | `failure_origin` | `environment` vs `work`, recorded on the `handback` event; gates quota clearing |
 | `headline` | Outcome headline; quota/API pause detection (`breaker.pause_of`: Fable wall mark, usage-limit text and reset time); the human need when no action is named |
 | `refusal.code`, `refusal.reason` | `WAIT_CODES` (`upstream-not-elaborated`, `epic-owned`, `epic-authoring`, `epic-unscored`, `epic-state-unknown`, `no-tracker`) -> wait, hold until the Epic's tracker facts change (`no-tracker` -> backoff as `bd-timeout`); `PERSON_CODES` (`epic-done`, `not-an-open-epic`, `no-epic`) -> human-action log |
-| `required_human_actions` | human-action log entries, which the supervisor's `human_log` writes to the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`); any entry also means "needs a person" -> Epic held (`lane._person_needed` -> `elabstate.hold_for_person`), with the restore command (`elabstate.restore_command`) logged. The driver is the one writer of this hold and this inbox entry; the Epic flows only return `requiredHumanActions`, and only for owner facts (§9). A non-transient failure with no `requiredHumanActions` opens an incident instead, and the open incident keeps the Epic out of dispatch (`incidents.IncidentBook.held_ids`) until the incident-responder resolves it |
+| `required_human_actions` | human-action log entries, which the supervisor's `human_log` writes to the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`); any entry also means "needs a person" -> Epic held (`lane._person_needed` -> `elabstate.hold_for_person`), with the restore command (`elabstate.restore_command`) logged. The driver is the one writer of this hold and this inbox entry; the Epic flows only return `requiredHumanActions`, and only for owner facts (§9). An ordinary item failure with no `requiredHumanActions` is recorded and excluded for the invocation; a fatal classification stops new dispatch |
 | `artifacts` | **only after** the lane reads `elaboration_state=done` from the tracker: `artifactio.file_in_vault(<working dir>, phases, prd, trd_target)` files the TRD (target from `artifacts.filing["trd.md"]` or `trdPath`) and Spec documents in the vault and writes bead metadata `artifact_trd_vault_path` (Epic) and `artifact_spec_vault_path`, `artifact_spec_data_model_vault_path`, `artifact_spec_criteria_vault_path` (each Story, matched by its `artifact_spec_path` file name) |
-| `detail_path`, `composite_detail`, `session_id` | incident evidence; human-action detail paths; Fable recovery (`session_id`) |
+| `detail_path`, `composite_detail`, `session_id` | failure evidence; human-action detail paths; Fable recovery (`session_id`) |
 | `beads_emitted`, `lifecycle_done` | recorded on the `handback` event only; read by `outcomes.py` to word the ending ("Finished: N Story and Task beads written" when `lifecycleDone`, else "unfinished") |
 
 Not used by the elaboration lane (recorded on the `handback` event or unused): `deployed_to_dev`,
 `smoke_passed`, `settled`, `pr_url`, `settle_failed`, `landing_stage`, `deploy_iteration`
 (build/deploy), `version` (repair), `mechanism` (story deploy), `evidence`, `cds_audit` (build),
-`incident` (incident-responder composite only).
+The retired incident handback field is no longer emitted or consumed.
 
 "Elaboration done" is **not** taken from the handback: after every `prd-to-spec` dispatch the lane
 re-reads `elaboration_state` from the tracker (`lane._elaboration_done`); only `done` triggers the
@@ -158,10 +160,10 @@ Events written around an elaboration dispatch, with the fields readers use:
   `▸ agent-teams-workforce:<child>` with ` #N` for repeats.
 - `verdict`: `{composite, phase, label, verdict (reject|loop|escalate|pass|accept|""), detail}` for any
   agent whose result preview contains `"verdict"` or `"admissible"`.
-- `handback`: `{composite, ok, stage, headline, failureOrigin, failureCause, failure, incidentReport,
+- `handback`: `{composite, ok, stage, headline, failureOrigin, failureCause, failure,
   paused, pauseKind, pauseReason, resumeAt, resumeAtEpoch, detailPath, compositeDetailPath,
   deployedToDev, smokePassed, settled, prUrl, settleFailed, landingStage, deployIteration,
-  beadsEmitted, lifecycleDone, refusal, requiredHumanActions, attempt, tier, childSessionId}`; a
+  beadsEmitted, lifecycleDone, refusal, requiredHumanActions, attempt, childSessionId}`; a
   dispatch that raised writes `stage: "dispatch-error"`, `failureCause: "other"`.
 - `elaboration_state`: `{lane, composite, elaborationState: "done", elaborationCause:
   "decomposed-into-tasks", writtenBy: "prd-to-spec", ok: true}`.
@@ -169,8 +171,7 @@ Events written around an elaboration dispatch, with the fields readers use:
 - `refusal_hold` / `refusal_released` / `hold_read_failed`: holds until the Epic's tracker facts
   (`elabstate.lifecycle_facts`: its `elaboration_*` and `wsjf*` metadata, its prerequisites' states,
   closed) change.
-- `repeat_backoff` (`stage`, `repeats`, `cause`, `headline`), `human_action`, `incident_opened` /
-  `incident_resolved` / `incident_retry`, `quota_tripped` / `quota_cleared`, `execution_stopped`,
+- `repeat_backoff` (`stage`, `repeats`, `cause`, `headline`), `human_action`, `quota_tripped` / `quota_cleared`, `execution_stopped`,
   `attempt_reopened`, `run_started` / `run_died` / `run_finished`, `heartbeat`.
 
 Readers and what they need (from an AST scan of `event.get(...)` / literal event types):
@@ -197,8 +198,7 @@ Readers and what they need (from an AST scan of `event.get(...)` / literal event
 - `phaserec.expected_phases(composite)` reads the `phases: [{title: ...}]` list out of the installed
   plugin's `workflows/<composite>.js` meta. Deleting `prd-to-spec.js` removes the Epic's expected
   phase list.
-- `failures.py`: `handback` (`ok`), `run_started`, `trigger_dispatch`; `incidents.py`:
-  `incident_*` events.
+- `failures.py`: `handback` (`ok`), `run_started`, `trigger_dispatch`.
 
 ## 6. Cost attribution (`runcost.py`, `harnesspaths.py`)
 
@@ -261,7 +261,7 @@ S02 places in the session runner. No flow keeps a copy of its own.
 2. After the session ends, whatever its outcome: snapshot again.
 3. Any difference in digest, existence or git status: `archstate.restore_constraints(<arch>,
    kept)` (today `depscore.py arch-constraints-restore --kept <copy>`), then fail the step at stage
-   `constraints-written`, cause `other` (incident-responder; no retry).
+   `constraints-written`, cause `other` (record failure; no retry).
 4. A snapshot or restore that itself fails fails the step at its stage, cause `other`.
 
 It stops wrong output nothing later catches: every agent with Write or Edit (the polyrepo-steward,
@@ -305,8 +305,7 @@ detailing step (`prd-reconciliation`). The one exception is the architecture sur
 - **7.9 Who gets asked what.** Only owner facts become `requiredHumanActions`: the architecture's
   `owner-concern` (business or section 2 conflict), a missing architecture path (`no-arch-path`),
   and credentials the run cannot hold. The driver alone writes the hold and the owner inbox from
-  them (§4). Every other failure is `failure.cause`; `other` opens an incident for the
-  incident-responder, never an owner action.
+  them (§4). Every other failure carries `failure.cause` and its classification; ordinary item failures are recorded and fatal defects stop new dispatch. Neither creates an owner action automatically.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
 - **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the
   driver is the only door, so `prd-to-spec` does not repeat them.

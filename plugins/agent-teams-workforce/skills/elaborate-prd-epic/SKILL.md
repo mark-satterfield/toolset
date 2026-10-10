@@ -165,9 +165,11 @@ headline }] }`. `cause` is `api`, `quota`, `bd-timeout`, `relay`, `contention` o
 failure happens from exit codes and structured fields, never by matching text. The run's cause
 is transient (anything but `other`) only when every failed repository's is. A transient cause
 releases the Epic: the next dispatch, after the supervisor's backoff, reruns only the failed
-steps. `other` is not retried: the Epic is held and the handback names what the
-incident-responder diagnoses. A failed hold write is made again after backoff, and the Epic is
-never released in its place.
+steps. An ordinary item failure is recorded and excluded from the current invocation while other
+eligible work continues. Setup, code, schema, or runtime type defects stop new dispatch and retain
+the original diagnostic; active paid steps finish. Failed runs dispatch no repair or diagnosis
+agent. Bounded within-step content corrections and transient/quota handling remain.
+
 
 Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
 compose them from your own account of what you think landed.

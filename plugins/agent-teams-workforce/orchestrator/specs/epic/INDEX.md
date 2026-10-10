@@ -1,5 +1,7 @@
 # Index of the Epic pipeline's artifacts and bead writes
 
+Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+
 Steps S01h and S01i. Every file, vault path and bead write the Epic flows produce, with the step that
 produces it and the steps that consume it. A step is cited as `<spec>#<step number>`, the number
 in that spec's Steps section; `driver` means the driver at `<control>/ops/sdlc-automation` as
@@ -41,9 +43,9 @@ removed (CONTEXT 7.10, 7.23).
 | `<work>/closure-edges.json` | `prd-to-spec#11` (`depscore.py closure-edges --out`) | `prd-to-spec#12` (agent input), `#13` | JSON: `{ edges[{ from, to, reason }], summary.warnings }` |
 | `<work>/candidates/task-deps.json` | `prd-to-spec#12` (agent `task-dependency-mapper`; required when the span has two or more repositories) | `prd-to-spec#12` (Python acceptance) | JSON: `{ edges[{ from, to, kind, reason }], acyclic, cycle[] }` |
 | `<work>/task-deps.json` (+ `.meta.json`) | `prd-to-spec#12` (accepted copy) | `prd-to-spec#12` (reuse), `#13` | JSON, same shape |
-| `<work>/task-edges/all.json` | `prd-to-spec#13` (`depscore.py write-all-task-edges --out`) | none: read by the incident-responder as run evidence | JSON: write summary `{ blockers, added, removed, standing, rejected }` |
+| `<work>/task-edges/all.json` | `prd-to-spec#13` (`depscore.py write-all-task-edges --out`) | none: retained as diagnostic evidence | JSON: write summary `{ blockers, added, removed, standing, rejected }` |
 | `<work>/STEPS.md` | after each phase: `prd-to-spec` (`artifactio.complete_step`), `spec-authoring#13` | `driver` (`artifactio.plan` -> the `resume` argument; `observe.py` accepted and stale steps; an open item in QUESTIONS.md) | text: one completed step id per line |
-| `<work>/run.json` | `prd-to-spec#17` | none: read by the driver (handback `detailPath` -> incident evidence and human-action detail, `driver-contract.md` §4) and the owner | JSON: the run record (composite, Epic, PRD id, outcome, per-phase status, reused/stale/task-rerun events) |
+| `<work>/run.json` | `prd-to-spec#17` | none: read by the driver (handback `detailPath` -> failure evidence and human-action detail, `driver-contract.md` §4) and the owner | JSON: the run record (composite, Epic, PRD id, outcome, per-phase status, reused/stale/task-rerun events) |
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | `prd-to-spec#17` (event set: an open item in QUESTIONS.md) | `driver` (`outcomes.py`, `observe.py`, `runview.py`, `attemptview.py`, `failures.py`) | JSON lines |
 | `<arch>/target/<subject>/` (deletion, committed in the vault) | `prd-to-spec#15` (`depscore.py arch-target-remove`) | none: the removal is the end state | git commit in the vault repository |
 
@@ -59,7 +61,7 @@ removed (CONTEXT 7.10, 7.23).
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
 | `<arch-work>/arc42-revision.json` | `architecture#2` (`archrevision.check`), updated by `#21`, `#22`, `#28` (`archrevision.mark`) | `architecture#2` (next run); `driver` (`arc42-revision` input kind of the `architecture` step's record) | JSON: `{ archRoot, revision, files{}, views{}, integrating, recordedAt }` |
-| `<work>/stale-<timestamp>/architecture/` | `architecture#2` (moves stale saved work aside) | none: kept, not deleted, for the owner and the incident-responder | the moved files |
+| `<work>/stale-<timestamp>/architecture/` | `architecture#2` (moves stale saved work aside) | none: kept, not deleted, for the owner | the moved files |
 | `<arch-work>/repositories.json` | `architecture#6` (Python inventory; DESIGN 11.1) | `architecture#7` | JSON: `[{ name, path, role, lifecycle }]` |
 | `<arch-work>/survey.json`, `survey.md` (+ `.meta.json`) | `architecture#7` (agent `prd-reality-reconciler`, SURVEY), accepted `#8` | `architecture#5`, `#9`, `#11`, `#12`, `#13`, `#15`, `#16`, `#17`, `#20`, `#23`; `trd-authoring#2` (input), `#3`; `prd-to-spec#5` (`saved-target`) | JSON (SURVEY_SCHEMA) and Markdown |
 | `<arch-work>/survey-matrix.json` (retired by DESIGN 3.6) | `architecture` before `#7` (Python: the element status matrix rows of the listed repositories) | `architecture#7`; `architecture#5` (seal input) | JSON: matrix rows |
@@ -68,7 +70,7 @@ removed (CONTEXT 7.10, 7.23).
 | `<arch-work>/plans/round<n>-plan-0.json` | `architecture#13` (agent coordinator), settled `#14` | `architecture#4`, `#14`, `#15`, `#16` | JSON (COORDINATOR_SCHEMA) |
 | `<arch-work>/rounds/r<n>-<seq>-<role>-<agent>.json` | `architecture#11` (boundary guardian), `#15` (writers), `#16` (reviewers) | `architecture#4`, `#13`, `#17` | JSON (writer or review schema) |
 | `<arch-work>/draft/` (views, `delta/`, `draft/baseline.json`) | `architecture#15` (writers); seed `#10` (`arch-target --seed`) | `architecture#16`, `#17`, `#20` | arc42 Markdown views, JSON baseline |
-| `<arch-work>/target-check.json` | `architecture#9`, `#10` (dry-run check) | `architecture#9` (subject refusals, in-process); file: none, read by the incident-responder | JSON: dry-run report |
+| `<arch-work>/target-check.json` | `architecture#9`, `#10` (dry-run check) | `architecture#9` (subject refusals, in-process); file: none, retained as diagnostic evidence | JSON: dry-run report |
 | `<arch-work>/decision.json`, `decision.md` (+ `.meta.json`) | `architecture#17` (agent `architecture-decider`) | `architecture#2` (cited views), `#13`, `#23`, `#25`; `repo-scoping#3` (input); `trd-authoring#2` (input), `#3` | JSON (DECISION_SCHEMA) and Markdown |
 | `<arch-work>/target.json` | `architecture#20` (`arch-target --out`) | `prd-to-spec#5` (`saved-target`); `repo-scoping#3` (input); `trd-authoring#2` (input); `spec-authoring#1` | JSON: target report |
 | `<arch>/target/<subject>/` (views, `delta/`, `baseline.json`) | `architecture#20` (`write_target`) | `prd-to-spec#7` (`arch-delta`); `architecture#23`, `#25`, `#29`; `repo-scoping#5`; `trd-authoring#2` (input), `#3`; `spec-authoring#3`, `#4`; deleted by `prd-to-spec#15` | arc42 Markdown (`lifecycle_state: in-review`), JSON baseline |
@@ -124,7 +126,7 @@ removed (CONTEXT 7.10, 7.23).
 | `<work>/candidates/tasks-<slug>.json` | `task-decomposition#6` (agent `task-decomposer`) | `task-decomposition#7` | JSON: decomposition schema |
 | `<work>/tasks-<slug>.json` (+ `.meta.json`) | `task-decomposition#7`, amended `#11`, recorded `#8` | `task-decomposition#2`, `#9`, `#10`, `#11`; `prd-to-spec#11` (`closure-edges`), `#12` (agent input and `task-deps` input), `#13` | JSON: `{ tasks[], testStrategy, rationale, edges[], scores[], notes }` |
 | `<work>/candidates/tasks-<slug>.correction.json` | `task-decomposition#10` (agent `task-decomposer`) | `task-decomposition#10` (Python acceptance) | JSON: `{ tasks[], edges[], scores[] }` (no `noWork`; `scores` also for saved Task keys named as unsized) |
-| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | `task-decomposition#10` | `task-decomposition#11` (merged into `tasks-<slug>.json`); otherwise evidence for the incident-responder | JSON, same shape |
+| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | `task-decomposition#10` | `task-decomposition#11` (merged into `tasks-<slug>.json`); otherwise evidence in the failure record | JSON, same shape |
 
 ### Owner-run portfolio flows (not part of the Epic pipeline: future readiness process, CONTEXT 7.17; `task-dependency-assessment` deleted in S08)
 
@@ -141,7 +143,7 @@ removed (CONTEXT 7.10, 7.23).
 | `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#4`, `#7` | Markdown |
 | `<workDir>/context.json` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#4`, `#7` | JSON: `{ epic\|task, standing[], withdrawn[], corpusDir, indexPath, summary }` |
 | `<workDir>/edges.json` (+ `.meta.json`) | `dependency-assessment#4`, `#7` (agent `epic-sequencer`); `task-dependency-assessment#4`, `#7` (agent `task-dependency-mapper`); recorded `#5` | the same flow's `#3`, `#6`, `#8` | JSON: `{ edges[], withdrawn[] }` |
-| `<workDir>/reasoning.md` | the same agent steps (`#4`, `#7`) | none: read by the owner and the incident-responder | Markdown |
+| `<workDir>/reasoning.md` | the same agent steps (`#4`, `#7`) | none: read by the owner | Markdown |
 | `<workDir>/validation.json` | `dependency-assessment#6`; `task-dependency-assessment#6` | the same flow's `#7`, `#10` (Epic) / `#11` (Task) | JSON: `edgeset.validate` result |
 | `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | `dependency-assessment#8`; `task-dependency-assessment#8` (with `storyEdges` from `#9`) | the same flow's `#10` (Epic) / `#11` (Task) | JSON: `edgeset.apply_edges` result |
 | `<workDir>/scoring/` | `dependency-assessment#9`; `task-dependency-assessment#10` (the `wsjf-scoring` flow in-process) | as in the `wsjf-scoring` rows | as above |
