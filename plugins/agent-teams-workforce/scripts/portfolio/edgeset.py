@@ -51,7 +51,7 @@ import json
 import operator
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 import beadgraph
 from bead_metadata import (
@@ -63,7 +63,9 @@ from bead_metadata import (
     KEY_SEQ_OWNED_BLOCKERS,
     KEY_SEQ_OWNED_BLOCKERS_AT,
 )
+from beadcontracts import PlannedWrite
 from beadgraph import join_ids, now_iso
+from contracts import JsonObject, JsonValue, json_object
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -90,6 +92,134 @@ class Edge:
     #: The answer to the recorded reason an earlier assessment withdrew this edge for.
     #: Required only on an edge a withdrawal record covers.
     answers: str = ""
+
+
+#: One edge standing between an item and another open bead of its level, as
+#: `standing_edges` reports it. The last four come from the blocked bead's recorded
+#: reasons and are None when none is recorded.
+StandingEdge = TypedDict(
+    "StandingEdge",
+    {
+        "from": str,
+        "to": str,
+        "type": str,
+        "owned": bool,
+        "reason": JsonValue,
+        "confidence": JsonValue,
+        "setBy": JsonValue,
+        "setAt": JsonValue,
+    },
+)
+
+#: One recorded withdrawal of an edge, as `withdrawal_history` reports it.
+EdgeWithdrawal = TypedDict(
+    "EdgeWithdrawal",
+    {
+        "from": str,
+        "to": str,
+        "reason": JsonValue,
+        "withdrawnBy": JsonValue,
+        "withdrawnAt": JsonValue,
+    },
+)
+
+#: One withdrawal a proposal or command made, as the apply and withdraw results report it.
+WithdrawnEdge = TypedDict("WithdrawnEdge", {"from": str, "to": str, "reason": str})
+
+
+class PlannedEdge(TypedDict):
+    """One edge a plan adds or removes."""
+
+    blocker: str
+    blocked: str
+
+
+#: One owned edge a plan converts from the other level's dependency type.
+ConvertedEdge = TypedDict("ConvertedEdge", {"blocker": str, "blocked": str, "from": str})
+
+
+class EdgePlan(TypedDict):
+    """The diff `plan_edges` computes between a proposal and the tracker."""
+
+    add: list[PlannedEdge]
+    convert: list[ConvertedEdge]
+    remove: list[PlannedEdge]
+    unchanged: int
+    protectedHandMadeEdges: list[str]
+    metadata: dict[str, dict[str, str]]
+
+
+class ValidationReport(TypedDict):
+    """The verdict and every defect `validate` found in a proposal."""
+
+    ok: bool
+    level: str
+    edgeCount: int
+    withdrawnCount: int
+    scope: str
+    badScope: str | None
+    outsideScope: list[str]
+    missingReason: list[str]
+    missingArchCheck: list[str]
+    readdsWithdrawn: list[str]
+    unaccounted: list[str]
+    withdrawnNotOwned: list[str]
+    keptAndWithdrawn: list[str]
+    notEpicToEpic: NotRequired[list[str]]
+    notTaskToTask: NotRequired[list[str]]
+    cycle: list[str]
+    dangling: list[str]
+    selfEdges: list[str]
+    ontoClosed: list[str]
+    fromClosed: list[str]
+    duplicates: list[str]
+
+
+class ApplyRefused(TypedDict):
+    """What `apply_edges` returns for a proposal that fails validation."""
+
+    applied: bool
+    dryRun: bool
+    validation: ValidationReport
+
+
+class ApplyResult(TypedDict):
+    """What `apply_edges` returns for a proposal it applied (or planned, in a dry run)."""
+
+    applied: bool
+    dryRun: bool
+    level: str
+    scope: str
+    planned: list[PlannedWrite]
+    sequencedRecorded: int
+    validation: ValidationReport
+    added: int
+    converted: int
+    removed: int
+    unchanged: int
+    withdrawn: list[WithdrawnEdge]
+    reasonsRecorded: list[str]
+    withdrawalsRecorded: list[str]
+    plan: EdgePlan
+
+
+class WithdrawSummary(TypedDict):
+    """The summary line of one withdrawal."""
+
+    withdrawn: str
+    applied: bool
+
+
+class WithdrawResult(TypedDict):
+    """What `withdraw_edge` returns."""
+
+    withdrawn: WithdrawnEdge
+    replaced: JsonObject
+    applied: bool
+    dryRun: bool
+    level: str
+    planned: list[PlannedWrite]
+    summary: WithdrawSummary
 
 
 #: The dependency type each level's edges are stored as.
@@ -163,18 +293,28 @@ def _edge_file(path: Path) -> object:
     return json.loads(_STDIN[0])
 
 
-def _parse(entries: list[dict]) -> list[Edge]:
+def _parse(entries: object) -> list[Edge]:
     """Parse a list of `{"from", "to", "reason", "confidence"}` entries.
 
     Args:
-        entries: The list.
+        entries: The list, as the edge file holds it.
 
     Returns:
         The edges.
 
+    Raises:
+        SequencingError: `entries` is not a list of JSON objects.
+
     """
+    if not isinstance(entries, list):
+        msg: str = f"an edge file lists its edges as a JSON array, not {type(entries).__name__}"
+        raise SequencingError(msg)
     edges: list[Edge] = []
-    for entry in entries:
+    for member in entries:
+        if not isinstance(member, dict):
+            msg = f"an edge entry is a JSON object, not {type(member).__name__}"
+            raise SequencingError(msg)
+        entry: JsonObject = json_object(member)
         blocker = str(entry.get("from") or entry.get("blocker") or "").strip()
         blocked = str(entry.get("to") or entry.get("blocked") or "").strip()
         edges.append(
@@ -203,8 +343,10 @@ def read_edges(path: Path) -> list[Edge]:
         The proposed edges.
 
     """
-    raw = _edge_file(path)
-    return _parse(raw.get("edges", []) if isinstance(raw, dict) else raw)
+    raw: object = _edge_file(path)
+    if isinstance(raw, dict):
+        return _parse(json_object(raw).get("edges", []))
+    return _parse(raw)
 
 
 def read_withdrawn(path: Path) -> list[Edge]:
@@ -217,11 +359,13 @@ def read_withdrawn(path: Path) -> list[Edge]:
         The withdrawn edges, each with its reason; none when the file lists none.
 
     """
-    raw = _edge_file(path)
-    return _parse(raw.get("withdrawn", []) if isinstance(raw, dict) else [])
+    raw: object = _edge_file(path)
+    if isinstance(raw, dict):
+        return _parse(json_object(raw).get("withdrawn", []))
+    return []
 
 
-def edge_reasons(bead: Bead) -> dict:
+def edge_reasons(bead: Bead) -> dict[str, JsonObject]:
     """Read the recorded reasons for the owned edges onto a bead.
 
     Args:
@@ -232,19 +376,20 @@ def edge_reasons(bead: Bead) -> dict:
         records none or the value does not parse as a JSON object.
 
     """
-    raw = bead.metadata.get(KEY_SEQ_EDGE_REASONS)
+    raw: str | None = bead.metadata.get(KEY_SEQ_EDGE_REASONS)
     if not raw:
         return {}
     try:
-        value = json.loads(raw)
+        decoded: object = json.loads(raw)
     except TypeError, ValueError:
         return {}
-    if not isinstance(value, dict):
+    if not isinstance(decoded, dict):
         return {}
-    return {str(k): v for k, v in value.items() if isinstance(v, dict)}
+    value: JsonObject = json_object(decoded)
+    return {key: entry for key, entry in value.items() if isinstance(entry, dict)}
 
 
-def edge_withdrawals(bead: Bead) -> dict:
+def edge_withdrawals(bead: Bead) -> dict[str, JsonObject]:
     """Read the recorded withdrawals of owned edges onto a bead.
 
     Args:
@@ -255,19 +400,20 @@ def edge_withdrawals(bead: Bead) -> dict:
         records none or the value does not parse as a JSON object.
 
     """
-    raw = bead.metadata.get(KEY_SEQ_EDGE_WITHDRAWN)
+    raw: str | None = bead.metadata.get(KEY_SEQ_EDGE_WITHDRAWN)
     if not raw:
         return {}
     try:
-        value = json.loads(raw)
+        decoded: object = json.loads(raw)
     except TypeError, ValueError:
         return {}
-    if not isinstance(value, dict):
+    if not isinstance(decoded, dict):
         return {}
-    return {str(k): v for k, v in value.items() if isinstance(v, dict)}
+    value: JsonObject = json_object(decoded)
+    return {key: entry for key, entry in value.items() if isinstance(entry, dict)}
 
 
-def withdrawal_history(graph: Graph, item: str, level: str = "epic") -> list[dict]:
+def withdrawal_history(graph: Graph, item: str, level: str = "epic") -> list[EdgeWithdrawal]:
     """Every withdrawal an assessment recorded for an edge touching one item.
 
     Args:
@@ -281,8 +427,8 @@ def withdrawal_history(graph: Graph, item: str, level: str = "epic") -> list[dic
         answers the recorded reason.
 
     """
-    open_items = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
-    out = []
+    open_items: set[str] = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
+    out: list[EdgeWithdrawal] = []
     for blocked_id in sorted(open_items):
         bead = graph.beads[blocked_id]
         for blocker, entry in sorted(edge_withdrawals(bead).items()):
@@ -300,7 +446,7 @@ def withdrawal_history(graph: Graph, item: str, level: str = "epic") -> list[dic
     return sorted(out, key=operator.itemgetter("from", "to"))
 
 
-def standing_edges(graph: Graph, item: str, level: str = "epic") -> list[dict]:
+def standing_edges(graph: Graph, item: str, level: str = "epic") -> list[StandingEdge]:
     """Every edge the tracker holds between one item and another open bead of its level.
 
     Both directions and every dependency type except `parent-child`, which is hierarchy.
@@ -316,24 +462,34 @@ def standing_edges(graph: Graph, item: str, level: str = "epic") -> list[dict]:
         names the blocker; the last four come from its `KEY_SEQ_EDGE_REASONS` and are None
         when none is recorded.
 
+    Raises:
+        SequencingError: A tracker record's `dependencies` is not a list of JSON objects.
+
     """
-    open_items = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
+    open_items: set[str] = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
     found: dict[tuple[str, str], str] = {}
     for record in graph.records:
-        blocked = str(record.get("id") or "")
-        for dep in record.get("dependencies") or []:
-            blocker = str(dep.get("depends_on_id") or "")
-            kind = str(dep.get("type") or "")
+        blocked: str = str(record.get("id") or "")
+        dependencies: JsonValue = record.get("dependencies") or []
+        if not isinstance(dependencies, list):
+            msg: str = f"{blocked}: `dependencies` is not a list"
+            raise SequencingError(msg)
+        for dep in dependencies:
+            if not isinstance(dep, dict):
+                msg = f"{blocked}: a dependency is not a JSON object"
+                raise SequencingError(msg)
+            blocker: str = str(dep.get("depends_on_id") or "")
+            kind: str = str(dep.get("type") or "")
             if kind == "parent-child" or blocker == blocked:
                 continue
             if item not in {blocker, blocked}:
                 continue
             if blocker in open_items and blocked in open_items:
                 found[blocker, blocked] = kind
-    edges = []
+    edges: list[StandingEdge] = []
     for (blocker, blocked), kind in sorted(found.items()):
-        bead = graph.beads[blocked]
-        recorded = edge_reasons(bead).get(blocker, {})
+        bead: Bead = graph.beads[blocked]
+        recorded: JsonObject = edge_reasons(bead).get(blocker, {})
         edges.append(
             {
                 "from": blocker,
@@ -503,7 +659,9 @@ def _scope_defects(
     owned_standing: set[str] = {f"{s['from']}->{s['to']}" for s in standing_edges(graph, item, level) if s["owned"]}
     kept: set[str] = {_pair(e) for e in edges}
     dropped: set[str] = {_pair(e) for e in withdrawn}
-    withdrawn_before: dict[str, dict] = {f"{w['from']}->{w['to']}": w for w in withdrawal_history(graph, item, level)}
+    withdrawn_before: dict[str, EdgeWithdrawal] = {
+        f"{w['from']}->{w['to']}": w for w in withdrawal_history(graph, item, level)
+    }
     return _ScopeDefects(
         bad_scope=scope_defect(graph, item, level),
         outside=sorted(
@@ -533,7 +691,7 @@ def validate(
     item: str | None = None,
     withdrawn: list[Edge] | tuple[Edge, ...] = (),
     level: str = "epic",
-) -> dict:
+) -> ValidationReport:
     """Report every defect in a proposed edge set.
 
     The defects are: an edge whose ends are not both of the level (`notEpicToEpic` or
@@ -597,7 +755,7 @@ def validate(
         or scoped.withdrawn_not_owned
         or scoped.kept_and_withdrawn
     )
-    return {
+    report: ValidationReport = {
         "ok": ok,
         "level": level,
         "edgeCount": len(edges),
@@ -611,7 +769,6 @@ def validate(
         "unaccounted": scoped.unaccounted,
         "withdrawnNotOwned": scoped.withdrawn_not_owned,
         "keptAndWithdrawn": scoped.kept_and_withdrawn,
-        "notEpicToEpic" if level == "epic" else "notTaskToTask": wrong_kind,
         "cycle": cycle,
         "dangling": dangling,
         "selfEdges": self_edges,
@@ -619,6 +776,11 @@ def validate(
         "fromClosed": from_closed,
         "duplicates": duplicates,
     }
+    if level == "epic":
+        report["notEpicToEpic"] = wrong_kind
+    else:
+        report["notTaskToTask"] = wrong_kind
+    return report
 
 
 # ------------------------------------------------------------------------------------
@@ -631,7 +793,7 @@ def plan_edges(
     edges: list[Edge],
     item: str | None = None,
     level: str = "epic",
-) -> dict:
+) -> EdgePlan:
     """Diff the proposed edge set against the tracker, respecting hand-made edges.
 
     Only beads of the level are diffed, so an Epic pass never touches a Task's edges and
@@ -657,7 +819,7 @@ def plan_edges(
     desired: dict[str, set[str]] = {}
     for edge in edges:
         desired.setdefault(edge.blocked, set()).add(edge.blocker)
-    plan: dict = {
+    plan: EdgePlan = {
         "add": [],
         "convert": [],
         "remove": [],
@@ -676,7 +838,7 @@ def plan_edges(
     return plan
 
 
-def _plan_bead(plan: dict, bead: Bead, want: set[str], item: str | None, types: tuple[str, str]) -> None:
+def _plan_bead(plan: EdgePlan, bead: Bead, want: set[str], item: str | None, types: tuple[str, str]) -> None:
     """Add one blocked bead's part of the diff to the plan.
 
     Args:
@@ -722,7 +884,7 @@ def _plan_bead(plan: dict, bead: Bead, want: set[str], item: str | None, types: 
         }
 
 
-def _owned_after_adds(graph: Graph, plan: dict) -> dict[str, dict[str, str]]:
+def _owned_after_adds(graph: Graph, plan: EdgePlan) -> dict[str, dict[str, str]]:
     """Build the ownership records that cover every edge the diff adds, before any is added.
 
     Each blocked bead that gains an edge is recorded as owning its CURRENT owned edges
@@ -755,7 +917,7 @@ def _owned_after_adds(graph: Graph, plan: dict) -> dict[str, dict[str, str]]:
 def _reason_records(
     graph: Graph,
     edges: list[Edge],
-    plan: dict,
+    plan: EdgePlan,
     item: str,
     level: str = "epic",
 ) -> dict[str, str]:
@@ -781,17 +943,17 @@ def _reason_records(
     proposed: dict[str, dict[str, Edge]] = {}
     for edge in edges:
         proposed.setdefault(edge.blocked, {})[edge.blocker] = edge
-    touched = {item} | set(proposed) | {s["to"] for s in standing_edges(graph, item, level) if s["owned"]}
-    stamp = now_iso()
+    touched: set[str] = {item} | set(proposed) | {s["to"] for s in standing_edges(graph, item, level) if s["owned"]}
+    stamp: str = now_iso()
     out: dict[str, str] = {}
     for blocked_id in sorted(touched):
-        bead = graph.beads.get(blocked_id)
+        bead: Bead | None = graph.beads.get(blocked_id)
         if bead is None:
             continue
-        final = plan["metadata"].get(blocked_id, {}).get(KEY_SEQ_OWNED_BLOCKERS)
-        owned_after = set(beadgraph.split_ids(final)) if final is not None else set(bead.owned_blockers)
-        before = edge_reasons(bead)
-        after = {
+        final: str | None = plan["metadata"].get(blocked_id, {}).get(KEY_SEQ_OWNED_BLOCKERS)
+        owned_after: set[str] = set(beadgraph.split_ids(final)) if final is not None else set(bead.owned_blockers)
+        before: dict[str, JsonObject] = edge_reasons(bead)
+        after: dict[str, JsonObject] = {
             blocker: entry
             for blocker, entry in before.items()
             if item not in {blocker, blocked_id} or blocker in owned_after
@@ -799,13 +961,13 @@ def _reason_records(
         for blocker, edge in proposed.get(blocked_id, {}).items():
             if blocker not in owned_after:
                 continue
-            entry = {
+            entry: JsonObject = {
                 "reason": edge.reason,
                 "confidence": edge.confidence,
                 "setBy": item,
             }
-            old = before.get(blocker, {})
-            same = all(old.get(k) == v for k, v in entry.items())
+            old: JsonObject = before.get(blocker, {})
+            same: bool = all(old.get(k) == v for k, v in entry.items())
             entry["setAt"] = old.get("setAt") if same and old.get("setAt") else stamp
             after[blocker] = entry
         if after != before:
@@ -836,15 +998,15 @@ def _withdrawal_records(
         Blocked bead id -> the JSON value to write, for each bead whose value changes.
 
     """
-    stamp = now_iso()
-    touched = {e.blocked for e in withdrawn} | {e.blocked for e in edges}
+    stamp: str = now_iso()
+    touched: set[str] = {e.blocked for e in withdrawn} | {e.blocked for e in edges}
     out: dict[str, str] = {}
     for blocked_id in sorted(touched):
-        bead = graph.beads.get(blocked_id)
+        bead: Bead | None = graph.beads.get(blocked_id)
         if bead is None:
             continue
-        before = edge_withdrawals(bead)
-        after = dict(before)
+        before: dict[str, JsonObject] = edge_withdrawals(bead)
+        after: dict[str, JsonObject] = dict(before)
         for edge in withdrawn:
             if edge.blocked != blocked_id:
                 continue
@@ -867,7 +1029,7 @@ def withdraw_edge(
     writer: Writer,
     withdrawn_by: str,
     level: str = "epic",
-) -> dict:
+) -> WithdrawResult:
     """Withdraw ONE standing owned edge, and record the withdrawal with its reason.
 
     The edge is removed, its ownership and recorded reason are dropped, and the
@@ -898,18 +1060,20 @@ def withdraw_edge(
     if not reason.strip():
         msg = "a withdrawal states why the edge does not exist: pass --reason"
         raise SequencingError(msg)
-    standing = {(s["from"], s["to"]): s for s in standing_edges(graph, blocked, level)}
-    edge = standing.get((blocker, blocked))
+    standing: dict[tuple[str, str], StandingEdge] = {
+        (s["from"], s["to"]): s for s in standing_edges(graph, blocked, level)
+    }
+    edge: StandingEdge | None = standing.get((blocker, blocked))
     if edge is None:
         msg = f"no {LEVEL_NAMES[_level(level)]} edge {blocker}->{blocked} stands between two open beads"
         raise SequencingError(msg)
     if not edge["owned"]:
         msg = f"{blocker}->{blocked} was drawn by hand and is never withdrawn here"
         raise SequencingError(msg)
-    bead = graph.beads[blocked]
-    reasons = edge_reasons(bead)
-    recorded = reasons.pop(blocker, {})
-    withdrawals = edge_withdrawals(bead)
+    bead: Bead = graph.beads[blocked]
+    reasons: dict[str, JsonObject] = edge_reasons(bead)
+    recorded: JsonObject = reasons.pop(blocker, {})
+    withdrawals: dict[str, JsonObject] = edge_withdrawals(bead)
     withdrawals[blocker] = {
         "reason": reason,
         "withdrawnBy": withdrawn_by,
@@ -963,7 +1127,7 @@ class ApplyScope:
     level: str = "epic"
 
 
-def _write_plan(writer: Writer, plan: dict, ahead: dict[str, dict[str, str]], edge_type: str) -> None:
+def _write_plan(writer: Writer, plan: EdgePlan, ahead: dict[str, dict[str, str]], edge_type: str) -> None:
     """Write the ownership-first records, then the adds, conversions and withdrawals of a plan.
 
     Args:
@@ -1022,7 +1186,7 @@ def apply_edges(
     edges: list[Edge],
     writer: Writer,
     scope: ApplyScope,
-) -> dict:
+) -> ApplyRefused | ApplyResult:
     """Validate, diff and write an edge set. Idempotent by construction.
 
     An unchanged proposal adds nothing, converts nothing, withdraws nothing and writes no
@@ -1055,10 +1219,10 @@ def apply_edges(
     edges = [
         e for e in edges if not any(end in graph.beads and graph.beads[end].closed for end in (e.blocker, e.blocked))
     ]
-    report: dict = validate(graph, edges, item, withdrawn, level)
+    report: ValidationReport = validate(graph, edges, item, withdrawn, level)
     if not report["ok"]:
         return {"applied": False, "dryRun": writer.dry_run, "validation": report}
-    plan: dict = plan_edges(graph, edges, item, level)
+    plan: EdgePlan = plan_edges(graph, edges, item, level)
     reasons: dict[str, str] = _reason_records(graph, edges, plan, item, level) if item is not None else {}
     withdrawals: dict[str, str] = _withdrawal_records(graph, edges, withdrawn, item) if item is not None else {}
     pending: dict[str, dict[str, str]] = {}

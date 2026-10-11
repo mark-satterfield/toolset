@@ -21,9 +21,10 @@ from typing import TYPE_CHECKING, TypedDict
 
 import beadgraph
 from bead_metadata import KEY_ELABORATION_STATE
-from contracts import JsonObject
 from edgeset import (
+    EdgeWithdrawal,
     SequencingError,
+    StandingEdge,
     standing_edges,
     withdrawal_history,
 )
@@ -58,8 +59,8 @@ class EpicContext(TypedDict):
     """The `assess-context` result for one Epic."""
 
     epic: AssessedEpic
-    standing: list[JsonObject]
-    withdrawn: list[JsonObject]
+    standing: list[StandingEdge]
+    withdrawn: list[EdgeWithdrawal]
     corpusDir: str
     indexPath: str
     summary: EpicContextSummary
@@ -91,8 +92,8 @@ class TaskContext(TypedDict):
     """The `assess-context --task` result for one Task."""
 
     task: AssessedTask
-    standing: list[JsonObject]
-    withdrawn: list[JsonObject]
+    standing: list[StandingEdge]
+    withdrawn: list[EdgeWithdrawal]
     corpusDir: str
     indexPath: str
     summary: TaskContextSummary
@@ -219,7 +220,7 @@ def write_task_index(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
+def task_context(graph: Graph, task: str, out_dir: Path) -> TaskContext:
     """Write the open-Task corpus and index, and return the Task and its standing edges.
 
     Args:

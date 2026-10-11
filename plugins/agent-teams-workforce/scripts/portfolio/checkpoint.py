@@ -20,25 +20,68 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import TypedDict
+
+from contracts import JsonValue
 
 
-def load(path: Path) -> dict:
-    """The checkpoint at `path`, as the workflow reads it.
+class CheckpointLoad(TypedDict):
+    """What `load` prints for one checkpoint file."""
+
+    found: bool
+    retired: bool
+    content: JsonValue
+    error: str | None
+
+
+def _json(value: object) -> JsonValue:
+    """Narrow a value `json.loads` returned to a JSON value.
+
+    Args:
+        value: The decoded value.
+
+    Returns:
+        The same value, typed as JSON.
+
+    Raises:
+        TypeError: The value holds something JSON cannot.
+
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, list):
+        return [_json(member) for member in value]
+    if isinstance(value, dict):
+        result: dict[str, JsonValue] = {}
+        for key, member in value.items():
+            if not isinstance(key, str):
+                msg: str = f"JSON object key {key!r} is not a string"
+                raise TypeError(msg)
+            result[key] = _json(member)
+        return result
+    msg = f"{type(value).__name__} is not a JSON value"
+    raise TypeError(msg)
+
+
+def load(path: Path) -> CheckpointLoad:
+    """Read the checkpoint at `path`, as the workflow reads it.
 
     Args:
         path: The checkpoint file.
 
     Returns:
         {found, retired, content, error}.
+
     """
     if not path.is_file():
         return {"found": False, "retired": False, "content": None, "error": None}
     try:
-        text = path.read_text(encoding="utf-8")
+        text: str = path.read_text(encoding="utf-8")
         if not text.strip():
             return {"found": True, "retired": False, "content": None, "error": None}
-        value = json.loads(text)
-    except (OSError, ValueError) as exc:
+        decoded: object = json.loads(text)
+        value: JsonValue = _json(decoded)
+    except (OSError, ValueError, TypeError) as exc:
         return {
             "found": True,
             "retired": False,
@@ -54,13 +97,15 @@ def load(path: Path) -> dict:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """The command-line parser.
+    """Build the command-line parser.
 
     Returns:
         The parser.
+
     """
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
     read = sub.add_parser("load", help="print a checkpoint file as JSON")
@@ -76,9 +121,17 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         0.
+
+    Raises:
+        TypeError: argparse produced something other than a path for `--file`.
+
     """
-    args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    print(json.dumps(load(args.file), separators=(",", ":")))
+    args: argparse.Namespace = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    file: object = args.file
+    if not isinstance(file, Path):
+        msg: str = f"--file must be a path, got {type(file).__name__}"
+        raise TypeError(msg)
+    sys.stdout.write(json.dumps(load(file), separators=(",", ":")) + "\n")
     return 0
 
 

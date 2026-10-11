@@ -54,6 +54,7 @@ import concurrent.futures
 import dataclasses
 import datetime as dt
 import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -64,8 +65,11 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import] - the tool runs 
 import sys
 import tempfile
 import time
+from collections.abc import (
+    Callable,  # ruff: ignore[typing-only-standard-library-import] - typing.get_type_hints resolves Finding.action at runtime
+)
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -75,7 +79,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts
 from driver_surface_types import CONTROL_REPO_ENV
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable, Mapping
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
@@ -92,6 +96,284 @@ EXIT_USAGE = 2
 
 class PolyrepoError(Exception):
     """An environment or usage error the tool cannot work around."""
+
+
+class NamingPattern(TypedDict):
+    """One naming pattern from the config's `naming.patterns` list."""
+
+    name: str
+    kind: str
+    regex: str
+    space: NotRequired[str]
+
+
+class GhRepo(TypedDict):
+    """One GitHub repository of the owner, as the tool records it."""
+
+    name: str
+    archived: bool
+    pushed_at: str | None
+    url: str | None
+    visibility: str | None
+
+
+type PrCloseStatus = Literal["planned", "closed", "failed"]
+
+
+class EnvResult(TypedDict):
+    """What setting up a repo's environment did, and the problems that remain."""
+
+    steps: list[str]
+    problems: list[str]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PullRequest:
+    """One open pull request, as gh reports it."""
+
+    repo: str
+    number: int
+    title: str
+    url: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Worktree:
+    """One linked worktree of a clone."""
+
+    path: Path
+    locked: bool
+    prunable: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TemplateComparison:
+    """One repo's files compared with its template's render: (state, repo commit time) by path."""
+
+    repo: str
+    files: dict[str, tuple[str, int | None]]
+    error: str | None
+
+
+class TemplateFileRow(TypedDict):
+    """How one template file compares across the repos built from the template."""
+
+    file: str
+    same: int
+    missing: list[str]
+    repo_newer: list[str]
+    template_newer: list[str]
+
+
+class TemplateMember(TypedDict):
+    """A repo built from a template, and how that was decided."""
+
+    repo: str
+    matched_by: str
+
+
+class RenderError(TypedDict):
+    """A repo the template could not be rendered for."""
+
+    repo: str
+    error: str
+
+
+class TemplateReport(TypedDict):
+    """The templates-check result for one template."""
+
+    template: str
+    repos: list[TemplateMember]
+    render_errors: list[RenderError]
+    files: list[TemplateFileRow]
+    lags: bool
+
+
+class KindWithoutTemplate(TypedDict):
+    """A repo kind no template builds, and its repos."""
+
+    kind: str
+    repos: list[str]
+
+
+class DoctorFinding(TypedDict):
+    """One problem the doctor reports."""
+
+    check: str
+    subject: str
+    kind: str
+    detail: str
+
+
+def _opt_str(value: object, what: str) -> str | None:
+    """Narrow an optional string read from external data.
+
+    Returns:
+        The string, or None.
+
+    Raises:
+        PolyrepoError: when the value is neither a string nor None.
+
+    """
+    if value is None or isinstance(value, str):
+        return value
+    msg = f"{what} is {type(value).__name__}, not a string"
+    raise PolyrepoError(msg)
+
+
+def _map(value: object, what: str) -> dict[str, object]:
+    """Narrow a record value to a string-keyed mapping.
+
+    Returns:
+        A dict with the value's string keys.
+
+    Raises:
+        PolyrepoError: when the value is not a mapping.
+
+    """
+    if not isinstance(value, dict):
+        msg = f"{what} is {type(value).__name__}, not a mapping"
+        raise PolyrepoError(msg)
+    pairs: list[tuple[object, object]] = list(value.items())
+    return {k: v for k, v in pairs if isinstance(k, str)}
+
+
+def _seq(value: object, what: str) -> list[object]:
+    """Narrow a record value to a list.
+
+    Returns:
+        A list of the value's items.
+
+    Raises:
+        PolyrepoError: when the value is not a list or tuple.
+
+    """
+    if not isinstance(value, (list, tuple)):
+        msg = f"{what} is {type(value).__name__}, not a list"
+        raise PolyrepoError(msg)
+    items: list[object] = list(value)
+    return items
+
+
+def _strs(value: object, what: str) -> list[str]:
+    """Narrow a record value to a list of strings.
+
+    Returns:
+        The strings.
+
+    Raises:
+        PolyrepoError: when the value is not a list of strings.
+
+    """
+    out: list[str] = []
+    for item in _seq(value, what):
+        if not isinstance(item, str):
+            msg = f"{what} holds {type(item).__name__}, not a string"
+            raise PolyrepoError(msg)
+        out.append(item)
+    return out
+
+
+def _str(value: object, what: str) -> str:
+    """Narrow a record value to a string.
+
+    Returns:
+        The string.
+
+    Raises:
+        PolyrepoError: when the value is not a string.
+
+    """
+    if not isinstance(value, str):
+        msg = f"{what} is {type(value).__name__}, not a string"
+        raise PolyrepoError(msg)
+    return value
+
+
+def _int(value: object, what: str) -> int:
+    """Narrow a record value to an int.
+
+    Returns:
+        The integer.
+
+    Raises:
+        PolyrepoError: when the value is not an int.
+
+    """
+    if not isinstance(value, int) or isinstance(value, bool):
+        msg = f"{what} is {type(value).__name__}, not an int"
+        raise PolyrepoError(msg)
+    return value
+
+
+def parse_pull_request(value: object, repo: str, what: str) -> PullRequest:
+    """Validate one pull request entry from gh's JSON; a malformed entry raises PolyrepoError.
+
+    Returns:
+        The pull request.
+
+    """
+    pr = _map(value, f"{what} entry")
+    return PullRequest(
+        repo=repo,
+        number=_int(pr.get("number"), f"{what} number"),
+        title=_str(pr.get("title"), f"{what} title"),
+        url=_str(pr.get("url"), f"{what} url"),
+    )
+
+
+def parse_naming_pattern(value: object) -> NamingPattern:
+    """Validate one entry of the config's `naming.patterns` list.
+
+    Returns:
+        The naming pattern.
+
+    Raises:
+        PolyrepoError: when a required key is missing or not a string.
+
+    """
+    if not isinstance(value, dict):
+        msg = f"naming pattern {value!r} is not a mapping"
+        raise PolyrepoError(msg)
+    fields: dict[str, str] = {}
+    for key in ("name", "kind", "regex"):
+        v: object = value.get(key)
+        if not isinstance(v, str):
+            msg = f"naming pattern {value!r} has no string {key!r}"
+            raise PolyrepoError(msg)
+        fields[key] = v
+    pat = NamingPattern(name=fields["name"], kind=fields["kind"], regex=fields["regex"])
+    space = _opt_str(value.get("space"), "naming pattern space")
+    if space is not None:
+        pat["space"] = space
+    return pat
+
+
+def parse_gh_repo(value: object) -> GhRepo:
+    """Validate one cached GitHub repo record.
+
+    Returns:
+        The record.
+
+    Raises:
+        PolyrepoError: when the record is not a mapping or a field has the wrong type.
+
+    """
+    if not isinstance(value, dict):
+        msg = f"GitHub record {value!r} is not a mapping"
+        raise PolyrepoError(msg)
+    name: object = value.get("name")
+    archived: object = value.get("archived", False)
+    if not isinstance(name, str) or not isinstance(archived, bool):
+        msg = f"GitHub record {value!r} lacks a string name or a boolean archived"
+        raise PolyrepoError(msg)
+    return GhRepo(
+        name=name,
+        archived=archived,
+        pushed_at=_opt_str(value.get("pushed_at"), "GitHub pushed_at"),
+        url=_opt_str(value.get("url"), "GitHub url"),
+        visibility=_opt_str(value.get("visibility"), "GitHub visibility"),
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -259,9 +541,19 @@ class Config:
     exclude_names: set[str]
     ttl: int
     owned: list[re.Pattern[str]]
-    patterns: list[dict[str, Any]]
-    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+    patterns: list[NamingPattern]
+    raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
+
+    def archive_after_days(self) -> int:
+        """Return the configured delay between deprecating and archiving a repo; malformed config raises PolyrepoError.
+
+        Returns:
+            The number of days (default 60).
+
+        """
+        section = _map(self.raw.get("deprecation") or {}, "config deprecation")
+        return _int(section.get("archive_after_days", 60), "deprecation.archive_after_days")
 
     def setting_path(self, section: str, key: str, default: str) -> Path:
         """Resolve a path setting, relative to the config file's folder.
@@ -270,10 +562,10 @@ class Config:
             The absolute path.
 
         """
-        rel = (self.raw.get(section) or {}).get(key) or default
+        rel = _map(self.raw.get(section) or {}, f"config {section}").get(key) or default
         return (self.file.parent / str(rel)).resolve()
 
-    def classify(self, name: str) -> dict[str, Any] | None:
+    def classify(self, name: str) -> NamingPattern | None:
         """Return the first naming pattern the name matches.
 
         Returns:
@@ -388,7 +680,7 @@ def load_config(explicit: str | None) -> Config:
         exclude_names=set((raw.get("exclude") or {}).get("names") or []),
         ttl=int(raw.get("cache_ttl_seconds", 300)),
         owned=[re.compile(r) for r in naming.get("owned") or []],
-        patterns=list(naming.get("patterns") or []),
+        patterns=[parse_naming_pattern(p) for p in naming.get("patterns") or []],
         raw=raw,
     )
 
@@ -530,13 +822,17 @@ class GitHub:
         key = hashlib.sha256(str(cfg.file).encode()).hexdigest()[:16]
         cache_home = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
         self.cache_file = cache_home / "polyrepo" / key / "github.json"
-        self._resolved: dict[str, dict[str, Any] | None] = {}
+        self._resolved: dict[str, GhRepo | None] = {}
         self.repos = self._load(use_cache)
         self.lower = {n.lower(): n for n in self.repos}
 
-    def _load(self, use_cache: bool) -> dict[str, dict[str, Any]]:
+    def _load(self, use_cache: bool) -> dict[str, GhRepo]:
         if use_cache and self.cache_file.exists() and time.time() - self.cache_file.stat().st_mtime < self.cfg.ttl:
-            return json.loads(self.cache_file.read_text())
+            cached: object = json.loads(self.cache_file.read_text())
+            if not isinstance(cached, dict):
+                msg = f"{self.cache_file} does not hold a mapping"
+                raise PolyrepoError(msg)
+            return {str(k): parse_gh_repo(v) for k, v in cached.items()}
         cp = run(
             [
                 "gh", "repo", "list", self.cfg.owner, "--limit", "2000",
@@ -547,16 +843,26 @@ class GitHub:
         if cp.returncode != 0:
             msg = f"gh repo list {self.cfg.owner} failed: {cp.stderr.strip()}"
             raise PolyrepoError(msg)
-        repos = {
-            r["name"]: {
-                "name": r["name"],
-                "archived": r["isArchived"],
-                "pushed_at": r["pushedAt"],
-                "url": r["url"],
-                "visibility": r["visibility"].lower(),
-            }
-            for r in json.loads(cp.stdout)
-        }
+        listing: object = json.loads(cp.stdout)
+        if not isinstance(listing, list):
+            msg = f"gh repo list {self.cfg.owner} did not return a list"
+            raise PolyrepoError(msg)
+        repos: dict[str, GhRepo] = {}
+        for r in listing:
+            if not isinstance(r, dict):
+                msg = f"gh repo list {self.cfg.owner} returned a non-mapping entry {r!r}"
+                raise PolyrepoError(msg)
+            visibility = _opt_str(r.get("visibility"), "GitHub visibility")
+            rec = parse_gh_repo(
+                {
+                    "name": r.get("name"),
+                    "archived": r.get("isArchived"),
+                    "pushed_at": r.get("pushedAt"),
+                    "url": r.get("url"),
+                    "visibility": visibility.lower() if visibility is not None else None,
+                },
+            )
+            repos[rec["name"]] = rec
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
         self.cache_file.write_text(json.dumps(repos))
         return repos
@@ -565,7 +871,7 @@ class GitHub:
         """Drop the cached listing so the next call lists GitHub again."""
         self.cache_file.unlink(missing_ok=True)
 
-    def get(self, name: str) -> dict[str, Any] | None:
+    def get(self, name: str) -> GhRepo | None:
         """Look a repo up by exact or case-insensitive name in the listing.
 
         Returns:
@@ -575,11 +881,14 @@ class GitHub:
         n = self.lower.get(name.lower())
         return self.repos.get(n) if n else None
 
-    def resolve(self, name: str) -> dict[str, Any] | None:
+    def resolve(self, name: str) -> GhRepo | None:
         """Resolve a name through GitHub's rename redirects.
 
         Returns:
             The current record of the repo the name leads to, or None when none exists.
+
+        Raises:
+            PolyrepoError: when GitHub's answer is not a repository mapping.
 
         """
         if name in self._resolved:
@@ -588,15 +897,24 @@ class GitHub:
         if rec is None:
             cp = run(["gh", "api", f"repos/{self.cfg.owner}/{name}"], timeout=60)
             if cp.returncode == 0:
-                d = json.loads(cp.stdout)
-                if d.get("owner", {}).get("login", "").lower() == self.cfg.owner.lower():
-                    rec = self.get(d["name"]) or {
-                        "name": d["name"],
-                        "archived": d.get("archived", False),
-                        "pushed_at": d.get("pushed_at"),
-                        "url": d.get("html_url"),
-                        "visibility": d.get("visibility"),
-                    }
+                d: object = json.loads(cp.stdout)
+                if not isinstance(d, dict):
+                    msg = f"gh api repos/{self.cfg.owner}/{name} did not return a mapping"
+                    raise PolyrepoError(msg)
+                owner: object = d.get("owner")
+                login: object = owner.get("login", "") if isinstance(owner, dict) else ""
+                if isinstance(login, str) and login.lower() == self.cfg.owner.lower():
+                    gh_name: object = d.get("name")
+                    found = self.get(gh_name) if isinstance(gh_name, str) else None
+                    rec = found or parse_gh_repo(
+                        {
+                            "name": gh_name,
+                            "archived": d.get("archived", False),
+                            "pushed_at": d.get("pushed_at"),
+                            "url": d.get("html_url"),
+                            "visibility": d.get("visibility"),
+                        },
+                    )
         self._resolved[name] = rec
         return rec
 
@@ -628,7 +946,7 @@ class Manifest:
             e["name"]: e
             for key in ENTRY_LISTS
             for e in self.doc.get(key) or []
-            if isinstance(e, dict) and e.get("name")
+            if isinstance(e, CommentedMap) and e.get("name")
         }
 
     def groups(self) -> list[CommentedMap]:
@@ -638,7 +956,7 @@ class Manifest:
             Every group with a name.
 
         """
-        return [g for g in self.doc.get("groups") or [] if isinstance(g, dict) and g.get("name")]
+        return [g for g in self.doc.get("groups") or [] if isinstance(g, CommentedMap) and g.get("name")]
 
     def has_stored_dependencies(self) -> bool:
         """Say whether the manifest holds repo-to-repo dependency edges, which it may not.
@@ -666,7 +984,7 @@ class Manifest:
         """
         return [g["name"] for g in self.groups() if name in (g.get("members") or [])]
 
-    def add_entry(self, name: str, fields: dict[str, Any]) -> None:
+    def add_entry(self, name: str, fields: dict[str, object]) -> None:
         """Append a new repo entry; for an entry that exists, fill only the fields it lacks."""
         e = self.entries().get(name)
         if e is not None:
@@ -867,7 +1185,7 @@ class State:
                 names.add(n)
         return sorted(names, key=str.lower)
 
-    def record(self, name: str, deep: bool = True) -> dict[str, Any]:
+    def record(self, name: str, deep: bool = True) -> dict[str, object]:
         """Build a repo's full record: live facts plus the manifest's purpose, owns, groups.
 
         Groups are reported only for a repo that exists and is active. Each `owns` item
@@ -881,13 +1199,13 @@ class State:
 
         """
         r = self.local.get(name)
-        e = self.manifest.entries().get(name) or {}
+        e = self.manifest.entries().get(name) or CommentedMap()
         g = self.gh.get(name)
         pat = self.cfg.classify(name)
         purpose_head = e.get("purpose_head")
         lifecycle = self.lifecycle(name)
         live = r is not None or g is not None
-        rec: dict[str, Any] = {
+        rec: dict[str, object] = {
             "name": name,
             "space": r.space if r else self.cfg.expected_space(name),
             "path": str(r.path) if r else None,
@@ -967,13 +1285,13 @@ class Finding:
     repo: str
     detail: str
     fix: str | None = None
-    action: Callable[[], None] | None = dataclasses.field(default=None, repr=False)
+    action: Callable[[], object] | None = dataclasses.field(default=None, repr=False)
     manifest_change: bool = False
     logged: bool = False
     status: str = "open"
     error: str | None = None
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         """Return the finding as JSON-ready data.
 
         Returns:
@@ -1006,6 +1324,11 @@ def must(cp: subprocess.CompletedProcess[str]) -> None:
         raise GitFailedError(
             (cp.stderr or cp.stdout).strip() or f"{cp.args} exited {cp.returncode}",
         )
+
+
+def _add_entry(man: Manifest, cfg: Config, name: str, lifecycle: str) -> None:
+    """Add a manifest entry for a repo, with the fields computed when the fix runs."""
+    man.add_entry(name, entry_fields(cfg, name, lifecycle))
 
 
 def point_origin(repo: Path, url: str) -> None:
@@ -1047,8 +1370,8 @@ def entry_fields(
     cfg: Config,
     name: str,
     lifecycle: str,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    extra: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Return the fields of a new manifest entry.
 
     The fields are the lifecycle, GitHub URL, default branch, and the deprecation date when
@@ -1058,7 +1381,7 @@ def entry_fields(
         The fields, with extra merged over them.
 
     """
-    fields: dict[str, Any] = {
+    fields: dict[str, object] = {
         "lifecycle": lifecycle,
         "remote_url": cfg.github_url(name),
         "default_branch": cfg.default_branch,
@@ -1129,7 +1452,7 @@ def _check_entries_off_disk(
                     name,
                     f"GitHub renamed {name} to {rec['name']}, which has its own manifest entry",
                     fix=f"remove the {name} entry",
-                    action=lambda n=name: man.remove_entry(n),
+                    action=functools.partial(man.remove_entry, name),
                     manifest_change=True,
                 ),
             )
@@ -1142,7 +1465,7 @@ def _check_entries_off_disk(
                     name,
                     f"GitHub renamed {name} to {new}",
                     fix=f"rename the manifest entry to {new}",
-                    action=lambda o=name, n=new: man.rename_entry(o, n),
+                    action=functools.partial(man.rename_entry, name, new),
                     manifest_change=True,
                 ),
             )
@@ -1153,7 +1476,7 @@ def _check_entries_off_disk(
                     name,
                     "manifest entry with no repo on disk or on GitHub",
                     fix="remove the entry and its group memberships",
-                    action=lambda n=name: man.remove_entry(n),
+                    action=functools.partial(man.remove_entry, name),
                     manifest_change=True,
                 ),
             )
@@ -1211,10 +1534,7 @@ def _check_github_only(
                     name,
                     f"{lc} repo on GitHub with no manifest entry",
                     fix=f"add a manifest entry (lifecycle {lc})",
-                    action=lambda n=name, lc=lc: man.add_entry(
-                        n,
-                        entry_fields(cfg, n, lc),
-                    ),
+                    action=functools.partial(_add_entry, man, cfg, name, lc),
                     manifest_change=True,
                 ),
             )
@@ -1291,7 +1611,7 @@ def _check_group_members(st: State) -> list[Finding]:
                         m,
                         f"member of group {gname}; GitHub renamed it to {new}",
                         fix=f"rename the member to {new}",
-                        action=lambda gn=gname, o=m, n=new: man.set_member(gn, o, n),
+                        action=functools.partial(man.set_member, gname, m, new),
                         manifest_change=True,
                     ),
                 )
@@ -1303,7 +1623,7 @@ def _check_group_members(st: State) -> list[Finding]:
                     m,
                     f"member of group {gname}, but {why}",
                     fix=f"remove it from group {gname}",
-                    action=lambda gn=gname, o=m: man.set_member(gn, o, None),
+                    action=functools.partial(man.set_member, gname, m, None),
                     manifest_change=True,
                 ),
             )
@@ -1343,7 +1663,7 @@ def _check_open_items(st: State) -> list[Finding]:
                     key,
                     f"the manifest carries a {key} section ({len(items)} settled item(s))",
                     fix=f"remove the {key} section; git history keeps it",
-                    action=lambda k=key: man.remove_section(k),
+                    action=functools.partial(man.remove_section, key),
                     manifest_change=True,
                 ),
             )
@@ -1388,7 +1708,7 @@ def _check_local(
     return out
 
 
-def _check_naming(cfg: Config, name: str, r: LocalRepo, out: list[Finding]) -> dict[str, Any] | None:
+def _check_naming(cfg: Config, name: str, r: LocalRepo, out: list[Finding]) -> NamingPattern | None:
     """Check a repo's folder name and placement, appending findings to out.
 
     Returns:
@@ -1417,7 +1737,7 @@ def _check_origin(
     st: State,
     name: str,
     r: LocalRepo,
-    pat: dict[str, Any] | None,
+    pat: NamingPattern | None,
     out: list[Finding],
 ) -> bool:
     """Check a repo's origin remote against GitHub, appending findings to out.
@@ -1437,7 +1757,7 @@ def _check_origin(
                     name,
                     "no origin remote; GitHub has a repo of this name",
                     fix=f"add origin {cfg.github_url(rec['name'])}",
-                    action=lambda: point_origin(r.path, cfg.github_url(rec["name"])),
+                    action=functools.partial(point_origin, r.path, cfg.github_url(rec["name"])),
                 ),
             )
         else:
@@ -1477,10 +1797,7 @@ def _check_origin(
                 name,
                 f"origin names {origin_name}; GitHub now calls it {gh_name}",
                 fix=f"point origin at {cfg.github_url(gh_name)}",
-                action=lambda n=gh_name: point_origin(
-                    r.path,
-                    cfg.github_url(n),
-                ),
+                action=functools.partial(point_origin, r.path, cfg.github_url(gh_name)),
             ),
         )
     return True
@@ -1500,7 +1817,7 @@ def _name_mismatch(st: State, name: str, gh_name: str, *, name_valid: bool) -> F
             name,
             f"folder is {name} but its GitHub repo is {gh_name}",
             fix=f"rename the GitHub repo {gh_name} to {name} and point origin at it",
-            action=lambda o=gh_name: rename(st, o, name),
+            action=functools.partial(rename, st, gh_name, name),
             logged=True,
         )
     why = "a different repo already has that name" if taken else "the folder name is not valid"
@@ -1598,7 +1915,7 @@ def _check_disk_fields(st: State, name: str, r: LocalRepo, e: CommentedMap) -> l
             Finding(
                 "purpose-recheck",
                 name,
-                f"purpose {why}; {b} is now {r.main_sha[:12]}",
+                f"purpose {why}; {b} is now {(r.main_sha or 'unknown')[:12]}",
             ),
         )
     return out
@@ -1640,7 +1957,7 @@ def _check_tracked(
                     name,
                     f"manifest lifecycle is {lc or '(missing)'}; GitHub and the name say {want}",
                     fix=f"set lifecycle to {want}",
-                    action=lambda w=want: man.set_field(name, "lifecycle", w),
+                    action=functools.partial(man.set_field, name, "lifecycle", want),
                     manifest_change=True,
                 ),
             )
@@ -1685,7 +2002,7 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
                 f"deprecated_on {since!r} is not a date",
             ),
         ]
-    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
+    days = cfg.archive_after_days()
     age = (dt.date.fromisoformat(today()) - start).days
     if age < days:
         return []
@@ -1732,11 +2049,14 @@ def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
     todo = [f for f in findings if f.action is not None]
     ordered = [f for f in todo if not f.manifest_change] + [f for f in todo if f.manifest_change]
     for f in ordered:
+        action = f.action
+        if action is None:
+            continue
         if dry_run:
             f.status = "planned"
             continue
         try:
-            f.action()  # type: ignore[misc]
+            action()
             f.status = "fixed"
         except (GitFailedError, PolyrepoError, OSError, KeyError, ValueError) as exc:
             f.status = "failed"
@@ -1775,7 +2095,7 @@ def append_changelog(cfg: Config, title: str, lines: list[str]) -> None:
     cfg.changes.append(title.removeprefix("polyrepo ").strip())
 
 
-def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
+def commit_records(cfg: Config, subject: str) -> dict[str, object]:
     """Commit the steward's own files, then pull --rebase and push.
 
     The files are the manifest, changelog, knowledge store and fleet list, committed on the
@@ -1826,7 +2146,7 @@ def _require_branch(root: Path, branch: str | None, want: str) -> None:
         raise GitFailedError(msg)
 
 
-def finish_records(cfg: Config, data: dict[str, Any]) -> None:
+def finish_records(cfg: Config, data: dict[str, object]) -> None:
     """Commit and push the steward's files when this run changed them, reporting it in data."""
     if cfg.changes:
         data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)))
@@ -2089,7 +2409,7 @@ def fleet_after_rename(cfg: Config, old: Path, new: Path, active: bool) -> list[
 
 def emit(
     args: argparse.Namespace,
-    data: dict[str, Any],
+    data: Mapping[str, object],
     text: Callable[[], str],
 ) -> None:
     """Print JSON or text."""
@@ -2099,16 +2419,16 @@ def emit(
         sys.stdout.write(text() + "\n")
 
 
-def _status_line(rec: dict[str, Any]) -> str:
+def _status_line(rec: dict[str, object]) -> str:
     parts = [f"{rec['name']}  [{rec['space'] or '-'}]  {rec['lifecycle']}"]
-    if rec["present"]["disk"]:
+    if _map(rec["present"], "present")["disk"]:
         parts.extend((f"branch {rec['branch']}", f"uncommitted {rec['uncommitted']}"))
-        lc = rec["last_commit"]
+        lc = _map(rec["last_commit"] or {}, "last_commit")
         if lc:
             parts.append(
-                f"last {lc['date'][:10]} {lc['sha'][:8]} {lc['subject'][:60]!r}",
+                f"last {str(lc['date'])[:10]} {str(lc['sha'])[:8]} {str(lc['subject'])[:60]!r}",
             )
-        m = rec["main"]
+        m = _map(rec["main"] or {}, "main")
         if m and m["fetch_error"]:
             parts.append(f"fetch failed: {m['fetch_error']}")
         elif m and m["ahead"] is not None:
@@ -2119,7 +2439,7 @@ def _status_line(rec: dict[str, Any]) -> str:
             parts.append("main not on origin")
     else:
         parts.append("not on disk")
-    g = rec["github"]
+    g = _map(rec["github"] or {}, "github")
     if g:
         parts.append(
             f"GitHub pushed {str(g['pushed_at'])[:10]}{' archived' if g['archived'] else ''}",
@@ -2213,8 +2533,8 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if open_ else 0
 
 
-def _records_line(data: dict[str, Any]) -> list[str]:
-    rec = data.get("records")
+def _records_line(data: Mapping[str, object]) -> list[str]:
+    rec = _map(data.get("records") or {}, "records")
     if not rec:
         return []
     err = f": {rec['error']}" if rec.get("error") else ""
@@ -2238,7 +2558,7 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
         for rec in recs:
             lines.append(_status_line(rec))
             if args.repos:
-                lines.extend(f"    {f}" for f in rec["uncommitted_files"] or [])
+                lines.extend(f"    {f}" for f in _strs(rec["uncommitted_files"] or [], "uncommitted_files"))
         return "\n".join(lines)
 
     emit(args, {"repos": recs}, text)
@@ -2278,7 +2598,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     recs = [st.record(n, deep=False) for n in st.tracked_names()]
     if args.group:
-        recs = [r for r in recs if args.group in r["groups"]]
+        recs = [r for r in recs if args.group in _strs(r["groups"], "groups")]
     if args.lifecycle:
         recs = [r for r in recs if r["lifecycle"] == args.lifecycle]
     if args.space:
@@ -2300,7 +2620,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-def _lookup(rec: dict[str, Any], attr: str) -> object:
+def _lookup(rec: dict[str, object], attr: str) -> object:
     cur: object = rec
     for part in attr.split("."):
         if not isinstance(cur, dict) or part not in cur:
@@ -2382,7 +2702,7 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
         "polyrepo purpose",
         [f"{name}: purpose {what} at {cfg.default_branch} {r.main_sha[:12]}"],
     )
-    data = {
+    data: dict[str, object] = {
         "repo": name,
         "purpose": str(st.manifest.entries()[name]["purpose"]).strip(),
         "purpose_head": r.main_sha,
@@ -2392,7 +2712,7 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
         args,
         data,
         lambda: "\n".join(
-            [f"{name}: purpose {what} at {r.main_sha[:12]}", *_records_line(data)],
+            [f"{name}: purpose {what} at {(r.main_sha or 'unknown')[:12]}", *_records_line(data)],
         ),
     )
     return 0
@@ -2452,7 +2772,7 @@ def cmd_grep(args: argparse.Namespace, cfg: Config) -> int:
     matches = _rg_matches(cp.stdout, rels)
     if args.files:
         files = sorted({(m["repo"], m["file"]) for m in matches}, key=str)
-        data: dict[str, Any] = {
+        data: dict[str, object] = {
             "count": len(files),
             "files": [{"repo": r, "file": f} for r, f in files],
         }
@@ -2489,14 +2809,14 @@ def _rg_argv(args: argparse.Namespace, rels: list[str]) -> list[str]:
     return argv
 
 
-def _rg_matches(stdout: str, rels: dict[str, str]) -> list[dict[str, Any]]:
+def _rg_matches(stdout: str, rels: dict[str, str]) -> list[dict[str, object]]:
     """Parse rg --json output into one record per matching line.
 
     Returns:
         One {repo, file, line, text} per match.
 
     """
-    matches: list[dict[str, Any]] = []
+    matches: list[dict[str, object]] = []
     for ln in stdout.splitlines():
         ev = json.loads(ln)
         if ev.get("type") != "match":
@@ -2534,7 +2854,7 @@ def _worktree_on(repo: Path, branch: str) -> Path | None:
     return None
 
 
-def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
+def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, object]:
     """Fetch origin and bring main up to origin/main, stopping on a dirty tree or a conflict.
 
     Returns:
@@ -2542,7 +2862,7 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
 
     """
     b = cfg.default_branch
-    res: dict[str, Any] = {"repo": r.name, "path": str(r.path)}
+    res: dict[str, object] = {"repo": r.name, "path": str(r.path)}
     if not git_out(r.path, "remote", "get-url", "origin"):
         return {**res, "status": "no-origin"}
     err = fetch_origin(r.path)
@@ -2558,7 +2878,7 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
     return _advance_main(r, b, res, (main, om))
 
 
-def _advance_main(r: LocalRepo, b: str, res: dict[str, Any], refs: tuple[str, str]) -> dict[str, Any]:
+def _advance_main(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str, str]) -> dict[str, object]:
     """Bring a main that is behind origin/main up to it, where it is checked out or not.
 
     `refs` is (main, origin/main) as commit ids; res carries ahead and behind.
@@ -2596,7 +2916,7 @@ def _advance_main(r: LocalRepo, b: str, res: dict[str, Any], refs: tuple[str, st
     return {**res, "status": "rebased", "behind": 0}
 
 
-def _advance_unchecked_out(r: LocalRepo, b: str, res: dict[str, Any], refs: tuple[str, str]) -> dict[str, Any]:
+def _advance_unchecked_out(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str, str]) -> dict[str, object]:
     """Fast-forward a main no worktree has checked out, unless it has diverged.
 
     Returns:
@@ -2637,7 +2957,9 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
     def text() -> str:
         lines = []
         for x in results:
-            extra = "; ".join(s for s in (x.get("detail"), ", ".join(x.get("files") or [])) if s)
+            extra = "; ".join(
+                s for s in (str(x.get("detail") or ""), ", ".join(_strs(x.get("files") or [], "files"))) if s
+            )
             lines.append(f"{x['repo']}: {x['status']}{'  ' + extra if extra else ''}")
         return "\n".join(lines)
 
@@ -2648,7 +2970,7 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
 # create ---------------------------------------------------------------------------------------
 
 
-def _templates(cfg: Config) -> tuple[Path, dict[str, Any]]:
+def _templates(cfg: Config) -> tuple[Path, dict[str, object]]:
     """Return the templates folder and the templates settings.
 
     Returns:
@@ -2657,7 +2979,7 @@ def _templates(cfg: Config) -> tuple[Path, dict[str, Any]]:
     """
     return (
         cfg.setting_path("templates", "dir", "../repositories/templates"),
-        cfg.raw.get("templates") or {},
+        _map(cfg.raw.get("templates") or {}, "config templates"),
     )
 
 
@@ -2725,13 +3047,16 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     if not (tdir / "copier.yml").is_file():
         msg = f"no template {template!r} in {troot}"
         raise PolyrepoError(msg)
-    rx = ((tset.get("kinds") or {}).get(template) or {}).get("name_regex")
-    if rx and not re.search(rx, name):
+    rx = _map(_map(tset.get("kinds") or {}, "templates kinds").get(template) or {}, "template kind").get("name_regex")
+    if isinstance(rx, str) and rx and not re.search(rx, name):
         msg = f"a {template} repo name must match {rx}"
         raise PolyrepoError(msg)
     sub = args.dir
     if sub is None:
-        sub = ((tset.get("placement") or {}).get(space) or {}).get(template, "")
+        sub = _map(_map(tset.get("placement") or {}, "templates placement").get(space) or {}, "placement").get(
+            template,
+            "",
+        )
     space_dir = cfg.root / space
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
@@ -2763,7 +3088,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     name, b = args.name, cfg.default_branch
     tdir, dest = _create_checks(args, cfg)
     data = {"service_name": _service_name(cfg, name), "repo_name": name}
-    res: dict[str, Any] = {
+    res: dict[str, object] = {
         "repo": name,
         "space": args.space,
         "template": args.template,
@@ -2830,7 +3155,7 @@ def _create_dry_run(
     tdir: Path,
     dest: Path,
     data: dict[str, str],
-    res: dict[str, Any],
+    res: dict[str, object],
 ) -> int:
     """Render the template into a temporary folder and report the plan, changing nothing.
 
@@ -2854,14 +3179,14 @@ def _create_dry_run(
         res,
         lambda: "\n".join(
             [f"dry run: {name} -> {dest}"]
-            + [f"  {s}" for s in res["steps"]]
-            + [f"  template renders {len(res['rendered_files'])} files"],
+            + [f"  {s}" for s in _strs(res["steps"], "steps")]
+            + [f"  template renders {len(_seq(res['rendered_files'], 'rendered_files'))} files"],
         ),
     )
     return 0
 
 
-def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, Any]) -> None:
+def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> None:
     """Initialise the rendered repo, set up its environment, commit it and create it on GitHub.
 
     The environment result is recorded in res; a failed git or gh step propagates as the
@@ -2872,7 +3197,10 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
     _exclude_worktrees(dest)
     # Before the first commit, so the lockfile the setup task writes is committed too.
     if env_applicable(dest):
-        tspec = (_templates(cfg)[1].get("kinds") or {}).get(args.template) or {}
+        tspec = _map(
+            _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds").get(args.template) or {},
+            "template kind",
+        )
         synth = bool(tspec.get("synth", args.template in ENV_SYNTH_KINDS))
         env_res = setup_environment(dest, synth)
         res["environment"] = env_res
@@ -2891,7 +3219,7 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
     create_on_github(cfg, name, dest)
 
 
-def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, Any]) -> int:
+def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
     """Add the new repo's manifest entry, set up its beads, log it, and commit the records.
 
     Returns:
@@ -2921,7 +3249,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         log.append(f"environment setup FAILED: {res['environment_error']}")
         code = 1
     elif res.get("environment"):
-        log.append(f"environment set up: {'; '.join(res['environment']['steps'])}")
+        log.append(f"environment set up: {'; '.join(_strs(_map(res['environment'], 'environment')['steps'], 'steps'))}")
     if args.lifecycle not in LIFECYCLES_INACTIVE and args.space not in BEADS_SKIP_SPACES:
         try:
             done = beads_setup(
@@ -2929,7 +3257,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
                 LocalRepo(name=name, path=dest, space=args.space),
                 None,
             )
-            log.append(f"beads set up: {'; '.join(done['steps']) or 'already set up'}")
+            log.append(f"beads set up: {'; '.join(_strs(done['steps'], 'steps')) or 'already set up'}")
             log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[dest]))
         except (GitFailedError, OSError, PolyrepoError) as exc:
             res["beads_error"] = str(exc)
@@ -3097,7 +3425,7 @@ def probe_environment(path: Path) -> list[str]:
     return problems
 
 
-def setup_environment(path: Path, synth: bool) -> dict[str, Any]:
+def setup_environment(path: Path, synth: bool) -> EnvResult:
     """Run the repo's `install` task, then verify the environment (and `cdk synth --profile dev`).
 
     Returns:
@@ -3107,7 +3435,7 @@ def setup_environment(path: Path, synth: bool) -> dict[str, Any]:
     steps: list[str] = []
     problems: list[str] = []
     if shutil.which("task") is None:
-        return {"steps": steps, "problems": ["the task binary is not on PATH"]}
+        return EnvResult(steps=steps, problems=["the task binary is not on PATH"])
     cp = run(
         ["task", "--dir", str(path), "install"],
         timeout=ENV_SETUP_TIMEOUT,
@@ -3131,12 +3459,12 @@ def setup_environment(path: Path, synth: bool) -> dict[str, Any]:
             problems.append(f"cdk synth --profile dev failed: {_tail(cp)}")
         else:
             steps.append("cdk synth --profile dev succeeded")
-    return {"steps": steps, "problems": problems}
+    return EnvResult(steps=steps, problems=problems)
 
 
 def _env_kind(cfg: Config, r: LocalRepo) -> str | None:
     _troot, tset = _templates(cfg)
-    kind, _how, _answers = _template_for(r, tset.get("kinds") or {})
+    kind, _how, _answers = _template_for(r, _map(tset.get("kinds") or {}, "templates kinds"))
     return kind
 
 
@@ -3145,7 +3473,7 @@ def _env_synth(cfg: Config, r: LocalRepo) -> bool:
     if not kind:
         return False
     _troot, tset = _templates(cfg)
-    spec = (tset.get("kinds") or {}).get(kind) or {}
+    spec = _map(_map(tset.get("kinds") or {}, "templates kinds").get(kind) or {}, "template kind")
     return bool(spec.get("synth", kind in ENV_SYNTH_KINDS))
 
 
@@ -3196,7 +3524,7 @@ def cmd_environment(args: argparse.Namespace, cfg: Config) -> int:
                 f.status, f.error = "failed", "; ".join(res["problems"])
             else:
                 f.status = "fixed"
-    data: dict[str, Any] = {
+    data: dict[str, object] = {
         "findings": [f.as_dict() for f in findings],
         "open": sum(f.status in {"open", "failed"} for f in findings),
         "fixed": sum(f.status == "fixed" for f in findings),
@@ -3251,7 +3579,7 @@ def _template_ignore_lines(cfg: Config, r: LocalRepo) -> list[str]:
 
     """
     troot, tset = _templates(cfg)
-    kind, _how, _answers = _template_for(r, tset.get("kinds") or {})
+    kind, _how, _answers = _template_for(r, _map(tset.get("kinds") or {}, "templates kinds"))
     f = troot / kind / ".gitignore" if kind else None
     if f is None or not f.is_file():
         return []
@@ -3365,7 +3693,7 @@ def _beads_files(t: _BeadsTarget, *, shared: bool) -> None:
     beads = t.path / ".beads"
     beads.mkdir(mode=0o700, exist_ok=True)
     cfgtext = f'issue-prefix: "{t.prefix}"\nsync:\n    remote: "{t.remote}"\n'
-    meta: dict[str, Any] = {"database": "dolt", "backend": "dolt"}
+    meta: dict[str, object] = {"database": "dolt", "backend": "dolt"}
     if shared:
         cfgtext += f"dolt:\n    shared-server: true\n    port: {t.port}\n    database: {t.db}\n"
         meta.update(dolt_mode="server", dolt_server_port=t.port, dolt_database=t.db)
@@ -3428,7 +3756,7 @@ def beads_setup(
     cfg: Config,
     r: LocalRepo,
     trailer: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Bring one repo to the canonical beads state, commit and push it.
 
     Gives it a database when the shared server has none, repairs identity, prefix and mode
@@ -3479,7 +3807,9 @@ def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
 
     def project_id() -> str | None:
         try:
-            return json.loads(meta_f.read_text()).get("project_id")
+            meta: object = json.loads(meta_f.read_text())
+            pid: object = meta.get("project_id") if isinstance(meta, dict) else None
+            return pid if isinstance(pid, str) else None
         except OSError, ValueError:
             return None
 
@@ -3509,7 +3839,7 @@ def _beads_commit(
     path: Path,
     steps: list[str],
     trailer: str | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Commit the repo's beads config files and `.gitignore` on the default branch, and push.
 
     A failed git step propagates as the GitFailedError that `must` raises.
@@ -3520,7 +3850,7 @@ def _beads_commit(
     """
     paths = [p for p in (*BEADS_TRACKED, ".gitignore") if (path / p).is_file()]
     must(git(path, "add", "-f", "--", *paths))
-    res: dict[str, Any] = {
+    res: dict[str, object] = {
         "repo": name,
         "steps": steps,
         "committed": False,
@@ -3612,7 +3942,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     findings = beads_setup_findings(st)
     if args.check:
-        data: dict[str, Any] = {
+        data: dict[str, object] = {
             "findings": [f.as_dict() for f in findings],
             "open": len(findings),
         }
@@ -3638,7 +3968,8 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
         args,
         data,
         lambda: "\n".join(
-            f"{x['repo']}: " + (x.get("error") or ("would set up" if x.get("dry_run") else "set up")) for x in results
+            f"{x['repo']}: " + str(x.get("error") or ("would set up" if x.get("dry_run") else "set up"))
+            for x in results
         ),
     )
     return 1 if data["open"] else 0
@@ -3692,14 +4023,14 @@ def _beads_setup_run(
     cfg: Config,
     st: State,
     names: list[str],
-) -> tuple[list[dict[str, Any]], list[str]]:
+) -> tuple[list[dict[str, object]], list[str]]:
     """Set up beads in each named repo, then add the set-up repos to the fleet list in one write.
 
     Returns:
         (one result per repo, plus one for a failed fleet list write; changelog lines).
 
     """
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, object]] = []
     log: list[str] = []
     fleet_adds: list[Path] = []
     for n in names:
@@ -3716,7 +4047,7 @@ def _beads_setup_run(
         results.append(res)
         if "error" not in res:
             log.append(
-                f"{n}: beads set up ({'; '.join(res['steps']) or 'already set up'})",
+                f"{n}: beads set up ({'; '.join(_strs(res['steps'], 'steps')) or 'already set up'})",
             )
     if fleet_adds:
         # One write for the whole run: the fleet watcher restarts on each list change.
@@ -3752,14 +4083,17 @@ def _clone_dest(cfg: Config, name: str) -> Path:
     base = name
     if name.startswith("deprecated-"):
         base = name[len("deprecated-") :]
-    tset = cfg.raw.get("templates") or {}
-    kinds = tset.get("kinds") or {}
-    placement = (tset.get("placement") or {}).get(space) or {}
+    tset = _map(cfg.raw.get("templates") or {}, "config templates")
+    kinds = _map(tset.get("kinds") or {}, "templates kinds")
+    placement = _map(_map(tset.get("placement") or {}, "templates placement").get(space) or {}, "placement")
     sub = next(
         (
-            placement[k]
+            str(placement[k])
             for k, v in kinds.items()
-            if k in placement and v.get("name_regex") and re.search(v["name_regex"], base, re.IGNORECASE)
+            if k in placement
+            and isinstance(rx := _map(v or {}, "template kind").get("name_regex"), str)
+            and rx
+            and re.search(rx, base, re.IGNORECASE)
         ),
         "",
     )
@@ -3803,7 +4137,7 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
     name = args.repo
     dest = _clone_dest(cfg, name)
     here = _clone_conflicts(cfg, name)
-    res: dict[str, Any] = {"repo": name, "path": str(dest), "cloned": False}
+    res: dict[str, object] = {"repo": name, "path": str(dest), "cloned": False}
     wrong = [p for p in here if p != dest]
     if wrong:
         msg = f"refusing to clone {name} into {dest}: it already exists at " + ", ".join(str(p) for p in wrong)
@@ -3844,7 +4178,7 @@ def rename(
     st: State,
     old: str,
     new: str,
-    extra_fields: dict[str, Any] | None = None,
+    extra_fields: dict[str, object] | None = None,
     dry_run: bool = False,
 ) -> list[str]:
     """Rename a repo on GitHub and on disk together, repoint origin, and rename its manifest entry.
@@ -3883,10 +4217,10 @@ class _RenamePlan:
     """What a rename will do: the clone and GitHub repo it moves, and the entry it writes."""
 
     r: LocalRepo | None
-    rec: dict[str, Any] | None
+    rec: GhRepo | None
     new_path: Path | None
     url: str
-    fields: dict[str, Any]
+    fields: dict[str, object]
     active: bool
     steps: list[str]
 
@@ -3895,7 +4229,7 @@ def _rename_plan(
     st: State,
     old: str,
     new: str,
-    extra_fields: dict[str, Any] | None,
+    extra_fields: dict[str, object] | None,
 ) -> _RenamePlan:
     """Check that a rename can proceed and plan its steps.
 
@@ -3925,7 +4259,7 @@ def _rename_plan(
     if rec and rec["name"] != new:
         steps.append(f"rename the GitHub repo {cfg.owner}/{rec['name']} to {new}")
     new_path = _rename_local_steps(cfg, r, new, url, steps) if r else None
-    entry = man.entries().get(old) or man.entries().get(new) or {}
+    entry = man.entries().get(old) or man.entries().get(new) or CommentedMap()
     fields, lc = _rename_fields(cfg, new, entry, extra_fields)
     steps.append(
         f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items()),
@@ -3973,9 +4307,9 @@ def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: li
 def _rename_fields(
     cfg: Config,
     new: str,
-    entry: dict[str, Any],
-    extra_fields: dict[str, Any] | None,
-) -> tuple[dict[str, Any], str]:
+    entry: dict[str, object],
+    extra_fields: dict[str, object] | None,
+) -> tuple[dict[str, object], str]:
     """Work out the renamed entry's fields and lifecycle.
 
     Returns:
@@ -4050,7 +4384,7 @@ def _run_rename(
     st: State,
     name: str,
     new: str,
-    after: Callable[[dict[str, Any]], bool] | None = None,
+    after: Callable[[dict[str, object], list[str]], bool] | None = None,
 ) -> int:
     """Run a rename for a command and report it.
 
@@ -4061,21 +4395,22 @@ def _run_rename(
         0 on success, 1 when a step failed part way.
 
     """
-    res: dict[str, Any] = {"repo": name, "new_name": new, "dry_run": args.dry_run}
+    res: dict[str, object] = {"repo": name, "new_name": new, "dry_run": args.dry_run}
     try:
-        res["steps"] = rename(st, name, new, dry_run=args.dry_run)
+        steps: list[str] = rename(st, name, new, dry_run=args.dry_run)
+        res["steps"] = steps
     except GitFailedError as exc:
         res["error"] = str(exc)
         emit(args, res, lambda: f"{name}: stopped: {res['error']}")
         return 1
-    ok = after(res) if after else True
+    ok = after(res, steps) if after else True
     finish_records(st.cfg, res)
     head = f"dry run: rename {name} to {new}" if args.dry_run else f"{name}: renamed to {new}"
     emit(
         args,
         res,
         lambda: "\n".join(
-            [head, *[f"  {s}" for s in res["steps"]], *_records_line(res)],
+            [head, *[f"  {s}" for s in steps], *_records_line(res)],
         ),
     )
     return 0 if ok else 1
@@ -4101,13 +4436,16 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
 DEPRECATED_PR_COMMENT = "Closed: this repository is deprecated."
 
 
-def open_prs(cfg: Config, repo: str) -> list[dict[str, Any]]:
+def open_prs(cfg: Config, repo: str) -> list[PullRequest]:
     """List a GitHub repo's open pull requests.
 
     When gh cannot list them, the GitFailedError that `must` raises propagates.
 
     Returns:
         One {number, title, url} per open pull request.
+
+    Raises:
+        PolyrepoError: when gh's answer is not a list of mappings.
 
     """
     cp = run(
@@ -4118,7 +4456,11 @@ def open_prs(cfg: Config, repo: str) -> list[dict[str, Any]]:
         timeout=120,
     )  # fmt: skip
     must(cp)
-    return json.loads(cp.stdout or "[]")
+    prs: object = json.loads(cp.stdout or "[]")
+    if not isinstance(prs, list):
+        msg = f"gh pr list for {cfg.owner}/{repo} did not return a list"
+        raise PolyrepoError(msg)
+    return [parse_pull_request(p, repo, f"gh pr list for {cfg.owner}/{repo}") for p in prs]
 
 
 def close_pr(cfg: Config, repo: str, number: int) -> str | None:
@@ -4138,7 +4480,7 @@ def close_pr(cfg: Config, repo: str, number: int) -> str | None:
     return None if cp.returncode == 0 else _last_line(cp)
 
 
-def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) -> bool:
+def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, object], steps: list[str]) -> bool:
     """Close every open pull request of a repo, recording each in res["closed_prs"].
 
     Returns:
@@ -4148,26 +4490,32 @@ def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) 
     try:
         prs = open_prs(cfg, repo)
     except (GitFailedError, json.JSONDecodeError) as exc:
-        res["pr_error"] = f"could not list open pull requests: {exc}"
-        res["steps"].append(f"open pull requests NOT closed: {res['pr_error']}")
+        pr_error = f"could not list open pull requests: {exc}"
+        res["pr_error"] = pr_error
+        steps.append(f"open pull requests NOT closed: {pr_error}")
         return False
     ok = True
+    closed: list[dict[str, object]] = []
     for pr in prs:
-        pr["status"] = "planned" if dry_run else "closed"
-        if not dry_run and (err := close_pr(cfg, repo, pr["number"])):
-            pr["status"], pr["error"], ok = "failed", err, False
-        verb = {"planned": "close", "closed": "closed", "failed": "FAILED to close"}
-        res["steps"].append(
-            f"{verb[pr['status']]} pull request #{pr['number']} {pr['title']}"
-            + (f": {pr['error']}" if pr.get("error") else ""),
+        status: PrCloseStatus = "planned" if dry_run else "closed"
+        error: str | None = None
+        if not dry_run and (err := close_pr(cfg, repo, pr.number)):
+            status, error, ok = "failed", err, False
+        verb: dict[PrCloseStatus, str] = {"planned": "close", "closed": "closed", "failed": "FAILED to close"}
+        steps.append(
+            f"{verb[status]} pull request #{pr.number} {pr.title}" + (f": {error}" if error else ""),
         )
+        row: dict[str, object] = {"number": pr.number, "title": pr.title, "url": pr.url, "status": status}
+        if error:
+            row["error"] = error
+        closed.append(row)
     if not prs:
-        res["steps"].append("no open pull requests to close")
-    res["closed_prs"] = prs
+        steps.append("no open pull requests to close")
+    res["closed_prs"] = closed
     return ok
 
 
-def _worktrees(repo: Path) -> list[dict[str, Any]]:
+def _worktrees(repo: Path) -> list[Worktree]:
     """List a clone's linked worktrees (not its main one).
 
     When git cannot list them, the GitFailedError that `must` raises propagates.
@@ -4178,7 +4526,7 @@ def _worktrees(repo: Path) -> list[dict[str, Any]]:
     """
     cp = git(repo, "worktree", "list", "--porcelain")
     must(cp)
-    out: list[dict[str, Any]] = []
+    out: list[Worktree] = []
     for block in cp.stdout.strip().split("\n\n")[1:]:
         lines = block.splitlines()
         path = next(
@@ -4187,11 +4535,11 @@ def _worktrees(repo: Path) -> list[dict[str, Any]]:
         )
         if path:
             out.append(
-                {
-                    "path": Path(path),
-                    "locked": any(ln.startswith("locked") for ln in lines),
-                    "prunable": any(ln.startswith("prunable") for ln in lines),
-                },
+                Worktree(
+                    path=Path(path),
+                    locked=any(ln.startswith("locked") for ln in lines),
+                    prunable=any(ln.startswith("prunable") for ln in lines),
+                ),
             )
     return out
 
@@ -4213,7 +4561,7 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
         wts = _worktrees(repo)
     except GitFailedError as exc:
         return [f"cannot list worktrees: {exc}"], []
-    trees = [repo] + [w["path"] for w in wts if not w["prunable"]]
+    trees = [repo] + [w.path for w in wts if not w.prunable]
     for t in trees:
         reasons.extend(_tree_local_work(t))
     cp = git(repo, "stash", "list")
@@ -4222,7 +4570,7 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
     elif stashes := [ln for ln in cp.stdout.splitlines() if ln.strip()]:
         reasons.append(f"stash entries: {len(stashes)}")
     reasons.extend(_branch_local_work(repo))
-    removable = [] if reasons else [w["path"] for w in wts]
+    removable = [] if reasons else [w.path for w in wts]
     return reasons, removable
 
 
@@ -4283,18 +4631,18 @@ def delete_clone(
     clone: Path,
     final: Path,
     dry_run: bool,
-    res: dict[str, Any],
-) -> bool:
+    res: dict[str, object],
+) -> tuple[bool, list[str]]:
     """Delete a deprecated repo's local clone and its linked worktrees, when no work exists only in them.
 
     Otherwise the clone is left and the path to delete by hand is named.
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must start with `deprecated-`. Records the outcome in res["clone"] and res["steps"].
+    must start with `deprecated-`. Records the outcome in res["clone"].
 
     Returns:
-        False when the clone was left in place or could not be deleted.
+        False when the clone was left in place or could not be deleted, and the steps taken or planned.
 
     """
     path, final = clone.resolve(), final.resolve()
@@ -4305,26 +4653,27 @@ def delete_clone(
         if not final.name.startswith("deprecated-")
         else None
     )
+    steps: list[str] = []
     reasons = [bad] if bad else []
     worktrees: list[Path] = []
     if not bad:
         reasons, worktrees = clone_local_work(path)
     if reasons:
         res["clone"] = {"path": str(final), "status": "refused", "reasons": reasons}
-        res["steps"].append(
+        steps.append(
             f"local clone NOT {'to be ' if dry_run else ''}deleted: {'; '.join(reasons)}; "
             f"once resolved, delete it by hand: {final}",
         )
-        return False
+        return False, steps
     if dry_run:
         res["clone"] = {
             "path": str(final),
             "status": "planned",
             "worktrees": [str(w) for w in worktrees],
         }
-        res["steps"].extend(f"remove linked worktree {w}" for w in worktrees)
-        res["steps"].append(f"delete the local clone {final}")
-        return True
+        steps.extend(f"remove linked worktree {w}" for w in worktrees)
+        steps.append(f"delete the local clone {final}")
+        return True, steps
     done: list[str] = []
     try:
         for w in worktrees:
@@ -4334,20 +4683,20 @@ def delete_clone(
         shutil.rmtree(path)
     except (GitFailedError, OSError) as exc:
         res["clone"] = {"path": str(path), "status": "failed", "error": str(exc)}
-        res["steps"].extend(done)
-        res["steps"].append(
+        steps.extend(done)
+        steps.append(
             f"local clone NOT deleted: {exc}; delete it by hand: {path}",
         )
-        return False
+        return False, steps
     done.append(f"deleted the local clone {path}")
     res["clone"] = {
         "path": str(path),
         "status": "deleted",
         "worktrees": [str(w) for w in worktrees],
     }
-    res["steps"].extend(done)
+    steps.extend(done)
     append_changelog(cfg, f"polyrepo deprecate {path.name}: local clone", done)
-    return True
+    return True, steps
 
 
 def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
@@ -4377,14 +4726,16 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     new = deprecated_name(name)
     r = st.local.get(name) or st.local.get(new)
 
-    def after(res: dict[str, Any]) -> bool:
-        ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res)
+    def after(res: dict[str, object], steps: list[str]) -> bool:
+        ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res, steps)
         if r is None:
-            res["steps"].append("no local clone to delete")
+            steps.append("no local clone to delete")
             return ok
         final = r.path.with_name(new)
         clone = r.path if args.dry_run else final
-        return delete_clone(cfg, clone, final, args.dry_run, res) and ok
+        deleted, clone_steps = delete_clone(cfg, clone, final, args.dry_run, res)
+        steps.extend(clone_steps)
+        return deleted and ok
 
     return _run_rename(args, st, name, new, after=after)
 
@@ -4461,8 +4812,8 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
         PolyrepoError: when a block has no source or its source file is missing.
 
     """
-    sc = cfg.raw.get("agents_sync") or {}
-    specs = sc.get("blocks") or []
+    sc = _map(cfg.raw.get("agents_sync") or {}, "config agents_sync")
+    specs = [_map(s, "agents_sync block") for s in _seq(sc.get("blocks") or [], "agents_sync blocks")]
     out = []
     for spec in specs:
         marker = str(spec.get("marker") or "")
@@ -4482,7 +4833,7 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
             AgentsBlock(
                 marker,
                 f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->",
-                frozenset(spec.get("exclude") or []),
+                frozenset(_strs(spec.get("exclude") or [], "agents_sync exclude")),
             ),
         )
     if not out:
@@ -4501,6 +4852,20 @@ def _blocks_for(blocks: list[AgentsBlock], name: str) -> list[AgentsBlock]:
     return [b for b in blocks if name not in b.exclude]
 
 
+def _literal(text: str) -> Callable[[re.Match[str]], str]:
+    """Build a re.sub replacement that inserts text as written, with no backslash expansion.
+
+    Returns:
+        A replacement function that ignores its match and returns text.
+
+    """
+
+    def replace(_m: re.Match[str]) -> str:
+        return text
+
+    return replace
+
+
 def _with_blocks(text: str | None, blocks: list[AgentsBlock], name: str) -> str:
     """Put each block into AGENTS.md text: replace its marked copy, or append one.
 
@@ -4511,10 +4876,7 @@ def _with_blocks(text: str | None, blocks: list[AgentsBlock], name: str) -> str:
     out = f"# {name}\n" if text is None else text
     for b in blocks:
         rx = b.pattern()
-        if rx.search(out):
-            out = rx.sub(lambda _m, t=b.text: t, out, count=1)
-        else:
-            out = out.rstrip("\n") + "\n\n" + b.text + "\n"
+        out = rx.sub(_literal(b.text), out, count=1) if rx.search(out) else out.rstrip("\n") + "\n\n" + b.text + "\n"
     return out
 
 
@@ -4555,7 +4917,7 @@ def _sync_one(
     r: LocalRepo,
     blocks: list[AgentsBlock],
     write: bool,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Bring one repo's AGENTS.md blocks current, committing and pushing when write is set.
 
     Returns:
@@ -4565,7 +4927,7 @@ def _sync_one(
     f = r.path / "AGENTS.md"
     cur = f.read_text() if f.is_file() else None
     want = _with_blocks(cur, blocks, r.name)
-    res: dict[str, Any] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
+    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
     if res["state"] == "current" or not write:
         return res
     b = cfg.default_branch
@@ -4656,7 +5018,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         bad = [x for x in results if x["state"] != "current"]
     counts: dict[str, int] = {}
     for x in results:
-        counts[x["state"]] = counts.get(x["state"], 0) + 1
+        counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
 
     def text() -> str:
         lines = [
@@ -4665,8 +5027,8 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         for x in results:
             if x["state"] == "current":
                 continue
-            st_ = x.get("status", "would update" if args.dry_run else "")
-            detail = x.get("detail", "")
+            st_ = str(x.get("status", "would update" if args.dry_run else ""))
+            detail = str(x.get("detail", ""))
             lines.append(
                 f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}",
             )
@@ -4679,20 +5041,20 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
 # templates-check ------------------------------------------------------------------------------
 
 
-def _read_yaml(f: Path) -> dict[str, Any]:
+def _read_yaml(f: Path) -> dict[str, object]:
     if not f.is_file():
         return {}
     try:
         d = YAML(typ="safe").load(f.read_text(encoding="utf-8"))
     except OSError, YAMLError:
         return {}
-    return d if isinstance(d, dict) else {}
+    return _map(d, str(f)) if isinstance(d, dict) else {}
 
 
 def _template_for(
     r: LocalRepo,
-    kinds: dict[str, Any],
-) -> tuple[str | None, str | None, dict[str, Any]]:
+    kinds: Mapping[str, object],
+) -> tuple[str | None, str | None, dict[str, object]]:
     """Decide which template a repo was built from: Copier answers, then repo.status.yaml, then its name.
 
     Returns:
@@ -4705,11 +5067,11 @@ def _template_for(
         return Path(src).name, "copier-answers", answers
     stype = _read_yaml(r.path / "repo.status.yaml").get("service_type")
     for t, k in kinds.items():
-        if stype and stype in ((k or {}).get("status_types") or []):
+        if stype and stype in _seq(_map(k or {}, "template kind").get("status_types") or [], "status_types"):
             return t, "repo.status.yaml", answers
     for t, k in kinds.items():
-        rx = (k or {}).get("name_regex")
-        if rx and re.search(rx, r.name):
+        rx = _map(k or {}, "template kind").get("name_regex")
+        if isinstance(rx, str) and rx and re.search(rx, r.name):
             return t, "name", answers
     return None, None, answers
 
@@ -4745,12 +5107,12 @@ def _compare_to_template(
     r: LocalRepo,
     tdir: Path,
     files: dict[str, str],
-    answers: dict[str, Any],
-) -> dict[str, Any]:
+    answers: dict[str, object],
+) -> TemplateComparison:
     """Render the template as this repo would have been rendered and compare file by file.
 
     Returns:
-        {repo, files: {path: (state, repo commit time)}} or {repo, error}.
+        The repo, its files' (state, repo commit time) by path, and the render error if any.
 
     """
     data = {k: str(v) for k, v in answers.items() if not k.startswith("_")} or {
@@ -4762,7 +5124,7 @@ def _compare_to_template(
         rendered = Path(tmp) / r.name
         cp = _copier_render(tdir, rendered, data)
         if cp.returncode != 0:
-            return {"repo": r.name, "error": _last_line(cp)}
+            return TemplateComparison(repo=r.name, files={}, error=_last_line(cp))
         for rel in files:
             t, mine = rendered / rel, r.path / rel
             if not t.is_file():
@@ -4773,15 +5135,15 @@ def _compare_to_template(
                 out[rel] = ("same", None)
             else:
                 out[rel] = ("differs", _commit_time(r.path, rel))
-    return {"repo": r.name, "files": out}
+    return TemplateComparison(repo=r.name, files=out, error=None)
 
 
 def _check_template(
     cfg: Config,
     tdir: Path,
-    members: list[tuple[LocalRepo, str, dict[str, Any]]],
+    members: list[tuple[LocalRepo, str, dict[str, object]]],
     ignore: list[str],
-) -> dict[str, Any]:
+) -> TemplateReport:
     files = _template_files(tdir, ignore)
     now = int(time.time())
     tdates = {rel: _commit_time(tdir, src) or now for rel, src in files.items()}
@@ -4792,33 +5154,29 @@ def _check_template(
                 members,
             ),
         )
-    rows = []
+    rows: list[TemplateFileRow] = []
     for rel in files:
-        row: dict[str, Any] = {
-            "file": rel,
-            "same": 0,
-            "missing": [],
-            "repo_newer": [],
-            "template_newer": [],
-        }
+        row = TemplateFileRow(file=rel, same=0, missing=[], repo_newer=[], template_newer=[])
         for c in compared:
-            state, when = (c.get("files") or {}).get(rel, (None, None))
+            state, when = c.files.get(rel, (None, None))
             if state == "same":
                 row["same"] += 1
             elif state == "missing":
-                row["missing"].append(c["repo"])
+                row["missing"].append(c.repo)
             elif state == "differs":
-                key = "repo_newer" if when and when > tdates[rel] else "template_newer"
-                row[key].append(c["repo"])
+                if when and when > tdates[rel]:
+                    row["repo_newer"].append(c.repo)
+                else:
+                    row["template_newer"].append(c.repo)
         if row["missing"] or row["repo_newer"] or row["template_newer"]:
             rows.append(row)
-    return {
-        "template": tdir.name,
-        "repos": [{"repo": m[0].name, "matched_by": m[1]} for m in members],
-        "render_errors": [{"repo": c["repo"], "error": c["error"]} for c in compared if "error" in c],
-        "files": rows,
-        "lags": any(row["repo_newer"] for row in rows),
-    }
+    return TemplateReport(
+        template=tdir.name,
+        repos=[TemplateMember(repo=m[0].name, matched_by=m[1]) for m in members],
+        render_errors=[RenderError(repo=c.repo, error=c.error) for c in compared if c.error is not None],
+        files=rows,
+        lags=any(row["repo_newer"] for row in rows),
+    )
 
 
 def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
@@ -4835,9 +5193,13 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     if not troot.is_dir():
         msg = f"templates folder {troot} not found"
         raise PolyrepoError(msg)
-    kinds = {t: k for t, k in (tset.get("kinds") or {}).items() if (troot / t / "copier.yml").is_file()}
-    ignore = list(tset.get("ignore") or [])
-    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, Any]]]] = {t: [] for t in kinds}
+    kinds = {
+        t: k
+        for t, k in _map(tset.get("kinds") or {}, "templates kinds").items()
+        if (troot / t / "copier.yml").is_file()
+    }
+    ignore = _strs(tset.get("ignore") or [], "templates ignore")
+    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, object]]]] = {t: [] for t in kinds}
     untemplated: dict[str, list[str]] = {}
     for r in _local_repos(cfg):
         if r.name.startswith("deprecated-"):
@@ -4852,17 +5214,18 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
         if d.is_dir() and (d / "copier.yml").is_file() and d.name not in kinds:
             by_template[d.name] = []
     results = [_check_template(cfg, troot / t, members, ignore) for t, members in sorted(by_template.items())]
-    no_template = [{"kind": k, "repos": sorted(v)} for k, v in sorted(untemplated.items())]
-    data = {
+    no_template = [KindWithoutTemplate(kind=k, repos=sorted(v)) for k, v in sorted(untemplated.items())]
+    lagging: list[str] = [x["template"] for x in results if x["lags"]]
+    data: dict[str, object] = {
         "templates": results,
         "kinds_without_template": no_template,
-        "lagging_templates": [x["template"] for x in results if x["lags"]],
+        "lagging_templates": lagging,
     }
     emit(args, data, lambda: _templates_text(results, no_template))
-    return 1 if data["lagging_templates"] or no_template else 0
+    return 1 if lagging or no_template else 0
 
 
-def _templates_text(results: list[dict[str, Any]], no_template: list[dict[str, Any]]) -> str:
+def _templates_text(results: list[TemplateReport], no_template: list[KindWithoutTemplate]) -> str:
     """Render the templates-check report as text.
 
     Returns:
@@ -4886,7 +5249,7 @@ def _templates_text(results: list[dict[str, Any]], no_template: list[dict[str, A
     return "\n".join(lines)
 
 
-def _template_file_line(row: dict[str, Any]) -> str:
+def _template_file_line(row: TemplateFileRow) -> str:
     """Render one template file's comparison with its repos.
 
     Returns:
@@ -4983,7 +5346,7 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
                 "polyrepo beads-fleet --fix",
                 [f"beads fleet list (repos.additional): {c}" for c in changes],
             )
-    data: dict[str, Any] = {
+    data: dict[str, object] = {
         "file": str(fleet_file(cfg)),
         "listed": len(fleet_paths(cfg)),
         "findings": [f.as_dict() for f in findings],
@@ -5004,7 +5367,7 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["open"] else 0
 
 
-def deprecated_open_prs(cfg: Config) -> list[dict[str, Any]]:
+def deprecated_open_prs(cfg: Config) -> list[PullRequest]:
     """Find every open pull request in a deprecated- repo of the owner on GitHub.
 
     Returns:
@@ -5024,16 +5387,16 @@ def deprecated_open_prs(cfg: Config) -> list[dict[str, Any]]:
     if cp.returncode != 0:
         msg = f"gh search prs failed: {_last_line(cp)}"
         raise PolyrepoError(msg)
-    return [
-        {
-            "repo": pr["repository"]["name"],
-            "number": pr["number"],
-            "title": pr["title"],
-            "url": pr["url"],
-        }
-        for pr in json.loads(cp.stdout or "[]")
-        if pr["repository"]["name"].startswith("deprecated-")
-    ]
+    parsed: object = json.loads(cp.stdout or "[]")
+    prs: list[PullRequest] = []
+    for item in _seq(parsed, "gh search prs output"):
+        repo = _str(
+            _map(_map(item, "gh search prs entry").get("repository"), "gh search prs repository").get("name"),
+            "repository name",
+        )
+        if repo.startswith("deprecated-"):
+            prs.append(parse_pull_request(item, repo, "gh search prs"))
+    return prs
 
 
 def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
@@ -5047,17 +5410,17 @@ def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
     findings = [
         Finding(
             "deprecated-repo-open-pr",
-            pr["repo"],
-            f"#{pr['number']} {pr['title']} ({pr['url']}) is open in a deprecated repo",
-            fix=f"close #{pr['number']} with the comment {DEPRECATED_PR_COMMENT!r}",
+            pr.repo,
+            f"#{pr.number} {pr.title} ({pr.url}) is open in a deprecated repo",
+            fix=f"close #{pr.number} with the comment {DEPRECATED_PR_COMMENT!r}",
         )
         for pr in prs
     ]
     if args.fix:
         for pr, f in zip(prs, findings, strict=True):
-            err = close_pr(cfg, pr["repo"], pr["number"])
+            err = close_pr(cfg, pr.repo, pr.number)
             f.status, f.error = ("failed", err) if err else ("fixed", None)
-    data: dict[str, Any] = {
+    data: dict[str, object] = {
         "findings": [f.as_dict() for f in findings],
         "open": sum(f.status in {"open", "failed"} for f in findings),
         "fixed": sum(f.status == "fixed" for f in findings),
@@ -5098,11 +5461,11 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
 }  # fmt: skip
 
 
-def _finding(check: str, subject: str, kind: str, detail: str) -> dict[str, Any]:
-    return {"check": check, "subject": subject, "kind": kind, "detail": detail}
+def _finding(check: str, subject: str, kind: str, detail: str) -> DoctorFinding:
+    return DoctorFinding(check=check, subject=subject, kind=kind, detail=detail)
 
 
-def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
+def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, object]]:
     """Run one of the tool's own checks or repairs as a separate process and read its JSON.
 
     Returns:
@@ -5110,18 +5473,24 @@ def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
 
     """
     cp = run([*argv, *extra], timeout=900)
+    data: dict[str, object]
     try:
-        data = json.loads(cp.stdout) if cp.stdout.strip() else {}
+        parsed: object = json.loads(cp.stdout) if cp.stdout.strip() else {}
     except json.JSONDecodeError:
+        parsed = None
         data = {"error": f"unreadable output: {cp.stdout[:200]}"}
-    if not isinstance(data, dict):
-        data = {"error": f"unexpected output: {cp.stdout[:200]}"}
+    else:
+        data = (
+            _map(parsed, "check output")
+            if isinstance(parsed, dict)
+            else {"error": f"unexpected output: {cp.stdout[:200]}"}
+        )
     if cp.returncode == EXIT_USAGE and "error" not in data:
         data["error"] = _last_line(cp) or "exited 2"
     return cp.returncode, data
 
 
-def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
+def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]:
     """Turn one check's JSON output into doctor findings.
 
     Returns:
@@ -5137,24 +5506,28 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
         "deprecated-prs",
         "environment",
     }:
+        rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
         return [
-            _finding(check, f["repo"], f["kind"], f["detail"])
-            for f in data.get("findings") or []
+            _finding(check, str(f["repo"]), str(f["kind"]), str(f["detail"]))
+            for f in rows
             if f.get("status") in {"open", "failed", "planned"}
         ]
     if check == "agents-sync":
         return [
             _finding(
                 check,
-                r["repo"],
-                r["state"],
-                r.get("detail") or "shared AGENTS.md block not current",
+                str(r["repo"]),
+                str(r["state"]),
+                str(r.get("detail") or "shared AGENTS.md block not current"),
             )
-            for r in data.get("repos") or []
-            if isinstance(r, dict) and r.get("state") != "current"
+            for r in (_map(x, "agents-sync repo") for x in _seq(data.get("repos") or [], "repos"))
+            if r.get("state") != "current"
         ]
     if check == "beads":
-        return [_finding(check, a["repo"], "beads-anomaly", a["detail"]) for a in data.get("anomalies") or []]
+        return [
+            _finding(check, str(a["repo"]), "beads-anomaly", str(a["detail"]))
+            for a in (_map(x, "beads anomaly") for x in _seq(data.get("anomalies") or [], "anomalies"))
+        ]
     return []
 
 
@@ -5163,7 +5536,7 @@ def _resolve_location(cfg: Config, loc: str) -> Path:
     return target if target.is_absolute() else cfg.file.parent.parent / target
 
 
-def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
+def _governance_findings(cfg: Config) -> list[DoctorFinding]:
     """Check every governance entry's location and invoke command.
 
     Its location must exist, and a script or tool's `invoke` must run (the part before its
@@ -5214,7 +5587,7 @@ def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
     return out
 
 
-def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
+def _knowledge_findings(cfg: Config) -> list[DoctorFinding]:
     """Check that every location or pointer in the knowledge store resolves.
 
     A `location` or `pointer` entry names what it points at in `resolves` (one path or a
@@ -5255,7 +5628,7 @@ def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
     return out
 
 
-def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
+def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
     """Check the repository-naming document against the config's naming patterns.
 
     Every naming pattern has a section in the document (its heading's first word is the
@@ -5267,7 +5640,7 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
         One finding per disagreement.
 
     """
-    loc = ((cfg.raw.get("naming") or {}).get("document")) or ""
+    loc = _map(cfg.raw.get("naming") or {}, "config naming").get("document") or ""
     if not loc:
         return [
             _finding(
@@ -5305,7 +5678,7 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
                     f"{path.name} says {a} becomes {b}; the tool makes it {deprecated_name(a)}",
                 ),
             )
-    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
+    days = cfg.archive_after_days()
     out.extend(
         _finding(
             "naming-doc",
@@ -5319,7 +5692,7 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
     return out
 
 
-def _naming_example_findings(cfg: Config, sections: dict[str, str], doc_name: str) -> list[dict[str, Any]]:
+def _naming_example_findings(cfg: Config, sections: dict[str, str], doc_name: str) -> list[DoctorFinding]:
     """Check that every example in a naming document section matches that section's pattern.
 
     Returns:
@@ -5360,7 +5733,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """
     t0 = time.time()
     extra = ["--config", str(cfg.file)] + (["--no-cache"] if args.no_cache else [])
-    repairs: dict[str, dict[str, Any]] = {}
+    repairs: dict[str, dict[str, object]] = {}
     if args.fix:
         for name, argv in DOCTOR_REPAIRS.items():
             rc, data = _run_json(argv, extra)
@@ -5371,13 +5744,13 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
                 "error": data.get("error"),
             }
 
-    def one(item: tuple[str, list[str]]) -> tuple[str, int, dict[str, Any]]:
+    def one(item: tuple[str, list[str]]) -> tuple[str, int, dict[str, object]]:
         name, argv = item
         return (name, *_run_json(argv, [] if name == "beads" else extra))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(DOCTOR_CHECKS)) as ex:
         results = list(ex.map(one, DOCTOR_CHECKS.items()))
-    findings: list[dict[str, Any]] = []
+    findings: list[DoctorFinding] = []
     exits: dict[str, int] = {}
     for name, rc, data in results:
         exits[name] = rc
@@ -5388,7 +5761,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     counts: dict[str, int] = dict.fromkeys([*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc"], 0)
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
-    data = {
+    report: dict[str, object] = {
         "repairs": repairs,
         "findings": findings,
         "counts": counts,
@@ -5398,7 +5771,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     }
 
     def text() -> str:
-        lines = [f"{len(findings)} findings in {data['elapsed_s']}s"]
+        lines = [f"{len(findings)} findings in {report['elapsed_s']}s"]
         lines.extend(
             f"  repair {n}: exit {r['exit']}"
             + (f", {r['fixed']} fixed" if r.get("fixed") is not None else "")
@@ -5409,7 +5782,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
         lines.extend(f"  [{f['check']}/{f['kind']}] {f['subject']}: {f['detail']}" for f in findings)
         return "\n".join(lines)
 
-    emit(args, data, text)
+    emit(args, report, text)
     return 1 if findings else 0
 
 
@@ -5426,7 +5799,7 @@ def cmd_commit(args: argparse.Namespace, cfg: Config) -> int:
         res,
         lambda: (
             f"steward files {res['status']}"
-            + (f": {', '.join(res['files'])}" if res["files"] else "")
+            + (f": {', '.join(_strs(res['files'], 'files'))}" if res["files"] else "")
             + (f"; {res['error']}" if res.get("error") else "")
         ),
     )
