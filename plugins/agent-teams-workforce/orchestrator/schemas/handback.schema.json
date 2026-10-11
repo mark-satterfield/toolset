@@ -2,7 +2,8 @@
   "type": "object",
   "properties": {
     "version": {
-      "const": 1
+      "const": 1,
+      "type": "integer"
     },
     "ok": {
       "type": "boolean"
@@ -153,7 +154,7 @@
         "phases": {
           "type": "object",
           "patternProperties": {
-            "^(trd|spec:[a-zA-Z0-9][a-zA-Z0-9_-]*)$": {
+            "^(trd|spec:[a-zA-Z0-9._-]+)$": {
               "enum": [
                 "passed",
                 "reused"

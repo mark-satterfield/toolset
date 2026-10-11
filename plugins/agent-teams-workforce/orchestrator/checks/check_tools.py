@@ -94,7 +94,7 @@ class ToolChecks(unittest.TestCase):
 
                 def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
                     require(kwargs["timeout"] == int(values["ATW_BD_TIMEOUT"]), "tool boundary check failed")
-                    require(central.is_dir(), "tool boundary check failed")
+                    require(not central.exists(), "Read-only bd calls must not acquire the central writer lock")
                     return subprocess.CompletedProcess(
                         argv,
                         1,
@@ -178,7 +178,7 @@ class ToolChecks(unittest.TestCase):
                 if not stored:
                     stored["elab_key"] = "created"
                     stage = "write"
-                raise StepError(stage, "bd-timeout")
+                    raise StepError(stage, "bd-timeout")
                 return stored["elab_key"]
 
             with patch(

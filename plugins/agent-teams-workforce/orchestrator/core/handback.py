@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import traceback
 from collections.abc import Mapping
 from pathlib import Path
@@ -138,6 +139,21 @@ def schema_path() -> Path:
     return Path(__file__).resolve().parents[1] / "schemas" / "handback.schema.json"
 
 
+def _finite_json(value: JsonValue, payload: JsonValue, field: str = "handback") -> None:
+    if isinstance(value, float) and not math.isfinite(value):
+        message: str = f"{field}: expected finite JSON number"
+        raise HandbackValidationError(message, payload)
+    if isinstance(value, dict):
+        key: str
+        member: JsonValue
+        for key, member in value.items():
+            _finite_json(member, payload, f"{field}.{key}")
+    elif isinstance(value, list):
+        index: int
+        for index, member in enumerate(value):
+            _finite_json(member, payload, f"{field}.{index}")
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def validate(payload: object, schema: Path | None = None) -> HandbackDocument:
     """Validate the exact wire shape and return its corresponding typed value.
@@ -153,6 +169,11 @@ def validate(payload: object, schema: Path | None = None) -> HandbackDocument:
     if schema is not None and not isinstance(schema, Path):
         argument_error: str = "schema must be a Path or None"
         raise TypeError(argument_error)
+    try:
+        tree: JsonValue = check_type(payload, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    except TypeCheckError as exc:
+        raise HandbackValidationError(str(exc), payload) from exc
+    _finite_json(tree, tree)
     raw_definition: object = json.loads((schema or schema_path()).read_text(encoding="utf-8"))
     definition: dict[str, JsonValue] = check_type(
         raw_definition,
@@ -322,6 +343,15 @@ def failure_for(stage: str, exc: BaseException, *, agent_started: bool, setup: b
     return failure
 
 
+def _original_failure(value: JsonValue) -> JsonValue:
+    try:
+        _finite_json(value, value)
+    except HandbackValidationError:
+        # Non-JSON numbers survive as evidence text, never as numbers in the replacement document.
+        return json.dumps(value)
+    return value
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def rejected(payload: object, exc: BaseException, bead: str, detail: str) -> HandbackDocument:
     """Report a contract defect beside untouched original failure evidence.
@@ -347,7 +377,7 @@ def rejected(payload: object, exc: BaseException, bead: str, detail: str) -> Han
         "cause": "other",
         "repositories": [],
         "classification": "pipeline-code-defect",
-        "originalFailure": raw.get("failure"),
+        "originalFailure": _original_failure(raw.get("failure")),
         "handbackDefect": diagnostic(exc, agent_started=False),
     }
     original_detail: JsonValue = raw.get("detailPath")

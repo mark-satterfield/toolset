@@ -160,16 +160,20 @@ def snap_size(value: float) -> int:
         value: The size the caller judged.
 
     Returns:
-        The rung; 1 for any value at or below 1.
+        The rung; 1 for any finite value at or below 1.
 
     Raises:
         TypeError: An argument violates the declared input contract.
+        ValueError: The size is not finite.
 
     """
     low: int
     high: int
-    if not (isinstance(value, float)):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise TypeError(_ARGUMENT_ERROR)
+    if not -float("inf") < value < float("inf"):
+        message: str = "WSJF size must be finite"
+        raise ValueError(message)
     low, high = 1, 2
     if value <= low:
         return low

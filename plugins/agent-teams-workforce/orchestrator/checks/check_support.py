@@ -1,10 +1,15 @@
 """Explicit failures shared by existing isolated checks."""
 
+from __future__ import annotations
+
 import sys
-from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from typeguard import CollectionCheckStrategy, typechecked
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -26,8 +31,7 @@ def report(message: str) -> None:
 
 
 @contextmanager
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def expected_error[E: Exception](kind: type[E]) -> Iterator[list[E]]:
+def expected_error[E: Exception](kind: type[E]) -> Generator[list[E]]:
     """Capture the specific exception expected by an existing check.
 
     Yields:
@@ -35,8 +39,12 @@ def expected_error[E: Exception](kind: type[E]) -> Iterator[list[E]]:
 
     Raises:
         AssertionError: The operation did not raise its expected exception.
+        TypeError: The expected exception is not an exception class.
 
     """
+    if not isinstance(kind, type) or not issubclass(kind, Exception):
+        message: str = "Expected error must be an Exception subclass"
+        raise TypeError(message)
     captured: list[E] = []
     try:
         yield captured

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from orchestrator.core.tools import CommandResult
@@ -19,6 +19,16 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.flows.architecture_resume import retire_generation
 from orchestrator.flows.architecture_support import Architecture, ArchitectureStep, read
+
+
+class RepositorySummary(TypedDict):
+    """The four repository facts consumed by survey authoring."""
+
+    name: str
+    path: str | None
+    role: str | None
+    lifecycle: str
+
 
 SURVEY_FILES = (
     "survey.json",
@@ -129,30 +139,59 @@ def prepare_survey(flow: Architecture) -> None:
         raise flow.tools.failure(stage, "other", result)
 
 
-def _survey_repositories(flow: Architecture) -> list[dict[str, JsonValue]]:
+def _survey_repositories(flow: Architecture) -> list[RepositorySummary]:
     """Project the inventory response into the saved survey repository fields.
 
     Returns:
         The active repository summaries consumed by survey authoring.
 
     """
-    rows: JsonValue
     inventory: CommandResult = flow.tools.polyrepo(["inventory", "--no-fetch"], stage="survey")
-    value: object = json.loads(inventory.stdout)
-    rows = (
-        value
-        if isinstance(value, list)
-        else json_object(value).get("repositories", json_object(value).get("repos", []))
+    return survey_repositories(inventory.stdout)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def survey_repositories(output: str) -> list[RepositorySummary]:
+    """Project the polyrepo inventory's sole wire shape into survey repository facts.
+
+    Returns:
+        Active repository summaries from the required ``repos`` collection.
+
+    Raises:
+        TypeError: Output is not JSON text or a repository field has the wrong type.
+        ValueError: The inventory is missing its required repository collection.
+
+    """
+    if not isinstance(output, str):
+        message: str = "Repository inventory output must be JSON text"
+        raise TypeError(message)
+    value: dict[str, JsonValue] = json_object(json.loads(output))
+    if "repos" not in value:
+        message = "Repository inventory requires the producer's repos collection"
+        raise ValueError(message)
+    rows: list[dict[str, JsonValue]] = check_type(
+        value["repos"],
+        list[dict[str, JsonValue]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
-    repositories: list[dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None]] = [
-        {key: row.get(key) for key in ("name", "path", "role", "lifecycle")}
-        for row in check_type(
-            rows,
-            list[dict[str, JsonValue]],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        if row.get("lifecycle") != "archived" and "/apps/marketing/" not in str(row.get("path", ""))
-    ]
+    repositories: list[RepositorySummary] = []
+    row: dict[str, JsonValue]
+    for row in rows:
+        fields: dict[str, JsonValue] = {}
+        key: str
+        for key in ("name", "path", "role", "lifecycle"):
+            field: JsonValue = row.get(key)
+            if key not in row or (not isinstance(field, str) and not (field is None and key in {"path", "role"})):
+                message = f"Repository inventory repos[].{key} must match its string/null producer contract"
+                raise TypeError(message)
+            fields[key] = field
+        if fields["lifecycle"] != "archived" and "/apps/marketing/" not in str(fields["path"]):
+            repositories.append({
+                "name": check_type(fields["name"], str),
+                "path": check_type(fields["path"], str | None),
+                "role": check_type(fields["role"], str | None),
+                "lifecycle": check_type(fields["lifecycle"], str),
+            })
     return repositories
 
 
@@ -168,7 +207,7 @@ def produce_survey(flow: Architecture, *, recheck: bool = False) -> None:
         argument_error: str = "produce_survey: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     stage: str = "survey"
-    repositories: list[dict[str, JsonValue]] = _survey_repositories(flow)
+    repositories: list[RepositorySummary] = _survey_repositories(flow)
     repo_file: Path = flow.work / "repositories.json"
     write_json(repo_file, repositories)
     refs: tuple[Path, Path, Path, Path] = (

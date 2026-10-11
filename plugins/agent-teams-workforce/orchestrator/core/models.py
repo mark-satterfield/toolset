@@ -43,22 +43,29 @@ class RetryExhaustedError(StepError):
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
-class DeterministicStep:
+class DeterministicStep[T]:
     """A deterministic action with explicitly declared input and output files."""
 
     stage: str
     inputs: tuple[str, ...]
     outputs: tuple[Path, ...]
-    action: Callable[[], object]
+    action: Callable[[], T]
     reusable: bool = True
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
+        """Validate every constructed field, including nested collection entries.
+
+        Raises:
+            TypeError: The action is not callable.
+
+        """
         check_type(self.stage, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.outputs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.action, Callable[[], object], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        if not callable(self.action):
+            message: str = "Deterministic step action must be callable"
+            raise TypeError(message)
         check_type(self.reusable, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 

@@ -157,7 +157,7 @@ class ArtifactStore:
                 raise
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def execute(self, step: DeterministicStep) -> tuple[str, object]:
+    def execute[T](self, step: DeterministicStep[T]) -> tuple[str, T | None]:
         """Run one deterministic step or reuse its accepted output.
 
         Returns:
@@ -172,7 +172,7 @@ class ArtifactStore:
                 return "reused", None
             self.invalidate(step.outputs)
             with contextlib.redirect_stdout(sys.stderr):
-                result = step.action()
+                result: T = step.action()
             self.accept(step.stage, step.inputs, step.outputs)
         except StepError:
             raise

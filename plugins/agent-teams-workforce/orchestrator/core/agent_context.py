@@ -71,16 +71,37 @@ def definition(plugin: Path, step: AgentStep, model: str) -> dict[str, JsonValue
         A Claude agent definition.
 
     Raises:
-        ValueError: The agent file has no frontmatter.
+        ValueError: Agent frontmatter or its turn limit is invalid.
+        TypeError: Agent metadata does not match the Claude definition contract.
 
     """
-    text = (plugin / "agents" / f"{step.agent}.md").read_text(encoding="utf-8")
+    if not isinstance(plugin, Path) or not isinstance(step, AgentStep) or not isinstance(model, str):
+        argument_error: str = "Agent definition requires a plugin Path, AgentStep, and model string"
+        raise TypeError(argument_error)
+    text: str = (plugin / "agents" / f"{step.agent}.md").read_text(encoding="utf-8")
     if not text.startswith("---\n"):
-        message = f"agent {step.agent} has no frontmatter"
+        message: str = f"agent {step.agent} has no frontmatter"
         raise ValueError(message)
+    front: str
+    body: str
     front, body = text[4:].split("\n---", 1)
-    metadata = json_object(yaml.safe_load(front))
-    result: dict[str, JsonValue] = {key: metadata[key] for key in ("description", "maxTurns") if key in metadata}
+    metadata: dict[str, JsonValue] = json_object(yaml.safe_load(front))
+    result: dict[str, JsonValue] = {}
+    description: JsonValue = metadata.get("description")
+    if not isinstance(description, str):
+        message = f"agent {step.agent} description must be a string"
+        raise TypeError(message)
+    result["description"] = description
+    if "maxTurns" in metadata:
+        turns: JsonValue = metadata["maxTurns"]
+        if not isinstance(turns, int) or isinstance(turns, bool):
+            message = f"agent {step.agent} maxTurns must be an integer"
+            raise TypeError(message)
+        if turns <= 0:
+            message = f"agent {step.agent} maxTurns must be positive"
+            raise ValueError(message)
+        result["maxTurns"] = turns
+    key: str
     for key in ("tools", "disallowedTools", "skills", "mcpServers"):
         if key in metadata:
             result[key] = list(list_field(metadata[key]))
@@ -198,8 +219,17 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, model:
     Returns:
         Explicit arguments selecting the agent, settings and MCP configuration.
 
+    Raises:
+        TypeError: Session inputs do not satisfy the preparation contract.
+
     """
-    agent = definition(plugin, step, model)
+    if not all(isinstance(path, Path) for path in (plugin, config, directory)):
+        message: str = "Session plugin, config, and directory must be Paths"
+        raise TypeError(message)
+    if not isinstance(step, AgentStep) or not isinstance(model, str):
+        message = "Session preparation requires an AgentStep and model string"
+        raise TypeError(message)
+    agent: dict[str, JsonValue] = definition(plugin, step, model)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(directory / "agents.json", {f"atw-{step.agent}": agent})
     write_json(directory / "settings.json", safety_settings(config, plugin))

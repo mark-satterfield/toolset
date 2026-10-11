@@ -179,6 +179,28 @@ class DeploymentTarget:
         check_type(self.profile, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
+def _command_arguments(arguments: Sequence[str], timeout: float) -> None:
+    """Validate argv and a finite timeout consistently before wrapper expansion.
+
+    Raises:
+        TypeError: Arguments are not a sequence of strings or timeout is not numeric.
+        ValueError: The timeout is not positive and finite.
+
+    """
+    if not isinstance(arguments, Sequence) or isinstance(arguments, (str, bytes)):
+        message: str = "Command arguments must be a sequence of strings, not a string"
+        raise TypeError(message)
+    if any(not isinstance(argument, str) for argument in arguments):
+        message = "Every command argument must be a string"
+        raise TypeError(message)
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+        message = "Command timeout must be numeric, not boolean"
+        raise TypeError(message)
+    if not 0 < timeout < float("inf"):
+        message = "Command timeout must be positive and finite"
+        raise ValueError(message)
+
+
 class Tools:
     """One run's deterministic tool boundary and private operation evidence directory."""
 
@@ -234,22 +256,13 @@ class Tools:
 
         Raises:
             TypeError: An argument violates the declared input contract.
-            ValueError: The timeout is invalid.
             FileNotFoundError: The executable cannot be resolved.
 
         """
-        if (
-            not (isinstance(argv, Sequence))
-            or not (isinstance(stage, str))
-            or not (isinstance(cwd, Path) or cwd is None)
-            or not (isinstance(timeout, float))
-            or not (isinstance(check, bool))
-        ):
+        if not (isinstance(stage, str)) or not (isinstance(cwd, Path) or cwd is None) or not (isinstance(check, bool)):
             argument_error: str = "command: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
-        if not 0 < timeout < float("inf"):
-            message: str = "command timeout must be positive and finite"
-            raise ValueError(message)
+        _command_arguments(argv, timeout)
         resolved: str | None = shutil.which(argv[0]) if argv else None
         if resolved is None:
             message = f"executable not found: {argv[0] if argv else '<empty argv>'}"
@@ -473,7 +486,8 @@ class Tools:
             TypeError: An argument violates the declared input contract.
 
         """
-        if not (isinstance(args, Sequence)) or not (isinstance(stage, str)) or not (isinstance(timeout, float)):
+        _command_arguments(args, timeout)
+        if not isinstance(stage, str):
             argument_error: str = "polyrepo: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
         script: Path = self.plugin / "skills/polyrepo-repo/scripts/polyrepo.py"
@@ -504,12 +518,12 @@ class Tools:
         """
         if (
             not (isinstance(subcommand, str))
-            or not (isinstance(args, Sequence))
+            or not isinstance(target, DeploymentTarget)
             or not (isinstance(stage, str))
-            or not (isinstance(timeout, float))
         ):
             argument_error: str = "cdk: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
+        _command_arguments(args, timeout)
         return self.command(
             ["cdk", subcommand, "--profile", target.profile, *args],
             cwd=target.repository,
