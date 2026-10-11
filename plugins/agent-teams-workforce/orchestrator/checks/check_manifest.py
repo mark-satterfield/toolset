@@ -12,20 +12,16 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # The composite contract is generated into its skill, its one definition.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
-from typing import TYPE_CHECKING
-
 from composites_contract import PRD_TO_SPEC
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
+from orchestrator.core.handback_contract import Session  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
+from orchestrator.core.io import JsonValue  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from orchestrator.core.manifest import RunManifest, manifest_path, read_manifest, record_run, record_session
 from orchestrator.core.models import RunContext
 
 # Any phase the prd-to-spec composite declares serves; the record does not interpret it.
 from orchestrator.flows.architecture_support import ARCHITECTURE_PHASE
-
-if TYPE_CHECKING:
-    from orchestrator.core.handback_contract import Session
-    from orchestrator.core.io import JsonValue
 
 
 def _manifest(path: Path) -> RunManifest:

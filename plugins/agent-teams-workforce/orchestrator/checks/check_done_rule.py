@@ -6,14 +6,10 @@ from pathlib import Path
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from typing import TYPE_CHECKING
-
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.handback_contract import OTHER_CAUSE, QUOTA_CAUSE
+from orchestrator.core.io import JsonValue  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from orchestrator.flows.elaboration_support import done_rule, repository_failure
-
-if TYPE_CHECKING:
-    from orchestrator.core.io import JsonValue
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

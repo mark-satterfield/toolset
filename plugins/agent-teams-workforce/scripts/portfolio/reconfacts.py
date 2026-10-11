@@ -65,7 +65,16 @@ from recon_contract import (
     STATUSES,
     SURFACE_UI,
     WORK_STATUSES,
+    ArtifactKind,
+    DependencyChanges,
+    DesignSource,
     ReconContractError,
+    ReconDetailing,
+    ReconItem,
+    ReconStatus,
+    UiArtifact,
+    UiAuthority,
+    UiItem,
     parse_detailing,
 )
 
@@ -74,17 +83,6 @@ if TYPE_CHECKING:
 
     from beadcontracts import Bundle
     from contracts import JsonObject, JsonValue
-    from recon_contract import (
-        ArtifactKind,
-        DependencyChanges,
-        DesignSource,
-        ReconDetailing,
-        ReconItem,
-        ReconStatus,
-        UiArtifact,
-        UiAuthority,
-        UiItem,
-    )
 
 #: At most this many warnings are printed; the count of all of them is always printed.
 MAX_PROBLEMS: Final = 40

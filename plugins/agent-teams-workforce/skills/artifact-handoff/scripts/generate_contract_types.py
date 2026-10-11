@@ -16,12 +16,15 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import (
+    Callable,  # ruff: ignore[typing-only-standard-library-import] - get_type_hints resolves Target.render at runtime.
+)
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypeIs
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
 type JsonObject = dict[str, Json]

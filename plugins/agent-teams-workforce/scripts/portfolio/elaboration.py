@@ -37,9 +37,10 @@ next run takes it up without a reclaim.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Unpack
+from typing import Unpack
 
 import beadgraph
+import scoringcontracts  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from bead_metadata import (
     CAUSE_DECOMPOSED,
     CAUSE_STARTED,
@@ -60,9 +61,6 @@ from contracts import JsonValue
 from elaborationcontracts import EpicValue, Finished, FinishOptions, Refusal, Refused, Released, Started
 from scoring import score
 from typeguard import CollectionCheckStrategy, check_type, typechecked
-
-if TYPE_CHECKING:
-    import scoringcontracts
 
 #: The Epic's elaboration lifecycle and its companions.
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration input contract"

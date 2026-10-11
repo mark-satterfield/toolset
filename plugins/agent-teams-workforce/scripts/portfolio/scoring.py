@@ -30,11 +30,12 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import Final, TypedDict
 
 import beadgraph
 import scoringcontracts
 import wsjf as rubric
+import wsjf_types  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from bead_metadata import (
     ELABORATION_DONE,
     KEY_ELABORATION_STATE,
@@ -68,16 +69,8 @@ from scoringcontracts import (
     ScoreResult,
 )
 from typeguard import CollectionCheckStrategy, typechecked
-
-if TYPE_CHECKING:
-    import wsjf_types
-    from wsjf_types import (
-        Item,
-        Unscored,
-    )
-    from wsjf_types import (
-        ScoreResult as RubricResult,
-    )
+from wsjf_types import Item, Unscored  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
+from wsjf_types import ScoreResult as RubricResult  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 
 _ARGUMENT_ERROR: str = "Arguments violate the scoring input contract"
 

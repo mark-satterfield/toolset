@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -26,6 +26,7 @@ import beadgraph as graph
 import beads_contract as contract
 from bead_metadata import KEY_ELAB_KEY
 from composites_contract import EVENT_PHASES, PRD_TO_SPEC
+from contracts import JsonObject  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from driver_surface_types import CONTROL_REPO_ENV
 from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.events import EventWriter
@@ -40,9 +41,6 @@ from orchestrator.core.handback_contract import (
 from orchestrator.core.models import RetryExhaustedError, StepError
 from orchestrator.core.tool_locks import bd_gate
 from orchestrator.core.tools import Tools, retry_call
-
-if TYPE_CHECKING:
-    from contracts import JsonObject
 
 
 @runtime_checkable

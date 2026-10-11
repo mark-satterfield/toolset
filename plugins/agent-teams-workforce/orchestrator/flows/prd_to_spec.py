@@ -50,6 +50,8 @@ from orchestrator.core.handback_contract import (
     SPEC_PHASE_PREFIX,
     TRD_PHASE,
     VERDICT_EVENT,
+    ArtifactReport,
+    EventName,
     Failure,
     phase_event,
 )
@@ -85,8 +87,6 @@ TASK_SCORES_STAGE: Final = "task-scores"
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from orchestrator.core.handback_contract import ArtifactReport, EventName
 
 
 LOGGER = logging.getLogger(__name__)
