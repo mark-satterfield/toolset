@@ -33,7 +33,7 @@ from .agent_process import SessionProcesses, SessionRequest
 from .artifacts import ArtifactStore
 from .constraints import Section2Guard
 from .driver_contracts import (
-    DispatchArgumentsContract,
+    DispatchArguments,
     child_environment,
     dispatch_arguments,
     exhausted_reset,
@@ -186,7 +186,7 @@ class AgentRunner:
         context.cleanup.append(self.processes.stop_all)
         self._lock = threading.Lock()
         self._version_checked = False
-        self.dispatch: DispatchArgumentsContract = dispatch_arguments()
+        self.dispatch: DispatchArguments = dispatch_arguments()
         self.context.model_policy.setdefault(
             "fable_until",
             float(check_type(context.args.get(self.dispatch.KEY_FABLE_UNTIL) or 0, int | float)),

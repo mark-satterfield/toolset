@@ -43,7 +43,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner, strict_json
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, PRD_TO_SPEC_PHASES, verdict_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
@@ -218,7 +218,7 @@ class Architecture:
         self.store: ArtifactStore = store
         self.runner: AgentRunner = runner
         self.tools: Tools = tools
-        dispatch: DispatchArgumentsContract = dispatch_arguments()
+        dispatch: DispatchArguments = dispatch_arguments()
         self.work: Path = context.work / ARCHITECTURE_WORK_FOLDER
         self.work.mkdir(parents=True, exist_ok=True)
         self.arch: Path = Path(check_type(context.args[dispatch.KEY_ARCH_PATH], str)).expanduser().resolve()

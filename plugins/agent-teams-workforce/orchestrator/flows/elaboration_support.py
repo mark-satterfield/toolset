@@ -20,7 +20,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.events import EventSink
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import (
@@ -269,7 +269,7 @@ def lifecycle(  # ruff: ignore[non-pep695-generic-function] - Typeguard requires
     ):
         raise TypeError(_ARGUMENT_ERROR)
 
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
 
     def attempt() -> R:
         repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))
@@ -432,7 +432,7 @@ def record(
         or not (isinstance(notes, list))
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
     path: Path = manifest_path(context.work)
     result.update(json_object({"beadId": context.bead, "detailPath": str(path), "sessions": context.sessions}))
     prd: dict[str, JsonValue] = json_object(context.args.get(dispatch.KEY_PRD, {}))

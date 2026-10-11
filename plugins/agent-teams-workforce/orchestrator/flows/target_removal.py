@@ -8,7 +8,7 @@ from contracts import GitFailure
 from target_contract import KEY_TARGET_DIR
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import CONTENTION_CAUSE, FATAL_CLASSES, Failure
 from orchestrator.core.io import JsonValue, json_object
@@ -82,7 +82,7 @@ def remove(context: RunContext, tools: Tools) -> dict[str, JsonValue]:
 
 def _remove_locked(context: RunContext, tools: Tools, latest: dict[str, JsonValue]) -> dict[str, JsonValue]:
     stage: str = "target-removal"
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
     arch: Path = Path(check_type(context.args[dispatch.KEY_ARCH_PATH], str))
     removal: TargetRemoval | Refusal | GitFailure = tools.portfolio(
         stage,

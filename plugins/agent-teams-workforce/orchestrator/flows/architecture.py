@@ -25,7 +25,7 @@ from typeguard import CollectionCheckStrategy, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import snapshot
@@ -68,7 +68,7 @@ def run(
     if not isinstance(context, RunContext) or not (matrix_path is None or isinstance(matrix_path, Path)):
         argument_error: str = "run: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
     arch: JsonValue = context.args.get(dispatch.KEY_ARCH_PATH) or os.environ.get(ARCH_PATH_ENV)
     if not arch:
         return {

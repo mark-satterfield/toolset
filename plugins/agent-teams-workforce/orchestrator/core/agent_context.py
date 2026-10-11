@@ -8,7 +8,6 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -28,30 +27,26 @@ SAFETY_HOOKS = frozenset({
 })
 
 
-@runtime_checkable
-class YamlLoader(Protocol):
-    """The PyYAML surface this module uses: safe_load of one document."""
-
-    def safe_load(self, stream: str) -> object:
-        """Parse one YAML document into plain Python values."""
-        ...
-
-
-def yaml_loader() -> YamlLoader:
-    """Load PyYAML behind a typed edge, since the library ships no type stubs.
+def yaml_safe_load(stream: str) -> object:
+    """Parse one YAML document with PyYAML behind a typed edge, since the library ships no type stubs.
 
     Returns:
-        The PyYAML module, narrowed to the safe_load surface.
+        The parsed document as plain Python values.
 
     Raises:
-        TypeError: The imported yaml module has no safe_load.
+        TypeError: ``stream`` is not text, or the imported yaml module has no safe_load.
 
     """
-    module: object = importlib.import_module("yaml")
-    if not isinstance(module, YamlLoader):
-        message: str = "the yaml module does not provide safe_load"
+    if not isinstance(stream, str):
+        message: str = f"YAML input must be text, got {type(stream).__name__}"
         raise TypeError(message)
-    return module
+    module: object = importlib.import_module("yaml")
+    loader: object = getattr(module, "safe_load", None)
+    if not callable(loader):
+        message = "the yaml module does not provide safe_load"
+        raise TypeError(message)
+    parsed: object = loader(stream)
+    return parsed
 
 
 class PipelineStoppedError(RuntimeError):
@@ -116,7 +111,7 @@ def definition(plugin: Path, step: AgentStep, model: str) -> dict[str, JsonValue
     front: str
     body: str
     front, body = text[4:].split("\n---", 1)
-    metadata: dict[str, JsonValue] = json_object(yaml_loader().safe_load(front))
+    metadata: dict[str, JsonValue] = json_object(yaml_safe_load(front))
     result: dict[str, JsonValue] = {}
     description: JsonValue = metadata.get("description")
     if not isinstance(description, str):

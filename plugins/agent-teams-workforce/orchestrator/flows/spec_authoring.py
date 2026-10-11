@@ -47,7 +47,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner, strict_json
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext, StepError
@@ -105,7 +105,7 @@ class SpecAuthoring:
     store: ArtifactStore
     runner: AgentRunner
     tools: Tools
-    dispatch: DispatchArgumentsContract
+    dispatch: DispatchArguments
     work: Path
     slug: str
     repo: Path

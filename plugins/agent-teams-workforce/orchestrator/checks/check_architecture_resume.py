@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import EVENT_KEY, REUSED_NOTE, EventName
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.models import AgentStep, RunContext
@@ -66,7 +66,7 @@ def main() -> None:
         def emit(event: EventName, **fields: JsonValue) -> None:
             notes.append({EVENT_KEY: event, **fields})
 
-        dispatch: DispatchArgumentsContract = dispatch_arguments()
+        dispatch: DispatchArguments = dispatch_arguments()
         context = RunContext(
             "epic",
             "architecture",

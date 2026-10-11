@@ -33,7 +33,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, TRD_PHASE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext, StepError
@@ -205,7 +205,7 @@ def _locate(args: Mapping[str, JsonValue]) -> tuple[Path, Path, str, JsonValue]:
         StepError: The PRD path or the target folder is missing.
 
     """
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
     prd_value: JsonValue = json_object(args.get(dispatch.KEY_PRD, {})).get(dispatch.PRD_PATH)
     target: JsonValue = args.get(KEY_TARGET_DIR)
     if not prd_value or not target:

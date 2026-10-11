@@ -34,7 +34,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import (
     DEFECT_CLASS,
@@ -165,7 +165,7 @@ class _Elaboration:
     result: JsonObject = field(init=False)
     artifacts: ArtifactReport = field(init=False)
     invoke: PhaseRunner = field(init=False)
-    dispatch: DispatchArgumentsContract = field(init=False)
+    dispatch: DispatchArguments = field(init=False)
 
     def __post_init__(self) -> None:
         self.dispatch = dispatch_arguments()
@@ -522,7 +522,7 @@ def run(context: RunContext) -> JsonObject:
     """
     if not (isinstance(context, RunContext)):
         raise TypeError(_ARGUMENT_ERROR)
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
     args: dict[str, JsonValue] = context.args
     prd: dict[str, JsonValue] = json_object(args.get(dispatch.KEY_PRD, {}))
     if (

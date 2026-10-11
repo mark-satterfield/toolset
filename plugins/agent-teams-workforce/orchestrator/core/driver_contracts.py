@@ -8,9 +8,10 @@ import os
 import re
 import sys
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol, get_type_hints, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -58,9 +59,13 @@ class ChildProcess(Protocol):
     TERMINATE_GRACE: float
 
 
-@runtime_checkable
-class DispatchArgumentsContract(Protocol):
-    """Control dispatchargs module: the orchestrator command line and its dispatch-arguments file."""
+@dataclass(frozen=True, slots=True)
+class DispatchArguments:
+    """Control dispatchargs values: the orchestrator command line and its dispatch-arguments file.
+
+    Built from the dispatchargs module by ``dispatch_arguments()``, which checks every value's
+    type, so annotated locals and parameters hold a concrete class rather than a module.
+    """
 
     FLOW_PRD_TO_SPEC: str
     ORCHESTRATED_FLOWS: frozenset[str]
@@ -95,18 +100,8 @@ class DispatchArgumentsContract(Protocol):
     DS_MOCKS_DIR: str
     DS_SHELLS_DIR: str
     OWNER_TOKEN: re.Pattern[str]
-
-    def parse_arguments(self, raw: object) -> Mapping[str, object]:
-        """Parse a decoded dispatch-arguments document, raising ValueError or TypeError on drift."""
-        ...
-
-    def command(self, executable: str, entry: Path, flow: str, bead: str, scratch: Path) -> list[str]:
-        """Build the run.py command line."""
-        ...
-
-
-_DISPATCH_HINTS: dict[str, object] = get_type_hints(DispatchArgumentsContract)
-_DISPATCH_TEXT_NAMES: tuple[str, ...] = tuple(name for name, hint in _DISPATCH_HINTS.items() if hint is str)
+    parse_arguments: Callable[[object], Mapping[str, object]]
+    command: Callable[[str, Path, str, str, Path], list[str]]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -209,30 +204,99 @@ def terminate_grace() -> float:
     return check_type(driver_module("childproc").TERMINATE_GRACE, float)
 
 
-@functools.cache
-def dispatch_arguments() -> DispatchArgumentsContract:
-    """Return the producer's dispatch-arguments contract, checking every name's type.
-
-    The body checks each name itself: typeguard's protocol check inspects a module's type,
-    not the module, so it cannot check a module against this protocol.
+def _attribute(module: ModuleType, name: str) -> object:
+    """Read one contract name from the producer module.
 
     Returns:
-        The control repository's dispatchargs module.
+        The module's value for ``name``.
 
     Raises:
-        TypeError: The module lacks a contract name or a name has the wrong type.
+        TypeError: The module does not define ``name``.
+
+    """
+    if not hasattr(module, name):
+        message: str = f"{module.__file__} does not provide the dispatch-arguments name {name}"
+        raise TypeError(message)
+    value: object = getattr(module, name)
+    return value
+
+
+def _text(module: ModuleType, name: str) -> str:
+    """Read one text contract name, checking its type.
+
+    Returns:
+        The validated text value.
+
+    """
+    return check_type(_attribute(module, name), str)
+
+
+def _names(module: ModuleType, name: str) -> frozenset[str]:
+    """Read one frozen name-set contract value, checking every member.
+
+    Returns:
+        The validated set of names.
+
+    """
+    return check_type(
+        _attribute(module, name),
+        frozenset[str],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+
+
+@functools.cache
+def dispatch_arguments() -> DispatchArguments:
+    """Return the producer's dispatch-arguments values, checking every name's type.
+
+    A missing name raises ``TypeError``; a name of the wrong type raises typeguard's
+    ``TypeCheckError``.
+
+    Returns:
+        The control repository's dispatchargs values as a frozen ``DispatchArguments``.
 
     """
     module: ModuleType = driver_module("dispatchargs")
-    if not isinstance(module, DispatchArgumentsContract):
-        message: str = f"{module.__file__} does not provide the dispatch-arguments contract"
-        raise TypeError(message)
-    name: str
-    for name in _DISPATCH_TEXT_NAMES:
-        check_type(getattr(module, name), str)
-    check_type(module.ORCHESTRATED_FLOWS, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    check_type(module.ARGUMENT_KEYS, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    check_type(module.OWNER_TOKEN, re.Pattern[str])
-    check_type(module.parse_arguments, Callable[[object], Mapping[str, object]])
-    check_type(module.command, Callable[[str, Path, str, str, Path], list[str]])
-    return module
+    return DispatchArguments(
+        FLOW_PRD_TO_SPEC=_text(module, "FLOW_PRD_TO_SPEC"),
+        ORCHESTRATED_FLOWS=_names(module, "ORCHESTRATED_FLOWS"),
+        OPT_BEAD=_text(module, "OPT_BEAD"),
+        OPT_ARGS=_text(module, "OPT_ARGS"),
+        OPT_HANDBACK=_text(module, "OPT_HANDBACK"),
+        ARGUMENTS_FILE=_text(module, "ARGUMENTS_FILE"),
+        HANDBACK_FILE=_text(module, "HANDBACK_FILE"),
+        KEY_PRD=_text(module, "KEY_PRD"),
+        KEY_EPIC=_text(module, "KEY_EPIC"),
+        KEY_OWNER=_text(module, "KEY_OWNER"),
+        KEY_RECLAIM=_text(module, "KEY_RECLAIM"),
+        KEY_BEADS_REPO_PATH=_text(module, "KEY_BEADS_REPO_PATH"),
+        KEY_ARCH_PATH=_text(module, "KEY_ARCH_PATH"),
+        KEY_TRD_PATH=_text(module, "KEY_TRD_PATH"),
+        KEY_DESIGN_SYSTEM=_text(module, "KEY_DESIGN_SYSTEM"),
+        KEY_SKILLSPOKE_ROOT=_text(module, "KEY_SKILLSPOKE_ROOT"),
+        KEY_EXECUTION_ID=_text(module, "KEY_EXECUTION_ID"),
+        KEY_SUPERVISOR_INVOCATION_ID=_text(module, "KEY_SUPERVISOR_INVOCATION_ID"),
+        KEY_FABLE_UNTIL=_text(module, "KEY_FABLE_UNTIL"),
+        ARGUMENT_KEYS=_names(module, "ARGUMENT_KEYS"),
+        PRD_ID=_text(module, "PRD_ID"),
+        PRD_TITLE=_text(module, "PRD_TITLE"),
+        PRD_PATH=_text(module, "PRD_PATH"),
+        EPIC_KEY=_text(module, "EPIC_KEY"),
+        EPIC_ID=_text(module, "EPIC_ID"),
+        EPIC_TYPE=_text(module, "EPIC_TYPE"),
+        EPIC_TITLE=_text(module, "EPIC_TITLE"),
+        EPIC_PRD_REF=_text(module, "EPIC_PRD_REF"),
+        EPIC_TYPE_VALUE=_text(module, "EPIC_TYPE_VALUE"),
+        DS_PACKAGES_DIR=_text(module, "DS_PACKAGES_DIR"),
+        DS_MOCKS_DIR=_text(module, "DS_MOCKS_DIR"),
+        DS_SHELLS_DIR=_text(module, "DS_SHELLS_DIR"),
+        OWNER_TOKEN=check_type(_attribute(module, "OWNER_TOKEN"), re.Pattern[str]),
+        parse_arguments=check_type(
+            _attribute(module, "parse_arguments"),
+            Callable[[object], Mapping[str, object]],
+        ),
+        command=check_type(
+            _attribute(module, "command"),
+            Callable[[str, Path, str, str, Path], list[str]],
+        ),
+    )

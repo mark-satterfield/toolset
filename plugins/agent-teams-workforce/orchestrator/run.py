@@ -26,7 +26,7 @@ from composites_contract import ORCHESTRATED, PRD_TO_SPEC
 
 from orchestrator.core.agent_context import SessionCleanupError
 from orchestrator.core.artifacts import load_artifactio
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback import failure_for, stop_stage
 from orchestrator.core.handback_contract import (
     SHUTDOWN_CAUSE,
@@ -57,7 +57,7 @@ def _not_contract(contract: object) -> str:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def parser(contract: DispatchArgumentsContract) -> argparse.ArgumentParser:
+def parser(contract: DispatchArguments) -> argparse.ArgumentParser:
     """Build the orchestrator command-line parser from the driver's dispatch-arguments contract.
 
     Args:
@@ -70,7 +70,7 @@ def parser(contract: DispatchArgumentsContract) -> argparse.ArgumentParser:
         TypeError: ``contract`` is not the dispatch-arguments contract.
 
     """
-    if not isinstance(contract, DispatchArgumentsContract):
+    if not isinstance(contract, DispatchArguments):
         raise TypeError(_not_contract(contract))
     result: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
     result.add_argument("flow", choices=FLOWS)
@@ -85,8 +85,8 @@ def _interrupted(number: int, _frame: FrameType | None) -> None:
     raise InterruptedError(message)
 
 
-def _context(contract: DispatchArgumentsContract, bead: str, flow_name: str, path: Path) -> RunContext:
-    if not isinstance(contract, DispatchArgumentsContract):
+def _context(contract: DispatchArguments, bead: str, flow_name: str, path: Path) -> RunContext:
+    if not isinstance(contract, DispatchArguments):
         raise TypeError(_not_contract(contract))
     raw: object = json.loads(path.read_text(encoding="utf-8"))
     args: dict[str, JsonValue] = json_object(dict(contract.parse_arguments(raw)))
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv is not None and (not isinstance(argv, list) or any(not isinstance(arg, str) for arg in argv)):
         message: str = "Arguments must be a list of strings"
         raise TypeError(message)
-    contract: DispatchArgumentsContract = dispatch_arguments()
+    contract: DispatchArguments = dispatch_arguments()
     options: argparse.Namespace = parser(contract).parse_args(argv)
     bead: str
     flow_name: str

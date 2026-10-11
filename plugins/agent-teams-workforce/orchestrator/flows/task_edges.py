@@ -15,7 +15,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
@@ -131,7 +131,7 @@ def run(
     except TaskDepsError as exc:
         raise tools.failure(stage, OTHER_CAUSE, {"taskDeps": str(final), "error": str(exc)}) from exc
 
-    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    dispatch: DispatchArguments = dispatch_arguments()
 
     def write_edges() -> dict[str, JsonValue]:
         repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))

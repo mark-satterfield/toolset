@@ -40,10 +40,10 @@ from target_contract import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agent_context import yaml_loader
+from orchestrator.core.agent_context import yaml_safe_load
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -193,11 +193,11 @@ class _RepositoryScoping:
         if not delta_items:
             raise StepError(stage, OTHER_CAUSE, (f"{DELTA_ITEMS_FILE} has no build items",))
         items: list[dict[str, JsonValue]] = _objects(delta_items)
-        dispatch: DispatchArgumentsContract = dispatch_arguments()
+        dispatch: DispatchArguments = dispatch_arguments()
         arch = Path(check_type(self.args[dispatch.KEY_ARCH_PATH], str)).resolve()
         self.prd = Path(check_type(json_object(self.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
         control = env_path(CONTROL_REPO_ENV)
-        config = json_object(yaml_loader().safe_load((control / ".polyrepo/config.yaml").read_text(encoding="utf-8")))
+        config = json_object(yaml_safe_load((control / ".polyrepo/config.yaml").read_text(encoding="utf-8")))
         matrix = matrix_path or snapshot(context, tools)
         matrix_data = read_snapshot(matrix)
         self.elements = sorted({" ".join(item[KEY_ELEMENT].split()).casefold() for item in delta_items})
