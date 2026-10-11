@@ -30,7 +30,15 @@ wall: FableWall = fablewall
 quota: Breaker = breaker
 process: ChildProcess = childproc
 artifacts: ArtifactProducer = artifactio.ArtifactProducer()
-handback_rules: handbackcontract.HandbackContract = handback_contract
+handback_rules: handbackcontract.HandbackContract = handbackcontract.HandbackContract(
+    wire=handback_contract.wire,
+    validate=handback_contract.validate,
+    validate_event=handback_contract.validate_event,
+    diagnostic=handback_contract.diagnostic,
+    failure=handback_contract.failure,
+    interrupted_failure=handback_contract.interrupted_failure,
+    rejected=handback_contract.rejected,
+)
 """
 DEPENDENCIES: tuple[str, ...] = (
     "typeguard",
