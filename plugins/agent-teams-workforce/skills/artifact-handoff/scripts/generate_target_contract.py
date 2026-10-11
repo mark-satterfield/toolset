@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 SCRIPTS_DIR: Final[Path] = Path(__file__).resolve().parent
 SCHEMA_PATH: Final[Path] = SCRIPTS_DIR.parent / "schemas" / "target-report.schema.json"
 OUTPUT_PATH: Final[Path] = SCRIPTS_DIR / "target_contract.py"
+# The toolset ruff line length; a longer generated line is wrapped the way ruff format wraps it.
+MAX_LINE: Final[int] = 120
 
 DEFS: Final[str] = "$defs"
 REF_PREFIX: Final[str] = "#/$defs/"
@@ -289,7 +291,11 @@ def _vocabularies(definitions: Mapping[str, object], known: dict[str, str]) -> l
             f"{const}: Final[{_literal([value])}] = {json.dumps(value)}"
             for const, value in zip(names, values, strict=True)
         )
-        set_lines.append(f"{collection}: Final[frozenset[{alias}]] = frozenset({{{', '.join(names)}}})")
+        line: str = f"{collection}: Final[frozenset[{alias}]] = frozenset({{{', '.join(names)}}})"
+        if len(line) > MAX_LINE:
+            members: str = "".join(f"    {name},\n" for name in names)
+            line = f"{collection}: Final[frozenset[{alias}]] = frozenset({{\n{members}}})"
+        set_lines.append(line)
     return [*vocab_lines, "", *const_lines, "", *set_lines]
 
 

@@ -31,9 +31,9 @@
   "x-targetManifestSummaryKeys": ["designChanged", "documentationChanged", "implementationWork", "approvalFiles"],
   "$defs": {
     "ArchitectureChange": {
-      "description": "How the target deduplicates its documents: none (future = current, no delta), new (no current set; the target views are the delta), partial (target views are the future set; delta/ holds the change alone).",
+      "description": "How the target deduplicates its documents: none (future = current, no delta), new (no current set; the target views are the delta), partial (target views are the future set; delta/ holds the change alone), pending (the assessment names design or documentation work and no view is authored yet; it becomes new or partial once views exist, and no target is written in this state).",
       "type": "string",
-      "enum": ["none", "new", "partial"]
+      "enum": ["none", "new", "partial", "pending"]
     },
     "DeltaItemKind": {
       "description": "Kind of a delta item that is not a delta-view element: an unsatisfied element of the future set, or an element the delta's work rests on (from closure.json). A delta-view element carries no kind.",

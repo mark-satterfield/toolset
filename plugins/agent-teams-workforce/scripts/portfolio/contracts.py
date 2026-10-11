@@ -13,9 +13,12 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 # The architecture baseline types are generated from the artifact-handoff survey schema, their one definition.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+# The architecture change values are generated from the target report schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 
 # isort: split
 from survey_contract import BaselineCode, BaselineDocument, BaselineEntry, EvidenceRef
+from target_contract import ArchitectureChange
 
 __all__ = [
     "SEAL_DIGEST_KEYS",
@@ -629,33 +632,8 @@ class BaselineManifest(TypedDict):
     entries: list[BaselineEntry]
     implementationWork: list[str]
     approvalFiles: list[str]
-    architectureChange: NotRequired[str]
+    architectureChange: NotRequired[ArchitectureChange]
     note: NotRequired[str]
-
-
-class TargetResult(TypedDict):
-    """Target creation or baseline seeding result, including refusal branches."""
-
-    ok: bool
-    refusals: list[str]
-    summary: JsonObject
-    subjectRefusals: NotRequired[list[str]]
-    subject: NotRequired[str]
-    subjectName: NotRequired[str]
-    targetDir: NotRequired[str]
-    deltaDir: NotRequired[str]
-    files: NotRequired[list[str]]
-    deltaFiles: NotRequired[list[str]]
-    warnings: NotRequired[list[str]]
-    dryRun: NotRequired[bool]
-    draftWritten: NotRequired[bool]
-    architectureChange: NotRequired[str]
-    note: NotRequired[str]
-    designChanged: NotRequired[bool]
-    documentationChanged: NotRequired[bool]
-    implementationWork: NotRequired[int]
-    approvalFiles: NotRequired[list[str]]
-    seeded: NotRequired[list[str]]
 
 
 class DeltaView(CatalogRecord):

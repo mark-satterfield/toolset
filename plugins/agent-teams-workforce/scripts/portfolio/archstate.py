@@ -69,7 +69,6 @@ from contracts import (
     Refusal,
     StateReport,
     TargetRemoval,
-    TargetResult,
     TreeDifference,
     TreeSnapshot,
     json_object,
@@ -96,6 +95,7 @@ from target_contract import (
     CHANGE_NEW,
     CHANGE_NONE,
     CHANGE_PARTIAL,
+    CHANGE_PENDING,
     DELTA_FOLDER,
     KEY_LIFECYCLE_STATE,
     KIND_IMPLEMENTATION_GAP,
@@ -112,11 +112,11 @@ from target_contract import (
     DeltaView,
     ElementState,
     TargetNames,
+    TargetResult,
+    validate_target_report,
 )
 
 STATE_KEY: Final = KEY_LIFECYCLE_STATE
-# Not yet in target-report.schema.json's ArchitectureChange enum; see the seeded baseline.
-CHANGE_PENDING: Final = "pending"
 EFFECTIVE: DocumentLifecycleState = LIFECYCLE_EFFECTIVE
 IN_REVIEW: DocumentLifecycleState = LIFECYCLE_IN_REVIEW
 FENCE = "---"
@@ -130,7 +130,7 @@ SEED_FILES = (BASELINE_FILE, f"{DELTA_FOLDER}/{BASELINE_FILE}")
 # How the documents are deduplicated: `none` (future = current, one set, no delta), `new` (no
 # current, one set that is both the future and the delta), `partial` (the future set and a delta
 # of the change alone).
-CHANGE_NOTES = {
+CHANGE_NOTES: Final[dict[ArchitectureChange, str]] = {
     CHANGE_NONE: "No architecture change: current and future are the same. The future set is the "
     "effective views cited in `entries[].documents`; there is no delta. Build work is "
     "every element those views show, including satisfied elements whose Tasks verify them.",
@@ -841,7 +841,7 @@ def _effective_elements(root: Path) -> set[str]:
     }
 
 
-def _change_case(draft: Path, files: list[Path], manifest: BaselineManifest | None) -> str:
+def _change_case(draft: Path, files: list[Path], manifest: BaselineManifest | None) -> ArchitectureChange:
     """Tell which case a draft is, consistent with the survey's assessment (see CHANGE_NOTES).
 
     A draft with no authored view is `none` only when the assessment names no design or
@@ -856,13 +856,13 @@ def _change_case(draft: Path, files: list[Path], manifest: BaselineManifest | No
         `none`, `new`, `partial` or `pending`.
 
     """
-    kind: str = _change_kind(draft, files)
+    kind: ArchitectureChange = _change_kind(draft, files)
     if kind == CHANGE_NONE and manifest and (manifest["designChanged"] or manifest["documentationChanged"]):
         return CHANGE_PENDING
     return kind
 
 
-def _change_kind(draft: Path, files: list[Path]) -> str:
+def _change_kind(draft: Path, files: list[Path]) -> ArchitectureChange:
     """Tell how a draft's views deduplicate: `none`, `new` or `partial` (see CHANGE_NOTES).
 
     Args:
@@ -1007,14 +1007,14 @@ def _seed_target(source: Path, manifest: BaselineManifest | None, baseline_refus
             "ok": False,
             "refusals": reasons,
             "seeded": [],
-            "summary": json_object({"ok": False, "refusals": reasons, "seeded": 0}),
+            "summary": {"ok": False, "refusals": reasons, "seeded": 0},
         }
     authored_now: list[Path] = (
         [p for p in _draft_files(source) if p.relative_to(source).as_posix() not in SEED_FILES]
         if source.is_dir()
         else []
     )
-    kind: str = _change_case(source, authored_now, manifest)
+    kind: ArchitectureChange = _change_case(source, authored_now, manifest)
     noted = {**manifest, "architectureChange": kind, "note": CHANGE_NOTES[kind]}
     out: Path = source / BASELINE_FILE
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1058,7 +1058,7 @@ def _publish_target_files(source: Path, dest: Path, files: list[Path], as_delta:
             shutil.copyfile(path, out)
 
 
-def _publish_target_manifest(dest: Path, manifest: BaselineManifest | None, change: str) -> None:
+def _publish_target_manifest(dest: Path, manifest: BaselineManifest | None, change: ArchitectureChange) -> None:
     noted: BaselineManifest
     if manifest:
         dest.mkdir(parents=True, exist_ok=True)
@@ -1104,7 +1104,7 @@ class TargetOptions:
 @dataclass(frozen=True)
 class _DraftPlan:
     files: list[Path]
-    change: str
+    change: ArchitectureChange
     as_delta: list[Path]
     refusals: list[str]
     warnings: list[str]
@@ -1131,7 +1131,7 @@ def _draft_plan(source: Path, root: Path, manifest: BaselineManifest | None) -> 
         and not draft_written
     )
     files: list[Path] = [] if no_author else authored
-    change: str = _change_case(source, files, manifest)
+    change: ArchitectureChange = _change_case(source, files, manifest)
     draft_refusals: list[str] = (
         _draft_refusals(source, files) if source.is_dir() else [f"the draft {source} is not a directory"]
     )
@@ -1198,7 +1198,7 @@ def write_target(draft: str, options: TargetOptions) -> TargetResult:
             "subjectRefusals": [],
             "subject": subject_folder(options.subject),
             "subjectName": options.subject.strip(),
-            "summary": json_object({"ok": False, "refusals": none}),
+            "summary": {"ok": False, "refusals": none},
         }
     folder: str = subject_name(subject_folder(options.subject), options.forbid)
     subject_refusals: list[str] = _subject_refusals(options.subject, folder)
@@ -1221,7 +1221,7 @@ def write_target(draft: str, options: TargetOptions) -> TargetResult:
         dest / p.relative_to(source) for p in plan.files if p.relative_to(source).parts[0] == DELTA_FOLDER
     ] + [dest / DELTA_FOLDER / p.relative_to(source) for p in plan.as_delta]
     report: TargetResult = {
-        "summary": {},
+        "summary": {"ok": not refusals, "refusals": refusals},
         "ok": not refusals,
         "refusals": refusals,
         "subjectRefusals": subject_refusals,
@@ -1248,19 +1248,36 @@ def write_target(draft: str, options: TargetOptions) -> TargetResult:
         )
         report["files"].append(str(dest / BASELINE_FILE))
     # The summary carries what a caller acts on, because `--out` prints only the summary.
-    fields: JsonObject = json_object(report)
-    report["summary"] = {key: fields[key] for key in TARGET_SUMMARY_KEYS} | {
-        key: _count(fields, key) for key in TARGET_SUMMARY_COUNT_KEYS
-    }
-    if manifest:
-        report["summary"].update(
-            {key: json_object(report)[key] for key in TARGET_MANIFEST_SUMMARY_KEYS},
-        )
+    report = _summarized(report, with_manifest=manifest is not None)
     if refusals or options.dry_run:
         return report
     _publish_target_files(source, dest, plan.files, plan.as_delta)
     _publish_target_manifest(dest, manifest, plan.change)
     return report
+
+
+def _summarized(report: TargetResult, *, with_manifest: bool) -> TargetResult:
+    """Add the summary a caller acts on and validate the report before it leaves the producer.
+
+    The report is validated against the target report schema, its one definition, so a value
+    the readers would reject fails here, where it is made.
+
+    Args:
+        report: The target report without its final summary.
+        with_manifest: Whether the report carries the baseline manifest fields.
+
+    Returns:
+        The validated report with its summary.
+
+    """
+    fields: JsonObject = json_object(report)
+    summary: JsonObject = {key: fields[key] for key in TARGET_SUMMARY_KEYS} | {
+        key: _count(fields, key) for key in TARGET_SUMMARY_COUNT_KEYS
+    }
+    if with_manifest:
+        summary.update({key: fields[key] for key in TARGET_MANIFEST_SUMMARY_KEYS})
+    fields["summary"] = summary
+    return validate_target_report(fields, "archstate.write_target")
 
 
 def _count(fields: JsonObject, key: str) -> int:

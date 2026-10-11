@@ -18,20 +18,26 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-type ArchitectureChange = Literal["none", "new", "partial"]
+type ArchitectureChange = Literal["none", "new", "partial", "pending"]
 type DeltaItemKind = Literal["implementation-gap", "prerequisite"]
 type ElementState = Literal["unknown", "built", "deployed"]
 
 CHANGE_NONE: Final[Literal["none"]] = "none"
 CHANGE_NEW: Final[Literal["new"]] = "new"
 CHANGE_PARTIAL: Final[Literal["partial"]] = "partial"
+CHANGE_PENDING: Final[Literal["pending"]] = "pending"
 KIND_IMPLEMENTATION_GAP: Final[Literal["implementation-gap"]] = "implementation-gap"
 KIND_PREREQUISITE: Final[Literal["prerequisite"]] = "prerequisite"
 STATE_UNKNOWN: Final[Literal["unknown"]] = "unknown"
 STATE_BUILT: Final[Literal["built"]] = "built"
 STATE_DEPLOYED: Final[Literal["deployed"]] = "deployed"
 
-ARCHITECTURE_CHANGES: Final[frozenset[ArchitectureChange]] = frozenset({CHANGE_NONE, CHANGE_NEW, CHANGE_PARTIAL})
+ARCHITECTURE_CHANGES: Final[frozenset[ArchitectureChange]] = frozenset({
+    CHANGE_NONE,
+    CHANGE_NEW,
+    CHANGE_PARTIAL,
+    CHANGE_PENDING,
+})
 DELTA_ITEM_KINDS: Final[frozenset[DeltaItemKind]] = frozenset({KIND_IMPLEMENTATION_GAP, KIND_PREREQUISITE})
 ELEMENT_STATES: Final[frozenset[ElementState]] = frozenset({STATE_UNKNOWN, STATE_BUILT, STATE_DEPLOYED})
 
