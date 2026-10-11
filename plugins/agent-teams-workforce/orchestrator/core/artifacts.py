@@ -19,7 +19,7 @@ from driver_surface_types import ARTIFACT_SCRIPT_ENV
 
 from .artifact_contract import ArtifactProducer
 from .handback_contract import OTHER_CAUSE, REUSED_PHASE
-from .io import JsonValue, json_object
+from .io import JsonValue, json_object, write_json
 from .models import DeterministicStep, StepError
 
 REQUIRED_KINDS = {
@@ -114,8 +114,17 @@ class ArtifactStore:
         meta = json_object(json.loads(text))
         if check_type(meta["sha256"], str) != digest:
             return False
+        return self._inputs_match(meta["inputs"], current, output)
+
+    def _inputs_match(self, recorded_value: JsonValue, current: list[dict[str, JsonValue]], output: Path) -> bool:
+        """Compare recorded input provenance with the current inputs, as receipt reuse does.
+
+        Returns:
+            Whether every current input is recorded unchanged and no recorded input is stale.
+
+        """
         recorded = check_type(
-            meta["inputs"],
+            recorded_value,
             list[dict[str, JsonValue]],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
@@ -126,6 +135,53 @@ class ArtifactStore:
             if entry not in candidates:
                 return False
         return not any(check_type(self.module.input_problem(item, self.root, output), str | None) for item in recorded)
+
+    @staticmethod
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def fingerprint_path(output: Path) -> Path:
+        """Name the file that records the inputs a session was launched with for ``output``.
+
+        Returns:
+            ``<output>.inputs.json`` beside the output.
+
+        """
+        return output.with_name(output.name + ".inputs.json")
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def record_fingerprint(self, inputs: tuple[str, ...], output: Path) -> None:
+        """Record, before a session launches, the provenance of the inputs it will read.
+
+        The provenance is ``hashed_inputs``, the same record an accepted receipt holds, so a
+        saved output can later be shown to come from unchanged inputs.
+        """
+        current: list[dict[str, JsonValue]] = check_type(
+            self.module.hashed_inputs(list(inputs), self.root),
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        write_json(self.fingerprint_path(output), {"inputs": list[JsonValue](current)})
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def fingerprint_matches(self, inputs: tuple[str, ...], output: Path) -> bool:
+        """Decide whether a saved, unaccepted output was produced from the current inputs.
+
+        Returns:
+            Whether ``output`` exists and its recorded launch inputs match the current inputs.
+            A missing output or a missing fingerprint is no match.
+
+        """
+        if not output.is_file():
+            return False
+        try:
+            text: str = self.fingerprint_path(output).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return False
+        current: list[dict[str, JsonValue]] = check_type(
+            self.module.hashed_inputs(list(inputs), self.root),
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        return self._inputs_match(json_object(json.loads(text))["inputs"], current, output)
 
     @staticmethod
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

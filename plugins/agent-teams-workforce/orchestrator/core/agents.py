@@ -143,6 +143,22 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
     return None
 
 
+CONTENT_FAILURES: tuple[type[Exception], ...] = (OSError, ValueError, UnicodeError, jsonschema.ValidationError)
+"""Failures of an agent output itself; they take the corrective path, never the defect path."""
+
+
+def _write_errors(step: AgentStep, exc: Exception) -> Path:
+    """Save the validation errors of ``step``'s output beside it for the corrective session.
+
+    Returns:
+        The errors file.
+
+    """
+    errors: Path = step.output.with_name(step.output.name + ".errors.json")
+    write_json(errors, {"output": str(step.output), "errors": [str(exc)]})
+    return errors
+
+
 def _emit(emit: EventSink, event: OrchestratorEvent) -> None:
     """Send one contract-built event through a sink as its name and facts."""
     facts: dict[str, JsonValue] = json_object({key: value for key, value in event.items() if key != EVENT_KEY})
@@ -279,20 +295,32 @@ class AgentRunner:
             _emit(self.emit, reused_note(step=step.stage))
             return final
         self.store.invalidate((final,))
+        saved_errors: Path | None = None
+        if self.store.fingerprint_matches(step.inputs, step.output):
+            # A saved output from unchanged inputs is reused, never discarded and redone.
+            try:
+                result: dict[str, JsonValue] | None = validate_output(step)
+            except CONTENT_FAILURES as exc:
+                saved_errors = _write_errors(step, exc)
+                if not step.corrective:
+                    raise StepError(step.stage, OTHER_CAUSE, (str(saved_errors),)) from exc
+            else:
+                _emit(self.emit, reused_note(step=step.stage))
+                return self._accept_result(step, final, result)
         try:
             self._version()
         except (OSError, ValueError, StepError) as exc:
             raise SessionSetupError(str(exc)) from exc
         with self.context.session_slots:
-            return self._execute(step, final)
+            return self._execute(step, final, saved_errors)
 
-    def _execute(self, step: AgentStep, final: Path) -> Path:
+    def _execute(self, step: AgentStep, final: Path, saved_errors: Path | None) -> Path:
         try:
             directory = Path(tempfile.mkdtemp(prefix="atw-session-"))
         except OSError as exc:
             raise SessionSetupError(str(exc)) from exc
         try:
-            return self._execute_in_directory(step, final, directory)
+            return self._execute_in_directory(step, final, directory, saved_errors)
         finally:
             with _finalization("remove temporary session directory"):
                 shutil.rmtree(directory)
@@ -302,6 +330,8 @@ class AgentRunner:
         step: AgentStep,
         session_id: str,
         directory: Path,
+        *,
+        keep_output: bool,
     ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], str, Session]:
         scratch = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
         env = check_type(
@@ -326,12 +356,21 @@ class AgentRunner:
             "effort": step.effort,
         }
         record_session(self.context, self.store, row)
-        # Old, unaccepted candidates must never be attributed to this session.
         step.output.parent.mkdir(parents=True, exist_ok=True)
-        step.output.unlink(missing_ok=True)
+        if not keep_output:
+            # Reaching here without keep_output means the saved output's inputs changed or were
+            # never recorded, so it cannot be attributed to this session's inputs.
+            step.output.unlink(missing_ok=True)
+        self.store.record_fingerprint(step.inputs, step.output)
         return scratch, env, inputs, model, row
 
-    def _execute_in_directory(self, step: AgentStep, final: Path, directory: Path) -> Path:
+    def _execute_in_directory(
+        self,
+        step: AgentStep,
+        final: Path,
+        directory: Path,
+        saved_errors: Path | None,
+    ) -> Path:
         """Keep one private cwd through corrective and model-fallback resumes.
 
         Returns:
@@ -344,10 +383,20 @@ class AgentRunner:
         """
         session_id = str(uuid4())
         try:
-            scratch, env, inputs, model, row = self._setup_request(step, session_id, directory)
+            scratch, env, inputs, model, row = self._setup_request(
+                step,
+                session_id,
+                directory,
+                keep_output=saved_errors is not None,
+            )
         except (OSError, ValueError, KeyError, ImportError) as exc:
             raise SessionSetupError(str(exc)) from exc
-        resume = corrective = False
+        resume = False
+        # A saved output that failed validation is corrected once in a new session, as a
+        # fresh output that failed validation is corrected once in its own session.
+        corrective = saved_errors is not None
+        if saved_errors is not None:
+            inputs.append(("validation errors", saved_errors))
         attempt = 0
         while True:
             _check_stop()
@@ -394,22 +443,14 @@ class AgentRunner:
             self._check_session(step, facts, stream)
             try:
                 result = validate_output(step)
-            except (
-                OSError,
-                ValueError,
-                UnicodeError,
-                jsonschema.ValidationError,
-            ) as exc:
-                errors = step.output.with_name(step.output.name + ".errors.json")
-                write_json(errors, {"output": str(step.output), "errors": [str(exc)]})
+            except CONTENT_FAILURES as exc:
+                errors = _write_errors(step, exc)
                 if corrective or not step.corrective:
                     raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from exc
                 inputs.append(("validation errors", errors))
                 corrective = resume = True
                 continue
-            if step.final is not None:
-                write_json(final, result)
-            self._record_output(step, final)
+            return self._accept_result(step, final, result)
             return final
 
     def _emit_fable_wall(self, info: dict[str, JsonValue]) -> None:
@@ -422,6 +463,18 @@ class AgentRunner:
                 window if isinstance(window, str) else None,
             ),
         )
+
+    def _accept_result(self, step: AgentStep, final: Path, result: dict[str, JsonValue] | None) -> Path:
+        """Write a validated result to its final path and record its receipt.
+
+        Returns:
+            The accepted artifact path.
+
+        """
+        if step.final is not None:
+            write_json(final, result)
+        self._record_output(step, final)
+        return final
 
     def _record_output(self, step: AgentStep, final: Path) -> None:
         """Record the validated output's receipt; a receipt failure is raised, never downgraded."""
