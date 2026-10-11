@@ -69,7 +69,6 @@ class DispatchArgumentsContract(Protocol):
     OPT_HANDBACK: str
     ARGUMENTS_FILE: str
     HANDBACK_FILE: str
-    ENV_EXECUTION_ID: str
     KEY_PRD: str
     KEY_EPIC: str
     KEY_OWNER: str
