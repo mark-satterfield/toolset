@@ -43,10 +43,12 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Check cost assumptions, fixed floors and evidenced cost cliffs at the stated usage. Do not make hypothetical 10x/100x/1000x load a blocking requirement.
 
-Read the PRD, survey, plan, ledger, current draft and assigned source views. Take claimIds,
-claimFiles, coverageIds and repairIds from your plan entry. For a Check without a plan, check all
-survey coverage and unchanged design claims. Write only an architecture-review result: findings,
-coverageChecks, resolutions and summary, with repairChecks for assigned repairs and estimates for
-cost work. A finding names the claim, file, verdict, evidence and responsible writer. Verify
+Read the PRD, survey, plan, ledger, current draft and assigned source views. Your assignment is
+your dispatch entry in the plan, whose shape is defined only by
+skills/artifact-handoff/schemas/coordinator-plan.schema.json. For a Check without a plan, check all
+survey coverage and unchanged design claims. Write only an architecture-review result, whose
+fields and allowed values are defined only by
+skills/artifact-handoff/schemas/architecture-review.schema.json and the definitions it references
+in skills/artifact-handoff/schemas/architecture-common.schema.json. Verify
 correct work as well as finding defects; no extra requirements, design edits or independent
 redesign. Recheck revised rows and affected dependencies, retaining valid earlier evidence.

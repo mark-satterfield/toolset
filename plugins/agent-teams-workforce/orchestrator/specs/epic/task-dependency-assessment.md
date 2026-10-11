@@ -11,18 +11,25 @@ edges itself (`task-decomposition.md`, `prd-to-spec.md` steps 11 to 13). S08 del
 --task` when nothing else uses them. This file stays only as the record of what is deleted.
 
 Source: `<plugin>/workflows/task-dependency-assessment.js` (`meta.description`), the agent
-`<plugin>/agents/task-dependency-mapper.md`, `<plugin>/skills/beads-contract/SKILL.md` (sequencing
-and Story-edge keys), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
+`<plugin>/agents/task-dependency-mapper.md`, `<plugin>/skills/beads-contract/SKILL.md` (bead
+metadata), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
 `<plugin>/scripts/portfolio/depscore.py` (`assess-plan --level task`, `assess-context --task`,
 `validate --task`, `apply-edges --task`), `edgeset.py`, `assesscontext.py` (`task_context`) and
-`storyedges.py`. `<driver>` is `$ATW_CONTROL_REPO/ops/sdlc-automation`. It shares its shape with
+`storyedges.py`. `<driver>` is the driver directory the `pipeline-contracts` skill defines
+(`DRIVER_DIR_PARTS` under the control repository its `CONTROL_REPO_ENV` variable names). It shares
+its shape with
 `<orch>/specs/epic/dependency-assessment.md` and calls the flow in
 `<orch>/specs/epic/wsjf-scoring.md`.
 
+Bead metadata: every metadata key, key group and value shape this spec names is defined only in
+`<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and is named here by the
+constant `<plugin>/skills/beads-contract/scripts/bead_metadata.py` generates from it (`KEY_*` for
+one key, `*_KEYS` for a key group). This spec restates none of their names or shapes.
+
 ## Who calls it (the S01f question)
 
-- **The Epic pipeline does not call this flow.** Tasks written by elaboration carry `elab_key`
-  and get their `blocks` edges from elaboration (`depscore.py write-task` within a Story,
+- **The Epic pipeline does not call this flow.** Tasks written by elaboration carry
+  `KEY_ELAB_KEY` and get their `blocks` edges from elaboration (`depscore.py write-task` within a Story,
   `write-all-task-edges` across Stories; see `<orch>/specs/epic/task-decomposition.md` and
   `<orch>/specs/epic/prd-to-spec.md`). `prd-to-spec` does dispatch the same agent,
   `task-dependency-mapper`, but in its other assignment (edges between Tasks of different Stories
@@ -37,7 +44,7 @@ and Story-edge keys), `<plugin>/workflows/README.md` (Portfolio section), and, f
 
 ## 1. Purpose
 
-Assess the build dependencies of ONE Task created outside elaboration (no `elab_key`) and write its
+Assess the build dependencies of ONE Task created outside elaboration (no `KEY_ELAB_KEY`) and write its
 `blocks` edges, then re-score. An edge from Task A to Task B means B cannot be built until A is
 built, because B consumes something A provides (an API, an event contract, a table, an IAM grant, a
 deployed resource); sharing a domain, a repository or an Epic is not an edge, and when in doubt an
@@ -57,37 +64,40 @@ After a successful run (with `apply` true):
 - The owned `blocks` edges touching the Task equal the validated proposal (added; owned ones
   stored as `tracks` converted to `blocks`; owned ones not proposed removed). Hand-made edges are
   unchanged.
-- On each blocked Task touched: `seq_owned_blockers`, `seq_owned_blockers_at`, `seq_edge_reasons`
-  (`{reason, confidence, setBy, setAt}` per blocker), `seq_edge_withdrawn`
-  (`{reason, withdrawnBy, withdrawnAt}` per blocker).
-- On the assessed Task: `seq_content_hash` (judging fingerprint at plan time), `seq_assessed_at`.
+- On each blocked Task touched: `KEY_SEQ_OWNED_BLOCKERS`, `KEY_SEQ_OWNED_BLOCKERS_AT`,
+  `KEY_SEQ_EDGE_REASONS` and `KEY_SEQ_EDGE_WITHDRAWN`, each in the shape the schema defines.
+- On the assessed Task: `KEY_SEQ_CONTENT_HASH` (judging fingerprint at plan time),
+  `KEY_SEQ_ASSESSED_AT`.
 - Story order re-derived by `storyedges.story_edges` over the whole tracker: on each Story,
-  `story_owned_blockers`, `story_owned_blockers_at`, `story_edge_reasons`, and the Story-to-Story
-  `blocks` edges it owns. A Story whose order is contradictory is refused (not written) and named.
-- `wsjf-scoring` has run over the whole portfolio. The Task gets a `wsjf` only if it sits under a
-  scored Epic (value is inherited); a Task with no Epic stays unscored.
+  `KEY_STORY_OWNED_BLOCKERS`, `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`, and the
+  Story-to-Story `blocks` edges it owns. A Story whose order is contradictory is refused (not
+  written) and named.
+- `wsjf-scoring` has run over the whole portfolio. The Task gets a `KEY_WSJF` value only if it sits
+  under a scored Epic (value is inherited); a Task with no Epic stays unscored.
 - With `apply: false`: diff and proposal in files; beads unchanged; no Story edges; no scoring.
 - When the proposal does not validate: nothing is written; the result names the Task and every
   finding (`stop`).
 
 ## 3. Inputs
 
-- Arguments: `task` (required), `repoPath` (default `$ATW_CONTROL_REPO`), `workDir`, `archPath`
-  (`$ATW_ARCH_PATH`), `projectRoot` (`$ATW_PROJECT_ROOT`), `apply` (default true),
-  `priorFailure` (optional).
+- Arguments: `task` (required), `repoPath` (default: the control repository), `workDir`,
+  `archPath` (the architecture root), `projectRoot`, `apply` (default true), `priorFailure`
+  (optional). The control repository, architecture root and project root come from the
+  `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
+  skill.
 - beads, read with descriptions: every open Task (title, description, status, `parent` lineage to
-  its Epic, metadata `repoPath`, `elab_key`), every `blocks`/`tracks` edge among Tasks, the
-  sequencing keys, the judging fingerprint (`beads-contract.py content_hash --scope judging`);
+  its Epic, metadata `KEY_REPO_PATH`, `KEY_ELAB_KEY`), every `blocks`/`tracks` edge among Tasks,
+  the `SEQUENCING_KEYS`, the judging fingerprint (`beads-contract.py content_hash --scope judging`);
   Stories and their Tasks for `story_edges`.
 
 ## 4. Outputs
 
 Files (under `<workDir>`):
 - `assess-plan.json`: `depscore.assess_plan(level="task")`: `{level: "task", scope, since,
-  unassessed, fingerprints: {id: sha} for every open Task without `elab_key`, summary: {level,
+  unassessed, fingerprints: {id: sha} for every open Task without `KEY_ELAB_KEY`, summary: {level,
   scope, openTasks, candidates, unassessed, unassessedIds}}`.
 - `context/task/<id>.md` (one per open Task: `# <id> — <title>\n\n<description>`),
-  `context/index.md` (`- <id> | <title> | Epic: <id or none> | repo: <repoPath or unset> |
+  `context/index.md` (`- <id> | <title> | Epic: <id or none> | repo: <KEY_REPO_PATH value or unset> |
   status: <status> | file: <path>`).
 - `context.json`: `assesscontext.task_context` result: `{task: {id, title, fingerprint, epic,
   repoPath, path}, standing: [{from, to, type, owned, reason, confidence, setBy, setAt}],
@@ -107,8 +117,9 @@ Files (under `<workDir>`):
 - `scoring/`: the `wsjf-scoring` work directory.
 
 Bead writes: `edgeset.apply_edges` (order as in the Epic spec, edge type `blocks`), then
-`storyedges.story_edges` (Story edges and `story_*` keys), then the `wsjf-scoring` writes. No vault
-writes, no commits, no ledger events.
+`storyedges.story_edges` (Story edges and `KEY_STORY_OWNED_BLOCKERS`,
+`KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`), then the `wsjf-scoring`
+writes. No vault writes, no commits, no ledger events.
 
 Result: as the Epic spec's, with `task` in place of `epic`, and the headline carrying the Story
 edge outcome.
@@ -118,7 +129,7 @@ edge outcome.
 1. `deterministic` **Plan**: `depscore.assess_plan(graph, level="task", task=<task>)` (today
    `depscore.py assess-plan --level task --task <id> --out assess-plan.json -C <repo>`). Refuse,
    with no session, when `edgeset.scope_defect(graph, task, "task")` names a defect: not an open
-   Task, or a Task elaboration wrote (`elab_key`).
+   Task, or a Task elaboration wrote (`KEY_ELAB_KEY`).
 2. `deterministic` **Context**: `assesscontext.task_context(graph, task, context_dir)` (today
    `depscore.py assess-context --task <id> --dir context --out context.json`).
 3. `deterministic` **Reuse**: skip step 4 when `edges.json` exists and every input recorded in
@@ -138,7 +149,7 @@ edge outcome.
 6. `deterministic` **Validate**: `edgeset.validate(graph, edges, task, withdrawn, "task")`.
 7. `agent` **Correct** (only when step 6 is not ok, at most once): `task-dependency-mapper`, new
    session, with `validation.json` and the instruction to revise to THE TEST. Then 5 and 6 again.
-8. `deterministic` **Apply**: `edgeset.apply_edges(..., item=<task>, level="task")` with the
+8. `deterministic` **Apply**: `edgeset.apply_edges(..., ApplyScope(..., item=<task>, level="task"))` with the
    plan's fingerprints (today `depscore.py apply-edges --edges edges.json --plan assess-plan.json
    --task <id> [--dry-run] --out apply-edges.json`).
 9. `deterministic` **Story edges**: when applied and not a dry run, reload the graph and run
@@ -160,7 +171,7 @@ Agents dispatched by the JavaScript, accounted for:
 ## 6. Checks kept / Checks dropped
 
 **Checks kept** (in `edgeset.validate`, step 6 and again inside `apply_edges`)
-- Scope refusal of a Task elaboration wrote (`elab_key`): without it this flow and elaboration
+- Scope refusal of a Task elaboration wrote (`KEY_ELAB_KEY`): without it this flow and elaboration
   both own that Task's edges and overwrite each other; nothing reconciles them.
 - Edge outside the Task, ends not both open Tasks (`notTaskToTask`), dangling, self-edge: without
   it a `blocks` edge onto an Epic or Story or a missing bead holds the Task out of the build lane
@@ -184,7 +195,7 @@ Agents dispatched by the JavaScript, accounted for:
 ## 7. Failure causes
 
 As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differences:
-- Step 1 scope refusal for an `elab_key` Task: `other`; not retried; reported (the Task's edges
+- Step 1 scope refusal for a `KEY_ELAB_KEY` Task: `other`; not retried; reported (the Task's edges
   are elaboration's).
 - Step 9 `story_edges` fails to read the tracker (`GraphError`): recorded in `storyEdges`
   (`bd-timeout` / `contention` / `other` as for any `bd` call); the applied Task edges stand; a
@@ -207,7 +218,7 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
 - 7.16 Hierarchy and sources of work: every Task is created by elaboration, so this flow has no
   input to assess; it is deleted in S08 and not rewritten.
 - 7.8 "Tasks with no WSJF score are never considered": via step 10. A Task created outside
-  elaboration under no Epic, or under an unscored Epic, gets no `wsjf` and so is never selected by
+  elaboration under no Epic, or under an unscored Epic, gets no `KEY_WSJF` value and so is never selected by
   `selection.build_candidates`; this flow does not work around that.
 - 7.8 "Unbuildable Tasks are hidden": the `blocks` edges this flow writes are what makes a Task
   wait (`selection.waiting_build`) rather than be dispatched.

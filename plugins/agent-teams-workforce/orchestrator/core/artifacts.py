@@ -14,7 +14,11 @@ from pathlib import Path
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+from driver_surface_types import ARTIFACT_SCRIPT_ENV
+
 from .artifact_contract import ArtifactProducer
+from .handback_contract import OTHER_CAUSE, REUSED_PHASE
 from .io import JsonValue, json_object
 from .models import DeterministicStep, StepError
 
@@ -41,13 +45,13 @@ def load_artifactio(path: Path | None = None) -> ArtifactProducer:
 
     """
     stage = "input"
-    source = (path or Path(os.environ["ATW_ARTIFACT_SCRIPT"])).resolve()
+    source = (path or Path(os.environ[ARTIFACT_SCRIPT_ENV])).resolve()
     parent = str(source.parent)
     if parent not in sys.path:
         sys.path.insert(0, parent)
     spec = importlib.util.spec_from_file_location("atw_artifactio", source)
     if spec is None or spec.loader is None:
-        raise StepError(stage, "other", (f"cannot load artifact script: {source}",))
+        raise StepError(stage, OTHER_CAUSE, (f"cannot load artifact script: {source}",))
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     with contextlib.redirect_stdout(sys.stderr):
@@ -58,7 +62,7 @@ def load_artifactio(path: Path | None = None) -> ArtifactProducer:
     if missing:
         raise StepError(
             stage,
-            "other",
+            OTHER_CAUSE,
             tuple(f"artifactio lacks {name}" for name in missing),
         )
     return producer
@@ -169,7 +173,7 @@ class ArtifactStore:
         """
         try:
             if step.reusable and self.reusable(step.inputs, step.outputs):
-                return "reused", None
+                return REUSED_PHASE, None
             self.invalidate(step.outputs)
             with contextlib.redirect_stdout(sys.stderr):
                 result: T = step.action()
@@ -180,6 +184,6 @@ class ArtifactStore:
             self.work.mkdir(parents=True, exist_ok=True)
             evidence = self.work / (self.module.safe_key(step.stage) + ".traceback.txt")
             evidence.write_text(traceback.format_exc(), encoding="utf-8")
-            raise StepError(step.stage, "other", (str(evidence),)) from exc
+            raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
         else:
             return "ran", result

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/composites.schema.json",
+  "title": "Composite names and phase vocabulary",
+  "description": "The shape of composites.json, the one definition of every composite id, the runner that runs it, its phases in run order with their display titles, the role sets it belongs to and its opening kind. scripts/generate_composites.py renders scripts/composites_contract.py and scripts/shared-blocks/composite-phases.js from composites.json under this schema; scripts/check_composites_contract.py fails when either is stale.",
+  "type": "object",
+  "required": ["wire", "fallbackPhases", "composites", "retired"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "wire": {
+      "description": "Display vocabulary of composite progress.",
+      "type": "object",
+      "required": ["phaseSentinel", "progressPrefix"],
+      "additionalProperties": false,
+      "properties": {
+        "phaseSentinel": {"type": "string", "minLength": 1, "description": "Prefix of a PHASE progress line. A headless session prompt forbids the agent from printing lines that begin with it.", "x-constant": "PHASE_SENTINEL"},
+        "progressPrefix": {"type": "string", "minLength": 1, "description": "Prefix of an orchestrator-event progress line.", "x-constant": "PROGRESS_PREFIX"}
+      }
+    },
+    "fallbackPhases": {
+      "description": "Phases shown for a known composite that declares none (a retired id, or probe).",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/phase"},
+      "x-constant": "FALLBACK_PHASES"
+    },
+    "composites": {
+      "description": "Every composite the pipeline dispatches, by id.",
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/compositeId"},
+      "additionalProperties": {"$ref": "#/$defs/composite"}
+    },
+    "retired": {
+      "description": "Ids no longer dispatched, kept only to attribute historical cost and ledger rows.",
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/compositeId"},
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sets"],
+        "additionalProperties": false,
+        "properties": {"sets": {"$ref": "#/$defs/sets"}}
+      }
+    }
+  },
+  "$defs": {
+    "compositeId": {
+      "description": "A composite id; Workflow agent-teams-workforce:<id> runs a workflow-runner composite.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "x-python": {"literal": "CompositeId"}
+    },
+    "phaseId": {
+      "description": "A phase id as the driver and orchestrator emit it.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "x-python": {"literal": "PhaseId"}
+    },
+    "phase": {
+      "description": "One phase of a composite, in run order.",
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/phaseId"},
+        "title": {"type": "string", "minLength": 1, "description": "The display title, as the workflow's meta.phases shows it."},
+        "event": {"type": "boolean", "description": "True when the orchestrator emits a phase event with this id.", "x-collect": "EVENT_PHASES"}
+      },
+      "x-python": {"typeddict": "PhaseSpec", "fields": ["id", "title"]}
+    },
+    "runner": {
+      "description": "What runs a composite: the Python orchestrator (orchestrator/run.py FLOWS), a headless Workflow session, the driver itself (storydeploy.py), or the probe.",
+      "type": "string",
+      "enum": ["orchestrator", "workflow", "driver", "probe"],
+      "x-python": {"literal": "Runner"}
+    },
+    "openingKind": {
+      "description": "The kind of bead a composite opens a run budget for.",
+      "type": "string",
+      "enum": ["epic", "task"],
+      "x-python": {"literal": "OpeningKind", "mapping": "OPENING_KIND"}
+    },
+    "set": {
+      "description": "A role set a composite belongs to; each driver and plugin collection of composite ids is one of these.",
+      "type": "string",
+      "enum": [
+        "orchestrated",
+        "target-repo",
+        "code-build",
+        "repo-required",
+        "design-aware",
+        "elaboration",
+        "bug",
+        "story",
+        "attaching",
+        "former-trigger"
+      ],
+      "x-python": {
+        "literal": "CompositeSet",
+        "frozensets": {
+          "orchestrated": "ORCHESTRATED",
+          "target-repo": "TARGET_REPO",
+          "code-build": "CODE_BUILD",
+          "repo-required": "REPO_REQUIRED",
+          "design-aware": "DESIGN_AWARE",
+          "story": "STORY",
+          "attaching": "ATTACHING",
+          "former-trigger": "FORMER_TRIGGER"
+        },
+        "singles": {
+          "elaboration": "ELABORATION_COMPOSITE",
+          "bug": "BUG_COMPOSITE"
+        },
+        "known": "KNOWN",
+        "retired": "RETIRED"
+      }
+    },
+    "sets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/set"}
+    },
+    "composite": {
+      "description": "One composite: its runner, its phases in run order, its role sets and its opening kind.",
+      "type": "object",
+      "required": ["runner", "phases", "sets"],
+      "additionalProperties": false,
+      "properties": {
+        "runner": {"$ref": "#/$defs/runner"},
+        "phases": {"type": "array", "items": {"$ref": "#/$defs/phase"}},
+        "sets": {"$ref": "#/$defs/sets"},
+        "openingKind": {"$ref": "#/$defs/openingKind"}
+      },
+      "x-python": {"typeddict": "CompositeSpec"}
+    }
+  }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import typing
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -13,13 +14,27 @@ from datetime import UTC, datetime
 from operator import itemgetter
 from pathlib import Path
 
+# The architecture writer and review results are generated into the artifact-handoff skill, their one place.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
 import contracts
 import roundcontracts
 from archevidence import digest
-from contracts import Claim, JsonObject, json_object
-from jsonartifact import read_artifact
+from architecture_artifacts import REVIEW_SCHEMA_PATH, WRITER_SCHEMA_PATH, resolved_schema
+from contracts import Claim, JsonObject, JsonValue, json_object
+from jsonartifact import read_artifact, receipt_path
+from jsonschema import Draft202012Validator
 from roundcontracts import CompactPlan, Dispatch, RevisionRef, RoundFacts, RoundLedger, RoundPlan
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
+
+# The provenance receipt the driver's artifactio writes beside an artifact (`<file>.meta.json`).
+META_SUFFIX: typing.Final[str] = ".meta.json"
+# The jsonartifact publish transaction sidecar; jsonartifact exports no publish_path yet.
+PUBLISH_SUFFIX: typing.Final[str] = ".publish"
+# The top-level fields a legacy saved result predates: it is checked without them.
+LEGACY_WRITER_FIELD: typing.Final[str] = "coverage"
+LEGACY_REVIEW_FIELD: typing.Final[str] = "coverageChecks"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -27,7 +42,9 @@ def set_aside(path: Path) -> str:
     """Move a saved file that cannot be used out of the way, with its receipt sidecars.
 
     The file is renamed `<name>.unreadable-<timestamp>`, a name no reader of the working
-    directory matches, so the step it belongs to runs again.
+    directory matches, so the step it belongs to runs again. Its acceptance receipt, publish
+    transaction and provenance receipt move with it, so none is left describing a file that
+    is no longer there.
 
     Args:
         path: The file.
@@ -39,17 +56,20 @@ def set_aside(path: Path) -> str:
         TypeError: An argument violates the declared input contract.
 
     """
-    suffix: str | str
+    sidecar: Path
     if not (isinstance(path, Path)):
         argument_error: str = "set_aside: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     stamp: str = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     moved: Path = path.with_name(f"{path.name}.unreadable-{stamp}")
     path.rename(moved)
-    for suffix in (".receipt", ".publish"):
-        sidecar: Path = path.with_name(path.name + suffix)
+    for sidecar in (
+        receipt_path(path),
+        path.with_name(path.name + PUBLISH_SUFFIX),
+        path.with_name(path.name + META_SUFFIX),
+    ):
         if sidecar.is_file():
-            sidecar.rename(moved.with_name(moved.name + suffix))
+            sidecar.rename(moved.with_name(moved.name + sidecar.name.removeprefix(path.name)))
     return str(moved)
 
 
@@ -104,19 +124,64 @@ def overlap_justified(plan: RoundPlan, claim: Claim, reviewers: list[Dispatch]) 
 def _recorded_meta(path: Path) -> dict[str, str]:
     """Read a result receipt when it still describes the bytes on disk.
 
+    Only a missing receipt or result means no receipt; any other failure stops the round,
+    since a receipt that cannot be trusted must not decide which round resumes. A receipt or
+    result that exists but cannot be read propagates its OSError unchanged.
+
     Returns:
-        Its content hash and update timestamp, or no trusted receipt.
+        Its content hash and update timestamp, or no trusted receipt when the receipt or the
+        result does not exist or the receipt describes other bytes.
+
+    Raises:
+        ValueError: The receipt is not a JSON object; the message names the receipt.
+        TypeError: The receipt's sha256 or updated_at is not a string; the message names the
+            receipt.
 
     """
+    meta_path: Path = path.with_name(path.name + META_SUFFIX)
     try:
-        meta: JsonObject = json_object(json.loads(path.with_name(path.name + ".meta.json").read_text()))
-        return (
-            {"sha256": check_type(meta["sha256"], str), "updated_at": check_type(meta.get("updated_at", ""), str)}
-            if isinstance(meta, dict) and meta.get("sha256") == hashlib.sha256(path.read_bytes()).hexdigest()
-            else {}
-        )
-    except OSError, ValueError:
+        text: str = meta_path.read_text(encoding="utf-8")
+        content: bytes = path.read_bytes()
+    except FileNotFoundError:
         return {}
+    try:
+        meta: JsonObject = json_object(json.loads(text))
+    except (ValueError, TypeCheckError) as error:
+        message: str = f"{meta_path}: provenance receipt is not a JSON object: {error}"
+        raise ValueError(message) from error
+    sha256: JsonValue = meta.get("sha256")
+    updated_at: JsonValue = meta.get("updated_at", "")
+    if not isinstance(sha256, str) or not isinstance(updated_at, str):
+        message = f"{meta_path}: provenance receipt sha256 and updated_at must be strings"
+        raise TypeError(message)
+    return {"sha256": sha256, "updated_at": updated_at} if sha256 == hashlib.sha256(content).hexdigest() else {}
+
+
+def _result_conforms(result: JsonValue, *, writer: bool, legacy: bool) -> bool:
+    """Return whether a saved dispatch result satisfies its architecture schema.
+
+    A legacy result predates the writer's ``coverage`` and the reviewer's ``coverageChecks``,
+    so it is checked against the schema without that one requirement; every other required
+    field, and every field it carries, must still conform.
+
+    Returns:
+        True when the result validates against the writer or review schema.
+
+    Raises:
+        ValueError: The schema's top-level ``required`` is not a list of field names.
+
+    """
+    schema_path: Path = WRITER_SCHEMA_PATH if writer else REVIEW_SCHEMA_PATH
+    schema: dict[str, object] = resolved_schema(schema_path)
+    if legacy:
+        required: object = schema.get("required")
+        if not isinstance(required, list) or not all(isinstance(name, str) for name in required):
+            message: str = f"{schema_path.name}: top-level required is not a list of field names"
+            raise ValueError(message)
+        exempt: str = LEGACY_WRITER_FIELD if writer else LEGACY_REVIEW_FIELD
+        schema = {**schema, "required": [name for name in required if name != exempt]}
+    conforms: bool = bool(Draft202012Validator(schema).is_valid(result))
+    return conforms
 
 
 @dataclass(frozen=True)
@@ -257,8 +322,8 @@ class _RoundState:
         roles, notes = self.inputs.roles, self.notes
         usable: list[RoundPlan] = []
         for plan in plans:
-            n: int = plan.get("round") if isinstance(plan, dict) else None
-            if not isinstance(n, int) or n < 1 or not isinstance(plan.get("dispatches"), list):
+            n: object = plan.get("round") if isinstance(plan, dict) else None
+            if type(n) is not int or n < 1 or not isinstance(plan.get("dispatches"), list):
                 notes.append(f"a saved round plan that is not a plan was dropped: {n!r}")
                 continue
             usable.append(plan)
@@ -309,10 +374,11 @@ class _RoundState:
                     )
                 except OSError, UnicodeDecodeError, ValueError:
                     result = None
-                required: tuple[str, ...] = ("files", "claims", "answers") if d in writers else ("findings",)
-                if not d.get("legacySaved"):
-                    required += ("coverage",) if d in writers else ("coverageChecks",)
-                if not isinstance(result, dict) or any(not isinstance(result.get(k), list) for k in required):
+                if result is None or not _result_conforms(
+                    result,
+                    writer=d in writers,
+                    legacy=bool(d.get("legacySaved")),
+                ):
                     notes.append(
                         f"malformed saved dispatch result set aside: {set_aside(file)}",
                     )
@@ -366,7 +432,10 @@ class _RoundState:
             for c in d.get("assignedClaims", []):
                 by_claim.setdefault((c["id"], c["revision"]), []).append(d)
         for (cid, _revision), reviewers in by_claim.items():
-            claim: contracts.Claim = next(c for c in ledger.claims if c["id"] == cid)
+            claim = next((c for c in ledger.claims if c["id"] == cid), None)
+            if claim is None:
+                gaps.append(f"round {n}: assigned claim {cid} is no longer present; replan its review")
+                continue
             if len(reviewers) > 1 and not overlap_justified(plan, claim, reviewers):
                 warning: str = (
                     f"round {n}: claim {cid} is reviewed by "
@@ -409,7 +478,7 @@ class _RoundState:
                     "findings": [
                         json_object(finding)
                         for finding in ledger.findings
-                        if d.get("repairIds") or finding.get("claimId") in selected
+                        if d.get("repairIds") or finding["claimId"] in selected
                     ],
                 },
             )

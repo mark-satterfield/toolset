@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.handback_contract import EVENT_KEY, REUSED_NOTE, EventName
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
@@ -61,13 +63,17 @@ def main() -> None:
         tools = Tools(work / "evidence")
         notes: list[dict[str, object]] = []
 
-        def emit(event: str, **fields: JsonValue) -> None:
-            notes.append({"event": event, **fields})
+        def emit(event: EventName, **fields: JsonValue) -> None:
+            notes.append({EVENT_KEY: event, **fields})
 
+        dispatch: DispatchArgumentsContract = dispatch_arguments()
         context = RunContext(
             "epic",
             "architecture",
-            {"archPath": str(root / "vault"), "prd": {"path": str(root / "prd.md")}},
+            {
+                dispatch.KEY_ARCH_PATH: str(root / "vault"),
+                dispatch.KEY_PRD: {dispatch.PRD_PATH: str(root / "prd.md")},
+            },
             root,
             "survey-check",
         )
@@ -84,7 +90,7 @@ def main() -> None:
             "hashlib.sha256((work / 'survey.json').read_bytes()).hexdigest() == originals['survey.json']",
         )
         require(notes, "notes")
-        require(all(n["kind"] == "reused" for n in notes), "all((n[1]['kind'] == 'reused' for n in notes))")
+        require(all(n["kind"] == REUSED_NOTE for n in notes), "every emitted note must be a reused note")
     require(
         all(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest for name, digest in originals.items()),
         "original survey artifacts changed",

@@ -7,9 +7,12 @@ from pathlib import Path
 
 import beadgraph
 import beadwrite
+from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
+from driver_surface_types import CONTROL_REPO_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import strict_json
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import StepError
 from orchestrator.core.tools import Tools, env_path
@@ -39,16 +42,16 @@ def snapshot(tools: Tools, epic: str, slug: str) -> tuple[beadgraph.Graph, beadg
     graph: beadgraph.Graph = tools.portfolio(
         "decompose",
         beadgraph.load,
-        env_path("ATW_CONTROL_REPO"),
+        env_path(CONTROL_REPO_ENV),
         with_description=True,
     )
     stories: list[beadgraph.Bead] = [
         b
         for b in graph.beads.values()
-        if b.parent == epic and b.kind == "story" and b.metadata.get("elab_key") == f"story:{slug}"
+        if b.parent == epic and b.kind == "story" and b.metadata.get(KEY_ELAB_KEY) == f"story:{slug}"
     ]
     if len(stories) != 1:
-        raise StepError(stage, "other", (f"expected one Story story:{slug}",))
+        raise StepError(stage, OTHER_CAUSE, (f"expected one Story story:{slug}",))
     story: beadgraph.Bead = stories[0]
     return (
         graph,
@@ -70,16 +73,16 @@ def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
     """
     if not (isinstance(bead, beadgraph.Bead)):
         raise TypeError(_ARGUMENT_ERROR)
-    raw: str | list[str] = bead.metadata.get("requirement_ids", [])
+    raw: str | list[str] = bead.metadata.get(KEY_REQUIREMENT_IDS, [])
     decoded: object = json.loads(raw) if isinstance(raw, str) and raw else raw
     ids: list[str] = check_type(decoded, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     return json_object({
         "id": bead.id,
         "title": bead.title,
-        "elabKey": bead.metadata.get("elab_key"),
+        "elabKey": bead.metadata.get(KEY_ELAB_KEY),
         "description": bead.description[:2000],
         "status": bead.status,
-        "requirementIds": ids or [],
+        ARG_REQUIREMENT_IDS: ids or [],
     })
 
 
@@ -115,7 +118,7 @@ def replace(tools: Tools, epic: str, slug: str, work: Path, reason: str) -> dict
         kept: list[dict[str, JsonValue]] = []
         for bead in tasks:
             started: bool = tools.portfolio("decompose", beadwrite.task_started, bead)
-            (kept if started or not str(bead.metadata.get("elab_key", "")).startswith("task:") else deleted).append(
+            (kept if started or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:") else deleted).append(
                 task_facts(bead),
             )
         ids: dict[str, dict[str, JsonValue]] = {check_type(b["id"], str): b for b in deleted}
@@ -128,7 +131,7 @@ def replace(tools: Tools, epic: str, slug: str, work: Path, reason: str) -> dict
                         row: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
                             "dependent": bead.id,
                             "deleted": blocker,
-                            "requirementIds": ids[blocker]["requirementIds"],
+                            ARG_REQUIREMENT_IDS: ids[blocker][ARG_REQUIREMENT_IDS],
                         }
                         if row not in incoming:
                             incoming.append(row)
@@ -143,7 +146,7 @@ def replace(tools: Tools, epic: str, slug: str, work: Path, reason: str) -> dict
             "reason": reason,
         })
         write_json(journal, facts)
-        writer: beadgraph.Writer = tools.portfolio("decompose", beadgraph.Writer, env_path("ATW_CONTROL_REPO"))
+        writer: beadgraph.Writer = tools.portfolio("decompose", beadgraph.Writer, env_path(CONTROL_REPO_ENV))
         tools.portfolio("decompose", beadwrite.replace_tasks, writer, epic, slug=slug, reason=reason)
         return facts
 
@@ -186,7 +189,7 @@ def repoint(tools: Tools, epic: str, slug: str, work: Path) -> list[str]:
                 continue
             ids = set(
                 check_type(
-                    edge["requirementIds"],
+                    edge[ARG_REQUIREMENT_IDS],
                     list[str],
                     collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
                 ),
@@ -196,7 +199,7 @@ def repoint(tools: Tools, epic: str, slug: str, work: Path) -> list[str]:
                 for b in tasks
                 if ids.intersection(
                     check_type(
-                        task_facts(b)["requirementIds"],
+                        task_facts(b)[ARG_REQUIREMENT_IDS],
                         list[str],
                         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
                     ),

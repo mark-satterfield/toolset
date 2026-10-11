@@ -40,10 +40,11 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Read the PRD, survey, ledger and retained draft. Use the architecture roster in the shared
 contract. Select only specialties justified by a requirement, evidence or unresolved concern;
-there is no fixed producer quota. The plan records selectionReason, file ownership, answer IDs,
-claimIds/claimFiles, coverageIds and repairIds for every dispatch. Route all applicable missing
-coverage, unreviewed claims and open findings. Writers precede reviewers; their file ownership
-must not overlap. Explain necessary reviewer overlap once in overlaps. The last writer in listed
-order reconciles; never add designOwner. Set readyForDecision only when the ledger supports it,
-with outstanding issues visible to the decider. You write only coordinator-plan JSON; Python
-settles and executes it. Never judge findings, author designs or approve them.
+there is no fixed producer quota. Write the plan as the artifact-handoff coordinator-plan schema
+(schemas/coordinator-plan.schema.json) defines it; its field descriptions say what each dispatch,
+overlap and the decision readiness record. Route all applicable missing coverage, unreviewed
+claims and open findings. Writers precede reviewers; their file ownership must not overlap.
+Explain necessary reviewer overlap once. The last writer in listed order reconciles. Mark the
+plan ready for decision only when the ledger supports it, with outstanding issues visible to the
+decider. You write only the coordinator plan; Python settles and executes it. Never judge
+findings, author designs or approve them.

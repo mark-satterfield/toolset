@@ -38,17 +38,21 @@ Read the Story, PRD/TRD, all three spec documents, placed items, task context an
 In one pass: decompose into coherent single-repository build Tasks, sequence dependencies, then
 size them using the wsjf skill's agent-pipeline reference jobs. Tasks are how to build, not new
 requirements or test-only activities. Every placed item, including prerequisites and overlaps
-with another Epic, gets a Task. Existing started/closed Tasks in context are retained through
-reuses; another Epic's Task adds blockedByExternal and never replaces this Epic's Task.
-Write tasks.schema.json: tasks with local keys T1..., descriptions, type task, spec paths/sections,
-work-item/TRD requirementIds, exact decisionIds, criterion/DoD id references, reuses,
-blockedByExternal and surfaces. Empty surfaces means none; null means not settled by the spec.
-Use the shared surface enum. Include testStrategy from the spec or null. Every Task gets a score:
-Fibonacci jobSize, plausible sizeLow <= jobSize <= sizeHigh and integer sizeConfidence percent.
-Judge volume/complexity/uncertainty, not calendar or human time. Split work above 13 when feasible;
-otherwise record the judged size and explanation. Do not assign Epic value or WSJF arithmetic.
-Prefer one UI artifact per Task; if input forces two, preserve first-artifact normalization and
-record a warning, not a refusal. For an exact uncited/unsized-items correction, read saved tasks
-and error input; use tasks-correction schema, new keys N1..., edges into new Tasks, and scores for
-new or explicitly unsized saved keys. No noWork, no status-based omission, no code-comparison
-pass, no empty-success escape. Python performs all Task and edge writes.
+with another Epic, gets a Task. An existing started or closed Task in context is reused, not
+rewritten; another Epic's Task that plans the same work is recorded as an external blocker and
+never replaces this Epic's Task.
+Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
+`tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
+the surface set and what an empty list and null each mean, and the score rules (jobSize on the
+wsjf skill's Fibonacci scale inside its sizeLow..sizeHigh range, sizeConfidence an integer
+percent). Cite the work items, requirements and decisions each Task builds exactly as the inputs
+name them. Take the test strategy from the spec, never invent one. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
+volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
+too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
+value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve
+first-artifact normalization and record a warning, not a refusal. For an exact uncited or
+unsized-items correction, read the saved tasks and the error input and write per artifact-handoff's
+tasks-correction.schema.json as the `tasks-correction` section of the Epic contracts defines it
+(its own new-key series, N1...), adding only the new Tasks, the edges into them and the sizes
+the errors name. A correction never carries noWork. No status-based omission, no
+code-comparison pass, no empty-success escape. Python performs all Task and edge writes.

@@ -2,12 +2,13 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-Source of intent: `export const meta` of `<plugin>/workflows/architecture.js`, the agent
-definitions under `<plugin>/agents/`, the `architecture-baseline` and `artifact-handoff` skills,
-and `CONTEXT.md`. The JavaScript was read only for contracts (file names, JSON shapes, script
-subcommands and result fields). Paths below use:
+Source of intent: the agent definitions under `<plugin>/agents/`, the `architecture-baseline` and
+`artifact-handoff` skills, and `CONTEXT.md`. The flow that implements this spec is the Python flow
+`<plugin>/orchestrator/flows/architecture.py` (with its `architecture_*.py` modules beside it).
+Paths below use:
 
-- `<arch>` = the architecture root (`$ATW_ARCH_PATH`; today
+- `<arch>` = the architecture root (the driver environment variable `ARCH_PATH_ENV` defined by the
+  `pipeline-contracts` skill, `<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`; today
   `/Users/msat1971/projects/SkillSpoke/skillspoke-docs/docs/tech/architecture`), holding `arc42/`,
   `target/`, `built/` and `reference/`.
 - `<art>` = the Epic's artifacts directory,
@@ -42,8 +43,9 @@ or evidence that changed are refreshed.
 
 After a successful run, all of the following are true:
 
-1. `<work>/survey.json` and `<work>/survey.md` hold an accepted survey (SURVEY_SCHEMA, section 4)
-   for the current inputs, sealed by `<work>/survey.json.baseline-inputs.json`. The survey has:
+1. `<work>/survey.json` and `<work>/survey.md` hold an accepted survey
+   (`<plugin>/skills/artifact-handoff/schemas/survey.schema.json`) for the current inputs, sealed by
+   its seal file (`<portfolio>/contracts.py`: `survey_seal_path`, `SurveySeal`). The survey has:
    - the target `subject`;
    - one `capabilities` entry per capability the PRD needs;
    - one `baseline` assessment entry per capability, with `designAction`, `documentationAction`,
@@ -75,11 +77,11 @@ After a successful run, all of the following are true:
    the coordinator lists them, and the last writer folds the others' contributions into its views
    (it is the round's reconciler). No `designOwner` field is stored. A legacy plan that carries one
    has it ignored.
-6. `<work>/decision.json` / `decision.md` hold the decider's verdict: `approve` (with `choices`),
-   `return` (with `returnTo`) or `owner-concern`. Only two kinds of concern reach the owner:
-   `business-conflict` (two business requirements no design can satisfy together) and
-   `architecture-conflict` (section 2 constraints that contradict each other or cannot be met with the
-   PRD). Any other concern goes back to the team.
+6. `<work>/decision.json` / `decision.md` hold the decider's verdict, in the shape
+   `<plugin>/skills/artifact-handoff/schemas/decision.schema.json` defines. Only the concern kinds
+   the schema's `ownerConcerns[].kind` enum lists reach the owner: two business requirements no design can
+   satisfy together, or section 2 constraints that contradict each other or cannot be met with the
+   PRD. Any other concern goes back to the team.
 7. `<arch>/target/<subject>/` holds the approved draft with every view `lifecycle_state: in-review`.
    It also holds `baseline.json`: `version`, `arc42Revision`, `survey`, `surveySha256`,
    `designChanged`, `documentationChanged`, `entries`, `implementationWork`, `approvalFiles`,
@@ -99,16 +101,15 @@ After a successful run, all of the following are true:
 9. Section 2 (`<arch>/arc42/02-architecture-constraints/`) is byte-identical to the start of the run.
    If any session changes it, the session runner's guard (`driver-contract.md` §8) restores it from
    the copy taken before that session and the run fails (hard limit).
-10. `<arch>/target/<subject>/closure.json` holds the checked prerequisite closure:
-    - `prerequisites[]`: one per element the delta's work rests on (reached from a build item
-      through the effective views, and not itself a build item) whose element status matrix state
-      is `unknown` or not built; an element with no row reads `unknown` (CONTEXT 7.25). Each has
-      `element` (named as the arc42 views name it), `state` (the matrix state it read, so
-      `unknown`), `views`, `requiredBy`, `requires`, `evidence` (view paths and headings, never
-      code) and `repository` (the repository the element's matrix row names, when it names one).
-    - `satisfied[]`: the elements reached whose matrix state is `built` or `deployed`, each with
-      the row's `state`, `repository` and the Task and commit that last changed it.
-    - `rootEdges[]`, `version` and `roots`.
+10. `<arch>/target/<subject>/closure.json` holds the checked prerequisite closure. Its shape is
+    defined only by `<plugin>/skills/artifact-handoff/schemas/closure.schema.json`; field
+    interpretation is in `artifact-handoff/epic-contracts.md`.
+    - A prerequisite is each element the delta's work rests on (reached from a build item through
+      the effective views, and not itself a build item) whose element status matrix state is not
+      built; an element with no matrix row is not built (CONTEXT 7.25). Its evidence is view paths
+      and headings, never code.
+    - A satisfied entry is each element reached whose matrix state is one of the states
+      `closure.schema.json`'s `satisfied[].state` enum lists.
     - There is no cycle.
     - The matrix is read, never written, by this step: it is seeded once with state `unknown`
       (PLAN S05a), and only the build pipeline sets `built` or `deployed`. While no row is `built`,
@@ -131,19 +132,19 @@ After a successful run, all of the following are true:
 
 | Input | Source |
 |---|---|
-| Architecture root | `archPath` arg (driver sets it from `$ATW_ARCH_PATH`). Under it: `arc42/`, `arc42/02-architecture-constraints/` (owner, read-only), `arc42/04-solution-strategy/README.md`, `target/<subject>/` (open targets), `built/<subject>/`, `reference/architecture-documentation-model.md` (MODEL), `reference/diagram-and-model-types.md` (MENU) |
+| Architecture root | `archPath` arg (driver sets it from the `ARCH_PATH_ENV` variable of the `pipeline-contracts` skill). Under it: `arc42/`, `arc42/02-architecture-constraints/` (owner, read-only), `arc42/04-solution-strategy/README.md`, `target/<subject>/` (open targets), `built/<subject>/`, `reference/architecture-documentation-model.md` (MODEL), `reference/diagram-and-model-types.md` (MENU) |
 | PRD | `prd.path` (a vault file under `docs/sdlc/`) or `prd.body`; `prd.id`, `prd.title` |
 | Epic | `epic.id` (`ssbd-…`); its prefix, `prd.id` and the PRD file's base name are the names a subject may not carry (`--forbid`) |
 | Subject override | optional `subject` arg (`architectureSubject` on the composite) |
 | Round bound | none: fixed at 3 review rounds with a hard stop (CONTEXT 7.7, the owner's answer 5 of 2026-10-09). Today's `maxRounds` argument (default 6) and the composite's `maxArchitectureRounds` are dropped |
 | Beads | the central beads database (`depscore.repo`, the composite's `emitTarget`), read-only, through `atw-bd` in the survey session |
-| Artifact recorder | `artifacts {dir, relDir, epicId, script, phase: 'architecture', inputs, beadId}`; `script` is `<driver>/artifactio.py` (`$ATW_ARTIFACT_SCRIPT`). `inputs` are the PRD path plus `arc42-revision:{"dir":"<arch>/arc42","record":"<work>/arc42-revision.json"}` |
+| Artifact recorder | `artifacts {dir, relDir, epicId, script, phase: 'architecture', inputs, beadId}`; `script` is `<driver>/artifactio.py` (the `ARTIFACT_SCRIPT_ENV` variable of the `pipeline-contracts` skill). `inputs` are the PRD path plus one arc42-revision input over `<arch>/arc42` and `<work>/arc42-revision.json`, written in the specifier grammar the driver's `artifactio.py` defines (`ARC42_REVISION_PREFIX`: `arc42-revision:` followed by the JSON `{dir, record}`) |
 | Repositories | each repository's local checkout and its `main` (read with `git -C <repo> show/grep main:…`), as named by the polyrepo-steward |
 | Element status matrix | the survey (step 7: the rows of the listed repositories) and the Closure (step 32: the row of each element the walk reaches): repository and CDK stack; expected content per the architecture; state (`unknown`, `built` meaning tests passing, `deployed` meaning deployed to AWS dev and verified); the Task and commit that last changed it (CONTEXT 7.25). Read only. Seeded once with every repository and CDK stack, state `unknown` (PLAN S05a); only the build pipeline sets `built` or `deployed`. Its storage, row format, matching rule and read-failure fact: QUESTIONS.md item 32e. |
 | AWS guidance | the AWS MCP Server documentation tools and `aws-core:*` skills (sessions only; no AWS account calls) |
-| Schemas | `<plugin>/skills/artifact-handoff/schemas/architecture-writer.schema.json`, `architecture-review.schema.json`, `architecture-baseline.schema.json`, `checkpoint.schema.json`; the survey, coordinator, decision, maintain, conformance, repositories and closure schemas are defined in the workflow today (section 4 lists their fields; the closure walk's schema is new, section 4) |
+| Schemas | every agent-facing contract of this step is a schema file under `<plugin>/skills/artifact-handoff/schemas/`: `survey.schema.json`, `architecture-baseline.schema.json`, `coordinator-plan.schema.json`, `architecture-writer.schema.json`, `architecture-review.schema.json`, `architecture-common.schema.json`, `decision.schema.json`, `maintain.schema.json`, `conformance.schema.json`, `closure-walk.schema.json`, `closure.schema.json`, `target-report.schema.json`, `checkpoint.schema.json`. The flow (`<plugin>/orchestrator/flows/architecture_support.py`) loads each from its file by name and defines none inline. Section 4 names the schema of each file and restates none of its fields |
 
-Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. Drop them.
+Unused args: `repoPath` and `seedRepos` are not inputs of this step.
 
 ## 4. Outputs
 
@@ -153,28 +154,28 @@ Unused args: `repoPath` and `seedRepos` are accepted by the JS and never read. D
 |---|---|---|---|
 | `arc42-revision.json` | `archrevision.check` / `mark` | `{archRoot, revision, files{rel: sha256}, views{rel: sha256}, integrating, recordedAt}`. `views` are the arc42 files `survey.json`, `ledger.json`, `decision.json` name by absolute path, plus the files `draft/` holds copies of | binds all saved work to arc42 (step 2) |
 | `tree-start.json` | `archstate.snapshot_tree` | per-file hashes of `arc42/`, `target/`, `built/` at start | no (diagnostic only; see Checks dropped) |
-| `survey.json` | prd-reality-reconciler, accepted | SURVEY_SCHEMA: `subject`, `subjectReason`, `capabilities[] {name, requirements[], effectiveViews[], code[], openBeads[], openTargets[], notes?}`, `baseline[]` (architecture-baseline.schema.json: `id, kind, requirements, subjects, documents[{path,version,lifecycle_state}], code{state, behaviorEvidenceRefs, infrastructureEvidenceRefs}, awsGuidance, designAction, documentationAction, implementationAction, rationale, conflicts, current, target, disposition, suitabilityEvidenceRefs`), `openTargets[]`, `businessConflicts[{requirements, why}]`, `coverage[]` (COVERAGE rows: `id, subject, scope, obligation, sources, views, status, action, reason, evidenceRefs[{path,heading,repo,revision,url}], disposition, dispositionReason`), `summary` | **yes** (the most expensive artifact, about 850k tokens) |
-| `survey.json.baseline-inputs.json` | `archbaseline.survey_freshness(seal=True)` | `{revision, surveySha256, contextSha, inputs[], repos[]}` | the survey's seal |
-| `survey.json.receipt` | `jsonartifact.py` acceptance | integrity receipt of the accepted bytes | legacy; read leniently |
+| `survey.json` | prd-reality-reconciler, accepted | the survey: `artifact-handoff/schemas/survey.schema.json` (its baseline entries `architecture-baseline.schema.json`, its coverage rows and evidence refs `architecture-common.schema.json`) | **yes** (the most expensive artifact, about 850k tokens) |
+| the survey's seal (`contracts.survey_seal_path`) | `archbaseline.survey_freshness(seal=True)` | `<portfolio>/contracts.py` `SurveySeal` (forms `SEAL_FORMS`; read with `parse_survey_seal`) | the survey's seal |
+| the legacy survey receipt (`jsonartifact.receipt_path`) | `<portfolio>/jsonartifact.py` acceptance | integrity receipt of the accepted bytes; shape owned by `<portfolio>/jsonartifact.py` | legacy; read leniently |
 | `survey.md` | prd-reality-reconciler | readable survey | with `survey.json` |
 | `survey-matrix.json` | Python, before step 7 | the element status matrix rows of the repositories in `repositories.json`, for the survey session to read by path | input of the survey's seal |
-| `*.meta.json` (beside `survey.json`, `survey.md`, `decision.md`, `architecture-update.json`, …) | `artifactio.py record` | `{artifact, path, epic_id, phase, created_at, updated_at, sha256, bytes, inputs}` | read by the composite's phase-level reuse (S01b) |
+| `*.meta.json` (beside `survey.json`, `survey.md`, `decision.md`, `architecture-update.json`, …) | `artifactio.py record` | the artifact provenance receipt: the driver's `artifactio.py` `ArtifactReceipt`, built by `record` (a code-only contract; no agent writes or reads it) | read by the composite's phase-level reuse (S01b) |
 | `candidates/` | session submission helpers | in-progress candidate files and `*.progress.json` checkpoints | replaced (see section 8) |
-| `plans/round<n>-plan-0.json` | coordinator, accepted | COORDINATOR_SCHEMA: `readyForDecision, reason, dispatches[{agentType, role, task, selectionReason, repairIds, files, answers, coverageIds, claimIds, claimFiles}], overlaps[{files, claimIds, agentTypes, reason}]` | **yes** |
-| `rounds/r<n>-<seq>-<role>-<agentType>.json` | each writer/reviewer, accepted | writers: architecture-writer.schema.json (`files, claims[{claimId, claim, file, citation, supersedes, evidenceRefs}], answers[{findingId, response: fixed\|disputed, evidence}], repairAnswers?, businessConflicts, coverage, summary`); reviewers: architecture-review.schema.json (`findings[{claimId, claim, file, verdict, evidence, owner}], coverageChecks[{id, verdict, evidence}], resolutions[{findingId, verdict: accepted\|rejected, evidence}], repairChecks?, estimates?, summary`) | **yes**, one per dispatch |
+| `plans/round<n>-plan-0.json` | coordinator, accepted | the round plan: the coordinator writes the shape [`artifact-handoff/schemas/coordinator-plan.schema.json`](../../../skills/artifact-handoff/schemas/coordinator-plan.schema.json) defines; step 14's settlement then saves the settled plan (adding `round` and a per-dispatch `seq`) over the same file, in the shape `<portfolio>/roundcontracts.py` `RoundPlan` defines | **yes** |
+| `rounds/r<n>-<seq>-<role>-<agentType>.json` | each writer/reviewer, accepted | writers: [`artifact-handoff/schemas/architecture-writer.schema.json`](../../../skills/artifact-handoff/schemas/architecture-writer.schema.json) (`architecture_artifacts.WriterResult`); reviewers: [`artifact-handoff/schemas/architecture-review.schema.json`](../../../skills/artifact-handoff/schemas/architecture-review.schema.json) (`architecture_artifacts.ReviewResult`) | **yes**, one per dispatch |
 | `ledger.json` | `archresume.resume_facts` | `contractVersion: 2, historicalAuthoring, assignments, roundPlans, claims, findings, savedResults, repairRequests, coverage…, coverageRevision`. Folded from `rounds/` and `plans/`. Sessions read it by path | derived (rebuilt on every read) |
 | `draft/` | writers; `arch-target --seed` writes `draft/baseline.json` | arc42 section layout plus `delta/`; never `02-architecture-constraints/` | yes (the writers' views) |
-| `target-check.json` | `arch-target --dry-run --out` | full dry-run report (`subject`, `subjectRefusals`, `draftWritten`, …) | no (recomputed) |
-| `decision.json`, `decision.md` | architecture-decider, accepted | DECISION_SCHEMA: `round, verdict: approve\|return\|owner-concern, diligence[{check, present, where}], choices[{dispute, chosen, why}], returnTo[{agentType, missing}], ownerConcerns[{kind: business-conflict\|architecture-conflict, concern, evidence}], summary` | **yes** |
-| `target.json` | `arch-target --out` | full target report (`targetDir, deltaDir, files, deltaFiles, architectureChange, note, designChanged, documentationChanged, implementationWork, approvalFiles, draftWritten`) | read by the composite (`depscore.py saved-target`, which also reports `ok` and `closureSaved`; the composite reuses the phase only when both are true and the Closure's inputs are unchanged) and by `repo-scoping`, `spec-authoring`, `trd-authoring` |
+| `target-check.json` | `arch-target --dry-run --out` | full dry-run report: `artifact-handoff/schemas/target-report.schema.json` (`target_contract.TargetResult`) | no (recomputed) |
+| `decision.json`, `decision.md` | architecture-decider, accepted | the decision: [`artifact-handoff/schemas/decision.schema.json`](../../../skills/artifact-handoff/schemas/decision.schema.json) | **yes** |
+| `target.json` | `arch-target --out` | full target report: `artifact-handoff/schemas/target-report.schema.json` (`target_contract.TargetResult`) | read by the composite (`depscore.py saved-target`, which also reports whether the report is usable and the Closure is saved; the composite reuses the phase only when both are true and the Closure's inputs are unchanged) and by `repo-scoping`, `spec-authoring`, `trd-authoring` |
 | `integrate-before.json` | `snapshot_tree` | tree hashes before integration | yes (integration measurement baseline) |
 | `tree-last.json` | `arch-integration-files --save-last` | tree hashes after the last measurement | yes |
 | `integration-files.json` | `arch-integration-files --files-out` | `touched[]`, `deleted[]`, `all[]`, `unreported[]`, `section2[]`, `outside[]`, `changedSinceLast[]` | yes |
-| `architecture-update.json` | architecture-maintainer (accepted), or written directly on the publication-only path | MAINTAIN_SCHEMA: `changedFiles, createdFiles, deletedFiles, viewsChecked[{element, view, action: updated\|deleted\|added\|unaffected}], constraintIssues[], contradictions[], summary` | **yes** |
-| `conformance-<n>.json` | architecture-conformance-reviewer, accepted | CONFORMANCE_SCHEMA: `conforms, reviewedFiles[], findings[{file, finding, evidence}], coverageChecks[{id, verdict, evidence}], summary` | **yes** (last one) |
-| `closure-roots.json` | `arch-delta --roots-only --save` | the build roots: `items[{id, element, kind, views, requires…}]`, `architectureChange`, `note` | yes (deterministic) |
-| `closure-walk.json` | prd-reality-reconciler (CLOSURE mode), accepted | the walk from the roots through the effective views: `rootEdges[{item, requires, evidence}]`, `elements[{element, views, requiredBy, requires, evidence}]` (every element reached that is not itself a root; evidence is view paths and headings), `summary`. No state: the agent does not judge what is built | **yes** |
-| `closure.json` | step 32, Python, from `closure-walk.json` and the element status matrix | CLOSURE_SCHEMA: `prerequisites[]` and `satisfied[]` (fields in section 2.10), `rootEdges[]`, `summary` | **yes** |
+| `architecture-update.json` | architecture-maintainer (accepted), or written directly on the publication-only path | the maintain result: [`artifact-handoff/schemas/maintain.schema.json`](../../../skills/artifact-handoff/schemas/maintain.schema.json) | **yes** |
+| `conformance-<n>.json` | architecture-conformance-reviewer, accepted | the conformance review: [`artifact-handoff/schemas/conformance.schema.json`](../../../skills/artifact-handoff/schemas/conformance.schema.json) (`architecture_artifacts.ConformanceResult`) | **yes** (last one) |
+| `closure-roots.json` | `arch-delta --roots-only --save` | the build roots: a delta report, `artifact-handoff/schemas/target-report.schema.json` (`target_contract.DeltaResult`) | yes (deterministic) |
+| `closure-walk.json` | prd-reality-reconciler (CLOSURE mode), accepted | the walk from the roots through the effective views: [`artifact-handoff/schemas/closure-walk.schema.json`](../../../skills/artifact-handoff/schemas/closure-walk.schema.json). The agent does not judge what is built | **yes** |
+| `closure.json` | step 32, Python, from `closure-walk.json` and the element status matrix | the closure: [`artifact-handoff/schemas/closure.schema.json`](../../../skills/artifact-handoff/schemas/closure.schema.json) | **yes** |
 | `relay/`, `*.relay` files | relay plumbing | none needed | **dropped** |
 
 ### Vault writes (`skillspoke-docs` repository)
@@ -212,7 +213,8 @@ with a failure at stage `constraints-written`, if the session changed it.
 **Preparation**
 
 1. *deterministic: refuse missing input.* No architecture root → `stage: no-arch-path`, with one
-   `requiredHumanActions` entry naming `ATW_ARCH_PATH` (owner configuration; the composite returns it
+   `requiredHumanActions` entry naming the `ARCH_PATH_ENV` variable of the `pipeline-contracts`
+   skill (owner configuration; the composite returns it
    and the driver holds the Epic for the owner). No PRD path or body, no Epic id, no artifacts
    directory → `stage: input`, cause `other` (a driver defect in the failure record).
 2. *deterministic: bind saved work to arc42* with `archrevision.check(arch, work, stale_root=<art>)`.
@@ -243,11 +245,11 @@ with a failure at stage `constraints-written`, if the session changed it.
      surveys);
    - the cited evidence state;
    - the baseline schema;
-   - `contextSha` = sha256 of `relay.canonical({prdBody: prd.body or "", schema: SURVEY_SCHEMA})`.
-   Saved surveys also bind the `main^{tree}` of every repository they cite, because they judged
+   - the context digest, one of the seal's digests (`contracts.SEAL_DIGEST_KEYS`).
+   The seal's shape is `<portfolio>/contracts.py` `SurveySeal`. Saved surveys also bind the `main^{tree}` of every repository they cite, because they judged
    code; new surveys judge no code, so they bind no `main^{tree}`. How the three saved surveys
    (CONTEXT 7.13) stay reusable, with their code-derived `implementationAction`, `code.state` and
-   `implementationWork` replaced by the matrix's answer, and whether `contextSha` must change, is
+   `implementationWork` replaced by the matrix's answer, and whether the context digest must change, is
    QUESTIONS.md item 32b.
 6. *agent: polyrepo-steward*, list repositories `{name, path, role, lifecycle}`. Current: sonnet,
    effort `low`, inline schema. New: write `<work>/repositories.json`. Runs only when the survey must
@@ -264,7 +266,7 @@ with a failure at stage `constraints-written`, if the session changed it.
    - Current: opus, effort `medium`. That is right: this is the expensive assessment, and lowering it
      risks a wrong scope.
 8. *deterministic: accept the survey.*
-   - Parse JSON and validate SURVEY_SCHEMA.
+   - Parse JSON and validate it against `artifact-handoff/schemas/survey.schema.json`.
    - Record `survey.md` and `survey.json` with `artifactio.record(…, phase='architecture',
      inputs=artifacts.inputs)`.
    - Seal with `survey_freshness(seal=True)`; `current` must be true, meaning the survey carries an
@@ -302,7 +304,8 @@ with a failure at stage `constraints-written`, if the session changed it.
       design scope with requirement ids; open notes (open repairs, repair checks needed, coverage
       gaps, unanswered or awaiting-resolution findings with owners, claims without a reviewer verdict
       per writer); agents returned to by the decider; dispatches refused or silent last round.
-    - Output: `plans/round<n>-plan-0.json` (COORDINATOR_SCHEMA).
+    - Output: `plans/round<n>-plan-0.json`
+      ([`coordinator-plan.schema.json`](../../../skills/artifact-handoff/schemas/coordinator-plan.schema.json)).
     - Current: sonnet, effort `medium`. That is right: routing only.
 14. *deterministic: settle the plan.* All of these steps are kept:
     - Drop a dispatch whose agent is not on the roster.
@@ -350,11 +353,14 @@ with a failure at stage `constraints-written`, if the session changed it.
       `cost` (cost-architecture-reviewer, cost-impact-reviewer). Current effort is `medium` for all.
       The models are fable, sonnet and opus per frontmatter; operational-readiness-reviewer is opus
       with frontmatter effort `low`.
-    - Each receives the same paths plus its `assignedClaims` / `claimFiles` / coverage ids / repair ids
-      in the plan entry, and the same review standard the writers received (step 15).
+    - Each receives the same paths plus its dispatch entry in the plan (the claims, files, coverage
+      and repairs it is assigned, as
+      [`coordinator-plan.schema.json`](../../../skills/artifact-handoff/schemas/coordinator-plan.schema.json)
+      defines them), and the same review standard the writers received (step 15).
     - Output: `rounds/r<n>-<seq>-<role>-<agent>.json` (review schema; cost reviewers add `estimates`).
     - Then fold the ledger. The round counts as complete when every plan dispatch has a saved result
-      file. `ready` = the coordinator's `readyForDecision`, or round 3 is complete.
+      file. The round is ready for the decider when the coordinator's plan says so (its
+      `readyForDecision` field, as `coordinator-plan.schema.json` defines it), or round 3 is complete.
 17. *agent: architecture-decider.*
     - Inputs: PRD, `survey.*`, `rounds/`, `ledger.json`, `draft/` (seeded first, as in step 10),
       `<arch>/arc42`, `<arch>/target/`, plus the open notes as in step 13.
@@ -362,7 +368,8 @@ with a failure at stage `constraints-written`, if the session changed it.
     - Current: opus, effort `high`. That is right: approval authority.
     The verdict leads to one of these:
     - `approve`: go to step 19.
-    - `owner-concern` where every concern is `business-conflict` or `architecture-conflict`: return
+    - `owner-concern` where every concern's kind is one `decision.schema.json`'s `ownerConcerns[].kind`
+      enum lists: return
       `stage: owner-concern` with `requiredHumanActions`, built as follows:
       - one action per concern, naming its kind, the concern and its evidence;
       - one more action telling the owner to delete `decision.json` once the PRD or section 2 says
@@ -408,8 +415,9 @@ with a failure at stage `constraints-written`, if the session changed it.
     - `archstate.promote(approvalFiles, arch_root=<arch>/arc42, reviewed=approvalFiles)`; any
       `refused` → `stage: approve`.
     - `commit_integration(<arch>/arc42, approvalFiles, message=…)`; not ok → `stage: commit`.
-    - Write `architecture-update.json` as the publication receipt (`changedFiles` = approvalFiles,
-      `viewsChecked` one per file with `action: updated`), and record it.
+    - Write `architecture-update.json` as the publication receipt, in the shape
+      `maintain.schema.json` defines: `changedFiles` are the approval files, `viewsChecked` holds
+      one entry per approval file with action `updated`, and the other lists are empty. Record it.
     - `archrevision.mark('integrated')`.
     - Go to Closure.
 
@@ -422,9 +430,11 @@ with a failure at stage `constraints-written`, if the session changed it.
       coverage rows), `survey.json`, PRD, `<arch>`, MODEL, MENU.
     - Task: the model's step 5 integration. For every element added, changed or removed, update or
       delete every effective view that shows it at every scope, and add new views. Leave
-      `lifecycle_state` and `target/` untouched. Record each coverage row id in `viewsChecked`.
+      `lifecycle_state` and `target/` untouched. Record each coverage row id among the views it
+      checked, as `maintain.schema.json` defines them.
     - A RESUMING variant is used when `architecture-update.json` exists without a conforming review.
-    - Output: `architecture-update.json` (MAINTAIN_SCHEMA).
+    - Output: `architecture-update.json`
+      ([`maintain.schema.json`](../../../skills/artifact-handoff/schemas/maintain.schema.json)).
     - Current: sonnet, effort `medium`.
     - Skipped when a saved update plus a conforming last review exist.
 24. *deterministic: measure* with `archfiles.integration_files(arch, before=integrate-before.json,
@@ -477,12 +487,12 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
     - Current: opus, effort `medium`.
 32. *deterministic: classify and write.* For every element in `closure-walk.json`, read its row in
     the element status matrix (the matching rule: QUESTIONS.md item 32e):
-    - state `built` or `deployed` → a `satisfied` entry with the row's state, repository, Task and
-      commit (whether `built` alone satisfies a prerequisite that must be deployed: QUESTIONS.md
+    - a state `closure.schema.json`'s `satisfied[].state` enum lists → a satisfied entry carrying the row's facts
+      (whether `built` alone satisfies a prerequisite that must be deployed: QUESTIONS.md
       item 32f);
-    - state `unknown`, or no row → a `prerequisites` entry with `state: unknown` and the row's
-      repository when it names one: the element is pulled into the Epic's scope, and its Tasks
-      build it (CONTEXT 7.25).
+    - any other state, or no row → a prerequisite entry carrying the row's repository when it
+      names one: the element is pulled into the Epic's scope, and its Tasks build it (CONTEXT 7.25).
+    Both entry shapes are `closure.schema.json`'s.
     Write `<work>/closure.json`, then `archclosure.write_closure(<work>/closure.json, deltaDir)`
     writes `target/<subject>/closure.json` (no bead status read).
     - Refused (a cycle, or not a closure object) → one corrective pass of step 31. The brief carries
@@ -551,8 +561,8 @@ search repository code and reads no beads (CONTEXT 7.20, 7.23).
 - *Closure states come from the element status matrix, in Python (step 32).* Without it a session's
   guess about what is built would decide which prerequisites get no Task; nothing later adds a Task
   for an element the Closure left out.
-- *Decision owner-concern filter* (only `business-conflict` / `architecture-conflict` reach the
-  owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
+- *Decision owner-concern filter* (only the kinds `decision.schema.json`'s `ownerConcerns[].kind`
+  enum lists reach the owner). This is owner rule CONTEXT 7.9, not a check: everything else goes back to the team.
 - *Round bound: 3 review rounds, then a hard stop* (step 18). Owner requirement (CONTEXT 7.7), not a
   quality check: rounds beyond 3 spend without converging and produce a recorded failure with diagnostic evidence.
 
@@ -635,13 +645,13 @@ Rule: a rerun redoes no step whose saved result exists and whose input fingerpri
 starts no session before the first step that needs one. Fingerprints are computed in Python and
 stored beside each result as `<result>.meta.json` by `artifactio.record` (the one input-record
 format of every Epic flow), except the survey, whose existing seal
-(`survey.json.baseline-inputs.json`) stays because the saved surveys carry it (CONTEXT 7.13). The
+(`contracts.survey_seal_path`, `SurveySeal`) stays because the saved surveys carry it (CONTEXT 7.13). The
 input lists below are the single source; `prd-to-spec.md` refers here.
 
 | Saved result | Fingerprint inputs | A rerun after it redoes |
 |---|---|---|
 | `arc42-revision.json` | per-file arc42 hashes of the views the saved work cites | nothing, while the cited views are unchanged |
-| `survey.json` (+ seal) | the `survey_freshness` binding (step 5): PRD, MODEL, MENU, section 2 folder, cited documents and evidence, the element status matrix rows its judgments rest on, `contextSha` (saved surveys also bind cited repositories' `main^{tree}`; QUESTIONS.md item 32b) | nothing: Survey is skipped, **no session starts** |
+| `survey.json` (+ seal) | the `survey_freshness` binding (step 5): PRD, MODEL, MENU, section 2 folder, cited documents and evidence, the element status matrix rows its judgments rest on, and the seal's digests (`contracts.SurveySeal`; saved surveys also bind cited repositories' `main^{tree}`; QUESTIONS.md item 32b) | nothing: Survey is skipped, **no session starts** |
 | `repositories.json` | none (the steward's live facts); reused within a run | only when the survey reruns |
 | `plans/round<n>-plan-0.json` | `ledger.json` + `survey.json` + PRD + n | nothing for that round's plan; a saved pending plan is resumed as is |
 | `rounds/r<n>-<seq>-…json` | writer: PRD + `survey.json` + its plan entry; reviewer: the same + `draft/` | only the dispatches of the pending plan with no saved result |
@@ -656,8 +666,8 @@ input lists below are the single source; `prd-to-spec.md` refers here.
 | `<work>/closure.json` + `target/<subject>/closure.json` | `closure-walk.json` + the element status matrix rows of the elements it names | nothing; a changed matrix row reruns only step 32 (deterministic, no session) |
 
 The saved work of `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` (CONTEXT 7.13) must be read in place:
-- `survey.json`, `survey.md`, their `.meta.json`, `survey.json.baseline-inputs.json`,
-  `survey.json.receipt`;
+- `survey.json`, `survey.md`, their `.meta.json`, the survey's seal (`contracts.survey_seal_path`)
+  and the legacy survey receipt (`jsonartifact.receipt_path`);
 - `plans/`, `candidates/`, `ledger.json`;
 - `target-check.json`, `arc42-revision.json`, `tree-start.json`.
 
@@ -702,8 +712,8 @@ QUESTIONS.md). `relay/` is ignored.
 - **7.4 Retries.** Structured causes come from the session runner and the script results. There are
   no unchanged reruns. Clarified reruns are allowed: an unanswered finding is re-sent once with the
   omission named, and the decider is re-asked once after a non-actionable return (a repeat fails the item and records the diagnostic). Git push contention backs off.
-- **7.9 Who gets asked what.** Only `business-conflict` and `architecture-conflict` (stage
-  `owner-concern`) and a missing architecture root (stage `no-arch-path`) reach the owner, as
+- **7.9 Who gets asked what.** Only the concern kinds the decision schema's `ownerConcerns[].kind`
+  enum lists (stage `owner-concern`) and a missing architecture root (stage `no-arch-path`) reach the owner, as
   `requiredHumanActions`; the composite returns them and the driver writes the owner inbox and the
   hold. Every technical gap is decided by the team or the decider.
 - **7.10 Repositories.** Repository facts come from the polyrepo-steward. The prd-reality-reconciler

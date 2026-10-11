@@ -42,8 +42,9 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Check monitoring, logs, metrics, alarms, failure recovery and operational burden against the actual environment and the shared standard.
 
-Read the PRD, survey, plan, ledger, current draft and assigned source views. Take claimIds,
-claimFiles, coverageIds and repairIds from your plan entry. For a Check without a plan, check all
+Read the PRD, survey, plan, ledger, current draft and assigned source views. Your assignment is
+your dispatch entry in the plan, whose shape is defined only by
+skills/artifact-handoff/schemas/coordinator-plan.schema.json. For a Check without a plan, check all
 survey coverage and unchanged design claims. Write only an architecture-review result: findings,
 coverageChecks, resolutions and summary, with repairChecks for assigned repairs and estimates for
 cost work. A finding names the claim, file, verdict, evidence and responsible writer. Verify

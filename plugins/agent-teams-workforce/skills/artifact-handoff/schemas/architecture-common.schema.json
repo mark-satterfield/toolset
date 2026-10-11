@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The definitions the architecture writer, review and conformance results share: coverage rows, evidence references, business conflicts, coverage checks, the review verdict and conformance findings. Defined only here; every other schema reaches them with a $ref to architecture-common.schema.json#/$defs/<name>.",
+  "$defs": {
+    "EvidenceRef": {
+      "description": "One piece of evidence. Every field is present; a field the reference does not use is the empty string.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "heading", "repo", "revision", "url"],
+      "properties": {
+        "path": {"type": "string"},
+        "heading": {"type": "string"},
+        "repo": {"type": "string"},
+        "revision": {"type": "string"},
+        "url": {"type": "string"}
+      }
+    },
+    "BusinessConflict": {
+      "description": "Two or more business requirements of the PRD that no design can satisfy together, and why.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "why"],
+      "properties": {
+        "requirements": {"type": "array", "items": {"type": "string"}},
+        "why": {"type": "string"}
+      }
+    },
+    "CoverageStatus": {
+      "description": "How far the architecture covers one obligation. A consumer reads an invalid value as the default.",
+      "type": "string",
+      "enum": [
+        "Present and sufficient",
+        "Present but incomplete",
+        "Required and absent",
+        "Not yet applicable",
+        "Not assessed"
+      ],
+      "default": "Not assessed"
+    },
+    "CoverageAction": {
+      "description": "What the change does to the views covering one obligation. A consumer reads an invalid value as the default.",
+      "type": "string",
+      "enum": ["create", "update", "unchanged", "remove", "not-applicable", "unresolved"],
+      "default": "unresolved"
+    },
+    "CoverageDisposition": {
+      "description": "Whether a coverage row is required by this change or unrelated historical debt. A consumer reads an invalid value as the default.",
+      "type": "string",
+      "enum": ["required", "unrelated-debt"],
+      "default": "required"
+    },
+    "CoverageRow": {
+      "description": "One obligation of the architecture documentation model and how the architecture covers it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "subject",
+        "scope",
+        "obligation",
+        "sources",
+        "views",
+        "status",
+        "action",
+        "reason",
+        "evidenceRefs",
+        "disposition",
+        "dispositionReason"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "subject": {"type": "string"},
+        "scope": {"type": "string"},
+        "obligation": {"type": "string"},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "views": {"type": "array", "items": {"type": "string"}},
+        "status": {"$ref": "#/$defs/CoverageStatus"},
+        "action": {"$ref": "#/$defs/CoverageAction"},
+        "reason": {"type": "string"},
+        "evidenceRefs": {"type": "array", "items": {"$ref": "#/$defs/EvidenceRef"}},
+        "disposition": {"$ref": "#/$defs/CoverageDisposition"},
+        "dispositionReason": {"type": "string"}
+      }
+    },
+    "ReviewVerdict": {
+      "description": "A reviewer's verdict on one claim or one coverage row.",
+      "type": "string",
+      "enum": ["verified", "unsupported", "wrong"]
+    },
+    "CoverageCheck": {
+      "description": "A reviewer's independent check of one coverage row, by its id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verdict", "evidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "verdict": {"$ref": "#/$defs/ReviewVerdict"},
+        "evidence": {"type": "string"}
+      }
+    },
+    "ConformanceFinding": {
+      "description": "One problem the conformance reviewer found, with its file and evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "finding", "evidence"],
+      "properties": {
+        "file": {"type": "string"},
+        "finding": {"type": "string"},
+        "evidence": {"type": "string"}
+      }
+    }
+  }
+}

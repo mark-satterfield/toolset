@@ -17,23 +17,88 @@ must keep or withdraw each owned one with a reason that answers the recorded one
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import beadgraph
+from bead_metadata import KEY_ELABORATION_STATE
+from contracts import JsonObject
 from edgeset import (
     SequencingError,
     standing_edges,
     withdrawal_history,
 )
-from prds import ELAB_KEY, write_index, write_prds
+from prds import write_index, write_prds
 
 if TYPE_CHECKING:
     from beadgraph import Bead, Graph
 
 
-def assess_context(
-    graph: Graph, epic: str, out_dir: Path, *, corpus_ready: bool = False
-) -> dict:
+class AssessedEpic(TypedDict):
+    """The Epic an assessment reads, with its PRD file."""
+
+    id: str
+    title: str
+    fingerprint: str
+    elaborationState: str | None
+    prdPath: str
+
+
+class EpicContextSummary(TypedDict):
+    """The counts of one Epic's assessment context."""
+
+    epic: str
+    openEpics: int
+    standing: int
+    withdrawn: int
+    owned: int
+    handMade: int
+
+
+class EpicContext(TypedDict):
+    """The `assess-context` result for one Epic."""
+
+    epic: AssessedEpic
+    standing: list[JsonObject]
+    withdrawn: list[JsonObject]
+    corpusDir: str
+    indexPath: str
+    summary: EpicContextSummary
+
+
+class AssessedTask(TypedDict):
+    """The Task an assessment reads, with its file."""
+
+    id: str
+    title: str
+    fingerprint: str
+    epic: str | None
+    repoPath: str | None
+    path: str
+
+
+class TaskContextSummary(TypedDict):
+    """The counts of one Task's assessment context."""
+
+    task: str
+    openTasks: int
+    standing: int
+    owned: int
+    handMade: int
+    withdrawn: int
+
+
+class TaskContext(TypedDict):
+    """The `assess-context --task` result for one Task."""
+
+    task: AssessedTask
+    standing: list[JsonObject]
+    withdrawn: list[JsonObject]
+    corpusDir: str
+    indexPath: str
+    summary: TaskContextSummary
+
+
+def assess_context(graph: Graph, epic: str, out_dir: Path, *, corpus_ready: bool = False) -> EpicContext:
     """Write the PRD corpus and index, and return the Epic and its standing edges.
 
     Args:
@@ -53,6 +118,7 @@ def assess_context(
 
     Raises:
         SequencingError: `corpus_ready` was passed and there is no corpus for the Epic.
+
     """
     epics = [b for b in graph.of_kind("epic") if not b.closed]
     bead = graph.beads[epic]
@@ -75,7 +141,7 @@ def assess_context(
             "id": bead.id,
             "title": bead.title,
             "fingerprint": prints.get(bead.id, ""),
-            "elaborationState": bead.metadata.get(ELAB_KEY),
+            "elaborationState": bead.metadata.get(KEY_ELABORATION_STATE),
             "prdPath": paths[bead.id],
         },
         "standing": standing,
@@ -107,6 +173,7 @@ def write_tasks(graph: Graph, tasks: list[Bead], task_dir: Path) -> dict[str, st
 
     Returns:
         Task id -> the file holding it.
+
     """
     task_dir.mkdir(parents=True, exist_ok=True)
     paths = {}
@@ -114,14 +181,18 @@ def write_tasks(graph: Graph, tasks: list[Bead], task_dir: Path) -> dict[str, st
         bead = graph.beads.get(task.id, task)
         path = task_dir / f"{bead.id}.md"
         path.write_text(
-            f"# {bead.id} — {bead.title}\n\n{bead.description}\n", encoding="utf-8"
+            f"# {bead.id} — {bead.title}\n\n{bead.description}\n",
+            encoding="utf-8",
         )
         paths[bead.id] = str(path)
     return paths
 
 
 def write_task_index(
-    graph: Graph, tasks: list[Bead], paths: dict[str, str], path: Path
+    graph: Graph,
+    tasks: list[Bead],
+    paths: dict[str, str],
+    path: Path,
 ) -> None:
     """Write the index of the open Tasks.
 
@@ -134,6 +205,7 @@ def write_task_index(
         tasks: The Tasks to list, in the order to list them.
         paths: Task id -> the file holding it, from `write_tasks`.
         path: The index file to write.
+
     """
     lines = ["# Open Tasks"]
     for task in tasks:
@@ -141,7 +213,7 @@ def write_task_index(
         repo = task.metadata.get(REPO_KEY) or "unset"
         lines.append(
             f"- {task.id} | {task.title} | Epic: {epic.id if epic else 'none'} | "
-            f"repo: {repo} | status: {task.status} | file: {paths.get(task.id, '')}"
+            f"repo: {repo} | status: {task.status} | file: {paths.get(task.id, '')}",
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -162,6 +234,7 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
         `withdrawn` (every edge touching it that an assessment withdrew, with the reason,
         from `edgeset.withdrawal_history`), `corpusDir`, `indexPath`, and a `summary` of
         counts.
+
     """
     tasks = [b for b in graph.of_kind("task") if not b.closed]
     bead = graph.beads[task]

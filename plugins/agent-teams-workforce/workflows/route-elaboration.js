@@ -5,7 +5,9 @@ export const meta = {
   phases: [{ title: 'Classify', detail: 'maps the bead type and labels to prd-to-spec or a skip' }],
 }
 
-// args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? } }
+// args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? },
+//         infraVocabulary: { types, labels } (the artifact-handoff skill's schemas/infra-vocabulary.schema.json,
+//         printed by its scripts/infra_vocabulary.py) }
 // returns: { bead, action: 'elaborate' | 'skip', composite: 'prd-to-spec' | null, reason, ruledBy: 'deterministic' }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
@@ -15,7 +17,10 @@ const type = norm(bead.type)
 const labels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm).filter(Boolean)
 const labelSet = new Set(labels)
 const hasLabel = (...names) => names.some((n) => labelSet.has(n))
-const KNOWN_TYPES = new Set(['task', 'bug', 'infra', 'infrastructure', 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
+const vocabulary = a.infraVocabulary || {}
+const INFRA_TYPES = (Array.isArray(vocabulary.types) ? vocabulary.types : []).map(norm).filter(Boolean)
+const INFRA_LABELS = (Array.isArray(vocabulary.labels) ? vocabulary.labels : []).map(norm).filter(Boolean)
+const KNOWN_TYPES = new Set(['task', 'bug', ...INFRA_TYPES, 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
 const byLabel = (...names) => !KNOWN_TYPES.has(type) && hasLabel(...names)
 const labelTail = labels.length ? `, labels=[${labels.join(', ')}]` : ''
 
@@ -26,6 +31,11 @@ const elaborate = (reason) => route('elaborate', 'prd-to-spec', reason)
 const skip = (reason) => route('skip', null, reason)
 
 function decide() {
+  if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
+    return skip(
+      'no infraVocabulary supplied: pass the object printed by the artifact-handoff skill\'s scripts/infra_vocabulary.py as args.infraVocabulary → SKIP',
+    )
+  }
   if (type === 'epic' || byLabel('epic')) {
     return elaborate('epic → prd-to-spec, which authors the TRD and produces the Specs, Stories and Tasks beneath it')
   }
@@ -42,7 +52,7 @@ function decide() {
       `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}); it is triaged by a person into an Epic, a Task, or a closure → SKIP`,
     )
   }
-  if (type === 'task' || type === 'infra' || type === 'infrastructure' || byLabel('task', 'infra', 'infrastructure')) {
+  if (type === 'task' || INFRA_TYPES.includes(type) || byLabel('task', ...INFRA_LABELS)) {
     return skip(`${type || 'this bead'} carries development work → SKIP here; route it through route-build.js`)
   }
   return skip(`type="${type || 'n/a'}"${labelTail} has no elaboration composite → SKIP`)

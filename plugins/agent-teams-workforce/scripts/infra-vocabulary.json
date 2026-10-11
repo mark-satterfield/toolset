@@ -1,4 +1,0 @@
-{
-  "types": ["infra", "infrastructure"],
-  "labels": ["infra", "infrastructure", "cdk", "iac", "provisioning"]
-}

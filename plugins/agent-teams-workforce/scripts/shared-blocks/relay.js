@@ -461,19 +461,22 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     return { ok: true, view: r.view }
   }
   const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
+  // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
+  // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
+  const CHECKPOINT_SCHEMA = /* CHECKPOINT_SCHEMA */ {}
   function artifactBrief(candidate, schema, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision]
-    const command = (operation, extra = []) => ['python3', helper, operation, ...binding, ...extra].map(quote).join(' ')
-    const progress = `${candidate}.progress.json`
-    const submit = command('submit', ['--progress-file', progress])
+    const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
+    const operations = CHECKPOINT_SCHEMA['x-operations']
+    if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const progress = `${candidate}${suffix}`
+    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
 Progress: ${progress}
 Input revision: ${revision}
-Submission command: ${submit}
-Checkpoint command: ${command('checkpoint', ['--progress-file', progress])}
-Status command: ${command('status')}`
+${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
   async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
     const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]

@@ -11,10 +11,13 @@ from pathlib import Path
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# orchestrator.core.artifacts imports the generated driver-surface contract from its skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.artifact_contract import ArtifactProducer
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
+from orchestrator.core.handback_contract import REUSED_PHASE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import DeterministicStep
 
@@ -35,7 +38,7 @@ def check_resume(module: ArtifactProducer, root: Path) -> None:
 
     step = DeterministicStep("copy", (str(source),), (output,), produce)
     require(store.execute(step)[0] == "ran", "store.execute(step)[0] == 'ran'")
-    require(store.execute(step)[0] == "reused", "store.execute(step)[0] == 'reused'")
+    require(store.execute(step)[0] == REUSED_PHASE, "store.execute(step)[0] == REUSED_PHASE")
     source.write_text("two")
     require(store.execute(step)[0] == "ran", "store.execute(step)[0] == 'ran'")
     require(len(calls) == len(("initial", "changed")), "initial and changed inputs each execute once")

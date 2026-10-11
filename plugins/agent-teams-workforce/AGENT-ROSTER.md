@@ -122,7 +122,7 @@ conformance reviewer again to correct the effective version from what a Story bu
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | Details an approved architecture delta for ONE repository: for each delta item placed there (one element the delta shows), compares what the delta makes it with the code on the repository's main and gives it one status — `add`, `modify`, `remove`, `done` or `planned-elsewhere` — each citing file:line (planned-elsewhere names the open bead that plans it), and reports upstream dependency changes. Also writes the architecture step's survey, and in built-version records each difference between a Story's code and the effective views in `built/<subject>/`. |
+| prd-reality-reconciler | test | Details an approved architecture delta for ONE repository: for each delta item placed there (one element the delta shows), compares what the delta makes it with the code on the repository's main and gives it one status from `$defs/ReconStatus` in `skills/artifact-handoff/schemas/recon.schema.json`, each citing file:line as that schema's `ReconItem` requires, and reports upstream dependency changes. Also writes the architecture step's survey, and in built-version records each difference between a Story's code and the effective views in `built/<subject>/`. |
 
 ## Spec Freshness
 

@@ -1,0 +1,120 @@
+{
+  "$schema": "./composites.schema.json",
+  "wire": {
+    "phaseSentinel": "PHASE",
+    "progressPrefix": "▸ "
+  },
+  "fallbackPhases": [
+    {"id": "start", "title": "Start"},
+    {"id": "work", "title": "Work"},
+    {"id": "finish", "title": "Finish"}
+  ],
+  "composites": {
+    "prd-to-spec": {
+      "runner": "orchestrator",
+      "openingKind": "epic",
+      "sets": ["orchestrated", "elaboration"],
+      "phases": [
+        {"id": "epic-lifecycle", "title": "Epic Lifecycle"},
+        {"id": "prd", "title": "PRD"},
+        {"id": "epic", "title": "Epic"},
+        {"id": "architecture", "title": "Architecture", "event": true},
+        {"id": "repo-scoping", "title": "Repo Scoping", "event": true},
+        {"id": "trd-authoring", "title": "TRD Authoring", "event": true},
+        {"id": "spec-authoring", "title": "Spec Authoring", "event": true},
+        {"id": "task-decomposition", "title": "Task Decomposition", "event": true},
+        {"id": "task-edges", "title": "Task Edges", "event": true},
+        {"id": "finish", "title": "Finish", "event": true},
+        {"id": "run-ledger", "title": "Run Ledger"}
+      ]
+    },
+    "task-to-deploy": {
+      "runner": "workflow",
+      "openingKind": "task",
+      "sets": ["target-repo", "code-build", "repo-required", "design-aware"],
+      "phases": [
+        {"id": "workspace", "title": "Workspace"},
+        {"id": "infra-intent", "title": "Infra Intent"},
+        {"id": "regression-scope", "title": "Regression Scope"},
+        {"id": "baseline", "title": "Baseline"},
+        {"id": "red", "title": "Red"},
+        {"id": "green", "title": "Green"},
+        {"id": "refactor", "title": "Refactor"},
+        {"id": "cds-audit", "title": "CDS Audit"},
+        {"id": "documentation", "title": "Documentation"},
+        {"id": "commit", "title": "Commit"},
+        {"id": "run-ledger", "title": "Run Ledger"}
+      ]
+    },
+    "bug-fix": {
+      "runner": "workflow",
+      "openingKind": "task",
+      "sets": ["target-repo", "code-build", "bug"],
+      "phases": [
+        {"id": "workspace", "title": "Workspace"},
+        {"id": "triage", "title": "Triage"},
+        {"id": "red", "title": "Red"},
+        {"id": "green", "title": "Green"},
+        {"id": "refactor", "title": "Refactor"},
+        {"id": "integration", "title": "Integration"},
+        {"id": "adversarial", "title": "Adversarial"},
+        {"id": "deploy-to-dev", "title": "Deploy-to-dev"},
+        {"id": "settle", "title": "Settle"},
+        {"id": "run-ledger", "title": "Run Ledger"}
+      ]
+    },
+    "story-deploy": {
+      "runner": "driver",
+      "sets": ["story"],
+      "phases": [
+        {"id": "mechanism", "title": "Mechanism"},
+        {"id": "workspace", "title": "Workspace"},
+        {"id": "publish", "title": "Publish"},
+        {"id": "ssm-check", "title": "SSM Check"},
+        {"id": "deploy", "title": "Deploy"},
+        {"id": "verify", "title": "Verify"},
+        {"id": "fix", "title": "Fix"},
+        {"id": "built", "title": "Built"},
+        {"id": "pull-request", "title": "Pull Request"},
+        {"id": "merge-wait", "title": "Merge Wait"},
+        {"id": "close", "title": "Close"}
+      ]
+    },
+    "story-deploy-fix": {
+      "runner": "workflow",
+      "sets": ["story"],
+      "phases": [
+        {"id": "fix", "title": "Fix"},
+        {"id": "commit", "title": "Commit"}
+      ]
+    },
+    "deploy-mechanism": {
+      "runner": "workflow",
+      "sets": ["story"],
+      "phases": [
+        {"id": "ask", "title": "Ask"}
+      ]
+    },
+    "built-version": {
+      "runner": "workflow",
+      "sets": ["story"],
+      "phases": [
+        {"id": "compare", "title": "Compare"},
+        {"id": "correct", "title": "Correct"},
+        {"id": "remove", "title": "Remove"}
+      ]
+    },
+    "probe": {
+      "runner": "probe",
+      "sets": ["attaching"],
+      "phases": []
+    }
+  },
+  "retired": {
+    "repair": {"sets": ["attaching"]},
+    "incident": {"sets": ["attaching"]},
+    "dependency-assessment": {"sets": ["former-trigger"]},
+    "task-dependency-assessment": {"sets": ["former-trigger"]},
+    "wsjf-scoring": {"sets": ["former-trigger"]}
+  }
+}

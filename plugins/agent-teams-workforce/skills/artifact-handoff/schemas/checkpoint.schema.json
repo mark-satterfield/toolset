@@ -1,22 +1,73 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artifact checkpoint",
+  "description": "The sidecar <candidate><x-sidecarSuffix> that artifactcontract.py checkpoint|complete|submit writes and artifactcontract.py status and jsonartifact.py read. It is built from the agent-authored progress file <candidate><x-progressSuffix> ($defs/Progress) plus the binding keys. The Python types are generated from this file by scripts/generate_checkpoint_contract.py.",
+  "x-sidecarSuffix": ".checkpoint",
+  "x-progressSuffix": ".progress.json",
+  "x-bindingKeys": ["artifactPath", "schemaSha256", "revision"],
+  "x-authoredStatuses": ["in-progress", "blocked"],
+  "x-operations": ["validate", "checkpoint", "complete", "submit", "status"],
   "type": "object",
   "additionalProperties": false,
   "required": ["status", "artifactPath", "schemaSha256", "revision", "task", "completed", "remaining", "artifacts"],
   "properties": {
     "status": {"enum": ["in-progress", "blocked", "complete"]},
-    "artifactPath": {"type": "string", "minLength": 1},
-    "schemaSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "candidateSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "revision": {"type": "string", "minLength": 1},
-    "task": {"type": "string", "minLength": 1},
-    "completed": {"type": "array", "items": {"type": "string", "minLength": 1}},
-    "remaining": {"type": "array", "items": {"type": "string", "minLength": 1}},
-    "artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
-    "reason": {"type": "string", "minLength": 1}
+    "artifactPath": {"$ref": "#/$defs/ArtifactPath"},
+    "schemaSha256": {"$ref": "#/$defs/Sha256"},
+    "candidateSha256": {"$ref": "#/$defs/Sha256"},
+    "revision": {"$ref": "#/$defs/Revision"},
+    "task": {"$ref": "#/$defs/Progress/properties/task"},
+    "completed": {"$ref": "#/$defs/Progress/properties/completed"},
+    "remaining": {"$ref": "#/$defs/Progress/properties/remaining"},
+    "artifacts": {"$ref": "#/$defs/Progress/properties/artifacts"},
+    "reason": {"$ref": "#/$defs/Progress/properties/reason"}
   },
   "allOf": [
     {"if": {"properties": {"status": {"const": "complete"}}}, "then": {"required": ["candidateSha256"], "properties": {"remaining": {"maxItems": 0}}}},
     {"if": {"properties": {"status": {"const": "blocked"}}}, "then": {"required": ["reason"], "properties": {"remaining": {"minItems": 1}}}}
-  ]
+  ],
+  "$defs": {
+    "ArtifactPath": {"description": "The absolute candidate path; a binding key.", "type": "string", "minLength": 1},
+    "Revision": {"description": "The input revision; a binding key.", "type": "string", "minLength": 1},
+    "Sha256": {"description": "Lowercase hex SHA-256 of a canonical JSON value.", "type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "Progress": {
+      "description": "The agent-authored progress file <candidate><x-progressSuffix>; its keys are copied into the checkpoint.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "completed", "remaining", "artifacts"],
+      "properties": {
+        "task": {"type": "string", "minLength": 1},
+        "completed": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "remaining": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "StatusReport": {
+      "description": "What the status operation reports for a candidate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["incomplete", "in-progress", "blocked", "complete-unaccepted"]},
+        "reason": {"type": "string"},
+        "remaining": {"$ref": "#/$defs/Progress/properties/remaining"},
+        "artifactPath": {"$ref": "#/$defs/ArtifactPath"},
+        "schemaSha256": {"$ref": "#/$defs/Sha256"},
+        "revision": {"$ref": "#/$defs/Revision"},
+        "candidateSha256": {"$ref": "#/$defs/Sha256"}
+      }
+    },
+    "CommandResult": {
+      "description": "What the validate, checkpoint, complete and submit operations print; status is absent only for submit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "status": {"enum": ["schema-valid", "complete-unaccepted", "in-progress", "blocked", "invalid"]},
+        "artifactPath": {"$ref": "#/$defs/ArtifactPath"},
+        "error": {"type": "string", "minLength": 1}
+      }
+    }
+  }
 }

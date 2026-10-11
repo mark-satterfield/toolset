@@ -24,8 +24,8 @@ they and their Tasks are named; every other Story's edges are written as usual. 
 cycle detection does not catch this: a Story edge against a Task edge freezes both Stories
 without any single edge closing a loop.
 
-Ownership is recorded on the later Story as `story_owned_blockers`, with reasons as
-`story_edge_reasons`, so an edge drawn
+Ownership is recorded on the later Story under the beads-contract Story owned-blockers key,
+with reasons under its Story edge-reasons key, so an edge drawn
 by hand is never removed and an edge the sources no longer derive is.
 """
 
@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Final, NotRequired, TypedDict
 
 import beadgraph
 import contracts
@@ -43,20 +44,24 @@ from beadgraph import Bead, Graph, Writer, join_ids, now_iso, split_ids
 from contracts import JsonObject
 from typeguard import CollectionCheckStrategy, typechecked
 
-#: Metadata key on the later Story listing the Story edges this script created.
+# The bead metadata keys are generated from the beads-contract schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+
+# isort: split
+from bead_metadata import (
+    KEY_REPO_PATH,
+    KEY_STORY_EDGE_REASONS,
+    KEY_STORY_OWNED_BLOCKERS,
+    KEY_STORY_OWNED_BLOCKERS_AT,
+)
+
 _ARGUMENT_ERROR: str = "Arguments violate the storyedges input contract"
 
-
-OWNED_KEY = "story_owned_blockers"
-OWNED_AT_KEY = "story_owned_blockers_at"
-
-#: Metadata key on the later Story: blocker id -> the reasons the edge stands.
-REASONS_KEY = "story_edge_reasons"
-
-#: The metadata key a Story records its repository under.
-REPO_KEY = "repoPath"
-
-_REPO_LINE = re.compile(r"^\s*repoPath:\s*(\S.*?)\s*$", re.MULTILINE)
+#: The `<repo key>: <path>` line a Story's notes carry when its metadata holds no repository.
+_REPO_LINE: Final[re.Pattern[str]] = re.compile(
+    rf"^\s*{re.escape(KEY_REPO_PATH)}:\s*(\S.*?)\s*$",
+    re.MULTILINE,
+)
 
 
 class EdgeReason(TypedDict):
@@ -146,7 +151,7 @@ def repository_of(bead: Bead, record: JsonObject) -> str | None:
 
     Args:
         bead: The Story.
-        record: Its tracker record, for the `repoPath:` line in its notes.
+        record: Its tracker record, for the repository line in its notes.
 
     Returns:
         The repository, or None when the Story records none.
@@ -157,7 +162,7 @@ def repository_of(bead: Bead, record: JsonObject) -> str | None:
     """
     if not (isinstance(bead, Bead)):
         raise TypeError(_ARGUMENT_ERROR)
-    value: str = bead.metadata.get(REPO_KEY, "").strip()
+    value: str = bead.metadata.get(KEY_REPO_PATH, "").strip()
     if not value:
         match: re.Match[str] | None = _REPO_LINE.search(str(record.get("notes") or ""))
         value = match.group(1).strip() if match else ""
@@ -294,7 +299,7 @@ def _hand_made(graph: Graph, repos: dict[str, str]) -> set[tuple[str, str]]:
     pairs: set[tuple[str, str]] = set()
     for story in repos:
         bead: beadgraph.Bead = graph.beads[story]
-        owned: set[str] = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
+        owned: set[str] = set(split_ids(bead.metadata.get(KEY_STORY_OWNED_BLOCKERS, "")))
         pairs |= {(story, b) for b in bead.blockers if b in repos and b not in owned}
     return pairs
 
@@ -419,7 +424,7 @@ def _write_story_edges(
         wanted: dict[str, list[EdgeReason]] = {
             first: reasons for (later, first), reasons in required.items() if later == story
         }
-        owned: set[str] = set(split_ids(bead.metadata.get(OWNED_KEY, "")))
+        owned: set[str] = set(split_ids(bead.metadata.get(KEY_STORY_OWNED_BLOCKERS, "")))
         standing: set[str] = set(bead.blockers)
         adds: list[str] = sorted(set(wanted) - standing)
         drops: list[str] = sorted((owned - set(wanted)) & standing)
@@ -433,7 +438,7 @@ def _write_story_edges(
         if adds:
             writer.metadata(
                 story,
-                {OWNED_KEY: join_ids(owned | set(adds)), OWNED_AT_KEY: now_iso()},
+                {KEY_STORY_OWNED_BLOCKERS: join_ids(owned | set(adds)), KEY_STORY_OWNED_BLOCKERS_AT: now_iso()},
             )
         for first in adds:
             writer.bd(["dep", "add", story, first, "--type", "blocks"])
@@ -450,12 +455,16 @@ def _write_story_edges(
         if (
             adds
             or drops
-            or final != bead.metadata.get(OWNED_KEY, "")
-            or (wanted and reasons != bead.metadata.get(REASONS_KEY, ""))
+            or final != bead.metadata.get(KEY_STORY_OWNED_BLOCKERS, "")
+            or (wanted and reasons != bead.metadata.get(KEY_STORY_EDGE_REASONS, ""))
         ):
             writer.metadata(
                 story,
-                {OWNED_KEY: final, OWNED_AT_KEY: now_iso(), REASONS_KEY: reasons},
+                {
+                    KEY_STORY_OWNED_BLOCKERS: final,
+                    KEY_STORY_OWNED_BLOCKERS_AT: now_iso(),
+                    KEY_STORY_EDGE_REASONS: reasons,
+                },
             )
     return added, removed, unchanged
 

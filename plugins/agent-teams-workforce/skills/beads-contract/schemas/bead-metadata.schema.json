@@ -1,0 +1,1276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-teams-workforce/skills/beads-contract/schemas/bead-metadata.schema.json",
+  "title": "Pipeline-owned bead metadata",
+  "description": "The one definition of every metadata key the pipeline writes on a bead (`bd show --json` .metadata), its value type, when it is required and its allowed values; plus the build-contract projection read_contract returns, the acceptance-criteria resolution result and the content fingerprint fields. Every value is stored as a string. scripts/generate_bead_metadata.py generates scripts/bead_metadata.py from this file; scripts/check_bead_metadata_generated.py fails when that module is stale.",
+  "type": "object",
+  "additionalProperties": {
+    "type": "string"
+  },
+  "x-key-groups": [
+    {
+      "name": "CONTRACT_KEYS",
+      "doc": "The build contract a Task carries."
+    },
+    {
+      "name": "GATE_KEYS",
+      "doc": "Keys the readiness gate (task-ready) writes."
+    },
+    {
+      "name": "BUILD_LIFECYCLE_KEYS",
+      "doc": "Keys the build lane writes on a Task."
+    },
+    {
+      "name": "BUILD_STOP_KEYS",
+      "doc": "Keys naming why a Task's build stopped; empty when it did not stop."
+    },
+    {
+      "name": "CDS_AUDIT_KEYS",
+      "doc": "The cds audit verdict of a web-ui Task."
+    },
+    {
+      "name": "LANE_KEYS",
+      "doc": "Keys the elaboration lane writes."
+    },
+    {
+      "name": "ARTIFACT_KEYS",
+      "doc": "Keys recording an authored document on its bead."
+    },
+    {
+      "name": "STORY_KEYS",
+      "doc": "Keys on a Story: its owned edges and the host's record of its deploy."
+    },
+    {
+      "name": "WSJF_KEYS",
+      "doc": "Keys WSJF scoring writes; numeric values are stored as text."
+    },
+    {
+      "name": "SEQUENCING_KEYS",
+      "doc": "Keys dependency assessment writes."
+    }
+  ],
+  "x-constants": [
+    {
+      "name": "UNKNOWN",
+      "value": "unknown",
+      "doc": "The literal a producer writes for an undecided -or-unknown contract value; read as None."
+    },
+    {
+      "name": "ACCEPTANCE_FIELD",
+      "value": "acceptance_criteria",
+      "doc": "The record field `bd create/update --acceptance` writes."
+    },
+    {
+      "name": "SOURCE_METADATA",
+      "value": "metadata.acceptance_criteria",
+      "doc": "Criteria source 1: the bead's acceptance_criteria metadata key."
+    },
+    {
+      "name": "SOURCE_ACCEPTANCE",
+      "value": "acceptance_criteria",
+      "doc": "Criteria source 2: the bead's acceptance_criteria record field."
+    },
+    {
+      "name": "SOURCE_DESCRIPTION",
+      "value": "description",
+      "doc": "Criteria source 3: the bead's description."
+    },
+    {
+      "name": "CONTENT_HASH_LENGTH",
+      "value": 16,
+      "doc": "Hex characters kept from the SHA-256 of the fingerprint payload."
+    }
+  ],
+  "x-field-sets": [
+    {
+      "name": "CONTENT_HASH_FIELDS",
+      "kind": "tuple",
+      "values": [
+        "acceptance",
+        "acceptance_criteria",
+        "dependencies",
+        "deps",
+        "description",
+        "design",
+        "issue_type",
+        "labels",
+        "priority",
+        "title",
+        "type"
+      ],
+      "doc": "Record keys the readiness fingerprint is taken over; keys outside CONTENT_HASH_PRESENT hash as null."
+    },
+    {
+      "name": "CONTENT_HASH_PRESENT",
+      "kind": "frozenset",
+      "values": [
+        "acceptance_criteria",
+        "description",
+        "design",
+        "issue_type",
+        "priority",
+        "title"
+      ],
+      "doc": "Readiness fingerprint keys hashed with their value."
+    },
+    {
+      "name": "JUDGING_HASH_FIELDS",
+      "kind": "tuple",
+      "values": [
+        "acceptance",
+        "dependencies",
+        "deps",
+        "description",
+        "design",
+        "issue_type",
+        "labels",
+        "priority",
+        "title",
+        "type"
+      ],
+      "doc": "Record keys the judging fingerprint is taken over; keys outside JUDGING_HASH_PRESENT hash as null."
+    },
+    {
+      "name": "JUDGING_HASH_PRESENT",
+      "kind": "frozenset",
+      "values": [
+        "description",
+        "issue_type",
+        "priority",
+        "title"
+      ],
+      "doc": "Judging fingerprint keys hashed with their value."
+    }
+  ],
+  "x-references": [
+    {
+      "name": "SPEC_REFERENCE",
+      "kind": "tuple",
+      "doc": "Contract arguments naming the Spec; a complete contract carries one."
+    },
+    {
+      "name": "REPO_REFERENCE",
+      "kind": "str",
+      "doc": "The contract argument naming the repository."
+    }
+  ],
+  "x-artifacts": {
+    "kinds": [
+      "trd",
+      "spec",
+      "spec_data_model",
+      "spec_criteria",
+      "story"
+    ],
+    "fields": [
+      "path",
+      "meta",
+      "sha256",
+      "vault_path"
+    ],
+    "specAspects": [
+      [
+        "",
+        "spec"
+      ],
+      [
+        "data-model",
+        "spec_data_model"
+      ],
+      [
+        "criteria",
+        "spec_criteria"
+      ]
+    ]
+  },
+  "$defs": {
+    "ContractKind": {
+      "type": "string",
+      "enum": [
+        "text",
+        "list",
+        "list-or-unknown",
+        "object-or-unknown"
+      ],
+      "x-python": {
+        "literal": "ContractKind",
+        "tuple": "CONTRACT_KINDS",
+        "constants": [
+          [
+            "KIND_TEXT",
+            "text"
+          ],
+          [
+            "KIND_LIST",
+            "list"
+          ],
+          [
+            "KIND_LIST_OR_UNKNOWN",
+            "list-or-unknown"
+          ],
+          [
+            "KIND_OBJECT_OR_UNKNOWN",
+            "object-or-unknown"
+          ]
+        ]
+      }
+    },
+    "HashScope": {
+      "type": "string",
+      "enum": [
+        "readiness",
+        "judging"
+      ],
+      "description": "readiness hashes the record content and the build contract; judging hashes only title, description, issue_type and priority.",
+      "x-python": {
+        "literal": "HashScope",
+        "tuple": "SCOPES",
+        "constants": [
+          [
+            "SCOPE_READINESS",
+            "readiness"
+          ],
+          [
+            "SCOPE_JUDGING",
+            "judging"
+          ]
+        ]
+      }
+    },
+    "CdsDesignSource": {
+      "type": "string",
+      "enum": [
+        "bundle",
+        "cds",
+        "none"
+      ],
+      "x-python": {
+        "literal": "CdsDesignSource",
+        "tuple": "CDS_DESIGN_SOURCES",
+        "constants": [
+          [
+            "CDS_DESIGN_SOURCE_BUNDLE",
+            "bundle"
+          ],
+          [
+            "CDS_DESIGN_SOURCE_CDS",
+            "cds"
+          ],
+          [
+            "CDS_DESIGN_SOURCE_NONE",
+            "none"
+          ]
+        ]
+      }
+    },
+    "ReviewStatus": {
+      "type": "string",
+      "enum": [
+        "COMPLETE",
+        "INCOMPLETE"
+      ],
+      "x-python": {
+        "literal": "ReviewStatus",
+        "tuple": "REVIEW_STATUSES",
+        "constants": [
+          [
+            "REVIEW_COMPLETE",
+            "COMPLETE"
+          ],
+          [
+            "REVIEW_INCOMPLETE",
+            "INCOMPLETE"
+          ]
+        ]
+      }
+    },
+    "BuildState": {
+      "type": "string",
+      "enum": [
+        "red",
+        "green",
+        "deployed-unverified"
+      ],
+      "x-python": {
+        "literal": "BuildState",
+        "tuple": "BUILD_STATES",
+        "constants": [
+          [
+            "BUILD_STATE_RED",
+            "red"
+          ],
+          [
+            "BUILD_STATE_GREEN",
+            "green"
+          ],
+          [
+            "BUILD_STATE_DEPLOYED_UNVERIFIED",
+            "deployed-unverified"
+          ]
+        ],
+        "extra": [
+          [
+            "BUILD_STATE_UNSET",
+            ""
+          ]
+        ]
+      }
+    },
+    "CdsAuditVerdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "blocked",
+        "error"
+      ],
+      "x-python": {
+        "literal": "CdsAuditVerdict",
+        "tuple": "CDS_AUDIT_VERDICTS",
+        "constants": [
+          [
+            "CDS_AUDIT_PASSED",
+            "pass"
+          ],
+          [
+            "CDS_AUDIT_FAILED",
+            "fail"
+          ],
+          [
+            "CDS_AUDIT_BLOCKED",
+            "blocked"
+          ],
+          [
+            "CDS_AUDIT_ERRORED",
+            "error"
+          ]
+        ]
+      }
+    },
+    "ElaborationState": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "in_progress",
+        "done"
+      ],
+      "x-python": {
+        "literal": "ElaborationState",
+        "tuple": "ELABORATION_STATES",
+        "constants": [
+          [
+            "ELABORATION_READY",
+            "ready"
+          ],
+          [
+            "ELABORATION_IN_PROGRESS",
+            "in_progress"
+          ],
+          [
+            "ELABORATION_DONE",
+            "done"
+          ]
+        ],
+        "extra": [
+          [
+            "ELABORATION_AUTHORING",
+            ""
+          ]
+        ]
+      }
+    },
+    "ElaborationCause": {
+      "type": "string",
+      "enum": [
+        "elaboration-started",
+        "decomposed-into-tasks",
+        "human-ruling",
+        "awaiting-human-action"
+      ],
+      "x-python": {
+        "literal": "ElaborationCause",
+        "tuple": "ELABORATION_CAUSES",
+        "constants": [
+          [
+            "CAUSE_STARTED",
+            "elaboration-started"
+          ],
+          [
+            "CAUSE_DECOMPOSED",
+            "decomposed-into-tasks"
+          ],
+          [
+            "CAUSE_HUMAN",
+            "human-ruling"
+          ],
+          [
+            "CAUSE_AWAITING_HUMAN",
+            "awaiting-human-action"
+          ]
+        ],
+        "subsets": [
+          [
+            "DONE_CAUSES",
+            [
+              "decomposed-into-tasks",
+              "human-ruling"
+            ]
+          ]
+        ]
+      }
+    },
+    "StoryDeployState": {
+      "type": "string",
+      "enum": [
+        "waiting-for-ssm",
+        "deploying",
+        "pr-open"
+      ],
+      "x-python": {
+        "literal": "StoryDeployState",
+        "tuple": "STORY_DEPLOY_STATES",
+        "constants": [
+          [
+            "STORY_DEPLOY_WAITING_FOR_SSM",
+            "waiting-for-ssm"
+          ],
+          [
+            "STORY_DEPLOY_DEPLOYING",
+            "deploying"
+          ],
+          [
+            "STORY_DEPLOY_PR_OPEN",
+            "pr-open"
+          ]
+        ]
+      }
+    },
+    "IsoTime": {
+      "type": "string",
+      "description": "An ISO-8601 timestamp."
+    },
+    "JsonList": {
+      "type": "string",
+      "description": "A compact JSON array, stored as text."
+    },
+    "JsonObjectText": {
+      "type": "string",
+      "description": "A compact JSON object, stored as text."
+    },
+    "Criteria": {
+      "type": "object",
+      "description": "The acceptance criteria resolve_criteria found, where, and every place it searched.",
+      "additionalProperties": false,
+      "required": [
+        "criteria",
+        "sourceId",
+        "sourceField",
+        "inherited",
+        "searched"
+      ],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "sourceField": {
+          "type": "string"
+        },
+        "inherited": {
+          "type": "boolean"
+        },
+        "searched": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-python": {
+        "typeddict": "Criteria"
+      }
+    }
+  },
+  "properties": {
+    "repoPath": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "repoPath",
+        "kind": "text",
+        "reference": "REPO_REFERENCE"
+      },
+      "description": "REQUIRED on a Task: the one absolute repository path elaboration ruled; the build lane builds there."
+    },
+    "spec_path": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "specPath",
+        "kind": "text",
+        "reference": "SPEC_REFERENCE"
+      },
+      "description": "One root-relative Spec path; a complete contract carries this or spec_paths."
+    },
+    "spec_paths": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "specPaths",
+        "kind": "list",
+        "reference": "SPEC_REFERENCE"
+      },
+      "description": "JSON array of Spec paths; a complete contract carries this or spec_path."
+    },
+    "spec_sections": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "specSections",
+        "kind": "list"
+      },
+      "description": "JSON array of Spec section names, for navigation."
+    },
+    "acceptance_criteria": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "acceptanceCriteria",
+        "kind": "list"
+      },
+      "description": "JSON array of criteria: one home among several, never required (see resolve_criteria)."
+    },
+    "definition_of_done": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "definitionOfDone",
+        "kind": "list"
+      },
+      "description": "JSON array of strings passed to the Red and Green phases."
+    },
+    "requirement_ids": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "requirementIds",
+        "kind": "list"
+      },
+      "description": "JSON array of requirement and delta-item ids, for traceability."
+    },
+    "decision_ids": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "decisionIds",
+        "kind": "list"
+      },
+      "description": "JSON array of architecture view paths (relative to the arc42 folder, #<heading> for part of a view) the item was designed against."
+    },
+    "surfaces": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "surfaces",
+        "kind": "list-or-unknown"
+      },
+      "description": "JSON array of surfaces, or the literal unknown (nobody ruled; never [])."
+    },
+    "test_strategy": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "testStrategy",
+        "kind": "object-or-unknown"
+      },
+      "description": "JSON object, or the literal unknown."
+    },
+    "cds_design_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CdsDesignSource"
+        }
+      ],
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "cdsDesignSource",
+        "kind": "text",
+        "hashedWhenPresent": true
+      },
+      "description": "On a web-ui Task: bundle builds from and is audited against the supplied cds bundle; cds is designed with and audited against the live CDS design system; none gets no cds design step or audit."
+    },
+    "cds_artifact": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "cdsArtifact",
+        "kind": "object-or-unknown",
+        "hashedWhenPresent": true
+      },
+      "description": "JSON object {kind, slug} naming the Page, Shell or View a bundle or cds web-ui Task builds, as a bundle.json names it."
+    },
+    "cds_bundle_path": {
+      "type": "string",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "cdsBundlePath",
+        "kind": "text",
+        "hashedWhenPresent": true
+      },
+      "description": "On a bundle web-ui Task only: the absolute path of the supplied single-artifact cds bundle."
+    },
+    "cds_build_specs": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "cdsBuildSpecs",
+        "kind": "list",
+        "hashedWhenPresent": true
+      },
+      "description": "On a bundle web-ui Task: JSON array of absolute spec/build-spec.md paths, each with #<Section ID> when only some Sections are built."
+    },
+    "review_status": {
+      "$ref": "#/$defs/ReviewStatus",
+      "x-groups": [
+        "GATE_KEYS"
+      ]
+    },
+    "review_missing": {
+      "type": "string",
+      "x-groups": [
+        "GATE_KEYS"
+      ],
+      "description": "Required non-empty when review_status is INCOMPLETE; empty when COMPLETE."
+    },
+    "reviewed_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "GATE_KEYS"
+      ]
+    },
+    "ready_content_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "x-groups": [
+        "GATE_KEYS"
+      ],
+      "x-aliases": [
+        "CONTENT_HASH_KEY"
+      ],
+      "description": "The readiness fingerprint the stored verdict was judged over."
+    },
+    "build_state": {
+      "anyOf": [
+        {
+          "const": ""
+        },
+        {
+          "$ref": "#/$defs/BuildState"
+        }
+      ],
+      "x-groups": [
+        "BUILD_LIFECYCLE_KEYS"
+      ]
+    },
+    "build_stop_stage": {
+      "type": "string",
+      "x-groups": [
+        "BUILD_LIFECYCLE_KEYS",
+        "BUILD_STOP_KEYS"
+      ],
+      "description": "A handback stage from the handback contract; empty when the build did not stop."
+    },
+    "build_stop_headline": {
+      "type": "string",
+      "x-groups": [
+        "BUILD_LIFECYCLE_KEYS",
+        "BUILD_STOP_KEYS"
+      ]
+    },
+    "build_stop_evidence": {
+      "type": "string",
+      "x-groups": [
+        "BUILD_LIFECYCLE_KEYS",
+        "BUILD_STOP_KEYS"
+      ],
+      "description": "May be empty."
+    },
+    "cds_audit_verdict": {
+      "$ref": "#/$defs/CdsAuditVerdict",
+      "x-groups": [
+        "CDS_AUDIT_KEYS"
+      ]
+    },
+    "cds_audit_findings": {
+      "type": "string",
+      "x-groups": [
+        "CDS_AUDIT_KEYS"
+      ],
+      "description": "str() of the cdsAudit findings value."
+    },
+    "cds_audit_script_version": {
+      "type": "string",
+      "x-groups": [
+        "CDS_AUDIT_KEYS"
+      ]
+    },
+    "cds_audit_design_source": {
+      "$ref": "#/$defs/CdsDesignSource",
+      "x-groups": [
+        "CDS_AUDIT_KEYS"
+      ]
+    },
+    "cds_audit_bundle": {
+      "type": "string",
+      "x-groups": [
+        "CDS_AUDIT_KEYS"
+      ],
+      "description": "The bundle path the audit used."
+    },
+    "elaboration_state": {
+      "anyOf": [
+        {
+          "const": ""
+        },
+        {
+          "$ref": "#/$defs/ElaborationState"
+        }
+      ],
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "An Epic's elaboration state; empty while it is being authored."
+    },
+    "elaboration_state_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "LANE_KEYS"
+      ]
+    },
+    "elaboration_state_cause": {
+      "$ref": "#/$defs/ElaborationCause",
+      "x-groups": [
+        "LANE_KEYS"
+      ]
+    },
+    "elaboration_state_owner": {
+      "type": "string",
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "The owner token that set the state."
+    },
+    "elab_key": {
+      "type": "string",
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "The identity a re-elaboration matches on, written once at the create: story:<slug> on a Story, the task key on a Task."
+    },
+    "elab_follows": {
+      "type": "string",
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "The Task a follow-up Task replaces, set when the original was already built."
+    },
+    "artifact_trd_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "trd",
+        "path"
+      ]
+    },
+    "artifact_trd_meta": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "trd",
+        "meta"
+      ]
+    },
+    "artifact_trd_sha256": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "trd",
+        "sha256"
+      ]
+    },
+    "artifact_trd_vault_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "trd",
+        "vault_path"
+      ],
+      "description": "On the Epic."
+    },
+    "artifact_spec_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec",
+        "path"
+      ]
+    },
+    "artifact_spec_meta": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec",
+        "meta"
+      ]
+    },
+    "artifact_spec_sha256": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec",
+        "sha256"
+      ]
+    },
+    "artifact_spec_vault_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec",
+        "vault_path"
+      ],
+      "description": "On the Story."
+    },
+    "artifact_spec_data_model_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_data_model",
+        "path"
+      ]
+    },
+    "artifact_spec_data_model_meta": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_data_model",
+        "meta"
+      ]
+    },
+    "artifact_spec_data_model_sha256": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_data_model",
+        "sha256"
+      ]
+    },
+    "artifact_spec_data_model_vault_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_data_model",
+        "vault_path"
+      ],
+      "description": "On the Story."
+    },
+    "artifact_spec_criteria_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_criteria",
+        "path"
+      ]
+    },
+    "artifact_spec_criteria_meta": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_criteria",
+        "meta"
+      ]
+    },
+    "artifact_spec_criteria_sha256": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_criteria",
+        "sha256"
+      ]
+    },
+    "artifact_spec_criteria_vault_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "spec_criteria",
+        "vault_path"
+      ],
+      "description": "On the Story."
+    },
+    "artifact_story_path": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "story",
+        "path"
+      ]
+    },
+    "artifact_story_meta": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "story",
+        "meta"
+      ]
+    },
+    "artifact_story_sha256": {
+      "type": "string",
+      "x-groups": [
+        "ARTIFACT_KEYS"
+      ],
+      "x-artifact": [
+        "story",
+        "sha256"
+      ]
+    },
+    "story_owned_blockers": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "The Stories this Story is ordered after by a blocks edge depscore.py story-edges created."
+    },
+    "story_owned_blockers_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "STORY_KEYS"
+      ]
+    },
+    "story_edge_reasons": {
+      "$ref": "#/$defs/JsonObjectText",
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "Keyed by blocker id."
+    },
+    "story_deploy_state": {
+      "$ref": "#/$defs/StoryDeployState",
+      "x-groups": [
+        "STORY_KEYS"
+      ]
+    },
+    "story_deploy_attempt": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "x-groups": [
+        "STORY_KEYS"
+      ]
+    },
+    "story_deploy_error": {
+      "type": "string",
+      "maxLength": 400,
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "May be empty."
+    },
+    "story_ssm_missing": {
+      "type": "string",
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "Comma-separated SSM parameters the Story's stacks read that AWS dev does not hold; may be empty."
+    },
+    "story_pr_url": {
+      "type": "string",
+      "x-groups": [
+        "STORY_KEYS"
+      ]
+    },
+    "story_published_head": {
+      "type": "string",
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "The git sha the Story's branch was published at."
+    },
+    "built_version_error": {
+      "type": "string",
+      "maxLength": 400,
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "May be empty."
+    },
+    "wsjf": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_calculated_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_rubric": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_ubv": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_tc": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_rroe": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_unblocks": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_reaches": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_cod": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_size": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ],
+      "description": "The size the score divides by: the judged Fibonacci estimate, or on a done Epic the sum of its distinct Tasks' sizes."
+    },
+    "wsjf_size_source": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ],
+      "description": "supplied or child-rollup."
+    },
+    "wsjf_size_estimate": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_size_low": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_size_high": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_size_confidence": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ],
+      "description": "Integer percent."
+    },
+    "wsjf_size_outside_range": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ],
+      "description": "true when an Epic's child roll-up falls outside its estimate's range."
+    },
+    "wsjf_confidence": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_value_from": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ]
+    },
+    "wsjf_content_hash": {
+      "type": "string",
+      "x-groups": [
+        "WSJF_KEYS"
+      ],
+      "description": "The judging fingerprint of the bead the judged dimensions were read from."
+    },
+    "seq_owned_blockers": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ],
+      "description": "The edges dependency assessment created on the bead (tracks on an Epic, blocks on a Task outside elaboration); only these are ever withdrawn or converted."
+    },
+    "seq_owned_blockers_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ]
+    },
+    "seq_content_hash": {
+      "type": "string",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ],
+      "description": "The judging fingerprint the assessment last read the item at."
+    },
+    "seq_edge_reasons": {
+      "$ref": "#/$defs/JsonObjectText",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ],
+      "description": "On the blocked bead, keyed by blocker id: {reason, confidence, setBy, setAt} for each owned edge."
+    },
+    "seq_edge_withdrawn": {
+      "$ref": "#/$defs/JsonObjectText",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ],
+      "description": "On the blocked bead, keyed by blocker id: {reason, withdrawnBy, withdrawnAt} for each owned edge an assessment withdrew."
+    },
+    "seq_assessed_at": {
+      "$ref": "#/$defs/IsoTime",
+      "x-groups": [
+        "SEQUENCING_KEYS"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_status": {
+            "const": "INCOMPLETE"
+          }
+        },
+        "required": [
+          "review_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "review_missing": {
+            "minLength": 1
+          }
+        },
+        "required": [
+          "review_missing"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_status": {
+            "const": "COMPLETE"
+          }
+        },
+        "required": [
+          "review_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "review_missing": {
+            "maxLength": 0
+          }
+        }
+      }
+    }
+  ]
+}

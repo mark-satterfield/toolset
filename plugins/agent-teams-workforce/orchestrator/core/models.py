@@ -11,6 +11,7 @@ from typing import NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from .handback_contract import Session
 from .io import JsonValue
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
@@ -85,7 +86,6 @@ class AgentStep:
     effort: str
     add_dirs: tuple[Path, ...] = ()
     corrective: bool = True
-    receipt_required: bool = True
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
@@ -105,7 +105,6 @@ class AgentStep:
         check_type(self.effort, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.add_dirs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.corrective, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.receipt_required, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 class ModelPolicy(TypedDict, total=False):
@@ -113,24 +112,6 @@ class ModelPolicy(TypedDict, total=False):
 
     fable_until: float
     fable_blocked: bool
-
-
-class SessionRecord(TypedDict):
-    """Attribution written before launch and updated when the process finishes."""
-
-    sessionId: str
-    cwd: str
-    phase: str
-    step: str
-    agent: str
-    model: str
-    effort: str
-    pid: NotRequired[int]
-    pgid: NotRequired[int]
-    startedAt: NotRequired[float]
-    endedAt: NotRequired[float | None]
-    exit: NotRequired[int | None]
-    cause: NotRequired[str | None]
 
 
 class SessionFacts(TypedDict):
@@ -174,7 +155,7 @@ class RunContext:
     work: Path
     run_id: str
     stage: str = "input"
-    sessions: list[SessionRecord] = field(default_factory=list)
+    sessions: list[Session] = field(default_factory=list)
     cleanup: list[Callable[[], None]] = field(default_factory=list)
     model_policy: ModelPolicy = field(default_factory=ModelPolicy)
     session_slots: threading.BoundedSemaphore = field(
@@ -190,7 +171,7 @@ class RunContext:
         check_type(self.work, Path, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.run_id, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.stage, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.sessions, list[SessionRecord], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.sessions, list[Session], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.cleanup, list[Callable[[], None]], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.model_policy, ModelPolicy, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(

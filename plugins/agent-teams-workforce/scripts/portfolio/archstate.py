@@ -38,11 +38,12 @@ import os
 import re
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without shell execution.
+import sys
 import tempfile
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import archclosure
 import contracts
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
 
 from archbaseline import baseline_facts
 from archcatalog import read_catalog, split_frontmatter
+from archevidence import load_repository_paths
 from archgit import git_result, run_git
 from archmatrix import catalog_elements, element_id, row_of, satisfied
 from archrevision import arc42_revision
@@ -60,16 +62,12 @@ from contracts import (
     BuiltRemoval,
     ConstraintRestore,
     ConstraintSnapshot,
-    DeltaItem,
-    DeltaResult,
-    DeltaView,
     FileError,
     IntegrationCommit,
     JsonObject,
     PromotionReport,
     Refusal,
     StateReport,
-    TargetNames,
     TargetRemoval,
     TargetResult,
     TreeDifference,
@@ -78,34 +76,71 @@ from contracts import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-STATE_KEY = "lifecycle_state"
-EFFECTIVE = "effective"
-IN_REVIEW = "in-review"
+# The survey and target report contracts are generated into the artifact-handoff skill, their
+# one definition; both paths are declared here rather than inherited from another import.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+
+# isort: split
+from survey_contract import (
+    DESIGN_VALIDATE_EXISTING,
+    LIFECYCLE_EFFECTIVE,
+    LIFECYCLE_IN_REVIEW,
+    BaselineEntry,
+    DocumentLifecycleState,
+    SurveyContractError,
+    parse_baseline,
+)
+from target_contract import (
+    BASELINE_FILE,
+    CHANGE_NEW,
+    CHANGE_NONE,
+    CHANGE_PARTIAL,
+    DELTA_FOLDER,
+    KEY_LIFECYCLE_STATE,
+    KIND_IMPLEMENTATION_GAP,
+    STATE_BUILT,
+    STATE_DEPLOYED,
+    STATE_UNKNOWN,
+    TARGET_FOLDER,
+    TARGET_MANIFEST_SUMMARY_KEYS,
+    TARGET_SUMMARY_COUNT_KEYS,
+    TARGET_SUMMARY_KEYS,
+    ArchitectureChange,
+    DeltaItem,
+    DeltaResult,
+    DeltaView,
+    ElementState,
+    TargetNames,
+)
+
+STATE_KEY: Final = KEY_LIFECYCLE_STATE
+# Not yet in target-report.schema.json's ArchitectureChange enum; see the seeded baseline.
+CHANGE_PENDING: Final = "pending"
+EFFECTIVE: DocumentLifecycleState = LIFECYCLE_EFFECTIVE
+IN_REVIEW: DocumentLifecycleState = LIFECYCLE_IN_REVIEW
 FENCE = "---"
 MIN_BUILT_PATH_PARTS = 2
 EFFECTIVE_FOLDER = "arc42"
 CONSTRAINTS_FOLDER = "02-architecture-constraints"
-TARGET_FOLDER = "target"
-DELTA_FOLDER = "delta"
 # The baseline handoff: the effective views each capability relies on and the implementation
 # work derived from the element matrix. It belongs to the future set, never to the
 # delta; `delta/baseline.json` is read only from targets written before that rule.
-BASELINE_FILE = "baseline.json"
 SEED_FILES = (BASELINE_FILE, f"{DELTA_FOLDER}/{BASELINE_FILE}")
 # How the documents are deduplicated: `none` (future = current, one set, no delta), `new` (no
 # current, one set that is both the future and the delta), `partial` (the future set and a delta
 # of the change alone).
 CHANGE_NOTES = {
-    "none": "No architecture change: current and future are the same. The future set is the "
+    CHANGE_NONE: "No architecture change: current and future are the same. The future set is the "
     "effective views cited in `entries[].documents`; there is no delta. Build work is "
     "every element those views show, including satisfied elements whose Tasks verify them.",
-    "new": "Entirely new architecture: there is no current set. The target views are both the "
+    CHANGE_NEW: "Entirely new architecture: there is no current set. The target views are both the "
     "future and the delta; there is no separate delta folder. Build work is the elements those "
     "views show plus `implementationWork`.",
-    "partial": "Partial change: the target views are the future set, and `delta/` holds the "
+    CHANGE_PARTIAL: "Partial change: the target views are the future set, and `delta/` holds the "
     "change alone. Build work is the elements the delta shows plus `implementationWork`, the "
     "elements of the future set not satisfied by the element matrix.",
-    "pending": "Change not yet authored: the assessment names design or documentation work "
+    CHANGE_PENDING: "Change not yet authored: the assessment names design or documentation work "
     "(`designChanged` or `documentationChanged`), and no view is written yet, so the case is "
     "not known: it becomes `new` or `partial` when the views are authored. It is never `none`, "
     "and no target is written in this state. Build work so far is `implementationWork`.",
@@ -822,8 +857,8 @@ def _change_case(draft: Path, files: list[Path], manifest: BaselineManifest | No
 
     """
     kind: str = _change_kind(draft, files)
-    if kind == "none" and manifest and (manifest["designChanged"] or manifest["documentationChanged"]):
-        return "pending"
+    if kind == CHANGE_NONE and manifest and (manifest["designChanged"] or manifest["documentationChanged"]):
+        return CHANGE_PENDING
     return kind
 
 
@@ -840,10 +875,10 @@ def _change_kind(draft: Path, files: list[Path]) -> str:
     """
     rels: list[Path] = [p.relative_to(draft) for p in files if p.suffix == ".md"]
     if not rels:
-        return "none"
+        return CHANGE_NONE
     if any(r.parts and r.parts[0] == DELTA_FOLDER for r in rels):
-        return "partial"
-    return "new"
+        return CHANGE_PARTIAL
+    return CHANGE_NEW
 
 
 def _draft_refusals(draft: Path, files: list[Path]) -> list[str]:
@@ -860,7 +895,7 @@ def _draft_refusals(draft: Path, files: list[Path]) -> list[str]:
     """
     reasons: list[str] = []
     rels: list[Path] = [p.relative_to(draft) for p in files]
-    if _change_kind(draft, files) == "none":
+    if _change_kind(draft, files) == CHANGE_NONE:
         reasons.append(
             "the draft has no views: the design or documentation work the assessment names has not been authored",
         )
@@ -927,9 +962,18 @@ def _target_baseline(
             survey: object = json.loads(Path(baseline).read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             return None, [f"baseline unreadable or invalid: {exc}"], []
-        facts: contracts.BaselineFacts = baseline_facts(json_object(survey), matrix_snapshot)
-        baseline_refusals = facts["errors"]
+        facts: contracts.BaselineFacts = baseline_facts(
+            json_object(survey),
+            matrix_snapshot,
+            repository_paths=load_repository_paths(Path(baseline).parent),
+        )
+        baseline_refusals = list(facts["errors"])
         warnings.extend(facts["warnings"])
+        entries: list[BaselineEntry] = []
+        try:
+            entries = parse_baseline(facts["entries"])
+        except SurveyContractError as exc:
+            baseline_refusals.append(f"baseline entries do not satisfy the survey contract: {exc}")
         warnings.extend(f"unresolved baseline, carried as implementation work: {item}" for item in facts["unknowns"])
         manifest = {
             "version": 1,
@@ -938,15 +982,15 @@ def _target_baseline(
             "surveySha256": hashlib.sha256(Path(baseline).read_bytes()).hexdigest(),
             "designChanged": bool(facts["designWork"]),
             "documentationChanged": bool(facts["docWork"]),
-            "entries": facts["entries"],
+            "entries": entries,
             "implementationWork": facts["implementationWork"],
             "approvalFiles": sorted(
                 {
                     document["path"]
-                    for entry in facts["entries"]
-                    if entry["designAction"] == "validate-existing"
+                    for entry in entries
+                    if entry["designAction"] == DESIGN_VALIDATE_EXISTING
                     for document in entry["documents"]
-                    if document["lifecycle_state"] == "in-review"
+                    if document["lifecycle_state"] == LIFECYCLE_IN_REVIEW
                 },
             ),
         }
@@ -1096,9 +1140,9 @@ def _draft_plan(source: Path, root: Path, manifest: BaselineManifest | None) -> 
     warnings.extend(_draft_warnings(source, files) if source.is_dir() else [])
     # A new-looking draft whose views show elements the effective version shows is a
     # partial change: those views are its delta.
-    as_delta: list[Path] = _existing_views(files, _effective_elements(root)) if change == "new" else []
+    as_delta: list[Path] = _existing_views(files, _effective_elements(root)) if change == CHANGE_NEW else []
     if as_delta:
-        change = "partial"
+        change = CHANGE_PARTIAL
         warnings.append(
             f"the draft has no {DELTA_FOLDER}/ views and shows elements the effective "
             f"version shows: {', '.join(p.relative_to(source).as_posix() for p in as_delta)} "
@@ -1173,10 +1217,9 @@ def write_target(draft: str, options: TargetOptions) -> TargetResult:
     ):
         subject_refusals = [f"{dest} is outside {root / TARGET_FOLDER}"]
         refusals = subject_refusals + refusals
-    delta: list[Path] = [p for p in plan.files if p.relative_to(source).parts[0] == DELTA_FOLDER]
-    delta_out: list[Path] = [dest / p.relative_to(source) for p in delta] + [
-        dest / DELTA_FOLDER / p.relative_to(source) for p in plan.as_delta
-    ]
+    delta_out: list[Path] = [
+        dest / p.relative_to(source) for p in plan.files if p.relative_to(source).parts[0] == DELTA_FOLDER
+    ] + [dest / DELTA_FOLDER / p.relative_to(source) for p in plan.as_delta]
     report: TargetResult = {
         "summary": {},
         "ok": not refusals,
@@ -1205,42 +1248,40 @@ def write_target(draft: str, options: TargetOptions) -> TargetResult:
         )
         report["files"].append(str(dest / BASELINE_FILE))
     # The summary carries what a caller acts on, because `--out` prints only the summary.
-    report["summary"] = {
-        key: json_object(report)[key]
-        for key in (
-            "ok",
-            "refusals",
-            "subjectRefusals",
-            "subject",
-            "subjectName",
-            "targetDir",
-            "deltaDir",
-            "dryRun",
-            "draftWritten",
-            "architectureChange",
-        )
-    } | {
-        "files": len(report["files"]),
-        "deltaFiles": len(report["deltaFiles"]),
-        "warnings": len(warnings),
+    fields: JsonObject = json_object(report)
+    report["summary"] = {key: fields[key] for key in TARGET_SUMMARY_KEYS} | {
+        key: _count(fields, key) for key in TARGET_SUMMARY_COUNT_KEYS
     }
     if manifest:
         report["summary"].update(
-            {
-                key: json_object(report)[key]
-                for key in (
-                    "designChanged",
-                    "documentationChanged",
-                    "implementationWork",
-                    "approvalFiles",
-                )
-            },
+            {key: json_object(report)[key] for key in TARGET_MANIFEST_SUMMARY_KEYS},
         )
     if refusals or options.dry_run:
         return report
     _publish_target_files(source, dest, plan.files, plan.as_delta)
     _publish_target_manifest(dest, manifest, plan.change)
     return report
+
+
+def _count(fields: JsonObject, key: str) -> int:
+    """Count the members of one list field of a target report.
+
+    Args:
+        fields: The report as a JSON object.
+        key: A key from `TARGET_SUMMARY_COUNT_KEYS`.
+
+    Returns:
+        The number of members.
+
+    Raises:
+        TypeError: The field is not a list.
+
+    """
+    value: contracts.JsonValue = fields.get(key)
+    if not isinstance(value, list):
+        message: str = f"target report field {key!r} is not a list"
+        raise TypeError(message)
+    return len(value)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1294,7 +1335,7 @@ def target_names(target_dir: str, names: list[str]) -> TargetNames | FileError:
     }
 
 
-def _change_of(baseline_file: Path, delta_root: Path) -> str:
+def _change_of(baseline_file: Path, delta_root: Path) -> ArchitectureChange:
     """Read how a written target deduplicates its documents (see CHANGE_NOTES).
 
     Args:
@@ -1314,9 +1355,13 @@ def _change_of(baseline_file: Path, delta_root: Path) -> str:
     if isinstance(raw, dict):
         value: JsonObject = json_object(raw)
         recorded = value.get("architectureChange")
-    if isinstance(recorded, str) and recorded in CHANGE_NOTES and recorded != "pending":
-        return recorded
-    return "partial" if delta_root.is_dir() else "none"
+    if recorded == CHANGE_NONE:
+        return CHANGE_NONE
+    if recorded == CHANGE_NEW:
+        return CHANGE_NEW
+    if recorded == CHANGE_PARTIAL:
+        return CHANGE_PARTIAL
+    return CHANGE_PARTIAL if delta_root.is_dir() else CHANGE_NONE
 
 
 @dataclass(frozen=True)
@@ -1338,26 +1383,14 @@ def _assessment_document_paths(entries: contracts.JsonValue) -> tuple[str, ...]:
         TypeError: An assessment entry or document reference is malformed.
 
     """
-    entry: bool | int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None
-    document: bool | int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None
     message: str = "baseline handoff has invalid assessment document references"
-    if not isinstance(entries, list):
-        raise TypeError(message)
-    paths: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise TypeError(message)
-        documents: contracts.JsonValue = entry.get("documents", [])
-        if not isinstance(documents, list):
-            raise TypeError(message)
-        for document in documents:
-            if not isinstance(document, dict) or not isinstance(document.get("path"), str):
-                raise TypeError(message)
-            path: contracts.JsonValue = document["path"]
-            if not isinstance(path, str):
-                raise TypeError(message)
-            paths.append(path)
-    return tuple(paths)
+    if entries == []:
+        return ()
+    try:
+        baseline: list[BaselineEntry] = parse_baseline(entries)
+    except SurveyContractError as exc:
+        raise TypeError(message) from exc
+    return tuple(document["path"] for entry in baseline for document in entry["documents"])
 
 
 def _saved_assessment(path: Path) -> _SavedAssessment:
@@ -1420,7 +1453,15 @@ def _delta_catalog(views: list[Path], warnings: list[str]) -> tuple[dict[str, li
     listed: list[DeltaView] = []
     for view in views:
         catalog: contracts.CatalogRecord = read_catalog(view)
-        listed.append({"path": str(view), **catalog})
+        listed.append(
+            {
+                "path": str(view),
+                "view_type": catalog["view_type"],
+                "scope": catalog["scope"],
+                "subject": catalog["subject"],
+                "shows": catalog["shows"],
+            },
+        )
         elements: list[str] = catalog["shows"] or ([catalog["subject"]] if catalog["subject"] else [])
         if not catalog["shows"]:
             warnings.append(
@@ -1434,7 +1475,7 @@ def _delta_catalog(views: list[Path], warnings: list[str]) -> tuple[dict[str, li
 
 @dataclass(frozen=True)
 class _DeltaScope:
-    change: str
+    change: ArchitectureChange
     target: Path
     baseline: Path
     matrix: JsonObject | None
@@ -1450,6 +1491,29 @@ def _catalog_sort_key(pair: tuple[str, list[str]]) -> str:
     return element_id(pair[0])
 
 
+def _element_state(value: contracts.JsonValue) -> ElementState:
+    """Narrow an element matrix row's state to the target report's element states.
+
+    Args:
+        value: The row's `state` value.
+
+    Returns:
+        The state.
+
+    Raises:
+        TypeError: The value is not an element state the target report defines.
+
+    """
+    if value == STATE_UNKNOWN:
+        return STATE_UNKNOWN
+    if value == STATE_BUILT:
+        return STATE_BUILT
+    if value == STATE_DEPLOYED:
+        return STATE_DEPLOYED
+    message: str = f"element matrix state {value!r} is not an element state of the target report"
+    raise TypeError(message)
+
+
 def _implementation_gaps(
     scope: _DeltaScope,
     manifest: _SavedAssessment | None,
@@ -1462,13 +1526,13 @@ def _implementation_gaps(
     # Build scope is catalog elements, not survey capability labels or code judgments.
     present: set[str] = {element_id(item["element"]) for item in items}
     documents: list[JsonObject]
-    if scope.change == "partial":
+    if scope.change == CHANGE_PARTIAL:
         documents = [
             {"path": str(path)}
             for path in _draft_files(scope.target)
             if path.suffix == ".md" and DELTA_FOLDER not in path.relative_to(scope.target).parts
         ]
-    elif scope.change == "none" and manifest:
+    elif scope.change == CHANGE_NONE and manifest:
         documents = [{"path": path} for path in manifest.documents]
     else:
         documents = []
@@ -1483,15 +1547,15 @@ def _implementation_gaps(
     ):
         key: str = element_id(element)
         row: dict[str, contracts.JsonValue] = row_of(scope.matrix, element)
-        if key in present or (scope.change == "partial" and satisfied(scope.matrix or {}, row)):
+        if key in present or (scope.change == CHANGE_PARTIAL and satisfied(scope.matrix or {}, row)):
             continue
         items.append(
             {
                 "id": f"D{len(items) + 1}",
                 "element": element,
-                "kind": "implementation-gap",
+                "kind": KIND_IMPLEMENTATION_GAP,
                 "views": sorted(set(element_views)),
-                "state": check_type(row.get("state", "unknown"), str),
+                "state": _element_state(row.get("state", STATE_UNKNOWN)),
                 "repository": check_type(row.get("repository"), str | None),
                 "baseline": str(scope.baseline),
             },
@@ -1559,10 +1623,10 @@ def delta_items(
     baseline_file: Path = target / BASELINE_FILE
     if not baseline_file.is_file():
         baseline_file = root / BASELINE_FILE
-    change: str = _change_of(baseline_file, root)
+    change: ArchitectureChange = _change_of(baseline_file, root)
     if root.is_dir():
         views: list[Path] = [p for p in _draft_files(root) if p.suffix == ".md"]
-    elif change == "new":
+    elif change == CHANGE_NEW:
         views = [
             p for p in _draft_files(target) if p.suffix == ".md" and p.relative_to(target).parts[0] != DELTA_FOLDER
         ]
@@ -1582,7 +1646,7 @@ def delta_items(
         for n, element in enumerate(sorted(shown, key=str.casefold), start=1)
     ]
     _implementation_gaps(_DeltaScope(change, target, baseline_file, matrix_snapshot), manifest, items, refusals)
-    if change == "none" and not items:
+    if change == CHANGE_NONE and not items:
         refusals.append(
             "the unchanged architecture's cited effective views name no elements",
         )

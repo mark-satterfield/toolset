@@ -10,7 +10,7 @@ available both inside Claude Code sessions and to automation run outside it.
 | Project value | Source |
 |---|---|
 | The repos and their folders | the `polyrepo` tool (`list`, `status <repo>`), every app space |
-| Root / C2 repo (holds real issues + hydration list) | `ATW_CONTROL_REPO` |
+| Root / C2 repo (holds real issues + hydration list) | the control-repository variable, `CONTROL_REPO_ENV` in the `pipeline-contracts` skill's driver surface |
 | Shared server port | `ATW_BEADS_PORT` (default `3308`) |
 | Issue prefix | the root repo's `issue_prefix` (`bd config get issue_prefix` there) |
 | Shared server data dir | bd-managed: `~/.beads/shared-server/dolt/` |
@@ -155,7 +155,7 @@ orphans; verify `bd dolt test` still connects afterward (it will — the data is
 
 ## The root / command-and-control repo is special
 
-The root repo (`ATW_CONTROL_REPO`) holds the fleet's real issues and the hydration list. It is
+The root repo (the control repository the `pipeline-contracts` skill's `CONTROL_REPO_ENV` names) holds the fleet's real issues and the hydration list. It is
 already on the shared server. **Never** reset its working set or force-push it during a bulk
 operation, and never add it to a sweep that treats databases as empty. Audit it; repair it
 only with explicit, case-by-case intent.

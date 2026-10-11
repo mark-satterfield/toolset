@@ -21,21 +21,28 @@ import functools
 import json
 import math
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 import contracts
 
 # isort: split
 import portfolio_path  # ruff: ignore[unused-import] - Standalone imports need the bundled plugin path before orchestrator imports.
 
+# The bead metadata keys are generated from the beads-contract schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+
 # isort: split
 
+import bead_metadata
 import beads_contract
+from bead_metadata import KEY_SEQ_OWNED_BLOCKERS, HashScope
 from beadcontracts import PlannedWrite
 from contracts import JsonObject, JsonValue, json_object
+from orchestrator.core import handback_contract
 from orchestrator.core import tool_locks as locks
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -79,21 +86,15 @@ def edge_type(kind: str) -> str:
 #: Statuses that mean the bead is finished. An edge onto one of these is inert.
 CLOSED = frozenset({"closed"})
 
-#: Metadata key on the DEPENDENT bead listing the Epic edges this system created, as a
-#: comma-separated id list of the beads it depends on. An edge absent from it was made by
-#: hand and is never removed.
-OWNED_KEY = "seq_owned_blockers"
-OWNED_AT_KEY = "seq_owned_blockers_at"
-
 
 #: The cause of a failure the beads server or its connection made, not the command.
-BD_TIMEOUT = "bd-timeout"
+BD_TIMEOUT: Final[str] = handback_contract.BD_TIMEOUT_CAUSE
 #: The cause of a failure another writer's lock made: the command collided, it did not fail.
-CONTENTION = "contention"
+CONTENTION: Final[str] = handback_contract.CONTENTION_CAUSE
 #: The causes a write is made again for.
-RETRIED_CAUSES = frozenset({BD_TIMEOUT, CONTENTION})
+RETRIED_CAUSES: Final[frozenset[str]] = frozenset({BD_TIMEOUT, CONTENTION})
 #: The cause of any other failure.
-OTHER_CAUSE = "other"
+OTHER_CAUSE: Final[str] = handback_contract.OTHER_CAUSE
 
 
 class GraphError(RuntimeError):
@@ -164,7 +165,7 @@ class Bead:
     @property
     def owned_blockers(self) -> tuple[str, ...]:
         """The Epic edges on this bead that this system created, per its own record."""
-        return tuple(split_ids(self.metadata.get(OWNED_KEY, "")))
+        return tuple(split_ids(self.metadata.get(KEY_SEQ_OWNED_BLOCKERS, "")))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -316,6 +317,9 @@ BD_GATE: BdGate | None = None
 def _central() -> Path | None:
     """Resolve the central repository or use the working directory.
 
+    The repository comes from `beads_contract.central_repo`, which reads the environment
+    variable the pipeline-contracts skill defines as `CONTROL_REPO_ENV`.
+
     Returns:
         The repository, or None.
 
@@ -331,7 +335,7 @@ _HOMES: dict[str, dict[str, str]] = {}
 def _target(args: list[str], repo: Path | None) -> Path | None:
     """Resolve the repository for a `bd` command by the beads-contract rule.
 
-    Every command runs against the central database (`repo`, else `$ATW_CONTROL_REPO`),
+    Every command runs against the central database (`repo`, else the `CONTROL_REPO_ENV` repository),
     except a write to a bead filed in a fleet repository's own database, which runs there:
     the one-way fleet sync would copy the fleet copy back over a central edit.
 
@@ -412,7 +416,7 @@ def _bd_json(args: list[str], repo: Path | None) -> JsonValue:
 
     Args:
         args: The `bd` arguments.
-        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
 
     Returns:
         The parsed stdout.
@@ -531,7 +535,7 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
     Args:
         bead_id: The bead to write.
         pairs: The keys and values to merge onto its metadata.
-        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -561,7 +565,7 @@ class Writer:
     """The one path for tracker writes; a dry-run writer records each write instead.
 
     Attributes:
-        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
         dry_run: True to record each write in `planned` and change nothing.
         planned: The writes a dry run would have made, in order.
 
@@ -635,15 +639,14 @@ class Writer:
         write_metadata(bead_id, pairs, self.repo)
 
 
-#: The fingerprint scope a caller asks for. `judging` covers only the material a judging
-#: or assessing session is handed; `readiness` also covers the build contract. The scopes
-#: themselves are defined once, in `beads_contract.py`; this is only how a caller names one.
-SCOPE_JUDGING = "judging"
-SCOPE_READINESS = "readiness"
+#: The fingerprint scopes, re-exported from `bead_metadata` for callers that name them here.
+SCOPE_JUDGING: Final[HashScope] = bead_metadata.SCOPE_JUDGING
+SCOPE_READINESS: Final[HashScope] = bead_metadata.SCOPE_READINESS
+_SCOPE_ERROR: Final[str] = f"The fingerprint scope must be one of {', '.join(bead_metadata.SCOPES)}"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def fingerprints(records: list[JsonObject], scope: str = SCOPE_READINESS) -> dict[str, str]:
+def fingerprints(records: list[JsonObject], scope: HashScope = SCOPE_READINESS) -> dict[str, str]:
     """Compute every record fingerprint through the shared contract.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
@@ -660,10 +663,13 @@ def fingerprints(records: list[JsonObject], scope: str = SCOPE_READINESS) -> dic
 
     Raises:
         TypeError: An argument violates the declared input contract.
+        ValueError: `scope` is not one of the beads-contract fingerprint scopes.
 
     """
     if not (isinstance(records, list)) or not (isinstance(scope, str)):
         raise TypeError(_ARGUMENT_ERROR)
+    if scope not in bead_metadata.SCOPES:
+        raise ValueError(_SCOPE_ERROR)
     latest: dict[str, dict[str, contracts.JsonValue]] = {str(record.get("id") or ""): record for record in records}
     return {
         bead_id: beads_contract.fingerprint_of(bead_id, record, scope=scope)["fingerprint"]
@@ -696,7 +702,7 @@ def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
     """Return every record of one issue type directly under a parent, from one `bd list` call.
 
     Args:
-        repo: The central repository, or None for `$ATW_CONTROL_REPO`.
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
         parent: The parent id.
         kind: The issue type.
 

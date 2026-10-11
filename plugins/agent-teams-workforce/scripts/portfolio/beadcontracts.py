@@ -5,16 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract scripts on sys.path.
 from contracts import DeltaItem, JsonObject
-
-
-class UiItem(TypedDict):
-    """Describe the ui item wire record."""
-
-    id: str
-    designSource: str
-    buildSpec: str | None
-    sections: list[str]
+from recon_contract import ArtifactKind, DesignSource
 
 
 class UiAppendSummary(TypedDict):
@@ -37,7 +30,7 @@ class Bundle(TypedDict):
     """Describe the bundle wire record."""
 
     path: str
-    kind: str
+    kind: ArtifactKind
     slug: str
     shell: JsonObject | None
     createdAt: str
@@ -66,8 +59,8 @@ class DesignArtifact(TypedDict):
 class BuildSelection(TypedDict):
     """Describe the build selection wire record."""
 
-    designSource: str
-    recordedSource: str
+    designSource: DesignSource
+    recordedSource: DesignSource
     artifact: DesignArtifact | None
     bundle: str | None
     buildSpec: str | None
@@ -93,7 +86,7 @@ class PlannedTask(TypedDict):
     title: str
     dependsOn: list[str]
     blockedByExternal: list[str]
-    designSource: NotRequired[str]
+    designSource: NotRequired[DesignSource]
 
 
 class TaskPlanSummary(TypedDict):

@@ -36,33 +36,37 @@ atw-bd ready --type task --json -n 0 --readonly > /tmp/ready-tasks.json
 into an Epic, a Task, or a closure — `route-build` skips it and there is no
 triage composite to dispatch. Do not query for them here.
 
-**Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata under the
-`wsjf` rubric at Task level — written when `prd-to-spec` elaborates the Task's Epic, and
-rewritten by the `wsjf-scoring` workflow — read it, do not recompute it:
+**Order by WSJF, descending.** The WSJF score is stored on the issue as Beads metadata —
+written when `prd-to-spec` elaborates the Task's Epic, and rewritten by the `wsjf-scoring`
+workflow — so read it, do not recompute it. The score is the `wsjf` key; it and every other
+WSJF key are defined once in the `beads-contract` schema (`$ROOT/skills/beads-contract/schemas/bead-metadata.schema.json`,
+its `WSJF_KEYS` group). Read a candidate's WSJF keys with the `beads-contract` CLI, which
+reports them as their own group, and order by the `wsjf` entry of that group; never hand-roll
+`jq` against `bd`:
 
 ```bash
-atw-bd show <id> --json --readonly \
-  | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
-           | "\(.wsjf // "")"'
+python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" metadata get <id>
 ```
 
-A candidate with no stored `wsjf` has not been scored. It cannot be ranked, so it
+(`$ROOT` is the installed plugin root, resolved in step 3.)
+
+A candidate with no stored score has not been scored. It cannot be ranked, so it
 is left out of the ordering rather than given a fallback position — run
 `/agent-teams-workforce:wsjf-scoring` to score it. `task-ready` does not score.
 
-Order the scored candidates by `wsjf` descending. Break ties by putting a candidate
+Order the scored candidates by score descending. Break ties by putting a candidate
 whose status is `in_progress` first, then by bead id ascending.
 
 Then run `/agent-teams-workforce:task-ready <id>` on the candidates in that order.
 That gate judges whether the issue carries what someone needs in order to work it,
-and persists `review_status`, `review_missing`, `reviewed_at`, and
-`ready_content_hash`. It is expensive only the first time — on later runs the content
-hash matches, it reuses the stored verdict and reruns nothing.
+and persists its verdict in the schema's gate keys (the `GATE_KEYS` group). It is
+expensive only the first time — on later runs the content fingerprint matches, it reuses
+the stored verdict and reruns nothing.
 
 **Gate on `Ready`, not on membership in `atw-bd ready`.** `task-ready` returns a hard
 boolean, and `Ready: TRUE` requires both a `READY` pipeline result and tracker-ready
 state. Take the highest-WSJF candidate whose gate says `Ready: TRUE`. Skip any that
-comes back `FALSE` and record its `Pipeline result` — an `INCOMPLETE` issue needs
+comes back `FALSE` and record its `Pipeline result` — an issue the gate found incomplete needs
 work on the issue, not a dispatch.
 
 If nothing is `Ready: TRUE`, report "no ready development work" with the reasons and
@@ -101,7 +105,8 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
          infraVocabulary}})
 ```
 
-`infraVocabulary` is the JSON object in `$ROOT/scripts/infra-vocabulary.json`, passed as it stands.
+`infraVocabulary` is the JSON object printed by
+`python3 $ROOT/skills/artifact-handoff/scripts/infra_vocabulary.py`, passed as it stands.
 
 | action | What to do |
 | --- | --- |
@@ -137,17 +142,20 @@ python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
 
 Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
-the requirement ids and the architecture views the Task was designed against (`decisionIds`). Pass it as-is, adding the Task's
-`type` and `labels` from `atw-bd show <id> --json`, and pass the JSON object in `$ROOT/scripts/infra-vocabulary.json` as the
+the requirement ids and the architecture views the Task was designed against — every field the
+schema's build-contract projection defines. Pass it as-is, adding the Task's
+`type` and `labels` from `atw-bd show <id> --json`, and pass the JSON object printed by
+`python3 $ROOT/skills/artifact-handoff/scripts/infra_vocabulary.py` as the
 `infraVocabulary` argument (together they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
-not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
+not drop fields from it. If `missing` names the repository, the Task's build contract is incomplete:
 the repository is ruled during elaboration, so release the claim, report the id and that reason, and stop — never
 work out a repository yourself.
 
-The project's configuration reaches the composite as arguments, read from the `ATW_*`
-environment (see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script
-cannot read the environment itself. Omit any argument whose variable is unset, and name it in
-your report.
+The project's configuration reaches the composite as arguments, read from the environment
+(see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script cannot read the
+environment itself. The driver environment variables used below are defined in the
+`pipeline-contracts` skill (`$ROOT/skills/pipeline-contracts/schemas/driver-surface.schema.json`,
+`$defs.DriverEnvironment`). Omit any argument whose variable is unset, and name it in your report.
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
@@ -173,9 +181,11 @@ person has triaged a bug and decided it is a fix; the router never names it.)
 - the phase it reached — it should reach **Commit**
 - the `stage` and `headline` of a run that stopped, **verbatim**
 - the Story worktree and branch the work was committed on, and the commit
-- for a `web-ui` Task whose design source is `bundle` or `cds`, the `cdsAudit` verdict and finding count
+- when the result carries `cdsAudit`, its verdict and finding count
 
-When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped:
+When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped.
+The `cds-audit` command writes the schema's cds audit keys (the `CDS_AUDIT_KEYS` group) and
+refuses a verdict outside its allowed values; do not write those keys with `metadata set`:
 
 ```bash
 python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" cds-audit <id> '<the result's cdsAudit, as JSON>'

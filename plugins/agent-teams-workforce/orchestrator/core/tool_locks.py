@@ -11,6 +11,10 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import portfolio_bootstrap  # ruff: ignore[unused-import] -- sets sys.path
+
+# isort: split
+from driver_surface_types import CONTROL_REPO_ENV
 from typeguard import CollectionCheckStrategy, typechecked
 
 _LOG = logging.getLogger(__name__)
@@ -49,8 +53,8 @@ def control_repo() -> Path:
         ValueError: The control repository variable is missing.
 
     """
-    value = os.environ.get("ATW_CONTROL_REPO", "").strip()
-    message = "ATW_CONTROL_REPO is required"
+    value: str = os.environ.get(CONTROL_REPO_ENV, "").strip()
+    message: str = f"{CONTROL_REPO_ENV} is required"
     if not value:
         raise ValueError(message)
     return Path(value).expanduser().resolve()

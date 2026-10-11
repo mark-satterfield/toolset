@@ -2,19 +2,29 @@
 
 A workflow script cannot run a command or read a file; a runner session types the command and
 copies what it prints. This script is what the session types, for every command other than
-`depscore.py` (which carries the same protocol itself). It takes, first, `--argv-sha256 HEX`: the
-SHA-256 of the canonical JSON of the argument list after it, so a command line typed differently
-from the one the workflow built is refused (exit 3) before anything runs. Everything it prints is
-one sealed, flat envelope line (see relay.py): the facts, plus `~exit`, `~checksum` and the
-relay file's `~file`, `~sha256`, `~bytes`, which the workflow checks the session's copy against.
+`depscore.py` (which carries the same protocol itself). relay.py implements the protocol;
+this script only builds each command's view and hands it to relay.py.
+
+Everything it prints is one line, `RELAY64v1:` followed by the base64 of the canonical JSON
+envelope. The envelope is flat: each leaf of the command's view under its dotted path (only
+booleans, numbers and strings), plus `~exit` (the integer exit status), `~checksum` (the
+SHA-256 hex of the canonical `{exit, view}`) and, when a relay file is involved, `~file`,
+`~sha256` and `~bytes` (that file's path, SHA-256 hex and size). `run` also writes the relay
+file: a JSON object `{command, argvSha256, exitCode, view, result}` holding the full result.
+
+A command line may start with `--argv-sha256 HEX`, the SHA-256 of the canonical JSON array of
+the remaining arguments; when it differs, nothing runs and the envelope says why.
+
+Exit statuses: 0 the command ran (a run's own status is `exitCode` in its view); 2 refused or
+failed; 3 the command line was typed wrong (`--argv-sha256` mismatch); 4 `read` found no saved
+result for this command line.
 
 Commands:
 
     run --relay FILE [--cwd DIR] [--keys K1,K2] [--tail N] [--timeout S] -- PROGRAM ARG...
         Run PROGRAM (no shell; pass `/bin/sh -c '...'` explicitly when one is needed). The full
-        stdout, stderr and exit status go to FILE; the view carries `exitCode`, `json` (stdout
-        parsed when it is one JSON object, reduced to the top-level KEYS when given; else null),
-        `stdoutBytes`, `stderrBytes`, and with `--tail N` the last N lines of each.
+        result goes to FILE; stdout parsed as one JSON object is reduced to the top-level KEYS
+        when given, and `--tail N` keeps the last N lines of each stream in the view.
     read --relay FILE [--sha256 HEX] [--bytes N]
         Print the envelope saved in FILE again, re-running nothing. Optional receipt checks
         refuse a stale or changed file instead of substituting it for the original result.
@@ -30,24 +40,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - The run command executes the workflow's argv without a shell.
 import sys
 from pathlib import Path
 
 import relay
+from contracts import JsonObject, JsonValue, json_object
 
 
-def _dump(envelope: dict) -> None:
+def _dump(envelope: relay.FlatView) -> None:
     """Print one envelope on one line.
 
     Args:
         envelope: The sealed envelope.
+
     """
-    print(relay.line(envelope))
+    sys.stdout.write(relay.line(envelope) + "\n")
 
 
 def _tail(text: str, n: int) -> str:
-    """The last `n` lines of a text.
+    """Return the last `n` lines of a text.
 
     Args:
         text: The text.
@@ -55,11 +67,12 @@ def _tail(text: str, n: int) -> str:
 
     Returns:
         Those lines, joined.
+
     """
     return "\n".join(text.splitlines()[-n:])
 
 
-def _parsed(text: str) -> dict | None:
+def _parsed(text: str) -> JsonObject | None:
     """Stdout parsed, when it is exactly one JSON object.
 
     Args:
@@ -67,12 +80,13 @@ def _parsed(text: str) -> dict | None:
 
     Returns:
         The object, or None.
+
     """
     try:
-        value = json.loads(text)
+        value: object = json.loads(text)
     except ValueError:
         return None
-    return value if isinstance(value, dict) else None
+    return json_object(value) if isinstance(value, dict) else None
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -83,6 +97,7 @@ def _run(args: argparse.Namespace) -> int:
 
     Returns:
         0 when the child ran (its status is in the view), 2 when it could not be started.
+
     """
     argv = list(args.argv)
     if argv and argv[0] == "--":
@@ -91,7 +106,7 @@ def _run(args: argparse.Namespace) -> int:
         _dump(relay.seal({"error": "run names no program"}, 2, None))
         return 2
     try:
-        done = subprocess.run(
+        done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - The workflow's checked argv; shell disabled.
             argv,
             cwd=args.cwd,
             capture_output=True,
@@ -107,11 +122,11 @@ def _run(args: argparse.Namespace) -> int:
     except OSError as exc:
         _dump(relay.seal({"error": f"cannot run {argv[0]}: {exc}"}, 2, None))
         return 2
-    parsed = _parsed(out)
-    keys = [k for k in (args.keys or "").split(",") if k]
+    parsed: JsonObject | None = _parsed(out)
+    keys: list[str] = [k for k in (args.keys or "").split(",") if k]
     if parsed is not None and keys:
         parsed = {k: parsed.get(k) for k in keys}
-    shown: dict = {
+    shown: JsonObject = {
         "exitCode": code,
         "json": parsed,
         "stdoutBytes": len(out.encode("utf-8")),
@@ -120,8 +135,8 @@ def _run(args: argparse.Namespace) -> int:
     if args.tail:
         shown["stdoutTail"] = _tail(out, args.tail)
         shown["stderrTail"] = _tail(err, args.tail)
-    full = {
-        "argv": argv,
+    full: JsonObject = {
+        "argv": list[JsonValue](argv),
         "cwd": args.cwd,
         "exitCode": code,
         "stdout": out,
@@ -132,14 +147,15 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _canonical_sha(value: object) -> str:
-    """The SHA-256 of a value's canonical JSON.
+def _canonical_sha(value: JsonValue) -> str:
+    """Hash a value's canonical JSON with SHA-256.
 
     Args:
         value: A JSON value.
 
     Returns:
         The hex digest.
+
     """
     return hashlib.sha256(relay.canonical(value).encode("ascii")).hexdigest()
 
@@ -152,9 +168,10 @@ def _check_file(args: argparse.Namespace) -> int:
 
     Returns:
         0.
+
     """
     path: Path = args.file
-    shown: dict = {
+    shown: JsonObject = {
         "exists": path.is_file(),
         "parsed": False,
         "match": False,
@@ -162,13 +179,14 @@ def _check_file(args: argparse.Namespace) -> int:
     }
     if path.is_file():
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
+            value: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError, OSError:
             value = None
         else:
+            digest: str = _canonical_sha(value)
             shown["parsed"] = True
-            shown["sha256"] = _canonical_sha(value)
-            shown["match"] = shown["sha256"] == args.sha256
+            shown["sha256"] = digest
+            shown["match"] = digest == args.sha256
     _dump(relay.seal(shown, 0, None))
     return 0
 
@@ -181,14 +199,17 @@ def _write_file(args: argparse.Namespace) -> int:
 
     Returns:
         0 when written, 2 when refused.
+
     """
     try:
-        value = json.loads(args.json)
+        value: JsonValue = json.loads(args.json)
     except ValueError as exc:
         _dump(
             relay.seal(
-                {"written": False, "error": f"--json is not JSON: {exc}"}, 2, None
-            )
+                {"written": False, "error": f"--json is not JSON: {exc}"},
+                2,
+                None,
+            ),
         )
         return 2
     got = _canonical_sha(value)
@@ -203,13 +224,15 @@ def _write_file(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """The command-line parser.
+    """Build the command-line parser.
 
     Returns:
         The parser.
+
     """
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="run a command and relay its result")
@@ -225,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--bytes", type=int, default=None)
     read.add_argument("--for-argv", default="")
     check = sub.add_parser(
-        "check-file", help="whether a saved JSON file equals a hashed value"
+        "check-file",
+        help="whether a saved JSON file equals a hashed value",
     )
     check.add_argument("--file", type=Path, required=True)
     check.add_argument("--sha256", required=True)
@@ -245,9 +269,13 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The exit status: 0, 2 (refused or failed), 3 (command line typed wrong), 4 (no saved
         result to read).
+
+    Raises:
+        RelayError: A saved relay file records an exit status that is not an integer.
+
     """
     rest, typed_wrong = relay.argv_mismatch(
-        list(sys.argv[1:] if argv is None else argv)
+        list(sys.argv[1:] if argv is None else argv),
     )
     if typed_wrong:
         _dump(relay.mismatch_envelope(typed_wrong))
@@ -260,12 +288,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "write-file":
         return _write_file(args)
     try:
-        shown = relay.read(args.relay, args.sha256, args.bytes, args.for_argv)
+        shown: relay.FlatView = relay.read(args.relay, args.sha256, args.bytes, args.for_argv)
     except (relay.RelayError, ValueError, OSError) as exc:
         _dump(relay.seal({"error": str(exc)}, 2, None))
         return 2
     _dump(shown)
-    return shown["~exit"]
+    status: relay.FlatScalar = shown["~exit"]
+    if isinstance(status, bool) or not isinstance(status, int):
+        message: str = f"{args.relay}: the saved relay exit status is not an integer"
+        raise relay.RelayError(message)
+    return status
 
 
 if __name__ == "__main__":

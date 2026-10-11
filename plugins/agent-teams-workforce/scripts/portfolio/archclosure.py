@@ -8,6 +8,7 @@ closure; it never reads bead states or searches repository code for satisfaction
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import archstate
@@ -15,7 +16,6 @@ import contracts
 from contracts import (
     ClosureFacts,
     ClosureResult,
-    DeltaItem,
     JsonObject,
     JsonValue,
     Prerequisite,
@@ -25,9 +25,36 @@ from contracts import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-CLOSURE_FILE = "closure.json"
+# The target report contract is generated into the artifact-handoff skill, its one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
+from target_contract import (
+    CLOSURE_FILE,
+    ELEMENT_STATES,
+    KEY_ELEMENT,
+    KEY_EVIDENCE,
+    KEY_REPOSITORY,
+    KEY_REQUIRED_BY,
+    KEY_REQUIRES,
+    KEY_STATE,
+    KEY_VIEWS,
+    KIND_PREREQUISITE,
+    STATE_UNKNOWN,
+    DeltaItem,
+    DeltaResult,
+)
+
 CLOSURE_VERSION = 1
-STATES = ("unknown", "built", "deployed")
+PREREQUISITE_KEYS: frozenset[str] = frozenset({
+    KEY_ELEMENT,
+    KEY_VIEWS,
+    KEY_REQUIRED_BY,
+    KEY_REQUIRES,
+    KEY_EVIDENCE,
+    KEY_STATE,
+    KEY_REPOSITORY,
+})
 
 
 def _text(value: JsonValue) -> str:
@@ -136,7 +163,10 @@ class _ClosureNodes:
         element: str = check_type(row["element"], str)
         state: str = _text(row.get("state"))
         repository: str | None = _text(row.get("repository")) or None
-        if state not in STATES:
+        unknown: list[str] = sorted(set(row) - PREREQUISITE_KEYS)
+        if unknown:
+            refusals.append(f"{element}: unknown prerequisite fields {', '.join(unknown)}")
+        if state != STATE_UNKNOWN:
             refusals.append(f"{element}: invalid matrix state {state!r}")
         if not repository:
             self.warnings.append(f"{element} has no matrix repository; repo scoping places it")
@@ -165,7 +195,6 @@ class _ClosureNodes:
             "evidence": _texts(row.get("evidence")),
             "repository": repository,
             "requiredBy": sorted(set(required_by)),
-            "reason": _text(row.get("reason")),
             "requires": [],
         }
 
@@ -217,7 +246,9 @@ class _ClosureNodes:
         ] = [
             row
             for row in satisfied
-            if isinstance(row, dict) and _text(row.get("element")) and row.get("state") in {"built", "deployed"}
+            if isinstance(row, dict)
+            and _text(row.get("element"))
+            and row.get("state") in ELEMENT_STATES - {STATE_UNKNOWN}
         ]
         self.requires = {key: sorted(set(value)) for key, value in self.requires.items()}
         cycle: list[str] = _cyclic(self.requires)
@@ -289,7 +320,7 @@ def write_closure(
     ):
         argument_error: str = "write_closure: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    listed: contracts.DeltaResult = archstate.delta_items(
+    listed: DeltaResult = archstate.delta_items(
         delta_dir,
         with_closure=False,
         matrix_snapshot=matrix_snapshot,
@@ -305,8 +336,8 @@ def write_closure(
         closure = json_object({
             **closure,
             "prerequisites": [
-                {k: v for k, v in p.items() if k != "requires"}
-                | {"requires": [r for r in p["requires"] if r != p["element"]]}
+                {k: v for k, v in p.items() if k != KEY_REQUIRES}
+                | {KEY_REQUIRES: [r for r in p["requires"] if r != p["element"]]}
                 for p in facts["prerequisites"]
             ],
         })
@@ -401,14 +432,13 @@ def merge_closure(
         {
             "id": id_of[p["element"]],
             "element": p["element"],
-            "kind": "prerequisite",
+            "kind": KIND_PREREQUISITE,
             "views": p["views"],
-            "state": p["state"],
+            "state": STATE_UNKNOWN,
             "requiredBy": [id_of[r] for r in p["requiredBy"]],
             "requires": [id_of[r] for r in p["requires"]],
             "repository": p["repository"],
             "evidence": p["evidence"],
-            "reason": p["reason"],
             "closure": str(path),
         }
         for p in facts["prerequisites"]

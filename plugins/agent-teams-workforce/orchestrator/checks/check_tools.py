@@ -19,11 +19,24 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/beads-contract/scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
 
 import beadgraph as graph
 import beads_contract as contract
+from bead_metadata import KEY_ELAB_KEY
+from composites_contract import EVENT_PHASES, PRD_TO_SPEC
+from driver_surface_types import CONTROL_REPO_ENV
 from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.events import EventWriter
+from orchestrator.core.handback_contract import (
+    API_CAUSE,
+    BD_TIMEOUT_CAUSE,
+    CONTENTION_CAUSE,
+    OTHER_CAUSE,
+    PHASE_EVENT,
+    QUOTA_CAUSE,
+)
 from orchestrator.core.models import RetryExhaustedError, StepError
 from orchestrator.core.tool_locks import bd_gate
 from orchestrator.core.tools import Tools, retry_call
@@ -60,13 +73,13 @@ class ToolChecks(unittest.TestCase):
             limit = 3
             if attempts <= limit:
                 stage = "write"
-                raise StepError(stage, "bd-timeout")
+                raise StepError(stage, BD_TIMEOUT_CAUSE)
             return "done"
 
         with expected_error(RetryExhaustedError):
             retry_call(action, sleep=pauses.append)
         require(pauses == [30, 60], "tool boundary check failed")
-        for cause in ("api", "quota", "other"):
+        for cause in (API_CAUSE, QUOTA_CAUSE, OTHER_CAUSE):
             with expected_error(StepError):
                 retry_call(
                     partial(_raise_step, cause),
@@ -82,7 +95,7 @@ class ToolChecks(unittest.TestCase):
             root = Path(directory)
             central = root / "central.lock"
             values = {
-                "ATW_CONTROL_REPO": directory,
+                CONTROL_REPO_ENV: directory,
                 "CENTRAL_BEADS_LOCK": str(central),
                 "ATW_BD_TIMEOUT": "3",
                 "ATW_BD_LOCK_WAIT": "0.01",
@@ -106,7 +119,7 @@ class ToolChecks(unittest.TestCase):
                     with expected_error(graph.GraphError) as caught:
                         graph.children(root, "example", "task")
                     require(
-                        check_type(check_type(caught[0], CauseFailure).cause, str) == "other",
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == OTHER_CAUSE,
                         "tool boundary check failed",
                     )
                 require(not (central.exists()), "tool boundary check failed")
@@ -118,14 +131,14 @@ class ToolChecks(unittest.TestCase):
                     with expected_error(graph.GraphError) as caught:
                         graph.children(root, "example", "task")
                     require(
-                        check_type(check_type(caught[0], CauseFailure).cause, str) == "bd-timeout",
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == BD_TIMEOUT_CAUSE,
                         "tool boundary check failed",
                     )
                 with bd_gate(write=False), patch.object(subprocess, "run") as run:
                     with expected_error(graph.GraphError) as caught:
                         graph.children(root, "example", "task")
                     require(
-                        check_type(check_type(caught[0], CauseFailure).cause, str) == "contention",
+                        check_type(check_type(caught[0], CauseFailure).cause, str) == CONTENTION_CAUSE,
                         "tool boundary check failed",
                     )
                     run.assert_not_called()
@@ -166,7 +179,7 @@ class ToolChecks(unittest.TestCase):
                 with expected_error(StepError) as caught:
                     tools.command(["git"], stage="git")
                 require(
-                    check_type(check_type(caught[0], CauseFailure).cause, str) == "other",
+                    check_type(check_type(caught[0], CauseFailure).cause, str) == OTHER_CAUSE,
                     "tool boundary check failed",
                 )
                 require(Path(check_type(caught[0], StepError).evidence[0]).is_file(), "tool boundary check failed")
@@ -176,17 +189,17 @@ class ToolChecks(unittest.TestCase):
             def write() -> str:
                 reads.append(dict(stored))
                 if not stored:
-                    stored["elab_key"] = "created"
+                    stored[KEY_ELAB_KEY] = "created"
                     stage = "write"
-                    raise StepError(stage, "bd-timeout")
-                return stored["elab_key"]
+                    raise StepError(stage, BD_TIMEOUT_CAUSE)
+                return stored[KEY_ELAB_KEY]
 
             with patch(
                 "orchestrator.core.tools.retry_call",
                 side_effect=lambda action: retry_call(action, sleep=lambda _: None),
             ):
                 require(tools.operation("write", write) == "created", "tool boundary check failed")
-            require(reads == [{}, {"elab_key": "created"}], "tool boundary check failed")
+            require(reads == [{}, {KEY_ELAB_KEY: "created"}], "tool boundary check failed")
 
     @staticmethod
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -196,7 +209,7 @@ class ToolChecks(unittest.TestCase):
         writer = EventWriter(events)
         with contextlib.redirect_stdout(diagnostics):
             sys.stdout.write("library diagnostic\n")
-            writer("phase", phase="architecture", step="survey")
+            writer(PHASE_EVENT, phase=EVENT_PHASES[PRD_TO_SPEC][0], step="survey")
         require(json.loads(events.getvalue())["step"] == "survey", "tool boundary check failed")
         require(diagnostics.getvalue() == "library diagnostic\n", "tool boundary check failed")
 

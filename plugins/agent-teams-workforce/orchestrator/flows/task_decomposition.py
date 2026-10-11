@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import ParamSpec, TypeVar
 
+# The driver surface and target report contracts are defined in these skill script directories.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import beadcontracts
 import beadgraph
 import beadwrite
 import hierarchy
 from beadcontracts import PlannedTask, TaskPlan
+from driver_surface_types import CONTROL_REPO_ENV
+from target_contract import DELTA_ITEMS_FILE
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
@@ -47,7 +54,7 @@ def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
         f"spec-{slug}.criteria.md",
         f"story-{slug}.json",
         "repo-scoping.json",
-        "delta-items.json",
+        DELTA_ITEMS_FILE,
     ]
     if ui:
         names.append(f"spec-{slug}.ui.json")
@@ -102,9 +109,9 @@ class TaskDecomposition:
         self.slug = str(context.args["slug"])
         stage: str = "input"
         if not re.fullmatch(r"[A-Za-z0-9._-]+", self.slug) or self.slug in {".", ".."}:
-            raise StepError(stage, "other", ("invalid Task artifact slug",))
+            raise StepError(stage, OTHER_CAUSE, ("invalid Task artifact slug",))
         if not context.args.get("repoPath"):
-            raise StepError(stage, "other", ("repoPath is required",))
+            raise StepError(stage, OTHER_CAUSE, ("repoPath is required",))
         self.repo = str(Path(check_type(context.args["repoPath"], str)).resolve())
         self.output = self.work / f"tasks-{self.slug}.json"
         self.facts = self.work / f"tasks-{self.slug}.context.json"
@@ -153,7 +160,7 @@ class TaskDecomposition:
         except Exception as exc:
             raise self.tools.failure(
                 stage,
-                "other",
+                OTHER_CAUSE,
                 {"error": repr(exc)},
             ) from exc
 
@@ -259,7 +266,7 @@ class TaskDecomposition:
             stage: str = "decompose" if not after["tasks"] else "uncited-items"
             raise StepError(
                 stage,
-                "other",
+                OTHER_CAUSE,
                 (str(gaps), str(output), str(merged)),
             )
         return {
@@ -298,7 +305,7 @@ class TaskDecomposition:
                 writer: beadgraph.Writer = self.tools.portfolio(
                     "task-write",
                     beadgraph.Writer,
-                    env_path("ATW_CONTROL_REPO"),
+                    env_path(CONTROL_REPO_ENV),
                 )
                 return json_object(
                     self.tools.portfolio(

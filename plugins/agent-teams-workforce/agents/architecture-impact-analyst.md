@@ -75,10 +75,13 @@ architecture" is useless to whoever picks it up.
 
 - **You read; you never write.** No `atw-bd create`, `atw-bd update`, `atw-bd close`, `atw-bd dep`. No edits to
   any document. The caller acts on your rulings.
-- **How work cites the architecture.** A bead cites views in its `decision_ids` metadata, and a
-  TRD or spec in its `decisionIds` frontmatter and on each requirement: each entry is a view's
-  path relative to the `arc42/` folder, with `#<heading>` when it rests on one part of the view.
-  The architecture holds no decision records; the key name is only where the citation is stored.
+- **How work cites the architecture.** A bead cites views in a build-contract metadata key the
+  `agent-teams-workforce:beads-contract` schema (`skills/beads-contract/schemas/bead-metadata.schema.json`)
+  defines; read it with `beads-contract.py contract <id>`, which returns the architecture views
+  the item was designed against. A TRD or spec cites them in its `decisionIds` frontmatter and on
+  each requirement: each entry is a view's path relative to the `arc42/` folder, with
+  `#<heading>` when it rests on one part of the view. The architecture holds no decision
+  records; the key name is only where the citation is stored.
 - **Find the elements, not only the paths.** Read each changed view's catalog frontmatter
   (`subject` and `shows`). An item can rest on an element without citing the exact view that
   changed, because the same element appears in views at several scopes.
@@ -88,8 +91,8 @@ architecture" is useless to whoever picks it up.
 - **Report the unaffected items too.** An item you examined and cleared is evidence. An item
   missing from your answer is indistinguishable from one you never looked at, and the next time
   this view changes, nobody can tell which it was.
-- **Absence of a citation is not absence of a dependency.** Items written before `decision_ids`
-  existed cite nothing in metadata. Check the spec and TRD documents an item points at: a
+- **Absence of a citation is not absence of a dependency.** Items written before beads
+  carried view citations cite nothing in metadata. Check the spec and TRD documents an item points at: a
   document citing one of these views means the item resting on it cites it too.
 - **Read a bead through the `agent-teams-workforce:beads-contract` CLI**, never a hand-rolled
   `jq` against `bd`, and never assume a field exists because a document said so.

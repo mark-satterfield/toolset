@@ -13,6 +13,18 @@ repos:
         language: system
         files: ^plugins/agent-teams-workforce/(orchestrator|scripts/portfolio|skills/(beads-contract|wsjf)/scripts)/.*\.py$
         pass_filenames: false
+      - id: checkpoint-contract-fresh
+        name: Generated checkpoint contract matches its schema
+        entry: uv run --no-project --python 3.14 python plugins/agent-teams-workforce/skills/artifact-handoff/scripts/generate_checkpoint_contract.py --check
+        language: system
+        files: ^(plugins/agent-teams-workforce/skills/artifact-handoff/(schemas/checkpoint\.schema\.json|scripts/(checkpoint_contract|generate_checkpoint_contract)\.py)|\.pre-commit-config\.yaml)$
+        pass_filenames: false
+      - id: checkpoint-contract-mypy
+        name: Checkpoint contract strict typing
+        entry: uvx mypy --strict plugins/agent-teams-workforce/skills/artifact-handoff/scripts/checkpoint_contract.py plugins/agent-teams-workforce/skills/artifact-handoff/scripts/generate_checkpoint_contract.py
+        language: system
+        files: ^plugins/agent-teams-workforce/skills/artifact-handoff/scripts/(checkpoint_contract|generate_checkpoint_contract)\.py$
+        pass_filenames: false
       - id: driver-producer-contracts
         name: Real pipeline producer contracts
         entry: uv run --no-project --python 3.14 --with typeguard python plugins/agent-teams-workforce/orchestrator/check_driver_contracts.py

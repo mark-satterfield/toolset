@@ -2,27 +2,50 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-Source of intent: `workflows/spec-authoring.js` `meta.description`; agents
+Implemented by: `orchestrator/flows/spec_authoring.py` (`run`) with
+`orchestrator/flows/spec_authoring_ui.py`. Agents
 `agents/api-specification-author.md`, `data-model-specification-author.md`,
 `acceptance-criteria-writer.md`, `user-story-writer.md`; skills `subagent-contract`,
 `artifact-handoff`; CONTEXT section 7. Contracts were read from `scripts/portfolio/specui.py`
 (`spec-ui-append`), `cdsbundles.py` (`list_bundles`, `bundle_problem`), `beadwrite.py`
 (`write_story`), `hierarchy.py` (`read_story`), `depscore.py` (`write-story`, `cds-bundles`),
 `<driver>/artifactio.py` (`record`, `step`, `plan`), `<driver>/workitems.py`
-(`design_system_args`), the call site in `workflows/prd-to-spec.js` (`specArgs`,
-`renderInventory`, `renderUiAuthority`, `authorSpecForRepo`) and the consumer
-`workflows/task-decomposition.js`.
+(`design_system_args`), the call site in `orchestrator/flows/prd_to_spec.py` (`_spec_job`,
+which runs `spec_authoring.run` once per span repository) and the consumer
+`orchestrator/flows/task_decomposition.py`.
+
+Bead metadata: every metadata key, value vocabulary and value form this spec names is defined only
+in `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and is named here by the
+constant `<plugin>/skills/beads-contract/scripts/bead_metadata.py` generates from it (`KEY_*` for
+one key, `ARTIFACT_KINDS` / `ARTIFACT_FIELDS` for the artifact keys, `CDS_DESIGN_SOURCE_*` for a
+design source). This spec restates none of their names, values or forms.
+
+Environment variables are named only in
+`<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`
+(`$defs.DriverEnvironment`; read `<plugin>/skills/pipeline-contracts/SKILL.md`); this spec writes
+`$<CONSTANT>` for the value of the variable that schema constant names. The per-repository
+detailing and the UI item shape are defined only by
+`<plugin>/skills/artifact-handoff/schemas/recon.schema.json` (generated Python:
+`recon_contract.py` in the same skill's `scripts/`): a UI item is `$defs.UiItem`
+(`recon_contract.UiItem`), its artifact `$defs.UiArtifact` (`recon_contract.UiArtifact`), its
+design source one of `recon_contract.DESIGN_SOURCES`, and the list key of a UI design sources file
+is `recon_contract.KEY_UI_ITEMS`. A UI design sources file holds that list of `UiItem` plus the
+normalization warnings; it is written by `orchestrator/flows/spec_authoring_ui.py` and read by
+`scripts/portfolio/specui.py` (`_items`, which validates each item against `$defs.UiItem` with
+`recon_contract.violations`). The repository placement is defined only by
+`<plugin>/skills/artifact-handoff/schemas/placement.schema.json` (`placement_contract.py`). This
+spec restates none of their fields or values.
 
 Path conventions:
 - `<art>` = the Epic's artifact directory,
-  `$ATW_CONTROL_REPO/.claude/workflow-runs/artifacts/<epic-key>/` (the epic key is the Epic bead id
+  `$<CONTROL_REPO_ENV>/.claude/workflow-runs/artifacts/<epic-key>/` (the epic key is the Epic bead id
   with characters outside `[A-Za-z0-9._-]` replaced by `_`).
 - `<slug>` = the repository's artifact slug: the repository path's basename with characters outside
   `[A-Za-z0-9._-]` replaced by `_`, suffixed `-2`, `-3`, ... when two span repositories share a
   basename (assigned once per run, in span order, by the `prd-to-spec` flow).
 - `<repo>` = the absolute path of the one repository.
-- "placed items" = the build items `repo-scoping` placed in `<repo>`: the `itemIds` of every
-  `placements[]` entry of `<art>/repo-scoping.json` whose `repoPath` is `<repo>`, joined to
+- "placed items" = the build items `repo-scoping` placed in `<repo>` in `<art>/repo-scoping.json`
+  (a placement ruling under the placement schema), joined to
   `<art>/delta-items.json` for each item's `element`, `views` and, for a prerequisite, `kind` and
   `requiredBy`.
 
@@ -37,17 +60,16 @@ there is no "nothing to build" case (CONTEXT 7.6). The spec set covers: the API/
 error contracts; the data model; the acceptance criteria and Definition of Done. The contracts
 maker and the data-model maker run in parallel; the criteria maker then reads their completed
 documents. For a repository that holds UI (`frontend: true` in its placement), the contracts maker
-also gives each UI item its design source (`bundle`: the owner supplied a single-artifact cds bundle
-that packages it, and the spec cites that bundle's `spec/build-spec.md` and its Section IDs; `cds`:
-it changes design and no bundle packages it, so it is designed with the CDS design system; `none`:
-it changes no design), and the flow checks those choices against the supplied bundles and appends a
+also gives each UI item its design source (`CDS_DESIGN_SOURCE_BUNDLE`: the owner supplied a
+single-artifact cds bundle that packages it, and the spec cites that bundle's `spec/build-spec.md`
+and its Section IDs; `CDS_DESIGN_SOURCE_CDS`: it changes design and no bundle packages it, so it is
+designed with the CDS design system; `CDS_DESIGN_SOURCE_NONE`: it changes no design), and the flow checks those choices against the supplied bundles and appends a
 `## UI design sources` section from the checked result. The saved documents decide; nothing a maker
 did not save carries a decision id. One more session authors the ONE Story the Spec pairs with (a
 container, single repository); the flow saves `story-<slug>.json` with its title, description and
 the decision ids, records every saved document, and writes that ONE Story bead with
-`depscore.py write-story`, keyed by its `elab_key`. (The `meta.description` also has the write's
-full result land in `story-<slug>.written.json`; its only reader was `task-decomposition.js`, and
-the Python `task-decomposition` reads beads itself, so the file is dropped.) When the saved spec
+`depscore.py write-story`, keyed by its `KEY_ELAB_KEY`. No `story-<slug>.written.json` is
+written: `orchestrator/flows/task_decomposition.py` reads the Story from beads itself. When the saved spec
 set is reusable, no session runs and only the Story write is repeated.
 
 ## 2. Produces and decides
@@ -58,7 +80,7 @@ After a successful run:
   `eventContracts`, `errorSpec`, and, when the repository holds UI items, one section per UI item
   headed by its id, ending with a `## UI design sources` section written by `spec_ui_append`.
   YAML frontmatter `decisionIds:` lists the architecture views it rests on; every entry resolves to
-  a file under `$ATW_ARCH_PATH` (step 5).
+  a file under `$<ARCH_PATH_ENV>` (step 5).
 - `<art>/spec-<slug>.data-model.md` exists: the data-model specification (stores, keys, indexes,
   item shapes per access pattern), with YAML frontmatter `decisionIds:` (checked the same way).
 - `<art>/spec-<slug>.criteria.md` exists: `acceptanceCriteria` (given/when/then, at most 120) and
@@ -68,12 +90,15 @@ After a successful run:
   sources (shape under Outputs).
 - `<art>/story-<slug>.json` exists: `{title, description, decisionIds}`.
 - Each of these files has a `.meta.json` (`artifactio.record`) binding its sha256 to its inputs.
-- A Story bead exists under the Epic with `elab_key = story:<slug>` (created, or updated when open
+- A Story bead exists under the Epic with `KEY_ELAB_KEY` in its Story form for `<slug>` (created,
+  or updated when open
   and its title, description or metadata differ, or left unchanged when not open).
 - The step `spec:<slug>` is recorded as passed in `STEPS.md` when authored in this run.
 - Decided: every placed item is specified (what to build and how), and every UI item has one design
-  source in `bundle | cds | none`, an artifact (`{kind, slug}` as a `bundle.json` names it) for
-  `bundle` and `cds`, and for `bundle` the bundle directory, its build spec and the Section IDs it
+  source in `recon_contract.DESIGN_SOURCES`, an artifact (`recon.schema.json`
+  `$defs.UiArtifact`) for
+  `CDS_DESIGN_SOURCE_BUNDLE` and `CDS_DESIGN_SOURCE_CDS`, and for `CDS_DESIGN_SOURCE_BUNDLE` the
+  bundle directory, its build spec and the Section IDs it
   builds.
 - Decided: the union of decision ids the contracts and data-model documents cite (deduplicated,
   in order).
@@ -104,7 +129,7 @@ After a successful run:
 - **Placed items:** from `<art>/repo-scoping.json` and `<art>/delta-items.json` (see Path
   conventions).
 - **Design system** (only when `frontend`), from the driver (`<driver>/workitems.py`
-  `design_system_args`): `packagesDir` = `$ATW_DESIGN_PACKAGES_DIR` (default
+  `design_system_args`): `packagesDir` = `$<DESIGN_PACKAGES_ENV>` (default
   `docs/product/product-design/ui-design/design-packages/` in the `skillspoke-docs` vault);
   `mocksDir` = `$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`; `shellsDir` =
   `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR`. Each bundle is a directory with `bundle.json`
@@ -127,10 +152,11 @@ No repository code is compared with the placed items (CONTEXT 7.23).
 - **`<art>/spec-<slug>.bundles.json`** (step 2b, only for a UI repository): the supplied bundles
   `cdsbundles.list_bundles(packagesDir)` lists, for the contracts maker to read by path.
 - **`<art>/candidates/spec-<slug>.ui.json`** (written by the contracts maker, only for a UI
-  repository): `uiItems[]` (`{item, designSource, reason, artifact?: {kind, slug}, bundle?,
-  buildSpec?, sections?}`).
-- **`<art>/spec-<slug>.ui.json`** (step 6): the checked `uiItems[]`, same shape, plus `mocksDir`
-  and `warnings[]`. Read by step 6 (`spec_ui_append`) and by `task-decomposition`.
+  repository): a UI design sources document whose `recon_contract.KEY_UI_ITEMS` list holds one
+  entry per UI item.
+- **`<art>/spec-<slug>.ui.json`** (step 6): the checked UI design sources, each item a
+  `recon.schema.json` `$defs.UiItem`, plus the normalization warnings. Read by step 6
+  (`specui.spec_ui_append`, through `specui._items`) and by `task-decomposition`.
 - **`<art>/story-<slug>.json`**: `title` (string), `description` (string), `decisionIds`
   (list of strings). Written by the flow from the story maker's result file plus the computed
   decision ids. `read_story` also honours an optional `acceptanceCriteria` list (none is written
@@ -142,11 +168,14 @@ No repository code is compared with the placed items (CONTEXT 7.23).
   (created|updated|unchanged)}` and `summary` `{created, updated}` feed the returned `story` and
   `summary`.
 - **Story bead** (`write_story`): type `story`; parent the Epic; title; description; acceptance
-  from `story-<slug>.json` `acceptanceCriteria` (empty today); notes `repoPath: <repo>`; metadata
-  `elab_key = story:<slug>`, `repoPath = <repo>`, `decision_ids` (compact JSON list, when any),
-  and for each of `spec`, `spec_data_model`, `spec_criteria`, `story` whose file exists:
-  `artifact_<key>_path` (relative to the project root), `artifact_<key>_meta`
-  (`<path>.meta.json`), `artifact_<key>_sha256` (from the `.meta.json`). An existing open Story
+  from `story-<slug>.json` `acceptanceCriteria` (empty today); notes naming `<repo>`; metadata
+  `KEY_ELAB_KEY` (Story form for `<slug>`), `KEY_REPO_PATH = <repo>`, `KEY_DECISION_IDS` (when
+  any, in the form the schema defines), and, for each Story-level artifact kind whose file exists
+  (the kinds `SPEC_ASPECT_KIND` maps the three spec documents to, `spec`, `spec_data_model` and
+  `spec_criteria`, plus `story`; never `trd`, which only the Epic carries), the keys
+  `artifact_key(kind, "path")` (the path relative to the project root),
+  `artifact_key(kind, "meta")` (the `.meta.json` path) and `artifact_key(kind, "sha256")` (the
+  sha256 from the `.meta.json`), as `hierarchy.read_story` builds them. An existing open Story
   is updated in one `bd update` only where title, description or a metadata key differ.
 - **`STEPS.md`**: line for step `spec:<slug>`.
 - **Failure result:** `{ok: false, stage, reason, failure: {stage, cause, repositories:
@@ -178,13 +207,14 @@ No vault writes, no git commits.
    session in this flow (steps 3, 4, 7, 10) runs inside the session runner's section 2 guard
    (`driver-contract.md` §8).
    Inputs: the step 1 context; for a UI repository, `spec-<slug>.bundles.json`, `mocksDir`,
-   `shellsDir` and the design-source rules: `bundle` only when a listed bundle packages the
-   artifact the item builds (the newest bundle of a kind and slug is the supplied one); otherwise
-   `cds` when it changes design, `none` when it does not; the artifact slug for `cds` is the
-   artifact's name in lower-case hyphenated words, matching an existing composed artifact's slug
-   when one exists; per design source, how to specify the item (`bundle`: by reference to the build
-   spec and Section IDs, no new CSS/tokens; `cds`: behaviour and content, design from CDS; `none`:
-   the change, no design). Outputs: `<art>/spec-<slug>.md`, and for a UI repository
+   `shellsDir` and the design-source rules: `CDS_DESIGN_SOURCE_BUNDLE` only when a listed bundle
+   packages the artifact the item builds (the newest bundle of a kind and slug is the supplied
+   one); otherwise `CDS_DESIGN_SOURCE_CDS` when it changes design, `CDS_DESIGN_SOURCE_NONE` when it
+   does not; the artifact slug for `CDS_DESIGN_SOURCE_CDS` is the artifact's name in lower-case
+   hyphenated words, matching an existing composed artifact's slug when one exists; per design
+   source, how to specify the item (`CDS_DESIGN_SOURCE_BUNDLE`: by reference to the build spec and
+   Section IDs, no new CSS/tokens; `CDS_DESIGN_SOURCE_CDS`: behaviour and content, design from CDS;
+   `CDS_DESIGN_SOURCE_NONE`: the change, no design). Outputs: `<art>/spec-<slug>.md`, and for a UI repository
    `<art>/candidates/spec-<slug>.ui.json`. Model `sonnet` (frontmatter), effort `medium` (dispatch
    and frontmatter). Right for contract prose; kept.
 4. **agent, in parallel with step 3** — `data-model-specification-author`. Inputs: the step 1
@@ -194,7 +224,7 @@ No vault writes, no git commits.
 5. **deterministic** — Check both documents exist, are non-empty UTF-8 (today
    `jsonartifact.py --document`). Then check their citations: every `decisionIds` entry in each
    document's YAML frontmatter, with any `#<heading>` removed, must name an existing file relative
-   to `$ATW_ARCH_PATH/arc42/` (effective view) or `$ATW_ARCH_PATH/` (target or delta view); the
+   to `$<ARCH_PATH_ENV>/arc42/` (effective view) or `$<ARCH_PATH_ENV>/` (target or delta view); the
    heading is not checked. A missing document or unresolved entries get one corrective
    re-dispatch of that document's maker naming the missing path or the exact entries (CONTEXT
    7.4); still failing → stage `author`, cause `other`. Then `artifactio.record` each with inputs
@@ -202,16 +232,20 @@ No vault writes, no git commits.
    `spec:<slug>`.
 6. **deterministic** — For a UI repository: check the candidate UI file and write
    `<art>/spec-<slug>.ui.json`. The check normalizes rather than refuses, as the detailing's
-   normalization of `uiAuthority` does today (`reconfacts.recon_facts`): an unknown design source
-   is `cds`; a `bundle` item whose bundle is not usable, is superseded, or whose build spec is not
-   the one its `bundle.json` names (`cdsbundles.bundle_problem`) is `cds`; a `bundle`/`cds` item
-   with no artifact gets `{kind: page, slug: <item id slugified>}`; an entry for an id that is not
-   a placed item is dropped. Each normalization is a warning. A missing or unparseable candidate
+   normalization of `uiAuthority` does today (`reconfacts.recon_facts`), in
+   `orchestrator/flows/spec_authoring_ui.py`: an unknown design source is
+   `recon_contract.DEFAULT_DESIGN_SOURCE`; a `recon_contract.DESIGN_SOURCE_BUNDLE` item whose
+   bundle is not usable, is superseded, or whose build spec is not the one its `bundle.json` names
+   (`cdsbundles.bundle_problem`) is `recon_contract.DESIGN_SOURCE_CDS`; a
+   `recon_contract.DESIGN_SOURCE_BUNDLE` or `recon_contract.DESIGN_SOURCE_CDS` item with no valid
+   artifact gets the kind `recon_contract.DEFAULT_ARTIFACT_KIND` and the item id slugified as its
+   slug; an entry for an id that is not a placed item is dropped; every written item conforms to
+   `recon.schema.json` `$defs.UiItem`. Each normalization is a warning. A missing or unparseable candidate
    gets one corrective re-dispatch of the contracts maker naming the problem; still failing →
    stage `author`, cause `other`. Record the file (inputs: the candidate's inputs plus
-   `spec-<slug>.bundles.json`). Then `specui.spec_ui_append(<art>/spec-<slug>.md, <uiItems as
-   JSON [{id, designSource, buildSpec, sections}]>)` (today `depscore.py spec-ui-append --doc ...
-   --items ...`). It replaces any earlier `## UI design sources` section with one line per item.
+   `spec-<slug>.bundles.json`). Then `specui.spec_ui_append(<art>/spec-<slug>.md,
+   <art>/spec-<slug>.ui.json)`: the second argument is the path of the checked UI design sources
+   file, whose items `specui._items` validates as `recon.schema.json` `$defs.UiItem`. It replaces any earlier `## UI design sources` section with one line per item.
    Then `artifactio.record` the contracts document again (its bytes changed).
 7. **agent** — `acceptance-criteria-writer`, after steps 3 to 6. Inputs: the step 1 context
    without the citation rule, and the two completed document paths (read them, including the UI
@@ -225,8 +259,7 @@ No vault writes, no git commits.
    <art>/spec-<slug>.md, <art>/spec-<slug>.data-model.md]`.
 9. **deterministic** — Compute `decisionIds`: read the YAML frontmatter `decisionIds` of
    `spec-<slug>.md` and `spec-<slug>.data-model.md` (checked in step 5); union, strip, deduplicate
-   in order. (Today they come from the makers' accepted metadata JSON; the `meta.description` makes
-   the saved documents decisive, so the documents are read.) Skipped on a reused spec set (the
+   in order. The saved documents decide; no maker metadata JSON is read. Skipped on a reused spec set (the
    saved `story-<slug>.json` already holds them).
 10. **agent** — `user-story-writer`, after step 8 (skipped on a reused spec set). Inputs: the
     three spec document paths, `<repo>`, the spec header. Task: title and description of the ONE
@@ -244,7 +277,7 @@ No vault writes, no git commits.
     write-story --epic <epic> --dir <art> --slug <slug> --repo <repo> --project-root <root> --out
     <art>/story-<slug>.written.json`, run with `-C <beads repo>`; the `--out` file is not written).
     Runs on every run, including a reused spec set, so the bead exists and carries the current
-    artifact metadata. Idempotent: keyed by `elab_key`.
+    artifact metadata. Idempotent: keyed by `KEY_ELAB_KEY`.
 13. **deterministic** — When authored in this run: `artifactio.record_step(<epic>,
     "spec:<slug>")`. Return the result.
 
@@ -272,20 +305,20 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 ## 6. Checks kept / Checks dropped
 
 - **Documents exist and are non-empty (steps 5 and 8).** Without it, the Story bead would be
-  written with missing `artifact_spec*` metadata and `task-decomposition` would decompose from
+  written with missing spec-kind `ARTIFACT_KEYS` metadata and `task-decomposition` would decompose from
   nothing; no later step checks the spec files before Tasks are written to beads.
 - **UI design sources checked against the supplied bundles (step 6), and `spec_ui_append` written
   from the checked file, not from the maker's prose.** Without it, a stale bundle or a wrong
   build-spec path or Section IDs would reach the Task build contracts in beads; nothing later
   re-derives them.
-- **Story written idempotently by `elab_key` (step 12).** Without it, a rerun would create a second
+- **Story written idempotently by `KEY_ELAB_KEY` (step 12).** Without it, a rerun would create a second
   Story under the Epic (wrong output in beads), and nothing later deduplicates Stories.
 - **Only open Stories are updated (`write_story`).** Without it, a rerun could rewrite a started or
   closed Story's prose and metadata; nothing restores them.
-- **One repository per Story.** The Story's `repoPath` and its metadata come from the flow, never
+- **One repository per Story.** The Story's `KEY_REPO_PATH` and its metadata come from the flow, never
   from a session (the agent's forbidden decisions).
 - **Citations resolve (step 5).** Without it a `decisionIds` entry naming no view reaches the
-  Story's `decision_ids` in beads and every Task inherits it (`task-decomposition.md`); nothing
+  Story's `KEY_DECISION_IDS` in beads and every Task inherits it (`task-decomposition.md`); nothing
   later checks it.
 - **Section 2 hard limit:** the session runner's guard around every maker session
   (`driver-contract.md` §8); the four makers hold Write.
@@ -293,7 +326,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 **Checks dropped:**
 
 - The per-repository detailing (`prd-reconciliation`) and everything that rode on it: the
-  add/modify/remove/"done"/"planned-elsewhere" statuses, the `file:line` evidence of existing code,
+  item statuses `recon_contract.STATUSES` names, the `file:line` evidence of existing code,
   the "a `done` item contradicted by the code is reported" rule, and the upstream dependency check
   (`dependencyChanges`). Elaboration does not judge existing code (CONTEXT 7.10, 7.23); the build
   pipeline's tests decide what already works, and a dependency change shows there.
@@ -303,7 +336,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   documents are decisive and `artifactio` fingerprints decide reuse.
 - `uiSpec` in the contracts maker's metadata: replaced by the candidate UI file (step 3), which is
   checked (step 6).
-- Silent fallback when the bundle listing fails (today: log and treat every UI item as `cds`):
+- Silent fallback when the bundle listing fails (today: log and treat every UI item as `CDS_DESIGN_SOURCE_CDS`):
   dropped because it lets a wrong design source reach beads unnoticed; a listing that raises is a
   failure (see Failure causes).
 - Input refusal "no artifact directory or beads target": the Python composite always supplies
@@ -318,8 +351,8 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   `dispatchDeaths`, `dispatchOutcome` and text-matching failure classification: replaced by the
   runner's structured cause (CONTEXT 7.4).
 - The `replay: true` argument: replaced by the reuse check of step 2.
-- `story-<slug>.written.json`: its only reader was `task-decomposition.js`; the Python
-  `task-decomposition` reads the Story's Tasks from beads right before its maker runs
+- `story-<slug>.written.json`: no reader remains; `orchestrator/flows/task_decomposition.py`
+  reads the Story's Tasks from beads right before its maker runs
   (`tasks-<slug>.context.json`), which is current even when this step was reused.
 - The `trd.summary` input: the TRD is read by path.
 
@@ -333,7 +366,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 | Step 5 or 8: a document missing or empty after its session ended normally | `other` | One corrective re-dispatch of that maker naming the missing file is reasonable; then stage `author`, record failure. |
 | Step 5: `decisionIds` entries that name no file | `other` | One corrective re-dispatch of that maker naming the exact entries; then stage `author`, record failure. |
 | Step 6: candidate UI file missing or not JSON | `other` | One corrective re-dispatch of the contracts maker naming the problem; then stage `author`, record failure. |
-| Step 5, 6, 8, 11: `artifactio.record` fails | `other` | No. Non-fatal warning; the cost is that the next run cannot reuse that file, and the Story's `artifact_<key>_sha256` is absent for it. |
+| Step 5, 6, 8, 11: `artifactio.record` fails | `other` | No. Non-fatal warning; the cost is that the next run cannot reuse that file, and the Story's sha256 `ARTIFACT_KEYS` member for that kind is absent. |
 | Step 6: `SpecUiError` (items not a JSON list) | `other` | No (a programming error in the flow); stage `author`. |
 | Step 10: story draft missing or empty after a normal end | none | Not a failure: step 11 uses the default title and description. |
 | Step 11: `story-<slug>.json` cannot be written (`OSError`) | `other` | No; stage `story`. |
@@ -364,7 +397,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
 - **R3, the Story bead** is never "redone": `write_story` is idempotent and always runs.
 - A rerun after a crash between step 11 and step 12 reruns only step 12.
 - Not fingerprinted for R1, on purpose: the packages directory. A bundle supplied after the spec is
-  authored is found when the Task is built (the item's recorded artifact `{kind, slug}` and
+  authored is found when the Task is built (the item's recorded artifact and
   `cds-bundles --design-source` in the Task pipeline), so it does not invalidate the spec set.
 
 ## 9. Requirements that apply
@@ -388,7 +421,7 @@ Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
   the Story file and the bead write are code; only the documents' prose and the design-source
   choice are sessions.
 - **7.14 Facts, not guesses:** briefs carry paths and the item ids, not theories.
-- **7.16 Hierarchy:** the Story is written under its Epic, keyed by `elab_key`.
+- **7.16 Hierarchy:** the Story is written under its Epic, keyed by `KEY_ELAB_KEY`.
 - **Hard limits:** no write to arc42 section 2; no secrets; nothing in `apps/marketing/`; no
   destructive bead operation (a Story is created or updated, never deleted).
 

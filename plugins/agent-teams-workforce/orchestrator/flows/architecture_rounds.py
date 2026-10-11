@@ -7,11 +7,21 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import archevidence
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core.handback_contract import OTHER_CAUSE, rounds_warning_note
 from orchestrator.core.io import JsonValue, json_object, write_json
-from orchestrator.flows.architecture_support import ROLES, Architecture, ArchitectureStep, read, value_input
+from orchestrator.flows.architecture_support import (
+    ARCHITECTURE_PHASE,
+    ROLES,
+    Architecture,
+    ArchitectureStep,
+    read,
+    value_input,
+)
 from orchestrator.flows.architecture_survey import adopt_result, produce_survey
+from orchestrator.flows.elaboration_support import emit_event
 
 ROUND_LIMIT = 3
 
@@ -235,6 +245,7 @@ def decide(flow: Architecture, number: int) -> dict[str, JsonValue]:
         str(flow.draft),
         str(ledger),
         value_input("round", number),
+        value_input("cited-sources", archevidence.source_binding(flow.work)),
     )
     result: dict[str, JsonValue] = flow.agent(
         ArchitectureStep(
@@ -271,11 +282,11 @@ def decide(flow: Architecture, number: int) -> dict[str, JsonValue]:
             and not result.get("returnTo")
             and not json_object(flow.facts().get("repairs", {})).get("open")
         ):
-            raise flow.tools.failure(stage, "other", result)
+            raise flow.tools.failure(stage, OTHER_CAUSE, result)
     if result["round"] != number:
         raise flow.tools.failure(
             stage,
-            "other",
+            OTHER_CAUSE,
             {"expectedRound": number, "decision": result},
         )
     companion: Path = flow.work / "decision.md"
@@ -312,7 +323,7 @@ def run_rounds(flow: Architecture) -> dict[str, JsonValue]:
     ):
         raise flow.tools.failure(
             stage,
-            "other",
+            OTHER_CAUSE,
             {"decision": decision, "roundLimit": ROUND_LIMIT},
         )
     baseline: dict[str, JsonValue] = json_object(facts["baseline"])
@@ -357,16 +368,17 @@ def run_rounds(flow: Architecture) -> dict[str, JsonValue]:
             flow.work / "decision.json",
         ):
             if number > 1:
-                flow.runner.emit(
-                    "note",
-                    kind="rounds-warning",
-                    phase="architecture",
-                    rounds=number,
-                    drivers=list(_objects(json_object(facts["rounds"])["openFindings"])),
+                emit_event(
+                    flow.runner.emit,
+                    rounds_warning_note(
+                        ARCHITECTURE_PHASE,
+                        number,
+                        list[JsonValue](_objects(json_object(facts["rounds"])["openFindings"])),
+                    ),
                 )
             return decision
         plans = _objects(read(flow.work / "ledger.json").get("roundPlans", []))
-    raise flow.tools.failure(stage, "other", {"decision": decision, "roundLimit": ROUND_LIMIT})
+    raise flow.tools.failure(stage, OTHER_CAUSE, {"decision": decision, "roundLimit": ROUND_LIMIT})
 
 
 def _objects(value: object) -> list[dict[str, JsonValue]]:
@@ -488,6 +500,7 @@ def _round_plan(
             *flow.base_inputs(),
             str(flow.ledger_input(f"plan-{number}")),
             value_input("round", number),
+            value_input("cited-sources", archevidence.source_binding(flow.work)),
         )
         adopt_result(
             flow,
@@ -538,6 +551,7 @@ def _round_plan(
             *flow.base_inputs(),
             str(flow.ledger_input(f"plan-{number}")),
             value_input("round", number),
+            value_input("cited-sources", archevidence.source_binding(flow.work)),
         )
         flow.store.accept(
             f"architecture:plan-{number}",
@@ -554,6 +568,9 @@ def _decision_current(
     facts: dict[str, JsonValue],
     last: int,
 ) -> bool:
+    coverage = json_object(facts.get("coverage", {}))
+    if coverage.get("gaps") or archevidence.source_binding(flow.work)["errors"]:
+        return False
     if check_type(decision.get("round", 0), int) >= last and not json_object(facts["rounds"]).get("pendingPlan"):
         if owner_actions(decision, flow.work / "decision.json"):
             return True
@@ -564,6 +581,7 @@ def _decision_current(
                 str(flow.draft),
                 str(ledger),
                 value_input("round", decision["round"]),
+                value_input("cited-sources", archevidence.source_binding(flow.work)),
             )
             if flow.store.reusable(
                 (*inputs, str(flow.context_path)),

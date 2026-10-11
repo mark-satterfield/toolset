@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
+import sys
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -12,6 +13,12 @@ from typing import ParamSpec, TypeVar
 
 from contracts import GitFailure, GitFailureFact
 from typeguard import CollectionCheckStrategy, typechecked
+
+# The driver environment names are defined once, in the pipeline-contracts skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+
+# isort: split
+from driver_surface_types import EXECUTION_ID_ENV
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -84,7 +91,7 @@ def _commit_message(arguments: list[str], execution_id: str) -> None:
         ArchitectureGitError: No pipeline execution trailer is available.
 
     """
-    execution_id = execution_id or os.environ.get("ATW_EXECUTION_ID", "")
+    execution_id = execution_id or os.environ.get(EXECUTION_ID_ENV, "")
     if "-m" not in arguments or arguments.index("-m") + 1 >= len(arguments):
         error_8: str = "Architecture commit requires an explicit -m message"
         raise ValueError(error_8)

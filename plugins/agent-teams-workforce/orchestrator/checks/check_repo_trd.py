@@ -12,12 +12,30 @@ from typing import override
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.io import JsonValue
 from orchestrator.core.tools import CommandResult, Tools
 from orchestrator.flows.repo_placement import PlacementInputs, accept_placement, app_space
 from orchestrator.flows.repo_scoping import create_repositories
 from orchestrator.flows.trd_authoring import document
+from placement_contract import (
+    KEY_FRONTEND,
+    KEY_ITEM_IDS,
+    KEY_MISSING_REPOS,
+    KEY_NAME,
+    KEY_NO_CODE,
+    KEY_PLACEMENTS,
+    KEY_PURPOSE,
+    KEY_RATIONALE,
+    KEY_REPO_NAME,
+    KEY_REPO_PATH,
+    KEY_SPAN_RATIONALE,
+    KEY_TEMPLATE,
+    MissingRepo,
+    Placement,
+    PlacementRuling,
+)
 
 
 def _first(value: object) -> dict[str, JsonValue]:
@@ -75,8 +93,6 @@ def main() -> None:
         AssertionError: Invalid coverage or a prohibited path was accepted.
 
     """
-    plugin = Path(__file__).resolve().parents[2]
-    schema = plugin / "skills/artifact-handoff/schemas/placement.schema.json"
     config: dict[str, JsonValue] = {
         "repositories": {
             "patterns": [
@@ -97,33 +113,32 @@ def main() -> None:
         repo = root / "apps/product/Product-existing"
         repo.mkdir(parents=True)
         path = root / "placement.json"
-        value: dict[str, JsonValue] = {
-            "placements": [
-                {
-                    "repoName": "Product-existing",
-                    "repoPath": str(repo),
-                    "itemIds": ["a"],
-                    "frontend": False,
-                    "rationale": "element owner",
-                },
-            ],
-            "missingRepos": [],
-            "noCode": [],
-            "spanRationale": "one element",
+        placement: Placement = {
+            KEY_REPO_NAME: "Product-existing",
+            KEY_REPO_PATH: str(repo),
+            KEY_ITEM_IDS: ["a"],
+            KEY_FRONTEND: False,
+            KEY_RATIONALE: "element owner",
+        }
+        value: PlacementRuling = {
+            KEY_PLACEMENTS: [placement],
+            KEY_MISSING_REPOS: [],
+            KEY_NO_CODE: [],
+            KEY_SPAN_RATIONALE: "one element",
         }
         items: list[dict[str, JsonValue]] = [{"id": "a", "element": "Queue"}]
         live: dict[str, JsonValue] = {"repos": [{"name": "Product-existing", "path": str(repo)}]}
 
-        def check() -> tuple[dict[str, JsonValue], list[str]]:
+        def check() -> tuple[PlacementRuling, list[str]]:
             path.write_text(json.dumps(value))
             return accept_placement(
                 path,
-                PlacementInputs(schema, items, live, {}, config, control, arch, marketing),
+                PlacementInputs(items, live, {}, config, control, arch, marketing),
             )
 
-        require(_first(check()[0]["placements"])["itemIds"] == ["a"], "check()[0]['placements'][0]['itemIds'] == ['a']")
+        require(check()[0][KEY_PLACEMENTS][0][KEY_ITEM_IDS] == ["a"], "the one placement keeps item a")
         for ids in (["a", "a"], [], ["unknown"]):
-            _first(value["placements"])["itemIds"] = list(ids)
+            placement[KEY_ITEM_IDS] = list(ids)
             try:
                 check()
             except ValueError:
@@ -131,9 +146,9 @@ def main() -> None:
             else:
                 message = f"accepted invalid coverage: {ids}"
                 raise AssertionError(message)
-        _first(value["placements"])["itemIds"] = ["a"]
+        placement[KEY_ITEM_IDS] = ["a"]
         for bad in (control, arch.parent, marketing / "marketing-ui"):
-            _first(value["placements"])["repoPath"] = str(bad)
+            placement[KEY_REPO_PATH] = str(bad)
             _first(live["repos"])["path"] = str(bad)
             try:
                 check()
@@ -145,23 +160,29 @@ def main() -> None:
         require(app_space("Product-new", config) == "product", "app_space('Product-new', config) == 'product'")
         report("PASS: exact coverage, empty span and prohibited repository rejection")
 
-        missing: dict[str, JsonValue] = {
-            "name": "Product-existing",
-            "template": "service",
-            "purpose": "queue",
-            "itemIds": ["a"],
+        missing: MissingRepo = {
+            KEY_NAME: "Product-existing",
+            KEY_TEMPLATE: "service",
+            KEY_PURPOSE: "queue",
+            KEY_ITEM_IDS: ["a"],
+        }
+        creation: PlacementRuling = {
+            KEY_PLACEMENTS: [],
+            KEY_MISSING_REPOS: [missing],
+            KEY_NO_CODE: [],
+            KEY_SPAN_RATIONALE: "one missing repository",
         }
         result = create_repositories(
-            {"missingRepos": [missing]},
+            creation,
             CreationFacts(repo),
             config,
             root,
         )
         require(_first(result["created"])["existed"], "result['created'][0]['existed']")
         require(not result["failures"], "not result['failures']")
-        missing["name"] = "Product-new"
+        missing[KEY_NAME] = "Product-new"
         result = create_repositories(
-            {"missingRepos": [missing]},
+            creation,
             CreationFacts(repo),
             config,
             root,

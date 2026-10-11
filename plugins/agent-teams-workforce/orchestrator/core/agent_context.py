@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import shlex
 import sys
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
-import yaml
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .driver_contracts import denied_tools
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
+
+# isort: split
+# driver_contracts puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from driver_surface_types import CONTROL_REPO_ENV
 
 SAFETY_HOOKS = frozenset({
     "no-verify-blocker.sh",
@@ -21,6 +26,32 @@ SAFETY_HOOKS = frozenset({
     "bd-init-blocker.sh",
     "aws-profile-required.sh",
 })
+
+
+@runtime_checkable
+class YamlLoader(Protocol):
+    """The PyYAML surface this module uses: safe_load of one document."""
+
+    def safe_load(self, stream: str) -> object:
+        """Parse one YAML document into plain Python values."""
+        ...
+
+
+def yaml_loader() -> YamlLoader:
+    """Load PyYAML behind a typed edge, since the library ships no type stubs.
+
+    Returns:
+        The PyYAML module, narrowed to the safe_load surface.
+
+    Raises:
+        TypeError: The imported yaml module has no safe_load.
+
+    """
+    module: object = importlib.import_module("yaml")
+    if not isinstance(module, YamlLoader):
+        message: str = "the yaml module does not provide safe_load"
+        raise TypeError(message)
+    return module
 
 
 class PipelineStoppedError(RuntimeError):
@@ -85,7 +116,7 @@ def definition(plugin: Path, step: AgentStep, model: str) -> dict[str, JsonValue
     front: str
     body: str
     front, body = text[4:].split("\n---", 1)
-    metadata: dict[str, JsonValue] = json_object(yaml.safe_load(front))
+    metadata: dict[str, JsonValue] = json_object(yaml_loader().safe_load(front))
     result: dict[str, JsonValue] = {}
     description: JsonValue = metadata.get("description")
     if not isinstance(description, str):
@@ -253,7 +284,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, model:
         path = directory / "mcp.json"
         write_json(
             path,
-            {"mcpServers": mcp_servers(Path(os.environ["ATW_CONTROL_REPO"]), config, names)},
+            {"mcpServers": mcp_servers(Path(os.environ[CONTROL_REPO_ENV]), config, names)},
         )
         path.chmod(0o600)
         command.extend(["--mcp-config", str(path)])

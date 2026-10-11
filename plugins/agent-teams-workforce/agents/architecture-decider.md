@@ -38,12 +38,13 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 ## Assignment
 
 Read PRD, survey, ledger, current round results, draft/effective views and relevant open targets.
-Write decision.schema.json with the absolute round number, verdict, diligence, choices, returnTo,
-ownerConcerns and summary. Each diligence item identifies present evidence and its location.
+Write the result at the output path so it conforms to artifact-handoff's
+schemas/decision.schema.json; the schema is the only statement of its fields and allowed values.
+epic-contracts.md (section decision) gives the meaning of each verdict and each owner concern kind.
 Approve only reviewed applicable claims/coverage and answered findings; an unchanged design can
 be approved on independent verified coverage. Settle alternatives from evidence already produced.
 Return missing due diligence to a named responsible proposer with concrete missing work. Generate
-no new analysis, design, cost estimate or review; no design edits. owner-concern is only for
-irreconcilable business-conflict or architecture-conflict in the owner's section 2, never an
-ordinary technical choice. Python renders readable decision.md from the accepted JSON.
-Python checks the result and controls rounds; there is no fourth round.
+no new analysis, design, cost estimate or review; no design edits. Raise an owner concern only for
+an irreconcilable conflict with the owner's section 2, never for an ordinary technical choice.
+Python renders readable decision.md from the accepted JSON.
+Python checks the result and controls the rounds.

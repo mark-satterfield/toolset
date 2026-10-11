@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "infra-vocabulary",
+  "description": "The infrastructure routing vocabulary: the bead types and labels that mark an infrastructure Task. This file is the one definition of the contract and the only place its values are written. skills/artifact-handoff/scripts/infra_vocabulary.py is generated from it by scripts/gen_infra_vocabulary.py, and scripts/check_infra_vocabulary.py fails when that module is stale. Consumers strip and lower-case a bead's type and labels, match the type against types and the labels against labels, and count every infrastructure type as a known type, so a label marks an infrastructure Task only when the bead's type is not a known type.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["types", "labels"],
+  "properties": {
+    "types": {
+      "description": "The bead types that mark an infrastructure Task.",
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+      "const": ["infra", "infrastructure"]
+    },
+    "labels": {
+      "description": "The bead labels that mark an infrastructure Task when the bead's type is not a known type.",
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+      "const": ["infra", "infrastructure", "cdk", "iac", "provisioning"]
+    }
+  },
+  "$defs": {
+    "carrierKey": {
+      "description": "The workflow argument (route-build, task-to-deploy) under which the whole object is passed unchanged.",
+      "type": "string",
+      "const": "infraVocabulary"
+    }
+  }
+}

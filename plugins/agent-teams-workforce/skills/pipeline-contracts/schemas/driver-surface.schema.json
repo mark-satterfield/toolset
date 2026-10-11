@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/driver-surface.schema.json",
+  "title": "Driver module surface",
+  "description": "The one definition of the driver (ops/sdlc-automation in the control repository) surface the plugin orchestrator imports, the ATW_* environment the driver hands every child and orchestrator process, and the Claude CLI rate-limit event the driver's quota readers take. scripts/generate_types.py renders scripts/driver_surface_types.py from this file; scripts/check_generated.py fails when that module is stale.",
+  "x-driver": {
+    "dirParts": ["ops", "sdlc-automation"],
+    "dirDoc": "Path parts of the driver directory under ATW_CONTROL_REPO.",
+    "modules": [
+      {
+        "module": "headlessenv",
+        "constant": "HEADLESSENV_MODULE",
+        "protocol": "HeadlessEnvironment",
+        "doc": "Driver headlessenv module surface consumed by session setup.",
+        "members": [
+          {"name": "DENIED_TOOLS", "kind": "attribute", "python": "tuple[str, ...]", "doc": "Tools every headless and orchestrator agent session is denied, in order."},
+          {"name": "child_env", "kind": "method", "params": [["scratch", "Path"]], "returns": "dict[str, str]", "doc": "Build the subprocess environment: DriverEnvironment over the inherited one."}
+        ]
+      },
+      {
+        "module": "fablewall",
+        "constant": "FABLEWALL_MODULE",
+        "protocol": "FableWall",
+        "doc": "Driver fablewall module surface consumed by model fallback.",
+        "members": [
+          {"name": "is_refusal", "kind": "method", "params": [["info", "object"]], "returns": "bool", "doc": "Return whether a RateLimitInfo is a model-specific refusal."},
+          {"name": "reset_of", "kind": "method", "params": [["info", "object"]], "returns": "float | None", "doc": "Return the model-specific reset of a RateLimitInfo, in epoch seconds."}
+        ]
+      },
+      {
+        "module": "breaker",
+        "constant": "BREAKER_MODULE",
+        "protocol": "Breaker",
+        "doc": "Driver breaker module surface consumed by quota handling.",
+        "members": [
+          {"name": "exhausted_reset", "kind": "method", "params": [["info", "object"]], "returns": "float | None", "doc": "Return the latest reset among the exhausted windows, in epoch seconds."}
+        ]
+      },
+      {
+        "module": "childproc",
+        "constant": "CHILDPROC_MODULE",
+        "protocol": "ChildProcess",
+        "doc": "Driver childproc module termination policy.",
+        "members": [
+          {"name": "TERMINATE_GRACE", "kind": "attribute", "python": "float", "doc": "Seconds a terminated child is given before it is killed."}
+        ]
+      }
+    ]
+  },
+  "$defs": {
+    "DriverEnvironment": {
+      "description": "The ATW_* and process environment the driver hands child and orchestrator processes.", "x-details": "headlessenv.child_env(scratch) returns these keys over the inherited os.environ (atw.environment fills only absent or blank values); the keeper, supervisor and orchestrator dispatch add ATW_STOP_FILE, ATW_EXECUTION_ID and ATW_ORCH_IDLE.",
+      "type": "object",
+      "x-python": {"typeddict": "DriverEnvironment"},
+      "properties": {
+        "ATW_PROJECT_ROOT": {"type": "string", "minLength": 1, "description": "Absolute path of the project root.", "x-constant": "PROJECT_ROOT_ENV"},
+        "ATW_ARTIFACT_SCRIPT": {"type": "string", "minLength": 1, "description": "Absolute path of the phase-artifact recorder (artifactio.recorder_path()).", "x-constant": "ARTIFACT_SCRIPT_ENV"},
+        "ATW_PRD_EPIC_SYNC": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic sync script.", "x-constant": "PRD_EPIC_SYNC_ENV"},
+        "ATW_PRD_EPIC_VERIFY": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic verify script.", "x-constant": "PRD_EPIC_VERIFY_ENV"},
+        "ATW_FLEET_DIR": {"type": "string", "minLength": 1, "description": "The fleet directory: SKILLSPOKE_APP_ROOT, else the control repository's parent.", "x-constant": "FLEET_DIR_ENV"},
+        "ATW_CONTROL_REPO": {"type": "string", "minLength": 1, "description": "Absolute path of the control repository (SKILLSPOKE_CC, else the driver's repository root). The driver modules live under it at DRIVER_DIR_PARTS.", "x-constant": "CONTROL_REPO_ENV"},
+        "ATW_ARCH_PATH": {"type": "string", "minLength": 1, "description": "The architecture root; set only when the driver knows one. Readers use args.archPath first and fall back to it.", "x-constant": "ARCH_PATH_ENV"},
+        "ATW_DESIGN_PACKAGES_DIR": {"type": "string", "minLength": 1, "description": "The owner's cds design packages directory; optional.", "x-constant": "DESIGN_PACKAGES_ENV"},
+        "ATW_PRD_DIR": {"type": "string", "minLength": 1, "description": "The first PRD root; optional.", "x-constant": "PRD_DIR_ENV"},
+        "PATH": {"type": "string", "minLength": 1, "description": "The controller runtime's bin directory first, de-duplicated.", "x-constant": "PATH_ENV"},
+        "TMPDIR": {"type": "string", "minLength": 1, "description": "The dispatch scratch directory.", "x-constant": "TMPDIR_ENV", "x-group": "SCRATCH_ENV_KEYS"},
+        "TMP": {"type": "string", "minLength": 1, "description": "The dispatch scratch directory.", "x-constant": "TMP_ENV", "x-group": "SCRATCH_ENV_KEYS"},
+        "TEMP": {"type": "string", "minLength": 1, "description": "The dispatch scratch directory.", "x-constant": "TEMP_ENV", "x-group": "SCRATCH_ENV_KEYS"},
+        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": {"type": "string", "const": "0", "description": "Disables the Claude CLI print-mode background wait.", "x-constant": "BACKGROUND_WAIT_KEY", "x-const-mapping": "BACKGROUND_WAIT_ENV"},
+        "ATW_STOP_FILE": {"type": "string", "minLength": 1, "description": "Path of the stop marker file; absent means no stop marker. A consumer touches the file (mode 0o600) to request a drain, or tests whether it exists. It only requests a stop: how a stop is classified belongs to the handback contract.", "x-constant": "STOP_FILE_ENV", "x-file-mode": "STOP_FILE_MODE"},
+        "ATW_EXECUTION_ID": {"type": "string", "minLength": 1, "description": "The driver execution id. Required for an orchestrator dispatch; set for a headless workflow session only when its arguments carry an executionId.", "x-constant": "EXECUTION_ID_ENV"},
+        "ATW_ORCH_IDLE": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$", "default": "3600", "description": "Orchestrator idle limit in seconds: a positive finite float. A non-finite or non-positive value is a ValueError.", "x-constant": "ORCH_IDLE_ENV", "x-default-constant": "ORCH_IDLE_DEFAULT"}
+      },
+      "required": [
+        "ATW_PROJECT_ROOT",
+        "ATW_ARTIFACT_SCRIPT",
+        "ATW_PRD_EPIC_SYNC",
+        "ATW_PRD_EPIC_VERIFY",
+        "ATW_FLEET_DIR",
+        "ATW_CONTROL_REPO",
+        "PATH",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+      ],
+      "additionalProperties": {"type": "string"}
+    },
+    "StopFileMode": {
+      "description": "Permission bits a consumer creates the stop marker file with.",
+      "type": "integer",
+      "const": 384,
+      "x-python": {"constant": "STOP_FILE_MODE", "type": "int", "render": "0o600"}
+    },
+    "DeniedTool": {
+      "description": "A tool every headless and orchestrator agent session is denied. DENIED_TOOLS keeps this order.",
+      "type": "string",
+      "enum": [
+        "WebFetch",
+        "WebSearch",
+        "Artifact",
+        "SendMessage",
+        "EndConversation",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "mcp__claude_ai_Gmail__send_message",
+        "mcp__claude_ai_Gmail__reply",
+        "mcp__claude_ai_Gmail__forward",
+        "mcp__claude_ai_Gmail__create_draft",
+        "mcp__claude_ai_Google_Drive__share_file",
+        "mcp__claude_ai_Google_Drive__create_file",
+        "mcp__plugin_slack_slack__slack_send_message",
+        "mcp__plugin_slack_slack__slack_send_message_draft",
+        "mcp__plugin_slack_slack__slack_schedule_message"
+      ],
+      "x-python": {"literal": "DeniedTool", "tuple": "DENIED_TOOLS"}
+    },
+    "TerminateGrace": {
+      "description": "Seconds a terminated child process is given before it is killed.",
+      "type": "number",
+      "const": 10.0,
+      "x-python": {"constant": "TERMINATE_GRACE", "type": "float"}
+    },
+    "ExhaustedUtilization": {
+      "description": "A usage window whose utilization is at or above this value is exhausted.",
+      "type": "number",
+      "const": 1.0,
+      "x-python": {"constant": "EXHAUSTED_UTILIZATION", "type": "float"}
+    },
+    "RateLimitStatus": {
+      "description": "RateLimitInfo.status; only rejected is acted on.",
+      "type": "string",
+      "enum": ["allowed", "allowed_warning", "rejected"],
+      "x-python": {"literal": "RateLimitStatus", "tuple": "RATE_LIMIT_STATUSES", "constants": {"rejected": "REJECTED_STATUS"}}
+    },
+    "UsageWindowName": {
+      "description": "The account-wide usage windows. Any other window name is model-specific.",
+      "type": "string",
+      "enum": ["five_hour", "seven_day"],
+      "x-python": {"literal": "UsageWindowName", "frozenset": "ACCOUNT_WINDOWS"}
+    },
+    "UsageWindow": {
+      "description": "One usage window of a RateLimitInfo.",
+      "type": "object",
+      "x-python": {"typeddict": "UsageWindow"},
+      "properties": {
+        "utilization": {"type": "number", "description": "Exhausted when at or above EXHAUSTED_UTILIZATION."},
+        "resetsAt": {"type": "number", "description": "Reset time in epoch seconds."}
+      },
+      "required": ["utilization"]
+    },
+    "RateLimitInfo": {
+      "description": "The rate_limit_info of a rate_limit_event: the info argument of the quota readers.",
+      "type": "object",
+      "x-python": {"typeddict": "RateLimitInfo"},
+      "properties": {
+        "status": {"$ref": "#/$defs/RateLimitStatus"},
+        "unifiedWindows": {"type": "object", "additionalProperties": {"$ref": "#/$defs/UsageWindow"}, "description": "Window name -> usage window."},
+        "resetsAt": {"type": "number", "description": "Top-level reset time in epoch seconds."},
+        "rateLimitType": {"type": "string", "description": "The value with meaning here is MODEL_OVERAGE_TYPE.", "x-values": {"MODEL_OVERAGE_TYPE": "seven_day_overage_included"}},
+        "overageDisabledReason": {"type": "string", "description": "The value with meaning here is OUT_OF_CREDITS_REASON.", "x-values": {"OUT_OF_CREDITS_REASON": "out_of_credits"}}
+      },
+      "required": ["status"]
+    },
+    "RateLimitEvent": {
+      "description": "One Claude CLI stream-json rate-limit event.",
+      "type": "object",
+      "x-python": {"typeddict": "RateLimitEvent"},
+      "properties": {
+        "type": {"type": "string", "const": "rate_limit_event", "x-value-constant": "RATE_LIMIT_EVENT_TYPE"},
+        "rate_limit_info": {"$ref": "#/$defs/RateLimitInfo", "x-key-constant": "RATE_LIMIT_INFO_KEY"}
+      },
+      "required": ["type", "rate_limit_info"]
+    }
+  }
+}

@@ -12,14 +12,23 @@ from pathlib import Path
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+from contracts import SurveySeal, parse_survey_seal, survey_seal_path
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
-from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.models import RunContext
 from orchestrator.core.tools import Tools
 from orchestrator.flows.architecture_projection import project
 from orchestrator.flows.architecture_resume import (
+    RESULT_KEY_OK,
+    RESULT_KEY_SUBJECT,
+    RESULT_KEY_TARGET_DIR,
     approved,
     completed,
     retire_generation,
@@ -27,6 +36,13 @@ from orchestrator.flows.architecture_resume import (
     save_completion,
 )
 from orchestrator.flows.architecture_support import Architecture
+from survey_contract import SURVEY_FILE
+from target_contract import (
+    CLOSURE_FILE,
+    KEY_TARGET_DIR,
+    TARGET_REPORT_NAME,
+    TargetResult,
+)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -41,10 +57,14 @@ def main() -> None:
 
 
 def _flow(root: Path, artifact_script: Path) -> Architecture:
+    arguments = dispatch_arguments()
     context = RunContext(
         "example",
         "architecture",
-        {"archPath": str(root / "vault"), "prd": {"path": str(root / "prd.md")}},
+        {
+            arguments.KEY_ARCH_PATH: str(root / "vault"),
+            arguments.KEY_PRD: {arguments.PRD_PATH: str(root / "prd.md")},
+        },
         root,
         "check",
     )
@@ -73,13 +93,16 @@ def _completion_inputs(artifact_script: Path, survey_dir: Path) -> None:
         view.write_text("post-integration canonical")
         write_json(work / "arc42-revision.json", {"views": {"view.md": "old"}})
         write_json(work / "closure-walk.json", {"elements": []})
-        saved_seal = survey_dir / "survey.json.baseline-inputs.json"
-        original_seal = saved_seal.read_bytes()
-        seal = json_object(json.loads(original_seal))
-        inputs = check_type(seal["inputs"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        seal["inputs"] = [*inputs, str(flow.prd), str(view)]
-        write_json(work / "survey.json.baseline-inputs.json", seal)
-        result: dict[str, JsonValue] = {"ok": True, "subject": "example", "targetDir": str(target)}
+        saved_seal: Path = survey_seal_path(survey_dir / SURVEY_FILE)
+        original_seal: bytes = saved_seal.read_bytes()
+        seal: SurveySeal = parse_survey_seal(json.loads(original_seal))
+        seal["inputs"] = sorted([*seal["inputs"], str(flow.prd), str(view)])
+        write_json(survey_seal_path(work / SURVEY_FILE), seal)
+        result: dict[str, JsonValue] = {
+            RESULT_KEY_OK: True,
+            RESULT_KEY_SUBJECT: "example",
+            RESULT_KEY_TARGET_DIR: str(target),
+        }
         save_completion(flow, result)
         require(completed(flow) == result, "completed(flow) == result")
         (arch / "arc42/unrelated.md").write_text("another Epic")
@@ -112,18 +135,29 @@ def _approval(flow: Architecture, target: Path, view: Path) -> None:
             "integrating": True,
         },
     )
-    write_json(flow.work / "target.json", {"targetDir": str(target)})
+    target_report: TargetResult = {
+        "ok": True,
+        "refusals": [],
+        "summary": {"ok": True, "refusals": [], "targetDir": str(target)},
+        "targetDir": str(target),
+    }
+    write_json(flow.work / TARGET_REPORT_NAME, target_report)
     target_view = target / "view.md"
     target_view.write_text("approved")
-    save_approval(
-        flow,
-        {"targetDir": str(target)},
-        {"round": 3, "verdict": "approve"},
-    )
+    approval_decision: dict[str, JsonValue] = {
+        "round": 3,
+        "verdict": "approve",
+        "diligence": [],
+        "choices": [],
+        "returnTo": [],
+        "ownerConcerns": [],
+        "summary": "approved",
+    }
+    save_approval(flow, {KEY_TARGET_DIR: str(target)}, approval_decision)
     target_view.write_text("unreviewed target edit")
     require(approved(flow) is None, "target bytes were not fingerprinted")
     target_view.write_text("approved")
-    (target / "closure.json").write_text("downstream Closure publication", encoding="utf-8")
+    (target / CLOSURE_FILE).write_text("downstream Closure publication", encoding="utf-8")
     require(approved(flow), "Closure publication revoked architecture approval")
     view.write_text("interrupted maintainer write", encoding="utf-8")
     require(approved(flow), "owned canonical writes invalidated integration recovery")
@@ -138,7 +172,9 @@ def _approval(flow: Architecture, target: Path, view: Path) -> None:
     write_json(flow.work / "arc42-revision.json", {"archRoot": str(flow.arch), "files": {}, "integrating": True})
     flow.prd.write_text("new PRD during integration")
     require(approved(flow) is None, "upstream change reused integration recovery")
-    write_json(flow.work / "decision.json", {"round": 3, "verdict": "deny"})
+    # Deliberately not a schema-valid decision: retire_generation moves the file without reading it.
+    invalid_retired_decision: dict[str, JsonValue] = {"round": 3, "verdict": "not-a-verdict"}
+    write_json(flow.work / "decision.json", invalid_retired_decision)
     (flow.work / "plans").mkdir()
     write_json(flow.work / "plans/round3-plan-0.json", {"old": True})
     retire_generation(flow)

@@ -34,8 +34,9 @@ Never expose secrets, edit section 2, or touch apps/marketing repositories.
 Read PRD, TRD, contracts and data-model documents for the repository. Derive testable acceptance
 criteria and Definition of Done, with stable criterion/DoD ids and source requirement/section
 references. Cover required behavior and failure/boundary cases without inventing scope or
-architecture. Preserve any testStrategy stated by the sources; do not create arbitrary coverage
-thresholds. Requirements not checkable by unit tests may be assigned to human testing explicitly.
+architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
+property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
+do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and
 30 DoD items). Tasks cite these ids; do not replace the requirements with Task wording.
 Python creates the Story container deterministically; no user-story-writer is dispatched.

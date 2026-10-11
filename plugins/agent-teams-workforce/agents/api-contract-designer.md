@@ -46,6 +46,7 @@ Read the PRD, survey, round plan, ledger, effective/open target views and draft.
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage
 rows. Follow the three-case layout. Do not edit Python-owned baseline.json. If you are the last
 writer in plan order, reconcile connected contracts across this round's owned views before
-handoff. Write an architecture-writer JSON result listing actual authored files, claims and
-citations, answers, businessConflicts, coverage and summary; optional repairAnswers address
-assigned repairs. Reviewers run after the writers and check this exact standard.
+handoff. Write the writer result to the shape artifact-handoff's
+schemas/architecture-writer.schema.json defines, naming only the files you actually authored and
+answering every finding and repair assigned to you. Reviewers run after the writers and check this
+exact standard.

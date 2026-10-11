@@ -14,11 +14,24 @@ procedure `/agent-teams-workforce:work-bead <epic-id>` uses.
 
 ## 1. Locate the PRD
 
-The first argument is a path or a title. If it is a title, search the PRD directory,
-`$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
+The first argument is a path or a title. If it is a title, search the PRD directory: the
+directory in the PRD_DIR_ENV variable the `pipeline-contracts` skill names
+(`${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/SKILL.md`, schema
+`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`). Read the name from the skill's
+generated module, never from memory; if the variable is unset, report that variable as unset and
+stop:
 
 ```bash
-grep -ril -- "<title>" "$ATW_PRD_DIR"
+CONTRACTS="${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/scripts"
+{ read -r PRD_DIR_VAR; read -r PRD_DIR; } < <(PYTHONPATH="$CONTRACTS" python3 -c 'import os, driver_surface_types as d; print(d.PRD_DIR_ENV); print(os.environ.get(d.PRD_DIR_ENV, ""))')
+echo "PRD_DIR_VAR=${PRD_DIR_VAR}"
+echo "PRD_DIR=${PRD_DIR}"
+```
+
+When `PRD_DIR` printed empty, report `<PRD_DIR_VAR> is unset` and stop. Otherwise:
+
+```bash
+grep -ril -- "<title>" "<PRD_DIR>"
 ```
 
 Read the PRD. Extract `title` and `body`. Stop and report if you cannot find it —

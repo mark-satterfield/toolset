@@ -12,7 +12,8 @@ Usage:
   naming.py where
 
 The config is found, in order: `--config PATH`; `$RESOURCE_NAMING_CONFIG`;
-`$ATW_CONTROL_REPO/.resource-naming.yaml`; the first `.resource-naming.yaml` in the working
+`.resource-naming.yaml` in the control repository named by the environment variable
+`driver_surface_types.CONTROL_REPO_ENV` (pipeline-contracts skill); the first `.resource-naming.yaml` in the working
 directory or any directory above it. With none of these the script exits 2. There are no
 built-in defaults.
 
@@ -38,8 +39,19 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
+from driver_surface_types import CONTROL_REPO_ENV
+
+# PyYAML is optional until a config is loaded: its absence is reported as a config error
+# by `load_rules`, not as an import failure, so `--help` works without it.
+try:
+    import yaml
+
+    YAML_IMPORT_ERROR: ImportError | None = None
+except ImportError as _yaml_exc:
+    YAML_IMPORT_ERROR = _yaml_exc
+
 CONFIG_ENV = "RESOURCE_NAMING_CONFIG"
-CONTROL_REPO_ENV = "ATW_CONTROL_REPO"
 CONFIG_FILE = ".resource-naming.yaml"
 
 #: Regex for a value of each segment style.
@@ -77,12 +89,11 @@ def words(value: str) -> list[str]:
 
     Returns:
         The words, lowercased, in order.
+
     """
     out: list[str] = []
     for part in re.split(r"[^A-Za-z0-9]+", value):
-        out.extend(
-            w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", part)
-        )
+        out.extend(w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", part))
     return out
 
 
@@ -94,6 +105,7 @@ def transform(value: str, how: str) -> str:
 
     Raises:
         ConfigError: If the transform is unknown.
+
     """
     if how == "lower":
         return value.lower()
@@ -103,7 +115,8 @@ def transform(value: str, how: str) -> str:
         return "_".join(words(value))
     if how == "upper_snake":
         return "_".join(words(value)).upper()
-    raise ConfigError(f"unknown transform '{how}'")
+    msg: str = f"unknown transform '{how}'"
+    raise ConfigError(msg)
 
 
 @dataclass
@@ -116,56 +129,88 @@ class Node:
     children: list[Node] = field(default_factory=list)
 
 
+def flush_literal(nodes: list[Node], buf: str) -> str:
+    """Append pending literal text to the nodes when there is any.
+
+    Returns:
+        The emptied buffer ("").
+
+    """
+    if buf:
+        nodes.append(Node("lit", buf))
+    return ""
+
+
+class PatternParser:
+    """A recursive-descent parser over one pattern string."""
+
+    def __init__(self, pattern: str) -> None:
+        """Start parsing `pattern` at its first character."""
+        self.pattern: str = pattern
+        self.pos: int = 0
+
+    def parse_var(self, nodes: list[Node]) -> None:
+        """Parse the `{segment|transform}` placeholder that starts at the current position.
+
+        Raises:
+            ConfigError: If the placeholder has no closing brace.
+
+        """
+        end: int = self.pattern.find("}", self.pos)
+        if end < 0:
+            msg: str = f"unclosed '{{' in pattern {self.pattern!r}"
+            raise ConfigError(msg)
+        name, _, how = self.pattern[self.pos + 1 : end].partition("|")
+        nodes.append(Node("var", name.strip(), how.strip()))
+        self.pos = end + 1
+
+    def parse(self, until: str | None) -> list[Node]:
+        """Parse nodes up to the closing `until` character, or to the end when None.
+
+        Returns:
+            The nodes parsed at this level.
+
+        Raises:
+            ConfigError: If brackets or braces are unbalanced.
+
+        """
+        nodes: list[Node] = []
+        buf: str = ""
+        msg: str
+        while self.pos < len(self.pattern):
+            ch: str = self.pattern[self.pos]
+            if until and ch == until:
+                self.pos += 1
+                flush_literal(nodes, buf)
+                return nodes
+            if ch == "{":
+                buf = flush_literal(nodes, buf)
+                self.parse_var(nodes)
+            elif ch == "[":
+                buf = flush_literal(nodes, buf)
+                self.pos += 1
+                nodes.append(Node("opt", children=self.parse("]")))
+            elif ch in "]}":
+                msg = f"unbalanced '{ch}' in pattern {self.pattern!r}"
+                raise ConfigError(msg)
+            else:
+                buf += ch
+                self.pos += 1
+        if until:
+            msg = f"unclosed '[' in pattern {self.pattern!r}"
+            raise ConfigError(msg)
+        flush_literal(nodes, buf)
+        return nodes
+
+
 def parse_pattern(pattern: str) -> list[Node]:
-    """Parse a pattern into nodes.
+    """Parse a pattern into nodes; unbalanced brackets or braces raise ConfigError.
 
     Returns:
         The top-level nodes.
 
-    Raises:
-        ConfigError: If brackets or braces are unbalanced.
     """
-    pos = 0
-
-    def parse(until: str | None) -> list[Node]:
-        nonlocal pos
-        nodes: list[Node] = []
-        buf = ""
-        while pos < len(pattern):
-            ch = pattern[pos]
-            if until and ch == until:
-                pos += 1
-                if buf:
-                    nodes.append(Node("lit", buf))
-                return nodes
-            if ch == "{":
-                end = pattern.find("}", pos)
-                if end < 0:
-                    raise ConfigError(f"unclosed '{{' in pattern {pattern!r}")
-                if buf:
-                    nodes.append(Node("lit", buf))
-                    buf = ""
-                name, _, how = pattern[pos + 1 : end].partition("|")
-                nodes.append(Node("var", name.strip(), how.strip()))
-                pos = end + 1
-            elif ch == "[":
-                if buf:
-                    nodes.append(Node("lit", buf))
-                    buf = ""
-                pos += 1
-                nodes.append(Node("opt", children=parse("]")))
-            elif ch in "]}":
-                raise ConfigError(f"unbalanced '{ch}' in pattern {pattern!r}")
-            else:
-                buf += ch
-                pos += 1
-        if until:
-            raise ConfigError(f"unclosed '[' in pattern {pattern!r}")
-        if buf:
-            nodes.append(Node("lit", buf))
-        return nodes
-
-    return parse(None)
+    return PatternParser(pattern).parse(None)
 
 
 def placeholders(nodes: list[Node], optional: bool = False) -> list[tuple[str, bool]]:
@@ -173,6 +218,7 @@ def placeholders(nodes: list[Node], optional: bool = False) -> list[tuple[str, b
 
     Returns:
         (segment name, is optional) pairs in pattern order, constants excluded.
+
     """
     out: list[tuple[str, bool]] = []
     for n in nodes:
@@ -188,11 +234,10 @@ def uses_constants(nodes: list[Node]) -> bool:
 
     Returns:
         True when `{project}`, `{projectLower}` or `{metricsNamespace}` appears.
+
     """
     return any(
-        (n.kind == "var" and n.text in CONSTANTS)
-        or (n.kind == "opt" and uses_constants(n.children))
-        for n in nodes
+        (n.kind == "var" and n.text in CONSTANTS) or (n.kind == "opt" and uses_constants(n.children)) for n in nodes
     )
 
 
@@ -201,6 +246,7 @@ def trailing_literal(nodes: list[Node]) -> str:
 
     Returns:
         The trailing literal, or "" when the pattern ends with a placeholder.
+
     """
     return nodes[-1].text if nodes and nodes[-1].kind == "lit" else ""
 
@@ -210,6 +256,7 @@ def leading_literal(nodes: list[Node]) -> str:
 
     Returns:
         The leading literal, or "" when the pattern starts with a placeholder.
+
     """
     return nodes[0].text if nodes and nodes[0].kind == "lit" else ""
 
@@ -219,8 +266,113 @@ def kebab_flag(segment: str) -> str:
 
     Returns:
         The flag.
+
     """
     return "--" + "-".join(words(segment))
+
+
+def render(nodes: list[Node], constants: dict[str, str], values: dict[str, str]) -> str | None:
+    """Render pattern nodes from project constants and segment values.
+
+    Returns:
+        The rendered text, or None when a placeholder outside any optional group has no value.
+
+    """
+    out: str = ""
+    for n in nodes:
+        if n.kind == "lit":
+            out += n.text
+        elif n.kind == "var":
+            v: str
+            if n.text in CONSTANTS:
+                v = constants[n.text]
+            elif n.text in values:
+                v = values[n.text]
+            else:
+                return None
+            out += transform(v, n.transform) if n.transform else v
+        else:
+            out += render(n.children, constants, values) or ""
+    return out
+
+
+def parse_project(source: Path, pid: object, spec: dict | None) -> dict:
+    """Validate one project entry of the config and index it.
+
+    Returns:
+        The project's prefix constants, repository prefix, categories and types.
+
+    Raises:
+        ConfigError: If the project's prefix is not a camelCase single token.
+
+    """
+    entry: dict = spec or {}
+    prefix: str = str(entry.get("prefix", ""))
+    if not re.fullmatch(STYLES["camelCase"], prefix):
+        msg: str = f"{source}: project '{pid}' needs a camelCase one-token prefix"
+        raise ConfigError(msg)
+    categories: dict[str, list[str]] = {
+        str(c): [str(t) for t in types] for c, types in (entry.get("categories") or {}).items()
+    }
+    return {
+        "constants": {
+            "project": prefix,
+            "projectLower": prefix.lower(),
+            "metricsNamespace": str(
+                entry.get("metrics_namespace", prefix[:1].upper() + prefix[1:]),
+            ),
+        },
+        "repo_prefix": str(entry.get("repo_prefix", prefix)),
+        "categories": categories,
+        "types": {t for types in categories.values() for t in types},
+    }
+
+
+def parse_segment_specs(source: Path, seg_cfg: dict) -> dict[str, dict]:
+    """Validate the segment declarations of the config.
+
+    Returns:
+        Segment name to its declaration.
+
+    Raises:
+        ConfigError: If a segment has neither an enum, a flag nor a known style.
+
+    """
+    segments: dict[str, dict] = {}
+    for name, spec in seg_cfg.items():
+        entry: dict = spec or {}
+        if "enum" not in entry and "flag" not in entry and entry.get("style") not in STYLES:
+            msg: str = f"{source}: segment '{name}' needs enum, flag or a style in {sorted(STYLES)}"
+            raise ConfigError(msg)
+        segments[name] = entry
+    return segments
+
+
+def parse_domains(source: Path, domain_cfg: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """Validate the domain reference table of the config.
+
+    Returns:
+        The domains, and each avoided term (lowercased) mapped to its domain's internal name.
+
+    Raises:
+        ConfigError: If an internal name is not camelCase or an external name is not its kebab.
+
+    """
+    domains: list[dict] = []
+    avoid: dict[str, str] = {}
+    msg: str
+    for d in domain_cfg:
+        internal: str = d["internal"]
+        if not re.fullmatch(STYLES["camelCase"], internal):
+            msg = f"{source}: domain internal name '{internal}' is not camelCase"
+            raise ConfigError(msg)
+        if d.get("external") and d["external"] != transform(internal, "kebab"):
+            msg = f"{source}: domain external '{d['external']}' is not kebab of '{internal}'"
+            raise ConfigError(msg)
+        domains.append(d)
+        for term in d.get("avoid", []):
+            avoid[term.lower()] = internal
+    return domains, avoid
 
 
 @dataclass
@@ -245,99 +397,70 @@ class Rules:
 
         Raises:
             ConfigError: If a required key is missing or a rule is inconsistent.
+
         """
-        self.source = source
+        self.source: Path = source
+        msg: str
         if not isinstance(data, dict):
-            raise ConfigError(f"{source}: top level must be a mapping")
+            msg = f"{source}: top level must be a mapping"
+            raise ConfigError(msg)
         try:
             proj_cfg = data["projects"]
             seg_cfg = data["segments"]
             res_cfg = data["resources"]
         except (KeyError, TypeError) as exc:
-            raise ConfigError(f"{source}: missing required key {exc}") from exc
+            msg = f"{source}: missing required key {exc}"
+            raise ConfigError(msg) from exc
         if not isinstance(proj_cfg, dict) or not proj_cfg:
-            raise ConfigError(f"{source}: projects must be a non-empty mapping")
+            msg = f"{source}: projects must be a non-empty mapping"
+            raise ConfigError(msg)
         self.projects: dict[str, dict] = {}
         for pid, spec in proj_cfg.items():
-            spec = spec or {}
-            prefix = str(spec.get("prefix", ""))
-            if not re.fullmatch(STYLES["camelCase"], prefix):
-                raise ConfigError(
-                    f"{source}: project '{pid}' needs a camelCase one-token prefix"
-                )
-            categories = {
-                str(c): [str(t) for t in types]
-                for c, types in (spec.get("categories") or {}).items()
-            }
-            self.projects[str(pid)] = {
-                "constants": {
-                    "project": prefix,
-                    "projectLower": prefix.lower(),
-                    "metricsNamespace": str(
-                        spec.get("metrics_namespace", prefix[:1].upper() + prefix[1:])
-                    ),
-                },
-                "repo_prefix": str(spec.get("repo_prefix", prefix)),
-                "categories": categories,
-                "types": {t for types in categories.values() for t in types},
-            }
-        self.forbidden_substrings = [
-            s.lower() for s in data.get("forbidden_substrings", [])
-        ]
-        self.forbidden_tokens = {t.lower() for t in data.get("forbidden_tokens", [])}
-        self.permitted_suffixes = set(data.get("permitted_suffixes", []))
-        self.type_words = {t.lower() for t in data.get("type_words", [])}
-        self.segments: dict[str, dict] = {}
-        for name, spec in seg_cfg.items():
-            spec = spec or {}
-            if (
-                "enum" not in spec
-                and "flag" not in spec
-                and spec.get("style") not in STYLES
-            ):
-                raise ConfigError(
-                    f"{source}: segment '{name}' needs enum, flag or a style in {sorted(STYLES)}"
-                )
-            self.segments[name] = spec
-        self.domains: list[dict] = []
-        self.avoid: dict[str, str] = {}
-        for d in data.get("domains", []):
-            internal = d["internal"]
-            if not re.fullmatch(STYLES["camelCase"], internal):
-                raise ConfigError(
-                    f"{source}: domain internal name '{internal}' is not camelCase"
-                )
-            if d.get("external") and d["external"] != transform(internal, "kebab"):
-                raise ConfigError(
-                    f"{source}: domain external '{d['external']}' is not kebab of '{internal}'"
-                )
-            self.domains.append(d)
-            for term in d.get("avoid", []):
-                self.avoid[term.lower()] = internal
+            self.projects[str(pid)] = parse_project(source, pid, spec)
+        self.forbidden_substrings: list[str] = [s.lower() for s in data.get("forbidden_substrings", [])]
+        self.forbidden_tokens: set[str] = {t.lower() for t in data.get("forbidden_tokens", [])}
+        self.permitted_suffixes: set[str] = set(data.get("permitted_suffixes", []))
+        self.type_words: set[str] = {t.lower() for t in data.get("type_words", [])}
+        self.segments: dict[str, dict] = parse_segment_specs(source, seg_cfg)
+        self.domains: list[dict]
+        self.avoid: dict[str, str]
+        self.domains, self.avoid = parse_domains(source, data.get("domains", []))
         self.resources: dict[str, Resource] = {}
         for key, spec in res_cfg.items():
-            nodes = parse_pattern(spec["pattern"])
-            for seg, _ in placeholders(nodes):
-                if seg not in self.segments:
-                    raise ConfigError(
-                        f"{source}: resource '{key}' uses undefined segment '{seg}'"
-                    )
-            category = spec.get("category", "aws")
-            tail = trailing_literal(nodes)
-            if category == "aws" and tail and tail not in self.permitted_suffixes:
-                raise ConfigError(
-                    f"{source}: resource '{key}' ends in '{tail}', not a permitted suffix"
-                )
-            self.resources[key] = Resource(
-                key,
-                spec.get("description", ""),
-                spec["pattern"],
-                nodes,
-                category,
-                int(spec.get("min_length", 1)),
-                int(spec.get("max_length", 0)),
-                {t.lower() for t in spec.get("type_words", [])},
-            )
+            self.resources[key] = self.parse_resource(key, spec)
+
+    def parse_resource(self, key: str, spec: dict) -> Resource:
+        """Validate one resource declaration against the loaded segments and suffixes.
+
+        Returns:
+            The resource.
+
+        Raises:
+            ConfigError: If the pattern uses an undefined segment, or an AWS resource ends in
+                a literal that is not a permitted suffix.
+
+        """
+        msg: str
+        nodes: list[Node] = parse_pattern(spec["pattern"])
+        for seg, _ in placeholders(nodes):
+            if seg not in self.segments:
+                msg = f"{self.source}: resource '{key}' uses undefined segment '{seg}'"
+                raise ConfigError(msg)
+        category: str = spec.get("category", "aws")
+        tail: str = trailing_literal(nodes)
+        if category == "aws" and tail and tail not in self.permitted_suffixes:
+            msg = f"{self.source}: resource '{key}' ends in '{tail}', not a permitted suffix"
+            raise ConfigError(msg)
+        return Resource(
+            key,
+            spec.get("description", ""),
+            spec["pattern"],
+            nodes,
+            category,
+            int(spec.get("min_length", 1)),
+            int(spec.get("max_length", 0)),
+            {t.lower() for t in spec.get("type_words", [])},
+        )
 
     def resource(self, key: str) -> Resource:
         """Look up a resource type.
@@ -347,11 +470,11 @@ class Rules:
 
         Raises:
             ConfigError: If the type is not in the config.
+
         """
         if key not in self.resources:
-            raise ConfigError(
-                f"unknown resource type '{key}'; known: {', '.join(sorted(self.resources))}"
-            )
+            msg: str = f"unknown resource type '{key}'; known: {', '.join(sorted(self.resources))}"
+            raise ConfigError(msg)
         return self.resources[key]
 
     def project(self, pid: str | None) -> dict:
@@ -362,11 +485,11 @@ class Rules:
 
         Raises:
             NamingError: If the id is not a configured project.
+
         """
         if pid not in self.projects:
-            raise NamingError(
-                f"--project '{pid}' is not a project; projects: {', '.join(self.projects)}"
-            )
+            msg: str = f"--project '{pid}' is not a project; projects: {', '.join(self.projects)}"
+            raise NamingError(msg)
         return self.projects[pid]
 
     def project_types(self, prefix: str, seg_values: dict[str, str]) -> list[str]:
@@ -374,17 +497,16 @@ class Rules:
 
         Returns:
             One reason when the project restricts its types and the type is not one of them.
+
         """
         for pid, proj in self.projects.items():
             if proj["constants"]["project"].lower() != prefix.lower():
                 continue
             value = seg_values.get("type")
             if proj["types"] and value is not None and value not in proj["types"]:
-                cats = "; ".join(
-                    f"{c}: {', '.join(t)}" for c, t in proj["categories"].items()
-                )
+                cats = "; ".join(f"{c}: {', '.join(t)}" for c, t in proj["categories"].items())
                 return [
-                    f"type '{value}' is not a type of project '{pid}' (categories {cats})"
+                    f"type '{value}' is not a type of project '{pid}' (categories {cats})",
                 ]
         return []
 
@@ -395,17 +517,14 @@ class Rules:
 
         Returns:
             A regex (no anchors).
+
         """
         spec = self.segments[seg]
         if "flag" in spec:
             return re.escape(str(spec["flag"]))
         if "enum" in spec:
             values = [transform(v, how) if how else v for v in spec["enum"]]
-            return (
-                "(?:"
-                + "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True))
-                + ")"
-            )
+            return "(?:" + "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True)) + ")"
         if how:
             return TRANSFORM_REGEX[how]
         return STYLES[spec["style"]]
@@ -415,53 +534,105 @@ class Rules:
 
         Raises:
             NamingError: If the value breaks a rule.
+
         """
         spec = self.segments[seg]
         flag = kebab_flag(seg)
+        msg: str
         if "flag" in spec:
             if value != str(spec["flag"]):
-                raise NamingError(f"{flag} takes no value")
+                msg = f"{flag} takes no value"
+                raise NamingError(msg)
         elif "enum" in spec:
             if value not in spec["enum"]:
-                raise NamingError(
-                    f"{flag} '{value}' must be one of: {', '.join(spec['enum'])}"
-                )
+                msg = f"{flag} '{value}' must be one of: {', '.join(spec['enum'])}"
+                raise NamingError(msg)
         elif not re.fullmatch(STYLES[spec["style"]], value):
-            raise NamingError(
-                f"{flag} '{value}' is not {spec['style']} (one token, {STYLES[spec['style']]})"
-            )
-        rejected = {t.lower() for t in spec.get("reject_words", [])}
-        bad = [w for w in words(value) if w in rejected]
+            msg = f"{flag} '{value}' is not {spec['style']} (one token, {STYLES[spec['style']]})"
+            raise NamingError(msg)
+        bad: list[str] = self.rejected_words(seg, value)
         if bad:
-            raise NamingError(
-                f"{flag} '{value}' contains redundant word(s) {bad}; drop them"
-            )
+            msg = f"{flag} '{value}' contains redundant word(s) {bad}; drop them"
+            raise NamingError(msg)
+
+    def rejected_words(self, seg: str, value: str) -> list[str]:
+        """List the words of a segment value that the segment declares redundant.
+
+        Returns:
+            The rejected words, in the order they appear in the value.
+
+        """
+        rejected: set[str] = {t.lower() for t in self.segments[seg].get("reject_words", [])}
+        return [w for w in words(value) if w in rejected]
 
     # -- whole-name rules ---------------------------------------------------------------
 
     def global_violations(self, name: str) -> list[str]:
-        """Apply the rules that hold for every name: forbidden spellings, environment
-        words and avoided domain terms.
+        """Apply the rules that hold for every name.
+
+        The rules are the forbidden spellings, environment words and avoided domain terms.
 
         Returns:
             One reason per violation; empty when the name passes.
+
         """
-        reasons: list[str] = []
-        low = name.lower()
-        for sub in self.forbidden_substrings:
-            if sub in low:
-                reasons.append(f"contains forbidden spelling '{sub}'")
-        toks = words(name)
+        low: str = name.lower()
+        reasons: list[str] = [f"contains forbidden spelling '{sub}'" for sub in self.forbidden_substrings if sub in low]
+        toks: list[str] = words(name)
         for t in toks:
             if t in self.forbidden_tokens:
                 reasons.append(f"contains '{t}' (no environment segment in names)")
             if t in self.avoid:
                 reasons.append(
-                    f"contains avoided term '{t}'; use domain '{self.avoid[t]}'"
+                    f"contains avoided term '{t}'; use domain '{self.avoid[t]}'",
                 )
         return reasons
 
     # -- name ---------------------------------------------------------------------------
+
+    def build_constants(self, res: Resource, pid: str | None) -> dict[str, str]:
+        """Resolve the project constants a resource pattern needs.
+
+        Returns:
+            The project's constants, or an empty mapping when the pattern uses none.
+
+        Raises:
+            NamingError: If the pattern needs a project and none is given, or the project
+                is not configured.
+
+        """
+        if uses_constants(res.nodes):
+            if not pid:
+                msg: str = f"'{res.key}' needs --project (one of: {', '.join(self.projects)})"
+                raise NamingError(msg)
+            constants: dict[str, str] = self.project(pid)["constants"]
+            return constants
+        if pid:
+            self.project(pid)
+        return {}
+
+    @staticmethod
+    def check_segment_set(res: Resource, values: dict[str, str]) -> None:
+        """Check that the supplied segments are exactly ones the pattern takes.
+
+        Raises:
+            NamingError: If a supplied segment is not in the pattern, or a required one is missing.
+
+        """
+        msg: str
+        segs: list[tuple[str, bool]] = placeholders(res.nodes)
+        known: set[str] = {s for s, _ in segs}
+        extra: list[str] = sorted(set(values) - known)
+        if extra:
+            msg = (
+                f"'{res.key}' takes no {', '.join(kebab_flag(e) for e in extra)}; "
+                f"it takes {', '.join(kebab_flag(s) for s, _ in segs) or 'no segments'}"
+            )
+            raise NamingError(msg)
+        missing: list[str] = [kebab_flag(s) for s, opt in segs if not opt and s not in values]
+        if missing:
+            msg = f"'{res.key}' needs {', '.join(missing)} (pattern {res.pattern})"
+            raise NamingError(msg)
 
     def build(self, res: Resource, values: dict[str, str], pid: str | None) -> str:
         """Generate a name from segment values for one project.
@@ -472,55 +643,17 @@ class Rules:
         Raises:
             NamingError: If the project or a value is missing, extra or invalid, or the
                 result breaks a rule.
+
         """
-        constants: dict[str, str] = {}
-        if uses_constants(res.nodes):
-            if not pid:
-                raise NamingError(
-                    f"'{res.key}' needs --project (one of: {', '.join(self.projects)})"
-                )
-            constants = self.project(pid)["constants"]
-        elif pid:
-            self.project(pid)
-        segs = placeholders(res.nodes)
-        known = {s for s, _ in segs}
-        extra = sorted(set(values) - known)
-        if extra:
-            raise NamingError(
-                f"'{res.key}' takes no {', '.join(kebab_flag(e) for e in extra)}; "
-                f"it takes {', '.join(kebab_flag(s) for s, _ in segs) or 'no segments'}"
-            )
-        missing = [kebab_flag(s) for s, opt in segs if not opt and s not in values]
-        if missing:
-            raise NamingError(
-                f"'{res.key}' needs {', '.join(missing)} (pattern {res.pattern})"
-            )
+        constants: dict[str, str] = self.build_constants(res, pid)
+        self.check_segment_set(res, values)
         for seg, value in values.items():
             self.validate_segment(seg, value)
-
-        def render(nodes: list[Node]) -> str | None:
-            out = ""
-            for n in nodes:
-                if n.kind == "lit":
-                    out += n.text
-                elif n.kind == "var":
-                    if n.text in CONSTANTS:
-                        v = constants[n.text]
-                    elif n.text in values:
-                        v = values[n.text]
-                    else:
-                        return None
-                    out += transform(v, n.transform) if n.transform else v
-                else:
-                    out += render(n.children) or ""
-            return out
-
-        name = render(res.nodes) or ""
-        reasons = self.violations(res, name, pid)
+        name: str = render(res.nodes, constants, values) or ""
+        reasons: list[str] = self.violations(res, name, pid)
         if reasons:
-            raise NamingError(
-                f"generated '{name}' breaks the rules: " + "; ".join(reasons)
-            )
+            msg: str = f"generated '{name}' breaks the rules: " + "; ".join(reasons)
+            raise NamingError(msg)
         return name
 
     # -- check --------------------------------------------------------------------------
@@ -533,6 +666,7 @@ class Rules:
 
         Returns:
             The regex.
+
         """
         counter = {"n": 0}
         projects = [self.projects[pid]] if pid else list(self.projects.values())
@@ -551,10 +685,7 @@ class Rules:
                         }
                         out += (
                             f"(?P<c{counter['n']}_{n.text}>"
-                            + "|".join(
-                                re.escape(a)
-                                for a in sorted(alts, key=len, reverse=True)
-                            )
+                            + "|".join(re.escape(a) for a in sorted(alts, key=len, reverse=True))
                             + ")"
                         )
                     else:
@@ -566,47 +697,66 @@ class Rules:
 
         return "^" + emit(res.nodes) + "$"
 
+    def pattern_violations(self, res: Resource, name: str, pid: str | None) -> list[str]:
+        """Match a name against its resource pattern and check the matched segments.
+
+        Returns:
+            One reason per violation; empty when the name matches and its segments pass.
+
+        """
+        match: re.Match[str] | None = re.fullmatch(self.regex(res, pid), name)
+        if not match:
+            scope: str = f"project '{pid}'" if pid else "any project"
+            return [f"does not match '{res.pattern}' for {res.key} ({scope})"]
+        reasons: list[str] = []
+        seg_values: dict[str, str] = {}
+        prefix: str = ""
+        for group, value in match.groupdict().items():
+            if value is None:
+                continue
+            kind, seg = group.split("_", 1)
+            if kind.startswith("c"):
+                if seg in {"project", "projectLower"}:
+                    prefix = value
+                continue
+            seg_values[seg] = value
+            bad: list[str] = self.rejected_words(seg, value)
+            if bad:
+                reasons.append(
+                    f"segment {seg} '{value}' contains redundant word(s) {bad}",
+                )
+        if prefix:
+            reasons.extend(self.project_types(prefix, seg_values))
+        return reasons
+
+    @staticmethod
+    def length_violations(res: Resource, name: str) -> list[str]:
+        """Check a name's length against its resource's limits.
+
+        Returns:
+            One reason per violated limit; empty when the length is within them.
+
+        """
+        reasons: list[str] = []
+        if len(name) < res.min_length:
+            reasons.append(f"shorter than {res.min_length} characters")
+        if res.max_length and len(name) > res.max_length:
+            reasons.append(
+                f"{len(name)} characters, over the {res.key} limit of {res.max_length}",
+            )
+        return reasons
+
     def violations(self, res: Resource, name: str, pid: str | None = None) -> list[str]:
         """Check a name against its resource pattern and every global rule.
 
         Returns:
             One reason per violation; empty when the name passes.
+
         """
-        reasons: list[str] = []
         if pid:
             self.project(pid)
-        match = re.fullmatch(self.regex(res, pid), name)
-        if not match:
-            scope = f"project '{pid}'" if pid else "any project"
-            reasons.append(f"does not match '{res.pattern}' for {res.key} ({scope})")
-        else:
-            seg_values: dict[str, str] = {}
-            prefix = ""
-            for group, value in match.groupdict().items():
-                if value is None:
-                    continue
-                kind, seg = group.split("_", 1)
-                if kind.startswith("c"):
-                    if seg in ("project", "projectLower"):
-                        prefix = value
-                    continue
-                seg_values[seg] = value
-                rejected = {
-                    t.lower() for t in self.segments[seg].get("reject_words", [])
-                }
-                bad = [w for w in words(value) if w in rejected]
-                if bad:
-                    reasons.append(
-                        f"segment {seg} '{value}' contains redundant word(s) {bad}"
-                    )
-            if prefix:
-                reasons.extend(self.project_types(prefix, seg_values))
-        if len(name) < res.min_length:
-            reasons.append(f"shorter than {res.min_length} characters")
-        if res.max_length and len(name) > res.max_length:
-            reasons.append(
-                f"{len(name)} characters, over the {res.key} limit of {res.max_length}"
-            )
+        reasons: list[str] = self.pattern_violations(res, name, pid)
+        reasons.extend(self.length_violations(res, name))
         reasons.extend(self.global_violations(name))
         reasons.extend(self.type_word_violations(res, name))
         return reasons
@@ -622,6 +772,7 @@ class Rules:
 
         Returns:
             One reason per violating word; empty when the name passes.
+
         """
         if res.category != "aws":
             return []
@@ -649,9 +800,11 @@ def find_config(explicit: str | None) -> tuple[Path, list[str]]:
 
     Raises:
         ConfigError: If no config is found.
+
     """
     tried: list[str] = []
     candidates: list[tuple[str, Path]] = []
+    msg: str
     if explicit:
         candidates.append(("--config", Path(explicit)))
     env = os.environ.get(CONFIG_ENV, "").strip()
@@ -660,19 +813,20 @@ def find_config(explicit: str | None) -> tuple[Path, list[str]]:
     control = os.environ.get(CONTROL_REPO_ENV, "").strip()
     if control:
         candidates.append((f"${CONTROL_REPO_ENV}", Path(control) / CONFIG_FILE))
-    for parent in [Path.cwd(), *Path.cwd().parents]:
-        candidates.append(("search", parent / CONFIG_FILE))
+    candidates.extend(("search", parent / CONFIG_FILE) for parent in [Path.cwd(), *Path.cwd().parents])
     for how, path in candidates:
         tried.append(f"{how}: {path}")
         if path.is_file():
             return path, tried
         if how != "search":
             # An explicitly named config that is absent is an error, not a fallthrough.
-            raise ConfigError(f"naming config named by {how} does not exist: {path}")
-    raise ConfigError(
-        "no resource naming config found. Set $RESOURCE_NAMING_CONFIG, or $ATW_CONTROL_REPO "
+            msg = f"naming config named by {how} does not exist: {path}"
+            raise ConfigError(msg)
+    msg = (
+        f"no resource naming config found. Set ${CONFIG_ENV}, or ${CONTROL_REPO_ENV} "
         f"to a repo holding {CONFIG_FILE}. Tried:\n  " + "\n  ".join(tried)
     )
+    raise ConfigError(msg)
 
 
 def load_rules(explicit: str | None) -> Rules:
@@ -682,46 +836,44 @@ def load_rules(explicit: str | None) -> Rules:
         The rules.
 
     Raises:
-        ConfigError: If the config is missing, unreadable or invalid.
+        ConfigError: If the config is missing, unreadable or invalid, or PyYAML is not installed.
+
     """
     path, _ = find_config(explicit)
-    try:
-        import yaml
-    except ImportError as exc:
-        raise ConfigError("PyYAML is required: pip install pyyaml") from exc
+    msg: str
+    if YAML_IMPORT_ERROR is not None:
+        msg = "PyYAML is required: pip install pyyaml"
+        raise ConfigError(msg) from YAML_IMPORT_ERROR
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        raise ConfigError(f"{path}: cannot read: {exc}") from exc
+        msg = f"{path}: cannot read: {exc}"
+        raise ConfigError(msg) from exc
     return Rules(data, path)
 
 
 def cmd_list(rules: Rules) -> None:
     """Print every resource type with its pattern and segments."""
-    print(f"# config: {rules.source}")
-    print("# projects (--project: prefix / repository prefix / categories)")
+    sys.stdout.write(f"# config: {rules.source}\n")
+    sys.stdout.write("# projects (--project: prefix / repository prefix / categories)\n")
     for pid, proj in rules.projects.items():
-        cats = "; ".join(f"{c}: {', '.join(t)}" for c, t in proj["categories"].items())
-        print(
-            f"{pid}: {proj['constants']['project']} / {proj['repo_prefix']}"
-            + (f" / {cats}" if cats else "")
+        cats: str = "; ".join(f"{c}: {', '.join(t)}" for c, t in proj["categories"].items())
+        sys.stdout.write(
+            f"{pid}: {proj['constants']['project']} / {proj['repo_prefix']}" + (f" / {cats}" if cats else "") + "\n",
         )
-    print()
-    width = max(len(k) for k in rules.resources)
+    sys.stdout.write("\n")
+    width: int = max(len(k) for k in rules.resources)
     for key, res in rules.resources.items():
-        flags = " ".join(
+        flags: str = " ".join(
             (["--project"] if uses_constants(res.nodes) else [])
-            + [
-                (f"[{kebab_flag(s)}]" if opt else kebab_flag(s))
-                for s, opt in placeholders(res.nodes)
-            ]
+            + [(f"[{kebab_flag(s)}]" if opt else kebab_flag(s)) for s, opt in placeholders(res.nodes)],
         )
-        print(f"{key:<{width}}  {res.pattern:<55}  {flags}")
+        sys.stdout.write(f"{key:<{width}}  {res.pattern:<55}  {flags}\n")
     if rules.domains:
-        print("\n# domains (external / internal / avoid)")
+        sys.stdout.write("\n# domains (external / internal / avoid)\n")
         for d in rules.domains:
-            print(
-                f"{d.get('name', '')}: {d.get('external', '')} / {d['internal']} / {', '.join(d.get('avoid', []))}"
+            sys.stdout.write(
+                f"{d.get('name', '')}: {d.get('external', '')} / {d['internal']} / {', '.join(d.get('avoid', []))}\n",
             )
 
 
@@ -733,21 +885,23 @@ def parse_segments(rules: Rules, argv: list[str]) -> dict[str, str]:
 
     Raises:
         NamingError: If a flag is unknown or has no value.
+
     """
     by_flag = {kebab_flag(s): s for s in rules.segments}
     values: dict[str, str] = {}
+    msg: str
     i = 0
     while i < len(argv):
         arg = argv[i]
         flag, eq, inline = arg.partition("=")
         if flag not in by_flag:
-            raise NamingError(
-                f"unknown option '{flag}'; segments: {', '.join(sorted(by_flag))}"
-            )
+            msg = f"unknown option '{flag}'; segments: {', '.join(sorted(by_flag))}"
+            raise NamingError(msg)
         spec = rules.segments[by_flag[flag]]
         if "flag" in spec:
             if eq:
-                raise NamingError(f"{flag} takes no value")
+                msg = f"{flag} takes no value"
+                raise NamingError(msg)
             values[by_flag[flag]] = str(spec["flag"])
             i += 1
             continue
@@ -755,7 +909,8 @@ def parse_segments(rules: Rules, argv: list[str]) -> dict[str, str]:
             value = inline
         else:
             if i + 1 >= len(argv):
-                raise NamingError(f"{flag} needs a value")
+                msg = f"{flag} needs a value"
+                raise NamingError(msg)
             i += 1
             value = argv[i]
         values[by_flag[flag]] = value
@@ -763,15 +918,57 @@ def parse_segments(rules: Rules, argv: list[str]) -> dict[str, str]:
     return values
 
 
+def cmd_check(rules: Rules, kind: str, name: str, pid: str | None) -> int:
+    """Check one name and report the result.
+
+    Returns:
+        0 when the name passes, 1 when it breaks a rule.
+
+    """
+    res: Resource = rules.resource(kind)
+    reasons: list[str] = rules.violations(res, name, pid)
+    if reasons:
+        sys.stderr.write(f"FAIL {kind} '{name}':\n")
+        for r in reasons:
+            sys.stderr.write(f"  - {r}\n")
+        sys.stderr.write(f"  pattern: {res.pattern}\n")
+        return 1
+    sys.stdout.write(f"OK {kind} '{name}'\n")
+    return 0
+
+
+def run_command(args: argparse.Namespace, rest: list[str]) -> int:
+    """Run the parsed subcommand; ConfigError and NamingError propagate to the caller.
+
+    Returns:
+        The exit code.
+
+    """
+    command: str = args.command
+    rules: Rules = load_rules(args.config)
+    if command == "list":
+        cmd_list(rules)
+    elif command == "where":
+        sys.stdout.write(f"{rules.source}\n")
+    elif command == "name":
+        res: Resource = rules.resource(args.kind)
+        sys.stdout.write(f"{rules.build(res, parse_segments(rules, rest), args.project)}\n")
+    else:
+        return cmd_check(rules, args.kind, args.name, args.project)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI.
 
     Returns:
         The exit code.
+
     """
     parser = argparse.ArgumentParser(description="Generate and check resource names.")
     parser.add_argument(
-        "--config", help="path to the naming config (overrides the lookup)"
+        "--config",
+        help="path to the naming config (overrides the lookup)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     p_name = sub.add_parser("name", help="print the name for a resource type")
@@ -787,31 +984,13 @@ def main(argv: list[str] | None = None) -> int:
     if rest and args.command != "name":
         parser.error(f"unrecognized arguments: {' '.join(rest)}")
     try:
-        rules = load_rules(args.config)
-        if args.command == "list":
-            cmd_list(rules)
-        elif args.command == "where":
-            print(rules.source)
-        elif args.command == "name":
-            res = rules.resource(args.kind)
-            print(rules.build(res, parse_segments(rules, rest), args.project))
-        else:
-            res = rules.resource(args.kind)
-            reasons = rules.violations(res, args.name, args.project)
-            if reasons:
-                print(f"FAIL {args.kind} '{args.name}':", file=sys.stderr)
-                for r in reasons:
-                    print(f"  - {r}", file=sys.stderr)
-                print(f"  pattern: {res.pattern}", file=sys.stderr)
-                return 1
-            print(f"OK {args.kind} '{args.name}'")
+        return run_command(args, rest)
     except ConfigError as exc:
-        print(f"naming: config error: {exc}", file=sys.stderr)
+        sys.stderr.write(f"naming: config error: {exc}\n")
         return 2
     except NamingError as exc:
-        print(f"naming: {exc}", file=sys.stderr)
+        sys.stderr.write(f"naming: {exc}\n")
         return 1
-    return 0
 
 
 if __name__ == "__main__":

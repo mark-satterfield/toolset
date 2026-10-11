@@ -6,7 +6,8 @@ export const meta = {
 }
 
 // args: { bead: { id, type?, labels?, title?, description?, parentType?, parentId?, ancestorTypes? },
-//         infraVocabulary: { types, labels } (the plugin's scripts/infra-vocabulary.json) }
+//         infraVocabulary: { types, labels } (the artifact-handoff skill's schemas/infra-vocabulary.schema.json,
+//         printed by its scripts/infra_vocabulary.py) }
 // returns: { bead, action: 'work' | 'skip', composite: 'task-to-deploy' | null, reason, ruledBy: 'deterministic' }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
@@ -40,7 +41,9 @@ const hasEpicAncestor = () => ancestorTypes.includes('epic')
 
 function decide() {
   if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
-    return skip('no infraVocabulary supplied: pass the types and labels from scripts/infra-vocabulary.json as args.infraVocabulary → SKIP')
+    return skip(
+      'no infraVocabulary supplied: pass the object printed by the artifact-handoff skill\'s scripts/infra_vocabulary.py as args.infraVocabulary → SKIP',
+    )
   }
   if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(

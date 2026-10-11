@@ -56,7 +56,7 @@ The pair is recorded on BOTH sides, so it never has to be inferred: the PRD carr
 
 The file shape carries the content mapping: the PRD's first and only `# ` heading is the Epic title, everything after it (minus the `**Epic:**` pointer) is the Epic description. No YAML frontmatter, no second `# ` heading.
 
-A PRD you write or revise is not delivered until its Epic matches. Run `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — the project's sync command — and state in your handoff that you did. If `ATW_PRD_EPIC_SYNC` is unset, report that and the exact slug needing sync rather than leaving the halves divergent. The `agent-teams-workforce:prd-writer` skill holds the full contract.
+A PRD you write or revise is not delivered until its Epic matches. Run the project's PRD-to-Epic sync script with `--only <slug> --apply` and state in your handoff that you did. The script's environment variable is defined only by the `agent-teams-workforce:pipeline-contracts` skill (`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`, the variable whose `x-constant` is `PRD_EPIC_SYNC_ENV`, today `ATW_PRD_EPIC_SYNC`); the schema is authoritative, so confirm the name there. If it is unset, report that and the exact slug needing sync rather than leaving the halves divergent. The `agent-teams-workforce:prd-writer` skill holds the full contract.
 
 ## Repair a Self-Contradictory Acceptance Criterion Yourself
 

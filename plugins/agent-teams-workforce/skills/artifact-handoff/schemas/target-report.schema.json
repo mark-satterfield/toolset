@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillspoke.ai/schemas/agent-teams-workforce/target-report.schema.json",
+  "title": "Architecture target and delta report",
+  "description": "The one definition of the architecture target report (<epic work>/architecture/target.json, written from archstate.write_target), its dry-run or seed check file (target-check.json), the delta report (delta-items.json and closure-roots.json, written from archstate.delta_items) and the target names report (archstate.target_names). Validate a document against one $defs entry: TargetResult, DeltaResult or TargetNames. target_contract.py is generated from this file by generate_target_contract.py.",
+  "x-files": {
+    "architectureWork": "architecture",
+    "targetReport": "target.json",
+    "targetCheck": "target-check.json",
+    "deltaItems": "delta-items.json",
+    "closureRoots": "closure-roots.json",
+    "targetFolder": "target",
+    "deltaFolder": "delta",
+    "baselineFile": "baseline.json",
+    "closureFile": "closure.json"
+  },
+  "x-targetRefusalKeys": ["refusals", "subjectRefusals"],
+  "x-targetSummaryKeys": [
+    "ok",
+    "refusals",
+    "subjectRefusals",
+    "subject",
+    "subjectName",
+    "targetDir",
+    "deltaDir",
+    "dryRun",
+    "draftWritten",
+    "architectureChange"
+  ],
+  "x-targetSummaryCountKeys": ["files", "deltaFiles", "warnings"],
+  "x-targetManifestSummaryKeys": ["designChanged", "documentationChanged", "implementationWork", "approvalFiles"],
+  "$defs": {
+    "ArchitectureChange": {
+      "description": "How the target deduplicates its documents: none (future = current, no delta), new (no current set; the target views are the delta), partial (target views are the future set; delta/ holds the change alone).",
+      "type": "string",
+      "enum": ["none", "new", "partial"]
+    },
+    "DeltaItemKind": {
+      "description": "Kind of a delta item that is not a delta-view element: an unsatisfied element of the future set, or an element the delta's work rests on (from closure.json). A delta-view element carries no kind.",
+      "type": "string",
+      "enum": ["implementation-gap", "prerequisite"]
+    },
+    "ElementState": {
+      "description": "Element matrix state of a delta item's element.",
+      "type": "string",
+      "enum": ["unknown", "built", "deployed"]
+    },
+    "TargetSummary": {
+      "description": "What a caller acts on in a target report. The no-architecture-root and seed-refusal branches carry ok and refusals alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "refusals"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "refusals": {"type": "array", "items": {"type": "string"}},
+        "subjectRefusals": {"type": "array", "items": {"type": "string"}},
+        "subject": {"type": "string"},
+        "subjectName": {"type": "string"},
+        "targetDir": {"type": "string"},
+        "deltaDir": {"type": "string"},
+        "dryRun": {"type": "boolean"},
+        "draftWritten": {"type": "boolean"},
+        "architectureChange": {"$ref": "#/$defs/ArchitectureChange"},
+        "files": {"description": "Count of files written.", "type": "integer", "minimum": 0},
+        "deltaFiles": {"description": "Count of delta files written.", "type": "integer", "minimum": 0},
+        "warnings": {"description": "Count of warnings.", "type": "integer", "minimum": 0},
+        "designChanged": {"type": "boolean"},
+        "documentationChanged": {"type": "boolean"},
+        "implementationWork": {"description": "Count of implementation work entries.", "type": "integer", "minimum": 0},
+        "approvalFiles": {"type": "array", "items": {"type": "string"}},
+        "seeded": {"description": "Count of seeded files (seed branch only).", "type": "integer", "minimum": 0}
+      }
+    },
+    "TargetResult": {
+      "description": "The target report: archstate.write_target's result, plus targetHashes when the target was written.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "refusals", "summary"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "refusals": {"type": "array", "items": {"type": "string"}},
+        "summary": {"$ref": "#/$defs/TargetSummary"},
+        "subjectRefusals": {"type": "array", "items": {"type": "string"}},
+        "subject": {"description": "The folder name every later step uses.", "type": "string"},
+        "subjectName": {"description": "The subject as given.", "type": "string"},
+        "targetDir": {"type": "string"},
+        "deltaDir": {"type": "string"},
+        "files": {"type": "array", "items": {"type": "string"}},
+        "deltaFiles": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "dryRun": {"type": "boolean"},
+        "draftWritten": {"type": "boolean"},
+        "architectureChange": {"$ref": "#/$defs/ArchitectureChange"},
+        "note": {"description": "The note archstate.CHANGE_NOTES gives the architectureChange.", "type": "string"},
+        "designChanged": {"type": "boolean"},
+        "documentationChanged": {"type": "boolean"},
+        "implementationWork": {"description": "Count of implementation work entries.", "type": "integer", "minimum": 0},
+        "approvalFiles": {"type": "array", "items": {"type": "string"}},
+        "seeded": {"type": "array", "items": {"type": "string"}},
+        "targetHashes": {
+          "description": "sha256 of every target file by path; present only when ok and neither seed nor dry run.",
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "DeltaView": {
+      "description": "A catalogued view of the delta: its path and its catalog frontmatter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "view_type", "scope", "subject", "shows"],
+      "properties": {
+        "path": {"type": "string"},
+        "view_type": {"type": "string"},
+        "scope": {"type": "string"},
+        "subject": {"type": "string"},
+        "shows": {"type": "array", "items": {"type": "string"}},
+        "lifecycle_state": {"type": "string"},
+        "repository": {"type": ["string", "null"]}
+      }
+    },
+    "DeltaItem": {
+      "description": "One build item: a delta-view element, an implementation gap, or a prerequisite from closure.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "element", "views"],
+      "properties": {
+        "id": {"type": "string"},
+        "element": {"type": "string"},
+        "views": {"type": "array", "items": {"type": "string"}},
+        "kind": {"$ref": "#/$defs/DeltaItemKind"},
+        "state": {"$ref": "#/$defs/ElementState"},
+        "repository": {"type": ["string", "null"]},
+        "baseline": {"type": "string"},
+        "requires": {"description": "Ids of the items needed built first.", "type": "array", "items": {"type": "string"}},
+        "requiredBy": {"description": "Ids of the items that need this one.", "type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string"},
+        "closure": {"description": "Path of the closure.json the item came from.", "type": "string"}
+      }
+    },
+    "DeltaSummary": {
+      "description": "What a caller acts on in a delta report. A refused delta carries ok and refusals alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "refusals"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "refusals": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"description": "Count of warnings.", "type": "integer", "minimum": 0},
+        "views": {"description": "Count of views.", "type": "integer", "minimum": 0},
+        "items": {"description": "Count of items.", "type": "integer", "minimum": 0},
+        "architectureChange": {"$ref": "#/$defs/ArchitectureChange"},
+        "deltaExists": {"type": "boolean"},
+        "baselineValidated": {"type": "boolean"},
+        "implementationWork": {"type": ["integer", "null"], "minimum": 0},
+        "implementationComplete": {"type": "boolean"},
+        "prerequisites": {"type": "integer", "minimum": 0}
+      }
+    },
+    "DeltaResult": {
+      "description": "The delta report: archstate.delta_items's result, saved as delta-items.json or closure-roots.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "refusals", "summary"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "refusals": {"type": "array", "items": {"type": "string"}},
+        "summary": {"$ref": "#/$defs/DeltaSummary"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "deltaDir": {"type": "string"},
+        "deltaExists": {"type": "boolean"},
+        "targetDir": {"type": "string"},
+        "architectureChange": {"$ref": "#/$defs/ArchitectureChange"},
+        "note": {"type": "string"},
+        "views": {"type": "array", "items": {"$ref": "#/$defs/DeltaView"}},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/DeltaItem"}},
+        "baselineValidated": {"type": "boolean"},
+        "implementationWork": {"type": ["integer", "null"], "minimum": 0},
+        "implementationComplete": {"type": "boolean"},
+        "prerequisites": {"type": "integer", "minimum": 0}
+      }
+    },
+    "TargetNamesSummary": {
+      "description": "Counts of the names a target mentions and does not mention.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["named", "unnamed"],
+      "properties": {
+        "named": {"type": "integer", "minimum": 0},
+        "unnamed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "TargetNames": {
+      "description": "archstate.target_names's result: which names a written target's files mention.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetDir", "named", "unnamed", "summary"],
+      "properties": {
+        "targetDir": {"type": "string"},
+        "named": {
+          "description": "Each mentioned name with the files that mention it.",
+          "type": "object",
+          "additionalProperties": {"type": "array", "items": {"type": "string"}}
+        },
+        "unnamed": {"type": "array", "items": {"type": "string"}},
+        "summary": {"$ref": "#/$defs/TargetNamesSummary"}
+      }
+    }
+  }
+}

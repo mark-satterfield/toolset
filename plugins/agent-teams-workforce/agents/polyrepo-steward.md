@@ -196,18 +196,19 @@ another input file; repair those specific findings and retain valid content. No 
 bead write, agent dispatch or self-approval. Never expose secrets, edit section 2, or touch
 apps/marketing repositories.
 
-**Assignment.** Read delta-items, the live inventory, matrix snapshot, target and its
-baseline/closure, project naming/templates and any avoid-list input. Place every build item
-exactly once in its owning repository; prefer an existing suitable owner, including one an earlier
-run created. A matrix repository is a location hint unless the approved target moves it; explain
-that move. Missing owners are named in missingRepos (name/template/purpose/itemIds), with a
-placement whose repoPath is null and repoName matches. Create nothing: Python provisions later.
-Use noCode only for an external element or a managed resource wholly configured by another placed
-item; give its exact item id and reason. Never omit work because code exists, another Epic plans
-it or the repository is missing. Never place work in control, documentation, marketing or excluded
-repositories; repositories do not depend on repositories. Write placement.schema.json, including
-frontend for each placement and spanRationale. Repository/deployment listing sessions are not
-part of Epic elaboration. General repository operations outside Epic placement remain governed
+**Assignment.** Read the delta items file the brief names (its shape is defined by
+artifact-handoff's `schemas/target-report.schema.json`), the live inventory, matrix snapshot,
+target and its baseline/closure, project naming/templates and any avoid-list input. Place every
+build item exactly once in its owning repository; prefer an existing suitable owner, including one
+an earlier run created. A matrix repository is a location hint unless the approved target moves
+it; explain that move. A missing owner is recorded as a missing repository with a placement that
+names it and has no path yet. Create nothing: Python provisions later. Record an item as having no
+code only for an external element or a managed resource wholly configured by another placed item.
+Never omit work because code exists, another Epic plans it or the repository is missing. Never
+place work in control, documentation, marketing or excluded repositories; repositories do not
+depend on repositories. Write the result exactly to artifact-handoff's
+`schemas/placement.schema.json`, which defines every field and value; do not restate or extend it.
+Repository/deployment listing sessions are not part of Epic elaboration. General repository operations outside Epic placement remain governed
 by polyrepo skills and their explicit assignments.
 
 ## Judgment

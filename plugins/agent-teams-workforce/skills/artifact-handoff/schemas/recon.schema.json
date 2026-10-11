@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recon.schema.json",
+  "title": "Per-repository detailing",
+  "description": "The detailing of one repository against the approved architecture delta, saved as recon-<slug>.json in the Epic's working directory. Every delta item placed in the repository gets one status with file:line evidence, its surface, the design source of each ui item, and the upstream dependency changes.",
+  "x-fileTemplate": "recon-{slug}.json",
+  "x-producerRequired": ["items", "dependencyChanges"],
+  "$ref": "#/$defs/ReconDetailing",
+  "$defs": {
+    "ReconStatus": {
+      "description": "How the code on main relates to the delta item.",
+      "enum": ["add", "modify", "remove", "done", "planned-elsewhere"]
+    },
+    "WorkStatus": {
+      "description": "The statuses that make work.",
+      "enum": ["add", "modify", "remove"]
+    },
+    "IdleStatus": {
+      "description": "The statuses that make no work.",
+      "enum": ["done", "planned-elsewhere"]
+    },
+    "Surface": {
+      "description": "The surface the item lives on.",
+      "enum": ["ui", "service", "infra", "data", "unknown"],
+      "default": "unknown"
+    },
+    "DesignSource": {
+      "description": "Where a ui item's design comes from: bundle (a single-artifact cds bundle the owner supplied packages it), cds (it changes design and no bundle packages it, so it is designed with the CDS design system) or none (it changes no design).",
+      "enum": ["bundle", "cds", "none"],
+      "default": "cds"
+    },
+    "ArtifactKind": {
+      "description": "The kind of cds artifact, as a bundle.json names it.",
+      "enum": ["page", "shell", "view"],
+      "default": "page"
+    },
+    "FromAbsent": {
+      "description": "The `from` value of an add item.",
+      "const": "absent"
+    },
+    "ToRemoved": {
+      "description": "The `to` value of a remove item.",
+      "const": "removed"
+    },
+    "ReconDetailing": {
+      "description": "The saved detailing of one repository.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "description": "One entry per delta item placed in this repository.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ReconItem" }
+        },
+        "evidenceSummary": {
+          "description": "A short summary of the evidence read.",
+          "type": "string"
+        },
+        "uiAuthority": {
+          "description": "The design source of each ui item; empty values when the repository holds no UI.",
+          "$ref": "#/$defs/UiAuthority"
+        },
+        "dependencyChanges": {
+          "description": "Whether an upstream contract, shared schema, event, library version or interface the delta assumes has changed in a way that invalidates it.",
+          "$ref": "#/$defs/DependencyChanges"
+        }
+      }
+    },
+    "ReconItem": {
+      "description": "The detailing of one placed delta item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "element", "status", "evidence", "surface"],
+      "properties": {
+        "id": {
+          "description": "The placed delta item id.",
+          "type": "string",
+          "minLength": 1
+        },
+        "element": {
+          "description": "The element the delta shows.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "How the code on main relates to the item.",
+          "$ref": "#/$defs/ReconStatus"
+        },
+        "from": {
+          "description": "What the code holds now; the literal value absent for an add item.",
+          "type": "string"
+        },
+        "to": {
+          "description": "What the code must hold; the literal value removed for a remove item.",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Each entry a file:line on main you read, followed by what it shows; required for every status.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "[^\\s:]+:\\d+" }
+        },
+        "plannedBy": {
+          "description": "The id of the open bead that plans the change; for planned-elsewhere only, null otherwise.",
+          "type": ["string", "null"]
+        },
+        "surface": {
+          "description": "The surface the item lives on.",
+          "$ref": "#/$defs/Surface"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "add" } } },
+          "then": { "properties": { "from": { "$ref": "#/$defs/FromAbsent" } } }
+        },
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "remove" } } },
+          "then": { "properties": { "to": { "$ref": "#/$defs/ToRemoved" } } }
+        },
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "planned-elsewhere" } } },
+          "then": { "required": ["plannedBy"], "properties": { "plannedBy": { "type": "string", "minLength": 1 } } },
+          "else": { "properties": { "plannedBy": { "type": "null" } } }
+        }
+      ]
+    },
+    "UiAuthority": {
+      "description": "The design source of each ui item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uiItems"],
+      "properties": {
+        "uiItems": {
+          "description": "One entry per ui item.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/UiItem" }
+        },
+        "mocksDir": {
+          "description": "The mocks directory consulted, or null.",
+          "type": ["string", "null"]
+        },
+        "artifactsConsulted": {
+          "description": "Every design artifact path opened.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "UiItem": {
+      "description": "The design source of one ui item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "designSource"],
+      "properties": {
+        "item": {
+          "description": "The placed item id.",
+          "type": "string",
+          "minLength": 1
+        },
+        "designSource": {
+          "description": "Where the item's design comes from.",
+          "$ref": "#/$defs/DesignSource"
+        },
+        "reason": {
+          "description": "One sentence: which bundle packages it, or why it is designed with CDS or changes no design.",
+          "type": "string"
+        },
+        "artifact": {
+          "description": "The artifact the item builds; required for bundle and cds, null for none.",
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/UiArtifact" }]
+        },
+        "bundle": {
+          "description": "Bundle only: the bundle directory exactly as depscore.py cds-bundles lists it.",
+          "type": ["string", "null"]
+        },
+        "buildSpec": {
+          "description": "Bundle only: the build-spec.md path exactly as depscore.py cds-bundles lists it.",
+          "type": ["string", "null"]
+        },
+        "sections": {
+          "description": "Bundle only: Section IDs (S1, S2, ...) from the build spec's Sections table; empty means the whole artifact.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["designSource"], "properties": { "designSource": { "const": "none" } } },
+          "then": { "properties": { "artifact": { "type": "null" } } },
+          "else": { "required": ["artifact"], "properties": { "artifact": { "$ref": "#/$defs/UiArtifact" } } }
+        },
+        {
+          "if": { "required": ["designSource"], "properties": { "designSource": { "const": "bundle" } } },
+          "then": { "required": ["bundle", "buildSpec"], "properties": { "bundle": { "type": "string", "minLength": 1 }, "buildSpec": { "type": "string", "minLength": 1 } } },
+          "else": { "properties": { "bundle": { "type": "null" }, "buildSpec": { "type": "null" }, "sections": { "maxItems": 0 } } }
+        }
+      ]
+    },
+    "UiArtifact": {
+      "description": "A cds artifact, as a bundle.json names it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "slug"],
+      "properties": {
+        "kind": {
+          "description": "The artifact kind.",
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "slug": {
+          "description": "Lower-case words joined by hyphens.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      }
+    },
+    "DependencyChanges": {
+      "description": "The upstream dependency changes that bear on the delta.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current"],
+      "properties": {
+        "current": {
+          "description": "True when no upstream change invalidates the delta.",
+          "type": "boolean"
+        },
+        "changeFindings": {
+          "description": "One entry per upstream change that invalidates the delta.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChangeFinding" }
+        },
+        "evidence": {
+          "description": "Under 60 words: what was checked.",
+          "type": "string"
+        }
+      }
+    },
+    "ChangeFinding": {
+      "description": "One upstream change that invalidates the delta.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dependency", "change", "invalidates"],
+      "properties": {
+        "dependency": { "description": "The dependency that changed.", "type": "string" },
+        "change": { "description": "What changed.", "type": "string" },
+        "invalidates": { "description": "What in the delta it invalidates.", "type": "string" }
+      }
+    },
+    "ReconReply": {
+      "description": "What the detailing session returns: no item content.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemCount"],
+      "properties": {
+        "itemCount": { "description": "The number of entries in items.", "type": "integer" },
+        "error": { "description": "What failed, when anything failed.", "type": "string" }
+      }
+    }
+  }
+}

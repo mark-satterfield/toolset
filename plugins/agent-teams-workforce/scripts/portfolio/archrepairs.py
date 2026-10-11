@@ -4,15 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Final, NotRequired, TypedDict
 
 import contracts
+import portfolio_path  # ruff: ignore[unused-import] - Standalone imports need the artifact-handoff contract path.
+from architecture_artifacts import (
+    REPAIR_REVISE,
+    REPAIR_VERIFIED,
+    RepairAnswer,
+    RepairCheck,
+    ReviewResult,
+    WriterResult,
+    parse_review_result,
+    parse_writer_result,
+)
 from contracts import JsonInput, JsonObject, json_object
 from jsonartifact import read_artifact
 from roundcontracts import RoundPlan
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+WRITER_ROLES: Final[tuple[str, ...]] = ("proposer", "diagram")
+"""The coordinator-plan dispatch roles whose round results are writer results; every other role's are reviews."""
 
 
 class HistoricalTeam(TypedDict):
@@ -20,13 +34,6 @@ class HistoricalTeam(TypedDict):
 
     author: str
     results: list[str]
-
-
-class RepairAnswer(TypedDict):
-    """The response to a named architecture repair."""
-
-    repairId: str
-    response: str
 
 
 class RecordedAnswer(TypedDict):
@@ -99,21 +106,13 @@ def _requests(work: Path, previous: list[RepairRequest]) -> dict[str, RepairRequ
     return requests
 
 
-def _review(work: Path, request: RepairRequest, name: str, agent: str, checks: list[JsonObject]) -> None:
-    check: JsonObject
+def _review(work: Path, request: RepairRequest, name: str, agent: str, checks: list[RepairCheck]) -> None:
+    check: RepairCheck
     for check in checks:
-        if isinstance(check, dict) and check.get("repairId") == request["id"] and check.get("evidence"):
-            request["review"] = {**check, "by": agent, "result": name}
-            if check.get("verdict") == "verified":
-                files: list[str] = [
-                    f
-                    for f in check_type(
-                        check.get("files") or [],
-                        list[str],
-                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                    )
-                    if isinstance(f, str) and f.strip()
-                ]
+        if check["repairId"] == request["id"] and check["evidence"]:
+            request["review"] = json_object({**check, "by": agent, "result": name})
+            if check["verdict"] == REPAIR_VERIFIED:
+                files: list[str] = [f for f in check["files"] if f.strip()]
                 readable: list[str] = [f for f in files if _readable(work, [f])]
                 request.pop("bindingError", None)
                 if len(readable) != len(files) or not files:
@@ -129,7 +128,7 @@ def _review(work: Path, request: RepairRequest, name: str, agent: str, checks: l
                     request["files"],
                 )
                 request["status"] = "resolved"
-            elif check.get("verdict") == "revise":
+            elif check["verdict"] == REPAIR_REVISE:
                 request["status"] = "open"
 
 
@@ -138,8 +137,43 @@ class _RepairEvidence:
     work: Path
     historical: HistoricalTeam
     plans: list[RoundPlan]
+    writers: dict[str, WriterResult] = field(default_factory=dict)
+    reviews: dict[str, ReviewResult] = field(default_factory=dict)
+
+    def _writer(self, path: Path) -> WriterResult:
+        """Parse one saved writer result once, against the artifact-handoff writer schema.
+
+        Returns:
+            The validated writer result.
+
+        """
+        key: str = str(path)
+        if key not in self.writers:
+            self.writers[key] = parse_writer_result(path)
+        return self.writers[key]
+
+    def _review(self, path: Path) -> ReviewResult:
+        """Parse one saved review result once, against the artifact-handoff review schema.
+
+        Returns:
+            The validated review result.
+
+        """
+        key: str = str(path)
+        if key not in self.reviews:
+            self.reviews[key] = parse_review_result(path)
+        return self.reviews[key]
 
     def apply(self, request: RepairRequest, name: str) -> None:
+        """Fold one saved round result into one repair request.
+
+        A saved result that is not JSON or breaks its artifact-handoff schema raises the
+        parser's ValueError, which names the file.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+
+        """
         round_name: str
         seq: str
         role: str
@@ -150,23 +184,6 @@ class _RepairEvidence:
         path: Path = Path(name)
         round_name, seq, role, agent = path.stem.split("-", 3)
         n: int = int(round_name[1:])
-        result: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = read_artifact(
-            path,
-            strict=False,
-        )
-        if not isinstance(result, dict):
-            return
-        result = json_object(result)
-        answers: list[RepairAnswer] = check_type(
-            result.get("repairAnswers", []),
-            list[RepairAnswer],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        checks: list[contracts.JsonObject] = check_type(
-            result.get("repairChecks", []),
-            list[JsonObject],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
         assigned: set[str] = {
             d.get("agentType")
             for plan in self.plans
@@ -177,10 +194,9 @@ class _RepairEvidence:
         permitted: set[str] = {request["agentType"], *assigned}
         if name in self.historical.get("results", []):
             permitted.add(self.historical.get("author", ""))
-        if role in {"proposer", "diagram"}:
-            explicit: bool = any(
-                a.get("repairId") == request["id"] and a.get("response") for a in answers if isinstance(a, dict)
-            )
+        if role in WRITER_ROLES:
+            answers: list[RepairAnswer] = self._writer(path).get("repairAnswers", [])
+            explicit: bool = any(a["repairId"] == request["id"] and a["response"] for a in answers)
             legacy: bool = (
                 n > request["decisionRound"]
                 or (n == request["decisionRound"] and path.stat().st_mtime > request.get("decisionTime", float("inf")))
@@ -192,10 +208,10 @@ class _RepairEvidence:
                     "by": agent,
                     "result": name,
                     "legacy": not explicit,
-                    "responses": [a for a in answers if isinstance(a, dict) and a.get("repairId") == request["id"]],
+                    "responses": [a for a in answers if a["repairId"] == request["id"]],
                 }
         elif agent not in {request["agentType"], request.get("answeredBy")}:
-            _review(self.work, request, name, agent, checks)
+            _review(self.work, request, name, agent, self._review(path).get("repairChecks", []))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

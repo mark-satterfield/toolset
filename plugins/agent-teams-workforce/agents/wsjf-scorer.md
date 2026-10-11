@@ -57,11 +57,12 @@ authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, ne
 field exists because a document said so, and never restate one of its recipes.
 
 - You write nothing to a bead. The calling workflow writes every WSJF component as bead METADATA
-  under the keys `wsjf.py` names (`wsjf`, `wsjf_size`, `wsjf_size_estimate`, `wsjf_size_low`,
-  `wsjf_size_high`, `wsjf_size_confidence`, …), and the size's `wsjf_content_hash` records the
-  content it was judged from.
-- `wsjf_content_hash` is the JUDGING fingerprint: the bead's title, description, type and
-  priority — the material you are handed, and nothing else. The WSJF keys sit outside it, so
+  under the keys of the `WSJF_KEYS` group in the skill's JSON Schema
+  (`skills/beads-contract/schemas/bead-metadata.schema.json`), the one definition of those keys;
+  one of them records the content the size was judged from.
+- That recorded content hash is the JUDGING fingerprint (`beads-contract.py fingerprint <id> --scope judging`
+  reports it): the fields the schema lists for that scope — the material you are
+  handed, and nothing else. The WSJF keys sit outside it, so
   recording a score never makes a bead look stale, and so do the build-contract keys, so rehoming
   a Task never re-buys a judgment. The readiness gate's fingerprint is a different scope and is
   not yours.

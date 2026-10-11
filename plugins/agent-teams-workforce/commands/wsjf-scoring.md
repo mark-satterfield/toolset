@@ -22,9 +22,20 @@ Together they re-judge every Epic and Task. It writes.
 
 ## Dispatch
 
+The environment variables read below are named and described by the `pipeline-contracts` skill
+(`${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/SKILL.md`, schema
+`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`). The block reads each name from
+that skill's generated module (`ARCH_PATH_ENV`, `PROJECT_ROOT_ENV`); never type a name from memory.
+
 ```bash
-if [ -z "${ATW_ARCH_PATH}" ]; then
-  echo "REFUSED: ATW_ARCH_PATH is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Set ATW_ARCH_PATH in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
+CONTRACTS="${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/scripts"
+{ read -r ARCH_VAR; read -r ARCH; read -r PROJECT; } < <(PYTHONPATH="$CONTRACTS" python3 -c 'import os, driver_surface_types as d; print(d.ARCH_PATH_ENV); print(os.environ.get(d.ARCH_PATH_ENV, "")); print(os.environ.get(d.PROJECT_ROOT_ENV, ""))')
+if [ -z "${ARCH_VAR}" ]; then
+  echo "REFUSED: the pipeline-contracts skill could not be loaded from ${CONTRACTS}."
+  exit 1
+fi
+if [ -z "${ARCH}" ]; then
+  echo "REFUSED: ${ARCH_VAR} is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Set ${ARCH_VAR} in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"
@@ -32,8 +43,8 @@ RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 echo "REPO=$REPO"
 echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 echo "RUN=$RUN"
-echo "ARCH=${ATW_ARCH_PATH}"
-echo "PROJECT=${ATW_PROJECT_ROOT}"
+echo "ARCH=${ARCH}"
+echo "PROJECT=${PROJECT}"
 ```
 
 When the block prints `REFUSED`, report that line verbatim and stop; dispatch nothing.

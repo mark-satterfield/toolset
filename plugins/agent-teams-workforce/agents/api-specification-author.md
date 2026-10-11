@@ -37,9 +37,11 @@ authorizers, event payloads/envelopes, publishers/consumers, errors and failure 
 from the approved design; do not search code to decide which work can be omitted. Write nonempty
 UTF-8 Markdown with decisionIds frontmatter; cite actual views read and preserve useful provenance.
 If this surface is not applicable, state why in a short document rather than inventing work.
-For a UI-source outcome, write spec-ui.schema.json at the assigned output path using the same
-shared UI contract. Read supplied bundles: bundle when the newest supplied matching kind/slug
-packages the item, cds for design changes otherwise, none for no design change. Retain artifact,
-bundle, buildSpec and section references. For the contract-document outcome use those sources by
-reference, with no invented CSS/tokens; Python appends the normalized UI-source section. Distinct
+For a UI-source outcome, write the file at the assigned output path so that it validates against
+the artifact-handoff skill's `schemas/spec-ui.schema.json`, as the skill's `epic-contracts.md#spec-ui`
+describes. Each `uiItems` entry is the UI item that `schemas/recon.schema.json` `$defs/UiItem`
+defines: its descriptions and the `$defs/DesignSource` and `$defs/ArtifactKind` enums give every
+field and allowed value; an unlisted design source fails the step. For the
+contract-document outcome use those design sources by reference, with no invented CSS/tokens;
+Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.

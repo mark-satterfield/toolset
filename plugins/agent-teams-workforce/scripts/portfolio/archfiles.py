@@ -11,12 +11,18 @@ file, so no file list passes through a model on its way between commands.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# Conformance results and verdicts are generated into the artifact-handoff skill, their one place.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
 import contracts
+from architecture_artifacts import VERDICT_VERIFIED, ConformanceResult, CoverageCheck, parse_conformance_result
 from archstate import snapshot_tree, tree_diff
-from contracts import FileError, IntegrationFiles, IntegrationReview, JsonObject, json_object
+from contracts import FileError, IntegrationFiles, IntegrationReview, json_object
 from jsonartifact import read_artifact
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -211,6 +217,9 @@ def _report_files(
 def review_check(review: Path, *, files: Path, coverage_from: Path) -> IntegrationReview | FileError:
     """Check a saved conformance review against the integration's files and approved coverage.
 
+    The review is read with `parse_conformance_result`; a review that is present but is not JSON
+    or breaks the conformance schema propagates its ValueError instead of being treated as absent.
+
     Args:
         review: The saved review (`conformance-N.json`).
         files: The files file `integration_files` wrote.
@@ -220,25 +229,29 @@ def review_check(review: Path, *, files: Path, coverage_from: Path) -> Integrati
 
     Returns:
         `missed` (touched files not reviewed), `coverageUnverified` (row ids without a verified
-        check with evidence), the review's verdict and its findings count; or `{error}`.
+        check with evidence), the review's verdict and its findings count; or `{error}` when the
+        review, files file or coverage rows are absent.
 
     Raises:
         TypeError: An argument violates the declared input contract.
+        ValueError: The saved review is present but is not JSON or breaks the conformance schema.
 
     """
-    r: contracts.JsonValue
     f: contracts.JsonValue
     saved: contracts.JsonValue
     result: contracts.JsonValue
     cov: contracts.JsonValue
-    findings: contracts.JsonValue
     if not (isinstance(review, Path)) or not (isinstance(files, Path)) or not (isinstance(coverage_from, Path)):
         argument_error: str = "review_check: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    r = _load(review)
-    f = _load(files)
-    if not isinstance(r, dict):
+    if not review.is_file():
         return {"error": f"{review}: no saved review"}
+    try:
+        r: ConformanceResult = parse_conformance_result(review)
+    except ValueError as exc:
+        message: str = f"review_check: saved review breaks the conformance schema: {exc}"
+        raise ValueError(message) from exc
+    f = _load(files)
     if not isinstance(f, dict):
         return {"error": f"{files}: no saved integration files"}
     saved = _load(coverage_from)
@@ -252,13 +265,10 @@ def review_check(review: Path, *, files: Path, coverage_from: Path) -> Integrati
     needed: dict[str, str] = {
         str(row.get("id")): str(row.get("revision") or "") for row in rows if isinstance(row, dict) and row.get("id")
     }
-    reviewed: set[str] = set(_paths(r.get("reviewedFiles")))
-    saved_checks: contracts.JsonValue = r.get("coverageChecks")
-    checks: list[JsonObject] = (
-        [c for c in saved_checks if isinstance(c, dict)] if isinstance(saved_checks, list) else []
-    )
+    reviewed: set[str] = {path.strip() for path in r["reviewedFiles"] if path.strip()}
+    checks: list[CoverageCheck] = r["coverageChecks"]
 
-    def verified(cid: str) -> JsonObject | None:
+    def verified(cid: str) -> CoverageCheck | None:
         """Find the verified check with evidence for one row id.
 
         Returns:
@@ -272,24 +282,16 @@ def review_check(review: Path, *, files: Path, coverage_from: Path) -> Integrati
             argument_error: str = "verified: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
         return next(
-            (
-                json_object(c)
-                for c in checks
-                if c.get("id") == cid
-                and c.get("verdict") == "verified"
-                and isinstance(evidence := c.get("evidence"), str)
-                and evidence.strip()
-            ),
+            (c for c in checks if c["id"] == cid and c["verdict"] == VERDICT_VERIFIED and c["evidence"].strip()),
             None,
         )
 
     unverified: list[str] = sorted(cid for cid in needed if verified(cid) is None)
-    findings = r.get("findings")
     return {
         "missed": [p for p in _paths(f.get("touched")) if p not in reviewed],
         "coverageUnverified": unverified,
-        "conforms": r.get("conforms") is True,
-        "findings": len(findings) if isinstance(findings, list) else 0,
+        "conforms": r["conforms"],
+        "findings": len(r["findings"]),
         "review": str(review),
     }
 

@@ -2,9 +2,10 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-Source: `<plugin>/workflows/repo-scoping.js` (`meta.description`), its call site and replay in
-`<plugin>/workflows/prd-to-spec.js` (`runRepoScoping`, `misplaced`, `readSavedSpan`), agent
-`<plugin>/agents/polyrepo-steward.md`, skill `<plugin>/skills/polyrepo-repo/SKILL.md`, CONTEXT
+Source: the Python flow `<plugin>/orchestrator/flows/repo_scoping.py` (`run`,
+`create_repositories`) with its placement acceptance in `<plugin>/orchestrator/flows/repo_placement.py`
+(`accept_placement`, `forbidden`), its call site in `<plugin>/orchestrator/flows/prd_to_spec.py`
+(`repo_scoping.run`), agent `<plugin>/agents/polyrepo-steward.md`, skill `<plugin>/skills/polyrepo-repo/SKILL.md`, CONTEXT
 sections 6 and 7 (7.10 sets the order of this flow; 7.25 the element status matrix). `<art>` below
 is the Epic's artifact directory, `<control>/.claude/workflow-runs/artifacts/<epic-id>/`
 (`artifactio.working_dir`).
@@ -36,11 +37,21 @@ and the build pipeline's tests decide what already works.
 
 After a successful run:
 
-- Every build item id appears exactly once: in one placement or in `noCode`.
-- No placement names the control repository (`$ATW_CONTROL_REPO`), the repository that holds the
-  architecture (`$ATW_ARCH_PATH` or a parent of it), or a repository under `apps/marketing/`.
+The placement ruling's fields are defined once, by the placement schema
+`<plugin>/skills/artifact-handoff/schemas/placement.schema.json`. Every reader of a placement
+ruling in code parses it through `skills/artifact-handoff/scripts/placement_contract.py`
+(`parse_placement_ruling` and its `KEY_*` constants), including the portfolio readers
+`hierarchy.placed_items` and `beadwrite._no_code`; the driver loads that same module through
+`decisions.placement_contract()` (`decisions.py` in the driver directory `DRIVER_DIR_PARTS` names under the control repository).
+This spec names the schema's parts and
+restates none of them.
+
+- Every build item id appears exactly once: in one placement or in the ruling's no-code list.
+- No placement names the control repository (the `CONTROL_REPO_ENV` variable of the
+  `pipeline-contracts` skill), the repository that holds the architecture (the `ARCH_PATH_ENV`
+  variable of that skill, or a parent of it), or a repository under `apps/marketing/`.
 - Every placement names either an existing repository from the inventory or a missing repository
-  the ruling lists in `missingRepos` with a name and a template.
+  the ruling lists among its missing repositories.
 - Every missing repository exists after part B (created now, or by an earlier run of the same PRD
   and found in the live inventory), and every placement that named it carries its path.
 - The span names at least one repository.
@@ -48,22 +59,22 @@ After a successful run:
   `<art>/repo-scoping.json.meta.json` records its input fingerprints.
 - `<art>/repo-creation.json` holds the result of part B (written also when no repository was
   missing, with an empty list).
-- The flow's result carries `repos` (the span as absolute paths, ordered by first placement),
-  `placements` (with every `repoPath` set), `noCode`, `createdRepos`, `spanRationale`.
+- The flow's result carries `repos` (the span as absolute paths, ordered by first placement), the
+  placement ruling with every placement's repository path filled from part B, and `createdRepos`.
 
 ## 3. Inputs
 
 | Input | Where it comes from |
 |---|---|
 | Epic id | the composite (`epic.key`, the bead id) |
-| PRD path | the composite (`prd.path`, under `$ATW_PRD_DIR`) |
+| PRD path | the composite (`prd.path`, under the directory the `PRD_DIR_ENV` variable of the `pipeline-contracts` skill names) |
 | Build items | `<art>/delta-items.json`, written by `depscore.py arch-delta --delta-dir <deltaDir> --save <art>/delta-items.json` in the composite's step 7 (`prd-to-spec.md`), after its Architecture phase. Item fields used: `id`, `element`, `views`, `kind` (`implementation-gap`, `prerequisite`, or absent for a view item), and for a prerequisite `requiredBy` and `repository` (the repository its element status matrix row names, when the row names one; `architecture.md` section 2 item 10). |
 | Approved target | `targetDir` (`<archPath>/target/<subject>/`), `deltaDir` (`<targetDir>/delta/`, present only for a partial change), `architectureChange` (`partial`, `new`, `none`) and `note`, all from the `arch-delta` result |
 | Architecture records | `<art>/architecture/decision.md`, `<art>/architecture/target.json` |
 | Element status matrix | the rows for the build items' elements: repository, state (`unknown`, `built`, `deployed`), and the Task and commit that last changed the element (CONTEXT 7.25; its storage, row format and matching rule: QUESTIONS.md item 32e). Read only. Seeded once with every repository, the CDK stacks each holds and their expected content, state `unknown` (PLAN S05a); only the build pipeline sets `built` or `deployed`. |
 | Live repository inventory | `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py inventory --json` |
-| Repositories to avoid | the corrective-pass list (section 5, step 6): `{repoPath or repoName, reason, itemIds}` |
-| Paths that never hold placed work | `$ATW_CONTROL_REPO`, `$ATW_ARCH_PATH`, `$SKILLSPOKE_ROOT/apps/marketing/` (the `marketing-*` repositories) |
+| Repositories to avoid | the corrective-pass list (section 5, step 6): each repository (by path, or by name for a missing one) with the reason and the item ids |
+| Paths that never hold placed work | the control repository and the architecture root (the `CONTROL_REPO_ENV` and `ARCH_PATH_ENV` variables of the `pipeline-contracts` skill), `$SKILLSPOKE_ROOT/apps/marketing/` (the `marketing-*` repositories) |
 
 No bead field or metadata key is read. No repository's code is read.
 
@@ -73,10 +84,10 @@ No bead field or metadata key is read. No repository's code is read.
 |---|---|
 | `<art>/repo-scoping.inventory.json` | step 4: the `polyrepo.py inventory --json` result, read by the steward session |
 | `<art>/candidates/repo-scoping.json` | the steward's raw placement result, schema below; validated once by step 6 and not reused on its own |
-| `<art>/repo-scoping.json` | accepted placement ruling. `placements[]: {repoPath (null for a missing repository), repoName, itemIds[], frontend, rationale}`, `missingRepos[]: {name, template, purpose, itemIds[]}`, `noCode[]: {itemId, reason}`, `spanRationale`. Read later by this flow's own reuse step (step 3) and by part B, by `beadwrite._no_code` (for `depscore.py closure-edges`), by `spec-authoring` (the placed items and `frontend` of its repository) and `task-decomposition` (the placed items of its repository; every repository's placements for the items a Task requires), and named as an input of each `spec:<slug>` and `tasks:<slug>` step. |
+| `<art>/repo-scoping.json` | accepted placement ruling, in the shape the placement schema (`<plugin>/skills/artifact-handoff/schemas/placement.schema.json`) defines. Read later by this flow's own reuse step (step 3) and by part B, by `beadwrite._no_code` (for `depscore.py closure-edges`), by `spec-authoring` (the placed items of its repository and whether that placement is a frontend) and `task-decomposition` (the placed items of its repository; every repository's placements for the items a Task requires), and named as an input of each `spec:<slug>` and `tasks:<slug>` step. |
 | `<art>/repo-scoping.json.meta.json` | `artifactio.record(<art>/repo-scoping.json, epic, phase="repo-scoping", inputs=<step 3 inputs>)`: `sha256`, `bytes`, `inputs[]` with each input's hash (the one input-record format of every Epic flow) |
 | `<art>/repo-creation.json` | part B's result: `created[]: {name, repoPath, template, itemIds[], existed}` (`existed` true when an earlier run had created it and the inventory found it), `failures[]: {name, template, itemIds[], error, ownerFact}`. Recorded with `artifactio.record` (inputs: `repo-scoping.json`). |
-| Flow result to the composite | `{ok, repos, placements, noCode, createdRepos, warnings?, artifactPath, creationPath, spanRationale, ledger: {phase: 'repo-scoping', beadId, subject, chosen: ['polyrepo-steward'], mode: 'fixed', repoCount, itemCount, createdRepoCount, ok}}`. `placements` here carry the created repositories' paths; `createdRepos` is `repo-creation.json` `created`. The driver's `decisions.py` (`_scoping`) renders `placements`, `createdRepos`, `noCode` and `spanRationale` from it. |
+| Flow result to the composite | `{ok, repos, createdRepos, warnings?, artifactPath, creationPath, ledger: {phase: 'repo-scoping', beadId, subject, chosen: ['polyrepo-steward'], mode: 'fixed', repoCount, itemCount, createdRepoCount, ok}}` plus the placement ruling's own keys, as the placement schema defines them, with every placement's repository path filled from part B. `createdRepos` is `repo-creation.json` `created`, not part of the placement ruling. The driver's `decisions.py` (`_scoping`) renders the placement ruling (its placements, no-code entries and span rationale, named by the constants `decisions.placement_contract()` loads from the placement contract), and from `createdRepos` only each created repository's name. |
 | New repositories | created by part B with `polyrepo.py create`, locally and on GitHub; the polyrepo tool commits its own manifest, changelog and beads fleet list. |
 
 No bead write and no vault write.
@@ -91,7 +102,7 @@ No bead write and no vault write.
    in the failure record, not a "nothing to build" result.
 2. *(removed)* **No-implementation short cut.** Today, when the `arch-delta` result has
    `baselineValidated`, `implementationComplete`, `implementationWork == 0` and no prerequisite
-   item, every item goes to `noCode` and the span is empty. There is no "nothing to build" outcome
+   item, every item goes to the no-code list and the span is empty. There is no "nothing to build" outcome
    (CONTEXT 7.6): code that already meets the requirements still gets Stories and Tasks, and the
    build pipeline's tests decide that nothing changes. The items are placed like any others.
 3. **Fingerprint the inputs and look for saved work** (deterministic, Python). Inputs: the PRD,
@@ -115,20 +126,19 @@ No bead write and no vault write.
      the steward's own records and the matrix row (an element whose row names a repository goes
      there unless the target moves it);
    - an element with no code in this project (an external system, or a managed service configured
-     in another item's repository) goes in `noCode` with the reason; an element of this PRD is
-     never put in `noCode` because the repository that would hold it is missing or because code
+     in another item's repository) goes in the ruling's no-code list with the reason; an element of
+     this PRD is never put there because the repository that would hold it is missing or because code
      for it may already exist;
    - before naming a missing repository, look in the inventory for one that already serves the
      element, including one an earlier run of this PRD created;
    - name a missing repository with the name, template and purpose the approved target gives, or,
      when the target names none, a name that follows the project's naming convention and the
-     template whose kind matches the element; list it in `missingRepos` and place its items with
-     `repoName` set and `repoPath` null;
+     template whose kind matches the element; list it among the ruling's missing repositories and
+     place its items in it as the placement schema states for a repository that does not exist yet;
    - create nothing and change nothing in any repository (creation is part B);
    - a placement never makes one repository depend on another (CONTEXT 7.10, section 9).
-   Model and effort today: the agent's `sonnet` with the workflow's `effort: 'high'` override (the
-   definition says `medium`). Keep `sonnet`/`high`: a wrong placement propagates into every later
-   step. Runs in parallel with `trd-authoring` (the composite starts
+   Model and effort: `sonnet` with effort `high` (the agent definition says `medium`): a wrong
+   placement propagates into every later step. Runs in parallel with `trd-authoring` (the composite starts
    both after Architecture). The session runs inside the session runner's section 2 guard
    (`driver-contract.md` §8).
 6. **Accept and check the placement** (deterministic, Python). Parse the candidate once, strictly,
@@ -136,8 +146,9 @@ No bead write and no vault write.
    - ids placed twice, ids not placed at all, ids that are not build items (dropped with a warning);
    - placements in a never-placed repository (control repository, architecture repository,
      `apps/marketing/`), including a missing repository whose name is a `marketing-*` name;
-   - placements whose `repoPath` is null and whose `repoName` is not in `missingRepos`, and
-     `missingRepos` entries with no name or no template, or whose name the inventory already holds;
+   - placements in a repository that does not exist and that the ruling does not list among its
+     missing repositories, and missing-repository entries with an empty name or template, or whose
+     name the inventory already holds;
    - items placed elsewhere than the repository their matrix row names;
    - an empty span (no placement names a repository).
    If any of the first two kinds, a never-placed repository, an unlisted or incomplete missing
@@ -151,7 +162,7 @@ No bead write and no vault write.
 ### Part B: creation
 
 8. **Create the missing repositories** (deterministic, Python; runs after step 7, also on a
-   reused ruling). For each `missingRepos` entry, in ruling order:
+   reused ruling). For each of the ruling's missing repositories, in ruling order:
    - look the name up in a fresh `polyrepo.py inventory --json`; when it is there (an earlier,
      interrupted run created it), record it with `existed: true` and its path;
    - otherwise run `polyrepo.py create` with the entry's name and template, and record the path
@@ -161,17 +172,13 @@ No bead write and no vault write.
 9. **Settle the span** (deterministic, Python). Any `failures` entry: an owner fact (for example
    missing GitHub credentials or organisation permission) is returned as `requiredHumanActions`
    (CONTEXT 7.9), and the run stops at stage `repo-creation` with no cause; any other failure
-   fails the run at stage `repo-creation`, cause `other` (recorded failure). Otherwise fill every
-   placement's `repoPath` from `repo-creation.json`, build `repos` in first-placement order,
-   `frontend` defaulting to false, `repoName` defaulting to the path basename, and return the
-   flow result. The composite takes this span as final: it runs no placement check of its own.
+   fails the run at stage `repo-creation`, cause `other` (recorded failure). Otherwise fill the
+   repository path of every placement in a created repository from `repo-creation.json`, build
+   `repos` in first-placement order, and return the flow result. Every placement field the
+   placement schema requires is already present in the accepted ruling; nothing is defaulted. The composite takes this span as final: it runs no placement check of its own.
 
-The relay calls of the current script map as follows: `relayKit.artifactRevision` (jsonartifact.py
-`--source`) → step 3 hashing in Python; `relayKit.authorArtifact` probe and accept (jsonartifact.py
-`--candidate --final`) → step 6 in Python; `relayKit.run ... artifactio.py record` → steps 7 and 8
-called directly; `depscore.py saved-span` and the `misplaced` check (composite) → steps 3 and 6
-of this flow. Repository creation, which the steward did inside its session today, is part B. No
-`workflow-command-runner` session remains.
+Fingerprinting (step 3), acceptance (step 6) and recording (steps 7 and 8) are direct Python
+calls; repository creation is part B. No `workflow-command-runner` session runs in this flow.
 
 ## 6. Checks
 
@@ -180,13 +187,13 @@ of this flow. Repository creation, which the steward did inside its session toda
 - Every item placed exactly once (step 6). Without it an item is dropped or built twice; nothing
   later sees an unplaced item, since spec authoring and Task decomposition only receive placed
   items.
-- No placement in the control repository or the architecture repository (step 6, moved here from
-  the composite's `misplaced`; the composite keeps no copy). Without it Stories and Tasks target
+- No placement in the control repository or the architecture repository (step 6; the composite
+  keeps no copy). Without it Stories and Tasks target
   the pipeline's own repository or the vault; no later step rejects a repository path.
 - No placement under `apps/marketing/`, and no missing repository with a `marketing-*` name (step
   6). Hard limit (CONTEXT 6, 7.10).
-- Every placement in a missing repository names an entry of `missingRepos` with a name and a
-  template (step 6). Without it part B has nothing to create and the items land in no repository;
+- Every placement in a missing repository names one of the ruling's missing repositories, with a
+  non-empty name and template (step 6). Without it part B has nothing to create and the items land in no repository;
   nothing later notices until the build pipeline fails.
 - Candidate parses against the schema (step 6). Without it the Python cannot read the ruling; a
   parse failure is a failed step, not wrong output.
@@ -194,7 +201,7 @@ of this flow. Repository creation, which the steward did inside its session toda
   before the rule existed is replayed into spec authoring and Task decomposition.
 - Section 2 hard limit: the session runner's guard around the steward session
   (`driver-contract.md` §8); the steward holds every tool.
-- An empty span fails (step 6, in `meta.description`, not in today's code): every Epic gets
+- An empty span fails (step 6): every Epic gets
   Stories and Tasks (CONTEXT 7.6); without the check the Epic is marked done with nothing built,
   and nothing later notices.
 - A creation failure stops the run (step 9): the items placed in that repository would otherwise
@@ -203,15 +210,14 @@ of this flow. Repository creation, which the steward did inside its session toda
 **Checks dropped**
 
 - The no-implementation short cut (step 2) and the "empty span is valid" rule: CONTEXT 7.6.
-- The `planned` prerequisite rule (a prerequisite another Epic's open bead plans goes in `noCode`)
+- The `planned` prerequisite rule (a prerequisite another Epic's open bead plans goes in the no-code list)
   and placement by the Closure's `deployedBy`: the Closure no longer produces either (it reads the
   element status matrix, `architecture.md` section 2 item 10). Every element the matrix does not
   show as built is placed and gets Tasks in this Epic; where an open Task of another Epic in the
   same repository overlaps, `task-decomposition` adds a `blocks` edge onto it as well
   (`blockedByExternal`).
 - Unknown item ids: not a failure; ignored with a warning (they change nothing downstream).
-- Silent conversion of unplaced items to `noCode` (current code, after the steward session and in
-  the composite's `readSavedSpan`): replaced by the step 6 corrective pass and then a failure,
+- Silent conversion of unplaced items to the no-code list after the steward session: replaced by the step 6 corrective pass and then a failure,
   because it hid dropped work.
 - The steward's own retry of a failed creation inside its session: creation is part B, a script;
   a failure that is not an owner fact is classified and recorded.
@@ -225,7 +231,7 @@ of this flow. Repository creation, which the steward did inside its session toda
   relay.
 - The `recorded.ok`/`persistErrors` path: `artifactio.record` is a direct call; an exception is a
   failed step with its cause.
-- A check that each existing `repoPath` exists on disk: not added. The inventory is the source of
+- A check that each existing placement's repository path exists on disk: not added. The inventory is the source of
   the paths, and a wrong path fails `spec-authoring` loudly when it records its inputs; no wrong
   output is written.
 

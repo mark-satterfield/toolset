@@ -2,10 +2,39 @@
 
 from __future__ import annotations
 
+import json
+import re
+import sys
 from collections.abc import Mapping, Sequence
-from typing import NotRequired, TypedDict
+from pathlib import Path
+from typing import Final, Literal, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+# The architecture baseline types are generated from the artifact-handoff survey schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+
+# isort: split
+from survey_contract import BaselineCode, BaselineDocument, BaselineEntry, EvidenceRef
+
+__all__ = [
+    "SEAL_DIGEST_KEYS",
+    "SEAL_FORMS",
+    "SEAL_FORM_ADOPTED",
+    "SEAL_FORM_V2",
+    "SEAL_UNREADABLE_WARNING",
+    "SURVEY_SEAL_SUFFIX",
+    "BaselineCode",
+    "BaselineDocument",
+    "BaselineEntry",
+    "EvidenceRef",
+    "FreshnessResult",
+    "SealForm",
+    "SurveySeal",
+    "parse_survey_seal",
+    "read_survey_seal",
+    "survey_seal_path",
+]
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type JsonObject = dict[str, JsonValue]
@@ -47,6 +76,174 @@ class FreshnessResult(TypedDict):
     revision: str
     errors: list[str]
     warnings: list[str]
+
+
+type SealForm = Literal["adopted", "v2"]
+"""A survey seal form: adopted (a legacy seal migrated in place) or v2 (written by run_survey).
+
+A seal with no form is the legacy JavaScript seal, which binds each repository's main^{tree}.
+Neither adopted nor v2 binds a repository tree; for both, the consumer passes the survey
+schema SHA as contextSha.
+"""
+
+SEAL_FORM_ADOPTED: Final[SealForm] = "adopted"
+SEAL_FORM_V2: Final[SealForm] = "v2"
+SEAL_FORMS: Final[frozenset[SealForm]] = frozenset({SEAL_FORM_ADOPTED, SEAL_FORM_V2})
+SEAL_DIGEST_KEYS: Final[tuple[str, str, str]] = ("revision", "surveySha256", "contextSha")
+SURVEY_SEAL_SUFFIX: Final[str] = ".baseline-inputs.json"
+SEAL_UNREADABLE_WARNING: Final[str] = "survey freshness receipt unreadable"
+_SHA256_HEX: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
+
+
+class SurveySeal(TypedDict):
+    """The survey freshness seal saved beside a survey as `<survey>.baseline-inputs.json`.
+
+    revision is the SHA-256 of the binding {files, contextSha, repositories, evidence, schema};
+    surveySha256 is the SHA-256 of the parsed survey JSON. Every digest is 64 lowercase hex
+    characters or empty. inputs are sorted absolute paths; repos are sorted nonblank repository
+    identifiers (evidence repository names, not paths) in every form. Evidence readability is a
+    live result and is never saved.
+    """
+
+    revision: str
+    surveySha256: str
+    contextSha: str
+    inputs: list[str]
+    repos: list[str]
+    form: NotRequired[SealForm]
+
+
+_SEAL_KEYS: Final[frozenset[str]] = frozenset(SurveySeal.__required_keys__ | SurveySeal.__optional_keys__)
+
+
+def survey_seal_path(survey_path: Path) -> Path:
+    """Name the freshness seal saved beside a survey.
+
+    Returns:
+        `<survey name>.baseline-inputs.json` in the survey's directory.
+
+    Raises:
+        TypeError: survey_path is not a Path.
+
+    """
+    if not isinstance(survey_path, Path):
+        message: str = "survey_seal_path requires a Path"
+        raise TypeError(message)
+    return survey_path.with_name(survey_path.name + SURVEY_SEAL_SUFFIX)
+
+
+def _seal_strings(value: object, field: str) -> list[str]:
+    if not isinstance(value, list):
+        message: str = f"survey seal {field} must be a list"
+        raise TypeError(message)
+    members: list[str] = []
+    member: object
+    for member in value:
+        if not isinstance(member, str):
+            message = f"survey seal {field} entries must be strings"
+            raise TypeError(message)
+        members.append(member)
+    if members != sorted(members):
+        message = f"survey seal {field} must be sorted"
+        raise ValueError(message)
+    return members
+
+
+def _seal_form(value: object) -> SealForm | None:
+    if value is None:
+        return None
+    if value == SEAL_FORM_ADOPTED:
+        return SEAL_FORM_ADOPTED
+    if value == SEAL_FORM_V2:
+        return SEAL_FORM_V2
+    message: str = f"unknown survey seal form: {value!r}"
+    raise ValueError(message)
+
+
+def _seal_digest(saved: Mapping[str, object], field: str) -> str:
+    digest_value: object = saved.get(field)
+    if not isinstance(digest_value, str) or (digest_value and not _SHA256_HEX.fullmatch(digest_value)):
+        message: str = f"survey seal requires a SHA-256 string for {field}"
+        raise ValueError(message)
+    return digest_value
+
+
+def parse_survey_seal(value: object) -> SurveySeal:
+    """Validate parsed seal JSON into the survey freshness seal.
+
+    Returns:
+        The validated seal, with form present only when the saved seal names one.
+
+    Raises:
+        TypeError: The seal or one of its lists has the wrong JSON type.
+        ValueError: A key is unknown (evidenceReadable is never saved), a digest is not
+            SHA-256 hex or empty, a path or identifier is invalid, a list is unsorted, or
+            the form is not adopted or v2.
+
+    """
+    if not isinstance(value, dict):
+        message: str = "survey seal must be an object"
+        raise TypeError(message)
+    saved: dict[object, object] = value
+    unknown: list[str] = sorted(str(key) for key in saved if key not in _SEAL_KEYS)
+    if unknown:
+        message = f"survey seal has unknown keys: {', '.join(unknown)}"
+        raise ValueError(message)
+    named: dict[str, object] = {str(key): member for key, member in saved.items()}
+    form: SealForm | None = _seal_form(named.get("form"))
+    if "form" in named and form is None:
+        message = "survey seal form must not be null"
+        raise ValueError(message)
+    revision, survey_sha, context_sha = (_seal_digest(named, field) for field in SEAL_DIGEST_KEYS)
+    inputs: list[str] = _seal_strings(named.get("inputs"), "inputs")
+    repos: list[str] = _seal_strings(named.get("repos"), "repos")
+    if any(not Path(path).is_absolute() for path in inputs):
+        message = "survey seal requires absolute input paths"
+        raise ValueError(message)
+    if any(not repo.strip() for repo in repos):
+        message = "survey seal requires nonempty repository identifiers"
+        raise ValueError(message)
+    seal: SurveySeal = {
+        "revision": revision,
+        "surveySha256": survey_sha,
+        "contextSha": context_sha,
+        "inputs": inputs,
+        "repos": repos,
+    }
+    if form is not None:
+        seal["form"] = form
+    return seal
+
+
+def read_survey_seal(seal_path: Path, warnings: list[str]) -> SurveySeal | None:
+    """Read a survey freshness seal with the contract's read semantics.
+
+    A missing seal is unsealed and returns None with no warning. Content that is not JSON or
+    fails validation appends SEAL_UNREADABLE_WARNING (with its cause) and returns None.
+
+    Returns:
+        The validated seal, or None when the seal is missing or unreadable.
+
+    Raises:
+        TypeError: seal_path is not a Path or warnings is not a list.
+        OSError: Reading the seal failed for a reason other than its absence.
+
+    """
+    if not isinstance(seal_path, Path) or not isinstance(warnings, list):
+        message: str = "read_survey_seal requires a Path and a warnings list"
+        raise TypeError(message)
+    try:
+        text: str = seal_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        failure: str = f"cannot read survey seal {seal_path}: {exc}"
+        raise OSError(exc.errno, failure) from exc
+    try:
+        return parse_survey_seal(json.loads(text))
+    except (ValueError, TypeError) as exc:
+        warnings.append(f"{SEAL_UNREADABLE_WARNING}: {exc}")
+        return None
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -405,43 +602,6 @@ class IntegrationCommit(TypedDict):
     summary: MutationSummary
 
 
-class BaselineDocument(TypedDict):
-    """Normalized citation of an architecture document."""
-
-    path: str
-    version: str
-    lifecycle_state: str
-
-
-class BaselineCode(TypedDict):
-    """Historical implementation evidence retained as assessment context."""
-
-    state: str
-    behaviorEvidenceRefs: list[JsonObject]
-    infrastructureEvidenceRefs: list[JsonObject]
-
-
-class BaselineEntry(TypedDict):
-    """Normalized architecture baseline assessment."""
-
-    id: str
-    requirements: list[str]
-    subjects: list[str]
-    documents: list[BaselineDocument]
-    conflicts: list[JsonValue]
-    awsGuidance: list[JsonObject]
-    suitabilityEvidenceRefs: list[JsonObject]
-    rationale: str
-    current: str
-    target: str
-    code: BaselineCode
-    kind: str
-    designAction: str
-    documentationAction: str
-    disposition: str
-    implementationAction: str
-
-
 class BaselineFacts(TypedDict):
     """Baseline actions derived from the explicit assessment and matrix."""
 
@@ -549,7 +709,6 @@ class Prerequisite(TypedDict):
     evidence: list[str]
     repository: str | None
     requiredBy: list[str]
-    reason: str
     requires: list[str]
 
 

@@ -9,8 +9,10 @@
 # (`polyrepo.py list`) reports them; deprecated and archived repos are not audited.
 #
 # Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
-#   ATW_CONTROL_REPO     required  the root repo; the issue prefix is read from its beads
-#                                  config, and it is excluded from the audit
+#   control repository   required  the variable CONTROL_REPO_ENV names in the pipeline-contracts
+#                                  skill (schemas/driver-surface.schema.json); the root repo:
+#                                  the issue prefix is read from its beads config, and it is
+#                                  excluded from the audit
 #   ATW_BEADS_PORT       optional  the shared Dolt server port (default 3308)
 #
 # Repo→database name mapping: replace '-' with '_' (my-repo -> my_repo).
@@ -28,15 +30,18 @@ fatal() {
   exit 2
 }
 
-: "${ATW_CONTROL_REPO:?ATW_CONTROL_REPO is not set — the root repo that holds the tracker}"
+CONTRACTS_DIR="$(cd "$(dirname "$0")/../../pipeline-contracts/scripts" && pwd)" || fatal "the pipeline-contracts skill scripts directory is missing"
+CONTROL_REPO_VAR="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); from driver_surface_types import CONTROL_REPO_ENV; print(CONTROL_REPO_ENV)' "$CONTRACTS_DIR")" || fatal "could not read CONTROL_REPO_ENV from the pipeline-contracts driver surface"
+CONTROL_REPO="${!CONTROL_REPO_VAR:-}"
+[ -n "$CONTROL_REPO" ] || fatal "$CONTROL_REPO_VAR is not set — the root repo that holds the tracker"
 PORT="${ATW_BEADS_PORT:-3308}"
 POLYREPO="$(cd "$(dirname "$0")/../../polyrepo-repo/scripts" && pwd)/polyrepo.py"
 command -v uv >/dev/null 2>&1 || fatal "uv not on PATH (needed to reach the server)"
-PREFIX="$(cd "$ATW_CONTROL_REPO" && bd config get issue_prefix)" || fatal "could not read issue_prefix from the beads config in $ATW_CONTROL_REPO"
-[ -n "$PREFIX" ] || fatal "the beads config in $ATW_CONTROL_REPO sets no issue_prefix"
+PREFIX="$(cd "$CONTROL_REPO" && bd config get issue_prefix)" || fatal "could not read issue_prefix from the beads config in $CONTROL_REPO"
+[ -n "$PREFIX" ] || fatal "the beads config in $CONTROL_REPO sets no issue_prefix"
 REPOS_JSON="$(uv run --quiet "$POLYREPO" list --json)" || fatal "polyrepo list failed: $REPOS_JSON"
 
-BEADS_REPOS="$REPOS_JSON" BEADS_CONTROL="$ATW_CONTROL_REPO" BEADS_SHARED_PORT="$PORT" \
+BEADS_REPOS="$REPOS_JSON" BEADS_CONTROL="$CONTROL_REPO" BEADS_SHARED_PORT="$PORT" \
 BEADS_PREFIX="$PREFIX" BEADS_JSON="$JSON" \
 uv run --quiet --with pymysql --python 3.14 python - <<'PY'
 import os, re, json, collections, sys, io

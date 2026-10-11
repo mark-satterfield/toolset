@@ -17,8 +17,8 @@ effective views, even for an unchanged capability. An open target's baseline rev
 stale: validate it against current effective views before reuse. Code on main may supply current
 design detail; it never proves built status. No AWS account inventory is required or permitted.
 Cite views by absolute path and unique heading, code by repository, main revision and file:line,
-external guidance by URL and retrieval/version reference. Unused evidenceRef fields are empty
-strings. Reading test source never proves execution. Refresh only changed or insufficient evidence.
+external guidance by URL and retrieval/version reference, each as survey.schema.json
+`$defs/EvidenceRef` defines it. Reading test source never proves execution. Refresh only changed or insufficient evidence.
 
 ## Implementation detail that must be present
 
@@ -35,13 +35,16 @@ views; ownership, authorization, retention, failure behavior and cost unit math 
 ## Coverage and findings
 
 Inventory relevant subjects from requirements and connected contracts independently of existing
-catalog hits: missing views are obligations too. Each coverage row has a stable id, subject,
-scope, MODEL obligation, sources, view paths (including absent paths), status, action, reason,
-evidenceRefs, disposition and dispositionReason. Preserve IDs across rounds. After authoring,
-Present and sufficient is appropriate only with evidence; Not yet applicable pairs with
-not-applicable. Unknown obligations use unresolved. Unchanged and not-applicable need concrete
-reasons. Mark unrelated-debt only with evidence it affects neither this change nor dependencies;
-retain its honest status and summarize it. Independent verification makes it nonblocking.
+catalog hits: missing views are obligations too. Each coverage row is an artifact-handoff
+survey.schema.json `$defs/CoverageRow`; that schema defines its fields, its status, action and
+disposition values, and the rules pairing them. Keep each row's id stable across rounds, name
+its MODEL obligation, and list absent view paths too. After authoring, a status claiming the
+obligation is sufficiently covered needs evidence; an obligation whose coverage cannot yet be
+determined takes the action the schema provides for that case; an action that leaves views as they are, or
+marks them inapplicable, needs a concrete reason. Give a row the `$defs/CoverageDisposition`
+value for unrelated historical debt only with evidence it affects neither this change nor its
+dependencies; retain its honest status and summarize it. Independent verification makes it
+nonblocking.
 
 Reviewers check assigned rows independently and return id/verdict/evidence for each, plus claim
 findings and resolutions. A missing obligation can be a finding without a prior author claim.
@@ -67,8 +70,9 @@ only the maintainer integrates approved changes into canonical arc42. Python pro
 
 ## Sequencing and reconciliation
 
-Read your own entry in the supplied round plan by agentType. It supplies task, files, answers,
-claimIds, claimFiles, coverageIds and repairIds. Writers run in plan order before any reviewer;
+Read your own dispatch entry in the supplied round plan. The plan's fields and allowed values are
+defined only in `skills/artifact-handoff/schemas/coordinator-plan.schema.json`; read them there.
+Writers run in plan order before any reviewer;
 the last writer reconciles connected views across the round's owned files. There is no designOwner
 field or permanent lead author. Resolve cross-view contract contradictions within that scope.
 Return claims, coverage and explicit fixed/disputed answers with evidence. Reviewers run afterward

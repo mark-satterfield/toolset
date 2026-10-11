@@ -31,7 +31,8 @@ Never expose secrets, edit section 2, or touch apps/marketing repositories.
 
 ## Assignment
 
-Read the PRD, survey, approved target/delta, delta-items, decision and architecture. Read section
+Read the PRD, survey, approved target/delta, the delta items file the brief names (its shape is
+defined by artifact-handoff's `schemas/target-report.schema.json`), decision and architecture. Read section
 2 and section 4 README fully, every change view and affected target/effective scope, applicable
 section 8 concepts, and overlapping open targets. The TRD's two sources are product requirements
 needing technical elaboration and architecture obligations on the elements in this work. A

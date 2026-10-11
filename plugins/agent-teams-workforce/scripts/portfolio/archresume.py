@@ -26,15 +26,31 @@ from typing import NotRequired, TypedDict
 import archcoverage
 import archrepairs
 import contracts
+import portfolio_path  # ruff: ignore[unused-import] - imported for its sys.path side effect before the from-imports below
 import roundcontracts
 from archbaseline import baseline_facts
-from archcoverage import CoverageSummary, coverage_facts
-from archevidence import digest, evidence_state, view_bindings, view_content
+from archcoverage import CoverageSummary, RoundCoverage, coverage_facts
+from archevidence import digest, evidence_state, load_repository_paths, view_bindings, view_content
+from architecture_artifacts import (
+    RESOLUTION_ACCEPTED,
+    RESOLUTION_REJECTED,
+    RESPONSE_DISPUTED,
+    VERDICT_VERIFIED,
+    ConformanceResult,
+    FindingAnswer,
+    ReviewResult,
+    WriterClaim,
+    WriterResult,
+    parse_conformance_result,
+    parse_review_result,
+    parse_writer_result,
+)
 from archrepairs import HistoricalTeam, RepairRequest, repair_facts
 from archrounds import RoundInputs, compact_plan, round_facts, save_ledger, set_aside
 from contracts import BaselineFacts, Claim, Finding, JsonObject, JsonValue, Resolution, json_object
 from jsonartifact import LENIENT_READS, read_artifact
 from roundcontracts import CompactPlan, RoundPlan
+from survey_contract import SURVEY_FILE, BaselineEntry, Survey, SurveyContractError, parse_survey
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 
@@ -202,7 +218,7 @@ def _saved_files(work: Path) -> list[Path]:
     fixed: list[Path] = [
         work / name
         for name in (
-            "survey.json",
+            SURVEY_FILE,
             LEDGER_NAME,
             "decision.json",
             "architecture-update.json",
@@ -352,11 +368,12 @@ class RoundSource:
 class Ledger:
     """The claims and findings of the rounds, folded in round order."""
 
-    def __init__(self, assign: dict[str, str]) -> None:
+    def __init__(self, assign: dict[str, str], *, repository_paths: dict[str, str] | None = None) -> None:
         """Start an empty ledger.
 
         Args:
             assign: Owners the coordinator assigned to findings that had none.
+            repository_paths: Named checkout paths from the saved repository menu.
 
         Raises:
             TypeError: The input violates the declared contract.
@@ -367,6 +384,7 @@ class Ledger:
         ):
             message: str = "__init__ requires its declared assign input type"
             raise TypeError(message)
+        self.repository_paths: dict[str, str] = repository_paths or {}
         self.assign: dict[str, str] = assign
         self.claims: list[Claim] = []
         self.findings: list[Finding] = []
@@ -374,62 +392,66 @@ class Ledger:
         self.reviewers: list[str] = []
         self.proposer_claims: dict[str, int] = {}
         self.files: list[str] = []
+        self.coverage: list[RoundCoverage] = []
         self.saved: list[str] = []
         self.last: int = 0
         self.resolutions: list[Resolution] = []
 
+    def _record(self, source: RoundSource) -> None:
+        """Record that one round result was folded.
+
+        Raises:
+            TypeError: The source has the wrong type.
+
+        """
+        if not isinstance(source, RoundSource):
+            message: str = "Ledger requires a RoundSource"
+            raise TypeError(message)
+        self.files.append(source.file)
+        self.saved.append(f"r{source.round}-{source.sequence}")
+        self.last = max(self.last, source.round)
+
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def absorb(self, source: RoundSource, result: JsonObject) -> None:
-        """Fold one validated round result into the ledger.
+    def absorb_review(self, source: RoundSource, result: ReviewResult) -> None:
+        """Fold one review result, parsed with the artifact-handoff review schema, into the ledger.
 
         Raises:
             TypeError: The source or result has the wrong type.
 
         """
         k: int
-        x: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-        if not isinstance(source, RoundSource) or not isinstance(result, dict):
-            message: str = "Ledger.absorb requires a round source and JSON object"
+        if not isinstance(result, dict):
+            message: str = "Ledger.absorb_review requires a parsed review result"
             raise TypeError(message)
-        self.files.append(source.file)
-        self.saved.append(f"r{source.round}-{source.sequence}")
-        self.last = max(self.last, source.round)
-        if source.role in WRITER_ROLES:
-            self._absorb_writer(source, result)
-            return
+        self._record(source)
+        self.coverage.append(RoundCoverage(source.agent, checks=tuple(result["coverageChecks"])))
         if source.agent not in self.reviewers:
             self.reviewers.append(source.agent)
         self.resolutions.extend(
-            check_type(
-                {**r, "by": source.agent, "round": source.round},
-                Resolution,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-            for r in check_type(
-                result.get("resolutions", []),
-                list[JsonObject],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-            if isinstance(r, dict)
+            {
+                "findingId": r["findingId"],
+                "evidence": r["evidence"],
+                "verdict": r["verdict"],
+                "by": source.agent,
+                "round": source.round,
+            }
+            for r in result["resolutions"]
         )
-        raw: JsonValue = result.get("findings")
-        for k, x in enumerate(raw if isinstance(raw, list) else []):
-            if not isinstance(x, dict) or not _text(x.get("verdict")):
-                continue
-            claim_id: str = _text(x.get("claimId"))
+        for k, x in enumerate(result["findings"]):
+            claim_id: str = x["claimId"].strip()
             claim: contracts.Claim | None = (
                 next((c for c in self.claims if c["id"] == claim_id), None) if claim_id else None
             )
-            if claim and source.agent != claim["by"] and _text(x.get("evidence")):
+            if claim and source.agent != claim["by"] and x["evidence"].strip():
                 claim["verdicts"].append(
                     {
                         "by": source.agent,
-                        "verdict": _text(x.get("verdict")),
+                        "verdict": x["verdict"],
                         "revision": claim["revision"],
-                        "evidence": check_type(x.get("evidence") or "", str),
+                        "evidence": x["evidence"],
                     },
                 )
-            named: str = _text(x.get("owner"))
+            named: str = x["owner"].strip()
             owner: str = claim["by"] if claim else named if named in self.writers else ""
             fid: str = f"F{source.round}.{source.sequence}.{k + 1}"
             self.findings.append(
@@ -439,110 +461,109 @@ class Ledger:
                     "by": source.agent,
                     "claimId": claim["id"] if claim else "",
                     "claimRevision": claim["revision"] if claim else "",
-                    "claim": check_type(x.get("claim") or "", str),
-                    "file": check_type(x.get("file") or "", str),
-                    "verdict": _text(x.get("verdict")),
-                    "evidence": check_type(x.get("evidence") or "", str),
+                    "claim": x["claim"],
+                    "file": x["file"],
+                    "verdict": x["verdict"],
+                    "evidence": x["evidence"],
                     "owner": self.assign.get(fid) or owner,
                     "answer": None,
                 },
             )
 
-    def _absorb_writer(self, source: RoundSource, result: JsonObject) -> None:
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def absorb_writer(self, source: RoundSource, result: WriterResult) -> None:
+        """Fold one writer result, parsed with the artifact-handoff writer schema, into the ledger.
+
+        Raises:
+            TypeError: The source or result has the wrong type.
+
+        """
+        k: int
+        c: WriterClaim
+        if not isinstance(result, dict):
+            message: str = "Ledger.absorb_writer requires a parsed writer result"
+            raise TypeError(message)
+        self._record(source)
+        self.coverage.append(RoundCoverage(source.agent, rows=tuple(result["coverage"])))
+        if source.agent not in self.writers:
+            self.writers.append(source.agent)
+        stated: int = 0
+        for k, c in enumerate(result["claims"]):
+            if c["claim"].strip():
+                stated += 1
+                self._absorb_claim(source, k, c)
+        if source.role == "proposer":
+            self.proposer_claims[source.agent] = self.proposer_claims.get(source.agent, 0) + stated
+        self._answers(source, result["answers"])
+
+    def _absorb_claim(self, source: RoundSource, k: int, c: WriterClaim) -> None:
+        """Fold one stated writer claim into the ledger, superseding the claims it names."""
         evidence: list[JsonObject]
         errors: list[str]
         superseded: str
-        k: int
-        c: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-        if source.agent not in self.writers:
-            self.writers.append(source.agent)
-        raw: JsonValue = result.get(
-            "claims",
+        cid: str = c["claimId"].strip() or f"C{source.round}.{source.sequence}.{k + 1}"
+        old: contracts.Claim | None = next((x for x in self.claims if x["id"] == cid), None)
+        if c["claimId"] and not old:
+            cid = f"C{source.round}.{source.sequence}.{k + 1}"
+            old = next((x for x in self.claims if x["id"] == cid), None)
+        refs: list[contracts.JsonObject] = [json_object(ref) for ref in c["evidenceRefs"]]
+        evidence, errors = evidence_state(refs, repository_paths=self.repository_paths)
+        file: str = c["file"]
+        view: str = str(Path(self.files[-1]).parent.parent / "draft" / file) if file else ""
+        views: list[str] = [view] if view else []
+        state: dict[str, str] = view_bindings(views, refs)
+        revision: str = digest(
+            {
+                "claim": c["claim"],
+                "citation": c["citation"],
+                "evidence": evidence,
+                "views": state,
+            },
         )
-        stated: int = 0
-        for k, c in enumerate(raw if isinstance(raw, list) else []):
-            if isinstance(c, dict) and _text(c.get("claim")):
-                stated += 1
-                cid: str = _text(c.get("claimId")) or f"C{source.round}.{source.sequence}.{k + 1}"
-                old: contracts.Claim | None = next((x for x in self.claims if x["id"] == cid), None)
-                if c.get("claimId") and not old:
-                    cid = f"C{source.round}.{source.sequence}.{k + 1}"
-                    old = next((x for x in self.claims if x["id"] == cid), None)
-                refs: list[contracts.JsonObject] = check_type(
-                    c.get("evidenceRefs", []),
-                    list[JsonObject],
-                    collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                )
-                evidence, errors = evidence_state(refs)
-                file: str = check_type(c.get("file") or "", str)
-                view: str = str(Path(self.files[-1]).parent.parent / "draft" / file) if file else ""
-                views: list[str] = [view] if view else []
-                state: dict[str, str] = view_bindings(views, refs)
-                revision: str = digest(
-                    {
-                        "claim": check_type(c.get("claim"), str),
-                        "citation": c.get("citation"),
-                        "evidence": evidence,
-                        "views": state,
-                    },
-                )
-                fresh: Claim = {
-                    "id": cid,
-                    "round": source.round,
-                    "by": source.agent,
-                    "claim": check_type(c.get("claim"), str),
-                    "file": file,
-                    "citation": check_type(c.get("citation") or "", str),
-                    "evidenceRefs": refs,
-                    "evidenceState": evidence,
-                    "evidenceErrors": errors,
-                    "views": views,
-                    "viewState": state,
-                    "revision": revision,
-                    "active": True,
-                    "legacy": "claimId" not in c,
-                    "verdicts": [],
-                    "history": [],
-                }
-                if old:
-                    fresh["history"] = old["history"] + [
-                        json_object({k: v for k, v in old.items() if k != "history"}),
-                    ]
-                    if old.get("claim") == c.get("claim"):
-                        fresh["verdicts"] = old["verdicts"]
-                    self.claims[self.claims.index(old)] = fresh
-                else:
-                    self.claims.append(fresh)
-                for superseded in check_type(
-                    c.get("supersedes", []),
-                    list[str],
-                    collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                ):
-                    target: contracts.Claim | None = next(
-                        (x for x in self.claims if x["id"] == superseded),
-                        None,
-                    )
-                    if not target or target["id"] == cid:
-                        continue
-                    target["active"] = False
-                    target["supersededBy"] = cid
+        fresh: Claim = {
+            "id": cid,
+            "round": source.round,
+            "by": source.agent,
+            "claim": c["claim"],
+            "file": file,
+            "citation": c["citation"],
+            "evidenceRefs": refs,
+            "evidenceState": evidence,
+            "evidenceErrors": errors,
+            "views": views,
+            "viewState": state,
+            "revision": revision,
+            "active": True,
+            "legacy": False,
+            "verdicts": [],
+            "history": [],
+        }
+        if old:
+            fresh["history"] = old["history"] + [
+                json_object({key: v for key, v in old.items() if key != "history"}),
+            ]
+            if old["claim"] == c["claim"]:
+                fresh["verdicts"] = old["verdicts"]
+            self.claims[self.claims.index(old)] = fresh
+        else:
+            self.claims.append(fresh)
+        for superseded in c["supersedes"]:
+            target: contracts.Claim | None = next(
+                (x for x in self.claims if x["id"] == superseded),
+                None,
+            )
+            if not target or target["id"] == cid:
+                continue
+            target["active"] = False
+            target["supersededBy"] = cid
 
-        if source.role == "proposer":
-            self.proposer_claims[source.agent] = self.proposer_claims.get(source.agent, 0) + stated
-        self._answers(source, result)
-
-    def _answers(self, source: RoundSource, result: JsonObject) -> None:
-        ans: bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
+    def _answers(self, source: RoundSource, answers: list[FindingAnswer]) -> None:
+        ans: FindingAnswer
         n: int = source.round
         agent: str = source.agent
-        answers: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = result.get(
-            "answers",
-        )
-        for ans in answers if isinstance(answers, list) else []:
-            if not isinstance(ans, dict):
-                continue
+        for ans in answers:
             f: contracts.Finding | None = next(
-                (x for x in self.findings if x["id"] == ans.get("findingId")),
+                (x for x in self.findings if x["id"] == ans["findingId"]),
                 None,
             )
             if not f or (f["owner"] and f["owner"] != agent):
@@ -550,8 +571,8 @@ class Ledger:
             f["owner"] = agent
             f["answer"] = {
                 "round": n,
-                "response": check_type(ans.get("response"), str),
-                "evidence": check_type(ans.get("evidence") or "", str),
+                "response": ans["response"],
+                "evidence": ans["evidence"],
             }
 
 
@@ -566,13 +587,16 @@ def _rounds(work: Path, roles: dict[str, str], assign: dict[str, str]) -> Ledger
     Returns:
         The ledger.
 
+    Raises:
+        ResumeError: A saved round result breaks its artifact-handoff schema.
+
     """
     p: Path
     n: int
     seq: int
     role: str
     agent: str
-    ledger: Ledger = Ledger(assign)
+    ledger: Ledger = Ledger(assign, repository_paths=load_repository_paths(work))
     folder: Path = work / "rounds"
     found: list[tuple[int, int, str, str, Path]] = []
     for p in folder.iterdir() if folder.is_dir() else []:
@@ -580,9 +604,15 @@ def _rounds(work: Path, roles: dict[str, str], assign: dict[str, str]) -> Ledger
         if p.is_file() and m and roles.get(m.group(4)) == m.group(3):
             found.append((int(m.group(1)), int(m.group(2)), m.group(3), m.group(4), p))
     for n, seq, role, agent, p in sorted(found):
-        payload: JsonValue = _load(p)
-        if isinstance(payload, dict):
-            ledger.absorb(RoundSource(n, seq, role, agent, str(p)), payload)
+        source: RoundSource = RoundSource(n, seq, role, agent, str(p))
+        try:
+            if role in WRITER_ROLES:
+                ledger.absorb_writer(source, parse_writer_result(p))
+            else:
+                ledger.absorb_review(source, parse_review_result(p))
+        except (OSError, ValueError) as exc:
+            message: str = f"round result {p}: {exc}"
+            raise ResumeError(message) from exc
     return ledger
 
 
@@ -693,29 +723,18 @@ def _integration(work: Path) -> IntegrationFacts:
     last: ReviewFacts | None = None
     if reviews:
         n, p = reviews[-1]
-        r: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = _load(p)
-        if not isinstance(r, dict):
-            message = f"{p}: not a JSON object"
-            raise ResumeError(message)
+        try:
+            r: ConformanceResult = parse_conformance_result(p)
+        except (OSError, ValueError) as exc:
+            message = f"conformance review {p}: {exc}"
+            raise ResumeError(message) from exc
         last = {
             "n": n,
             "path": str(p),
-            "conforms": r.get("conforms") is True,
-            "coverageChecks": len(
-                check_type(
-                    r.get("coverageChecks", []),
-                    list[JsonValue],
-                    collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                ),
-            ),
-            "reviewedFiles": len(_paths(r.get("reviewedFiles"))),
-            "findings": len(
-                check_type(
-                    r.get("findings", []),
-                    list[JsonValue],
-                    collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                ),
-            ),
+            "conforms": r["conforms"],
+            "coverageChecks": len(r["coverageChecks"]),
+            "reviewedFiles": len([f for f in r["reviewedFiles"] if f.strip()]),
+            "findings": len(r["findings"]),
         }
     return {
         "update": update,
@@ -741,7 +760,7 @@ def _baseline_out(baseline: BaselineFacts) -> JsonObject:
 
     """
     scope: set[str] = set(baseline["designWork"]) | set(baseline["docWork"]) | set(baseline["unknowns"])
-    entries: list[contracts.BaselineEntry] = [e for e in baseline["entries"] if e["id"] in scope]
+    entries: list[BaselineEntry] = [e for e in baseline["entries"] if e["id"] in scope]
     return json_object(
         {k: v for k, v in baseline.items() if k != "entries"}
         | {
@@ -786,29 +805,35 @@ class ResumeOptions:
         check_type(self.matrix_snapshot, JsonObject | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-def _saved_survey(work: Path) -> tuple[JsonObject, SurveyFacts | None]:
+def _saved_survey(work: Path, warnings: list[str]) -> tuple[JsonObject, SurveyFacts | None]:
     """Read the current saved survey projection.
+
+    Args:
+        work: The architecture working directory.
+        warnings: The resume warnings; a survey that breaks its contract is named here.
 
     Returns:
         The survey payload and its compact saved-state facts.
 
     """
-    survey: SurveyFacts | None = None
-    s: JsonObject = {}
-    sj: Path = work / "survey.json"
-    if sj.is_file():
-        s = json_object(_load(sj))
-        caps: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = s.get(
-            "capabilities",
-        )
-        survey = {
-            "saved": bool(_text(s.get("subject"))),
-            "readable": (work / "survey.md").is_file(),
-            "subject": _text(s.get("subject")),
-            "capabilities": len(caps) if isinstance(caps, list) else 0,
-            "coverageSaved": bool(s.get("coverage")),
-        }
-    return s, survey
+    sj: Path = work / SURVEY_FILE
+    if not sj.is_file():
+        return {}, None
+    raw: JsonValue = _load(sj)
+    readable: bool = (work / "survey.md").is_file()
+    try:
+        saved: Survey = parse_survey(raw)
+    except SurveyContractError as exc:
+        warnings.append(f"{sj} breaks the survey contract and is treated as not saved: {exc}")
+        return {}, {"saved": False, "readable": readable, "subject": "", "capabilities": 0, "coverageSaved": False}
+    facts: SurveyFacts = {
+        "saved": bool(saved["subject"]),
+        "readable": readable,
+        "subject": saved["subject"],
+        "capabilities": len(saved["capabilities"]),
+        "coverageSaved": bool(saved["coverage"]),
+    }
+    return json_object(raw), facts
 
 
 def _historical_team(previous: JsonObject, work: Path) -> HistoricalTeam:
@@ -871,7 +896,10 @@ def _finding_state(previous: JsonObject, ledger: Ledger, work: Path) -> tuple[li
                 and r["by"] != finding["owner"]
                 and finding["answer"]
                 and r["round"] >= finding["answer"]["round"]
-                and (finding["answer"].get("response") == "disputed" or current_revision != finding["initialRevision"])
+                and (
+                    finding["answer"].get("response") == RESPONSE_DISPUTED
+                    or current_revision != finding["initialRevision"]
+                )
             ),
             None,
         )
@@ -881,10 +909,12 @@ def _finding_state(previous: JsonObject, ledger: Ledger, work: Path) -> tuple[li
             "verdict": f["verdict"],
             "owner": f["owner"],
             "file": f["file"],
-            "answered": bool(f["answer"]) and not (f["resolution"] and f["resolution"].get("verdict") == "rejected"),
+            "answered": bool(f["answer"])
+            and not (f["resolution"] and f["resolution"].get("verdict") == RESOLUTION_REJECTED),
         }
         for f in ledger.findings
-        if f["verdict"] != "verified" and not (f["resolution"] and f["resolution"].get("verdict") == "accepted")
+        if f["verdict"] != VERDICT_VERIFIED
+        and not (f["resolution"] and f["resolution"].get("verdict") == RESOLUTION_ACCEPTED)
     ]
     unreviewed: dict[str, int] = {}
     for c in ledger.claims:
@@ -911,7 +941,7 @@ def _resume_inputs(work: Path, options: ResumeOptions) -> _ResumeInputs:
     roles: dict[str, str] = parse_roster(options.roster)
     LENIENT_READS.clear()
     warnings: list[str] = sweep_unreadable(work)
-    s, survey = _saved_survey(work)
+    s, survey = _saved_survey(work, warnings)
     ledger_path: Path = work / LEDGER_NAME
     previous: dict[str, contracts.JsonValue] = json_object(_load(ledger_path)) if ledger_path.is_file() else {}
     historical: HistoricalTeam = _historical_team(previous, work)
@@ -954,7 +984,11 @@ def resume_facts(work_dir: str, options: ResumeOptions) -> ResumeFacts:
     work: Path = Path(work_dir)
     inputs: _ResumeInputs = _resume_inputs(work, options)
     ledger_path: Path = work / LEDGER_NAME
-    coverage, coverage_summary = coverage_facts(inputs.raw_survey, inputs.ledger.files)
+    coverage, coverage_summary = coverage_facts(
+        parse_survey(inputs.raw_survey) if inputs.raw_survey else None,
+        inputs.ledger.coverage,
+        repository_paths=inputs.ledger.repository_paths,
+    )
     rounds: roundcontracts.RoundFacts = round_facts(
         work,
         RoundInputs(
@@ -971,12 +1005,16 @@ def resume_facts(work_dir: str, options: ResumeOptions) -> ResumeFacts:
             if options.plan
             else None,
             roles=inputs.roles,
-            coverage=coverage["coverage"],
+            coverage=[{"id": row["id"], "revision": row["revision"]} for row in coverage["coverage"]],
         ),
         inputs.ledger,
     )
     open_findings, unreviewed = _finding_state(inputs.previous, inputs.ledger, work)
-    baseline: contracts.BaselineFacts = baseline_facts(inputs.raw_survey, options.matrix_snapshot)
+    baseline: contracts.BaselineFacts = baseline_facts(
+        inputs.raw_survey,
+        options.matrix_snapshot,
+        repository_paths=inputs.ledger.repository_paths,
+    )
     # Bind approval to the assessed baseline and claims; per-row checks stay reusable.
     coverage_summary["revision"] = digest(
         {

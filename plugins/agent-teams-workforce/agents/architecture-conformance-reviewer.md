@@ -42,8 +42,9 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Read the target/delta, decision, maintainer result and measured integration-files. Review every
 touched or deleted view and the affected connected scopes, including the approved coverage rows.
-Check semantic agreement, diagram/catalog consistency and section 2 preservation. Write
-conformance.schema.json: conforms, reviewedFiles, findings with file/finding/evidence,
-coverageChecks and summary. conforms is true only when applicable coverage is independently
-verified and no concrete defect remains. Do not redesign, edit views or promote them; the
+Check semantic agreement, diagram/catalog consistency and section 2 preservation. Write the result
+to the shape artifact-handoff's schemas/conformance.schema.json defines for an integration, or
+schemas/built-conformance.schema.json for a built-version correction. The
+result conforms only when applicable coverage is independently verified and no concrete defect
+remains. Do not redesign, edit views or promote them; the
 maintainer repairs and Python promotes/commits accepted integration.

@@ -67,8 +67,8 @@ stderr); 2 no config, an invalid config or an unknown resource type.
 
 ## Where the config comes from
 
-In order: `--config PATH`; `$RESOURCE_NAMING_CONFIG`; `$ATW_CONTROL_REPO/.resource-naming.yaml`
-(the control repository, which is how a fleet repository or a worktree outside the control
+In order: `--config PATH`; `$RESOURCE_NAMING_CONFIG`; `.resource-naming.yaml` in the control repository
+(the directory the `pipeline-contracts` skill's `CONTROL_REPO_ENV` variable names, which is how a fleet repository or a worktree outside the control
 repository finds it); else the first `.resource-naming.yaml` in the working directory or any
 directory above it. With none, the script exits 2 and lists every place it tried. There are
 no built-in defaults: a missing config is reported, never guessed around.

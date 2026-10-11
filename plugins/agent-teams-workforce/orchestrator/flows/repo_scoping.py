@@ -3,20 +3,58 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import jsonschema
-import yaml
+# The driver surface and target report contracts are defined once, in their skills.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+from driver_surface_types import CONTROL_REPO_ENV
+from placement_contract import (
+    KEY_ITEM_IDS,
+    KEY_MISSING_REPOS,
+    KEY_NAME,
+    KEY_NO_CODE,
+    KEY_PLACEMENTS,
+    KEY_PURPOSE,
+    KEY_REPO_NAME,
+    KEY_REPO_PATH,
+    KEY_SPAN_RATIONALE,
+    KEY_TEMPLATE,
+    MissingRepo,
+    Placement,
+    PlacementRuling,
+)
+from target_contract import (
+    DELTA_ITEMS_FILE,
+    KEY_ARCHITECTURE_CHANGE,
+    KEY_DELTA_DIR,
+    KEY_ELEMENT,
+    KEY_ITEMS,
+    KEY_NOTE,
+    KEY_TARGET_DIR,
+    TARGET_REPORT_PARTS,
+    TargetContractError,
+    load_delta_report,
+)
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agents import AgentRunner, strict_json
+from orchestrator.core.agent_context import yaml_loader
+from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
 from orchestrator.core.handback import failure_for
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.matrix import read_snapshot, row_for, snapshot
 from orchestrator.core.models import AgentStep, RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
+from orchestrator.flows.architecture_support import REPO_SCOPING_PHASE
 from orchestrator.flows.repo_placement import PlacementInputs, accept_placement, app_space
+
+if TYPE_CHECKING:
+    from target_contract import DeltaItem, DeltaResult
 
 
 def _objects(value: object) -> list[dict[str, JsonValue]]:
@@ -31,7 +69,7 @@ def inventory(tools: Tools) -> dict[str, JsonValue]:
         The inventory object returned by the repository steward.
 
     """
-    result = tools.polyrepo(["inventory"], stage="repo-scoping")
+    result = tools.polyrepo(["inventory"], stage=REPO_SCOPING_PHASE)
     value = json_object(json.loads(result.stdout))
     _objects(value["repos"])
     return value
@@ -55,9 +93,9 @@ def _preflight(tools: Tools, config: dict[str, JsonValue]) -> str | None:
     return None
 
 
-def _create(missing: dict[str, JsonValue], tools: Tools, config: dict[str, JsonValue]) -> str:
+def _create(missing: MissingRepo, tools: Tools, config: dict[str, JsonValue]) -> str:
     stage = "repo-creation"
-    name = check_type(missing["name"], str)
+    name: str = missing[KEY_NAME]
     result = tools.polyrepo(
         [
             "create",
@@ -65,22 +103,22 @@ def _create(missing: dict[str, JsonValue], tools: Tools, config: dict[str, JsonV
             "--space",
             app_space(name, config),
             "--template",
-            check_type(missing["template"], str),
+            missing[KEY_TEMPLATE],
             "--purpose",
-            check_type(missing["purpose"], str),
+            missing[KEY_PURPOSE],
         ],
         stage=stage,
     )
     value = json_object(json.loads(result.stdout))
     path = check_type(value.get("path"), str | None)
     if not path or not Path(path).is_absolute():
-        raise tools.failure(stage, "other", {"result": value})
+        raise tools.failure(stage, OTHER_CAUSE, {"result": value})
     return path
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def create_repositories(
-    ruling: dict[str, JsonValue],
+    ruling: PlacementRuling,
     tools: Tools,
     config: dict[str, JsonValue],
     work: Path,
@@ -100,8 +138,12 @@ def create_repositories(
     created: list[dict[str, JsonValue]] = []
     failures: list[dict[str, JsonValue]] = []
     preflight_done = False
-    for missing in _objects(ruling["missingRepos"]):
-        facts = {key: missing[key] for key in ("name", "template", "itemIds")}
+    for missing in ruling[KEY_MISSING_REPOS]:
+        facts: dict[str, JsonValue] = {
+            KEY_NAME: missing[KEY_NAME],
+            KEY_TEMPLATE: missing[KEY_TEMPLATE],
+            KEY_ITEM_IDS: list(missing[KEY_ITEM_IDS]),
+        }
         try:
             outcome, preflight_done = _ensure_repository(missing, tools, config, preflight_done=preflight_done)
         except (StepError, ValueError, OSError, KeyError) as exc:
@@ -138,23 +180,28 @@ class _RepositoryScoping:
         self.context, self.store, self.runner, self.tools = context, store, runner, tools
         self.args, self.work = context.args, context.work
         stage = "input"
-        target = self.args.get("targetDir")
+        target = self.args.get(KEY_TARGET_DIR)
         if not target:
-            raise StepError(stage, "other", ("targetDir is required",))
+            raise StepError(stage, OTHER_CAUSE, (f"{KEY_TARGET_DIR} is required",))
         self.target = check_type(target, str)
-        self.items_path = self.work / "delta-items.json"
-        items = _objects(strict_json(self.items_path)["items"])
-        if not items:
-            raise StepError(stage, "other", ("delta-items.json has no build items",))
-        arch = Path(check_type(self.args["archPath"], str)).resolve()
-        self.prd = Path(check_type(json_object(self.args["prd"])["path"], str)).resolve()
-        control = env_path("ATW_CONTROL_REPO")
-        config = json_object(yaml.safe_load((control / ".polyrepo/config.yaml").read_text(encoding="utf-8")))
+        self.items_path = self.work / DELTA_ITEMS_FILE
+        try:
+            delta: DeltaResult = load_delta_report(self.items_path)
+        except (TargetContractError, OSError, json.JSONDecodeError) as exc:
+            raise StepError(stage, OTHER_CAUSE, (f"{DELTA_ITEMS_FILE} is not a delta report: {exc}",)) from exc
+        delta_items: list[DeltaItem] = delta.get(KEY_ITEMS, [])
+        if not delta_items:
+            raise StepError(stage, OTHER_CAUSE, (f"{DELTA_ITEMS_FILE} has no build items",))
+        items: list[dict[str, JsonValue]] = _objects(delta_items)
+        dispatch: DispatchArgumentsContract = dispatch_arguments()
+        arch = Path(check_type(self.args[dispatch.KEY_ARCH_PATH], str)).resolve()
+        self.prd = Path(check_type(json_object(self.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
+        control = env_path(CONTROL_REPO_ENV)
+        config = json_object(yaml_loader().safe_load((control / ".polyrepo/config.yaml").read_text(encoding="utf-8")))
         matrix = matrix_path or snapshot(context, tools)
         matrix_data = read_snapshot(matrix)
-        self.elements = sorted({" ".join(check_type(item["element"], str).split()).casefold() for item in items})
+        self.elements = sorted({" ".join(item[KEY_ELEMENT].split()).casefold() for item in delta_items})
         self.placement = PlacementInputs(
-            schema=runner.plugin / "skills/artifact-handoff/schemas/placement.schema.json",
             items=items,
             inventory=inventory(tools),
             rows={name: row_for(matrix_data, name) for name in self.elements},
@@ -171,23 +218,26 @@ class _RepositoryScoping:
                 (
                     self.prd,
                     self.work / "architecture/decision.md",
-                    self.work / "architecture/target.json",
+                    self.work.joinpath(*TARGET_REPORT_PARTS),
                     self.items_path,
                     self.target,
                 ),
             ),
             binding,
         )
-        if self.args.get("deltaDir"):
-            self.inputs += (check_type(self.args["deltaDir"], str),)
+        if self.args.get(KEY_DELTA_DIR):
+            self.inputs += (check_type(self.args[KEY_DELTA_DIR], str),)
         self.final = self.work / "repo-scoping.json"
         self.warnings: list[str] = []
 
-    def _validate(self, path: Path, *, reused: bool = False) -> dict[str, JsonValue]:
+    def _validate(self, path: Path, *, reused: bool = False) -> PlacementRuling:
         value, self.warnings = accept_placement(path, self.placement, reused=reused)
         return value
 
-    def _author(self, feedback_data: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    def _check_candidate(self, path: Path) -> dict[str, JsonValue]:
+        return json_object(self._validate(path))
+
+    def _author(self, feedback_data: dict[str, JsonValue]) -> PlacementRuling:
         self.store.invalidate((self.final,))
         inventory_path = self.work / "repo-scoping.inventory.json"
         rows_path = self.work / "repo-scoping.matrix.json"
@@ -199,22 +249,22 @@ class _RepositoryScoping:
         write_json(
             facts_path,
             {
-                "architectureChange": self.args.get("architectureChange"),
-                "note": self.args.get("note"),
-                "targetDir": self.target,
-                "deltaDir": self.args.get("deltaDir"),
+                KEY_ARCHITECTURE_CHANGE: self.args.get(KEY_ARCHITECTURE_CHANGE),
+                KEY_NOTE: self.args.get(KEY_NOTE),
+                KEY_TARGET_DIR: self.target,
+                KEY_DELTA_DIR: self.args.get(KEY_DELTA_DIR),
             },
         )
         candidate = self.work / "candidates/repo-scoping.json"
         self.store.invalidate((candidate,))
         self.runner.run(
             AgentStep(
-                stage="repo-scoping",
+                stage=REPO_SCOPING_PHASE,
                 agent="polyrepo-steward",
                 inputs=(*self.inputs, *map(str, (inventory_path, rows_path, feedback, facts_path))),
                 output=candidate,
                 final=None,
-                validate=self._validate,
+                validate=self._check_candidate,
                 outcome="Repository placement ruling for the approved architecture elements.",
                 model="sonnet",
                 effort="high",
@@ -224,15 +274,15 @@ class _RepositoryScoping:
         )
         ruling = self._validate(candidate)
         write_json(self.final, ruling)
-        self.store.accept("repo-scoping", self.inputs, (self.final,))
+        self.store.accept(REPO_SCOPING_PHASE, self.inputs, (self.final,))
         return ruling
 
-    def _ruling(self) -> dict[str, JsonValue]:
+    def _ruling(self) -> PlacementRuling:
         feedback = json_object({"avoid": self.placement.avoid})
         if self.store.reusable(self.inputs, (self.final,)) and not self.placement.avoid:
             try:
                 return self._validate(self.final, reused=True)
-            except (ValueError, OSError, jsonschema.ValidationError) as exc:
+            except (ValueError, OSError) as exc:
                 feedback["errors"] = [str(exc)]
         return self._author(feedback)
 
@@ -256,28 +306,32 @@ class _RepositoryScoping:
                 "requiredHumanActions": [item["error"] for item in failures],
                 "creationPath": str(creation_path),
             })
-        paths = {check_type(repo["name"], str).casefold(): repo["repoPath"] for repo in _objects(creation["created"])}
-        placements = [
-            {**p, "repoPath": p["repoPath"] or paths[check_type(p["repoName"], str).casefold()]}
-            for p in _objects(ruling["placements"])
-        ]
-        ruling["placements"] = list(placements)
+        paths: dict[str, str] = {
+            check_type(repo[KEY_NAME], str).casefold(): check_type(repo[KEY_REPO_PATH], str)
+            for repo in _objects(creation["created"])
+        }
+        placements: list[Placement] = []
+        for placement in ruling[KEY_PLACEMENTS]:
+            placed: Placement = placement.copy()
+            placed[KEY_REPO_PATH] = placement[KEY_REPO_PATH] or paths[placement[KEY_REPO_NAME].casefold()]
+            placements.append(placed)
+        ruling[KEY_PLACEMENTS] = placements
         write_json(self.final, ruling)
-        self.store.accept("repo-scoping", self.inputs, (self.final,))
+        self.store.accept(REPO_SCOPING_PHASE, self.inputs, (self.final,))
         self.store.accept("repo-creation", (str(self.final),), (creation_path,))
-        repos = list(dict.fromkeys(check_type(p["repoPath"], str) for p in placements))
+        repos: list[str] = list(dict.fromkeys(check_type(p[KEY_REPO_PATH], str) for p in placements))
         return json_object({
             "ok": True,
             "repos": repos,
-            "placements": placements,
-            "noCode": ruling["noCode"],
+            KEY_PLACEMENTS: placements,
+            KEY_NO_CODE: ruling[KEY_NO_CODE],
             "createdRepos": creation["created"],
             "warnings": self.warnings,
             "artifactPath": str(self.final),
             "creationPath": str(creation_path),
-            "spanRationale": ruling["spanRationale"],
+            KEY_SPAN_RATIONALE: ruling[KEY_SPAN_RATIONALE],
             "ledger": {
-                "phase": "repo-scoping",
+                "phase": REPO_SCOPING_PHASE,
                 "beadId": self.context.bead,
                 "subject": self.args.get("architectureSubject", ""),
                 "chosen": ["polyrepo-steward"],
@@ -305,27 +359,27 @@ def run(
         The accepted placement and measured repository creation outcome.
 
     """
-    context.stage = "repo-scoping"
+    context.stage = REPO_SCOPING_PHASE
     return _RepositoryScoping(context, store, runner, tools, matrix_path).run()
 
 
 def _ensure_repository(
-    missing: dict[str, JsonValue],
+    missing: MissingRepo,
     tools: Tools,
     config: dict[str, JsonValue],
     *,
     preflight_done: bool,
 ) -> tuple[dict[str, JsonValue], bool]:
     live = inventory(tools)
-    name = check_type(missing["name"], str).casefold()
+    name: str = missing[KEY_NAME].casefold()
     existing = next(
         (r for r in _objects(live["repos"]) if check_type(r["name"], str).casefold() == name and r.get("path")),
         None,
     )
     if existing:
-        return {"repoPath": existing["path"], "existed": True}, preflight_done
+        return {KEY_REPO_PATH: existing["path"], "existed": True}, preflight_done
     if not preflight_done:
         need = _preflight(tools, config)
         if need:
             return {"error": need, "ownerFact": True}, False
-    return {"repoPath": _create(missing, tools, config), "existed": False}, True
+    return {KEY_REPO_PATH: _create(missing, tools, config), "existed": False}, True

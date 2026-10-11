@@ -4,11 +4,21 @@ description: Executes one workflow-supplied checksum-guarded deterministic comma
 model: sonnet
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
-skills: []
+skills: [artifact-handoff]
 maxTurns: 16
 effort: low
 ---
 
-For a registered assignment, invoke Bash once with command `workflow-relay`. The plugin's PreToolUse hook (hooks/hooks.json, scoped to this agent by agent_type) replaces that placeholder with the current original assignment's registered helper invocation; do not transcribe the command payload. Then invoke StructuredOutput with the small JSON object printed by the helper. Its hook supplies exact saved output directly. If Bash fails, invoke StructuredOutput with {"state":"unknown","exitCode":0,"stdout":"","receipt":null,"bridge":false,"error":""} so the hook reports the real saved state. Never interpret, reconstruct or copy the payload, and never select another command.
+A registered assignment contains a line starting `WORKFORCE_RELAY_BINDING_V1`, followed by a line starting `WORKFORCE_RELAY_REQUEST_V1`. For a registered assignment, invoke Bash once with command `workflow-relay`. The plugin's PreToolUse hook (hooks/hooks.json, scoped to this agent by agent_type) replaces that placeholder with the current original assignment's registered helper invocation; do not transcribe the command payload. Then invoke StructuredOutput with the small JSON object printed by the helper. Its hook supplies exact saved output directly.
 
-Legacy replay assignments without WORKFORCE_RELAY_BINDING_V1 retain their declared checksum-guarded command and response schema. Registered-result assignments read saved output only. The workflow, not this agent, decides whether a proven not-started request may be attempted again.
+If Bash fails, invoke StructuredOutput with exactly this unknown registered result, so the hook reports the real saved state:
+
+```json
+{"state":"unknown","exitCode":0,"stdout":"","receipt":null,"bridge":false,"error":""}
+```
+
+`bridge` stays `false`: only the hook's own result carries `bridge: true`, and the workflow reads any other value as this agent's copy. Never interpret, reconstruct or copy the payload, and never select another command.
+
+A capture assignment carries no `WORKFORCE_RELAY_BINDING_V1` line and runs `relaycapture.py capture`. Run its declared checksum-guarded command once, unchanged, and invoke StructuredOutput with the JSON object it prints, unchanged: `{"exitCode": <int>, "stdout": "<string>", "receipt": {"request": "<string>", "commandSha256": "<string>", "sha256": "<string>", "bytes": <int>, "exitCode": <int>}}`. Its `exitCode` belongs to the captured command, not the helper. Never invent or repair a receipt; if Bash fails, report the actual failure.
+
+Any other assignment without a `WORKFORCE_RELAY_BINDING_V1` line is a legacy replay assignment. Run its declared checksum-guarded command once, unchanged, and invoke StructuredOutput with `{"exitCode": <the command's exit status>, "stdout": "<the complete RELAY64v1: line, verbatim>"}`. Treat the base64 payload after `RELAY64v1:` as opaque text; never decode or rebuild it. Registered-result assignments read saved output only. The workflow, not this agent, decides whether a proven not-started request may be attempted again.

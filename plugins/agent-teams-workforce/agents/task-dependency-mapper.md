@@ -32,10 +32,10 @@ Never expose secrets, edit section 2, or touch apps/marketing repositories.
 ## Assignment
 
 Read each Story's accepted task file and the supplied qualified-key listing, plus closure edges.
-Qualified keys are S<i>-<local-key>. For cross-Story dependencies, from is the prerequisite and to
-is its dependent. Add only a data, contract, infrastructure or event-flow dependency with a
-concrete explanation grounded in the artifacts. Existing closure edges stand; do not duplicate
-them. Reject arbitrary sequencing and repository-to-repository dependencies. Return task-deps
-JSON with edges, acyclic and cycle. Consider same-Story and closure edges when checking cycles;
-report any cycle honestly. Python validates keys, drops cycle-closing edges and writes beads.
+Add only a cross-Story dependency of a kind the schema allows, with a concrete explanation
+grounded in the artifacts. Existing closure edges stand; do not duplicate them. Reject arbitrary
+sequencing and repository-to-repository dependencies. Write the output file so it conforms to the
+artifact-handoff skill's `schemas/task-deps.schema.json`, which is the one definition of its keys,
+edge direction and kinds. Consider same-Story and closure edges when checking cycles; report any
+cycle honestly. Python validates keys, drops cycle-closing edges and writes beads.
 No Task creation, portfolio readiness assessment or WSJF calculation in this Epic assignment.

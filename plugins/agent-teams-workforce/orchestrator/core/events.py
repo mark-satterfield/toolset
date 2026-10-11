@@ -9,6 +9,7 @@ from typing import Protocol, TextIO, runtime_checkable
 
 from typeguard import CollectionCheckStrategy, typechecked
 
+from .handback_contract import EVENT_KEY, EventName, validate_event
 from .io import JsonValue, json_object
 
 
@@ -16,7 +17,7 @@ from .io import JsonValue, json_object
 class EventSink(Protocol):
     """A typed event channel accepting named facts."""
 
-    def __call__(self, event: str, **facts: JsonValue) -> None:
+    def __call__(self, event: EventName, **facts: JsonValue) -> None:
         """Accept an event name and its facts."""
         ...
 
@@ -41,17 +42,14 @@ class EventWriter:
         self.lock: threading.Lock = threading.Lock()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __call__(self, event: str, **facts: JsonValue) -> None:
-        """Emit one validated JSON event without interleaving concurrent writers.
+    def __call__(self, event: EventName, **facts: JsonValue) -> None:
+        """Emit one contract-validated JSON event without interleaving concurrent writers.
 
-        Raises:
-            TypeError: The event name is not text.
-
+        The assembled event is checked with ``validate_event`` before anything is written; an event
+        that breaks the orchestrator event contract raises ``HandbackValidationError`` and writes nothing.
         """
-        if not isinstance(event, str):
-            message: str = "Event names must be strings"
-            raise TypeError(message)
-        payload: dict[str, JsonValue] = json_object({"event": event, **facts})
+        payload: dict[str, JsonValue] = json_object({**facts, EVENT_KEY: event})
+        validate_event(payload)
         with self.lock:
             self.stream.write(
                 json.dumps(payload, ensure_ascii=False) + "\n",

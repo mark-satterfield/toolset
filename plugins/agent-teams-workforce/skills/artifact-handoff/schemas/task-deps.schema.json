@@ -1,4 +1,6 @@
 {
+  "title": "TaskDeps",
+  "description": "Cross-Story Task dependencies for a multi-repository span: the task-dependency-mapper writes <work>/candidates/task-deps.json and Python accepts it as <work>/task-deps.json. A single-repository span gets the empty document written by Python. At runtime the from and to strings are narrowed to an enum of the span's Task keys.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -8,8 +10,10 @@
   ],
   "properties": {
     "edges": {
+      "description": "The cross-Story edges; may be empty.",
       "type": "array",
       "items": {
+        "title": "TaskDepsEdge",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -20,12 +24,16 @@
         ],
         "properties": {
           "from": {
+            "description": "The prerequisite Task key, S<i>-<local key>.",
             "type": "string"
           },
           "to": {
+            "description": "The dependent Task key, S<i>-<local key>.",
             "type": "string"
           },
           "kind": {
+            "title": "TaskDepsEdgeKind",
+            "description": "What the dependent Task needs from the prerequisite.",
             "enum": [
               "data",
               "contract",
@@ -34,19 +42,27 @@
             ]
           },
           "reason": {
+            "description": "A one-line justification.",
             "type": "string"
           }
         }
       }
     },
     "acyclic": {
+      "description": "Whether the combined graph (same-Story edges, closure edges and these edges) is acyclic.",
       "type": "boolean"
     },
     "cycle": {
+      "description": "The Task keys naming the cycle; empty when acyclic is true.",
       "type": "array",
       "items": {
         "type": "string"
       }
     }
+  },
+  "x-empty": {
+    "edges": [],
+    "acyclic": true,
+    "cycle": []
   }
 }

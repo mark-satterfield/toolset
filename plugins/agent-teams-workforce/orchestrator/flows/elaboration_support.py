@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
@@ -11,13 +12,39 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Concatenate, ParamSpec, TypeVar
 
+# The driver surface is defined once, in the pipeline-contracts skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 import beadgraph
+from driver_surface_types import STOP_FILE_ENV, STOP_FILE_MODE
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.handback import Failure, failure_for
-from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.events import EventSink
+from orchestrator.core.handback import failure_for
+from orchestrator.core.handback_contract import (
+    CLASS_ORDER,
+    EVENT_KEY,
+    FATAL_CLASSES,
+    INTERRUPTED_CLASS,
+    ITEM_CLASS,
+    OTHER_CAUSE,
+    QUOTA_CAUSE,
+    RETRYABLE_CAUSES,
+    TRANSIENT_CLASS,
+    EventName,
+    Failure,
+    OrchestratorEvent,
+    PrdToSpecPhase,
+    RepositoryFailure,
+    parse_diagnostic,
+    parse_failure_class,
+    phase_event,
+    reused_note,
+)
+from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.manifest import manifest_path, record_run
 from orchestrator.core.models import RunContext
 from orchestrator.core.tools import Tools
 
@@ -29,6 +56,21 @@ _LOGGER = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def emit_event(sink: EventSink, event: OrchestratorEvent) -> None:
+    """Send one contract-built event through an event sink.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not callable(sink) or not isinstance(event, dict):
+        raise TypeError(_ARGUMENT_ERROR)
+    name: EventName = event[EVENT_KEY]
+    facts: dict[str, JsonValue] = {key: value for key, value in json_object(event).items() if key != EVENT_KEY}
+    sink(name, **facts)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -50,12 +92,12 @@ def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: b
     ):
         raise TypeError(_ARGUMENT_ERROR)
     failure: Failure = failure_for(stage, exc, agent_started=agent_started)
-    if failure.get("classification") in {"setup", "pipeline-code-defect"}:
-        marker: str | None = os.environ.get("ATW_STOP_FILE")
+    if failure["classification"] in FATAL_CLASSES:
+        marker: str | None = os.environ.get(STOP_FILE_ENV)
         if marker:
-            Path(marker).touch(mode=0o600)
-    if failure["cause"] == "shutdown":
-        stage = "shutdown"
+            Path(marker).touch(mode=STOP_FILE_MODE)
+    if failure["classification"] == INTERRUPTED_CLASS:
+        stage = failure["stage"]
     return json_object({
         "ok": False,
         "stage": stage,
@@ -85,7 +127,7 @@ class PhaseRunner:
 
     def call(
         self,
-        name: str,
+        name: PrdToSpecPhase,
         function: Callable[Concatenate[RunContext, ArtifactStore, AgentRunner, Tools, P], dict[str, JsonValue]],
         additions: dict[str, JsonValue] | None = None,
         *args: P.args,
@@ -115,11 +157,12 @@ class PhaseRunner:
             executable=self.runner.executable,
         )
         child.share_processes(self.runner)
-        self.runner.emit("phase", phase=name, step=name, repository=local.args.get("repoPath"))
+        repository: str | None = check_type(local.args.get("repoPath"), str | None)
+        emit_event(self.runner.emit, phase_event(name, name, repository))
         try:
             result: dict[str, JsonValue] = function(local, self.store, child, self.tools, *args, **kwargs)
             if result.get("resumed"):
-                self.runner.emit("note", kind="reused", phase=name, repository=local.args.get("repoPath"))
+                emit_event(self.runner.emit, reused_note(phase=name, repository=repository))
         except Exception as exc:
             _LOGGER.exception("Phase %s failed", name)
             return failed(
@@ -155,11 +198,11 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
             return job()
         except Exception as exc:
             failure: Failure = failure_for(context.stage, exc, agent_started=bool(context.sessions))
-            if failure["classification"] in {"setup", "pipeline-code-defect"}:
-                marker: str | None = os.environ.get("ATW_STOP_FILE")
+            if failure["classification"] in FATAL_CLASSES:
+                marker: str | None = os.environ.get(STOP_FILE_ENV)
                 if marker:
                     try:
-                        Path(marker).touch(mode=0o600)
+                        Path(marker).touch(mode=STOP_FILE_MODE)
                     except OSError as marker_error:
                         exc.add_note(f"Stop marker also failed: {marker_error}")
             raise
@@ -188,9 +231,9 @@ def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[
     if errors:
         dominant: BaseException = max(
             errors,
-            key=lambda error: {"item": 0, "transient": 1, "setup": 2, "pipeline-code-defect": 3}[
-                failure_for(context.stage, error, agent_started=bool(context.sessions))["classification"]
-            ],
+            key=lambda error: CLASS_ORDER.index(
+                failure_for(context.stage, error, agent_started=bool(context.sessions))["classification"],
+            ),
         )
         for error in errors:
             if error is not dominant:
@@ -226,8 +269,10 @@ def lifecycle(  # ruff: ignore[non-pep695-generic-function] - Typeguard requires
     ):
         raise TypeError(_ARGUMENT_ERROR)
 
+    dispatch: DispatchArgumentsContract = dispatch_arguments()
+
     def attempt() -> R:
-        repo: Path = Path(check_type(context.args["beadsRepoPath"], str))
+        repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))
         graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo, with_description=True)
         writer: beadgraph.Writer = tools.portfolio(stage, beadgraph.Writer, repo)
         return tools.portfolio(stage, operation, graph, writer, context.bead, *args, **kwargs)
@@ -286,68 +331,77 @@ def done_rule(
     }
 
 
-def _repository_failures(rows: list[dict[str, JsonValue]]) -> tuple[list[dict[str, JsonValue]], list[float]]:
+REPOSITORIES_INCOMPLETE_STAGE: str = "repositories-incomplete"
+
+
+def _repository_failures(rows: list[dict[str, JsonValue]]) -> tuple[list[RepositoryFailure], list[float]]:
     row: dict[str, JsonValue]
     value: dict[str, JsonValue]
-    field: str | str
-    failures: list[dict[str, JsonValue]] = []
+    failures: list[RepositoryFailure] = []
     resets: list[float] = []
     for row in rows:
         for value in (json_object(row.get("spec", {})), json_object(row.get("tasks", {}))):
             if not value or value.get("ok"):
                 continue
             fact: dict[str, JsonValue] = json_object(value.get("failure", {}))
-            reset: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = fact.get("resumeAt")
+            reset: JsonValue = fact.get("resumeAt")
             if reset is not None:
                 resets.append(check_type(reset, float))
-            failure: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
-                "repository": row["repository"],
-                "stage": fact.get("stage", value.get("stage", "repositories-incomplete")),
-                "cause": fact.get("cause", "other"),
-                "headline": value.get("headline", "incomplete repository"),
+            failure: RepositoryFailure = {
+                "repository": check_type(row["repository"], str),
+                "stage": check_type(fact.get("stage", value.get("stage", REPOSITORIES_INCOMPLETE_STAGE)), str),
+                "cause": check_type(fact.get("cause", OTHER_CAUSE), str),
+                "headline": check_type(value.get("headline", "incomplete repository"), str),
             }
-            for field in ("classification", "diagnostic"):
-                if field in fact:
-                    failure[field] = fact[field]
+            if "classification" in fact:
+                failure["classification"] = parse_failure_class(fact["classification"])
+            if "diagnostic" in fact:
+                failure["diagnostic"] = parse_diagnostic(fact["diagnostic"])
             failures.append(failure)
     return failures, resets
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def repository_failure(rows: list[dict[str, JsonValue]]) -> dict[str, JsonValue]:
+def repository_failure(rows: list[dict[str, JsonValue]]) -> Failure:
     """Combine repository failures without losing a systemic failure's diagnostic.
 
+    The combined cause is the highest-precedence retryable cause when every repository failed
+    on a retryable cause, otherwise ``other``. The classification is the first fatal repository
+    classification with its diagnostic, else ``transient`` for a retryable cause, else ``item``.
+
     Returns:
-        Repository evidence, dominant cause and any fatal diagnostic.
+        Repository evidence, dominant cause and classification.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    failures: list[dict[str, JsonValue]]
+    failures: list[RepositoryFailure]
     resets: list[float]
     if not (isinstance(rows, list)):
         raise TypeError(_ARGUMENT_ERROR)
     failures, resets = _repository_failures(rows)
-    causes: set[str] = {check_type(row["cause"], str) for row in failures}
-    transient: set[str] = {"quota", "api", "bd-timeout", "contention"}
+    causes: set[str] = {row["cause"] for row in failures}
     cause: str = (
-        next((value for value in ("quota", "api", "bd-timeout", "contention") if value in causes), "other")
-        if causes and causes <= transient
-        else "other"
+        next((value for value in RETRYABLE_CAUSES if value in causes), OTHER_CAUSE)
+        if causes and causes <= set(RETRYABLE_CAUSES)
+        else OTHER_CAUSE
     )
-    result: dict[str, JsonValue] = json_object({
-        "stage": "repositories-incomplete",
+    result: Failure = {
+        "stage": REPOSITORIES_INCOMPLETE_STAGE,
         "cause": cause,
+        "classification": TRANSIENT_CLASS if cause in RETRYABLE_CAUSES else ITEM_CLASS,
         "repositories": failures,
-    })
-    fatal: dict[str, JsonValue] | None = next(
-        (row for row in failures if row.get("classification") in {"setup", "pipeline-code-defect"}),
+    }
+    fatal: RepositoryFailure | None = next(
+        (row for row in failures if row.get("classification") in FATAL_CLASSES),
         None,
     )
     if fatal is not None:
-        result.update(classification=fatal["classification"], diagnostic=fatal["diagnostic"])
-    if resets and cause == "quota":
+        result["classification"] = fatal["classification"]
+        if "diagnostic" in fatal:
+            result["diagnostic"] = fatal["diagnostic"]
+    if resets and cause == QUOTA_CAUSE:
         result["resumeAt"] = max(resets)
     return result
 
@@ -360,6 +414,9 @@ def record(
     notes: list[JsonValue],
 ) -> dict[str, JsonValue]:
     """Persist detailed run evidence separately from the compact wire handback.
+
+    A ``StepError`` from ``record_run`` propagates unchanged when the run record could not be
+    read, validated or written.
 
     Returns:
         The result with its saved detail path and session manifest.
@@ -375,20 +432,10 @@ def record(
         or not (isinstance(notes, list))
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    path: Path = context.work / "run.json"
+    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    path: Path = manifest_path(context.work)
     result.update(json_object({"beadId": context.bead, "detailPath": str(path), "sessions": context.sessions}))
-    prd: dict[str, JsonValue] = json_object(context.args.get("prd", {}))
-    write_json(
-        path,
-        {
-            "runId": context.run_id,
-            "composite": context.flow,
-            "epicId": context.bead,
-            "prdId": prd.get("id"),
-            "result": result,
-            "phases": phases,
-            "notes": notes,
-            "sessions": context.sessions,
-        },
-    )
+    prd: dict[str, JsonValue] = json_object(context.args.get(dispatch.KEY_PRD, {}))
+    prd_id: str | None = check_type(prd.get(dispatch.PRD_ID), str | None)
+    record_run(context, prd_id, result, phases, notes)
     return result

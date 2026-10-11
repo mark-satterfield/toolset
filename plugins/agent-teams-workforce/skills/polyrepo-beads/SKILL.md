@@ -75,7 +75,7 @@ in automation alike. The bundled scripts read them:
 | Value | Variable |
 |---|---|
 | The repos and their folders | the `polyrepo` tool (`list`, `status <repo>`), every app space |
-| Root / command-and-control repo | `ATW_CONTROL_REPO` (required) |
+| Root / command-and-control repo | the control-repository variable of the driver environment, defined in `schemas/driver-surface.schema.json` of the `agent-teams-workforce:pipeline-contracts` skill (required) |
 | Shared server port | `ATW_BEADS_PORT` (default `3308`) |
 | Issue prefix | read from the root repo: `bd config get issue_prefix` |
 

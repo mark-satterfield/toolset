@@ -7,16 +7,16 @@
 At the START, one Epic is judged, and the first condition that fails is the refusal:
 
 * it is an open Epic;
-* it is not `elaboration_state = done`: its Tasks are written and they are the workable items;
-* it is not `in_progress` under another run's owner token (unless the caller reclaims).
+* its `KEY_ELABORATION_STATE` is not `ELABORATION_DONE`: its Tasks are written and they are the workable items;
+* it is not `ELABORATION_IN_PROGRESS` under another run's owner token (unless the caller reclaims).
 
 Which Epic is elaborated next, and whether it is scored and its upstream Epics are elaborated,
 is decided by keeper selection before any door arrives here, so it is not judged again. An
-absent or unrecognised `elaboration_state` is taken as `ready`, with a warning for the latter.
+absent or unrecognised `KEY_ELABORATION_STATE` is taken as `ELABORATION_READY`, with a warning for the latter.
 
-When the conditions hold, the Epic is marked `in_progress` and the run's owner token is
-recorded on it as `elaboration_state_owner`. The token is the caller's, or a fresh one. An
-`in_progress` Epic carrying a different token is owned by another run; the caller passes
+When the conditions hold, the Epic is marked `ELABORATION_IN_PROGRESS` and the run's owner token is
+recorded on it as `KEY_ELABORATION_STATE_OWNER`. The token is the caller's, or a fresh one. An
+`ELABORATION_IN_PROGRESS` Epic carrying a different token is owned by another run; the caller passes
 `reclaim` only once it has established that run is not live.
 
 At the FINISH, after the Tasks are written:
@@ -25,43 +25,47 @@ At the FINISH, after the Tasks are written:
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
   over every Task edge, across Stories;
-* with `done`, the Epic's `elaboration_state` is set to `done` with the cause
-  `decomposed-into-tasks` and its owner token is cleared. The Epic stays open; it closes
+* with `done`, the Epic's `KEY_ELABORATION_STATE` is set to `ELABORATION_DONE` with the cause
+  `CAUSE_DECOMPOSED` and its owner token is cleared. The Epic stays open; it closes
   only when its work is released.
 
-A run that started an Epic and ends without setting its elaboration to `done` RELEASES it: its owner token is
-cleared and the Epic stays `in_progress`, so the next run takes it up without a reclaim.
+A run that started an Epic and ends without setting its elaboration to `ELABORATION_DONE`
+RELEASES it: its owner token is cleared and the Epic stays `ELABORATION_IN_PROGRESS`, so the
+next run takes it up without a reclaim.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Unpack
+from typing import TYPE_CHECKING, Unpack
 
 import beadgraph
-import scoringcontracts  # ruff: ignore[typing-only-third-party-import] - Typeguard validates the annotated score assignment at runtime.
+from bead_metadata import (
+    CAUSE_DECOMPOSED,
+    CAUSE_STARTED,
+    ELABORATION_DONE,
+    ELABORATION_IN_PROGRESS,
+    ELABORATION_READY,
+    KEY_ELABORATION_STATE,
+    KEY_ELABORATION_STATE_AT,
+    KEY_ELABORATION_STATE_CAUSE,
+    KEY_ELABORATION_STATE_OWNER,
+    KEY_WSJF,
+    KEY_WSJF_CONFIDENCE,
+    KEY_WSJF_TC,
+    KEY_WSJF_UBV,
+)
 from beadgraph import Bead, Graph, Writer, now_iso
 from contracts import JsonValue
 from elaborationcontracts import EpicValue, Finished, FinishOptions, Refusal, Refused, Released, Started
 from scoring import score
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+if TYPE_CHECKING:
+    import scoringcontracts
+
 #: The Epic's elaboration lifecycle and its companions.
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration input contract"
-
-
-STATE_KEY = "elaboration_state"
-STATE_AT_KEY = "elaboration_state_at"
-CAUSE_KEY = "elaboration_state_cause"
-OWNER_KEY = "elaboration_state_owner"
-
-READY = "ready"
-IN_PROGRESS = "in_progress"
-DONE = "done"
-
-#: The cause recorded when elaboration starts and when its Tasks are written.
-CAUSE_STARTED = "elaboration-started"
-CAUSE_DECOMPOSED = "decomposed-into-tasks"
 
 
 class LifecycleError(RuntimeError):
@@ -122,10 +126,10 @@ def _epic_value(epic: Bead) -> EpicValue:
     return {
         "id": epic.id,
         "title": epic.title,
-        "userBusinessValue": _int(epic.metadata.get("wsjf_ubv")),
-        "timeCriticality": _int(epic.metadata.get("wsjf_tc")),
-        "confidence": _int(epic.metadata.get("wsjf_confidence")),
-        "wsjf": epic.metadata.get("wsjf"),
+        "userBusinessValue": _int(epic.metadata.get(KEY_WSJF_UBV)),
+        "timeCriticality": _int(epic.metadata.get(KEY_WSJF_TC)),
+        "confidence": _int(epic.metadata.get(KEY_WSJF_CONFIDENCE)),
+        "wsjf": epic.metadata.get(KEY_WSJF),
     }
 
 
@@ -170,40 +174,41 @@ def start(
             f"{epic_id} is not an open Epic in this tracker",
             epic,
         )
-    state: str | None = epic.metadata.get(STATE_KEY) or None
-    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
+    state: str | None = epic.metadata.get(KEY_ELABORATION_STATE) or None
+    recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
     warnings: list[str] = []
-    if state == DONE:
+    if state == ELABORATION_DONE:
         return _refusal(
             "epic-done",
-            f"{epic_id} is {STATE_KEY}={DONE}: its Tasks are written and they are the "
-            f"workable items. A person sets {STATE_KEY}={IN_PROGRESS} to elaborate it again, "
+            f"{epic_id} is {KEY_ELABORATION_STATE}={ELABORATION_DONE}: its Tasks are written and they are the "
+            f"workable items. A person sets {KEY_ELABORATION_STATE}={ELABORATION_IN_PROGRESS} to elaborate it again, "
             "which resumes from its persisted artifacts",
             epic,
         )
-    if state is not None and state not in {READY, IN_PROGRESS}:
+    if state is not None and state not in {ELABORATION_READY, ELABORATION_IN_PROGRESS}:
         warnings.append(
-            f"{epic_id} carries {STATE_KEY}={state}, which is not a lifecycle state; taken as {READY}",
+            f"{epic_id} carries {KEY_ELABORATION_STATE}={state}, which is not a lifecycle state; "
+            f"taken as {ELABORATION_READY}",
         )
-        state = READY
-    if state == IN_PROGRESS and recorded and recorded != owner and not reclaim:
+        state = ELABORATION_READY
+    if state == ELABORATION_IN_PROGRESS and recorded and recorded != owner and not reclaim:
         return _refusal(
             "epic-owned",
-            f"{epic_id} is {IN_PROGRESS} under run {recorded}, "
-            f"since {epic.metadata.get(STATE_AT_KEY) or 'an unrecorded time'}. When that "
+            f"{epic_id} is {ELABORATION_IN_PROGRESS} under run {recorded}, "
+            f"since {epic.metadata.get(KEY_ELABORATION_STATE_AT) or 'an unrecorded time'}. When that "
             "run is not live, start again with reclaim",
             epic,
             owner=recorded,
         )
-    resumed: str | None = recorded if state == IN_PROGRESS and not reclaim else None
+    resumed: str | None = recorded if state == ELABORATION_IN_PROGRESS and not reclaim else None
     token: str = owner or resumed or uuid.uuid4().hex
     writer.metadata(
         epic.id,
         {
-            STATE_KEY: IN_PROGRESS,
-            STATE_AT_KEY: now_iso(),
-            CAUSE_KEY: CAUSE_STARTED,
-            OWNER_KEY: token,
+            KEY_ELABORATION_STATE: ELABORATION_IN_PROGRESS,
+            KEY_ELABORATION_STATE_AT: now_iso(),
+            KEY_ELABORATION_STATE_CAUSE: CAUSE_STARTED,
+            KEY_ELABORATION_STATE_OWNER: token,
         },
     )
     return {
@@ -265,7 +270,7 @@ def finish(
     owner, done = options["owner"], options["done"]
     scope: str = options.get("scope", "epic-and-tasks")
     epic: beadgraph.Bead = graph.beads[epic_id]
-    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
+    recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
     if recorded and owner and recorded != owner:
         msg: str = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
@@ -288,10 +293,10 @@ def finish(
     lifecycle: dict[str, str] | None = None
     if finishing:
         lifecycle = {
-            STATE_KEY: DONE,
-            STATE_AT_KEY: now_iso(),
-            CAUSE_KEY: CAUSE_DECOMPOSED,
-            OWNER_KEY: "",
+            KEY_ELABORATION_STATE: ELABORATION_DONE,
+            KEY_ELABORATION_STATE_AT: now_iso(),
+            KEY_ELABORATION_STATE_CAUSE: CAUSE_DECOMPOSED,
+            KEY_ELABORATION_STATE_OWNER: "",
         }
         writer.metadata(epic.id, lifecycle)
     return {
@@ -348,16 +353,16 @@ def release(graph: Graph, writer: Writer, epic_id: str, *, owner: str) -> Releas
     ):
         raise TypeError(_ARGUMENT_ERROR)
     epic: beadgraph.Bead = graph.beads[epic_id]
-    recorded: str | None = epic.metadata.get(OWNER_KEY) or None
+    recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
     released: bool = recorded == owner
     if released:
-        writer.metadata(epic.id, {OWNER_KEY: ""})
+        writer.metadata(epic.id, {KEY_ELABORATION_STATE_OWNER: ""})
     return {
         "ok": True,
         "epic": epic.id,
         "released": released,
         "owner": recorded,
-        "state": epic.metadata.get(STATE_KEY) or None,
+        "state": epic.metadata.get(KEY_ELABORATION_STATE) or None,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {"ok": True, "epic": epic.id, "released": released},

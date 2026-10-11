@@ -116,12 +116,10 @@
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
 and stdout carries only its `summary`. With `--relay FILE` the full object is written to FILE
-and stdout carries its relay view with a `relay` block (`file`, `checksum`, `chars`) a workflow
-script checks the copy a runner session returns against; `relay-read --relay FILE` prints that
-same envelope again from FILE without re-running the command. A leading
-`--argv-sha256 HEX` refuses, with exit 3 and nothing run, a command line typed differently from
-the one the workflow script built (see relay.py). `--dry-run`
-computes, writes nothing, and returns the writes under `planned`.
+and stdout carries its relay envelope; `relay-read --relay FILE` prints that same envelope
+again from FILE without re-running the command. The envelope, the relay file and the leading
+command-line digest guard are relay.py's; this module imports them and restates none of them.
+`--dry-run` computes, writes nothing, and returns the writes under `planned`.
 """
 
 from __future__ import annotations
@@ -134,12 +132,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract and artifact-handoff scripts on sys.path before the contract imports below.
+
+# isort: split
 import beadgraph
 import edgeset
 import relay
 import wsjf as rubric
 from archclosure import write_closure
 from archfiles import IntegrationOptions, files_from, integration_files, review_check
+from architecture_artifacts import parse_conformance_result
 from archresume import ResumeError, ResumeOptions, resume_facts
 from archrevision import check as revision_check
 from archrevision import mark as revision_mark
@@ -159,6 +161,13 @@ from archstate import (
 from archstate import promote as approve_arch
 from archstate import states as arch_states
 from assesscontext import assess_context, task_context
+from bead_metadata import (
+    ELABORATION_DONE,
+    KEY_ELAB_KEY,
+    KEY_ELABORATION_STATE,
+    KEY_SEQ_ASSESSED_AT,
+    KEY_SEQ_CONTENT_HASH,
+)
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
 from beadwrite import (
     add_corrective_tasks,
@@ -175,9 +184,8 @@ from beadwrite import (
 from cdsbundles import list_bundles, select_build
 from contracts import JsonObject, JsonValue, json_object
 from edgeset import (
-    ASSESSED_AT_KEY,
-    ELAB_IDENTITY_KEY,
-    SEEN_KEY,
+    ApplyScope,
+    Edge,
     SequencingError,
     apply_edges,
     owned_edges,
@@ -194,13 +202,11 @@ from scoring import ScoringError, judge_input, plan, record, score
 from scoringcontracts import Plan
 from specui import SpecUiError, spec_ui_append
 from storyedges import story_edges
+from target_contract import DELTA_ITEMS_FILE
 from typeguard import CollectionCheckStrategy, check_type
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-
-ELAB_KEY = "elaboration_state"
 
 
 def snapshot(
@@ -257,7 +263,7 @@ def snapshot(
             "epic": epic_id(bead),
             "blockers": list(bead.depends_on),
             "ownedBlockers": list(bead.owned_blockers),
-            "elaborationState": bead.metadata.get(ELAB_KEY),
+            "elaborationState": bead.metadata.get(KEY_ELABORATION_STATE),
             "description": bead.description or None,
         }
 
@@ -331,18 +337,18 @@ def assess_plan(
     unassessed: list[str]
     item = epic if level == "epic" else task
     candidates = [
-        b for b in graph.of_kind(level) if not b.closed and not (level == "task" and b.metadata.get(ELAB_IDENTITY_KEY))
+        b for b in graph.of_kind(level) if not b.closed and not (level == "task" and b.metadata.get(KEY_ELAB_KEY))
     ]
     cutoff = _instant(since) if since is not None else None
     prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
 
     def assessed(bead: Bead) -> bool:
         at: datetime | None
-        if bead.metadata.get(SEEN_KEY) != prints.get(bead.id):
+        if bead.metadata.get(KEY_SEQ_CONTENT_HASH) != prints.get(bead.id):
             return False
         if cutoff is None:
             return True
-        at = _instant(bead.metadata.get(ASSESSED_AT_KEY) or "")
+        at = _instant(bead.metadata.get(KEY_SEQ_ASSESSED_AT) or "")
         return at is not None and at >= cutoff
 
     unassessed = [c.id for c in candidates if not assessed(c)]
@@ -740,7 +746,7 @@ def _configure_command_14(sub: _Subcommands, common: argparse.ArgumentParser) ->
     efi.add_argument(
         "--done",
         action="store_true",
-        help="set the Epic's `elaboration_state` to `done`",
+        help=f"set the Epic's `{KEY_ELABORATION_STATE}` to `{ELABORATION_DONE}`",
     )
     _dry_run_flag(efi)
 
@@ -788,7 +794,7 @@ def _configure_command_16(sub: _Subcommands, common: argparse.ArgumentParser) ->
         "--correction",
         required=True,
         type=Path,
-        help="the accepted corrective pass: tasks, noWork, edges and scores",
+        help="the accepted corrective pass, as the artifact-handoff skill's tasks-correction schema defines it",
     )
 
     wta: argparse.ArgumentParser = sub.add_parser(
@@ -967,7 +973,8 @@ def _configure_command_29(sub: _Subcommands, common: argparse.ArgumentParser) ->
         "--reviewed-from",
         type=Path,
         default=None,
-        help="instead of --reviewed-files: the `reviewedFiles` list of a saved conformance review",
+        help="instead of --reviewed-files: a saved integration conformance review (conformance schema), "
+        "whose reviewed files are approved",
     )
     aap.add_argument(
         "--reviewed-files",
@@ -1284,7 +1291,7 @@ def _configure_command_40(sub: _Subcommands, common: argparse.ArgumentParser) ->
         "--save",
         type=Path,
         default=None,
-        help="also write the full listing to this file (the Epic's delta-items.json)",
+        help=f"also write the full listing to this file (the Epic's {DELTA_ITEMS_FILE})",
     )
 
 
@@ -1385,9 +1392,11 @@ def _configure_command_45(sub: _Subcommands, common: argparse.ArgumentParser) ->
     )
     sua.add_argument("--doc", type=Path, required=True, help="the saved spec document")
     sua.add_argument(
-        "--items",
+        "--ui",
+        type=Path,
         required=True,
-        help="the repository's ui items as JSON: [{id, designSource?, buildSpec?, sections?}]",
+        help="the saved UI design sources document (spec-<slug>.ui.json), whose `uiItems` are "
+        "the artifact-handoff skill's recon schema `UiItem` rows",
     )
 
 
@@ -1654,6 +1663,7 @@ class _CommandOptions:
     message: str | None
     files_from: Path | None
     doc: Path | None
+    ui: Path | None
     items: str | None
     design_source: str | None
     kind: str | None
@@ -2080,6 +2090,11 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             Path | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
+        ui=check_type(
+            getattr(namespace, "ui", None),
+            Path | None,
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        ),
         items=check_type(
             getattr(namespace, "items", None),
             str | None,
@@ -2204,7 +2219,7 @@ def _dispatch_arch_approve(args: _CommandOptions, head: JsonObject) -> JsonObjec
         **approve_arch(
             files,
             arch_root=args.arch_root,
-            reviewed=files_from(args.reviewed_from, "reviewedFiles")
+            reviewed=parse_conformance_result(args.reviewed_from)["reviewedFiles"]
             if args.reviewed_from
             else split_ids(_required_text(args.reviewed_files)),
         ),
@@ -2502,7 +2517,7 @@ def _dispatch_spec_ui_append(args: _CommandOptions, head: JsonObject) -> JsonObj
         The selected command result.
 
     """
-    return json_object({**head, **spec_ui_append(_required_path(args.doc), _required_text(args.items))})
+    return json_object({**head, **spec_ui_append(_required_path(args.doc), _required_path(args.ui))})
 
 
 def _dispatch_recon_facts(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -2854,7 +2869,9 @@ def _dispatch_apply_edges(context: _GraphCommand) -> JsonObject:
     seen = _plan_fingerprints(args.plan) if args.plan else {}
     proposal = owned_edges(graph) if args.owned else read_edges(_required_path(args.edges))
     withdrawn = [] if args.owned else read_withdrawn(_required_path(args.edges))
-    result: JsonObject = json_object(apply_edges(graph, proposal, writer, seen, item, withdrawn, level))
+    result: JsonObject = json_object(
+        apply_edges(graph, proposal, writer, ApplyScope(seen, item, withdrawn, level)),
+    )
     summary: JsonObject = {
         key: result.get(key)
         for key in (
@@ -2899,9 +2916,7 @@ def _dispatch_withdraw_edge(context: _GraphCommand) -> JsonObject:
         **head,
         **withdraw_edge(
             graph,
-            _required_text(args.blocker),
-            _required_text(args.blocked),
-            _required_text(args.reason),
+            Edge(_required_text(args.blocker), _required_text(args.blocked), _required_text(args.reason)),
             writer,
             _required_text(args.by),
             _required_text(args.level),

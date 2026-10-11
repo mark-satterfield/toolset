@@ -5,43 +5,44 @@ or more cds bundles, each a directory `<change-slug>-<timestamp>/` that packages
 artifact (a Page, a Shell or a View) with its own `styles/`, `spec/build-spec.md`,
 `design/<kind>.html` and a `bundle.json`:
 
-    {"kind": "page" | "shell" | "view", "slug": str, "shell": {"name", "modified"} | null,
+    {"kind": <one of recon_contract.ARTIFACT_KINDS>, "slug": str, "shell": {"name", "modified"} | null,
      "created_at": ISO-8601 UTC, "build_spec": "spec/build-spec.md"}
 
 A directory without a readable `bundle.json` is not a bundle and is listed under `ignored`.
 When several bundles package the same kind and slug, the one with the newest `created_at` is
 the supplied one; the others are listed under `superseded`.
 
-A ui delta item takes one design source:
-
-- `bundle`: a supplied bundle packages the item; it is cited and audited against.
-- `cds`: the item changes design and no bundle packages it; it is designed with the CDS
-  design system and audited against the live design system.
-- `none`: the item changes no design (copy, or data wired into an existing element); it
-  is built like any other code change.
+A ui delta item takes one of the recon contract's `DESIGN_SOURCES`; their meanings are stated
+once, in `skills/artifact-handoff/schemas/recon.schema.json`.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 import beadcontracts
 from beadcontracts import BuildSelection, Bundle, BundleListing, DesignArtifact
 from contracts import JsonObject, JsonValue, json_object
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-#: The kinds of artifact a bundle packages.
+# The artifact kinds and design sources are generated from the artifact-handoff recon schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
+from recon_contract import (
+    ARTIFACT_KINDS,
+    DESIGN_SOURCE_BUNDLE,
+    DESIGN_SOURCE_CDS,
+    DESIGN_SOURCES,
+    ArtifactKind,
+    DesignSource,
+)
+
 _ARGUMENT_ERROR: str = "Arguments violate the cdsbundles input contract"
-
-
-KINDS = ("page", "shell", "view")
-
-#: The design sources a ui delta item, and a web-ui Task, takes.
-DESIGN_SOURCES = ("bundle", "cds", "none")
 
 #: The file that marks a directory as a bundle.
 BUNDLE_FILE = "bundle.json"
@@ -66,16 +67,35 @@ def _created(value: JsonValue) -> datetime | None:
     return stamp if stamp.tzinfo else None
 
 
+def artifact_kind(value: str) -> ArtifactKind | None:
+    """Narrow a kind name to the artifact kind it names.
+
+    Args:
+        value: The kind name, as a `bundle.json` or a detailing writes it.
+
+    Returns:
+        The artifact kind, or None when the name is not one of `ARTIFACT_KINDS`.
+
+    Raises:
+        TypeError: `value` is not a string.
+
+    """
+    if not isinstance(value, str):
+        raise TypeError(_ARGUMENT_ERROR)
+    stripped: str = value.strip()
+    return next((kind for kind in ARTIFACT_KINDS if kind == stripped), None)
+
+
 @dataclass(frozen=True)
 class _BundleManifest:
-    kind: Literal["page", "shell", "view"]
+    kind: ArtifactKind
     slug: str
     build_spec: str
     created: datetime
     shell: JsonObject | None
 
     def __post_init__(self) -> None:
-        if self.kind not in KINDS or not isinstance(self.slug, str) or not isinstance(self.build_spec, str):
+        if self.kind not in ARTIFACT_KINDS or not isinstance(self.slug, str) or not isinstance(self.build_spec, str):
             raise TypeError(_ARGUMENT_ERROR)
         if not isinstance(self.created, datetime):
             raise TypeError(_ARGUMENT_ERROR)
@@ -89,11 +109,12 @@ def _manifest(body: JsonObject) -> _BundleManifest | None:
     created: datetime | None = _created(body.get("created_at"))
     if not isinstance(kind, str) or not isinstance(slug, str) or not isinstance(spec, str):
         return None
-    if kind.strip() not in KINDS or not slug.strip() or not spec.strip() or created is None:
+    named: ArtifactKind | None = artifact_kind(kind)
+    if named is None or not slug.strip() or not spec.strip() or created is None:
         return None
     shell: JsonObject | None = json_object(body["shell"]) if isinstance(body.get("shell"), dict) else None
     return _BundleManifest(
-        check_type(kind.strip(), Literal["page", "shell", "view"]),
+        named,
         slug.strip(),
         spec.strip(),
         created,
@@ -263,6 +284,7 @@ def select_build(
 
     Raises:
         TypeError: An argument violates the declared input contract.
+        ValueError: `design_source` is not one of the recon contract's `DESIGN_SOURCES`.
 
     """
     kind: str
@@ -274,6 +296,10 @@ def select_build(
         or not (isinstance(recorded_bundle, str) or recorded_bundle is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
+    source: DesignSource | None = next((s for s in DESIGN_SOURCES if s == design_source.strip()), None)
+    if source is None:
+        message: str = f"design source {design_source!r} is not one of {DESIGN_SOURCES}"
+        raise ValueError(message)
     recorded: str | None = str(recorded_bundle or "").strip() or None
     art: DesignArtifact = artifact if artifact is not None else {"kind": "", "slug": ""}
     kind = str(art.get("kind") or "").strip()
@@ -283,19 +309,19 @@ def select_build(
         if held:
             kind, slug = held["kind"], held["slug"]
     out: BuildSelection = {
-        "designSource": design_source,
-        "recordedSource": design_source,
+        "designSource": source,
+        "recordedSource": source,
         "artifact": {"kind": kind, "slug": slug} if kind and slug else None,
         "bundle": None,
         "buildSpec": None,
         "switched": False,
         "blocked": None,
     }
-    if design_source not in {"bundle", "cds"}:
+    if source not in {DESIGN_SOURCE_BUNDLE, DESIGN_SOURCE_CDS}:
         return out
     found: beadcontracts.Bundle | None = _find_bundle(packages_dir, recorded, kind, slug)
     if found is None:
-        if design_source == "bundle":
+        if source == DESIGN_SOURCE_BUNDLE:
             out["blocked"] = (
                 f"the supplied cds bundle {recorded or '(none recorded)'} for "
                 f"{kind or '?'} {slug or '?'} is missing, and no bundle of that artifact "
@@ -306,10 +332,10 @@ def select_build(
         out["blocked"] = f"the cds bundle {found['path']} has no build spec at {found['buildSpec']}"
         return out
     out |= {
-        "designSource": "bundle",
+        "designSource": DESIGN_SOURCE_BUNDLE,
         "bundle": found["path"],
         "buildSpec": found["buildSpec"],
-        "switched": design_source != "bundle" or not recorded or Path(recorded).resolve() != Path(found["path"]),
+        "switched": source != DESIGN_SOURCE_BUNDLE or not recorded or Path(recorded).resolve() != Path(found["path"]),
     }
     return out
 

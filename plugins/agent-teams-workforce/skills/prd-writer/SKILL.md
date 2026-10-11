@@ -66,13 +66,16 @@ Three consequences bind every PRD author and reviewer:
    description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
    the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
 3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
-   Epic into sync, and say in your reply that you did. The project supplies the commands (see
-   "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`):
+   Epic into sync, and say in your reply that you did. The project supplies two scripts through
+   environment variables whose names are defined only by the `agent-teams-workforce:pipeline-contracts`
+   skill (`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`): the sync script is the
+   variable whose `x-constant` is `PRD_EPIC_SYNC_ENV`, the verify script the one whose `x-constant`
+   is `PRD_EPIC_VERIFY_ENV`. Read the names from that schema, never from memory, and run:
 
    ```bash
-   "$ATW_PRD_EPIC_SYNC" --only <slug> --apply     # document -> Epic (creates the Epic if absent)
-   "$ATW_PRD_EPIC_VERIFY" <slug>                  # check one PRD against its Epic
-   "$ATW_PRD_EPIC_VERIFY" <slug> --apply          # Epic -> document, when the Epic was edited first
+   "<sync script>" --only <slug> --apply     # document -> Epic (creates the Epic if absent)
+   "<verify script>" <slug>                  # check one PRD against its Epic
+   "<verify script>" <slug> --apply          # Epic -> document, when the Epic was edited first
    ```
 
    If a variable is unset, report its name and the exact slug that needs syncing rather than
@@ -141,7 +144,8 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    discussion. Never smooth a contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
 11. **Run `scripts/check_prd.py` on your draft and resolve every error** before you finish.
-12. **Sync the Epic half** — `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — and say so in your reply.
+12. **Sync the Epic half** — run the sync script (rule 3) with `--only <slug> --apply` — and say so
+    in your reply.
 
 ## Validate Mode — Workflow
 

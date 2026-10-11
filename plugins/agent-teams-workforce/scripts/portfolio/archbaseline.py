@@ -21,37 +21,79 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import contracts
-from archevidence import digest, evidence_state, view_content
+import strictschema
+from archevidence import digest, evidence_state, load_repository_paths, view_content
 from archmatrix import catalog_elements, row_of, satisfied
 from contracts import (
+    SEAL_FORMS,
     BaselineDocument,
     BaselineEntry,
     BaselineFacts,
     FreshnessResult,
     JsonObject,
     JsonValue,
+    SealForm,
+    SurveySeal,
     json_object,
+    read_survey_seal,
+    survey_seal_path,
 )
-from jsonschema import Draft202012Validator
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "skills/artifact-handoff/schemas/architecture-baseline.schema.json"
+# isort: split
+import survey_contract as sc
 
-#: The implementation action each target disposition implies.
-DISPOSITION_ACTION = {
-    "retain": "none",
-    "change": "modify",
-    "replace": "replace",
-    "add": "new",
-    "retire": "retire",
-    "undetermined": "unknown",
-}
-#: The implementation action code in each state needs when the disposition implies none.
-CODE_STATE_ACTION = {"partial": "modify", "absent": "new"}
-REF_LISTS = ("awsGuidance", "suitabilityEvidenceRefs")
-CODE_REF_LISTS = ("behaviorEvidenceRefs", "infrastructureEvidenceRefs")
 FRONTMATTER_PARTS = 3
-TEXT_FIELDS = ("rationale", "current", "target")
+#: The work actions a design action names: new or changed design, and existing design to validate.
+DESIGN_WORK: frozenset[sc.DesignAction] = frozenset((sc.DESIGN_MODIFY, sc.DESIGN_NEW))
+#: Design actions that keep the existing design.
+DESIGN_KEPT: frozenset[sc.DesignAction] = frozenset((sc.DESIGN_NONE, sc.DESIGN_REUSE, sc.DESIGN_VALIDATE_EXISTING))
+#: Design actions that keep the existing design without validating it.
+DESIGN_UNVALIDATED: frozenset[sc.DesignAction] = frozenset((sc.DESIGN_NONE, sc.DESIGN_REUSE))
+#: Code states whose assessment claims inspected code.
+CODE_ASSESSED: frozenset[sc.CodeState] = frozenset((sc.CODE_COMPLETE, sc.CODE_PARTIAL, sc.CODE_ABSENT))
+
+
+def _array_keys(definition: str) -> tuple[str, ...]:
+    """Name the array-valued properties of one survey schema definition.
+
+    Args:
+        definition: A `$defs` name in the survey schema.
+
+    Returns:
+        The property names whose schema type is an array, in schema order.
+
+    Raises:
+        SurveyContractError: The schema carries no such definition.
+
+    """
+    defs: JsonValue = sc.load_schema().get("$defs")
+    node: JsonValue = defs.get(definition) if isinstance(defs, dict) else None
+    properties: JsonValue = node.get("properties") if isinstance(node, dict) else None
+    if not isinstance(properties, dict):
+        message: str = f"survey schema has no $defs/{definition} properties"
+        raise sc.SurveyContractError(message)
+    return tuple(key for key, value in properties.items() if isinstance(value, dict) and value.get("type") == "array")
+
+
+#: The list-valued fields of a baseline entry, every one defaulted to an empty list.
+ENTRY_LISTS: tuple[str, ...] = _array_keys("BaselineEntry")
+
+
+def _evidence_lists(entry: BaselineEntry) -> list[list[sc.EvidenceRef]]:
+    """Gather every evidence list one baseline entry carries, by the keys the survey contract names.
+
+    Args:
+        entry: A validated baseline entry.
+
+    Returns:
+        The code evidence lists, then the entry's own evidence lists, in contract order.
+
+    """
+    code: contracts.BaselineCode = entry["code"]
+    code_lists: list[list[sc.EvidenceRef]] = [code[key] for key in sc.CODE_REF_LISTS]
+    entry_lists: list[list[sc.EvidenceRef]] = [entry[key] for key in sc.BASELINE_REF_LISTS]
+    return code_lists + entry_lists
 
 
 def _document_warnings(document: BaselineDocument) -> list[str]:
@@ -78,8 +120,8 @@ def _document_warnings(document: BaselineDocument) -> list[str]:
         else None
     )
     state: str | None = match.group(1).strip().strip("\"'") if match else None
-    observed: str = document["lifecycle_state"]
-    if state in {"effective", "in-review"} and state != observed:
+    observed: sc.DocumentLifecycleState = document["lifecycle_state"]
+    if sc.is_document_lifecycle_state(state) and state != observed:
         document["lifecycle_state"] = state
         return [f"document lifecycle is now {state} (observed {observed}): {path}"]
     return []
@@ -105,23 +147,24 @@ def _list(value: JsonValue) -> list[JsonValue]:
 def _normalize_inputs(entry: JsonObject) -> JsonObject:
     key: str
     document: dict[str, bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None]
-    for key in ("requirements", "subjects", "documents", "conflicts", *REF_LISTS):
+    for key in ENTRY_LISTS:
         if not isinstance(entry.get(key), list):
             entry[key] = []
     documents: list[
         dict[str, bool | int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None]
     ] = [d for d in _list(entry["documents"]) if isinstance(d, dict) and isinstance(d.get("path"), str) and d["path"]]
     for document in documents:
-        document.setdefault("version", "effective")
-        document.setdefault("lifecycle_state", "in-review")
+        document.setdefault("version", sc.DEFAULT_DOCUMENT_VERSION)
+        document.setdefault("lifecycle_state", sc.DEFAULT_DOCUMENT_LIFECYCLE_STATE)
     entry["documents"] = list(documents)
-    for key in TEXT_FIELDS:
+    for key in sc.BASELINE_TEXT_FIELDS:
         if not isinstance(entry.get(key), str):
             entry[key] = ""
     raw_code: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = entry.get("code")
     code: JsonObject = raw_code if isinstance(raw_code, dict) else {}
-    code.setdefault("state", "unknown")
-    for key in CODE_REF_LISTS:
+    if not sc.is_code_state(code.get("state")):
+        code["state"] = sc.DEFAULT_CODE_STATE
+    for key in sc.CODE_REF_LISTS:
         if not isinstance(code.get(key), list):
             code[key] = []
     entry["code"] = code
@@ -136,23 +179,20 @@ def _normalize_documentation(entry: JsonObject, warnings: list[str]) -> None:
             list[BaselineDocument],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
-        if d["version"] == "effective" and "arc42" in Path(d["path"]).parts
+        if d["version"] == sc.VERSION_EFFECTIVE and "arc42" in Path(d["path"]).parts
     ]
-    if entry["documentationAction"] == "none" and entry["designAction"] in {
-        "none",
-        "reuse",
-        "validate-existing",
-    }:
+    design: JsonValue = entry["designAction"]
+    if entry["documentationAction"] == sc.DOC_NONE and design in DESIGN_KEPT:
         if not canonical:
             warnings.append(
                 "existing design has no canonical arc42 document: documentation is created",
             )
-            entry["documentationAction"] = "create"
-        elif entry["designAction"] in {"none", "reuse"} and any(d["lifecycle_state"] != "effective" for d in canonical):
+            entry["documentationAction"] = sc.DOC_CREATE
+        elif design in DESIGN_UNVALIDATED and any(d["lifecycle_state"] != sc.LIFECYCLE_EFFECTIVE for d in canonical):
             warnings.append(
                 "canonical views are in review: the existing design is validated",
             )
-            entry["designAction"] = "validate-existing"
+            entry["designAction"] = sc.DESIGN_VALIDATE_EXISTING
 
 
 def _normalize(entry: JsonObject, warnings: list[str]) -> bool:
@@ -168,84 +208,85 @@ def _normalize(entry: JsonObject, warnings: list[str]) -> bool:
     """
     unknown: bool = False
     code: dict[str, contracts.JsonValue] = _normalize_inputs(entry)
-    if entry.get("kind") not in {"behavior", "infrastructure", "documentation"}:
-        entry["kind"] = "behavior"
-    if entry.get("designAction") not in {
-        "none",
-        "reuse",
-        "validate-existing",
-        "modify",
-        "new",
-    }:
+    if not sc.is_baseline_kind(entry.get("kind")):
+        entry["kind"] = sc.DEFAULT_BASELINE_KIND
+    if not sc.is_design_action(entry.get("designAction")):
         warnings.append(f"designAction {entry.get('designAction')!r} is not stated")
-        entry["designAction"] = "validate-existing"
+        entry["designAction"] = sc.DEFAULT_DESIGN_ACTION
         unknown = True
-    if entry.get("documentationAction") not in {"none", "update", "create"}:
-        entry["documentationAction"] = "none"
-    if entry.get("disposition") not in DISPOSITION_ACTION:
-        entry["disposition"] = "undetermined"
-    action: str = DISPOSITION_ACTION[check_type(entry["disposition"], str)]
-    if code["state"] == "unknown":
-        action = "unknown"
-    elif code["state"] == "not-applicable":
-        action = "none"
-    elif action == "none" and code["state"] in CODE_STATE_ACTION:
-        action = CODE_STATE_ACTION[check_type(code["state"], str)]
+    if not sc.is_documentation_action(entry.get("documentationAction")):
+        entry["documentationAction"] = sc.DEFAULT_DOCUMENTATION_ACTION
+    stated: JsonValue = entry.get("disposition")
+    disposition: sc.BaselineDisposition = (
+        stated if sc.is_baseline_disposition(stated) else sc.DEFAULT_BASELINE_DISPOSITION
+    )
+    entry["disposition"] = disposition
+    state: JsonValue = code["state"]
+    action: sc.ImplementationAction = sc.DISPOSITION_ACTION[disposition]
+    if state == sc.CODE_UNKNOWN:
+        action = sc.IMPL_UNKNOWN
+    elif state == sc.CODE_NOT_APPLICABLE:
+        action = sc.IMPL_NONE
+    elif action == sc.IMPL_NONE and sc.is_code_state(state) and state in sc.CODE_STATE_ACTION:
+        action = sc.CODE_STATE_ACTION[state]
     if entry.get("implementationAction") != action:
         warnings.append(
             f"implementationAction {entry.get('implementationAction')!r} derived as "
-            f"{action!r} from disposition {entry['disposition']} and code {code['state']}",
+            f"{action!r} from disposition {disposition} and code {state}",
         )
         entry["implementationAction"] = action
     _normalize_documentation(entry, warnings)
-    return unknown or code["state"] == "unknown" or action == "unknown"
+    return unknown or state == sc.CODE_UNKNOWN or action == sc.IMPL_UNKNOWN
 
 
-def _entry_warnings(entry: BaselineEntry) -> list[str]:
+def _entry_warnings(entry: BaselineEntry, repository_paths: dict[str, str]) -> list[str]:
     """Name what the evidence of an entry does not show.
 
     Args:
         entry: One normalized assessment entry.
+        repository_paths: Named checkout paths from the saved repository menu.
 
     Returns:
         The warnings.
 
     """
     document: BaselineDocument
-    refs: list[JsonObject]
+    refs: list[sc.EvidenceRef]
     _: list[JsonObject]
     failures: list[str]
     warnings: list[str] = []
     code: contracts.BaselineCode = entry["code"]
-    relevant: list[contracts.JsonObject] = (
-        code["behaviorEvidenceRefs"] if entry["kind"] == "behavior" else code["infrastructureEvidenceRefs"]
+    relevant: list[sc.EvidenceRef] = (
+        code["behaviorEvidenceRefs"] if entry["kind"] == sc.KIND_BEHAVIOR else code["infrastructureEvidenceRefs"]
     )
-    if code["state"] in {"complete", "partial", "absent"} and not relevant:
+    if code["state"] in CODE_ASSESSED and not relevant:
         warnings.append(
             "code assessment lacks inspected evidence for its obligation kind",
         )
-    if entry["kind"] == "behavior" and code["state"] == "not-applicable":
+    if entry["kind"] == sc.KIND_BEHAVIOR and code["state"] == sc.CODE_NOT_APPLICABLE:
         warnings.append("behavioral obligation states no implementation evidence")
     for document in entry["documents"]:
         warnings.extend(_document_warnings(document))
-    for refs in (
-        code["behaviorEvidenceRefs"],
-        code["infrastructureEvidenceRefs"],
-        entry["awsGuidance"],
-        entry["suitabilityEvidenceRefs"],
-    ):
-        _, failures = evidence_state(refs)
+    for refs in _evidence_lists(entry):
+        _, failures = evidence_state([json_object(ref) for ref in refs], repository_paths=repository_paths)
         warnings.extend(failures)
     return warnings
+
+
+@dataclass(frozen=True)
+class _AssessmentInputs:
+    named: dict[str, JsonObject]
+    matrix: JsonObject | None
+    repository_paths: dict[str, str]
 
 
 def _assess_entry(
     key: str,
     raw_entry: JsonObject,
-    named: dict[str, JsonObject],
     result: BaselineFacts,
-    matrix_snapshot: JsonObject | None,
+    inputs: _AssessmentInputs,
 ) -> None:
+    named, matrix_snapshot, repository_paths = inputs.named, inputs.matrix, inputs.repository_paths
     notes: list[str] = []
     _normalize(raw_entry, notes)
     entry: contracts.BaselineEntry = check_type(
@@ -254,19 +295,19 @@ def _assess_entry(
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
     # Historical code judgments remain context, never the scope decision.
-    unknown: bool = entry["disposition"] == "undetermined"
+    unknown: bool = entry["disposition"] == sc.DISPOSITION_UNDETERMINED
     if key in named:
         stated: list[str] = [str(r) for r in _list(named[key].get("requirements")) if isinstance(r, str) and r.strip()]
         if stated and set(stated) != set(entry["requirements"]):
             notes.append("requirements taken from the surveyed capability")
             entry["requirements"] = stated
-    notes.extend(_entry_warnings(entry))
+    notes.extend(_entry_warnings(entry, repository_paths))
     result["warnings"].extend(f"{key}: {note}" for note in notes)
-    if entry["designAction"] in {"modify", "new"}:
+    if entry["designAction"] in DESIGN_WORK:
         result["designWork"].append(key)
-    if entry["designAction"] == "validate-existing":
+    if entry["designAction"] == sc.DESIGN_VALIDATE_EXISTING:
         result["designReview"].append(key)
-    if entry["documentationAction"] != "none":
+    if entry["documentationAction"] != sc.DOC_NONE:
         result["docWork"].append(key)
     if unknown or entry["conflicts"]:
         result["unknowns"].append(key)
@@ -285,7 +326,12 @@ def _assess_entry(
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def baseline_facts(survey: JsonObject, matrix_snapshot: JsonObject | None = None) -> BaselineFacts:
+def baseline_facts(
+    survey: JsonObject,
+    matrix_snapshot: JsonObject | None = None,
+    *,
+    repository_paths: dict[str, str] | None = None,
+) -> BaselineFacts:
     """Return explicit actions; missing/invalid observations never imply no work.
 
     The assessment is invalid only when the survey carries none. Each entry is normalized
@@ -329,12 +375,11 @@ def baseline_facts(survey: JsonObject, matrix_snapshot: JsonObject | None = None
             "the survey carries no assessment (its `baseline` list is missing or empty)",
         )
         return result
-    raw_schema: object = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    schema: JsonObject = json_object(raw_schema)
+    schema: JsonObject = sc.baseline_schema()
     result["warnings"].extend(
         f"baseline {list(error.absolute_path)}: {error.message}"
         for error in sorted(
-            Draft202012Validator(schema).iter_errors(baseline),
+            strictschema.validator(schema).iter_errors(baseline),
             key=lambda error: str(list(error.absolute_path)),
         )
     )
@@ -366,7 +411,7 @@ def baseline_facts(survey: JsonObject, matrix_snapshot: JsonObject | None = None
     for key in sorted(set(by_id) - set(named)):
         result["warnings"].append(f"{key}: no surveyed capability has this name")
     for key, raw_entry in by_id.items():
-        _assess_entry(key, raw_entry, named, result, matrix_snapshot)
+        _assess_entry(key, raw_entry, result, _AssessmentInputs(named, matrix_snapshot, repository_paths or {}))
     result["valid"] = True
     return result
 
@@ -398,7 +443,7 @@ def _fingerprint_paths(paths: set[Path], warnings: list[str]) -> dict[str, str |
     return files
 
 
-def _fingerprint_repositories(repositories: set[str], form: str | None, warnings: list[str]) -> dict[str, str]:
+def _fingerprint_repositories(repositories: set[str], form: SealForm | None, warnings: list[str]) -> dict[str, str]:
     repo: str
     trees: dict[str, str] = {}
     for repo in sorted(repositories) if form is None else []:
@@ -420,31 +465,30 @@ def _fingerprint_repositories(repositories: set[str], form: str | None, warnings
     return trees
 
 
-def _read_freshness_receipt(path: Path, warnings: list[str]) -> JsonObject:
-    try:
-        loaded: object = json.loads(path.read_text(encoding="utf-8"))
-        saved: dict[str, contracts.JsonValue] = _validate_freshness_receipt(loaded)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as exc:
-        warnings.append(f"survey freshness receipt unreadable: {exc}")
-        return {}
-    return saved
+def survey_binding(path: Path) -> tuple[SealForm | None, str] | None:
+    """Read a validated survey seal's form and context binding.
 
+    An OSError reading the seal, other than its absence, propagates from
+    contracts.read_survey_seal.
 
-def _validate_freshness_receipt(value: object) -> JsonObject:
-    field: str | str
-    saved: dict[str, contracts.JsonValue] = json_object(value)
-    for field in ("inputs", "repos"):
-        paths: list[str] = check_type(
-            saved.get(field),
-            list[str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        if any(not Path(path).is_absolute() for path in paths):
-            message: str = "freshness receipt lacks absolute input/repository paths"
-            raise ValueError(message)
-    return saved
+    Args:
+        path: The survey freshness seal file (see contracts.survey_seal_path).
+
+    Returns:
+        The seal's form and contextSha, or None when the seal is missing or fails validation.
+
+    Raises:
+        TypeError: path is not a Path.
+
+    """
+    if not isinstance(path, Path):
+        message: str = "survey_binding requires a Path"
+        raise TypeError(message)
+    warnings: list[str] = []
+    saved: SurveySeal | None = read_survey_seal(path, warnings)
+    if saved is None or warnings:
+        return None
+    return saved.get("form"), saved["contextSha"]
 
 
 def _read_survey(path: Path, errors: list[str]) -> tuple[JsonObject, bool]:
@@ -466,21 +510,25 @@ class FreshnessOptions:
     repos: list[str] | None = None
     seal: bool = False
     context_sha: str | None = None
-    form: str | None = None
+    form: SealForm | None = None
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
         """Validate each field and collection member.
 
         Raises:
-            TypeError: The freshness configuration contains an invalid value.
+            TypeError: The freshness configuration contains a value of the wrong type.
+            ValueError: form is not one of contracts.SEAL_FORMS.
 
         """
         message: str = "Invalid survey freshness configuration"
         if not isinstance(self.seal, bool):
             raise TypeError(message)
-        if any(value is not None and not isinstance(value, str) for value in (self.context_sha, self.form)):
+        if self.context_sha is not None and not isinstance(self.context_sha, str):
             raise TypeError(message)
+        if self.form is not None and self.form not in SEAL_FORMS:
+            form_error: str = f"{message}: form {self.form!r} is not one of {sorted(SEAL_FORMS)}"
+            raise ValueError(form_error)
         if self.inputs is not None and (
             not isinstance(self.inputs, list) or any(not isinstance(path, Path) for path in self.inputs)
         ):
@@ -491,50 +539,43 @@ class FreshnessOptions:
             raise TypeError(message)
 
 
+@dataclass(frozen=True)
+class _FreshnessInputs:
+    saved: SurveySeal | None
+    warnings: list[str]
+    repository_paths: dict[str, str]
+
+
 def _freshness_receipt(
     survey: JsonObject,
     facts: BaselineFacts,
     options: FreshnessOptions,
-    saved: JsonObject,
-    warnings: list[str],
-) -> JsonObject:
+    binding_inputs: _FreshnessInputs,
+) -> tuple[SurveySeal, bool]:
     states: list[JsonObject]
     reference_warnings: list[str]
+    saved: SurveySeal | None = binding_inputs.saved
     inputs: list[Path] | None = options.inputs
     repos: list[str] | None = options.repos
     context_sha: str | None = options.context_sha
-    form: str | None = options.form
+    form: SealForm | None = options.form
+    if form is None and saved is not None:
+        form = saved.get("form")
     if context_sha is None:
-        context_sha = check_type(saved.get("contextSha", ""), str)
+        context_sha = saved["contextSha"] if saved is not None else ""
     if context_sha and not re.fullmatch(r"[0-9a-f]{64}", context_sha):
-        warnings.append("survey context is not a SHA-256 digest")
+        binding_inputs.warnings.append("survey context is not a SHA-256 digest")
     if not inputs:
-        inputs = [
-            Path(value)
-            for value in check_type(
-                saved.get("inputs", []),
-                list[str],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-        ]
+        inputs = [Path(value) for value in saved["inputs"]] if saved is not None else []
     if not repos:
-        repos = check_type(
-            saved.get("repos", []),
-            list[str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
+        repos = list(saved["repos"]) if saved is not None else []
     if not inputs:
-        warnings.append("survey freshness names no PRD/model/constraint inputs")
+        binding_inputs.warnings.append("survey freshness names no PRD/model/constraint inputs")
     references: list[dict[str, contracts.JsonValue]] = [
-        ref
-        for entry in facts["entries"]
-        for ref in entry["code"]["behaviorEvidenceRefs"]
-        + entry["code"]["infrastructureEvidenceRefs"]
-        + entry["awsGuidance"]
-        + entry["suitabilityEvidenceRefs"]
+        json_object(ref) for entry in facts["entries"] for refs in _evidence_lists(entry) for ref in refs
     ]
-    states, reference_warnings = evidence_state(references)
-    warnings.extend(reference_warnings)
+    states, reference_warnings = evidence_state(references, repository_paths=binding_inputs.repository_paths)
+    binding_inputs.warnings.extend(reference_warnings)
     paths: set[Path] = set(inputs) | {
         Path(document["path"]) for entry in facts["entries"] for document in entry["documents"]
     }
@@ -550,28 +591,24 @@ def _freshness_receipt(
         for ref in references
         if isinstance(ref, dict) and ref.get("repo") and not Path(str(ref.get("path") or "")).is_absolute()
     }
-    if form not in {None, "adopted", "v2"}:
-        message: str = f"unknown survey seal form: {form}"
-        raise ValueError(message)
-    raw_schema: object = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    schema: JsonObject = json_object(raw_schema)
+    schema: JsonObject = sc.baseline_schema()
     binding: contracts.JsonInput = {
-        "files": _fingerprint_paths(paths, warnings),
+        "files": _fingerprint_paths(paths, binding_inputs.warnings),
         "contextSha": context_sha,
-        "repositories": _fingerprint_repositories(repositories, form, warnings),
+        "repositories": _fingerprint_repositories(repositories, form, binding_inputs.warnings),
         "evidence": states,
         "schema": schema,
     }
-    receipt: JsonObject = {
+    receipt: SurveySeal = {
         "revision": digest(binding),
         "surveySha256": digest(survey),
         "contextSha": context_sha,
-        "inputs": contracts.json_value(sorted(str(path) for path in inputs)),
-        "repos": contracts.json_value(sorted(repositories)),
+        "inputs": sorted(str(path) for path in inputs),
+        "repos": sorted(repositories),
     }
     if form is not None:
         receipt["form"] = form
-    return receipt
+    return receipt, not reference_warnings
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -580,9 +617,10 @@ def survey_freshness(survey_path: Path, options: FreshnessOptions) -> FreshnessR
 
     Repository trees are survey-discovery inputs, not reviewer invalidation keys.
     A newly accepted survey is sealed explicitly; checking never updates its seal. Whatever
-    cannot be read (the receipt, an input, a repository's main tree, a cited source) is a
-    warning and is bound as it is; the seal is written whenever the survey parses, and the
-    survey is current only while it carries an assessment.
+    cannot be read (an input, a repository's main tree, a cited source) is a warning and is
+    bound as it is; the seal is written whenever the survey parses, and the survey is current
+    only while it carries an assessment. An OSError reading the seal, other than its absence,
+    propagates from contracts.read_survey_seal, and an OSError writing the seal propagates.
 
     Returns:
         The exact validity, freshness, fingerprint and diagnostics.
@@ -598,11 +636,19 @@ def survey_freshness(survey_path: Path, options: FreshnessOptions) -> FreshnessR
         raise TypeError(argument_error)
     errors: list[str] = []
     warnings: list[str] = []
-    seal_path: Path = survey_path.with_name(survey_path.name + ".baseline-inputs.json")
-    saved: dict[str, contracts.JsonValue] = _read_freshness_receipt(seal_path, warnings)
+    seal_path: Path = survey_seal_path(survey_path)
+    saved: SurveySeal | None = read_survey_seal(seal_path, warnings)
     survey, parsed = _read_survey(survey_path, errors)
-    facts: contracts.BaselineFacts = baseline_facts(survey)
-    receipt: dict[str, contracts.JsonValue] = _freshness_receipt(survey, facts, options, saved, warnings)
+    repository_paths = load_repository_paths(survey_path.parent)
+    facts: contracts.BaselineFacts = baseline_facts(survey, repository_paths=repository_paths)
+    receipt: SurveySeal
+    evidence_readable: bool
+    receipt, evidence_readable = _freshness_receipt(
+        survey,
+        facts,
+        options,
+        _FreshnessInputs(saved, warnings, repository_paths),
+    )
     valid: bool = facts["valid"] and not errors
     current: bool = False
     if options.seal and parsed:
@@ -612,19 +658,13 @@ def survey_freshness(survey_path: Path, options: FreshnessOptions) -> FreshnessR
             encoding="utf-8",
         )
         temporary.replace(seal_path)
-        current = valid
+        current = valid and evidence_readable
     elif not options.seal:
-        try:
-            saved_receipt: object = json.loads(seal_path.read_text(encoding="utf-8"))
-            current = valid and saved_receipt == receipt
-        except FileNotFoundError:
-            pass
-        except (OSError, ValueError) as exc:
-            warnings.append(f"survey freshness receipt unreadable: {exc}")
+        current = valid and evidence_readable and saved is not None and saved == receipt
     return {
         "valid": valid,
         "current": current,
-        "revision": check_type(receipt["revision"], str),
+        "revision": receipt["revision"],
         "errors": facts["errors"] + errors,
         "warnings": facts["warnings"] + warnings,
     }

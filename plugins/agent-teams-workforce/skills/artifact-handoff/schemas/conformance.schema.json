@@ -1,76 +1,20 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The architecture-conformance-reviewer's result for an integration (architecture.js Integrate, conformance-<n>.json). Conformance findings and coverage checks are defined once in architecture-common.schema.json#/$defs.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "conforms",
-    "reviewedFiles",
-    "findings",
-    "coverageChecks",
-    "summary"
-  ],
+  "required": ["conforms", "reviewedFiles", "findings", "coverageChecks", "summary"],
   "properties": {
-    "conforms": {
-      "type": "boolean"
+    "conforms": {"type": "boolean"},
+    "reviewedFiles": {"type": "array", "items": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "architecture-common.schema.json#/$defs/ConformanceFinding"}
     },
     "coverageChecks": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "verdict",
-          "evidence"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "verified",
-              "unsupported",
-              "wrong"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
-      }
+      "items": {"$ref": "architecture-common.schema.json#/$defs/CoverageCheck"}
     },
-    "reviewedFiles": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "findings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "file",
-          "finding",
-          "evidence"
-        ],
-        "properties": {
-          "file": {
-            "type": "string"
-          },
-          "finding": {
-            "type": "string"
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "summary": {
-      "type": "string"
-    }
+    "summary": {"type": "string"}
   }
 }

@@ -60,17 +60,22 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - the tool runs git, gh and bd with list argv and no shell
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
+from driver_surface_types import CONTROL_REPO_ENV
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
@@ -81,6 +86,8 @@ ENTRY_LISTS = ("repos", "deprecations")
 WORKTREES_LINE = ".worktrees/"
 OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+FILES_SHOWN = 5
+EXIT_USAGE = 2
 
 
 class PolyrepoError(Exception):
@@ -103,6 +110,7 @@ def run(
 
     Returns:
         The completed process; a timeout comes back as returncode 124.
+
     """
     base: dict[str, str] = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     for k, v in (env or {}).items():
@@ -111,7 +119,7 @@ def run(
         else:
             base[k] = v
     try:
-        return subprocess.run(
+        return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - list argv built by this tool, no shell
             argv,
             cwd=cwd,
             capture_output=True,
@@ -125,12 +133,15 @@ def run(
 
 
 def git(
-    repo: Path, *args: str, timeout: int = GIT_TIMEOUT
+    repo: Path,
+    *args: str,
+    timeout: int = GIT_TIMEOUT,
 ) -> subprocess.CompletedProcess[str]:
     """Run git in a repository.
 
     Returns:
         The completed process.
+
     """
     return run(["git", "-C", str(repo), *args], timeout=timeout)
 
@@ -140,6 +151,7 @@ def git_out(repo: Path, *args: str) -> str | None:
 
     Returns:
         The stripped output, or None.
+
     """
     cp = git(repo, *args)
     return cp.stdout.strip() if cp.returncode == 0 else None
@@ -155,6 +167,7 @@ def expand_env(text: str, extra: dict[str, str] | None = None) -> str:
 
     Returns:
         The expanded text.
+
     """
     env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), **(extra or {})}
     return re.sub(
@@ -169,19 +182,22 @@ def fetch_origin(repo: Path) -> str | None:
 
     Returns:
         None on success, else the last line of git's error.
+
     """
     cp = git(repo, "fetch", "--quiet", "--prune", "origin", timeout=FETCH_TIMEOUT)
     return None if cp.returncode == 0 else _last_line(cp)
 
 
 def main_vs_origin(
-    repo: Path, branch: str
+    repo: Path,
+    branch: str,
 ) -> tuple[str | None, str | None, int | None, int | None]:
     """Compare the local default branch with its origin copy, as last fetched.
 
     Returns:
         (main sha, origin/main sha, commits ahead, commits behind); the counts are None
         unless both branches exist.
+
     """
     main = git_out(repo, "rev-parse", "--verify", "-q", f"refs/heads/{branch}")
     om = git_out(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{branch}")
@@ -207,6 +223,7 @@ def mentions(repo: Path, item: str) -> bool:
 
     Returns:
         True when a tracked file contains one of the forms.
+
     """
     argv = ["grep", "-q", "-i", "-F", "-I"]
     for f in sorted({item, item.replace("-", "_")}):
@@ -251,6 +268,7 @@ class Config:
 
         Returns:
             The absolute path.
+
         """
         rel = (self.raw.get(section) or {}).get(key) or default
         return (self.file.parent / str(rel)).resolve()
@@ -260,6 +278,7 @@ class Config:
 
         Returns:
             The pattern mapping, or None when no pattern matches.
+
         """
         for p in self.patterns:
             if re.fullmatch(p["regex"], name):
@@ -271,16 +290,16 @@ class Config:
 
         Returns:
             True when the name is the project's and not excluded.
+
         """
-        return name not in self.exclude_names and any(
-            r.search(name) for r in self.owned
-        )
+        return name not in self.exclude_names and any(r.search(name) for r in self.owned)
 
     def expected_space(self, name: str) -> str | None:
         """Return the app space a repo of this name lives in; deprecated repos keep their space.
 
         Returns:
             The space name, or None when the name implies none.
+
         """
         p = self.classify(name)
         if p is None:
@@ -301,6 +320,7 @@ class Config:
 
         Returns:
             The https URL ending in .git.
+
         """
         return f"https://github.com/{self.owner}/{name}.git"
 
@@ -313,6 +333,7 @@ def find_config(explicit: str | None) -> Path:
 
     Raises:
         PolyrepoError: when no config file can be found.
+
     """
     candidates: list[Path] = []
     if explicit:
@@ -323,7 +344,7 @@ def find_config(explicit: str | None) -> Path:
     candidates.extend(d / ".polyrepo" / "config.yaml" for d in (here, *here.parents))
     if os.environ.get("SKILLSPOKE_CC"):
         candidates.append(
-            Path(os.environ["SKILLSPOKE_CC"]) / ".polyrepo" / "config.yaml"
+            Path(os.environ["SKILLSPOKE_CC"]) / ".polyrepo" / "config.yaml",
         )
     for c in candidates:
         if c.is_file():
@@ -340,6 +361,7 @@ def load_config(explicit: str | None) -> Config:
 
     Raises:
         PolyrepoError: when the root environment variable is unset or not a folder.
+
     """
     f = find_config(explicit)
     raw = YAML(typ="safe").load(f.read_text()) or {}
@@ -402,6 +424,7 @@ def discover(cfg: Config) -> tuple[dict[str, LocalRepo], list[tuple[str, list[Pa
 
     Returns:
         The repos by name, and any names found at more than one path.
+
     """
     found: dict[str, list[LocalRepo]] = {}
 
@@ -432,6 +455,7 @@ def fetch_is_fresh(repo: Path, ttl: int) -> bool:
 
     Returns:
         True when FETCH_HEAD is younger than ttl seconds.
+
     """
     fh = repo / ".git" / "FETCH_HEAD"
     return fh.exists() and time.time() - fh.stat().st_mtime < ttl
@@ -442,6 +466,7 @@ def collect_local(r: LocalRepo, cfg: Config, fetch: bool, use_cache: bool) -> Lo
 
     Returns:
         The same LocalRepo, filled in.
+
     """
     r.origin_url = git_out(r.path, "remote", "get-url", "origin")
     if fetch and r.origin_url and not (use_cache and fetch_is_fresh(r.path, cfg.ttl)):
@@ -449,27 +474,27 @@ def collect_local(r: LocalRepo, cfg: Config, fetch: bool, use_cache: bool) -> Lo
     fh = r.path / ".git" / "FETCH_HEAD"
     if fh.exists():
         r.fetched_at = dt.datetime.fromtimestamp(fh.stat().st_mtime, dt.UTC).isoformat(
-            timespec="seconds"
+            timespec="seconds",
         )
     r.branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD") or "(detached)"
     porcelain = git(r.path, "status", "--porcelain=v1", "--untracked-files=normal")
-    r.uncommitted_files = [
-        ln[3:]
-        for ln in porcelain.stdout.splitlines()
-        if porcelain.returncode == 0 and ln.strip()
-    ]
+    r.uncommitted_files = [ln[3:] for ln in porcelain.stdout.splitlines() if porcelain.returncode == 0 and ln.strip()]
     r.uncommitted = len(r.uncommitted_files)
     log = git_out(r.path, "log", "-1", "--format=%H%x1f%cI%x1f%s")
     if log:
         r.head_sha, r.head_date, r.head_subject = log.split("\x1f", 2)
     r.main_sha, r.origin_main_sha, r.ahead, r.behind = main_vs_origin(
-        r.path, cfg.default_branch
+        r.path,
+        cfg.default_branch,
     )
     return r
 
 
 def collect_all_local(
-    repos: dict[str, LocalRepo], cfg: Config, fetch: bool, use_cache: bool
+    repos: dict[str, LocalRepo],
+    cfg: Config,
+    fetch: bool,
+    use_cache: bool,
 ) -> None:
     """Collect live git facts for every repo in parallel."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
@@ -481,6 +506,7 @@ def parse_github_url(url: str | None) -> tuple[str, str] | None:
 
     Returns:
         (owner, name), or None when the URL is not a GitHub URL.
+
     """
     if not url:
         return None
@@ -509,11 +535,7 @@ class GitHub:
         self.lower = {n.lower(): n for n in self.repos}
 
     def _load(self, use_cache: bool) -> dict[str, dict[str, Any]]:
-        if (
-            use_cache
-            and self.cache_file.exists()
-            and time.time() - self.cache_file.stat().st_mtime < self.cfg.ttl
-        ):
+        if use_cache and self.cache_file.exists() and time.time() - self.cache_file.stat().st_mtime < self.cfg.ttl:
             return json.loads(self.cache_file.read_text())
         cp = run(
             [
@@ -548,6 +570,7 @@ class GitHub:
 
         Returns:
             The repo record, or None.
+
         """
         n = self.lower.get(name.lower())
         return self.repos.get(n) if n else None
@@ -557,6 +580,7 @@ class GitHub:
 
         Returns:
             The current record of the repo the name leads to, or None when none exists.
+
         """
         if name in self._resolved:
             return self._resolved[name]
@@ -565,10 +589,7 @@ class GitHub:
             cp = run(["gh", "api", f"repos/{self.cfg.owner}/{name}"], timeout=60)
             if cp.returncode == 0:
                 d = json.loads(cp.stdout)
-                if (
-                    d.get("owner", {}).get("login", "").lower()
-                    == self.cfg.owner.lower()
-                ):
+                if d.get("owner", {}).get("login", "").lower() == self.cfg.owner.lower():
                     rec = self.get(d["name"]) or {
                         "name": d["name"],
                         "archived": d.get("archived", False),
@@ -591,9 +612,7 @@ class Manifest:
         """Load the manifest; a missing file starts an empty one."""
         self.path = path
         self.yaml = _yaml()
-        self.doc: CommentedMap = (
-            self.yaml.load(path.read_text()) if path.exists() else CommentedMap()
-        )
+        self.doc: CommentedMap = self.yaml.load(path.read_text(encoding="utf-8")) if path.exists() else CommentedMap()
         if self.doc.get("repos") is None:
             self.doc["repos"] = []
         self.dirty = False
@@ -603,6 +622,7 @@ class Manifest:
 
         Returns:
             A name → entry mapping.
+
         """
         return {
             e["name"]: e
@@ -616,18 +636,16 @@ class Manifest:
 
         Returns:
             Every group with a name.
+
         """
-        return [
-            g
-            for g in self.doc.get("groups") or []
-            if isinstance(g, dict) and g.get("name")
-        ]
+        return [g for g in self.doc.get("groups") or [] if isinstance(g, dict) and g.get("name")]
 
     def has_stored_dependencies(self) -> bool:
         """Say whether the manifest holds repo-to-repo dependency edges, which it may not.
 
         Returns:
             True when `relationships.dependencies` is present and not empty.
+
         """
         rel = self.doc.get("relationships") or {}
         return bool(rel.get("dependencies"))
@@ -644,6 +662,7 @@ class Manifest:
 
         Returns:
             Group names.
+
         """
         return [g["name"] for g in self.groups() if name in (g.get("members") or [])]
 
@@ -680,7 +699,7 @@ class Manifest:
             del self.doc[key]
             self.dirty = True
 
-    def set_field(self, name: str, key: str, value: Any) -> None:
+    def set_field(self, name: str, key: str, value: object) -> None:
         """Set one field on an entry; None removes the field."""
         e = self.entries()[name]
         if value is None:
@@ -740,6 +759,7 @@ class State:
 
         Returns:
             Canonical names.
+
         """
         return resolve_names(self.tracked_names(), self.local, wanted)
 
@@ -749,11 +769,10 @@ class State:
         Returns:
             "active", "inactive" (deprecated or archived), "renamed:<new name>" when GitHub
             redirects it, or "missing".
+
         """
         if name in self.local or self.gh.get(name):
-            return (
-                "inactive" if self.lifecycle(name) in LIFECYCLES_INACTIVE else "active"
-            )
+            return "inactive" if self.lifecycle(name) in LIFECYCLES_INACTIVE else "active"
         rec = self.gh.resolve(name)
         return f"renamed:{rec['name']}" if rec else "missing"
 
@@ -762,6 +781,7 @@ class State:
 
         Returns:
             True or False from the repo's tracked files; None when src is not on disk.
+
         """
         r = self.local.get(src)
         if r is None:
@@ -785,6 +805,7 @@ class State:
 
         Returns:
             archived, deprecated, or the manifest's lifecycle (active when absent).
+
         """
         g = self.gh.get(name)
         if g and g["archived"]:
@@ -806,6 +827,7 @@ class State:
 
         Returns:
             True when the purpose needs a recheck.
+
         """
         if not r or not r.main_sha:
             return False
@@ -836,13 +858,12 @@ class State:
 
         Returns:
             Sorted names.
+
         """
         names = set(self.local) | set(self.manifest.entries())
         for n in self.gh.repos:
             p = self.cfg.classify(n)
-            if self.cfg.is_owned(n) and (
-                all_github or (p and p["kind"] == "deprecated")
-            ):
+            if self.cfg.is_owned(n) and (all_github or (p and p["kind"] == "deprecated")):
                 names.add(n)
         return sorted(names, key=str.lower)
 
@@ -857,6 +878,7 @@ class State:
 
         Returns:
             The record.
+
         """
         r = self.local.get(name)
         e = self.manifest.entries().get(name) or {}
@@ -884,9 +906,7 @@ class State:
             "uncommitted": r.uncommitted if r else None,
             "uncommitted_files": r.uncommitted_files if r else None,
             "last_commit": (
-                {"sha": r.head_sha, "date": r.head_date, "subject": r.head_subject}
-                if r and r.head_sha
-                else None
+                {"sha": r.head_sha, "date": r.head_date, "subject": r.head_subject} if r and r.head_sha else None
             ),
             "main": (
                 {
@@ -913,11 +933,7 @@ class State:
                 }
                 for o in e.get("owns") or []
             ],
-            "groups": (
-                self.manifest.groups_of(name)
-                if live and lifecycle not in LIFECYCLES_INACTIVE
-                else []
-            ),
+            "groups": (self.manifest.groups_of(name) if live and lifecycle not in LIFECYCLES_INACTIVE else []),
         }
         if e.get("deprecated_on"):
             rec["deprecated_on"] = str(e["deprecated_on"])
@@ -929,6 +945,7 @@ def gather(cfg: Config, fetch: bool, use_cache: bool) -> State:
 
     Returns:
         The State.
+
     """
     local, dups = discover(cfg)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
@@ -961,6 +978,7 @@ class Finding:
 
         Returns:
             The finding without its action.
+
         """
         return {
             "kind": self.kind,
@@ -982,18 +1000,18 @@ def must(cp: subprocess.CompletedProcess[str]) -> None:
 
     Raises:
         GitFailedError: when the command exited non-zero.
+
     """
     if cp.returncode != 0:
         raise GitFailedError(
-            (cp.stderr or cp.stdout).strip() or f"{cp.args} exited {cp.returncode}"
+            (cp.stderr or cp.stdout).strip() or f"{cp.args} exited {cp.returncode}",
         )
 
 
 def point_origin(repo: Path, url: str) -> None:
     """Point the repo's origin remote at a URL, adding the remote when it has none.
 
-    Raises:
-        GitFailedError: when git fails.
+    A git failure propagates as the GitFailedError that `must` raises.
     """
     verb = "set-url" if git_out(repo, "remote", "get-url", "origin") else "add"
     must(git(repo, "remote", verb, "origin", url))
@@ -1002,8 +1020,7 @@ def point_origin(repo: Path, url: str) -> None:
 def create_on_github(cfg: Config, name: str, repo: Path) -> None:
     """Create the private GitHub repo with auto-merge allowed, point origin at it, and push.
 
-    Raises:
-        GitFailedError: when gh or git fails.
+    A gh or git failure propagates as the GitFailedError that `must` raises.
     """
     must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
     must(
@@ -1018,7 +1035,7 @@ def create_on_github(cfg: Config, name: str, repo: Path) -> None:
                 "allow_auto_merge=true",
             ],
             timeout=120,
-        )
+        ),
     )
     point_origin(repo, cfg.github_url(name))
     b = cfg.default_branch
@@ -1027,13 +1044,19 @@ def create_on_github(cfg: Config, name: str, repo: Path) -> None:
 
 
 def entry_fields(
-    cfg: Config, name: str, lifecycle: str, extra: dict[str, Any] | None = None
+    cfg: Config,
+    name: str,
+    lifecycle: str,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return the fields of a new manifest entry: lifecycle, GitHub URL, default branch,
-    and the deprecation date when it is deprecated.
+    """Return the fields of a new manifest entry.
+
+    The fields are the lifecycle, GitHub URL, default branch, and the deprecation date when
+    it is deprecated.
 
     Returns:
         The fields, with extra merged over them.
+
     """
     fields: dict[str, Any] = {
         "lifecycle": lifecycle,
@@ -1050,9 +1073,9 @@ def reconcile(st: State) -> list[Finding]:
 
     Returns:
         The findings, each carrying its fix action when the fix is mechanical.
+
     """
-    cfg, man, gh = st.cfg, st.manifest, st.gh
-    entries = man.entries()
+    entries = st.manifest.entries()
     out: list[Finding] = []
     renamed_to: set[str] = set()
 
@@ -1065,7 +1088,35 @@ def reconcile(st: State) -> list[Finding]:
         for name, paths in st.duplicates
     )
 
-    # Manifest entries with no repo on disk.
+    out.extend(_check_entries_off_disk(st, entries, renamed_to))
+
+    # Repos on disk.
+    for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
+        out.extend(_check_local(st, name, r, entries, renamed_to))
+
+    # Every tracked name, on disk or not: manifest fields that GitHub decides.
+    for name in st.tracked_names():
+        out.extend(_check_tracked(st, name, entries))
+
+    out.extend(_check_github_only(st, entries, renamed_to))
+    out.extend(_check_relationships(st))
+    out.extend(_check_open_items(st))
+    return out
+
+
+def _check_entries_off_disk(
+    st: State,
+    entries: dict[str, CommentedMap],
+    renamed_to: set[str],
+) -> list[Finding]:
+    """Check manifest entries with no repo on disk, recording each GitHub rename in renamed_to.
+
+    Returns:
+        The findings, in manifest order.
+
+    """
+    cfg, man, gh = st.cfg, st.manifest, st.gh
+    out: list[Finding] = []
     for name, e in entries.items():
         if name in st.local:
             continue
@@ -1080,7 +1131,7 @@ def reconcile(st: State) -> list[Finding]:
                     fix=f"remove the {name} entry",
                     action=lambda n=name: man.remove_entry(n),
                     manifest_change=True,
-                )
+                ),
             )
         elif rec and rec["name"] != name:
             new = rec["name"]
@@ -1093,7 +1144,7 @@ def reconcile(st: State) -> list[Finding]:
                     fix=f"rename the manifest entry to {new}",
                     action=lambda o=name, n=new: man.rename_entry(o, n),
                     manifest_change=True,
-                )
+                ),
             )
         elif rec is None:
             out.append(
@@ -1104,33 +1155,33 @@ def reconcile(st: State) -> list[Finding]:
                     fix="remove the entry and its group memberships",
                     action=lambda n=name: man.remove_entry(n),
                     manifest_change=True,
-                )
+                ),
             )
-        elif (
-            lifecycle not in LIFECYCLES_INACTIVE
-            and not name.startswith("deprecated-")
-            and not rec["archived"]
-        ):
+        elif lifecycle not in LIFECYCLES_INACTIVE and not name.startswith("deprecated-") and not rec["archived"]:
             out.append(
                 Finding(
                     "not-cloned",
                     name,
                     f"on GitHub and in the manifest but not under {cfg.root}",
-                )
+                ),
             )
+    return out
 
-    # Repos on disk.
-    for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
-        out.extend(_check_local(st, name, r, entries, renamed_to))
 
-    # Every tracked name, on disk or not: manifest fields that GitHub decides.
-    for name in st.tracked_names():
-        out.extend(_check_tracked(st, name, entries))
+def _check_github_only(
+    st: State,
+    entries: dict[str, CommentedMap],
+    renamed_to: set[str],
+) -> list[Finding]:
+    """Check the project's GitHub repos that are not on disk.
 
-    # Project repos on GitHub.
-    origins = {
-        p[1].lower() for r in st.local.values() if (p := parse_github_url(r.origin_url))
-    }
+    Returns:
+        The findings, sorted by repo name.
+
+    """
+    cfg, man, gh = st.cfg, st.manifest, st.gh
+    out: list[Finding] = []
+    origins = {p[1].lower() for r in st.local.values() if (p := parse_github_url(r.origin_url))}
     for name, rec in sorted(gh.repos.items(), key=lambda kv: kv[0].lower()):
         if not cfg.is_owned(name) or name in st.local or name.lower() in origins:
             continue
@@ -1141,26 +1192,18 @@ def reconcile(st: State) -> list[Finding]:
                     "naming-violation",
                     name,
                     "GitHub repo name matches no naming pattern",
-                )
+                ),
             )
             continue
-        if (
-            pat["kind"] == "application"
-            and name not in entries
-            and name not in renamed_to
-        ):
+        if pat["kind"] == "application" and name not in entries and name not in renamed_to:
             out.append(
                 Finding(
                     "github-only",
                     name,
                     f"on GitHub but not under {cfg.root} and not in the manifest",
-                )
+                ),
             )
-        if (
-            pat["kind"] == "deprecated"
-            and name not in entries
-            and name not in renamed_to
-        ):
+        if pat["kind"] == "deprecated" and name not in entries and name not in renamed_to:
             lc = "archived" if rec["archived"] else "deprecated"
             out.append(
                 Finding(
@@ -1169,23 +1212,61 @@ def reconcile(st: State) -> list[Finding]:
                     f"{lc} repo on GitHub with no manifest entry",
                     fix=f"add a manifest entry (lifecycle {lc})",
                     action=lambda n=name, lc=lc: man.add_entry(
-                        n, entry_fields(cfg, n, lc)
+                        n,
+                        entry_fields(cfg, n, lc),
                     ),
                     manifest_change=True,
-                )
+                ),
             )
-
-    out.extend(_check_relationships(st))
-    out.extend(_check_open_items(st))
     return out
 
 
 def _check_relationships(st: State) -> list[Finding]:
-    """Check group members against disk and GitHub, each `owns` claim against the owning
-    repo's code, and that the manifest stores no repo-to-repo dependency.
+    """Check group members, `owns` claims and stored dependencies.
+
+    Group members are checked against disk and GitHub, each `owns` claim against the owning
+    repo's code, and the manifest must store no repo-to-repo dependency.
 
     Returns:
         The findings.
+
+    """
+    man = st.manifest
+    out: list[Finding] = _check_group_members(st)
+
+    if man.has_stored_dependencies():
+        out.append(
+            Finding(
+                "repo-dependency-stored",
+                "relationships.dependencies",
+                "the manifest stores repo-to-repo dependency edges; a dependency is "
+                "between services, components and infrastructure, never between repos",
+                fix="remove relationships.dependencies",
+                action=man.drop_stored_dependencies,
+                manifest_change=True,
+            ),
+        )
+
+    st.confirm_all()
+    for n, e in man.entries().items():
+        out.extend(
+            Finding(
+                "owns-unconfirmed",
+                n,
+                f"the manifest says {n} owns {o}, but no tracked file in {n} names it",
+            )
+            for o in e.get("owns") or []
+            if st.confirm(n, str(o)) is False
+        )
+    return out
+
+
+def _check_group_members(st: State) -> list[Finding]:
+    """Check every group member against disk and GitHub.
+
+    Returns:
+        One finding per member that is renamed, unknown or inactive.
+
     """
     man = st.manifest
     out: list[Finding] = []
@@ -1212,14 +1293,10 @@ def _check_relationships(st: State) -> list[Finding]:
                         fix=f"rename the member to {new}",
                         action=lambda gn=gname, o=m, n=new: man.set_member(gn, o, n),
                         manifest_change=True,
-                    )
+                    ),
                 )
                 continue
-            why = (
-                "on neither disk nor GitHub"
-                if s == "missing"
-                else "deprecated or archived"
-            )
+            why = "on neither disk nor GitHub" if s == "missing" else "deprecated or archived"
             out.append(
                 Finding(
                     f"group-member-{'unknown' if s == 'missing' else 'inactive'}",
@@ -1228,33 +1305,8 @@ def _check_relationships(st: State) -> list[Finding]:
                     fix=f"remove it from group {gname}",
                     action=lambda gn=gname, o=m: man.set_member(gn, o, None),
                     manifest_change=True,
-                )
+                ),
             )
-
-    if man.has_stored_dependencies():
-        out.append(
-            Finding(
-                "repo-dependency-stored",
-                "relationships.dependencies",
-                "the manifest stores repo-to-repo dependency edges; a dependency is "
-                "between services, components and infrastructure, never between repos",
-                fix="remove relationships.dependencies",
-                action=man.drop_stored_dependencies,
-                manifest_change=True,
-            )
-        )
-
-    st.confirm_all()
-    for n, e in man.entries().items():
-        for o in e.get("owns") or []:
-            if st.confirm(n, str(o)) is False:
-                out.append(
-                    Finding(
-                        "owns-unconfirmed",
-                        n,
-                        f"the manifest says {n} owns {o}, but no tracked file in {n} names it",
-                    )
-                )
     return out
 
 
@@ -1263,6 +1315,7 @@ def _check_open_items(st: State) -> list[Finding]:
 
     Returns:
         One finding per such section; removing it is mechanical once every entry is settled.
+
     """
     man = st.manifest
     out: list[Finding] = []
@@ -1271,12 +1324,7 @@ def _check_open_items(st: State) -> list[Finding]:
             continue
         items = man.doc.get(key) or []
         unsettled = [
-            i
-            for i in items
-            if not (
-                isinstance(i, dict)
-                and str(i.get("status", "")) in {"resolved", "false-alarm"}
-            )
+            i for i in items if not (isinstance(i, dict) and str(i.get("status", "")) in {"resolved", "false-alarm"})
         ]
         if unsettled:
             out.append(
@@ -1286,7 +1334,7 @@ def _check_open_items(st: State) -> list[Finding]:
                     f"the manifest's {key} holds {len(unsettled)} unsettled item(s); "
                     "put each to the user in the reply, record the answer where it belongs, "
                     "then remove the section",
-                )
+                ),
             )
         else:
             out.append(
@@ -1297,7 +1345,7 @@ def _check_open_items(st: State) -> list[Finding]:
                     fix=f"remove the {key} section; git history keeps it",
                     action=lambda k=key: man.remove_section(k),
                     manifest_change=True,
-                )
+                ),
             )
     return out
 
@@ -1309,10 +1357,15 @@ def _check_local(
     entries: dict[str, CommentedMap],
     renamed_to: set[str],
 ) -> list[Finding]:
-    cfg, man, gh = st.cfg, st.manifest, st.gh
+    """Check one repo on disk: its entry, naming, origin, pushed main and disk-decided fields.
+
+    Returns:
+        The findings, in check order.
+
+    """
+    cfg, man = st.cfg, st.manifest
     out: list[Finding] = []
     e = entries.get(name)
-    b = cfg.default_branch
 
     if e is None and name not in renamed_to:
         lc = "deprecated" if name.startswith("deprecated-") else "active"
@@ -1324,14 +1377,28 @@ def _check_local(
                 fix=f"add a manifest entry (lifecycle {lc}); its purpose is then a purpose-missing finding",
                 action=lambda: man.add_entry(name, entry_fields(cfg, name, lc)),
                 manifest_change=True,
-            )
+            ),
         )
 
-    # Naming and placement.
+    pat = _check_naming(cfg, name, r, out)
+    origin_ok = _check_origin(st, name, r, pat, out)
+    out.extend(_check_main_pushed(st, name, r, origin_ok=origin_ok))
+    if e is not None:
+        out.extend(_check_disk_fields(st, name, r, e))
+    return out
+
+
+def _check_naming(cfg: Config, name: str, r: LocalRepo, out: list[Finding]) -> dict[str, Any] | None:
+    """Check a repo's folder name and placement, appending findings to out.
+
+    Returns:
+        The naming pattern the name matches, or None.
+
+    """
     pat = cfg.classify(name)
     if pat is None:
         out.append(
-            Finding("naming-violation", name, "folder name matches no naming pattern")
+            Finding("naming-violation", name, "folder name matches no naming pattern"),
         )
     else:
         space = cfg.expected_space(name)
@@ -1341,12 +1408,26 @@ def _check_local(
                     "space-mismatch",
                     name,
                     f"a {pat['name']} name lives in space {r.space}, not {space}",
-                )
+                ),
             )
+    return pat
 
-    # Origin and GitHub.
+
+def _check_origin(
+    st: State,
+    name: str,
+    r: LocalRepo,
+    pat: dict[str, Any] | None,
+    out: list[Finding],
+) -> bool:
+    """Check a repo's origin remote against GitHub, appending findings to out.
+
+    Returns:
+        True when origin points at the repo's GitHub repo.
+
+    """
+    cfg, gh = st.cfg, st.gh
     parsed = parse_github_url(r.origin_url)
-    origin_ok = False
     if r.origin_url is None:
         rec = gh.get(name)
         if rec:
@@ -1357,83 +1438,96 @@ def _check_local(
                     "no origin remote; GitHub has a repo of this name",
                     fix=f"add origin {cfg.github_url(rec['name'])}",
                     action=lambda: point_origin(r.path, cfg.github_url(rec["name"])),
-                )
+                ),
             )
         else:
             out.append(_local_only(st, name, r))
-    elif parsed is None or parsed[0].lower() != cfg.owner.lower():
+        return False
+    if parsed is None or parsed[0].lower() != cfg.owner.lower():
         out.append(
             Finding(
                 "foreign-origin",
                 name,
                 f"origin {r.origin_url} is not a {cfg.owner} GitHub repo",
-            )
+            ),
         )
-    else:
-        origin_name = parsed[1]
-        rec = gh.resolve(origin_name)
-        if rec is None:
-            if origin_name == name:
-                out.append(_local_only(st, name, r))
-            else:
-                out.append(
-                    Finding(
-                        "github-missing",
-                        name,
-                        f"origin names {origin_name}, which is not on GitHub",
-                    )
-                )
+        return False
+    origin_name = parsed[1]
+    rec = gh.resolve(origin_name)
+    if rec is None:
+        if origin_name == name:
+            out.append(_local_only(st, name, r))
         else:
-            gh_name = rec["name"]
-            if gh_name != name:
-                taken = gh.resolve(name)
-                if taken is None and pat is not None:
-                    out.append(
-                        Finding(
-                            "name-mismatch",
-                            name,
-                            f"folder is {name} but its GitHub repo is {gh_name}",
-                            fix=f"rename the GitHub repo {gh_name} to {name} and point origin at it",
-                            action=lambda o=gh_name: rename(st, o, name),
-                            logged=True,
-                        )
-                    )
-                else:
-                    why = (
-                        "a different repo already has that name"
-                        if taken
-                        else "the folder name is not valid"
-                    )
-                    out.append(
-                        Finding(
-                            "name-mismatch",
-                            name,
-                            f"folder is {name} but its GitHub repo is {gh_name}; {why}",
-                        )
-                    )
-            elif origin_name != gh_name:
-                out.append(
-                    Finding(
-                        "origin-stale",
-                        name,
-                        f"origin names {origin_name}; GitHub now calls it {gh_name}",
-                        fix=f"point origin at {cfg.github_url(gh_name)}",
-                        action=lambda n=gh_name: point_origin(
-                            r.path, cfg.github_url(n)
-                        ),
-                    )
-                )
-                origin_ok = True
-            else:
-                origin_ok = True
+            out.append(
+                Finding(
+                    "github-missing",
+                    name,
+                    f"origin names {origin_name}, which is not on GitHub",
+                ),
+            )
+        return False
+    gh_name = rec["name"]
+    if gh_name != name:
+        out.append(_name_mismatch(st, name, gh_name, name_valid=pat is not None))
+        return False
+    if origin_name != gh_name:
+        out.append(
+            Finding(
+                "origin-stale",
+                name,
+                f"origin names {origin_name}; GitHub now calls it {gh_name}",
+                fix=f"point origin at {cfg.github_url(gh_name)}",
+                action=lambda n=gh_name: point_origin(
+                    r.path,
+                    cfg.github_url(n),
+                ),
+            ),
+        )
+    return True
 
-    # main pushed to GitHub.
+
+def _name_mismatch(st: State, name: str, gh_name: str, *, name_valid: bool) -> Finding:
+    """Report a folder whose GitHub repo has another name, with the rename fix when it is free.
+
+    Returns:
+        The name-mismatch finding.
+
+    """
+    taken = st.gh.resolve(name)
+    if taken is None and name_valid:
+        return Finding(
+            "name-mismatch",
+            name,
+            f"folder is {name} but its GitHub repo is {gh_name}",
+            fix=f"rename the GitHub repo {gh_name} to {name} and point origin at it",
+            action=lambda o=gh_name: rename(st, o, name),
+            logged=True,
+        )
+    why = "a different repo already has that name" if taken else "the folder name is not valid"
+    return Finding(
+        "name-mismatch",
+        name,
+        f"folder is {name} but its GitHub repo is {gh_name}; {why}",
+    )
+
+
+def _check_main_pushed(st: State, name: str, r: LocalRepo, *, origin_ok: bool) -> list[Finding]:
+    """Check that a repo's default branch is pushed to GitHub.
+
+    Returns:
+        The findings.
+
+    """
+    b = st.cfg.default_branch
+    out: list[Finding] = []
     if origin_ok and r.main_sha:
         if r.fetch_error:
             out.append(
                 Finding(
-                    "fetch-failed", name, f"git fetch origin failed: {r.fetch_error}"
-                )
+                    "fetch-failed",
+                    name,
+                    f"git fetch origin failed: {r.fetch_error}",
+                ),
             )
         elif r.origin_main_sha is None:
             out.append(
@@ -1443,9 +1537,9 @@ def _check_local(
                     f"{b} has never been pushed to origin",
                     fix=f"git push -u origin {b}",
                     action=lambda: must(
-                        git(r.path, "push", "-u", "origin", b, timeout=120)
+                        git(r.path, "push", "-u", "origin", b, timeout=120),
                     ),
-                )
+                ),
             )
         elif r.ahead and not r.behind:
             out.append(
@@ -1455,7 +1549,7 @@ def _check_local(
                     f"{b} is {r.ahead} commit(s) ahead of origin/{b}",
                     fix=f"git push origin {b}",
                     action=lambda: must(git(r.path, "push", "origin", b, timeout=120)),
-                )
+                ),
             )
         elif r.ahead and r.behind:
             out.append(
@@ -1463,50 +1557,57 @@ def _check_local(
                     "diverged",
                     name,
                     f"{b} is {r.ahead} ahead and {r.behind} behind origin/{b}; needs a rebase",
-                )
+                ),
             )
     elif r.origin_url and r.main_sha is None:
         out.append(Finding("no-default-branch", name, f"no local {b} branch"))
+    return out
 
-    # Manifest fields the disk decides.
-    if e is not None:
-        lp = e.get("local_path")
-        if lp is not None and Path(str(lp)).expanduser() != r.path:
-            out.append(
-                Finding(
-                    "local-path",
-                    name,
-                    f"manifest local_path {lp} is not where the repo is ({r.path})",
-                    fix="remove local_path; the tool finds the path on disk",
-                    action=lambda: man.set_field(name, "local_path", None),
-                    manifest_change=True,
-                )
-            )
-        if st.lifecycle(name) in LIFECYCLES_INACTIVE:
-            pass
-        elif not e.get("purpose"):
-            out.append(
-                Finding("purpose-missing", name, "manifest entry has no purpose")
-            )
-        elif st.purpose_moved(r, e.get("purpose_head")):
-            ph = e.get("purpose_head")
-            why = (
-                f"was written at {str(ph)[:12]}"
-                if ph
-                else "has no recorded purpose_head"
-            )
-            out.append(
-                Finding(
-                    "purpose-recheck",
-                    name,
-                    f"purpose {why}; {b} is now {r.main_sha[:12]}",
-                )
-            )
+
+def _check_disk_fields(st: State, name: str, r: LocalRepo, e: CommentedMap) -> list[Finding]:
+    """Check the manifest fields the disk decides: local_path and purpose.
+
+    Returns:
+        The findings.
+
+    """
+    man, b = st.manifest, st.cfg.default_branch
+    out: list[Finding] = []
+    lp = e.get("local_path")
+    if lp is not None and Path(str(lp)).expanduser() != r.path:
+        out.append(
+            Finding(
+                "local-path",
+                name,
+                f"manifest local_path {lp} is not where the repo is ({r.path})",
+                fix="remove local_path; the tool finds the path on disk",
+                action=lambda: man.set_field(name, "local_path", None),
+                manifest_change=True,
+            ),
+        )
+    if st.lifecycle(name) in LIFECYCLES_INACTIVE:
+        pass
+    elif not e.get("purpose"):
+        out.append(
+            Finding("purpose-missing", name, "manifest entry has no purpose"),
+        )
+    elif st.purpose_moved(r, e.get("purpose_head")):
+        ph = e.get("purpose_head")
+        why = f"was written at {str(ph)[:12]}" if ph else "has no recorded purpose_head"
+        out.append(
+            Finding(
+                "purpose-recheck",
+                name,
+                f"purpose {why}; {b} is now {r.main_sha[:12]}",
+            ),
+        )
     return out
 
 
 def _check_tracked(
-    st: State, name: str, entries: dict[str, CommentedMap]
+    st: State,
+    name: str,
+    entries: dict[str, CommentedMap],
 ) -> list[Finding]:
     cfg, man = st.cfg, st.manifest
     e = entries.get(name)
@@ -1524,7 +1625,7 @@ def _check_tracked(
                 fix=f"set remote_url to {want_url}",
                 action=lambda: man.set_field(name, "remote_url", want_url),
                 manifest_change=True,
-            )
+            ),
         )
     lc = str(e.get("lifecycle") or "")
     if rec is not None:
@@ -1541,7 +1642,7 @@ def _check_tracked(
                     fix=f"set lifecycle to {want}",
                     action=lambda w=want: man.set_field(name, "lifecycle", w),
                     manifest_change=True,
-                )
+                ),
             )
             if lc == "deprecated" and want == "active":
                 out[-1] = Finding(
@@ -1555,7 +1656,12 @@ def _check_tracked(
 
 
 def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Finding]:
-    """Date an undated deprecation, and archive a deprecated repo once its time is up."""
+    """Date an undated deprecation, and archive a deprecated repo once its time is up.
+
+    Returns:
+        The findings.
+
+    """
     cfg, man = st.cfg, st.manifest
     since = e.get("deprecated_on")
     if not since:
@@ -1567,15 +1673,17 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
                 fix=f"record deprecated_on {today()}, the first day the tool saw it deprecated",
                 action=lambda: man.set_field(name, "deprecated_on", today()),
                 manifest_change=True,
-            )
+            ),
         ]
     try:
         start = dt.date.fromisoformat(str(since)[:10])
     except ValueError:
         return [
             Finding(
-                "deprecated-undated", name, f"deprecated_on {since!r} is not a date"
-            )
+                "deprecated-undated",
+                name,
+                f"deprecated_on {since!r} is not a date",
+            ),
         ]
     days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
     age = (dt.date.fromisoformat(today()) - start).days
@@ -1584,7 +1692,7 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
 
     def act() -> None:
         must(
-            run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120)
+            run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120),
         )
         man.set_field(name, "lifecycle", "archived")
         r = st.local.get(name)
@@ -1598,7 +1706,7 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
             f"deprecated {age} days ago ({start}); repos are archived {days} days after deprecation",
             fix=f"archive {cfg.owner}/{name} on GitHub, set lifecycle archived, and drop it from the beads fleet list",
             action=act,
-        )
+        ),
     ]
 
 
@@ -1622,9 +1730,7 @@ def _local_only(st: State, name: str, r: LocalRepo) -> Finding:
 def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
     """Run every mechanical fix: GitHub and git actions first, then manifest changes, then the changelog."""
     todo = [f for f in findings if f.action is not None]
-    ordered = [f for f in todo if not f.manifest_change] + [
-        f for f in todo if f.manifest_change
-    ]
+    ordered = [f for f in todo if not f.manifest_change] + [f for f in todo if f.manifest_change]
     for f in ordered:
         if dry_run:
             f.status = "planned"
@@ -1655,6 +1761,7 @@ def today() -> str:
 
     Returns:
         The date as YYYY-MM-DD.
+
     """
     return dt.datetime.now().astimezone().date().isoformat()
 
@@ -1669,11 +1776,14 @@ def append_changelog(cfg: Config, title: str, lines: list[str]) -> None:
 
 
 def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
-    """Commit the steward's own files (manifest, changelog, knowledge store) on the default
-    branch of the repo that holds them, then pull --rebase and push.
+    """Commit the steward's own files, then pull --rebase and push.
+
+    The files are the manifest, changelog, knowledge store and fleet list, committed on the
+    default branch of the repo that holds them.
 
     Returns:
         {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
+
     """
     top = git_out(cfg.file.parent, "rev-parse", "--show-toplevel")
     if top is None:
@@ -1695,15 +1805,25 @@ def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
     b = cfg.default_branch
     branch = git_out(root, "symbolic-ref", "--short", "-q", "HEAD")
     try:
-        if branch != b:
-            msg = f"{root} is on {branch}, not {b}"
-            raise GitFailedError(msg)
+        _require_branch(root, branch, b)
         _commit_paths(root, files, f"chore(polyrepo): {subject}", force=True)
         must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
         must(git(root, "push", "origin", b, timeout=120))
     except GitFailedError as exc:
         return {"status": "failed", "files": files, "error": str(exc)}
     return {"status": "pushed", "files": files}
+
+
+def _require_branch(root: Path, branch: str | None, want: str) -> None:
+    """Refuse to commit in a repo that is not on the wanted branch.
+
+    Raises:
+        GitFailedError: when the repo is on another branch.
+
+    """
+    if branch != want:
+        msg = f"{root} is on {branch}, not {want}"
+        raise GitFailedError(msg)
 
 
 def finish_records(cfg: Config, data: dict[str, Any]) -> None:
@@ -1718,7 +1838,7 @@ def finish_records(cfg: Config, data: dict[str, Any]) -> None:
 # name every active repo that has one, and nothing else.
 
 _FLEET_ITEM = re.compile(
-    r"""^(?P<indent>\s*)-\s*(?P<q>["']?)(?P<path>[^"'#\s][^"'#]*?)(?P=q)\s*(?:#.*)?$"""
+    r"""^(?P<indent>\s*)-\s*(?P<q>["']?)(?P<path>[^"'#\s][^"'#]*?)(?P=q)\s*(?:#.*)?$""",
 )
 
 
@@ -1727,6 +1847,7 @@ def fleet_file(cfg: Config) -> Path:
 
     Returns:
         The path; by default `.beads/config.yaml` beside the steward's folder.
+
     """
     return cfg.setting_path("beads", "fleet_config", "../.beads/config.yaml")
 
@@ -1740,9 +1861,11 @@ def _fleet_block(lines: list[str]) -> tuple[int, int] | None:
 
     Returns:
         (first line after `additional:`, one past its last item), or None when absent.
+
     """
     top = next(
-        (i for i, ln in enumerate(lines) if re.match(r"^repos:\s*(#.*)?$", ln)), None
+        (i for i, ln in enumerate(lines) if re.match(r"^repos:\s*(#.*)?$", ln)),
+        None,
     )
     if top is None:
         return None
@@ -1773,6 +1896,7 @@ def fleet_paths(cfg: Config) -> dict[str, str]:
 
     Returns:
         Each listed path, normalized and absolute, mapped to the entry as written.
+
     """
     f = fleet_file(cfg)
     if not f.is_file():
@@ -1789,6 +1913,122 @@ def fleet_paths(cfg: Config) -> dict[str, str]:
     return out
 
 
+type _FleetItem = tuple[int, str, str, re.Match[str]]
+
+
+@dataclasses.dataclass
+class _FleetDoc:
+    """The fleet list file's lines and the parsed items of its `repos.additional` list."""
+
+    path: Path
+    base: Path
+    lines: list[str]
+    blk: tuple[int, int] | None
+    items: list[_FleetItem]
+    listed: set[str]
+
+    @classmethod
+    def read(cls, f: Path) -> _FleetDoc:
+        """Read the fleet list file and parse its items.
+
+        Returns:
+            The parsed file.
+
+        """
+        base = f.parent.parent
+        lines = f.read_text(encoding="utf-8").splitlines(keepends=True)
+        blk = _fleet_block([ln.rstrip("\n") for ln in lines])
+        items: list[_FleetItem] = []
+        if blk:
+            for i in range(*blk):
+                m = _FLEET_ITEM.match(lines[i].rstrip("\n"))
+                if m:
+                    items.append(
+                        (i, _fleet_norm(base, m.group("path")), m.group("path"), m),
+                    )
+        return cls(f, base, lines, blk, items, {n for _, n, _, _ in items})
+
+    def entry(self, p: Path) -> str:
+        """Return the fleet list entry for a repo folder.
+
+        Returns:
+            The folder relative to the control repo, with a trailing slash.
+
+        """
+        return os.path.relpath(p, self.base).replace(os.sep, "/").rstrip("/") + "/"
+
+    def rewrite(self, drop: set[str], swap: dict[str, Path]) -> tuple[dict[int, str], list[str]]:
+        """Remove the dropped items and replace the swapped ones.
+
+        Returns:
+            The new text of every item line (empty when removed), and one line per change.
+
+        """
+        changes: list[str] = []
+        out = {i: self.lines[i] for i, *_ in self.items}
+        for i, n, raw, m in self.items:
+            if n in drop:
+                out[i] = ""
+                changes.append(f"removed {raw}")
+            elif n in swap and os.path.normpath(swap[n]) in self.listed:
+                out[i] = ""
+                changes.append(f"removed {raw} ({self.entry(swap[n])} is already listed)")
+            elif n in swap:
+                out[i] = f"{m.group('indent')}- {m.group('q')}{self.entry(swap[n])}{m.group('q')}\n"
+                changes.append(f"replaced {raw} with {self.entry(swap[n])}")
+        return out, changes
+
+    def insertions(
+        self,
+        add: Iterable[Path],
+        swap: dict[str, Path],
+        kept: list[_FleetItem],
+    ) -> tuple[dict[int, list[str]], list[str]]:
+        """Place each added repo beside the kept entries in the same folder, in name order.
+
+        Returns:
+            The lines to insert before each line index, and one line per entry added.
+
+        Raises:
+            PolyrepoError: when an entry must be added and the file has no `repos.additional`.
+
+        """
+        before: dict[int, list[str]] = {}
+        changes: list[str] = []
+        for p in add:
+            new, want = self.entry(p), os.path.normpath(p)
+            if want in self.listed or want in {os.path.normpath(v) for v in swap.values()}:
+                continue
+            if self.blk is None:
+                msg = f"{self.path} has no repos.additional list to add {new} to"
+                raise PolyrepoError(msg)
+            tmpl = kept[0][3] if kept else None
+            line = (
+                f"{tmpl.group('indent')}- {tmpl.group('q')}{new}{tmpl.group('q')}\n" if tmpl else f'        - "{new}"\n'
+            )
+            before.setdefault(_fleet_insert_at(kept, new, want, self.blk[1]), []).append(line)
+            self.listed.add(want)
+            changes.append(f"added {new}")
+        return before, changes
+
+
+def _fleet_insert_at(kept: list[_FleetItem], new: str, want: str, end: int) -> int:
+    """Choose the line a new fleet entry goes before.
+
+    Returns:
+        Before the first later-named entry in the same folder, else after that folder's last
+        entry, else after the last entry, else at the end of the list.
+
+    """
+    same = [k for k in kept if Path(k[1]).parent == Path(want).parent]
+    later = [k for k in same if k[2].lower() > new.lower()]
+    if later:
+        return later[0][0]
+    if same:
+        return same[-1][0] + 1
+    return kept[-1][0] + 1 if kept else end
+
+
 def fleet_edit(
     cfg: Config,
     remove: Iterable[Path] = (),
@@ -1799,85 +2039,29 @@ def fleet_edit(
 
     The file is read immediately before it is written, so a concurrent edit to another
     entry is kept; comments and every other line are left as they are. A new entry goes
-    beside the entries in the same folder, in name order.
+    beside the entries in the same folder, in name order. Adding to a file with no
+    `repos.additional` propagates the PolyrepoError of `_FleetDoc.insertions`.
 
     Returns:
         One line per change made (none when the list already says it).
 
-    Raises:
-        PolyrepoError: when an entry must be added and the file has no `repos.additional`.
     """
     f = fleet_file(cfg)
     if not f.is_file():
         return []
-    base = f.parent.parent
-    lines = f.read_text().splitlines(keepends=True)
-    blk = _fleet_block([ln.rstrip("\n") for ln in lines])
-    items: list[tuple[int, str, str, re.Match[str]]] = []
-    if blk:
-        for i in range(*blk):
-            m = _FLEET_ITEM.match(lines[i].rstrip("\n"))
-            if m:
-                items.append(
-                    (i, _fleet_norm(base, m.group("path")), m.group("path"), m)
-                )
-    listed = {n for _, n, _, _ in items}
-
-    def entry(p: Path) -> str:
-        return os.path.relpath(p, base).replace(os.sep, "/").rstrip("/") + "/"
-
-    def norm(p: Path) -> str:
-        return os.path.normpath(p)
-
-    changes: list[str] = []
-    drop = {norm(p) for p in remove}
-    swap = {norm(o): n for o, n in (replace or {}).items()}
-    out = {i: lines[i] for i, *_ in items}
-    for i, n, raw, m in items:
-        if n in drop:
-            out[i] = ""
-            changes.append(f"removed {raw}")
-        elif n in swap and norm(swap[n]) in listed:
-            out[i] = ""
-            changes.append(f"removed {raw} ({entry(swap[n])} is already listed)")
-        elif n in swap:
-            out[i] = (
-                f"{m.group('indent')}- {m.group('q')}{entry(swap[n])}{m.group('q')}\n"
-            )
-            changes.append(f"replaced {raw} with {entry(swap[n])}")
-    kept = [(i, n, raw, m) for i, n, raw, m in items if out[i]]
-    before: dict[int, list[str]] = {}
-    for p in add:
-        new, want = entry(p), norm(p)
-        if want in listed or want in {norm(v) for v in swap.values()}:
-            continue
-        if blk is None:
-            msg = f"{f} has no repos.additional list to add {new} to"
-            raise PolyrepoError(msg)
-        tmpl = kept[0][3] if kept else None
-        line = (
-            f"{tmpl.group('indent')}- {tmpl.group('q')}{new}{tmpl.group('q')}\n"
-            if tmpl
-            else f'        - "{new}"\n'
-        )
-        same = [k for k in kept if Path(k[1]).parent == Path(want).parent]
-        later = [k for k in same if k[2].lower() > new.lower()]
-        if later:
-            at = later[0][0]
-        elif same:
-            at = same[-1][0] + 1
-        else:
-            at = kept[-1][0] + 1 if kept else blk[1]
-        before.setdefault(at, []).append(line)
-        listed.add(want)
-        changes.append(f"added {new}")
+    doc = _FleetDoc.read(f)
+    swap = {os.path.normpath(o): n for o, n in (replace or {}).items()}
+    out, changes = doc.rewrite({os.path.normpath(p) for p in remove}, swap)
+    kept = [it for it in doc.items if out[it[0]]]
+    before, added = doc.insertions(add, swap, kept)
+    changes += added
     if not changes:
         return []
-    text = []
-    for i, ln in enumerate(lines):
+    text: list[str] = []
+    for i, ln in enumerate(doc.lines):
         text.extend(before.get(i, []))
         text.append(out.get(i, ln))
-    text.extend(before.get(len(lines), []))
+    text.extend(before.get(len(doc.lines), []))
     f.write_text("".join(text))
     return changes
 
@@ -1890,6 +2074,7 @@ def fleet_after_rename(cfg: Config, old: Path, new: Path, active: bool) -> list[
 
     Returns:
         One line per change made.
+
     """
     if not active:
         return fleet_edit(cfg, remove=[old, new])
@@ -1903,33 +2088,32 @@ def fleet_after_rename(cfg: Config, old: Path, new: Path, active: bool) -> list[
 
 
 def emit(
-    args: argparse.Namespace, data: dict[str, Any], text: Callable[[], str]
+    args: argparse.Namespace,
+    data: dict[str, Any],
+    text: Callable[[], str],
 ) -> None:
     """Print JSON or text."""
     if args.json:
-        print(json.dumps(data, indent=2, default=str))
+        sys.stdout.write(json.dumps(data, indent=2, default=str) + "\n")
     else:
-        print(text())
+        sys.stdout.write(text() + "\n")
 
 
 def _status_line(rec: dict[str, Any]) -> str:
     parts = [f"{rec['name']}  [{rec['space'] or '-'}]  {rec['lifecycle']}"]
     if rec["present"]["disk"]:
-        parts.append(f"branch {rec['branch']}")
-        parts.append(f"uncommitted {rec['uncommitted']}")
+        parts.extend((f"branch {rec['branch']}", f"uncommitted {rec['uncommitted']}"))
         lc = rec["last_commit"]
         if lc:
             parts.append(
-                f"last {lc['date'][:10]} {lc['sha'][:8]} {lc['subject'][:60]!r}"
+                f"last {lc['date'][:10]} {lc['sha'][:8]} {lc['subject'][:60]!r}",
             )
         m = rec["main"]
         if m and m["fetch_error"]:
             parts.append(f"fetch failed: {m['fetch_error']}")
         elif m and m["ahead"] is not None:
             parts.append(
-                "main = origin/main"
-                if m["up_to_date"]
-                else f"main +{m['ahead']}/-{m['behind']} vs origin/main"
+                "main = origin/main" if m["up_to_date"] else f"main +{m['ahead']}/-{m['behind']} vs origin/main",
             )
         elif m and m["sha"] and not m["origin_sha"]:
             parts.append("main not on origin")
@@ -1938,7 +2122,7 @@ def _status_line(rec: dict[str, Any]) -> str:
     g = rec["github"]
     if g:
         parts.append(
-            f"GitHub pushed {str(g['pushed_at'])[:10]}{' archived' if g['archived'] else ''}"
+            f"GitHub pushed {str(g['pushed_at'])[:10]}{' archived' if g['archived'] else ''}",
         )
     else:
         parts.append("not on GitHub")
@@ -1950,7 +2134,9 @@ def _status_line(rec: dict[str, Any]) -> str:
 
 
 def resolve_names(
-    known: Iterable[str], local: dict[str, LocalRepo], wanted: list[str]
+    known: Iterable[str],
+    local: dict[str, LocalRepo],
+    wanted: list[str],
 ) -> list[str]:
     """Resolve repo names (any case) or paths inside a repo to known repo names.
 
@@ -1959,6 +2145,7 @@ def resolve_names(
 
     Raises:
         PolyrepoError: when an argument names no known repo.
+
     """
     lower = {n.lower(): n for n in known}
     out = []
@@ -1983,6 +2170,7 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 when no finding is left open, else 1.
+
     """
     t0 = time.time()
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
@@ -2010,14 +2198,12 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
             (
                 f"{len(st.local)} repos on disk, {len(st.manifest.entries())} manifest entries, "
                 f"{len(findings)} findings ({data['fixed']} fixed) in {data['elapsed_s']}s"
-            )
+            ),
         ]
         for f in findings:
-            tag = (
-                f.status if f.status != "open" else ("fixable" if f.fix else "judgment")
-            )
+            tag = f.status if f.status != "open" else ("fixable" if f.fix else "judgment")
             lines.append(
-                f"  [{f.kind}] {f.repo}: {f.detail}  ({tag}{': ' + f.fix if f.fix else ''})"
+                f"  [{f.kind}] {f.repo}: {f.detail}  ({tag}{': ' + f.fix if f.fix else ''})",
             )
             if f.error:
                 lines.append(f"      error: {f.error}")
@@ -2040,6 +2226,7 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0.
+
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
     names = st.resolve(args.repos) if args.repos else sorted(st.local, key=str.lower)
@@ -2059,18 +2246,16 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
-    """Report the full record of every repo on disk; --all adds every other repo the
-    manifest or GitHub has.
+    """Report the full record of every repo on disk.
+
+    --all adds every other repo the manifest or GitHub has.
 
     Returns:
         0.
+
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
-    names = (
-        st.tracked_names(all_github=True)
-        if args.all
-        else sorted(st.local, key=str.lower)
-    )
+    names = st.tracked_names(all_github=True) if args.all else sorted(st.local, key=str.lower)
     st.confirm_all()
     recs = [st.record(n) for n in names]
     data = {
@@ -2088,6 +2273,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0.
+
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     recs = [st.record(n, deep=False) for n in st.tracked_names()]
@@ -2109,15 +2295,13 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     emit(
         args,
         {"count": len(rows), "repos": rows},
-        lambda: "\n".join(
-            f"{r['name']}  [{r['space'] or '-'}]  {r['lifecycle']}" for r in rows
-        ),
+        lambda: "\n".join(f"{r['name']}  [{r['space'] or '-'}]  {r['lifecycle']}" for r in rows),
     )
     return 0
 
 
-def _lookup(rec: dict[str, Any], attr: str) -> Any:
-    cur: Any = rec
+def _lookup(rec: dict[str, Any], attr: str) -> object:
+    cur: object = rec
     for part in attr.split("."):
         if not isinstance(cur, dict) or part not in cur:
             return None
@@ -2125,17 +2309,14 @@ def _lookup(rec: dict[str, Any], attr: str) -> Any:
     return cur
 
 
-def _matches(value: Any, op: str, want: str) -> bool:
+def _matches(value: object, op: str, want: str) -> bool:
     if isinstance(value, list):
         return any(_matches(v, op, want) for v in value)
     if isinstance(value, dict):
         return any(_matches(v, op, want) for v in value.values())
     s = "" if value is None else str(value).lower()
     if op == "~":
-        return (
-            re.search(want, "" if value is None else str(value), re.IGNORECASE)
-            is not None
-        )
+        return re.search(want, "" if value is None else str(value), re.IGNORECASE) is not None
     return s == want.lower()
 
 
@@ -2147,6 +2328,7 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when a term has neither = nor ~.
+
     """
     terms = []
     for t in args.terms:
@@ -2160,9 +2342,7 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     if deep:
         st.confirm_all()
     recs = [st.record(n, deep=deep) for n in st.tracked_names()]
-    hits = [
-        r for r in recs if all(_matches(_lookup(r, a), op, v) for a, op, v in terms)
-    ]
+    hits = [r for r in recs if all(_matches(_lookup(r, a), op, v) for a, op, v in terms)]
     emit(
         args,
         {"count": len(hits), "repos": hits},
@@ -2179,6 +2359,7 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when the repo is not on disk, has no main, or has no purpose to confirm.
+
     """
     st = gather(cfg, fetch=False, use_cache=True)
     (name,) = st.resolve([args.repo])
@@ -2211,7 +2392,7 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
         args,
         data,
         lambda: "\n".join(
-            [f"{name}: purpose {what} at {r.main_sha[:12]}", *_records_line(data)]
+            [f"{name}: purpose {what} at {r.main_sha[:12]}", *_records_line(data)],
         ),
     )
     return 0
@@ -2224,22 +2405,20 @@ REBASE_OK = ("up-to-date", "rebased", "fast-forwarded")
 
 
 def _local_repos(
-    cfg: Config, names: list[str] | None = None, space: str | None = None
+    cfg: Config,
+    names: list[str] | None = None,
+    space: str | None = None,
 ) -> list[LocalRepo]:
     """Return the repos on disk, optionally narrowed to names (or paths) and one app space.
+
+    A name that is not a repo on disk propagates the PolyrepoError of `resolve_names`.
 
     Returns:
         The repos, sorted by name.
 
-    Raises:
-        PolyrepoError: when a name is not a repo on disk.
     """
     local, _ = discover(cfg)
-    picked = (
-        [local[n] for n in resolve_names(local, local, names)]
-        if names
-        else list(local.values())
-    )
+    picked = [local[n] for n in resolve_names(local, local, names)] if names else list(local.values())
     if space:
         picked = [r for r in picked if r.space == space]
     return sorted(picked, key=lambda r: r.name.lower())
@@ -2256,12 +2435,40 @@ def cmd_grep(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when there is nothing to search or rg fails.
+
     """
     repos = _local_repos(cfg, args.repo, args.space)
     if not repos:
         msg = "no repos to search"
         raise PolyrepoError(msg)
     rels = {r.path.relative_to(cfg.root).as_posix(): r.name for r in repos}
+    cp = run(_rg_argv(args, list(rels)), cwd=cfg.root, timeout=300)
+    if cp.returncode not in {0, 1}:
+        msg = f"rg failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    if not args.json:
+        sys.stdout.write(cp.stdout)
+        return cp.returncode
+    matches = _rg_matches(cp.stdout, rels)
+    if args.files:
+        files = sorted({(m["repo"], m["file"]) for m in matches}, key=str)
+        data: dict[str, Any] = {
+            "count": len(files),
+            "files": [{"repo": r, "file": f} for r, f in files],
+        }
+    else:
+        data = {"count": len(matches), "matches": matches}
+    sys.stdout.write(json.dumps(data, indent=2) + "\n")
+    return 0 if matches else 1
+
+
+def _rg_argv(args: argparse.Namespace, rels: list[str]) -> list[str]:
+    """Build the rg command line for a grep over the repo folders rels.
+
+    Returns:
+        The argv.
+
+    """
     argv = ["rg", "--no-config", "--color=never", "--glob", "!.worktrees"]
     for g in args.glob or []:
         argv += ["--glob", g]
@@ -2279,15 +2486,18 @@ def cmd_grep(args: argparse.Namespace, cfg: Config) -> int:
     else:
         argv += ["--line-number", "--with-filename"]
     argv += ["-e", args.pattern, "--", *rels]
-    cp = run(argv, cwd=cfg.root, timeout=300)
-    if cp.returncode not in (0, 1):
-        msg = f"rg failed: {_last_line(cp)}"
-        raise PolyrepoError(msg)
-    if not args.json:
-        print(cp.stdout, end="")
-        return cp.returncode
+    return argv
+
+
+def _rg_matches(stdout: str, rels: dict[str, str]) -> list[dict[str, Any]]:
+    """Parse rg --json output into one record per matching line.
+
+    Returns:
+        One {repo, file, line, text} per match.
+
+    """
     matches: list[dict[str, Any]] = []
-    for ln in cp.stdout.splitlines():
+    for ln in stdout.splitlines():
         ev = json.loads(ln)
         if ev.get("type") != "match":
             continue
@@ -2300,18 +2510,9 @@ def cmd_grep(args: argparse.Namespace, cfg: Config) -> int:
                 "file": rel[len(top) + 1 :] if top else rel,
                 "line": d["line_number"],
                 "text": d["lines"].get("text", "").rstrip("\n"),
-            }
+            },
         )
-    if args.files:
-        files = sorted({(m["repo"], m["file"]) for m in matches}, key=str)
-        data: dict[str, Any] = {
-            "count": len(files),
-            "files": [{"repo": r, "file": f} for r, f in files],
-        }
-    else:
-        data = {"count": len(matches), "matches": matches}
-    print(json.dumps(data, indent=2))
-    return 0 if matches else 1
+    return matches
 
 
 # rebase ---------------------------------------------------------------------------------------
@@ -2322,6 +2523,7 @@ def _worktree_on(repo: Path, branch: str) -> Path | None:
 
     Returns:
         Its path, or None when no worktree has it.
+
     """
     cur: Path | None = None
     for ln in (git_out(repo, "worktree", "list", "--porcelain") or "").splitlines():
@@ -2337,6 +2539,7 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
 
     Returns:
         {repo, status, ...}; status is one of REBASE_OK or the reason it stopped.
+
     """
     b = cfg.default_branch
     res: dict[str, Any] = {"repo": r.name, "path": str(r.path)}
@@ -2352,18 +2555,21 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
     res.update(ahead=ahead, behind=behind)
     if behind == 0:
         return {**res, "status": "up-to-date"}
+    return _advance_main(r, b, res, (main, om))
+
+
+def _advance_main(r: LocalRepo, b: str, res: dict[str, Any], refs: tuple[str, str]) -> dict[str, Any]:
+    """Bring a main that is behind origin/main up to it, where it is checked out or not.
+
+    `refs` is (main, origin/main) as commit ids; res carries ahead and behind.
+
+    Returns:
+        res with the status, and the worktree when main is checked out.
+
+    """
     wt = _worktree_on(r.path, b)
     if wt is None:
-        if ahead:
-            return {
-                **res,
-                "status": "not-checked-out",
-                "detail": f"{b} has diverged and is not checked out in any worktree",
-            }
-        cp = git(r.path, "update-ref", f"refs/heads/{b}", om, main)
-        if cp.returncode != 0:
-            return {**res, "status": "failed", "detail": _last_line(cp)}
-        return {**res, "status": "fast-forwarded", "behind": 0}
+        return _advance_unchecked_out(r, b, res, refs)
     res["worktree"] = str(wt)
     dirty = git(wt, "status", "--porcelain=v1", "--untracked-files=no").stdout
     if dirty.strip():
@@ -2372,7 +2578,7 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
             "status": "dirty",
             "files": [ln[3:] for ln in dirty.splitlines() if ln.strip()],
         }
-    if ahead == 0:
+    if res["ahead"] == 0:
         cp = git(wt, "merge", "--ff-only", "--quiet", f"refs/remotes/origin/{b}")
         if cp.returncode != 0:
             return {**res, "status": "failed", "detail": _last_line(cp)}
@@ -2390,6 +2596,26 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
     return {**res, "status": "rebased", "behind": 0}
 
 
+def _advance_unchecked_out(r: LocalRepo, b: str, res: dict[str, Any], refs: tuple[str, str]) -> dict[str, Any]:
+    """Fast-forward a main no worktree has checked out, unless it has diverged.
+
+    Returns:
+        res with the status.
+
+    """
+    main, om = refs
+    if res["ahead"]:
+        return {
+            **res,
+            "status": "not-checked-out",
+            "detail": f"{b} has diverged and is not checked out in any worktree",
+        }
+    cp = git(r.path, "update-ref", f"refs/heads/{b}", om, main)
+    if cp.returncode != 0:
+        return {**res, "status": "failed", "detail": _last_line(cp)}
+    return {**res, "status": "fast-forwarded", "behind": 0}
+
+
 def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
     """Rebase main on origin/main in the named repos, or all of them.
 
@@ -2398,6 +2624,7 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when neither repos nor --all are given.
+
     """
     if not args.repos and not args.all:
         msg = "name one or more repos, or pass --all"
@@ -2410,9 +2637,7 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
     def text() -> str:
         lines = []
         for x in results:
-            extra = "; ".join(
-                s for s in (x.get("detail"), ", ".join(x.get("files") or [])) if s
-            )
+            extra = "; ".join(s for s in (x.get("detail"), ", ".join(x.get("files") or [])) if s)
             lines.append(f"{x['repo']}: {x['status']}{'  ' + extra if extra else ''}")
         return "\n".join(lines)
 
@@ -2428,6 +2653,7 @@ def _templates(cfg: Config) -> tuple[Path, dict[str, Any]]:
 
     Returns:
         (folder, settings).
+
     """
     return (
         cfg.setting_path("templates", "dir", "../repositories/templates"),
@@ -2445,6 +2671,7 @@ def _service_name(cfg: Config, name: str) -> str:
     Returns:
         The name after the project prefix, or the name unchanged when no application
         pattern matches it.
+
     """
     pattern = cfg.classify(name)
     if pattern and pattern.get("kind") == "application" and "-" in name:
@@ -2453,7 +2680,9 @@ def _service_name(cfg: Config, name: str) -> str:
 
 
 def _copier_render(
-    tdir: Path, dest: Path, data: dict[str, str]
+    tdir: Path,
+    dest: Path,
+    data: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
     argv = ["copier", "copy", "--defaults", "--quiet"]
     for k, v in data.items():
@@ -2480,6 +2709,7 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
 
     Raises:
         PolyrepoError: when the request breaks a rule or the name is taken.
+
     """
     name, space, template = args.name, args.space, args.template
     pat = cfg.classify(name)
@@ -2528,6 +2758,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when the request is invalid or the template does not render.
+
     """
     name, b = args.name, cfg.default_branch
     tdir, dest = _create_checks(args, cfg)
@@ -2554,25 +2785,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         ],
     }
     if args.dry_run:
-        with tempfile.TemporaryDirectory(prefix="polyrepo-create-") as tmp:
-            out = Path(tmp) / name
-            cp = _copier_render(tdir, out, data)
-            if cp.returncode != 0:
-                msg = f"copier failed: {_last_line(cp)}"
-                raise PolyrepoError(msg)
-            res["rendered_files"] = sorted(
-                p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()
-            )
-        emit(
-            args,
-            res,
-            lambda: "\n".join(
-                [f"dry run: {name} -> {dest}"]
-                + [f"  {s}" for s in res["steps"]]
-                + [f"  template renders {len(res['rendered_files'])} files"]
-            ),
-        )
-        return 0
+        return _create_dry_run(args, tdir, dest, data, res)
     dest.parent.mkdir(parents=True, exist_ok=True)
     cp = _copier_render(tdir, dest, data)
     if cp.returncode != 0:
@@ -2584,36 +2797,108 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             agents.read_text() if agents.exists() else None,
             _blocks_for(_agents_blocks(cfg), name),
             name,
-        )
+        ),
     )
     try:
-        must(git(dest, "init", f"--initial-branch={b}"))
-        _exclude_worktrees(dest)
-        # Before the first commit, so the lockfile the setup task writes is committed too.
-        if env_applicable(dest):
-            tspec = (_templates(cfg)[1].get("kinds") or {}).get(args.template) or {}
-            synth = bool(tspec.get("synth", args.template in ENV_SYNTH_KINDS))
-            env_res = setup_environment(dest, synth)
-            res["environment"] = env_res
-            if env_res["problems"]:
-                res["environment_error"] = "; ".join(env_res["problems"])
-        must(git(dest, "add", "-A"))
-        must(
-            git(
-                dest,
-                "commit",
-                "-m",
-                f"chore(repo): scaffold {name} from the {args.template} template",
-                timeout=300,
-            )
-        )
-        create_on_github(cfg, name, dest)
+        _create_scaffold(args, cfg, dest, res)
     except GitFailedError as exc:
         res["error"] = str(exc)
         emit(
-            args, res, lambda: f"{name}: created at {dest} but stopped: {res['error']}"
+            args,
+            res,
+            lambda: f"{name}: created at {dest} but stopped: {res['error']}",
         )
         return 1
+    code = _create_records(args, cfg, dest, res)
+    emit(
+        args,
+        res,
+        lambda: "\n".join(
+            [
+                f"{name}: created at {dest} and pushed to GitHub"
+                + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
+                + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else ""),
+                *_records_line(res),
+            ],
+        ),
+    )
+    return code
+
+
+def _create_dry_run(
+    args: argparse.Namespace,
+    tdir: Path,
+    dest: Path,
+    data: dict[str, str],
+    res: dict[str, Any],
+) -> int:
+    """Render the template into a temporary folder and report the plan, changing nothing.
+
+    Returns:
+        0.
+
+    Raises:
+        PolyrepoError: when the template does not render.
+
+    """
+    name = args.name
+    with tempfile.TemporaryDirectory(prefix="polyrepo-create-") as tmp:
+        out = Path(tmp) / name
+        cp = _copier_render(tdir, out, data)
+        if cp.returncode != 0:
+            msg = f"copier failed: {_last_line(cp)}"
+            raise PolyrepoError(msg)
+        res["rendered_files"] = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file())
+    emit(
+        args,
+        res,
+        lambda: "\n".join(
+            [f"dry run: {name} -> {dest}"]
+            + [f"  {s}" for s in res["steps"]]
+            + [f"  template renders {len(res['rendered_files'])} files"],
+        ),
+    )
+    return 0
+
+
+def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, Any]) -> None:
+    """Initialise the rendered repo, set up its environment, commit it and create it on GitHub.
+
+    The environment result is recorded in res; a failed git or gh step propagates as the
+    GitFailedError that `must` raises.
+    """
+    name, b = args.name, cfg.default_branch
+    must(git(dest, "init", f"--initial-branch={b}"))
+    _exclude_worktrees(dest)
+    # Before the first commit, so the lockfile the setup task writes is committed too.
+    if env_applicable(dest):
+        tspec = (_templates(cfg)[1].get("kinds") or {}).get(args.template) or {}
+        synth = bool(tspec.get("synth", args.template in ENV_SYNTH_KINDS))
+        env_res = setup_environment(dest, synth)
+        res["environment"] = env_res
+        if env_res["problems"]:
+            res["environment_error"] = "; ".join(env_res["problems"])
+    must(git(dest, "add", "-A"))
+    must(
+        git(
+            dest,
+            "commit",
+            "-m",
+            f"chore(repo): scaffold {name} from the {args.template} template",
+            timeout=300,
+        ),
+    )
+    create_on_github(cfg, name, dest)
+
+
+def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, Any]) -> int:
+    """Add the new repo's manifest entry, set up its beads, log it, and commit the records.
+
+    Returns:
+        0, or 1 when the environment or beads setup failed.
+
+    """
+    name = args.name
     man = Manifest(cfg.manifest)
     man.add_entry(
         name,
@@ -2629,7 +2914,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     )
     man.save()
     log = [
-        f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
+        f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}",
     ]
     code = 0
     if res.get("environment_error"):
@@ -2637,13 +2922,12 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         code = 1
     elif res.get("environment"):
         log.append(f"environment set up: {'; '.join(res['environment']['steps'])}")
-    if (
-        args.lifecycle not in LIFECYCLES_INACTIVE
-        and args.space not in BEADS_SKIP_SPACES
-    ):
+    if args.lifecycle not in LIFECYCLES_INACTIVE and args.space not in BEADS_SKIP_SPACES:
         try:
             done = beads_setup(
-                cfg, LocalRepo(name=name, path=dest, space=args.space), None
+                cfg,
+                LocalRepo(name=name, path=dest, space=args.space),
+                None,
             )
             log.append(f"beads set up: {'; '.join(done['steps']) or 'already set up'}")
             log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=[dest]))
@@ -2654,26 +2938,6 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     append_changelog(cfg, "polyrepo create", log)
     GitHub(cfg, use_cache=True).invalidate()
     finish_records(cfg, res)
-    emit(
-        args,
-        res,
-        lambda: "\n".join(
-            [
-                f"{name}: created at {dest} and pushed to GitHub"
-                + (
-                    f"; environment setup failed: {res['environment_error']}"
-                    if res.get("environment_error")
-                    else ""
-                )
-                + (
-                    f"; beads setup failed: {res['beads_error']}"
-                    if res.get("beads_error")
-                    else ""
-                ),
-                *_records_line(res),
-            ]
-        ),
-    )
     return code
 
 
@@ -2787,6 +3051,7 @@ def env_applicable(path: Path) -> bool:
 
     Returns:
         True when it has a `pyproject.toml` and an `install` task.
+
     """
     if not (path / "pyproject.toml").is_file():
         return False
@@ -2803,6 +3068,7 @@ def probe_environment(path: Path) -> list[str]:
     Returns:
         One line per problem: a missing or broken `.venv/bin/python`, declared dependencies
         not installed or not importable, `aws_cdk` imported by the code but not importable.
+
     """
     py = path / ".venv" / "bin" / "python"
     if not py.is_file():
@@ -2820,13 +3086,13 @@ def probe_environment(path: Path) -> list[str]:
         problems.append(data["error"])
     if data["missing"]:
         problems.append(
-            "declared dependencies not installed: " + ", ".join(data["missing"])
+            "declared dependencies not installed: " + ", ".join(data["missing"]),
         )
     if data["failed"]:
         problems.append("installed but not importable: " + "; ".join(data["failed"]))
     if data["needs_cdk"] and not data["cdk_ok"]:
         problems.append(
-            f"aws_cdk is imported by the code but not importable: {data.get('cdk_error')}"
+            f"aws_cdk is imported by the code but not importable: {data.get('cdk_error')}",
         )
     return problems
 
@@ -2836,6 +3102,7 @@ def setup_environment(path: Path, synth: bool) -> dict[str, Any]:
 
     Returns:
         {"steps": [...], "problems": [...]}; empty problems means the environment holds.
+
     """
     steps: list[str] = []
     problems: list[str] = []
@@ -2887,6 +3154,7 @@ def environment_findings(st: State, only: list[str] | None = None) -> list[Findi
 
     Returns:
         One finding per repo with a problem.
+
     """
     cfg = st.cfg
     control = os.path.normpath(fleet_file(cfg).parent.parent)
@@ -2909,11 +3177,13 @@ def environment_findings(st: State, only: list[str] | None = None) -> list[Findi
 
 
 def cmd_environment(args: argparse.Namespace, cfg: Config) -> int:
-    """Check every active repo's development environment; with --fix, run the setup task of
-    each repo that has a gap and verify it again.
+    """Check every active repo's development environment.
+
+    With --fix, run the setup task of each repo that has a gap and verify it again.
 
     Returns:
         0 when no repo has a gap left, else 1.
+
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     only = st.resolve(args.repos) if args.repos else None
@@ -2937,10 +3207,9 @@ def cmd_environment(args: argparse.Namespace, cfg: Config) -> int:
         lambda: "\n".join(
             [f"{len(findings)} repos with an environment gap ({data['fixed']} fixed)"]
             + [
-                f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})"
-                + (f": {f.error}" if f.error else "")
+                f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" + (f": {f.error}" if f.error else "")
                 for f in findings
-            ]
+            ],
         ),
     )
     return 1 if data["open"] else 0
@@ -2979,17 +3248,14 @@ def _template_ignore_lines(cfg: Config, r: LocalRepo) -> list[str]:
 
     Returns:
         The non-comment lines; empty when the repo matches no template.
+
     """
     troot, tset = _templates(cfg)
     kind, _how, _answers = _template_for(r, tset.get("kinds") or {})
     f = troot / kind / ".gitignore" if kind else None
     if f is None or not f.is_file():
         return []
-    return [
-        ln.strip()
-        for ln in f.read_text().splitlines()
-        if ln.strip() and not ln.lstrip().startswith("#")
-    ]
+    return [ln.strip() for ln in f.read_text().splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
 
 
 def gitignore_missing(cfg: Config, r: LocalRepo) -> list[str]:
@@ -2997,11 +3263,10 @@ def gitignore_missing(cfg: Config, r: LocalRepo) -> list[str]:
 
     Returns:
         The missing lines, in order.
+
     """
     f = r.path / ".gitignore"
-    have = (
-        {_ignore_key(ln) for ln in f.read_text().splitlines()} if f.is_file() else set()
-    )
+    have = {_ignore_key(ln) for ln in f.read_text().splitlines()} if f.is_file() else set()
     want = [*BEADS_GITIGNORE, *_template_ignore_lines(cfg, r)]
     out: list[str] = []
     for w in want:
@@ -3015,6 +3280,7 @@ def ensure_gitignore(cfg: Config, r: LocalRepo) -> list[str]:
 
     Returns:
         The lines added.
+
     """
     miss = gitignore_missing(cfg, r)
     if not miss:
@@ -3025,7 +3291,7 @@ def ensure_gitignore(cfg: Config, r: LocalRepo) -> list[str]:
     f.write_text(
         f"{text}{sep}\n# Beads runtime and database files, and the standard ignores (polyrepo)\n"
         + "\n".join(miss)
-        + "\n"
+        + "\n",
     )
     return miss
 
@@ -3038,6 +3304,7 @@ def _beads_prefix(cfg: Config) -> str:
 
     Raises:
         PolyrepoError: when the control repo has none.
+
     """
     cp = run(["bd", "config", "get", "issue_prefix"], cwd=fleet_file(cfg).parent.parent)
     prefix = cp.stdout.strip()
@@ -3059,6 +3326,7 @@ def _server_databases() -> set[str]:
 
     Raises:
         PolyrepoError: when the server cannot be listed.
+
     """
     cp = run(
         [
@@ -3078,20 +3346,29 @@ def _server_databases() -> set[str]:
     return {ln.strip() for ln in cp.stdout.splitlines() if ln.strip()}
 
 
-def _beads_files(
-    path: Path, prefix: str, remote: str, db: str, port: int, shared: bool
-) -> None:
-    """Write `.beads/config.yaml` and `.beads/metadata.json`, in shared-server or embedded mode,
-    keeping a `project_id` already in the metadata."""
-    beads = path / ".beads"
+@dataclasses.dataclass(frozen=True)
+class _BeadsTarget:
+    """Where a repo's beads live: its folder, issue prefix, sync remote, database and server port."""
+
+    path: Path
+    prefix: str
+    remote: str
+    db: str
+    port: int
+
+
+def _beads_files(t: _BeadsTarget, *, shared: bool) -> None:
+    """Write `.beads/config.yaml` and `.beads/metadata.json` in shared-server or embedded mode.
+
+    A `project_id` already in the metadata is kept.
+    """
+    beads = t.path / ".beads"
     beads.mkdir(mode=0o700, exist_ok=True)
-    cfgtext = f'issue-prefix: "{prefix}"\nsync:\n    remote: "{remote}"\n'
+    cfgtext = f'issue-prefix: "{t.prefix}"\nsync:\n    remote: "{t.remote}"\n'
     meta: dict[str, Any] = {"database": "dolt", "backend": "dolt"}
     if shared:
-        cfgtext += (
-            f"dolt:\n    shared-server: true\n    port: {port}\n    database: {db}\n"
-        )
-        meta.update(dolt_mode="server", dolt_server_port=port, dolt_database=db)
+        cfgtext += f"dolt:\n    shared-server: true\n    port: {t.port}\n    database: {t.db}\n"
+        meta.update(dolt_mode="server", dolt_server_port=t.port, dolt_database=t.db)
     else:
         meta.update(dolt_mode="embedded")
     try:
@@ -3111,34 +3388,32 @@ def _bd(path: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProce
     )
 
 
-def _create_beads_database(
-    path: Path, prefix: str, remote: str, db: str, port: int
-) -> list[str]:
+def _create_beads_database(t: _BeadsTarget) -> list[str]:
     """Give the repo a database on the shared server, without `bd init`.
 
     `bd bootstrap` clones the repo's `refs/dolt/data` into the shared server when the remote
     has it. When it has not, bootstrap creates a fresh database only as an embedded store, so
     the repo is bootstrapped in embedded mode, given the fleet prefix, pushed to
-    `refs/dolt/data`, and bootstrapped again in shared-server mode, which clones it.
+    `refs/dolt/data`, and bootstrapped again in shared-server mode, which clones it. A failed
+    step propagates as the GitFailedError that `must` raises.
 
     Returns:
         One line per step taken.
 
-    Raises:
-        GitFailedError: when a step fails.
     """
+    path = t.path
     steps: list[str] = []
     remote_has = git_out(path, "ls-remote", "origin", "refs/dolt/data")
     if not remote_has:
-        _beads_files(path, prefix, remote, db, port, shared=False)
+        _beads_files(t, shared=False)
         must(_bd(path, "bootstrap", "--yes"))
-        must(_bd(path, "rename-prefix", f"{prefix}-", "--repair"))
+        must(_bd(path, "rename-prefix", f"{t.prefix}-", "--repair"))
         must(_bd(path, "dolt", "push"))
         shutil.rmtree(path / ".beads" / "embeddeddolt", ignore_errors=True)
         steps.append("created the database (embedded) and pushed it to refs/dolt/data")
-    _beads_files(path, prefix, remote, db, port, shared=True)
+    _beads_files(t, shared=True)
     must(_bd(path, "bootstrap", "--yes"))
-    steps.append(f"cloned refs/dolt/data into the shared server as {db}")
+    steps.append(f"cloned refs/dolt/data into the shared server as {t.db}")
     return steps
 
 
@@ -3150,20 +3425,23 @@ def _unstage(repo: Path, pattern: str) -> None:
 
 
 def beads_setup(
-    cfg: Config, r: LocalRepo, trailer: str | None = None
+    cfg: Config,
+    r: LocalRepo,
+    trailer: str | None = None,
 ) -> dict[str, Any]:
     """Bring one repo to the canonical beads state, commit and push it.
 
     Gives it a database when the shared server has none, repairs identity, prefix and mode
     (`bd doctor --fix` and the polyrepo-beads `converge-repo.sh`), completes its `.gitignore`,
-    and commits `.beads/` config files and the `.gitignore` on the default branch.
+    and commits `.beads/` config files and the `.gitignore` on the default branch. When the
+    environment lacks what a step needs, the step's PolyrepoError propagates.
 
     Returns:
         {"repo", "steps": [...], "committed": bool, "pushed": bool}.
 
     Raises:
         GitFailedError: when a step fails.
-        PolyrepoError: when the environment lacks what the step needs.
+
     """
     path, name, b = r.path, r.name, cfg.default_branch
     if git_out(path, "symbolic-ref", "--short", "-q", "HEAD") != b:
@@ -3172,11 +3450,30 @@ def beads_setup(
     prefix, port, remote = _beads_prefix(cfg), _beads_port(), cfg.github_url(name)
     try:
         db = json.loads((path / ".beads" / "metadata.json").read_text()).get(
-            "dolt_database"
+            "dolt_database",
         )
     except OSError, ValueError:
         db = None
-    db = db or name.replace("-", "_")
+    t = _BeadsTarget(path, prefix, remote, db or name.replace("-", "_"), port)
+    steps = _beads_converge(cfg, name, t)
+    _unstage(path, "*.gate.lock*")
+    added = ensure_gitignore(cfg, r)
+    if added:
+        steps.append(f"added {len(added)} lines to .gitignore")
+    return _beads_commit(cfg, name, path, steps, trailer)
+
+
+def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
+    """Give the repo its database and config files, and converge its identity when it lacks one.
+
+    Returns:
+        One line per step taken.
+
+    Raises:
+        GitFailedError: when the repo still has no project_id after convergence.
+
+    """
+    path = t.path
     steps: list[str] = []
     meta_f = path / ".beads" / "metadata.json"
 
@@ -3186,27 +3483,41 @@ def beads_setup(
         except OSError, ValueError:
             return None
 
-    on_server = db in _server_databases()
+    on_server = t.db in _server_databases()
     files_ok = (path / ".beads" / "config.yaml").is_file() and meta_f.is_file()
     if not on_server:
-        steps.extend(_create_beads_database(path, prefix, remote, db, port))
+        steps.extend(_create_beads_database(t))
     elif not files_ok:
-        _beads_files(path, prefix, remote, db, port, shared=True)
+        _beads_files(t, shared=True)
         steps.append("wrote the missing .beads config files")
     if not (on_server and files_ok and project_id()):
         _bd(path, "doctor", "--fix", "--yes")
         _bd(path, "vc", "commit", "-m", "chore: record project identity")
-        env = f"ATW_CONTROL_REPO={fleet_file(cfg).parent.parent}"
+        env = f"{CONTROL_REPO_ENV}={fleet_file(cfg).parent.parent}"
         conv = ["env", env, "bash", str(BEADS_SCRIPTS / "converge-repo.sh"), str(path)]
         must(run([*conv, "--clean"], timeout=600))
         steps.append("converged to the shared-server canonical state")
         if not project_id():
             msg = f"{name}: metadata.json has no project_id after convergence"
             raise GitFailedError(msg)
-    _unstage(path, "*.gate.lock*")
-    added = ensure_gitignore(cfg, r)
-    if added:
-        steps.append(f"added {len(added)} lines to .gitignore")
+    return steps
+
+
+def _beads_commit(
+    cfg: Config,
+    name: str,
+    path: Path,
+    steps: list[str],
+    trailer: str | None,
+) -> dict[str, Any]:
+    """Commit the repo's beads config files and `.gitignore` on the default branch, and push.
+
+    A failed git step propagates as the GitFailedError that `must` raises.
+
+    Returns:
+        {"repo", "steps": [...], "committed": bool, "pushed": bool}.
+
+    """
     paths = [p for p in (*BEADS_TRACKED, ".gitignore") if (path / p).is_file()]
     must(git(path, "add", "-f", "--", *paths))
     res: dict[str, Any] = {
@@ -3226,17 +3537,20 @@ def beads_setup(
         must(git(path, "commit", "-m", msg, "--", *paths, timeout=300))
     res["committed"] = True
     must(git(path, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
-    must(git(path, "push", "origin", b, timeout=120))
+    must(git(path, "push", "origin", cfg.default_branch, timeout=120))
     res["pushed"] = True
     return res
 
 
 def beads_setup_findings(st: State) -> list[Finding]:
-    """Check that every active repo carries its beads setup: config files committed, its entry in
-    the fleet list, and a complete `.gitignore`.
+    """Check that every active repo carries its beads setup.
+
+    The setup is its config files committed, its entry in the fleet list, and a complete
+    `.gitignore`.
 
     Returns:
         One finding per gap. The database on the server is the beads audit's check.
+
     """
     cfg = st.cfg
     control = os.path.normpath(fleet_file(cfg).parent.parent)
@@ -3252,21 +3566,17 @@ def beads_setup_findings(st: State) -> list[Finding]:
         missing = [p for p in BEADS_REQUIRED if not (r.path / p).is_file()]
         if missing:
             out.append(
-                Finding("beads-config-missing", name, f"missing {', '.join(missing)}")
+                Finding("beads-config-missing", name, f"missing {', '.join(missing)}"),
             )
         else:
-            loose = [
-                p
-                for p in BEADS_REQUIRED
-                if git(r.path, "ls-files", "--error-unmatch", "--", p).returncode != 0
-            ]
+            loose = [p for p in BEADS_REQUIRED if git(r.path, "ls-files", "--error-unmatch", "--", p).returncode != 0]
             if loose:
                 out.append(
                     Finding(
                         "beads-config-uncommitted",
                         name,
                         f"not tracked by git: {', '.join(loose)}",
-                    )
+                    ),
                 )
         if os.path.normpath(r.path) not in listed:
             out.append(
@@ -3274,7 +3584,7 @@ def beads_setup_findings(st: State) -> list[Finding]:
                     "beads-not-in-fleet",
                     name,
                     "not in the control repo's beads fleet list (repos.additional)",
-                )
+                ),
             )
         gi = gitignore_missing(cfg, r)
         if gi:
@@ -3283,20 +3593,21 @@ def beads_setup_findings(st: State) -> list[Finding]:
                     "gitignore-incomplete",
                     name,
                     f".gitignore lacks {', '.join(gi)}",
-                )
+                ),
             )
     return out
 
 
 def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
-    """Check every active repo's beads setup (--check), or set up the named repos or, with --all,
-    every active repo that has a gap or no database on the server.
+    """Check every active repo's beads setup (--check), or set up repos.
+
+    The repos set up are the named ones or, with --all, every active repo that has a gap or
+    no database on the server. Neither repos, --all nor --check propagates the PolyrepoError
+    of `_beads_setup_names`.
 
     Returns:
         0 when nothing is left open, else 1.
 
-    Raises:
-        PolyrepoError: when neither repos, --all nor --check is given.
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     findings = beads_setup_findings(st)
@@ -3309,35 +3620,85 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
             args,
             data,
             lambda: "\n".join(
-                [f"{len(findings)} beads setup gaps"]
-                + [f"  [{f.kind}] {f.repo}: {f.detail}" for f in findings]
+                [f"{len(findings)} beads setup gaps"] + [f"  [{f.kind}] {f.repo}: {f.detail}" for f in findings],
             ),
         )
         return 1 if findings else 0
+    names = _beads_setup_names(args, cfg, st, findings)
+    results, log = _beads_setup_run(args, cfg, st, names)
+    if log:
+        append_changelog(cfg, "polyrepo beads-setup", log)
+    data = {
+        "repos": results,
+        "open": sum("error" in x for x in results),
+        "fixed": sum("error" not in x and not x.get("dry_run") for x in results),
+    }
+    finish_records(cfg, data)
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            f"{x['repo']}: " + (x.get("error") or ("would set up" if x.get("dry_run") else "set up")) for x in results
+        ),
+    )
+    return 1 if data["open"] else 0
+
+
+def _beads_setup_names(
+    args: argparse.Namespace,
+    cfg: Config,
+    st: State,
+    findings: list[Finding],
+) -> list[str]:
+    """Choose the repos beads-setup works on: the named ones, or with --all every gap.
+
+    With --all, a repo is chosen when it has a setup gap or no database on the server.
+
+    Returns:
+        The repo names.
+
+    Raises:
+        PolyrepoError: when neither repos nor --all is given.
+
+    """
     if args.repos:
-        names = st.resolve(args.repos)
-    elif args.all:
-        dbs = _server_databases()
-        control = os.path.normpath(fleet_file(cfg).parent.parent)
-        gaps = {f.repo for f in findings}
-        names = []
-        for n, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
-            if (
-                st.lifecycle(n) in LIFECYCLES_INACTIVE
-                or r.space in BEADS_SKIP_SPACES
-                or os.path.normpath(r.path) == control
-            ):
-                continue
-            try:
-                db = json.loads((r.path / ".beads" / "metadata.json").read_text())
-                db = db.get("dolt_database")
-            except OSError, ValueError:
-                db = None
-            if n in gaps or (db or n.replace("-", "_")) not in dbs:
-                names.append(n)
-    else:
+        return st.resolve(args.repos)
+    if not args.all:
         msg = "give repo names, --all, or --check"
         raise PolyrepoError(msg)
+    dbs = _server_databases()
+    control = os.path.normpath(fleet_file(cfg).parent.parent)
+    gaps = {f.repo for f in findings}
+    names: list[str] = []
+    for n, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
+        if (
+            st.lifecycle(n) in LIFECYCLES_INACTIVE
+            or r.space in BEADS_SKIP_SPACES
+            or os.path.normpath(r.path) == control
+        ):
+            continue
+        try:
+            db = json.loads((r.path / ".beads" / "metadata.json").read_text())
+            db = db.get("dolt_database")
+        except OSError, ValueError:
+            db = None
+        if n in gaps or (db or n.replace("-", "_")) not in dbs:
+            names.append(n)
+    return names
+
+
+def _beads_setup_run(
+    args: argparse.Namespace,
+    cfg: Config,
+    st: State,
+    names: list[str],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Set up beads in each named repo, then add the set-up repos to the fleet list in one write.
+
+    Returns:
+        (one result per repo, plus one for a failed fleet list write; changelog lines).
+
+    """
     results: list[dict[str, Any]] = []
     log: list[str] = []
     fleet_adds: list[Path] = []
@@ -3355,34 +3716,15 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
         results.append(res)
         if "error" not in res:
             log.append(
-                f"{n}: beads set up ({'; '.join(res['steps']) or 'already set up'})"
+                f"{n}: beads set up ({'; '.join(res['steps']) or 'already set up'})",
             )
     if fleet_adds:
         # One write for the whole run: the fleet watcher restarts on each list change.
         try:
-            log.extend(
-                f"beads fleet list: {c}" for c in fleet_edit(cfg, add=fleet_adds)
-            )
+            log.extend(f"beads fleet list: {c}" for c in fleet_edit(cfg, add=fleet_adds))
         except (PolyrepoError, OSError) as exc:
             results.append({"repo": "(beads fleet list)", "error": str(exc)})
-    if log:
-        append_changelog(cfg, "polyrepo beads-setup", log)
-    data = {
-        "repos": results,
-        "open": sum("error" in x for x in results),
-        "fixed": sum("error" not in x and not x.get("dry_run") for x in results),
-    }
-    finish_records(cfg, data)
-    emit(
-        args,
-        data,
-        lambda: "\n".join(
-            f"{x['repo']}: "
-            + (x.get("error") or ("would set up" if x.get("dry_run") else "set up"))
-            for x in results
-        ),
-    )
-    return 1 if data["open"] else 0
+    return results, log
 
 
 # clone -----------------------------------------------------------------------------------------
@@ -3397,6 +3739,7 @@ def _clone_dest(cfg: Config, name: str) -> Path:
     Raises:
         PolyrepoError: when the name matches no application or deprecated pattern, or its
             app space folder does not exist.
+
     """
     space = cfg.expected_space(name)
     if space is None:
@@ -3416,20 +3759,19 @@ def _clone_dest(cfg: Config, name: str) -> Path:
         (
             placement[k]
             for k, v in kinds.items()
-            if k in placement
-            and v.get("name_regex")
-            and re.search(v["name_regex"], base, re.IGNORECASE)
+            if k in placement and v.get("name_regex") and re.search(v["name_regex"], base, re.IGNORECASE)
         ),
         "",
     )
     return space_dir / sub / name if sub else space_dir / name
 
 
-def _clone_conflicts(cfg: Config, name: str, dest: Path) -> list[Path]:
+def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
     """Find every clone of this repo already on disk, by folder name or by origin URL.
 
     Returns:
         The paths of those clones.
+
     """
     local, dups = discover(cfg)
     found = {r.path for n, r in local.items() if n.lower() == name.lower()}
@@ -3456,17 +3798,15 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
     Raises:
         PolyrepoError: when the repo already exists at any other path, is on disk more than
             once, does not exist on GitHub, or the clone fails.
+
     """
     name = args.repo
     dest = _clone_dest(cfg, name)
-    here = _clone_conflicts(cfg, name, dest)
+    here = _clone_conflicts(cfg, name)
     res: dict[str, Any] = {"repo": name, "path": str(dest), "cloned": False}
     wrong = [p for p in here if p != dest]
     if wrong:
-        msg = (
-            f"refusing to clone {name} into {dest}: it already exists at "
-            + ", ".join(str(p) for p in wrong)
-        )
+        msg = f"refusing to clone {name} into {dest}: it already exists at " + ", ".join(str(p) for p in wrong)
         raise PolyrepoError(msg)
     if dest in here:
         emit(args, res, lambda: f"{name}: already at {dest}")
@@ -3495,6 +3835,7 @@ def deprecated_name(name: str) -> str:
 
     Returns:
         The new name.
+
     """
     return "deprecated-" + name.lower()
 
@@ -3511,17 +3852,59 @@ def rename(
     The one rename operation: `rename`, `deprecate` and reconcile's name-parity repair all
     run it. It finds the local clone under either name and the GitHub repo through its
     origin (following GitHub's rename redirects), so it also completes a rename that only
-    one side has made. It refuses when the new name matches no naming pattern, another
-    GitHub repo has it, the target folder exists, or the local default branch is not known
-    to be pushed. A name starting with `deprecated-` makes the entry deprecated, dated
-    today unless it already has a date.
+    one side has made. It refuses, with the PolyrepoError of `_rename_plan`, when the new
+    name matches no naming pattern, another GitHub repo has it, the target folder exists, or
+    the local default branch is not known to be pushed. A name starting with `deprecated-`
+    makes the entry deprecated, dated today unless it already has a date.
 
     Returns:
         The steps planned (dry run) or done.
 
     Raises:
-        PolyrepoError: when the rename cannot proceed as it stands.
         GitFailedError: when a step fails part way; the message names the steps done.
+
+    """
+    plan = _rename_plan(st, old, new, extra_fields)
+    if dry_run:
+        return plan.steps
+    done: list[str] = []
+    try:
+        _rename_moves(st.cfg, new, plan, done)
+    except (GitFailedError, OSError) as exc:
+        so_far = f" (done before it stopped: {'; '.join(done)})" if done else ""
+        msg = f"{exc}{so_far}"
+        raise GitFailedError(msg) from exc
+    _rename_record(st, old, new, plan, done)
+    return done
+
+
+@dataclasses.dataclass
+class _RenamePlan:
+    """What a rename will do: the clone and GitHub repo it moves, and the entry it writes."""
+
+    r: LocalRepo | None
+    rec: dict[str, Any] | None
+    new_path: Path | None
+    url: str
+    fields: dict[str, Any]
+    active: bool
+    steps: list[str]
+
+
+def _rename_plan(
+    st: State,
+    old: str,
+    new: str,
+    extra_fields: dict[str, Any] | None,
+) -> _RenamePlan:
+    """Check that a rename can proceed and plan its steps.
+
+    Returns:
+        The plan.
+
+    Raises:
+        PolyrepoError: when the rename cannot proceed as it stands.
+
     """
     cfg, man = st.cfg, st.manifest
     if old == new:
@@ -3541,33 +3924,11 @@ def rename(
     steps: list[str] = []
     if rec and rec["name"] != new:
         steps.append(f"rename the GitHub repo {cfg.owner}/{rec['name']} to {new}")
-    new_path = None
-    if r:
-        if r.fetch_error:
-            msg = f"{r.name}: git fetch failed ({r.fetch_error}); cannot confirm {cfg.default_branch} is pushed"
-            raise PolyrepoError(msg)
-        if r.ahead:
-            msg = f"{r.name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
-            raise PolyrepoError(msg)
-        new_path = r.path.with_name(new)
-        if new_path != r.path:
-            if new_path.exists():
-                msg = f"{new_path} already exists"
-                raise PolyrepoError(msg)
-            steps.append(f"move {r.path} to {new_path}")
-        if r.origin_url != url:
-            steps.append(f"point origin at {url}")
+    new_path = _rename_local_steps(cfg, r, new, url, steps) if r else None
     entry = man.entries().get(old) or man.entries().get(new) or {}
-    lc = str(entry.get("lifecycle") or "active")
-    if new.startswith("deprecated-"):
-        lc = "deprecated"
-    elif lc in LIFECYCLES_INACTIVE:
-        lc = "active"
-    fields = entry_fields(cfg, new, lc, extra_fields)
-    if entry.get("deprecated_on") and lc == "deprecated":
-        fields["deprecated_on"] = entry["deprecated_on"]
+    fields, lc = _rename_fields(cfg, new, entry, extra_fields)
     steps.append(
-        f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items())
+        f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items()),
     )
     active = lc not in LIFECYCLES_INACTIVE
     if r and new_path:
@@ -3577,59 +3938,115 @@ def rename(
                 f"point the entry at {new_path}, or add it when it has a .beads folder"
                 if active
                 else f"remove {r.path}"
-            )
+            ),
         )
-    if dry_run:
-        return steps
+    return _RenamePlan(r, rec, new_path, url, fields, active, steps)
 
-    done: list[str] = []
-    try:
-        if rec and rec["name"] != new:
-            must(
-                run(
-                    [
-                        "gh", "repo", "rename", new,
-                        "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
-                    ],
-                    timeout=120,
-                )
-            )  # fmt: skip
-            done.append(f"GitHub {rec['name']} renamed to {new}")
-        if r and new_path:
-            if new_path != r.path:
-                r.path.rename(new_path)
-                done.append(f"moved {r.path} to {new_path}")
-            point_origin(new_path, url)
-            done.append(f"origin set to {url}")
-            must(git(new_path, "worktree", "repair"))
-    except (GitFailedError, OSError) as exc:
-        so_far = f" (done before it stopped: {'; '.join(done)})" if done else ""
-        raise GitFailedError(f"{exc}{so_far}") from exc
+
+def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: list[str]) -> Path:
+    """Check the local clone can move to its new name, appending its steps.
+
+    Returns:
+        The clone's path after the rename.
+
+    Raises:
+        PolyrepoError: when main is not known to be pushed or the new folder exists.
+
+    """
+    if r.fetch_error:
+        msg = f"{r.name}: git fetch failed ({r.fetch_error}); cannot confirm {cfg.default_branch} is pushed"
+        raise PolyrepoError(msg)
+    if r.ahead:
+        msg = f"{r.name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
+        raise PolyrepoError(msg)
+    new_path = r.path.with_name(new)
+    if new_path != r.path:
+        if new_path.exists():
+            msg = f"{new_path} already exists"
+            raise PolyrepoError(msg)
+        steps.append(f"move {r.path} to {new_path}")
+    if r.origin_url != url:
+        steps.append(f"point origin at {url}")
+    return new_path
+
+
+def _rename_fields(
+    cfg: Config,
+    new: str,
+    entry: dict[str, Any],
+    extra_fields: dict[str, Any] | None,
+) -> tuple[dict[str, Any], str]:
+    """Work out the renamed entry's fields and lifecycle.
+
+    Returns:
+        (the fields, the lifecycle).
+
+    """
+    lc = str(entry.get("lifecycle") or "active")
+    if new.startswith("deprecated-"):
+        lc = "deprecated"
+    elif lc in LIFECYCLES_INACTIVE:
+        lc = "active"
+    fields = entry_fields(cfg, new, lc, extra_fields)
+    if entry.get("deprecated_on") and lc == "deprecated":
+        fields["deprecated_on"] = entry["deprecated_on"]
+    return fields, lc
+
+
+def _rename_moves(cfg: Config, new: str, plan: _RenamePlan, done: list[str]) -> None:
+    """Rename the GitHub repo, move the clone and repoint origin, appending each step done.
+
+    A failed git or gh step propagates as the GitFailedError that `must` raises; a failed
+    move as OSError.
+    """
+    rec, r, new_path = plan.rec, plan.r, plan.new_path
+    if rec and rec["name"] != new:
+        must(
+            run(
+                [
+                    "gh", "repo", "rename", new,
+                    "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
+                ],
+                timeout=120,
+            ),
+        )  # fmt: skip
+        done.append(f"GitHub {rec['name']} renamed to {new}")
+    if r and new_path:
+        if new_path != r.path:
+            r.path.rename(new_path)
+            done.append(f"moved {r.path} to {new_path}")
+        point_origin(new_path, plan.url)
+        done.append(f"origin set to {plan.url}")
+        must(git(new_path, "worktree", "repair"))
+
+
+def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[str]) -> None:
+    """Write the renamed manifest entry, update the fleet list, and log the rename."""
+    cfg, man = st.cfg, st.manifest
     if old in man.entries() and new not in man.entries():
         man.rename_entry(old, new)
     man.add_entry(new, {})
-    for k, v in fields.items():
+    for k, v in plan.fields.items():
         man.set_field(new, k, v)
     man.set_field(new, "local_path", None)
     man.save()
-    if r and new_path:
+    if plan.r and plan.new_path:
         try:
             done.extend(
-                f"beads fleet list: {c}"
-                for c in fleet_after_rename(cfg, r.path, new_path, active)
+                f"beads fleet list: {c}" for c in fleet_after_rename(cfg, plan.r.path, plan.new_path, plan.active)
             )
         except (OSError, PolyrepoError) as exc:
             done.append(f"beads fleet list NOT updated: {exc}")
     append_changelog(
-        cfg, f"polyrepo rename {old} to {new}", [*done, f"manifest entry is now {new}"]
+        cfg,
+        f"polyrepo rename {old} to {new}",
+        [*done, f"manifest entry is now {new}"],
     )
     st.gh.invalidate()
-    return done
 
 
 def _run_rename(
     args: argparse.Namespace,
-    cfg: Config,
     st: State,
     name: str,
     new: str,
@@ -3642,6 +4059,7 @@ def _run_rename(
 
     Returns:
         0 on success, 1 when a step failed part way.
+
     """
     res: dict[str, Any] = {"repo": name, "new_name": new, "dry_run": args.dry_run}
     try:
@@ -3651,17 +4069,13 @@ def _run_rename(
         emit(args, res, lambda: f"{name}: stopped: {res['error']}")
         return 1
     ok = after(res) if after else True
-    finish_records(cfg, res)
-    head = (
-        f"dry run: rename {name} to {new}"
-        if args.dry_run
-        else f"{name}: renamed to {new}"
-    )
+    finish_records(st.cfg, res)
+    head = f"dry run: rename {name} to {new}" if args.dry_run else f"{name}: renamed to {new}"
     emit(
         args,
         res,
         lambda: "\n".join(
-            [head, *[f"  {s}" for s in res["steps"]], *_records_line(res)]
+            [head, *[f"  {s}" for s in res["steps"]], *_records_line(res)],
         ),
     )
     return 0 if ok else 1
@@ -3677,10 +4091,11 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 on success, 1 when a step failed part way.
+
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
     (name,) = st.resolve([args.repo])
-    return _run_rename(args, cfg, st, name, args.new_name)
+    return _run_rename(args, st, name, args.new_name)
 
 
 DEPRECATED_PR_COMMENT = "Closed: this repository is deprecated."
@@ -3689,11 +4104,11 @@ DEPRECATED_PR_COMMENT = "Closed: this repository is deprecated."
 def open_prs(cfg: Config, repo: str) -> list[dict[str, Any]]:
     """List a GitHub repo's open pull requests.
 
+    When gh cannot list them, the GitFailedError that `must` raises propagates.
+
     Returns:
         One {number, title, url} per open pull request.
 
-    Raises:
-        GitFailedError: when gh cannot list them.
     """
     cp = run(
         [
@@ -3711,6 +4126,7 @@ def close_pr(cfg: Config, repo: str, number: int) -> str | None:
 
     Returns:
         None when it closed, else gh's error.
+
     """
     cp = run(
         [
@@ -3727,6 +4143,7 @@ def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) 
 
     Returns:
         False when the pull requests could not be listed or one did not close.
+
     """
     try:
         prs = open_prs(cfg, repo)
@@ -3742,7 +4159,7 @@ def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) 
         verb = {"planned": "close", "closed": "closed", "failed": "FAILED to close"}
         res["steps"].append(
             f"{verb[pr['status']]} pull request #{pr['number']} {pr['title']}"
-            + (f": {pr['error']}" if pr.get("error") else "")
+            + (f": {pr['error']}" if pr.get("error") else ""),
         )
     if not prs:
         res["steps"].append("no open pull requests to close")
@@ -3753,11 +4170,11 @@ def _close_repo_prs(cfg: Config, repo: str, dry_run: bool, res: dict[str, Any]) 
 def _worktrees(repo: Path) -> list[dict[str, Any]]:
     """List a clone's linked worktrees (not its main one).
 
+    When git cannot list them, the GitFailedError that `must` raises propagates.
+
     Returns:
         One {path, locked, prunable} per linked worktree.
 
-    Raises:
-        GitFailedError: when git cannot list them.
     """
     cp = git(repo, "worktree", "list", "--porcelain")
     must(cp)
@@ -3765,7 +4182,8 @@ def _worktrees(repo: Path) -> list[dict[str, Any]]:
     for block in cp.stdout.strip().split("\n\n")[1:]:
         lines = block.splitlines()
         path = next(
-            (ln[len("worktree ") :] for ln in lines if ln.startswith("worktree ")), None
+            (ln[len("worktree ") :] for ln in lines if ln.startswith("worktree ")),
+            None,
         )
         if path:
             out.append(
@@ -3773,7 +4191,7 @@ def _worktrees(repo: Path) -> list[dict[str, Any]]:
                     "path": Path(path),
                     "locked": any(ln.startswith("locked") for ln in lines),
                     "prunable": any(ln.startswith("prunable") for ln in lines),
-                }
+                },
             )
     return out
 
@@ -3788,6 +4206,7 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
     Returns:
         The reasons not to delete it (empty when nothing would be lost), and the linked
         worktrees that hold no such work, which may be removed.
+
     """
     reasons: list[str] = []
     try:
@@ -3796,25 +4215,50 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
         return [f"cannot list worktrees: {exc}"], []
     trees = [repo] + [w["path"] for w in wts if not w["prunable"]]
     for t in trees:
-        cp = git(t, "status", "--porcelain=v1", "--untracked-files=normal")
-        if cp.returncode != 0:
-            reasons.append(f"{t}: git status failed: {_last_line(cp)}")
-        elif files := [ln[3:] for ln in cp.stdout.splitlines() if ln.strip()]:
-            reasons.append(
-                f"{t}: {len(files)} uncommitted or untracked file(s): "
-                + ", ".join(files[:5])
-                + (" ..." if len(files) > 5 else "")
-            )
-        cp = git(t, "rev-list", "--count", "HEAD", "--not", "--remotes")
-        if cp.returncode == 0 and cp.stdout.strip() not in {"", "0"}:
-            reasons.append(
-                f"{t}: HEAD has {cp.stdout.strip()} commit(s) on no remote branch"
-            )
+        reasons.extend(_tree_local_work(t))
     cp = git(repo, "stash", "list")
     if cp.returncode != 0:
         reasons.append(f"git stash list failed: {_last_line(cp)}")
     elif stashes := [ln for ln in cp.stdout.splitlines() if ln.strip()]:
         reasons.append(f"stash entries: {len(stashes)}")
+    reasons.extend(_branch_local_work(repo))
+    removable = [] if reasons else [w["path"] for w in wts]
+    return reasons, removable
+
+
+def _tree_local_work(t: Path) -> list[str]:
+    """Find uncommitted or untracked files in one working tree, and commits HEAD has on no remote.
+
+    Returns:
+        The reasons not to delete the tree.
+
+    """
+    reasons: list[str] = []
+    cp = git(t, "status", "--porcelain=v1", "--untracked-files=normal")
+    if cp.returncode != 0:
+        reasons.append(f"{t}: git status failed: {_last_line(cp)}")
+    elif files := [ln[3:] for ln in cp.stdout.splitlines() if ln.strip()]:
+        reasons.append(
+            f"{t}: {len(files)} uncommitted or untracked file(s): "
+            + ", ".join(files[:FILES_SHOWN])
+            + (" ..." if len(files) > FILES_SHOWN else ""),
+        )
+    cp = git(t, "rev-list", "--count", "HEAD", "--not", "--remotes")
+    if cp.returncode == 0 and cp.stdout.strip() not in {"", "0"}:
+        reasons.append(
+            f"{t}: HEAD has {cp.stdout.strip()} commit(s) on no remote branch",
+        )
+    return reasons
+
+
+def _branch_local_work(repo: Path) -> list[str]:
+    """Find local branches with commits that no remote-tracking branch contains.
+
+    Returns:
+        The reasons not to delete the clone.
+
+    """
+    reasons: list[str] = []
     cp = git(
         repo,
         "for-each-ref",
@@ -3829,17 +4273,21 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
             reasons.append(f"branch {b}: rev-list failed: {_last_line(n)}")
         elif n.stdout.strip() != "0":
             reasons.append(
-                f"branch {b} has {n.stdout.strip()} commit(s) on no remote branch"
+                f"branch {b} has {n.stdout.strip()} commit(s) on no remote branch",
             )
-    removable = [] if reasons else [w["path"] for w in wts]
-    return reasons, removable
+    return reasons
 
 
 def delete_clone(
-    cfg: Config, clone: Path, final: Path, dry_run: bool, res: dict[str, Any]
+    cfg: Config,
+    clone: Path,
+    final: Path,
+    dry_run: bool,
+    res: dict[str, Any],
 ) -> bool:
-    """Delete a deprecated repo's local clone and its linked worktrees, when no work
-    exists only in them; otherwise leave it and name the path to delete by hand.
+    """Delete a deprecated repo's local clone and its linked worktrees, when no work exists only in them.
+
+    Otherwise the clone is left and the path to delete by hand is named.
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
@@ -3847,6 +4295,7 @@ def delete_clone(
 
     Returns:
         False when the clone was left in place or could not be deleted.
+
     """
     path, final = clone.resolve(), final.resolve()
     bad = (
@@ -3864,7 +4313,7 @@ def delete_clone(
         res["clone"] = {"path": str(final), "status": "refused", "reasons": reasons}
         res["steps"].append(
             f"local clone NOT {'to be ' if dry_run else ''}deleted: {'; '.join(reasons)}; "
-            f"once resolved, delete it by hand: {final}"
+            f"once resolved, delete it by hand: {final}",
         )
         return False
     if dry_run:
@@ -3887,7 +4336,7 @@ def delete_clone(
         res["clone"] = {"path": str(path), "status": "failed", "error": str(exc)}
         res["steps"].extend(done)
         res["steps"].append(
-            f"local clone NOT deleted: {exc}; delete it by hand: {path}"
+            f"local clone NOT deleted: {exc}; delete it by hand: {path}",
         )
         return False
     done.append(f"deleted the local clone {path}")
@@ -3902,9 +4351,10 @@ def delete_clone(
 
 
 def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation,
-    close every open pull request in it with the deprecation comment, then delete its
-    local clone.
+    """Deprecate a repo: rename it, close its pull requests, then delete its local clone.
+
+    The rename to its deprecated- name dates the deprecation; every open pull request is
+    closed with the deprecation comment.
 
     The clone is deleted only when it holds no work that exists only on this machine
     (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
@@ -3917,6 +4367,7 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when the repo is already deprecated.
+
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
     (name,) = st.resolve([args.repo])
@@ -3935,13 +4386,13 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
         clone = r.path if args.dry_run else final
         return delete_clone(cfg, clone, final, args.dry_run, res) and ok
 
-    return _run_rename(args, cfg, st, name, new, after=after)
+    return _run_rename(args, st, name, new, after=after)
 
 
 # agents-sync ----------------------------------------------------------------------------------
 
 
-PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}"
+PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}"  # ruff: ignore[hardcoded-password-string] - a plugin path placeholder, not a secret
 PLUGIN_IMPORT = re.compile(r"^@\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)`?\s*$", re.MULTILINE)
 
 
@@ -3958,6 +4409,7 @@ class AgentsBlock:
 
         Returns:
             The compiled pattern.
+
         """
         m = re.escape(self.marker)
         return re.compile(rf"<!-- BEGIN {m}\b.*?<!-- END {m} -->", re.DOTALL)
@@ -3974,8 +4426,9 @@ def _plugin_block_body(f: Path) -> str:
 
     Raises:
         PolyrepoError: when an imported file is missing or a plugin path is left in the body.
+
     """
-    text = f.read_text()
+    text = f.read_text(encoding="utf-8")
     if text.startswith("---\n"):
         end = text.find("\n---\n", 4)
         if end != -1:
@@ -4006,6 +4459,7 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
 
     Raises:
         PolyrepoError: when a block has no source or its source file is missing.
+
     """
     sc = cfg.raw.get("agents_sync") or {}
     specs = sc.get("blocks") or []
@@ -4022,16 +4476,14 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
         if not marker or not f.is_file():
             msg = f"agents_sync block {marker or '(unnamed)'}: {f} not found"
             raise PolyrepoError(msg)
-        body = (
-            _plugin_block_body(f) if spec.get("plugin_file") else f.read_text().strip()
-        )
+        body = _plugin_block_body(f) if spec.get("plugin_file") else f.read_text().strip()
         note = str(spec.get("note") or "written by polyrepo agents-sync")
         out.append(
             AgentsBlock(
                 marker,
                 f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->",
                 frozenset(spec.get("exclude") or []),
-            )
+            ),
         )
     if not out:
         msg = "agents_sync.blocks in the polyrepo config lists no block"
@@ -4044,6 +4496,7 @@ def _blocks_for(blocks: list[AgentsBlock], name: str) -> list[AgentsBlock]:
 
     Returns:
         The blocks whose exclude list does not name the repo.
+
     """
     return [b for b in blocks if name not in b.exclude]
 
@@ -4053,6 +4506,7 @@ def _with_blocks(text: str | None, blocks: list[AgentsBlock], name: str) -> str:
 
     Returns:
         The new text.
+
     """
     out = f"# {name}\n" if text is None else text
     for b in blocks:
@@ -4069,6 +4523,7 @@ def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
 
     Returns:
         The text outside the owned blocks.
+
     """
     for b in blocks:
         text = b.pattern().sub("", text)
@@ -4076,15 +4531,16 @@ def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
 
 
 def _commit_paths(
-    repo: Path, paths: list[str], message: str, force: bool = False
+    repo: Path,
+    paths: list[str],
+    message: str,
+    force: bool = False,
 ) -> None:
     """Commit only these paths, re-staging once when a pre-commit hook rewrote them.
 
     With force, the paths are staged even inside an ignored folder (the beads fleet list
-    is a tracked file under the gitignored `.beads/`).
-
-    Raises:
-        GitFailedError: when the commit still fails.
+    is a tracked file under the gitignored `.beads/`). When the commit still fails, the
+    GitFailedError that `must` raises propagates.
     """
     add = ["add", "-f", "--"] if force else ["add", "--"]
     must(git(repo, *add, *paths))
@@ -4095,36 +4551,33 @@ def _commit_paths(
 
 
 def _sync_one(
-    cfg: Config, r: LocalRepo, blocks: list[AgentsBlock], write: bool
+    cfg: Config,
+    r: LocalRepo,
+    blocks: list[AgentsBlock],
+    write: bool,
 ) -> dict[str, Any]:
+    """Bring one repo's AGENTS.md blocks current, committing and pushing when write is set.
+
+    Returns:
+        {repo, state} plus, when it wrote, the status and any detail.
+
+    """
     f = r.path / "AGENTS.md"
     cur = f.read_text() if f.is_file() else None
     want = _with_blocks(cur, blocks, r.name)
-    if cur == want:
-        state = "current"
-    elif cur is None:
-        state = "missing-file"
-    elif all(b.pattern().search(cur) for b in blocks):
-        state = "outdated"
-    else:
-        state = "missing-block"
-    res: dict[str, Any] = {"repo": r.name, "state": state}
-    if state == "current" or not write:
+    res: dict[str, Any] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
+    if res["state"] == "current" or not write:
         return res
     b = cfg.default_branch
     branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
     if branch != b:
         return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
-    if cur is not None and git_out(r.path, "status", "--porcelain", "--", "AGENTS.md"):
-        head = git(r.path, "show", "HEAD:AGENTS.md")
-        if head.returncode != 0 or _without_blocks(
-            head.stdout, blocks
-        ) != _without_blocks(cur, blocks):
-            return {
-                **res,
-                "status": "skipped",
-                "detail": "AGENTS.md has uncommitted changes outside the synced blocks",
-            }
+    if cur is not None and _edited_outside_blocks(r.path, cur, blocks):
+        return {
+            **res,
+            "status": "skipped",
+            "detail": "AGENTS.md has uncommitted changes outside the synced blocks",
+        }
     f.write_text(want)
     paths = ["AGENTS.md"]
     claude = r.path / "CLAUDE.md"
@@ -4152,11 +4605,41 @@ def _sync_one(
     return {**res, "status": "pushed"}
 
 
+def _agents_state(cur: str | None, want: str, blocks: list[AgentsBlock]) -> str:
+    """Classify a repo's AGENTS.md against the text it should have.
+
+    Returns:
+        current, missing-file, outdated or missing-block.
+
+    """
+    if cur == want:
+        return "current"
+    if cur is None:
+        return "missing-file"
+    if all(b.pattern().search(cur) for b in blocks):
+        return "outdated"
+    return "missing-block"
+
+
+def _edited_outside_blocks(repo: Path, cur: str, blocks: list[AgentsBlock]) -> bool:
+    """Say whether AGENTS.md has uncommitted changes outside the synced blocks.
+
+    Returns:
+        True when it is modified and differs from HEAD outside the blocks, or HEAD has none.
+
+    """
+    if not git_out(repo, "status", "--porcelain", "--", "AGENTS.md"):
+        return False
+    head = git(repo, "show", "HEAD:AGENTS.md")
+    return head.returncode != 0 or _without_blocks(head.stdout, blocks) != _without_blocks(cur, blocks)
+
+
 def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
     Returns:
         0 when every repo is current (or was brought current and pushed), else 1.
+
     """
     blocks = _agents_blocks(cfg)
     repos = [
@@ -4168,9 +4651,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write), repos))
     if write:
-        bad = [
-            x for x in results if x["state"] != "current" and x["status"] != "pushed"
-        ]
+        bad = [x for x in results if x["state"] != "current" and x["status"] != "pushed"]
     else:
         bad = [x for x in results if x["state"] != "current"]
     counts: dict[str, int] = {}
@@ -4179,8 +4660,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
 
     def text() -> str:
         lines = [
-            f"{len(results)} repos: "
-            + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+            f"{len(results)} repos: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items())),
         ]
         for x in results:
             if x["state"] == "current":
@@ -4188,7 +4668,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
             st_ = x.get("status", "would update" if args.dry_run else "")
             detail = x.get("detail", "")
             lines.append(
-                f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}"
+                f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}",
             )
         return "\n".join(lines)
 
@@ -4203,19 +4683,21 @@ def _read_yaml(f: Path) -> dict[str, Any]:
     if not f.is_file():
         return {}
     try:
-        d = YAML(typ="safe").load(f.read_text())
+        d = YAML(typ="safe").load(f.read_text(encoding="utf-8"))
     except OSError, YAMLError:
         return {}
     return d if isinstance(d, dict) else {}
 
 
 def _template_for(
-    r: LocalRepo, kinds: dict[str, Any]
+    r: LocalRepo,
+    kinds: dict[str, Any],
 ) -> tuple[str | None, str | None, dict[str, Any]]:
     """Decide which template a repo was built from: Copier answers, then repo.status.yaml, then its name.
 
     Returns:
         (template, how it was decided, Copier answers).
+
     """
     answers = _read_yaml(r.path / ".copier-answers.yml")
     src = str(answers.get("_src_path") or "").rstrip("/")
@@ -4237,6 +4719,7 @@ def _template_files(tdir: Path, ignore: list[str]) -> dict[str, str]:
 
     Returns:
         rendered path → template source path.
+
     """
     out: dict[str, str] = {}
     for p in sorted(tdir.rglob("*")):
@@ -4268,6 +4751,7 @@ def _compare_to_template(
 
     Returns:
         {repo, files: {path: (state, repo commit time)}} or {repo, error}.
+
     """
     data = {k: str(v) for k, v in answers.items() if not k.startswith("_")} or {
         "service_name": _service_name(cfg, r.name),
@@ -4304,8 +4788,9 @@ def _check_template(
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         compared = list(
             ex.map(
-                lambda m: _compare_to_template(cfg, m[0], tdir, files, m[2]), members
-            )
+                lambda m: _compare_to_template(cfg, m[0], tdir, files, m[2]),
+                members,
+            ),
         )
     rows = []
     for rel in files:
@@ -4330,9 +4815,7 @@ def _check_template(
     return {
         "template": tdir.name,
         "repos": [{"repo": m[0].name, "matched_by": m[1]} for m in members],
-        "render_errors": [
-            {"repo": c["repo"], "error": c["error"]} for c in compared if "error" in c
-        ],
+        "render_errors": [{"repo": c["repo"], "error": c["error"]} for c in compared if "error" in c],
         "files": rows,
         "lags": any(row["repo_newer"] for row in rows),
     }
@@ -4346,20 +4829,15 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
 
     Raises:
         PolyrepoError: when the templates folder is missing.
+
     """
     troot, tset = _templates(cfg)
     if not troot.is_dir():
         msg = f"templates folder {troot} not found"
         raise PolyrepoError(msg)
-    kinds = {
-        t: k
-        for t, k in (tset.get("kinds") or {}).items()
-        if (troot / t / "copier.yml").is_file()
-    }
+    kinds = {t: k for t, k in (tset.get("kinds") or {}).items() if (troot / t / "copier.yml").is_file()}
     ignore = list(tset.get("ignore") or [])
-    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, Any]]]] = {
-        t: [] for t in kinds
-    }
+    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, Any]]]] = {t: [] for t in kinds}
     untemplated: dict[str, list[str]] = {}
     for r in _local_repos(cfg):
         if r.name.startswith("deprecated-"):
@@ -4373,52 +4851,58 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     for d in sorted(troot.iterdir()):
         if d.is_dir() and (d / "copier.yml").is_file() and d.name not in kinds:
             by_template[d.name] = []
-    results = [
-        _check_template(cfg, troot / t, members, ignore)
-        for t, members in sorted(by_template.items())
-    ]
-    no_template = [
-        {"kind": k, "repos": sorted(v)} for k, v in sorted(untemplated.items())
-    ]
+    results = [_check_template(cfg, troot / t, members, ignore) for t, members in sorted(by_template.items())]
+    no_template = [{"kind": k, "repos": sorted(v)} for k, v in sorted(untemplated.items())]
     data = {
         "templates": results,
         "kinds_without_template": no_template,
         "lagging_templates": [x["template"] for x in results if x["lags"]],
     }
-
-    def text() -> str:
-        lines = []
-        for x in results:
-            how: dict[str, int] = {}
-            for m in x["repos"]:
-                how[m["matched_by"]] = how.get(m["matched_by"], 0) + 1
-            lines.append(
-                f"{x['template']}: {len(x['repos'])} repos ("
-                + ", ".join(f"{v} by {k}" for k, v in sorted(how.items()))
-                + f"){'  TEMPLATE LAGS' if x['lags'] else ''}"
-            )
-            for row in x["files"]:
-                bits = []
-                if row["repo_newer"]:
-                    bits.append(
-                        f"newer in {len(row['repo_newer'])} repo(s) than the template"
-                    )
-                if row["template_newer"]:
-                    bits.append(f"older in {len(row['template_newer'])} repo(s)")
-                if row["missing"]:
-                    bits.append(f"missing from {len(row['missing'])} repo(s)")
-                lines.append(
-                    f"  {row['file']}: same in {row['same']}; " + "; ".join(bits)
-                )
-            lines.extend(
-                f"  render error {e['repo']}: {e['error']}" for e in x["render_errors"]
-            )
-        lines.append("repo kinds with no template:")
-        lines.extend(f"  {k['kind']}: {', '.join(k['repos'])}" for k in no_template)
-        return "\n".join(lines)
-
-    emit(args, data, text)
+    emit(args, data, lambda: _templates_text(results, no_template))
     return 1 if data["lagging_templates"] or no_template else 0
+
+
+def _templates_text(results: list[dict[str, Any]], no_template: list[dict[str, Any]]) -> str:
+    """Render the templates-check report as text.
+
+    Returns:
+        One block per template, then the repo kinds with no template.
+
+    """
+    lines = []
+    for x in results:
+        how: dict[str, int] = {}
+        for m in x["repos"]:
+            how[m["matched_by"]] = how.get(m["matched_by"], 0) + 1
+        lines.append(
+            f"{x['template']}: {len(x['repos'])} repos ("
+            + ", ".join(f"{v} by {k}" for k, v in sorted(how.items()))
+            + f"){'  TEMPLATE LAGS' if x['lags'] else ''}",
+        )
+        lines.extend(_template_file_line(row) for row in x["files"])
+        lines.extend(f"  render error {e['repo']}: {e['error']}" for e in x["render_errors"])
+    lines.append("repo kinds with no template:")
+    lines.extend(f"  {k['kind']}: {', '.join(k['repos'])}" for k in no_template)
+    return "\n".join(lines)
+
+
+def _template_file_line(row: dict[str, Any]) -> str:
+    """Render one template file's comparison with its repos.
+
+    Returns:
+        The line.
+
+    """
+    bits = []
+    if row["repo_newer"]:
+        bits.append(
+            f"newer in {len(row['repo_newer'])} repo(s) than the template",
+        )
+    if row["template_newer"]:
+        bits.append(f"older in {len(row['template_newer'])} repo(s)")
+    if row["missing"]:
+        bits.append(f"missing from {len(row['missing'])} repo(s)")
+    return f"  {row['file']}: same in {row['same']}; " + "; ".join(bits)
 
 
 def fleet_findings(st: State) -> tuple[list[Finding], set[Path], list[Path]]:
@@ -4429,21 +4913,15 @@ def fleet_findings(st: State) -> tuple[list[Finding], set[Path], list[Path]]:
 
     Returns:
         The findings, the paths to remove and the paths to add.
+
     """
     cfg = st.cfg
     f = fleet_file(cfg)
     if not f.is_file():
         return [Finding("fleet-config-missing", "-", f"{f} not found")], set(), []
     control = os.path.normpath(f.parent.parent)
-    lc = {
-        os.path.normpath(r.path): (r.name, st.lifecycle(r.name))
-        for r in st.local.values()
-    }
-    active = {
-        p: n
-        for p, (n, life) in lc.items()
-        if life not in LIFECYCLES_INACTIVE and p != control
-    }
+    lc = {os.path.normpath(r.path): (r.name, st.lifecycle(r.name)) for r in st.local.values()}
+    active = {p: n for p, (n, life) in lc.items() if life not in LIFECYCLES_INACTIVE and p != control}
     listed = fleet_paths(cfg)
     out: list[Finding] = []
     remove: set[Path] = set()
@@ -4464,7 +4942,7 @@ def fleet_findings(st: State) -> tuple[list[Finding], set[Path], list[Path]]:
                 name,
                 detail,
                 fix=f"remove {raw} from repos.additional",
-            )
+            ),
         )
         remove.add(Path(p))
     for p, name in sorted(active.items(), key=lambda kv: kv[1].lower()):
@@ -4475,7 +4953,7 @@ def fleet_findings(st: State) -> tuple[list[Finding], set[Path], list[Path]]:
                     name,
                     f"active repo with a .beads folder, not in repos.additional ({p})",
                     fix=f"add {os.path.relpath(p, control)}/ to repos.additional",
-                )
+                ),
             )
             add.append(Path(p))
     return out, remove, add
@@ -4486,6 +4964,7 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 when the list is correct (or was corrected), else 1.
+
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     findings, remove, add = fleet_findings(st)
@@ -4516,11 +4995,9 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
 
     def text() -> str:
         lines = [
-            f"{data['listed']} listed in {data['file']}, {len(findings)} findings ({data['fixed']} fixed)"
+            f"{data['listed']} listed in {data['file']}, {len(findings)} findings ({data['fixed']} fixed)",
         ]
-        lines.extend(
-            f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" for f in findings
-        )
+        lines.extend(f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" for f in findings)
         return "\n".join([*lines, *_records_line(data)])
 
     emit(args, data, text)
@@ -4535,6 +5012,7 @@ def deprecated_open_prs(cfg: Config) -> list[dict[str, Any]]:
 
     Raises:
         PolyrepoError: when gh cannot search.
+
     """
     cp = run(
         [
@@ -4563,6 +5041,7 @@ def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 when none is open (or every one was closed), else 1.
+
     """
     prs = deprecated_open_prs(cfg)
     findings = [
@@ -4586,12 +5065,10 @@ def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
 
     def text() -> str:
         lines = [
-            f"{len(findings)} open pull requests in deprecated repos ({data['fixed']} closed)"
+            f"{len(findings)} open pull requests in deprecated repos ({data['fixed']} closed)",
         ]
         lines.extend(
-            f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})"
-            + (f": {f.error}" if f.error else "")
-            for f in findings
+            f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" + (f": {f.error}" if f.error else "") for f in findings
         )
         return "\n".join(lines)
 
@@ -4630,6 +5107,7 @@ def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
 
     Returns:
         (exit status, parsed output); unreadable output becomes {"error": ...}.
+
     """
     cp = run([*argv, *extra], timeout=900)
     try:
@@ -4638,7 +5116,7 @@ def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
         data = {"error": f"unreadable output: {cp.stdout[:200]}"}
     if not isinstance(data, dict):
         data = {"error": f"unexpected output: {cp.stdout[:200]}"}
-    if cp.returncode == 2 and "error" not in data:
+    if cp.returncode == EXIT_USAGE and "error" not in data:
         data["error"] = _last_line(cp) or "exited 2"
     return cp.returncode, data
 
@@ -4648,6 +5126,7 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
 
     Returns:
         One finding per open problem the check reported.
+
     """
     if "error" in data:
         return [_finding(check, "-", "error", str(data["error"]))]
@@ -4675,10 +5154,7 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
             if isinstance(r, dict) and r.get("state") != "current"
         ]
     if check == "beads":
-        return [
-            _finding(check, a["repo"], "beads-anomaly", a["detail"])
-            for a in data.get("anomalies") or []
-        ]
+        return [_finding(check, a["repo"], "beads-anomaly", a["detail"]) for a in data.get("anomalies") or []]
     return []
 
 
@@ -4688,11 +5164,14 @@ def _resolve_location(cfg: Config, loc: str) -> Path:
 
 
 def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
-    """Check every governance entry: its location exists, and a script or tool's `invoke`
-    runs (the part before its first `<placeholder>`, with `--help`).
+    """Check every governance entry's location and invoke command.
+
+    Its location must exist, and a script or tool's `invoke` must run (the part before its
+    first `<placeholder>`, with `--help`).
 
     Returns:
         One finding per entry that does not resolve or does not run.
+
     """
     out = []
     for e in Manifest(cfg.manifest).doc.get("governance") or []:
@@ -4707,14 +5186,14 @@ def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
                     subject,
                     "location-missing",
                     f"{loc} does not resolve ({_resolve_location(cfg, str(loc))})",
-                )
+                ),
             )
         if str(e.get("type")) not in {"script", "tool"}:
             continue
         invoke = str(e.get("invoke") or "").split("<", 1)[0].strip()
         if not invoke:
             out.append(
-                _finding("governance", subject, "invoke-missing", "no invoke command")
+                _finding("governance", subject, "invoke-missing", "no invoke command"),
             )
             continue
         try:
@@ -4730,7 +5209,7 @@ def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
                     subject,
                     "invoke-fails",
                     f"`{shlex.join(argv)}` exited {cp.returncode}: {_last_line(cp)}",
-                )
+                ),
             )
     return out
 
@@ -4743,12 +5222,9 @@ def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
 
     Returns:
         One finding per entry with no `resolves`, and per path that does not exist.
+
     """
-    doc = (
-        YAML(typ="safe").load(cfg.knowledge.read_text())
-        if cfg.knowledge.exists()
-        else {}
-    )
+    doc = YAML(typ="safe").load(cfg.knowledge.read_text()) if cfg.knowledge.exists() else {}
     out = []
     for e in (doc or {}).get("knowledge") or []:
         if not isinstance(e, dict) or e.get("kind") not in {"location", "pointer"}:
@@ -4762,7 +5238,7 @@ def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
                     subject,
                     "pointer-unchecked",
                     "no `resolves` path, so the pointer cannot be checked",
-                )
+                ),
             )
             continue
         for t in targets if isinstance(targets, list) else [targets]:
@@ -4774,7 +5250,7 @@ def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
                         subject,
                         "pointer-missing",
                         f"{t} ({p}) does not exist",
-                    )
+                    ),
                 )
     return out
 
@@ -4789,33 +5265,68 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
 
     Returns:
         One finding per disagreement.
+
     """
     loc = ((cfg.raw.get("naming") or {}).get("document")) or ""
     if not loc:
         return [
             _finding(
-                "naming-doc", "-", "not-configured", "config naming.document is not set"
-            )
+                "naming-doc",
+                "-",
+                "not-configured",
+                "config naming.document is not set",
+            ),
         ]
     path = _resolve_location(cfg, str(loc))
     if not path.is_file():
         return [_finding("naming-doc", "-", "missing", f"{loc} ({path}) not found")]
     text = path.read_text()
-    out = []
     sections = {
-        m.group(1).split()[0].lower(): m.group(2)
-        for m in re.finditer(r"(?m)^### (.+)\n((?:(?!^##).*\n?)*)", text)
+        m.group(1).split()[0].lower(): m.group(2) for m in re.finditer(r"(?m)^### (.+)\n((?:(?!^##).*\n?)*)", text)
     }
-    for p in cfg.patterns:
-        if p["name"] not in sections:
+    out = [
+        _finding(
+            "naming-doc",
+            p["name"],
+            "pattern-undocumented",
+            f"naming pattern {p['name']} has no section in {path.name}",
+        )
+        for p in cfg.patterns
+        if p["name"] not in sections
+    ]
+    out.extend(_naming_example_findings(cfg, sections, path.name))
+    for a, b in re.findall(r"`([^`]+)` becomes `([^`]+)`", text):
+        if b.startswith("deprecated-") and deprecated_name(a) != b:
             out.append(
                 _finding(
                     "naming-doc",
-                    p["name"],
-                    "pattern-undocumented",
-                    f"naming pattern {p['name']} has no section in {path.name}",
-                )
+                    a,
+                    "deprecation-mismatch",
+                    f"{path.name} says {a} becomes {b}; the tool makes it {deprecated_name(a)}",
+                ),
             )
+    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
+    out.extend(
+        _finding(
+            "naming-doc",
+            "-",
+            "archive-delay-mismatch",
+            f"{path.name} says {n} days; the config archives after {days}",
+        )
+        for n in re.findall(r"(\d+) days after deprecation", text)
+        if int(n) != days
+    )
+    return out
+
+
+def _naming_example_findings(cfg: Config, sections: dict[str, str], doc_name: str) -> list[dict[str, Any]]:
+    """Check that every example in a naming document section matches that section's pattern.
+
+    Returns:
+        One finding per example the config's patterns classify otherwise.
+
+    """
+    out = []
     for sec, body in sections.items():
         ex = re.search(r"\*\*Examples:\*\*(.*)", body)
         for name in re.findall(r"`([^`]+)`", ex.group(1) if ex else ""):
@@ -4826,31 +5337,10 @@ def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
                         "naming-doc",
                         name,
                         "example-mismatch",
-                        f"{path.name} gives {name} as a {sec} example; the config's patterns "
+                        f"{doc_name} gives {name} as a {sec} example; the config's patterns "
                         f"classify it as {got['name'] if got else 'no pattern'}",
-                    )
+                    ),
                 )
-    for a, b in re.findall(r"`([^`]+)` becomes `([^`]+)`", text):
-        if b.startswith("deprecated-") and deprecated_name(a) != b:
-            out.append(
-                _finding(
-                    "naming-doc",
-                    a,
-                    "deprecation-mismatch",
-                    f"{path.name} says {a} becomes {b}; the tool makes it {deprecated_name(a)}",
-                )
-            )
-    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
-    for n in re.findall(r"(\d+) days after deprecation", text):
-        if int(n) != days:
-            out.append(
-                _finding(
-                    "naming-doc",
-                    "-",
-                    "archive-delay-mismatch",
-                    f"{path.name} says {n} days; the config archives after {days}",
-                )
-            )
     return out
 
 
@@ -4866,6 +5356,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 when no check reports a finding, else 1.
+
     """
     t0 = time.time()
     extra = ["--config", str(cfg.file)] + (["--no-cache"] if args.no_cache else [])
@@ -4894,9 +5385,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     findings.extend(_governance_findings(cfg))
     findings.extend(_knowledge_findings(cfg))
     findings.extend(_naming_doc_findings(cfg))
-    counts: dict[str, int] = {
-        c: 0 for c in [*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc"]
-    }
+    counts: dict[str, int] = dict.fromkeys([*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc"], 0)
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     data = {
@@ -4917,10 +5406,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
             for n, r in repairs.items()
         )
         lines.extend(f"  {c}: {n}" for c, n in counts.items())
-        lines.extend(
-            f"  [{f['check']}/{f['kind']}] {f['subject']}: {f['detail']}"
-            for f in findings
-        )
+        lines.extend(f"  [{f['check']}/{f['kind']}] {f['subject']}: {f['detail']}" for f in findings)
         return "\n".join(lines)
 
     emit(args, data, text)
@@ -4932,6 +5418,7 @@ def cmd_commit(args: argparse.Namespace, cfg: Config) -> int:
 
     Returns:
         0 when they are committed and pushed or already clean, else 1.
+
     """
     res = commit_records(cfg, args.message.strip())
     emit(
@@ -4951,12 +5438,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     Returns:
         The parser.
+
     """
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="print one JSON object")
     common.add_argument("--config", help="path to .polyrepo/config.yaml")
     common.add_argument(
-        "--no-cache", action="store_true", help="fetch and list GitHub even when fresh"
+        "--no-cache",
+        action="store_true",
+        help="fetch and list GitHub even when fresh",
     )
 
     p = argparse.ArgumentParser(
@@ -4966,8 +5456,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser(
-        "reconcile", parents=[common], help="compare disk, GitHub and the manifest"
+    def add(name: str, help_text: str) -> argparse.ArgumentParser:
+        return sub.add_parser(name, parents=[common], help=help_text)
+
+    _add_inspect_commands(add)
+    _add_repo_commands(add)
+    _add_upkeep_commands(add)
+    return p
+
+
+def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add the commands that report on the repos: reconcile to grep."""
+    s = add(
+        "reconcile",
+        "compare disk, GitHub and the manifest",
     )
     s.add_argument("--fix", action="store_true", help="repair every mechanical finding")
     s.add_argument(
@@ -4978,23 +5480,27 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-fetch", action="store_true", help="skip git fetch")
     s.set_defaults(func=cmd_reconcile)
 
-    s = sub.add_parser(
-        "status", parents=[common], help="live git and GitHub state per repo"
+    s = add(
+        "status",
+        "live git and GitHub state per repo",
     )
     s.add_argument(
-        "repos", nargs="*", help="repo names or paths (default: every repo on disk)"
+        "repos",
+        nargs="*",
+        help="repo names or paths (default: every repo on disk)",
     )
     s.add_argument("--no-fetch", action="store_true", help="skip git fetch")
     s.set_defaults(func=cmd_status)
 
-    s = sub.add_parser("list", parents=[common], help="list repos")
+    s = add("list", "list repos")
     s.add_argument("--group")
     s.add_argument("--lifecycle")
     s.add_argument("--space")
     s.set_defaults(func=cmd_list)
 
-    s = sub.add_parser(
-        "search", parents=[common], help="find repos by record attribute"
+    s = add(
+        "search",
+        "find repos by record attribute",
     )
     s.add_argument(
         "terms",
@@ -5008,7 +5514,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_search)
 
-    s = sub.add_parser("inventory", parents=[common], help="every repo's full record")
+    s = add("inventory", "every repo's full record")
     s.add_argument("--no-fetch", action="store_true", help="skip git fetch")
     s.add_argument(
         "--all",
@@ -5017,16 +5523,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_inventory)
 
-    s = sub.add_parser(
+    s = add(
         "purpose",
-        parents=[common],
-        help="record or confirm a repo's purpose at its current main",
+        "record or confirm a repo's purpose at its current main",
     )
     s.add_argument("repo")
     s.add_argument("--text", help="the new purpose (omit to confirm the current one)")
     s.set_defaults(func=cmd_purpose)
 
-    s = sub.add_parser("grep", parents=[common], help="rg across the repos on disk")
+    s = add("grep", "rg across the repos on disk")
     s.add_argument("pattern")
     s.add_argument("--space", help="only this app space")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
@@ -5037,15 +5542,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--glob", action="append", help="rg --glob (repeatable)")
     s.set_defaults(func=cmd_grep)
 
-    s = sub.add_parser(
-        "rebase", parents=[common], help="rebase main on origin/main after a fetch"
+
+def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add the commands that change repos: rebase, create, deprecate, clone and rename."""
+    s = add(
+        "rebase",
+        "rebase main on origin/main after a fetch",
     )
     s.add_argument("repos", nargs="*", help="repo names or paths")
     s.add_argument("--all", action="store_true", help="every repo on disk")
     s.set_defaults(func=cmd_rebase)
 
-    s = sub.add_parser(
-        "create", parents=[common], help="create a repo from a template, on GitHub too"
+    s = add(
+        "create",
+        "create a repo from a template, on GitHub too",
     )
     s.add_argument("name")
     s.add_argument("--space", required=True, help="the app space it belongs in")
@@ -5053,105 +5563,107 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--purpose", required=True, help="one line: what the repo is")
     s.add_argument("--lifecycle", default="active")
     s.add_argument(
-        "--dir", help="folder inside the space (default: the config's placement)"
+        "--dir",
+        help="folder inside the space (default: the config's placement)",
     )
     s.add_argument("--dry-run", action="store_true", help="check and render only")
     s.set_defaults(func=cmd_create)
 
-    s = sub.add_parser(
+    s = add(
         "deprecate",
-        parents=[common],
-        help="rename a repo deprecated-*, here and on GitHub, close its open PRs, "
+        "rename a repo deprecated-*, here and on GitHub, close its open PRs, "
         "and delete its local clone when no work exists only there",
     )
     s.add_argument("repo")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
     s.set_defaults(func=cmd_deprecate)
 
-    s = sub.add_parser(
+    s = add(
         "clone",
-        parents=[common],
-        help="clone a repo into the folder its name gives it; refuse if it exists elsewhere",
+        "clone a repo into the folder its name gives it; refuse if it exists elsewhere",
     )
     s.add_argument("repo")
     s.set_defaults(func=cmd_clone)
 
-    s = sub.add_parser(
+    s = add(
         "rename",
-        parents=[common],
-        help="rename a repo, here and on GitHub, and repoint the manifest",
+        "rename a repo, here and on GitHub, and repoint the manifest",
     )
     s.add_argument("repo")
     s.add_argument("new_name")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
     s.set_defaults(func=cmd_rename)
 
-    s = sub.add_parser(
+
+def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add the upkeep commands: agents-sync to commit."""
+    s = add(
         "agents-sync",
-        parents=[common],
-        help="write the shared AGENTS.md blocks into every repo",
+        "write the shared AGENTS.md blocks into every repo",
     )
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.set_defaults(func=cmd_agents_sync)
 
-    s = sub.add_parser(
+    s = add(
         "templates-check",
-        parents=[common],
-        help="compare the templates with the repos built from them",
+        "compare the templates with the repos built from them",
     )
     s.set_defaults(func=cmd_templates_check)
 
-    s = sub.add_parser(
+    s = add(
         "beads-fleet",
-        parents=[common],
-        help="check the beads fleet list (repos.additional) against the repos",
+        "check the beads fleet list (repos.additional) against the repos",
     )
     s.add_argument("--fix", action="store_true", help="correct the list")
     s.set_defaults(func=cmd_beads_fleet)
 
-    s = sub.add_parser(
+    s = add(
         "beads-setup",
-        parents=[common],
-        help="check every active repo's beads setup; set up the named repos or --all",
+        "check every active repo's beads setup; set up the named repos or --all",
     )
     s.add_argument("repos", nargs="*", help="repos to set up")
     s.add_argument(
-        "--all", action="store_true", help="set up every active repo with a gap"
+        "--all",
+        action="store_true",
+        help="set up every active repo with a gap",
     )
     s.add_argument(
-        "--check", action="store_true", help="report the gaps, change nothing"
+        "--check",
+        action="store_true",
+        help="report the gaps, change nothing",
     )
     s.add_argument(
-        "--dry-run", action="store_true", help="list the repos it would set up"
+        "--dry-run",
+        action="store_true",
+        help="list the repos it would set up",
     )
     s.add_argument("--trailer", help="a line to end each commit message body with")
     s.set_defaults(func=cmd_beads_setup)
 
-    s = sub.add_parser(
+    s = add(
         "environment",
-        parents=[common],
-        help="check every active repo's development environment; --fix runs its setup task",
+        "check every active repo's development environment; --fix runs its setup task",
     )
     s.add_argument("repos", nargs="*", help="only these repos (default: all active)")
     s.add_argument(
-        "--fix", action="store_true", help="run the setup task of each repo with a gap"
+        "--fix",
+        action="store_true",
+        help="run the setup task of each repo with a gap",
     )
     s.set_defaults(func=cmd_environment)
 
-    s = sub.add_parser(
+    s = add(
         "deprecated-prs",
-        parents=[common],
-        help="report open pull requests in deprecated- repos",
+        "report open pull requests in deprecated- repos",
     )
     s.add_argument("--fix", action="store_true", help="close them")
     s.set_defaults(func=cmd_deprecated_prs)
 
-    s = sub.add_parser(
+    s = add(
         "doctor",
-        parents=[common],
-        help="every health check as one report; --fix runs the repairs first",
+        "every health check as one report; --fix runs the repairs first",
     )
     s.add_argument(
         "--fix",
@@ -5160,14 +5672,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_doctor)
 
-    s = sub.add_parser(
+    s = add(
         "commit",
-        parents=[common],
-        help="commit and push the steward's own files after a hand edit",
+        "commit and push the steward's own files after a hand edit",
     )
     s.add_argument("--message", "-m", required=True, help="what changed")
     s.set_defaults(func=cmd_commit)
-    return p
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -5175,6 +5685,7 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         The exit status.
+
     """
     args = build_parser().parse_args(argv)
     try:
@@ -5182,9 +5693,9 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.func(args, cfg))
     except PolyrepoError as exc:
         if getattr(args, "json", False):
-            print(json.dumps({"error": str(exc)}))
+            sys.stdout.write(json.dumps({"error": str(exc)}) + "\n")
         else:
-            print(f"polyrepo: {exc}", file=sys.stderr)
+            sys.stderr.write(f"polyrepo: {exc}\n")
         return 2
 
 

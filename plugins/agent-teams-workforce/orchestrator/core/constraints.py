@@ -21,6 +21,7 @@ from pathlib import Path
 import archstate
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
+from .handback_contract import CONTENTION_CAUSE, OTHER_CAUSE
 from .io import JsonValue, json_object, write_json
 from .models import StepError
 from .tool_locks import LockTimeoutError, control_repo, file_lock, seconds
@@ -61,7 +62,7 @@ class Section2Guard:
             self.tools.portfolio("constraints-written", archstate.snapshot_constraints, str(self.arch), keep=True),
         )
         if value.get("error") or value.get("gitError"):
-            raise self.tools.failure(stage, "other", value)
+            raise self.tools.failure(stage, OTHER_CAUSE, value)
         value["head"] = self._git("rev-parse", "HEAD")
         kept: Path = self.root / "kept"
         if kept.exists():
@@ -87,7 +88,7 @@ class Section2Guard:
             self.tools.portfolio("constraints-written", archstate.snapshot_constraints, str(self.arch)),
         )
         if now.get("error") or now.get("gitError"):
-            raise self.tools.failure(stage, "other", now)
+            raise self.tools.failure(stage, OTHER_CAUSE, now)
         if all(saved.get(key) == now.get(key) for key in ("digest", "exists", "gitStatus")):
             return
         head: str = self._git("rev-parse", "HEAD")
@@ -155,7 +156,7 @@ class Section2Guard:
         self.stop()
         raise self.tools.failure(
             stage,
-            "other",
+            OTHER_CAUSE,
             {"changedCopy": str(changed), "sessions": sessions, "restore": restore},
         )
 
@@ -182,13 +183,13 @@ class Section2Guard:
         try:
             yield from self._guarded_session(marker, wait)
         except LockTimeoutError as exc:
-            raise StepError(stage, "contention", (str(exc),)) from exc
+            raise StepError(stage, CONTENTION_CAUSE, (str(exc),)) from exc
         except StepError, TypeCheckError:
             raise
         except Exception as exc:
             raise self.tools.failure(
                 stage,
-                "other",
+                OTHER_CAUSE,
                 {"error": repr(exc)},
             ) from exc
 

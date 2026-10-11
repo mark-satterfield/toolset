@@ -41,23 +41,25 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 ## Survey and recheck
 
 Read the PRD, architecture MODEL/MENU, section 2, effective views, relevant in-review views and
-open targets, plus the supplied repository inventory and prior survey/ledger if present. For each
-capability record its requirements, effectiveViews, design-detail code references when useful,
-openBeads and openTargets. Choose a domain subject (not a PRD/bead id or date) and justify it.
+open targets, plus the supplied repository inventory and prior survey/ledger if present. Record
+each capability as artifact-handoff's survey.schema.json `$defs/Capability` defines it, citing
+design-detail code when useful. Choose a domain subject (not a PRD/bead id or date) and justify it.
 Assess every capability in baseline and coverage, including applicable missing views and constraints
-not yet represented. Baseline entry id equals capability name, and requirements match.
-Write survey JSON at the output path using survey.schema.json. Fresh entries use code.state
-unknown, implementationAction unknown and disposition undetermined: those compatibility fields
-are not built judgments. Document design/documentation actions and suitability evidence. Do not
+not yet represented; the description of the schema's `$defs/Capability` ties each capability to
+the baseline entry whose id equals its name.
+Write survey JSON at the output path using survey.schema.json. Write each new baseline entry as
+the schema's `$defs/FreshBaselineEntry` rule states; those values are not built judgments.
+Document design/documentation actions and suitability evidence. Do not
 read a matrix to decide what is built; Python derives that separately without rerunning you.
 Python renders readable survey.md from the accepted JSON; write only the assigned JSON. On a recheck,
 address ledger findings for affected capabilities and preserve unaffected valid evidence.
 
 ## Closure walk
 
-For a Closure outcome, read closure-roots.json and effective architecture views. Traverse every
-root's transitive architectural prerequisites, de-duplicate elements, retain relations and cite
-view paths/headings. Write closure-walk.schema.json: rootEdges for each root and elements for all
-reached non-roots. Report no built/deployed state or repository provisioning decision; Python
-joins the walk to its matrix snapshot. No repository code search, deployments inventory or
+For a Closure outcome, read the closure roots file the brief names and the effective architecture
+views. Traverse every root's transitive architectural prerequisites, de-duplicate elements, retain
+relations and cite view paths/headings. Write the closure-walk artifact defined by the
+artifact-handoff skill (closure-walk section of its Epic contracts) at the output path. Report no
+built/deployed state or repository provisioning decision; Python joins the walk to its matrix
+snapshot. No repository code search, deployments inventory or
 per-repository reconciliation. Open work never removes a needed element.

@@ -12,16 +12,74 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 from operator import itemgetter
 from pathlib import Path
+from typing import Final
 
 import beadcontracts
 import contracts
+import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract modules on the path first.
 from beadcontracts import PlacedItem, TaskEdge
-from cdsbundles import DESIGN_SOURCES, KINDS, bundle_problem, read_bundle
+from cdsbundles import artifact_kind, bundle_problem, read_bundle
 from contracts import DeltaItem, JsonObject, JsonValue, json_object
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+# The bead metadata keys are generated from the beads-contract schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+
+# isort: split
+from recon_contract import (
+    DEFAULT_ARTIFACT_KIND,
+    DESIGN_SOURCE_BUNDLE,
+    DESIGN_SOURCE_CDS,
+    DESIGN_SOURCE_NONE,
+    KEY_ARTIFACT,
+    KEY_BUILD_SPEC,
+    KEY_BUNDLE,
+    KEY_DESIGN_SOURCE,
+    KEY_ITEM,
+    KEY_KIND,
+    KEY_SECTIONS,
+    KEY_SLUG,
+    KEY_UI_AUTHORITY,
+    KEY_UI_ITEMS,
+    DesignSource,
+    ReconDetailing,
+    UiArtifact,
+    UiAuthority,
+    UiItem,
+    read_detailing,
+    recon_file_name,
+)
+from recon_contract import ArtifactKind as UiArtifactKind
+
+# isort: split
+from bead_metadata import (
+    ARG_ACCEPTANCE_CRITERIA,
+    ARG_DECISION_IDS,
+    ARG_DEFINITION_OF_DONE,
+    ARG_REQUIREMENT_IDS,
+    ARG_SPEC_PATHS,
+    ARG_SPEC_SECTIONS,
+    ARG_SURFACES,
+    ARG_TEST_STRATEGY,
+    CDS_DESIGN_SOURCE_BUNDLE,
+    CDS_DESIGN_SOURCE_CDS,
+    CDS_DESIGN_SOURCE_NONE,
+    KEY_DECISION_IDS,
+    KEY_ELAB_KEY,
+    KEY_REPO_PATH,
+    KEY_WSJF_SIZE_CONFIDENCE,
+    KEY_WSJF_SIZE_ESTIMATE,
+    KEY_WSJF_SIZE_HIGH,
+    KEY_WSJF_SIZE_LOW,
+    SPEC_ASPECT_KIND,
+    ArtifactKind,
+    CdsDesignSource,
+    artifact_key,
+)
 
 #: The surfaces a Task may declare; anything else is dropped.
 _ARGUMENT_ERROR: str = "Arguments violate the hierarchy input contract"
@@ -41,12 +99,23 @@ SURFACES = (
 )
 
 #: The judged-size keys a Task carries, from its decomposition's `scores`.
-SIZE_KEYS = (
-    "wsjf_size_estimate",
-    "wsjf_size_low",
-    "wsjf_size_high",
-    "wsjf_size_confidence",
+SIZE_KEYS: Final[tuple[str, ...]] = (
+    KEY_WSJF_SIZE_ESTIMATE,
+    KEY_WSJF_SIZE_LOW,
+    KEY_WSJF_SIZE_HIGH,
+    KEY_WSJF_SIZE_CONFIDENCE,
 )
+
+
+#: The slug of an artifact whose item name yields no slug characters; a slug, not an artifact kind.
+_FALLBACK_ARTIFACT_SLUG: Final[str] = "page"
+
+#: The bead build-contract design source each detailing design source maps to.
+_BEAD_DESIGN_SOURCE: Final[dict[DesignSource, CdsDesignSource]] = {
+    DESIGN_SOURCE_BUNDLE: CDS_DESIGN_SOURCE_BUNDLE,
+    DESIGN_SOURCE_CDS: CDS_DESIGN_SOURCE_CDS,
+    DESIGN_SOURCE_NONE: CDS_DESIGN_SOURCE_NONE,
+}
 
 
 class HierarchyError(ValueError):
@@ -104,7 +173,7 @@ def _artifact_slug(text: str) -> str:
         The slug.
 
     """
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "page"
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or _FALLBACK_ARTIFACT_SLUG
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -441,7 +510,7 @@ def read_story(directory: Path, rel: str | None, repo: str, slug: str) -> Story:
         TypeError: An argument violates the declared input contract.
 
     """
-    key: str
+    kind: ArtifactKind
     name: str
     if (
         not (isinstance(directory, Path))
@@ -451,31 +520,30 @@ def read_story(directory: Path, rel: str | None, repo: str, slug: str) -> Story:
     ):
         raise TypeError(_ARGUMENT_ERROR)
     saved: dict[str, contracts.JsonValue] = _read_json(directory / f"story-{slug}.json")
-    metadata: dict[str, str] = {"elab_key": f"story:{slug}", "repoPath": repo}
-    decisions: list[str] = list(dict.fromkeys(_loose_list(saved.get("decisionIds"))))
+    metadata: dict[str, str] = {KEY_ELAB_KEY: f"story:{slug}", KEY_REPO_PATH: repo}
+    decisions: list[str] = list(dict.fromkeys(_loose_list(saved.get(ARG_DECISION_IDS))))
     if decisions:
-        metadata["decision_ids"] = json.dumps(
+        metadata[KEY_DECISION_IDS] = json.dumps(
             decisions,
             separators=(",", ":"),
             ensure_ascii=False,
         )
     if rel:
-        entries: list[tuple[str, str]] = [
-            ("spec", f"spec-{slug}.md"),
-            ("spec_data_model", f"spec-{slug}.data-model.md"),
-            ("spec_criteria", f"spec-{slug}.criteria.md"),
-            ("story", f"story-{slug}.json"),
+        entries: list[tuple[ArtifactKind, str]] = [
+            (kind, f"spec-{slug}.{aspect}.md" if aspect else f"spec-{slug}.md")
+            for aspect, kind in SPEC_ASPECT_KIND.items()
         ]
-        for key, name in entries:
+        entries.append(("story", f"story-{slug}.json"))
+        for kind, name in entries:
             if not (directory / name).is_file():
                 continue
-            metadata[f"artifact_{key}_path"] = f"{rel}/{name}"
-            metadata[f"artifact_{key}_meta"] = f"{rel}/{name}.meta.json"
+            metadata[artifact_key(kind, "path")] = f"{rel}/{name}"
+            metadata[artifact_key(kind, "meta")] = f"{rel}/{name}.meta.json"
             sha: str | None = _meta_sha(directory / name)
             if sha:
-                metadata[f"artifact_{key}_sha256"] = sha
+                metadata[artifact_key(kind, "sha256")] = sha
     criteria: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = saved.get(
-        "acceptanceCriteria",
+        ARG_ACCEPTANCE_CRITERIA,
     )
     return Story(
         repo_path=repo,
@@ -624,21 +692,46 @@ class UiDesign:
     source: str
     bundle: str | None = None
     cites: list[str] = field(default_factory=list)
-    artifact: dict[str, str] | None = None
+    artifact: UiArtifact | None = None
 
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
         check_type(self.source, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.bundle, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.cites, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.artifact, dict[str, str] | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.artifact, UiArtifact | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-def _design_source(source: str, slug: str, item: str) -> str:
-    if source not in DESIGN_SOURCES:
-        _WARNINGS.append(f"recon-{slug}.json: ui item {item} has design source {json.dumps(source)}; taken as cds")
-        return "cds"
-    return source
+def _supplied_bundle(entry: UiItem, named: UiArtifact | None, warn: str) -> UiDesign | None:
+    """Return the design of a `bundle` ui item built from its supplied bundle, or None.
+
+    Args:
+        entry: The detailing's `uiItems` entry, validated against the recon contract.
+        named: The artifact the entry names, or None.
+        warn: The prefix a warning about the entry carries.
+
+    Returns:
+        The design, or None (with a warning) when the bundle or build spec cannot be built from.
+
+    """
+    bundle: str = entry.get(KEY_BUNDLE) or ""
+    spec: str = entry.get(KEY_BUILD_SPEC) or ""
+    problem: str | None = bundle_problem(bundle, spec)
+    root: Path = Path(bundle).resolve()
+    held: beadcontracts.Bundle | None = None if problem else read_bundle(root)
+    if held is None:
+        _WARNINGS.append(f"{warn}: {problem or 'unreadable'}; taken as {DESIGN_SOURCE_CDS}")
+        return None
+    resolved: str = str(Path(spec).resolve())
+    sections: list[str] = entry.get(KEY_SECTIONS, [])
+    kind: UiArtifactKind | None = artifact_kind(held["kind"])
+    packaged: UiArtifact | None = {KEY_KIND: kind, KEY_SLUG: held["slug"]} if kind is not None else named
+    return UiDesign(
+        DESIGN_SOURCE_BUNDLE,
+        str(root),
+        [f"{resolved}#{x}" for x in sections] if sections else [resolved],
+        packaged,
+    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -649,12 +742,12 @@ def ui_authority(
 ) -> dict[str, UiDesign]:
     """Return the design source of each `ui` delta item the detailing resolved.
 
-    Reads `uiAuthority.uiItems` of the repository's saved detailing, `recon-<slug>.json`.
-    Each item takes `bundle` (a cds bundle the owner supplied packages it), `cds` (it changes
-    design and is designed with the CDS design system) or `none` (it changes no design).
-    A design source outside those is `cds`; a `cds` item with no artifact gets a `page`
-    named for the item; a `bundle` item whose bundle or build spec cannot be built from is
-    `cds`. Each is noted in `take_warnings`.
+    Reads `uiAuthority.uiItems` of the repository's saved detailing (`recon_file_name(slug)`),
+    validated against the artifact-handoff recon contract. Each item takes `bundle` (a cds
+    bundle the owner supplied packages it), `cds` (it changes design and is designed with the
+    CDS design system) or `none` (it changes no design). A `bundle` item whose bundle or build
+    spec cannot be built from is `cds`; a `cds` item with no artifact gets the contract's
+    default artifact kind named for the item. Each is noted in `take_warnings`.
 
     Args:
         directory: The Epic's working directory.
@@ -664,75 +757,49 @@ def ui_authority(
     Returns:
         Per delta item id its design: the source, and for a `bundle` item the bundle path
         and its build-spec citations (the absolute `build-spec.md` path, followed by
-        `#<Section ID>` for each Section it builds).
+        `#<Section ID>` for each Section it builds). An absent detailing yields no designs.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    entry: JsonValue
     if (
         not (isinstance(directory, Path))
         or not (isinstance(slug, str))
         or not (isinstance(packages_dir, str) or packages_dir is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / f"recon-{slug}.json"
-    ua: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
-        _read_json(path).get("uiAuthority") if path.is_file() else None
-    )
-    ua = json_object(ua) if isinstance(ua, dict) else {}
     del packages_dir
+    name: str = recon_file_name(slug)
+    path: Path = directory / name
+    if not path.is_file():
+        return {}
+    detailing: ReconDetailing = read_detailing(path)
+    authority: UiAuthority | None = detailing.get(KEY_UI_AUTHORITY)
     designs: dict[str, UiDesign] = {}
-    for entry in check_type(
-        ua.get("uiItems") or [],
-        list[JsonValue],
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    ):
-        if not isinstance(entry, dict):
+    for entry in authority[KEY_UI_ITEMS] if authority is not None else []:
+        item: str = entry[KEY_ITEM]
+        if item in designs:
             continue
-        item: str = str(entry.get("item") or "").strip()
-        source: str = str(entry.get("designSource") or "").strip()
-        if not item or item in designs:
-            continue
-        source = _design_source(source, slug, item)
-        raw_art: dict[str, contracts.JsonValue] = (
-            json_object(entry["artifact"]) if isinstance(entry.get("artifact"), dict) else {}
-        )
-        artifact: dict[str, str] = {
-            "kind": str(raw_art.get("kind") or "").strip(),
-            "slug": str(raw_art.get("slug") or "").strip(),
-        }
-        if source == "none":
+        source: DesignSource = entry[KEY_DESIGN_SOURCE]
+        if source == DESIGN_SOURCE_NONE:
             designs[item] = UiDesign(source)
             continue
-        if source == "bundle":
-            bundle: str = str(entry.get("bundle") or "").strip()
-            spec: str = str(entry.get("buildSpec") or "").strip()
-            problem: str | None = bundle_problem(bundle, spec)
-            if problem:
-                _WARNINGS.append(
-                    f"recon-{slug}.json: ui item {item}: {problem}; taken as cds",
-                )
-                source = "cds"
-        if source == "cds":
-            if artifact["kind"] not in KINDS or not artifact["slug"]:
-                artifact = {"kind": "page", "slug": _artifact_slug(item)}
-                _WARNINGS.append(
-                    f"recon-{slug}.json: cds ui item {item} names no artifact; taken as page {artifact['slug']}",
-                )
-            designs[item] = UiDesign(source, artifact=artifact)
-            continue
-        root: Path = Path(bundle).resolve()
-        spec = str(Path(spec).resolve())
-        sections: list[str] = str_list(entry.get("sections"))
-        held: beadcontracts.Bundle | None = read_bundle(root)
-        designs[item] = UiDesign(
-            "bundle",
-            str(root),
-            [f"{spec}#{x}" for x in sections] if sections else [spec],
-            {"kind": held["kind"] if held else "", "slug": held["slug"] if held else ""},
+        named: UiArtifact | None = entry.get(KEY_ARTIFACT)
+        if source == DESIGN_SOURCE_BUNDLE:
+            supplied: UiDesign | None = _supplied_bundle(entry, named, f"{name}: ui item {item}")
+            if supplied is not None:
+                designs[item] = supplied
+                continue
+        artifact: UiArtifact = (
+            named if named is not None else {KEY_KIND: DEFAULT_ARTIFACT_KIND, KEY_SLUG: _artifact_slug(item)}
         )
+        if named is None:
+            _WARNINGS.append(
+                f"{name}: {DESIGN_SOURCE_CDS} ui item {item} names no artifact; "
+                f"taken as {artifact[KEY_KIND]} {artifact[KEY_SLUG]}",
+            )
+        designs[item] = UiDesign(DESIGN_SOURCE_CDS, artifact=artifact)
     return designs
 
 
@@ -767,11 +834,11 @@ def task_design(
     cites: list[str] = list(dict.fromkeys(c for d in cited for c in d.cites))
     keyed: set[tuple[str, str]] = {(d.artifact["kind"], d.artifact["slug"]) for d in cited if d.artifact}
     artifacts: list[dict[str, str]] = [{"kind": k, "slug": s} for k, s in sorted(keyed)]
-    if "bundle" in sources:
-        return "bundle", bundles, cites, artifacts
-    if "cds" in sources or not cited:
-        return "cds", [], [], artifacts
-    return "none", [], [], []
+    if CDS_DESIGN_SOURCE_BUNDLE in sources:
+        return CDS_DESIGN_SOURCE_BUNDLE, bundles, cites, artifacts
+    if CDS_DESIGN_SOURCE_CDS in sources or not cited:
+        return CDS_DESIGN_SOURCE_CDS, [], [], artifacts
+    return CDS_DESIGN_SOURCE_NONE, [], [], []
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -807,7 +874,7 @@ def check_cds_contract(slug: str, tasks: list[Task]) -> None:
                 f"its contract takes {t.cds_artifacts[0]['kind']} "
                 f"{t.cds_artifacts[0]['slug']} and its description names {named}",
             )
-        if t.cds_design_source != "bundle":
+        if t.cds_design_source != CDS_DESIGN_SOURCE_BUNDLE:
             continue
         if not t.cds_bundle_path and t.cds_bundles:
             held: list[beadcontracts.Bundle] = [b for b in (read_bundle(Path(p)) for p in t.cds_bundles) if b]
@@ -925,11 +992,11 @@ def read_tasks(directory: Path, rel: str | None, options: ReadTaskOptions) -> li
     sources: _TaskSources = _TaskSources(
         options,
         _spec_refs(directory, rel, slug),
-        json_object(saved["testStrategy"]) if isinstance(saved.get("testStrategy"), dict) else None,
+        json_object(saved[ARG_TEST_STRATEGY]) if isinstance(saved.get(ARG_TEST_STRATEGY), dict) else None,
         edges,
         scores,
         ui_authority(directory, slug, options.packages_dir)
-        if any(UI_SURFACE in (_surfaces(t.get("surfaces")) or []) for t in unique)
+        if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}
@@ -984,21 +1051,21 @@ def _task_document(value: JsonObject) -> _TaskDocument:
     title: str = check_type(value.get("title") or "", str).strip()
     description: str = check_type(value.get("description") or "", str).strip()
     criteria: list[JsonValue] = check_type(
-        value.get("acceptanceCriteria") or [],
+        value.get(ARG_ACCEPTANCE_CRITERIA) or [],
         list[JsonValue],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
-    surfaces: list[str] | None = _surfaces(value.get("surfaces"))
+    surfaces: list[str] | None = _surfaces(value.get(ARG_SURFACES))
     reuses: JsonValue = value.get("reuses")
     return _TaskDocument(
         title=title,
         description=description,
         acceptance=tuple(ac_text(item) for item in criteria if ac_text(item)),
-        definition_of_done=_task_strings(value.get("definitionOfDone")),
-        spec_paths=_task_strings(value.get("specPaths")),
-        spec_sections=_task_strings(value.get("specSections")),
-        requirement_ids=_task_strings(value.get("requirementIds")),
-        decision_ids=_task_strings(value.get("decisionIds")),
+        definition_of_done=_task_strings(value.get(ARG_DEFINITION_OF_DONE)),
+        spec_paths=_task_strings(value.get(ARG_SPEC_PATHS)),
+        spec_sections=_task_strings(value.get(ARG_SPEC_SECTIONS)),
+        requirement_ids=_task_strings(value.get(ARG_REQUIREMENT_IDS)),
+        decision_ids=_task_strings(value.get(ARG_DECISION_IDS)),
         surfaces=tuple(surfaces) if surfaces is not None else None,
         reuses=check_type(reuses, str).strip() or None if reuses is not None else None,
         blocked_by_external=_task_strings(value.get("blockedByExternal")),
@@ -1048,10 +1115,6 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         cds_bundles=bundles,
         cds_artifacts=artifacts,
     )
-
-
-#: The detailing statuses that make work: a Task exists only for an item carrying one.
-WORK_STATUSES = ("add", "modify", "remove")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

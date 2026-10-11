@@ -6,9 +6,9 @@ JSON object on stdout naming where each value came from. `bd` runs every other `
 printing what `bd` prints.
 
 Every command runs `bd` against the CENTRAL beads database, the control repository's
-(`$ATW_CONTROL_REPO`), wherever it is run from. A write to a bead filed in a fleet
-repository's own database runs in that database, because the one-way fleet sync copies the
-fleet copy over the central one.
+(named by `CONTROL_REPO_ENV` of the pipeline-contracts skill), wherever it is run from.
+A write to a bead filed in a fleet repository's own database runs in that database,
+because the one-way fleet sync copies the fleet copy over the central one.
 
 Usage:
   beads-contract.py fingerprint <id> [--explain] [--scope readiness|judging]
@@ -23,7 +23,7 @@ Usage:
   beads-contract.py bd <bd arguments ...>     (the plugin's `atw-bd` command runs this)
 
 Common flags:
-  -C <path>          The central repository, when it is not `$ATW_CONTROL_REPO`.
+  -C <path>          The central repository, when it is not the `CONTROL_REPO_ENV` one.
   --records <file>   Read records from a JSON array in <file> instead of calling `bd`, or
                      `-` to read that array from stdin.
 """
@@ -44,13 +44,68 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 
+from bead_metadata import (
+    ACCEPTANCE_FIELD,
+    ARG_ACCEPTANCE_CRITERIA,
+    ARTIFACT_KEYS,
+    BUILD_LIFECYCLE_KEYS,
+    CDS_AUDIT_KEYS,
+    CDS_AUDIT_VERDICTS,
+    CONTENT_HASH_FIELDS,
+    CONTENT_HASH_KEY,
+    CONTENT_HASH_LENGTH,
+    CONTENT_HASH_PRESENT,
+    CONTRACT_HASHED_WHEN_PRESENT,
+    CONTRACT_KEYS,
+    CONTRACT_SCHEMA,
+    GATE_KEYS,
+    JUDGING_HASH_FIELDS,
+    JUDGING_HASH_PRESENT,
+    KEY_ACCEPTANCE_CRITERIA,
+    KEY_CDS_AUDIT_BUNDLE,
+    KEY_CDS_AUDIT_DESIGN_SOURCE,
+    KEY_CDS_AUDIT_FINDINGS,
+    KEY_CDS_AUDIT_SCRIPT_VERSION,
+    KEY_CDS_AUDIT_VERDICT,
+    KEY_REPO_PATH,
+    KEY_SPEC_PATH,
+    KEY_SPEC_PATHS,
+    KIND_LIST,
+    KIND_OBJECT_OR_UNKNOWN,
+    KIND_TEXT,
+    KNOWN_KEYS,
+    LANE_KEYS,
+    REPO_REFERENCE,
+    SCOPE_JUDGING,
+    SCOPE_READINESS,
+    SCOPES,
+    SEQUENCING_KEYS,
+    SOURCE_ACCEPTANCE,
+    SOURCE_DESCRIPTION,
+    SOURCE_METADATA,
+    SPEC_REFERENCE,
+    STORY_KEYS,
+    UNKNOWN,
+    WSJF_KEYS,
+    BuildContract,
+    Criteria,
+    HashScope,
+    JsonObject,
+    JsonValue,
+)
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+# The driver environment names are defined once, in the pipeline-contracts skill, and the
+# failure causes once, in the orchestrator's handback contract; both load by plugin path.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "skills" / "pipeline-contracts" / "scripts"))
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
+
+# isort: split
+from driver_surface_types import CONTROL_REPO_ENV
+from orchestrator.core.handback_contract import BD_TIMEOUT_CAUSE, CONTENTION_CAUSE, OTHER_CAUSE
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
-type JsonObject = dict[str, JsonValue]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -77,22 +132,6 @@ class Fingerprint(TypedDict):
     hashed: NotRequired[JsonObject]
     note: NotRequired[str]
 
-
-class Criteria(TypedDict):
-    """Criteria text and the exact source selected by the resolver."""
-
-    values: list[str]
-    sourceId: str
-    sourceField: str
-    inherited: NotRequired[bool]
-    searched: NotRequired[list[str]]
-
-
-#: `readiness` hashes the record content and the build contract; `judging` hashes only the
-#: title, description, issue_type and priority.
-SCOPE_READINESS = "readiness"
-SCOPE_JUDGING = "judging"
-SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
 
 #: The pause before each retry of a `bd` command that could not reach the beads server, in
 #: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
@@ -162,7 +201,7 @@ def failure_cause(stderr: str) -> str:
         stderr: `bd`'s standard error, without the command line.
 
     Returns:
-        `contention` when another writer held a lock, `bd-timeout` when the beads server
+        `CONTENTION_CAUSE` when another writer held a lock, `BD_TIMEOUT_CAUSE` when the beads server
         or its connection failed, else `other`.
 
     Raises:
@@ -173,8 +212,8 @@ def failure_cause(stderr: str) -> str:
         argument_error: str = "failure_cause: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     if LOCK_CONTENTION.search(stderr):
-        return "contention"
-    return "bd-timeout" if SERVER_FAILURE.search(stderr) else "other"
+        return CONTENTION_CAUSE
+    return BD_TIMEOUT_CAUSE if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -207,10 +246,6 @@ def connection_retryable(args: list[str], stderr: str) -> str:
     return ""
 
 
-#: The environment variable naming the control repository; its beads database is the
-#: central one, where the pipeline files its Epics, Stories and Tasks.
-CONTROL_REPO_ENV = "ATW_CONTROL_REPO"
-
 #: A bead id: a prefix, a hyphen, a hash or number, and any hierarchical suffixes.
 BEAD_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$")
 
@@ -234,7 +269,7 @@ def central_repo(explicit: str = "") -> str:
         explicit: A repository the caller named with `-C`, or "".
 
     Returns:
-        `explicit`, else `$ATW_CONTROL_REPO`, else "" (the working directory), with a
+        `explicit`, else the `CONTROL_REPO_ENV` repository, else "" (the working directory), with a
         warning on stderr, since the working directory is central only in the control repo.
 
     Raises:
@@ -339,54 +374,6 @@ def fleet_homes(rows: JsonValue, central: str) -> dict[str, str]:
     return homes
 
 
-#: The record keys the readiness fingerprint is taken over; keys outside
-#: CONTENT_HASH_PRESENT are hashed as null.
-CONTENT_HASH_FIELDS = (
-    "acceptance",
-    "acceptance_criteria",
-    "dependencies",
-    "deps",
-    "description",
-    "design",
-    "issue_type",
-    "labels",
-    "priority",
-    "title",
-    "type",
-)
-
-CONTENT_HASH_PRESENT = frozenset(
-    {
-        "acceptance_criteria",
-        "description",
-        "design",
-        "issue_type",
-        "priority",
-        "title",
-    },
-)
-
-#: The record keys the judging fingerprint is taken over; keys outside JUDGING_HASH_PRESENT
-#: are hashed as null.
-JUDGING_HASH_FIELDS = (
-    "acceptance",
-    "dependencies",
-    "deps",
-    "description",
-    "design",
-    "issue_type",
-    "labels",
-    "priority",
-    "title",
-    "type",
-)
-JUDGING_HASH_PRESENT = frozenset({"description", "issue_type", "priority", "title"})
-
-CONTENT_HASH_LENGTH = 16
-
-CONTENT_HASH_KEY = "ready_content_hash"
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def content_hash(rec: JsonObject, scope: str = SCOPE_READINESS) -> str:
     """Return a bead record's content fingerprint for a scope.
@@ -461,14 +448,6 @@ _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<text>.*\S)\s*$")
 #: A criterion written as one Given/When/Then sentence.
 _GIVEN_WHEN_THEN = re.compile(r"\bgiven\b.*\bwhen\b.*\bthen\b", re.IGNORECASE)
 
-#: The three homes criteria can occupy on one bead, in search order.
-SOURCE_METADATA = "metadata.acceptance_criteria"
-SOURCE_ACCEPTANCE = "acceptance_criteria"
-SOURCE_DESCRIPTION = "description"
-
-#: The record field `bd create/update --acceptance` writes.
-ACCEPTANCE_FIELD = "acceptance_criteria"
-
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def criteria_in_text(text: str) -> list[str]:
@@ -514,21 +493,21 @@ def criteria_in_text(text: str) -> list[str]:
     return _criteria_sentences(lines)
 
 
-def _criteria_on(bead_id: str, bead: JsonObject, searched: list[str]) -> Criteria | None:
+def _criteria_on(bead: JsonObject, bead_id: str, searched: list[str]) -> tuple[list[str], str] | None:
     """Return the criteria one bead carries, wherever on it they live.
 
     Args:
-        bead_id: The bead being read.
         bead: Its record.
+        bead_id: The bead being read.
         searched: The running list of places looked. Appended to.
 
     Returns:
-        The finding, or None when this bead carries none anywhere.
+        The criteria and the source field they came from, or None when this bead carries none.
 
     """
     metadata: dict[str, JsonValue] = metadata_of(bead)
     searched.append(f"{bead_id} {SOURCE_METADATA}")
-    raw: str | int | float | list[JsonValue] | dict[str, JsonValue] | None = metadata.get("acceptance_criteria")
+    raw: str | int | float | list[JsonValue] | dict[str, JsonValue] | None = metadata.get(KEY_ACCEPTANCE_CRITERIA)
     if raw is not None and str(raw).strip():
         try:
             parsed: JsonValue = check_type(
@@ -541,31 +520,19 @@ def _criteria_on(bead_id: str, bead: JsonObject, searched: list[str]) -> Criteri
         if isinstance(parsed, list):
             values: list[str] = [text for text in (str(item).strip() for item in parsed) if text]
             if values:
-                return {
-                    "values": values,
-                    "sourceId": bead_id,
-                    "sourceField": SOURCE_METADATA,
-                }
+                return values, SOURCE_METADATA
 
     searched.append(f"{bead_id} {SOURCE_ACCEPTANCE}")
     stated: str = str(bead.get(ACCEPTANCE_FIELD) or "").strip()
     if stated:
         values = criteria_in_text(stated) or [line.strip() for line in stated.splitlines() if line.strip()]
         if values:
-            return {
-                "values": values,
-                "sourceId": bead_id,
-                "sourceField": SOURCE_ACCEPTANCE,
-            }
+            return values, SOURCE_ACCEPTANCE
 
     searched.append(f"{bead_id} {SOURCE_DESCRIPTION}")
-    values = criteria_in_text(check_type(bead.get("description") or "", str))
+    values = criteria_in_text(str(bead.get(SOURCE_DESCRIPTION) or ""))
     if values:
-        return {
-            "values": values,
-            "sourceId": bead_id,
-            "sourceField": SOURCE_DESCRIPTION,
-        }
+        return values, SOURCE_DESCRIPTION
     return None
 
 
@@ -593,165 +560,29 @@ def resolve_criteria(bead_id: str, reader: Reader) -> Criteria:
         reader: The record source.
 
     Returns:
-        The finding: values, sourceId, sourceField, inherited, and every place looked.
+        The finding: criteria, sourceId, sourceField, inherited, and every place looked.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    ancestor: str
+    source_id: str
     if not (isinstance(bead_id, str)) or not (isinstance(reader, Reader)):
         argument_error: str = "resolve_criteria: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     searched: list[str] = []
-    found: Criteria | None = _criteria_on(bead_id, reader.get(bead_id), searched)
-    if found is None:
-        for ancestor in reader.ancestors(bead_id):
-            found = _criteria_on(ancestor, reader.get(ancestor), searched)
-            if found is not None:
-                break
-    if found is None:
-        return {
-            "values": [],
-            "sourceId": "",
-            "sourceField": "",
-            "inherited": False,
-            "searched": searched,
-        }
-    found["inherited"] = found["sourceId"] != bead_id or found["sourceField"] != SOURCE_METADATA
-    found["searched"] = searched
-    return found
-
-
-#: The literal a producer writes for an undecided value; read as None.
-UNKNOWN = "unknown"
-
-KIND_TEXT = "text"
-KIND_LIST = "list"
-KIND_LIST_OR_UNKNOWN = "list-or-unknown"
-KIND_OBJECT_OR_UNKNOWN = "object-or-unknown"
-
-#: The build contract a Task carries: metadata key -> (argument name, shape). Lists and the
-#: strategy object are stored as compact JSON strings.
-CONTRACT_SCHEMA = (
-    ("repoPath", "repoPath", KIND_TEXT),
-    ("spec_path", "specPath", KIND_TEXT),
-    ("spec_paths", "specPaths", KIND_LIST),
-    ("spec_sections", "specSections", KIND_LIST),
-    ("acceptance_criteria", "acceptanceCriteria", KIND_LIST),
-    ("definition_of_done", "definitionOfDone", KIND_LIST),
-    ("requirement_ids", "requirementIds", KIND_LIST),
-    ("decision_ids", "decisionIds", KIND_LIST),
-    ("surfaces", "surfaces", KIND_LIST_OR_UNKNOWN),
-    ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
-    ("cds_design_source", "cdsDesignSource", KIND_TEXT),
-    ("cds_artifact", "cdsArtifact", KIND_OBJECT_OR_UNKNOWN),
-    ("cds_bundle_path", "cdsBundlePath", KIND_TEXT),
-    ("cds_build_specs", "cdsBuildSpecs", KIND_LIST),
-)
-
-#: Contract keys the readiness fingerprint covers only on a bead that carries them: a bead
-#: with none (every Task without a `web-ui` surface) hashes as if they were not in the contract.
-CONTRACT_HASHED_WHEN_PRESENT = frozenset(
-    {"cds_design_source", "cds_artifact", "cds_bundle_path", "cds_build_specs"},
-)
-
-SPEC_REFERENCE = ("specPath", "specPaths")
-
-REPO_REFERENCE = "repoPath"
-
-#: Metadata keys the readiness gate writes.
-GATE_KEYS = (
-    "build_state",
-    CONTENT_HASH_KEY,
-    "review_status",
-    "review_missing",
-    "reviewed_at",
-)
-
-#: Metadata keys WSJF scoring writes.
-WSJF_KEYS = (
-    "wsjf",
-    "wsjf_calculated_at",
-    "wsjf_rubric",
-    "wsjf_ubv",
-    "wsjf_tc",
-    "wsjf_rroe",
-    "wsjf_unblocks",
-    "wsjf_reaches",
-    "wsjf_cod",
-    "wsjf_size",
-    "wsjf_size_source",
-    "wsjf_size_estimate",
-    "wsjf_size_low",
-    "wsjf_size_high",
-    "wsjf_size_confidence",
-    "wsjf_size_outside_range",
-    "wsjf_confidence",
-    "wsjf_value_from",
-    "wsjf_content_hash",
-)
-
-#: Metadata keys dependency assessment writes. `seq_owned_blockers` lists the edges it
-#: created; `seq_edge_reasons` and `seq_edge_withdrawn` are JSON objects keyed by blocker id.
-SEQUENCING_KEYS = (
-    "seq_owned_blockers",
-    "seq_owned_blockers_at",
-    "seq_content_hash",
-    "seq_edge_reasons",
-    "seq_edge_withdrawn",
-    "seq_assessed_at",
-)
-
-#: Metadata keys the elaboration lane writes.
-LANE_KEYS = (
-    "artifact_spec_path",
-    "elaboration_state",
-    "elaboration_state_at",
-    "elaboration_state_cause",
-    "elaboration_state_owner",
-    "elab_key",
-    "elab_follows",
-)
-
-#: Metadata keys on a Story. `story_owned_blockers` lists the Story edges `depscore.py
-#: story-edges` created and `story_edge_reasons` is a JSON object keyed by blocker id; the
-#: `story_deploy_*`, `story_ssm_missing` and `story_pr_url` keys are the host's record of
-#: the Story's deploy.
-STORY_KEYS = (
-    "story_owned_blockers",
-    "story_owned_blockers_at",
-    "story_edge_reasons",
-    "story_deploy_state",
-    "story_deploy_attempt",
-    "story_deploy_error",
-    "story_ssm_missing",
-    "story_pr_url",
-)
-
-#: The cds audit verdict of a web-ui Task: task-to-deploy's `cdsAudit` result, written
-#: by the build lane and by `cds-audit` for a run dispatched by hand.
-CDS_AUDIT_KEYS = (
-    "cds_audit_verdict",
-    "cds_audit_findings",
-    "cds_audit_script_version",
-    "cds_audit_design_source",
-    "cds_audit_bundle",
-)
-
-#: The verdicts task-to-deploy's `cdsAudit` result carries.
-CDS_AUDIT_VERDICTS = ("pass", "fail", "blocked", "error")
-
-#: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
-KNOWN_KEYS = frozenset(
-    [source for source, _, _ in CONTRACT_SCHEMA]
-    + list(GATE_KEYS)
-    + list(LANE_KEYS)
-    + list(WSJF_KEYS)
-    + list(SEQUENCING_KEYS)
-    + list(STORY_KEYS)
-    + list(CDS_AUDIT_KEYS),
-)
+    for source_id in [bead_id, *reader.ancestors(bead_id)]:
+        found: tuple[list[str], str] | None = _criteria_on(reader.get(source_id), source_id, searched)
+        if found is not None:
+            criteria, source_field = found
+            return {
+                "criteria": criteria,
+                "sourceId": source_id,
+                "sourceField": source_field,
+                "inherited": source_id != bead_id or source_field != SOURCE_METADATA,
+                "searched": searched,
+            }
+    return {"criteria": [], "sourceId": "", "sourceField": "", "inherited": False, "searched": searched}
 
 
 class ContractError(ValueError):
@@ -798,7 +629,7 @@ def _read_value(kind: str, raw: str) -> JsonValue | _Unreadable:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_contract(bead: JsonObject) -> JsonObject:
+def read_contract(bead: JsonObject) -> BuildContract:
     """Read the build contract a Task records, in the shape the composite takes.
 
     Args:
@@ -827,7 +658,7 @@ def read_contract(bead: JsonObject) -> JsonObject:
         value: JsonValue | _Unreadable = _read_value(kind, str(raw))
         if value is not _UNREADABLE:
             carried[name] = check_type(value, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    return carried
+    return check_type(carried, BuildContract, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -869,12 +700,12 @@ class BeadsError(RuntimeError):
     `cause` is set where `bd` fails, from `bd`'s standard error (`failure_cause`).
     """
 
-    def __init__(self, message: str, cause: str = "other") -> None:
+    def __init__(self, message: str, cause: str = OTHER_CAUSE) -> None:
         """Keep the message and the cause.
 
         Args:
             message: What failed.
-            cause: `contention`, `bd-timeout` or `other`.
+            cause: `CONTENTION_CAUSE`, `BD_TIMEOUT_CAUSE` or `OTHER_CAUSE`.
 
         Raises:
             TypeError: An argument violates the declared input contract.
@@ -917,29 +748,38 @@ def _load_records(records_file: str) -> JsonValue:
 class Reader:
     """Resolves bead records, from `bd` or from a synthesised file."""
 
-    def __init__(self, repo: str = "", records_file: str = "") -> None:
+    def __init__(self, repo: str = "", records_file: str = "", records: list[JsonObject] | None = None) -> None:
         """Build a reader.
 
         Args:
-            repo: The central repository named with `-C`, or "" for `$ATW_CONTROL_REPO`.
+            repo: The central repository named with `-C`, or "" for the `CONTROL_REPO_ENV` repository.
             records_file: A JSON array of records to read instead of calling `bd`,
                 or "-" to read that array from stdin.
+            records: Records already in memory to read instead of calling `bd`.
 
         Raises:
             TypeError: An argument violates the declared input contract.
 
         """
-        if not (isinstance(repo, str)) or not (isinstance(records_file, str)):
+        if (
+            not isinstance(repo, str)
+            or not isinstance(records_file, str)
+            or not (records is None or isinstance(records, list))
+        ):
             argument_error: str = "__init__: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
-        self.repo: str = central_repo(repo) if not records_file else repo
+        offline: bool = bool(records_file) or records is not None
+        self.repo: str = central_repo(repo) if not offline else repo
         self.homes: dict[str, str] | None = None
         self.written: dict[str, str] = {}
         self.cache: dict[str, JsonObject] = {}
         self.supplied: list[str] = []
-        self.offline: bool = bool(records_file)
+        self.offline: bool = offline
         if records_file:
             self._absorb(_load_records(records_file))
+        if records is not None:
+            supplied: list[JsonValue] = [*records]
+            self._absorb(supplied)
 
     def _absorb(self, loaded: JsonValue) -> None:
         """Index a decoded `bd --json` payload into the cache.
@@ -1210,11 +1050,31 @@ class Reader:
         return [bead_id for bead_id in self.supplied if bead_id not in before]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def offline_reader(records: list[JsonObject]) -> Reader:
+    """Build a reader over records already in memory; it never calls `bd`.
+
+    Args:
+        records: The bead records it reads; an id outside them reads as empty.
+
+    Returns:
+        The reader.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not isinstance(records, list):
+        argument_error: str = "offline_reader: records must be a list of bead records"
+        raise TypeError(argument_error)
+    return Reader(records=records)
+
+
 #: Printed by `--explain`.
-FINGERPRINT_NOTE = (
-    "`readiness` hashes the record content and the build contract keys under `metadata`; "
-    "`judging` hashes title, description, issue_type and priority. `labels`, `dependencies`, "
-    "the gate keys and the WSJF keys are never hashed."
+FINGERPRINT_NOTE: str = (
+    f"`{SCOPE_READINESS}` hashes {', '.join(sorted(CONTENT_HASH_PRESENT))} and the build contract keys "
+    f"under `metadata`; `{SCOPE_JUDGING}` hashes {', '.join(sorted(JUDGING_HASH_PRESENT))}. "
+    "Every other record key hashes as null, and no other metadata key is hashed."
 )
 
 
@@ -1271,7 +1131,7 @@ class CommandOptions:
     id: str = ""
     ids: tuple[str, ...] = ()
     explain: bool = False
-    scope: Literal["readiness", "judging"] = "readiness"
+    scope: HashScope = SCOPE_READINESS
     op: Literal["get", "set"] = "get"
     pairs: tuple[str, ...] = ()
     result: str = ""
@@ -1293,9 +1153,27 @@ class CommandOptions:
         if not isinstance(self.pairs, tuple) or not all(isinstance(value, str) for value in self.pairs):
             message = "CommandOptions.pairs must be a tuple of strings"
             raise TypeError(message)
-        if self.scope not in {"readiness", "judging"} or self.op not in {"get", "set"}:
+        if self.scope not in SCOPES or self.op not in {"get", "set"}:
             message = "CommandOptions contains an unknown scope or metadata operation"
             raise ValueError(message)
+
+
+def _hash_scope(value: str) -> HashScope:
+    """Narrow a parsed `--scope` value to a fingerprint scope.
+
+    Returns:
+        The matching scope from the contract.
+
+    Raises:
+        ValueError: The value names no scope.
+
+    """
+    scope: HashScope
+    for scope in SCOPES:
+        if scope == value:
+            return scope
+    message: str = f"unknown fingerprint scope {value!r}; expected one of {', '.join(SCOPES)}"
+    raise ValueError(message)
 
 
 def _command_options(args: argparse.Namespace) -> CommandOptions:
@@ -1309,7 +1187,7 @@ def _command_options(args: argparse.Namespace) -> CommandOptions:
             ),
         ),
         explain=check_type(getattr(args, "explain", False), bool),
-        scope=check_type(getattr(args, "scope", "readiness"), Literal["readiness", "judging"]),
+        scope=_hash_scope(check_type(getattr(args, "scope", SCOPE_READINESS), str)),
         op=check_type(getattr(args, "op", "get"), Literal["get", "set"]),
         pairs=tuple(
             check_type(
@@ -1428,8 +1306,8 @@ def cmd_criteria(args: CommandOptions, reader: Reader) -> JsonObject:
     found: Criteria = resolve_criteria(args.id, reader)
     return json_object({
         "id": args.id,
-        "criteria": found["values"],
-        "count": len(found["values"]),
+        "criteria": found["criteria"],
+        "count": len(found["criteria"]),
         "sourceId": found["sourceId"],
         "sourceField": found["sourceField"],
         "inherited": found["inherited"],
@@ -1461,19 +1339,19 @@ def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
         argument_error: str = "cmd_contract: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     rec: dict[str, JsonValue] = reader.get(args.id)
-    contract: dict[str, JsonValue] = read_contract(rec)
+    contract: JsonObject = json_object(dict(read_contract(rec)))
     criteria: Criteria = resolve_criteria(args.id, reader)
-    if criteria["values"]:
-        contract["acceptanceCriteria"] = [*criteria["values"]]
+    if criteria["criteria"]:
+        contract[ARG_ACCEPTANCE_CRITERIA] = [*criteria["criteria"]]
     metadata: dict[str, JsonValue] = metadata_of(rec)
     missing: list[str] = []
     if not contract.get(REPO_REFERENCE):
         missing.append(
-            "repoPath (the repository is ruled during elaboration and recorded on the Task)",
+            f"{KEY_REPO_PATH} (the repository is ruled during elaboration and recorded on the Task)",
         )
     if not any(contract.get(name) for name in SPEC_REFERENCE):
-        missing.append("spec_path or spec_paths")
-    if not criteria["values"]:
+        missing.append(f"{KEY_SPEC_PATH} or {KEY_SPEC_PATHS}")
+    if not criteria["criteria"]:
         missing.append("acceptance criteria (nowhere in the search order)")
     story_id: str = next(
         (anc for anc in reader.ancestors(args.id) if str(reader.get(anc).get("issue_type") or "") == "story"),
@@ -1495,7 +1373,7 @@ def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
         "bead": {
             "id": args.id,
             "title": str(rec.get("title") or ""),
-            "description": str(rec.get("description") or ""),
+            "description": str(rec.get(SOURCE_DESCRIPTION) or ""),
             **contract,
             **({"story": json_object(story)} if story else {}),
         },
@@ -1614,9 +1492,12 @@ def metadata(reader: Reader, bead_id: str, operation: Literal["get", "set"], pai
         return {
             "id": bead_id,
             "metadata": dict(metadata),
-            "contract": {key: metadata[key] for key, _, _ in CONTRACT_SCHEMA if key in metadata},
+            "contract": {key: metadata[key] for key in CONTRACT_KEYS if key in metadata},
             "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
+            "build": {key: metadata[key] for key in BUILD_LIFECYCLE_KEYS if key in metadata},
             "lane": {key: metadata[key] for key in LANE_KEYS if key in metadata},
+            "artifact": {key: metadata[key] for key in ARTIFACT_KEYS if key in metadata},
+            "story": {key: metadata[key] for key in STORY_KEYS if key in metadata},
             "wsjf": {key: metadata[key] for key in WSJF_KEYS if key in metadata},
             "sequencing": {key: metadata[key] for key in SEQUENCING_KEYS if key in metadata},
             "cdsAudit": {key: metadata[key] for key in CDS_AUDIT_KEYS if key in metadata},
@@ -1703,11 +1584,11 @@ def cmd_cds_audit(args: CommandOptions, reader: Reader) -> JsonObject:
     count: int = findings if isinstance(findings, int) and not isinstance(findings, bool) else 0
     version: str = str(audit.get("scriptVersion") or "").strip()[:100]
     pairs: list[str] = [
-        f"cds_audit_verdict={audit['verdict']}",
-        f"cds_audit_findings={count}",
-        f"cds_audit_script_version={version}",
-        f"cds_audit_design_source={str(audit.get('designSource') or '').strip()[:20]}",
-        f"cds_audit_bundle={str(audit.get('bundle') or '').strip()[:1000]}",
+        f"{KEY_CDS_AUDIT_VERDICT}={audit['verdict']}",
+        f"{KEY_CDS_AUDIT_FINDINGS}={count}",
+        f"{KEY_CDS_AUDIT_SCRIPT_VERSION}={version}",
+        f"{KEY_CDS_AUDIT_DESIGN_SOURCE}={str(audit.get('designSource') or '').strip()[:20]}",
+        f"{KEY_CDS_AUDIT_BUNDLE}={str(audit.get('bundle') or '').strip()[:1000]}",
     ]
     return metadata(reader, args.id, "set", pairs)
 
@@ -1738,7 +1619,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-C",
         dest="repo",
         default="",
-        help="the central repository, when it is not $ATW_CONTROL_REPO",
+        help=f"the central repository, when it is not ${CONTROL_REPO_ENV}",
     )
     parser.add_argument(
         "--records",
@@ -1934,7 +1815,7 @@ def main(argv: list[str] | None = None) -> int:
         command: str = check_type(args.command, str)
         result: CommandResult = COMMAND_HANDLERS[command](options, reader)
     except (ContractError, BeadsError) as exc:
-        cause: str = exc.cause if isinstance(exc, BeadsError) else "other"
+        cause: str = exc.cause if isinstance(exc, BeadsError) else OTHER_CAUSE
         sys.stdout.write(
             json.dumps({"ok": False, "error": str(exc), "cause": cause}, indent=2, ensure_ascii=False) + "\n",
         )

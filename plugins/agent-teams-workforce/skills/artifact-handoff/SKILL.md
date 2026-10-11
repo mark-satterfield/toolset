@@ -26,3 +26,15 @@ specific findings and affected references, and preserve valid work. On interrupt
 actual files; resumption continues those files. Do not fabricate completion for missing reasoning.
 Named missing inputs or remaining uncertainties belong in the contract's existing evidence fields;
 never add fields to a closed schema or return a success reference for absent work.
+
+## Generated contract types
+
+Each schema in [schemas/](schemas/) is the one definition of its contract. Python code never
+restates a key, type or allowed value: it imports the module that
+`scripts/generate_contract_types.py` generates from the schema, and
+`scripts/check_contract_types.py` fails when a generated module is stale. Run
+`python3 scripts/generate_contract_types.py` after changing a schema.
+
+| Schema | Generated module |
+|---|---|
+| `schemas/task-deps.schema.json` (Cross-Story Task dependencies) | `scripts/task_deps_contract.py` |

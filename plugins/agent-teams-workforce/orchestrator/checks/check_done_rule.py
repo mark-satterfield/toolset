@@ -2,17 +2,18 @@
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from typing import TYPE_CHECKING
+
 from orchestrator.checks.check_support import report, require
+from orchestrator.core.handback_contract import OTHER_CAUSE, QUOTA_CAUSE
+from orchestrator.flows.elaboration_support import done_rule, repository_failure
 
 if TYPE_CHECKING:
     from orchestrator.core.io import JsonValue
-
-from orchestrator.flows.elaboration_support import done_rule, repository_failure
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -56,12 +57,14 @@ def main() -> None:
         not done_rule([{**rows[0], "spec": {"ok": True, "story": {}}}], True, [])["done"],
         "not done_rule([{**rows[0], 'spec': {'ok': True, 'story': {}}}], True, [])['done']",
     )
-    bad: list[dict[str, JsonValue]] = [{"repository": "one", "spec": {"ok": False, "failure": {"cause": "quota"}}}]
-    require(repository_failure(bad)["cause"] == "quota", "repository_failure(bad)['cause'] == 'quota'")
+    bad: list[dict[str, JsonValue]] = [
+        {"repository": "one", "spec": {"ok": False, "failure": {"cause": QUOTA_CAUSE}}},
+    ]
+    require(repository_failure(bad)["cause"] == QUOTA_CAUSE, "repository_failure(bad)['cause'] == QUOTA_CAUSE")
     bad.append(
-        {"repository": "two", "tasks": {"ok": False, "failure": {"cause": "other"}}},
+        {"repository": "two", "tasks": {"ok": False, "failure": {"cause": OTHER_CAUSE}}},
     )
-    require(repository_failure(bad)["cause"] == "other", "repository_failure(bad)['cause'] == 'other'")
+    require(repository_failure(bad)["cause"] == OTHER_CAUSE, "repository_failure(bad)['cause'] == OTHER_CAUSE")
     report("PASS: repository Stories/Tasks/coverage, nonempty span, edges, scores and mixed failure causes")
 
 

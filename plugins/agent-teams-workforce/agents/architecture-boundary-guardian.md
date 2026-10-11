@@ -42,10 +42,12 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Check context coupling, section 2 constraints, cross-boundary contracts and unsupported departures from established patterns. In the initial Check, independently verify every surveyed unchanged capability and coverage row.
 
-Read the PRD, survey, plan, ledger, current draft and assigned source views. Take claimIds,
-claimFiles, coverageIds and repairIds from your plan entry. For a Check without a plan, check all
-survey coverage and unchanged design claims. Write only an architecture-review result: findings,
-coverageChecks, resolutions and summary, with repairChecks for assigned repairs and estimates for
-cost work. A finding names the claim, file, verdict, evidence and responsible writer. Verify
+Read the PRD, survey, plan, ledger, current draft and assigned source views. Take your assignment
+from your plan entry as the artifact-handoff coordinator-plan schema
+(schemas/coordinator-plan.schema.json) defines it. For a Check
+without a plan, check all survey coverage and unchanged design claims. Write only an
+architecture-review result as the artifact-handoff architecture-review schema
+(schemas/architecture-review.schema.json) defines it, covering assigned repairs and any cost
+work. Each finding identifies the claim and the responsible writer with evidence. Verify
 correct work as well as finding defects; no extra requirements, design edits or independent
 redesign. Recheck revised rows and affected dependencies, retaining valid earlier evidence.

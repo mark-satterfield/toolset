@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+# The Task dependency document is defined once, in the artifact-handoff skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import beadgraph
 import beadwrite
 import hierarchy
+from task_deps_contract import TaskDepsError, empty_task_deps, narrowed_task_deps_schema, parse_task_deps
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
-from orchestrator.flows.architecture_support import read
+from orchestrator.flows.architecture_support import TASK_EDGES_PHASE, read
+from orchestrator.flows.elaboration_support import emit_event
 
 _ARGUMENT_ERROR: str = "Arguments violate the task_edges input contract"
 
@@ -38,7 +45,6 @@ def run(
     """
     index: int
     slug: str
-    field: str | str
     if (
         not (isinstance(context, RunContext))
         or not (isinstance(store, ArtifactStore))
@@ -47,18 +53,18 @@ def run(
         or not (isinstance(repos, list))
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    stage: str = "task-edges"
-    context.stage = "task-edges"
-    runner.emit("phase", phase="task-edges", step="closure-edges")
+    stage: str = TASK_EDGES_PHASE
+    context.stage = stage
+    emit_event(runner.emit, phase_event(TASK_EDGES_PHASE, "closure-edges"))
     closure: dict[str, JsonValue] = json_object(
-        tools.portfolio("task-edges", beadwrite.closure_task_edges, context.work, repos),
+        tools.portfolio(stage, beadwrite.closure_task_edges, context.work, repos),
     )
     closure_path: Path = context.work / "closure-edges.json"
     write_json(closure_path, closure)
     if closure.get("ok") is False or closure.get("warnings") or json_object(closure.get("summary", {})).get("warnings"):
-        raise tools.failure(stage, "other", closure)
+        raise tools.failure(stage, OTHER_CAUSE, closure)
     slugs: dict[str, str] = check_type(
-        tools.portfolio("task-edges", hierarchy.repo_slugs, repos),
+        tools.portfolio(stage, hierarchy.repo_slugs, repos),
         dict[str, str],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
@@ -95,21 +101,13 @@ def run(
     write_json(listing, {"stories": rows, "closureEdgesPath": str(closure_path)})
     final: Path = context.work / "task-deps.json"
     if len(repos) > 1:
-        schema: dict[str, JsonValue] = read(
-            runner.plugin / "skills/artifact-handoff/schemas/task-deps.schema.json",
-        )
         keys: dict[str, str] = check_type(
-            tools.portfolio("task-edges", beadwrite.span_tasks, context.work, repos),
+            tools.portfolio(stage, beadwrite.span_tasks, context.work, repos),
             tuple[dict[str, str], list[tuple[str, str]], dict[str, str]],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )[0]
-        for field in ("from", "to"):
-            properties: dict[str, JsonValue] = json_object(
-                json_object(json_object(json_object(schema["properties"])["edges"])["items"])["properties"],
-            )
-            json_object(properties[field])["enum"] = list(keys)
         schema_path: Path = context.work / "task-deps.schema.json"
-        write_json(schema_path, schema)
+        write_json(schema_path, narrowed_task_deps_schema(list(keys)))
         runner.run(
             AgentStep(
                 stage="task-deps",
@@ -125,16 +123,23 @@ def run(
             ),
         )
     else:
-        write_json(final, {"edges": [], "acyclic": True, "cycle": []})
+        write_json(final, empty_task_deps())
         store.accept("task-deps", task_paths, (final,))
+    accepted: dict[str, JsonValue] = read(final)
+    try:
+        parse_task_deps(accepted)
+    except TaskDepsError as exc:
+        raise tools.failure(stage, OTHER_CAUSE, {"taskDeps": str(final), "error": str(exc)}) from exc
+
+    dispatch: DispatchArgumentsContract = dispatch_arguments()
 
     def write_edges() -> dict[str, JsonValue]:
-        repo: Path = Path(check_type(context.args["beadsRepoPath"], str))
-        graph: beadgraph.Graph = tools.portfolio("task-edges", beadgraph.load, repo)
-        writer: beadgraph.Writer = tools.portfolio("task-edges", beadgraph.Writer, repo)
+        repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))
+        graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo)
+        writer: beadgraph.Writer = tools.portfolio(stage, beadgraph.Writer, repo)
         return json_object(
             tools.portfolio(
-                "task-edges",
+                stage,
                 beadwrite.write_all_task_edges,
                 graph,
                 writer,
@@ -145,13 +150,13 @@ def run(
             ),
         )
 
-    written: dict[str, JsonValue] = tools.operation("task-edges", write_edges)
+    written: dict[str, JsonValue] = tools.operation(stage, write_edges)
     write_json(context.work / "task-edges/all.json", written)
     if written.get("ok") is False:
-        raise tools.failure(stage, "other", written)
+        raise tools.failure(stage, OTHER_CAUSE, written)
     return {
         "ok": True,
         "closureEdges": closure,
-        "crossStoryDependencies": read(final),
+        "crossStoryDependencies": accepted,
         "written": written,
     }

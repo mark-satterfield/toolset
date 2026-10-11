@@ -24,7 +24,9 @@ it and stops.
 
 Pipeline beads — every Epic, Story and Task the pipeline files, and every bead an agent reads
 or writes for its work — live in ONE database: the central beads database of the control
-repository (`$ATW_CONTROL_REPO`). It is read and written there wherever the actor runs. A
+repository (its environment variable is defined by the `DriverEnvironment` of
+`schemas/driver-surface.schema.json` in the `agent-teams-workforce:pipeline-contracts` skill;
+read it there). It is read and written there wherever the actor runs. A
 build or bug session runs inside a Task's own repository or worktree, and a plain `bd` there
 reaches THAT repository's database, where the central bead does not exist.
 
@@ -57,22 +59,22 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" 
 ```
 
 Every command prints ONE JSON object on stdout and reads `bd show --json --readonly` unless it
-is a `metadata set`, a `cds-audit` or `bd`. `-C <repoPath>` names the central repository when
-it is not `$ATW_CONTROL_REPO`. Exit status: `0` fine, `2` the command refused (the object
+is a `metadata set`, a `cds-audit` or `bd`. `-C <path>` names the central repository when
+it is not the control repository the `pipeline-contracts` driver environment names. Exit status: `0` fine, `2` the command refused (the object
 carries `error`).
 
 | Command | Answers |
 | --- | --- |
 | `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description, the contract and the Task's `story` (id, title), whose branch the Task is built on — passed as-is. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
-| `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--scope judging` returns the judging fingerprint instead; `--explain` prints the exact object hashed. |
+| `fingerprint <id>` | The content fingerprint, the stored readiness fingerprint (the schema's `CONTENT_HASH_KEY`), and whether they agree. `--scope` picks one of the schema's `HashScope` values; `--explain` prints the exact object hashed. |
 | `fingerprint-batch [id ...]` | The same answer, in either `--scope`, for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
 | `ancestors <id>` | The parent chain, nearest first, cycle-safe. |
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
 | `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, then reads the values back into `verified`. |
 | `bd <bd arguments ...>` | Runs any `bd` command against the central database (a write to a fleet-filed bead against its own) and prints what `bd` prints. `atw-bd` is this command. |
-| `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's `cds_audit_verdict`, `cds_audit_findings`, `cds_audit_script_version`, `cds_audit_design_source` and `cds_audit_bundle` from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside `pass`, `fail`, `blocked`, `error`; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
+| `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's cds audit keys (the schema's `CDS_AUDIT_KEYS` group) from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside the schema's `CdsAuditVerdict` values; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
 tracker — how the parent and prose paths are exercised when no live bead has them. `--records -`
@@ -112,11 +114,11 @@ Always present (on all 252): `id`, `title`, `status`, `priority`, `issue_type`, 
 Present only when set — the count is how many of the 252 carried it: `description` (250),
 `metadata` (226), `owner` (181), `created_by` (181), `labels` (163), `notes` (154),
 `external_ref` (78), `started_at` (8), `assignee` (6), **`parent` (4)**, `dependencies` (4),
-`comments_omitted` (3), **`acceptance_criteria` (3)**, `defer_until` (1).
+`comments_omitted` (3), **the schema's `ACCEPTANCE_FIELD` (3)**, `defer_until` (1).
 
 Two consequences worth stating outright:
 
-- **`acceptance_criteria` IS a real top-level record field**, written by `bd create/update
+- **The schema's `ACCEPTANCE_FIELD` IS a real top-level record field**, written by `bd create/update
   --acceptance`. It is a STRING, not an array. It is neither metadata nor description prose,
   and anything that looks only at those two is blind to it.
 - **`parent` is absent on a bead with no parent**, so "no `parent` key" and "`parent` is empty"
@@ -127,15 +129,13 @@ Do not hard-code this list. `record <id>` reports what a given bead actually car
 ## Acceptance criteria are PROSE
 
 This is the rule that WP-2 and WP-3 got wrong. Criteria are not a key/value pair and are not
-meant to be. **The requirement is that they exist somewhere.** They are searched in this order,
-and `criteria <id>` reports which one answered:
-
-1. `metadata.acceptance_criteria` on the Task — a JSON array. A convenience for the build lane,
-   never the evidence that criteria exist.
-2. The `acceptance_criteria` record field on the Task — what `bd update --acceptance` writes.
-3. The Task's own `description` prose.
-4. Each ancestor in turn, **nearest first**, through the same three homes. A Story or Epic that
-   states the criteria for the work beneath it has stated them for this Task.
+meant to be. **The requirement is that they exist somewhere.** They are searched in the order
+of the schema's three criteria sources (`SOURCE_METADATA`, `SOURCE_ACCEPTANCE`,
+`SOURCE_DESCRIPTION` in `x-constants`) on the Task, then on each ancestor in turn, **nearest
+first**, through the same three homes; `criteria <id>` reports which one answered in
+`sourceField`. The metadata source is a convenience for the build lane, never the evidence that
+criteria exist. A Story or Epic that states the criteria for the work beneath it has stated them
+for this Task.
 
 Prose recognition is implemented in `criteria_in_text` and is not restated here: an
 `Acceptance Criteria` heading (markdown or a bare labelled line) taking the bullets or prose
@@ -152,103 +152,29 @@ than appearing to invent criteria.
 
 ## The metadata key namespace
 
-`bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and the strategy
-object are compact JSON. The BUILD CONTRACT keys are inside the READINESS fingerprint and outside
-the JUDGING one; the gate's own keys, the WSJF keys, the lane keys and the sequencing keys are
-outside both, which is what lets each consumer store its own verdict without invalidating it.
+The ONE definition of every metadata key the pipeline writes on a bead — its group, its value
+type, when it is required, its allowed values, and the build-contract projection `contract`
+returns — is the JSON Schema `schemas/bead-metadata.schema.json` in this skill. Read it there;
+this page does not restate it. Python producers and consumers import the generated
+`scripts/bead_metadata.py` (`scripts/generate_bead_metadata.py` writes it from the schema and
+`scripts/check_bead_metadata_generated.py` fails when it is stale); the driver loads both files
+from the installed plugin through its `beadmeta.py`.
 
-Build contract, written by the decomposition phase onto each Task and read back by `contract`:
+`bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and objects are
+compact JSON. The build-contract keys are inside the READINESS fingerprint and outside the
+JUDGING one; every other group is outside both, which is what lets each consumer store its own
+verdict without invalidating it.
 
-| Key | Shape | Standing |
-| --- | --- | --- |
-| `repoPath` | one absolute repository path | REQUIRED — the repository elaboration ruled for the Task; the build lane builds there and rules none of its own |
-| `spec_path` | one root-relative path | Either this or `spec_paths` is REQUIRED — with no spec there is no contract to build against |
-| `spec_paths` | JSON array of paths | as above |
-| `spec_sections` | JSON array of strings | navigation |
-| `acceptance_criteria` | JSON array of strings | one home among several; never required, see above |
-| `definition_of_done` | JSON array of strings | passed to the Red and Green phases |
-| `requirement_ids` | JSON array of strings | traceability |
-| `decision_ids` | JSON array of architecture view paths | the architecture the Task was designed against; every phase that writes code receives it |
-| `surfaces` | JSON array, **or the literal `unknown`** | never required |
-| `test_strategy` | JSON object, **or the literal `unknown`** | never required |
-| `cds_design_source` | `bundle`, `cds` or `none` | written on every Task whose `surfaces` include `web-ui`: `bundle` builds from the cds bundle the owner supplied and is audited against it; `cds` is designed with the CDS design system and audited against the live design system; `none` changes no design and gets no cds design step or audit |
-| `cds_artifact` | JSON object `{kind, slug}`: the Page, Shell or View the Task's UI is, as a cds bundle's `bundle.json` names it | written on a `bundle` or `cds` web-ui Task; at build time `task-to-deploy` builds from the newest supplied bundle of this artifact, so a mockup can arrive any time before the Task is built |
-| `cds_bundle_path` | one absolute path: the supplied single-artifact cds bundle directory | written on a `bundle` web-ui Task only |
-| `cds_build_specs` | JSON array of absolute `spec/build-spec.md` paths, each with `#<Section ID>` when the Task builds only some Sections | written on a `bundle` web-ui Task, for the `ui` delta items its `requirement_ids` cite, from the detailing's `uiAuthority.uiItems` |
+**The schema's `UNKNOWN` literal is not `[]`, and the difference is the whole point.** For a
+contract key whose kind (the schema's `ContractKind`) admits it, `UNKNOWN` means nobody ruled and
+reads as null, so the phase falls back to its own lead; `[]` means somebody checked and the work
+crosses no boundary, which SKIPS the phase outright. Never write `[]` for a question no one
+settled.
 
-**`unknown` is not `[]`, and the difference is the whole point.** A null `surfaces` means nobody
-ruled, and the phase falls back to its own lead; `[]` means somebody checked and the work crosses
-no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec never settled the
-question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
-
-Readiness verdict, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
-`ready_content_hash`. Scoring, written by `prd-to-spec` when it writes a Task and scores its
-Epic, and by the `wsjf-scoring` workflow, never by `task-ready`: `wsjf`,
-`wsjf_calculated_at` and the dimensions below. Build lane: `build_state`; the cds audit verdict of a `web-ui` Task, from `task-to-deploy`'s
-`cdsAudit` result: `cds_audit_verdict` (`pass`, `fail`, `blocked` or `error`),
-`cds_audit_findings`, `cds_audit_script_version`, `cds_audit_design_source` and `cds_audit_bundle` (the design source and bundle the build actually used), written by the build lane and, for a run dispatched by hand, with `cds-audit`. Elaboration:
-`elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
-`elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
-`elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its
-start, under the run's owner token in `elaboration_state_owner`, and `done` when its Tasks are
-written; a person sets `ready` when a new PRD is finished, and `in_progress` to hand back
-an Epic that was already started — never `ready`, which would start it over.
-
-**`elab_key` is the identity a re-elaboration matches on**, written once at the create and never
-recomputed. A Story is keyed by the repository it covers, a Task by its repository and the slug
-of its title. Without it a second run of the same Epic has nothing to match against and writes a
-complete second set of Stories and Tasks beside the first. `elab_follows` names the Task a
-follow-up Task replaces — set when the original was already built and therefore was not
-rewritten. **`decision_ids` is the architecture views the item was designed against**, as a compact
-JSON list, written by elaboration on Stories and Tasks: each is a view's path relative to the
-arc42 folder, with `#<heading>` when the item rests on one part of the view. On a Task it is
-part of the build contract: it carries the architecture to the builder, and it is how a change
-to a view finds the work resting on it.
-
-WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
-`wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`
-(Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size` (the size the
-score divides by: the judged estimate on the Fibonacci scale, or on an Epic whose `elaboration_state` is
-`done` the plain sum of its distinct Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
-`wsjf_value_from`. They are what lets a Task INHERIT its Epic's value and an Epic roll its size
-up from its Tasks without either one re-judging anything. The judged size is stored apart from
-the size in use: `wsjf_size_estimate` (the judged estimate, kept after an Epic's size becomes
-the sum of its Tasks), `wsjf_size_low` and `wsjf_size_high` (its plausible range),
-`wsjf_size_confidence` (integer percent), and, on an Epic sized from its Tasks,
-`wsjf_size_outside_range` (`true` when that sum falls outside the estimate's range — a flag for
-examination, not an error).
-`wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
-from. Dependency assessment (the `dependency-assessment` workflow for an Epic, the
-`task-dependency-assessment` workflow for a Task created outside elaboration, one with no
-`elab_key`): `seq_owned_blockers`, a comma-separated id list of the edges the assessment
-created on the bead — on an Epic each a `tracks` edge onto the Epic named, on such a Task each
-a `blocks` edge onto the Task named — and `seq_owned_blockers_at`. The assessment only ever
-withdraws or converts an edge that list names, which is how a hand-made edge survives it.
-`seq_edge_reasons`, on the BLOCKED Epic or Task, is a JSON object keyed by blocker id, each
-value `{"reason", "confidence", "setBy", "setAt"}`: why each owned edge onto that bead stands,
-the item whose assessment set it, and when. It covers only owned edges, and an assessment
-rewrites only the entries for edges touching the item it assessed. `seq_edge_withdrawn`, also on the BLOCKED bead, is a JSON object keyed by blocker id, each
-value `{"reason", "withdrawnBy", "withdrawnAt"}`: every owned edge onto that bead an
-assessment withdrew, and why. An edge it covers is set again only by a proposal that answers
-the recorded reason, so a later assessment cannot quietly overturn an earlier one.
-`seq_content_hash` is the
-content fingerprint the assessment last read the item at, and `seq_assessed_at` is when that
-item's own assessment was last applied; both are written on the assessed Epic or Task every
-time its assessment applies. A Task elaboration wrote carries none of the six: its edges are
-elaboration's. `depscore.py apply-edges` writes all six keys, and `depscore.py
-withdraw-edge` writes the records for the one edge it withdraws; nothing else does.
-On a Story, `depscore.py story-edges` (also run by `elaboration-finish` and by a Task-level
-`apply-edges`) writes `story_owned_blockers`, the comma-separated Stories this Story is
-ordered after by a `blocks` edge the script created,
-`story_owned_blockers_at`, and `story_edge_reasons`, a JSON object keyed by blocker id whose
-value is why the edge stands (Epic order by `tracks` edges within one repository, or a Task
-edge between the two Stories in any repository). The host records the Story's deploy as `story_deploy_state`, `story_deploy_attempt`,
-`story_deploy_error`, `story_ssm_missing` (the SSM parameters its stacks read that AWS dev does
-not hold) and `story_pr_url`.
-
-`metadata get` lists every key outside that namespace under `unrecognized`. `metadata set`
-writes whatever `key=value` pairs it is given and refuses only an argument with no `=`; a
-typo'd key is written as given and is invisible to every reader, so name keys exactly.
+`metadata get` shows a bead's keys split by the schema's groups and lists every key outside the
+schema under `unrecognized`. `metadata set` writes whatever `key=value` pairs it is given and
+refuses only an argument with no `=`; a typo'd key is written as given and is invisible to every
+reader, so take key names from the schema.
 
 **Always `--set-metadata` (merges), never `--metadata` (replaces the whole object and drops every
 key the write did not name).** `metadata set` uses the right one and reads back to verify.
@@ -261,29 +187,24 @@ Both scopes have ONE implementation, `content_hash` in `scripts/beads-contract.p
 `fingerprint <id> --scope <scope> --explain` prints the exact object hashed. Do not reproduce
 either recipe in prose, in `jq`, or in a second language.
 
-**`--scope readiness`** (the default) is what `task-ready` rules on, stored as
-`ready_content_hash`. **`--scope judging`** is what a WSJF judging session is handed, stored as
-`wsjf_content_hash`; the SEQUENCING assessment shares it, stored as `seq_content_hash`, because
-it reads the same PRD corpus. **Pass the scope that matches the key you store the answer under**,
-or you will compare a watermark against a fingerprint of something else.
+The scopes are the schema's `HashScope` values, and which record fields each covers is the
+schema's `x-field-sets` (`CONTENT_HASH_FIELDS` / `CONTENT_HASH_PRESENT` for readiness,
+`JUDGING_HASH_FIELDS` / `JUDGING_HASH_PRESENT` for judging); the readiness scope also covers the
+build-contract keys (`CONTRACT_HASHED_WHEN_PRESENT` only on a bead that carries them). The
+readiness scope is what `task-ready` rules on, stored under the schema's `CONTENT_HASH_KEY`. The
+judging scope is what a WSJF judging session is handed and what the SEQUENCING assessment reads,
+each stored under its own key in the schema's WSJF and sequencing groups. **Pass the scope that
+matches the key you store the answer under**, or you will compare a watermark against a
+fingerprint of something else.
 
 What matters to a caller:
 
-- BOTH cover `title`, `description`, `issue_type` and `priority`.
-- READINESS ALSO covers the `acceptance_criteria` and `design` record fields and the BUILD
-  CONTRACT keys — the repository, the spec paths and sections, the criteria, the Definition of
-  Done, the requirement and decision ids, the surfaces and the test strategy, and the four cds
-  keys on a bead that carries them. Rehoming a Task or
-  changing the spec it builds against makes it stale, because it changes what a reviewer would
-  rule on.
-- JUDGING covers NONE of those. An Epic's judging session is handed its title and its PRD file,
-  a Task's its title and description, and a repoPath or a decision id has no bearing on business
-  value, time criticality or size — re-judging on one would pay full price for the same answer.
-- In both, three record keys (`acceptance`, `deps`, `type`) are null on every bead because `bd`
-  does not use those names; they stay in the object because the digest is over its shape.
-- **`labels` and `dependencies` are nulled**, as are the gate's own keys, the WSJF keys, the
-  lane keys and the sequencing keys, so writing a label, an edge, a score or a verdict never
-  changes the fingerprint.
+- Rehoming a Task or changing the spec it builds against makes it stale for readiness, because it
+  changes what a reviewer would rule on; it does not change the judging fingerprint, because the
+  build contract has no bearing on business value, time criticality or size.
+- A field set's key outside its `*_PRESENT` set hashes as null, so writing a label, an edge, a
+  score or a verdict never changes the fingerprint, and no metadata key outside the build
+  contract is hashed.
 - Timestamps, status and comments are outside it, so storing a verdict never invalidates it.
 - Criteria in the Task's OWN description ARE covered, because `description` is. Criteria on a
   PARENT are NOT — the fingerprint is over this bead's own record. Editing a parent's criteria

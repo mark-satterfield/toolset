@@ -15,8 +15,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
+# The artifact checkpoint contract is generated into the artifact-handoff skill, its one place.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
 import contracts
 import researchrecovery
+from checkpoint_contract import (
+    BINDING_KEYS,
+    REPORT_COMPLETE_UNACCEPTED,
+    STATUS_BLOCKED,
+    STATUS_COMPLETE,
+    CheckpointRecord,
+    StatusReport,
+    checkpoint_path,
+    load_checkpoint_schema,
+)
 from contracts import JsonObject, JsonValue, json_object
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -210,7 +223,11 @@ def read_artifact(path: Path, *, strict: bool = True) -> JsonValue:
     return value
 
 
-def _atomic(path: Path, data: bytes) -> None:
+def write_atomic(path: Path, data: bytes) -> None:
+    """Replace `path` with `data` and a trailing newline in one rename.
+
+    A write or rename failure (OSError) propagates; the temporary file is always removed.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -218,6 +235,70 @@ def _atomic(path: Path, data: bytes) -> None:
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def checkpoint_report(candidate: Path, schema: JsonObject, revision: str) -> StatusReport:
+    """Build the completed status report of a candidate, holding its checkpoint binding.
+
+    Returns:
+        The REPORT_COMPLETE_UNACCEPTED report carrying the binding keys; the caller adds the candidate digest.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not isinstance(candidate, Path) or not isinstance(schema, dict) or not isinstance(revision, str):
+        argument_error: str = "checkpoint_report: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    return {
+        "status": REPORT_COMPLETE_UNACCEPTED,
+        "artifactPath": str(candidate.absolute()),
+        "schemaSha256": _sha(canonical(schema)),
+        "revision": revision,
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def binding_matches(saved: CheckpointRecord, report: StatusReport) -> bool:
+    """Whether a saved checkpoint is bound to the candidate, schema and revision of `report`.
+
+    Returns:
+        True when every key of BINDING_KEYS holds the same value in both.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not isinstance(saved, dict) or not isinstance(report, dict):
+        argument_error: str = "binding_matches: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    return all(saved.get(key) == report.get(key) for key in BINDING_KEYS)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def read_checkpoint(candidate: Path) -> CheckpointRecord | None:
+    """Read and validate the checkpoint sidecar of a candidate.
+
+    A read failure (OSError), a decode failure (ValueError) or a schema violation
+    (ValidationError) of an existing sidecar propagates; it is never read as absent.
+
+    Returns:
+        The validated checkpoint, or None when the candidate has no sidecar.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not isinstance(candidate, Path):
+        argument_error: str = "read_checkpoint: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    sidecar: Path = checkpoint_path(candidate)
+    if not sidecar.exists():
+        return None
+    value: JsonValue = decode(sidecar.read_text(encoding="utf-8"))
+    Draft202012Validator(load_checkpoint_schema()).validate(value)
+    return check_type(value, CheckpointRecord, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -261,7 +342,7 @@ def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "")
         LENIENT_READS.append(f"{final}: {exc}; replaced as absent")
         previous_value = None
     if previous_value is not None and canonical(previous_value) != data:
-        _atomic(final.with_name(final.name + ".prev"), canonical(previous_value))
+        write_atomic(final.with_name(final.name + ".prev"), canonical(previous_value))
     receipt: ArtifactReceipt = {
         "artifactPath": str(final),
         "sha256": _sha(data),
@@ -280,10 +361,10 @@ def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "")
         else None
     )
     pending: Path = final.with_name(final.name + ".publish")
-    _atomic(pending, canonical({"previous": previous, "next": receipt}))
+    write_atomic(pending, canonical({"previous": previous, "next": receipt}))
     if previous_data != data:
-        _atomic(final, data)
-    _atomic(receipt_path(final), canonical(receipt))
+        write_atomic(final, data)
+    write_atomic(receipt_path(final), canonical(receipt))
     pending.unlink()
     return receipt
 
@@ -483,35 +564,23 @@ class _Acceptance:
         return None
 
     def pending(self) -> JsonObject | None:
-        checkpoint_path: Path = Path(str(self.candidate) + ".checkpoint")
-        checkpoint: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
-            decode(checkpoint_path.read_text(encoding="utf-8")) if checkpoint_path.is_file() else {}
-        )
-        if (
-            isinstance(checkpoint, dict)
-            and checkpoint.get("status") == "blocked"
-            and checkpoint.get("revision", "") == self.revision
-            and checkpoint.get("artifactPath") == str(self.candidate)
-            and checkpoint.get("schemaSha256") == _sha(canonical(self.schema))
+        checkpoint: CheckpointRecord | None = read_checkpoint(self.candidate)
+        if checkpoint is not None and binding_matches(
+            checkpoint,
+            checkpoint_report(self.candidate, self.schema, self.revision),
         ):
-            schema_path: Path = (
-                Path(__file__).resolve().parents[2] / "skills/artifact-handoff/schemas/checkpoint.schema.json"
-            )
-            Draft202012Validator(json_object(decode(schema_path.read_text(encoding="utf-8")))).validate(checkpoint)
-            return {
-                "pending": True,
-                "blocked": True,
-                "candidate": str(self.candidate),
-                "revision": self.revision,
-                "reason": checkpoint.get("reason") or "producer recorded a blocked dependency",
-                "remaining": checkpoint["remaining"],
-            }
-        if (
-            isinstance(checkpoint, dict)
-            and checkpoint.get("status") == "complete"
-            and checkpoint.get("revision", "") == self.revision
-        ):
-            return None
+            if checkpoint["status"] == STATUS_BLOCKED:
+                remaining: list[JsonValue] = [*checkpoint["remaining"]]
+                return {
+                    "pending": True,
+                    "blocked": True,
+                    "candidate": str(self.candidate),
+                    "revision": self.revision,
+                    "reason": checkpoint.get("reason") or "producer recorded a blocked dependency",
+                    "remaining": remaining,
+                }
+            if checkpoint["status"] == STATUS_COMPLETE:
+                return None
         pending: JsonObject = {"pending": True}
         if self.research_agent and self.research_repo is not None:
             research: researchrecovery.ResearchReceipt | None = recover(

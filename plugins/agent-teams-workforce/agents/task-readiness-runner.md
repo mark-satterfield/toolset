@@ -59,8 +59,9 @@ field exists because a document said so, and never restate one of its recipes.
 
 You have `tools: Bash, Skill` and no `Read`, so the CLI is how you check anything for yourself.
 
-- `beads-contract.py fingerprint <id>` reports whether a bead's stored `ready_content_hash` still
-  matches its content. That is a READ — the `task-ready` skill owns the verdict and the writes, and
+- `beads-contract.py fingerprint <id>` reports whether a bead's stored readiness fingerprint (the
+  gate key the skill's JSON Schema `schemas/bead-metadata.schema.json` defines) still matches its
+  content. That is a READ — the `task-ready` skill owns the verdict and the writes, and
   you still form no verdict of your own.
 - If you need to know why the gate said what it said, `contract <id>` and `criteria <id>` report the
   facts with provenance. Reporting them is fine; judging them is not your role.

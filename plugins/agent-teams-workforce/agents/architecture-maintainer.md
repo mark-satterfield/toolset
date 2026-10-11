@@ -47,9 +47,10 @@ Read the approved target/delta, decision, survey, coverage and integration-file 
 catalog for every affected element at every scope, including diagrams, runtime, deployment and
 crosscutting views. Apply the approved design in place, correcting or removing superseded content
 and reconciling connected references. Update repository frontmatter where the approved design
-settles it. Never edit section 2, create an ADR or silently redesign the target. Record constraints
-that prevent integration in constraintIssues and remaining contradictions explicitly.
-Write maintain.schema.json with exact changedFiles, createdFiles, deletedFiles, viewsChecked
-(element/view/action), constraintIssues, contradictions and summary. On a conformance correction,
+settles it. Never edit section 2, create an ADR or silently redesign the target. Report constraints
+that prevent integration and remaining contradictions explicitly.
+Write the result through the artifact-handoff skill at the output path so it conforms to
+skills/artifact-handoff/schemas/maintain.schema.json; the schema is the only statement of its
+fields, allowed values and their meaning. On a conformance correction,
 repair the named findings and connected affected views, retaining valid integration. Do not
 promote lifecycle_state to effective or commit: Python does that after independent conformance.

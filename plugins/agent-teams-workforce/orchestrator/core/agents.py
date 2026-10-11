@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -12,24 +13,54 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Generator  # ruff: ignore[typing-only-standard-library-import] - Runtime decorator resolves generator annotations.
+from collections.abc import (
+    Generator,  # ruff: ignore[typing-only-standard-library-import] - Runtime decorator resolves generator annotations.
+)
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from uuid import uuid4
 
+from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
+
+# isort: split
 import jsonschema
+import strictschema
+from driver_surface_types import ARCH_PATH_ENV, STOP_FILE_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .agent_context import PipelineStoppedError, SessionCleanupError, SessionSetupError, brief, prepare
 from .agent_process import SessionProcesses, SessionRequest
 from .artifacts import ArtifactStore
 from .constraints import Section2Guard
-from .driver_contracts import child_environment, exhausted_reset, is_refusal, reset_of
+from .driver_contracts import (
+    DispatchArgumentsContract,
+    child_environment,
+    dispatch_arguments,
+    exhausted_reset,
+    is_refusal,
+    reset_of,
+)
 from .events import EventSink, EventWriter
-from .handback import failure_for
+from .handback_contract import (
+    ACCOUNT_CAUSES,
+    API_CAUSE,
+    EVENT_KEY,
+    OTHER_CAUSE,
+    QUOTA_CAUSE,
+    SESSION_ENDED,
+    SESSION_STARTED,
+    SHUTDOWN_CAUSE,
+    OrchestratorEvent,
+    Session,
+    SessionState,
+    fable_wall_event,
+    heartbeat_event,
+    reused_note,
+    session_event,
+)
 from .io import JsonValue, json_object, write_json
 from .manifest import record_session
-from .models import AgentStep, RunContext, SessionFacts, SessionRecord, StepError
+from .models import AgentStep, RunContext, SessionFacts, StepError
 from .tools import Tools
 
 
@@ -37,13 +68,16 @@ from .tools import Tools
 def strict_json(path: Path) -> dict[str, JsonValue]:
     """Read an object with unique keys and finite JSON numbers.
 
+    A literal such as ``1e309`` overflows to infinity in Python's float parser; it is refused
+    like ``NaN`` and ``Infinity``.
+
     Returns:
         The validated JSON object.
 
     """
 
     def unique(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
-        result = {}
+        result: dict[str, JsonValue] = {}
         for key, value in pairs:
             if key in result:
                 message = f"duplicate JSON key: {key}"
@@ -55,11 +89,18 @@ def strict_json(path: Path) -> dict[str, JsonValue]:
         message = f"non-finite JSON number: {value}"
         raise ValueError(message)
 
+    def finite(value: str) -> float:
+        number = float(value)
+        if not math.isfinite(number):
+            nonfinite(value)
+        return number
+
     return json_object(
         json.loads(
             path.read_text(encoding="utf-8"),
             object_pairs_hook=unique,
             parse_constant=nonfinite,
+            parse_float=finite,
         ),
     )
 
@@ -78,7 +119,7 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
     if isinstance(step.validate, Path):
         result = strict_json(step.output)
         schema = strict_json(step.validate)
-        jsonschema.validate(result, schema)
+        strictschema.validate(result, schema)
         return result
     if not step.output.read_text(encoding="utf-8").strip():
         message = f"empty document: {step.output}"
@@ -87,8 +128,24 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
     return None
 
 
+def _emit(emit: EventSink, event: OrchestratorEvent) -> None:
+    """Send one contract-built event through a sink as its name and facts."""
+    facts: dict[str, JsonValue] = json_object({key: value for key, value in event.items() if key != EVENT_KEY})
+    emit(event[EVENT_KEY], **facts)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def emit_session(emit: EventSink, row: Session, state: SessionState) -> None:
+    """Emit the session attribution persisted by the runner without starting a process.
+
+    The event is built with ``session_event``, so a row without a positive, non-boolean ``pid``
+    and ``pgid`` raises ``HandbackValidationError`` and nothing is emitted.
+    """
+    _emit(emit, session_event(row, state))
+
+
 def _check_stop() -> None:
-    stop_file = os.environ.get("ATW_STOP_FILE")
+    stop_file = os.environ.get(STOP_FILE_ENV)
     if stop_file and Path(stop_file).exists():
         message = "supervisor stopped new agent steps"
         raise PipelineStoppedError(message)
@@ -129,9 +186,10 @@ class AgentRunner:
         context.cleanup.append(self.processes.stop_all)
         self._lock = threading.Lock()
         self._version_checked = False
+        self.dispatch: DispatchArgumentsContract = dispatch_arguments()
         self.context.model_policy.setdefault(
             "fable_until",
-            float(check_type(context.args.get("fableUntil") or 0, int | float)),
+            float(check_type(context.args.get(self.dispatch.KEY_FABLE_UNTIL) or 0, int | float)),
         )
         self.context.model_policy.setdefault("fable_blocked", False)
 
@@ -155,7 +213,7 @@ class AgentRunner:
             match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", result.stdout)
             stage = "input"
             if result.returncode or match is None or tuple(map(int, match.groups())) < (2, 1, 281):
-                raise StepError(stage, "other", ("Claude Code 2.1.281 or later is required",))
+                raise StepError(stage, OTHER_CAUSE, ("Claude Code 2.1.281 or later is required",))
             self._version_checked = True
 
     def _inputs(self, step: AgentStep) -> list[tuple[str, Path]]:
@@ -192,18 +250,18 @@ class AgentRunner:
         except PipelineStoppedError, SessionSetupError:
             raise
         except StepError as exc:
-            if exc.cause in {"api", "quota"}:
+            if exc.cause in ACCOUNT_CAUSES:
                 self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
             raise
         except Exception as exc:
             evidence = self.context.work / f"{self.store.module.safe_key(step.stage)}.runner-error.txt"
             evidence.parent.mkdir(parents=True, exist_ok=True)
             evidence.write_text(traceback.format_exc(), encoding="utf-8")
-            raise StepError(step.stage, "other", (str(evidence),)) from exc
+            raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
 
     def _run_step(self, step: AgentStep, final: Path) -> Path:
         if self.store.reusable(step.inputs, (final,)):
-            self.emit("note", kind="reused", step=step.stage)
+            _emit(self.emit, reused_note(step=step.stage))
             return final
         self.store.invalidate((final,))
         try:
@@ -229,7 +287,7 @@ class AgentRunner:
         step: AgentStep,
         session_id: str,
         directory: Path,
-    ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], str, SessionRecord]:
+    ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], str, Session]:
         scratch = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
         env = check_type(
             child_environment(scratch),
@@ -243,7 +301,7 @@ class AgentRunner:
             and (self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time())
             else step.model
         )
-        row: SessionRecord = {
+        row: Session = {
             "sessionId": session_id,
             "cwd": str(directory),
             "phase": self.context.stage,
@@ -313,11 +371,7 @@ class AgentRunner:
                 with self._lock:
                     self.context.model_policy["fable_until"] = reset_of(info) or exhausted_reset(info) or 0
                     self.context.model_policy["fable_blocked"] = not bool(self.context.model_policy["fable_until"])
-                self.emit(
-                    "fable-wall",
-                    resetsAt=self.context.model_policy["fable_until"] or None,
-                    window=info.get("rateLimitType"),
-                )
+                self._emit_fable_wall(info)
                 model, resume = "opus", True
                 row["model"] = model
                 record_session(self.context, self.store, row)
@@ -334,7 +388,7 @@ class AgentRunner:
                 errors = step.output.with_name(step.output.name + ".errors.json")
                 write_json(errors, {"output": str(step.output), "errors": [str(exc)]})
                 if corrective or not step.corrective:
-                    raise StepError(step.stage, "other", (str(errors), str(stream))) from exc
+                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from exc
                 inputs.append(("validation errors", errors))
                 corrective = resume = True
                 continue
@@ -343,20 +397,20 @@ class AgentRunner:
             self._record_output(step, final)
             return final
 
+    def _emit_fable_wall(self, info: dict[str, JsonValue]) -> None:
+        """Report the Fable refusal with the reset now in the model policy and its rate-limit window."""
+        window: JsonValue = info.get("rateLimitType")
+        _emit(
+            self.emit,
+            fable_wall_event(
+                self.context.model_policy["fable_until"] or None,
+                window if isinstance(window, str) else None,
+            ),
+        )
+
     def _record_output(self, step: AgentStep, final: Path) -> None:
-        """Record validated output; selected flows treat missing receipts as warnings."""
-        try:
-            self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
-        except Exception as exc:
-            failure = failure_for(step.stage, exc, agent_started=True)
-            if step.receipt_required or failure["classification"] in {"setup", "pipeline-code-defect"}:
-                raise
-            self.emit(
-                "note",
-                kind="warning",
-                step=step.stage,
-                detail=f"artifact receipt: {type(exc).__name__}: {exc}",
-            )
+        """Record the validated output's receipt; a receipt failure is raised, never downgraded."""
+        self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
 
     def _session(
         self,
@@ -365,12 +419,9 @@ class AgentRunner:
         prompt: str,
         env: dict[str, str],
         stream: Path,
-        row: SessionRecord,
+        row: Session,
     ) -> SessionFacts:
         directory = Path(row["cwd"])
-        model = row["model"]
-        details = {key: row[key] for key in ("sessionId", "agent", "step", "effort", "cwd", "phase")}
-        details["model"] = model
         pid = None
         facts = None
         failure_cause = None
@@ -380,10 +431,10 @@ class AgentRunner:
             pid = value
             row.update({"pid": pid, "pgid": pid, "startedAt": time.time(), "endedAt": None})
             record_session(self.context, self.store, row)
-            self.emit("session", state="started", pid=pid, pgid=pid, **details)
+            emit_session(self.emit, row, SESSION_STARTED)
 
         try:
-            arch = self.context.args.get("archPath") or os.environ.get("ATW_ARCH_PATH")
+            arch = self.context.args.get(self.dispatch.KEY_ARCH_PATH) or os.environ.get(ARCH_PATH_ENV)
             guard = (
                 Section2Guard(
                     Path(check_type(arch, str)),
@@ -402,11 +453,14 @@ class AgentRunner:
                         env,
                         stream,
                         started,
-                        lambda: self.emit("heartbeat", live=[row["sessionId"]], at=time.time()),
+                        lambda: _emit(self.emit, heartbeat_event([row["sessionId"]], time.time())),
                     ),
                 )
 
             facts = check_type(raw_facts, SessionFacts, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        except InterruptedError, KeyboardInterrupt, PipelineStoppedError:
+            failure_cause = SHUTDOWN_CAUSE
+            raise
         except (OSError, ValueError) as exc:
             if pid is None:
                 raise SessionSetupError(str(exc)) from exc
@@ -419,31 +473,23 @@ class AgentRunner:
         finally:
             with _finalization("persist session completion"):
                 if pid is not None:
-                    cause = failure_cause or (self._cause(facts) if facts else "other")
+                    cause = failure_cause or (self._cause(facts) if facts else OTHER_CAUSE)
                     row.update({"endedAt": time.time(), "exit": facts["exit"] if facts else None, "cause": cause})
                     record_session(self.context, self.store, row)
-                    self.emit(
-                        "session",
-                        state="ended",
-                        pid=pid,
-                        pgid=pid,
-                        exit=facts["exit"] if facts else None,
-                        cause=cause,
-                        **details,
-                    )
+                    emit_session(self.emit, row, SESSION_ENDED)
 
     @staticmethod
     def _cause(facts: SessionFacts) -> str | None:
         if facts["rate"] is not None:
-            return None if is_refusal(facts["rate"]) else "quota"
+            return None if is_refusal(facts["rate"]) else QUOTA_CAUSE
         result = facts["result"]
         if result and (
             result.get("terminal_reason") == "api_error"
             or (result.get("is_error") and result.get("api_error_status") is not None)
         ):
-            return "api"
+            return API_CAUSE
         if facts["timeout"] or (result and result.get("is_error")):
-            return "other"
+            return OTHER_CAUSE
         if facts.get("cancelledCause"):
             return facts["cancelledCause"]
         if (
@@ -453,18 +499,18 @@ class AgentRunner:
             or result.get("is_error")
             or result.get("subtype") != "success"
         ):
-            return "other"
+            return OTHER_CAUSE
         return None
 
     @classmethod
     def _check_session(cls, step: AgentStep, facts: SessionFacts, stream: Path) -> None:
         cause = cls._cause(facts)
         if facts["rate"] is not None and cause is None:
-            cause = "other"  # A second Fable refusal on Opus is not another retry.
+            cause = OTHER_CAUSE  # A second Fable refusal on Opus is not another retry.
         if cause:
             reset = (
                 exhausted_reset(facts["rate"])
-                if cause == "quota" and facts["rate"] is not None
+                if cause == QUOTA_CAUSE and facts["rate"] is not None
                 else facts.get("cancelledResumeAt")
             )
             raise StepError(step.stage, cause, (str(stream),), resume_at=check_type(reset, float | None))

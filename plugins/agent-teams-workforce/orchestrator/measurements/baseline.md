@@ -2,7 +2,8 @@
 
 Recorded 2026-10-09 from existing records only. No pipeline run was started.
 
-Units: weighted = input + 5 x output + 1.25 x cacheCreate + 0.1 x cacheRead (the `runcost.py` weights). Not dollars.
+Units: weighted tokens, as `costsidecar.WEIGHTS` and `costsidecar.UNITS_NOTE` define them
+(`ops/sdlc-automation/costsidecar.py` in the control repository). Not dollars.
 
 ## State at measurement
 
@@ -80,9 +81,10 @@ python3 /Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-wo
 
 - `runcost.py summary` gives `byDay` for 2026-10-09: 29 runs, 438 sessions, 68,973,529 weighted.
 - `runcost.py profile 2026-10-09` lists the 29 runs but returns null weights and an empty `byRole`, so it is not the source of the role numbers.
-- The role numbers come from the `roles` object in each `<driver>/state/runs/*-prd-to-spec-20261009T*.cost.json`,
-  summed by `s00_baseline.py` (a read-only script: it sums `weighted` and `sessions` per role over those files, takes the
-  median of the per-run `weighted`, and reads the first assistant turn's `usage` from the agent transcripts under
-  `~/.claude-skillspoke/projects/<project>/<sessionId>/` for the startup tokens). The script is committed beside this file.
+- The role numbers come from the `roles` object of each run cost sidecar
+  (`<driver>/state/runs/*-prd-to-spec-20261009T*.cost.json`; `costsidecar.CostSidecar` defines the sidecar shape),
+  summed by `s00_baseline.py` (a read-only script: it sums each role's weighted tokens and session count over those files,
+  takes the median of the per-run weighted tokens, and reads the first assistant turn's usage from the agent transcripts under
+  `~/.claude-skillspoke/projects/<project>/<session id>/` for the startup tokens). The script is committed beside this file.
 - The survey-redo split compares each Epic's first run of the day (ordered by `startedAt`) with its later runs.
 - Targets to compare against after the owner's runs (`CONTEXT.md` section 5): zero command-runner sessions; restart cost near zero tokens.

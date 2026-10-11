@@ -1,269 +1,61 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One architecture writer's round result (roles proposer and diagram). Coverage rows, evidence references and business conflicts are defined once in architecture-common.schema.json#/$defs; a loader resolves these references against that file.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "files",
-    "claims",
-    "answers",
-    "businessConflicts",
-    "coverage",
-    "summary"
-  ],
+  "required": ["files", "claims", "answers", "businessConflicts", "coverage", "summary"],
   "properties": {
-    "repairAnswers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "repairId",
-          "response"
-        ],
-        "properties": {
-          "repairId": {
-            "type": "string"
-          },
-          "response": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "files": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "coverage": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "subject",
-          "scope",
-          "obligation",
-          "sources",
-          "views",
-          "status",
-          "action",
-          "reason",
-          "evidenceRefs",
-          "disposition",
-          "dispositionReason"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "obligation": {
-            "type": "string"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "views": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "Present and sufficient",
-              "Present but incomplete",
-              "Required and absent",
-              "Not yet applicable",
-              "Not assessed"
-            ]
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "create",
-              "update",
-              "unchanged",
-              "remove",
-              "not-applicable",
-              "unresolved"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "evidenceRefs": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "path",
-                "heading",
-                "repo",
-                "revision",
-                "url"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "heading": {
-                  "type": "string"
-                },
-                "repo": {
-                  "type": "string"
-                },
-                "revision": {
-                  "type": "string"
-                },
-                "url": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "disposition": {
-            "type": "string",
-            "enum": [
-              "required",
-              "unrelated-debt"
-            ]
-          },
-          "dispositionReason": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "claims": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "claimId",
-          "claim",
-          "file",
-          "citation",
-          "supersedes",
-          "evidenceRefs"
-        ],
-        "properties": {
-          "claimId": {
-            "type": "string"
-          },
-          "claim": {
-            "type": "string"
-          },
-          "file": {
-            "type": "string"
-          },
-          "citation": {
-            "type": "string"
-          },
-          "supersedes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "evidenceRefs": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "path",
-                "heading",
-                "repo",
-                "revision",
-                "url"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "heading": {
-                  "type": "string"
-                },
-                "repo": {
-                  "type": "string"
-                },
-                "revision": {
-                  "type": "string"
-                },
-                "url": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "answers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "findingId",
-          "response",
-          "evidence"
-        ],
-        "properties": {
-          "findingId": {
-            "type": "string"
-          },
-          "response": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "disputed"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
-      }
-    },
+    "files": {"type": "array", "items": {"type": "string"}},
+    "claims": {"type": "array", "items": {"$ref": "#/$defs/WriterClaim"}},
+    "answers": {"type": "array", "items": {"$ref": "#/$defs/FindingAnswer"}},
     "businessConflicts": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "requirements",
-          "why"
-        ],
-        "properties": {
-          "requirements": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "why": {
-            "type": "string"
-          }
-        }
+      "items": {"$ref": "architecture-common.schema.json#/$defs/BusinessConflict"}
+    },
+    "coverage": {"type": "array", "items": {"$ref": "architecture-common.schema.json#/$defs/CoverageRow"}},
+    "summary": {"type": "string"},
+    "repairAnswers": {"type": "array", "items": {"$ref": "#/$defs/RepairAnswer"}}
+  },
+  "$defs": {
+    "WriterClaim": {
+      "description": "One claim the writer makes about a file it wrote, with its citation and evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claimId", "claim", "file", "citation", "supersedes", "evidenceRefs"],
+      "properties": {
+        "claimId": {"type": "string"},
+        "claim": {"type": "string"},
+        "file": {"type": "string"},
+        "citation": {"type": "string"},
+        "supersedes": {"type": "array", "items": {"type": "string"}},
+        "evidenceRefs": {"type": "array", "items": {"$ref": "architecture-common.schema.json#/$defs/EvidenceRef"}}
       }
     },
-    "summary": {
-      "type": "string"
+    "AnswerResponse": {
+      "description": "How the writer answers one reviewer finding.",
+      "type": "string",
+      "enum": ["fixed", "disputed"]
+    },
+    "FindingAnswer": {
+      "description": "The writer's answer to one reviewer finding, by its id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "response", "evidence"],
+      "properties": {
+        "findingId": {"type": "string"},
+        "response": {"$ref": "#/$defs/AnswerResponse"},
+        "evidence": {"type": "string"}
+      }
+    },
+    "RepairAnswer": {
+      "description": "The writer's answer to one repair request, by its id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repairId", "response"],
+      "properties": {
+        "repairId": {"type": "string"},
+        "response": {"type": "string"}
+      }
     }
   }
 }

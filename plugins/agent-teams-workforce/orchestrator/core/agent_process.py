@@ -19,8 +19,13 @@ from typing import IO
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .driver_contracts import terminate_grace
-from .io import json_object
+from .handback_contract import OTHER_CAUSE
+from .io import JsonValue, json_object
 from .models import SessionFacts, StepError
+
+# isort: split
+# driver_contracts puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from driver_surface_types import RATE_LIMIT_EVENT_TYPE, RATE_LIMIT_INFO_KEY, REJECTED_STATUS
 
 
 def _duration(env: dict[str, str], key: str, default: str) -> float:
@@ -152,7 +157,7 @@ class SessionProcesses:
         self._lock = threading.Lock()
         self._live: dict[int, subprocess.Popen[bytes]] = {}
         self._stopped = False
-        self._stop_cause = "other"
+        self._stop_cause: str = OTHER_CAUSE
         self._stop_resume_at: float | None = None
         self._cancelled: set[int] = set()
 
@@ -183,7 +188,7 @@ class SessionProcesses:
         process.wait()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def stop_all(self, *, cause: str = "other", resume_at: float | None = None) -> None:
+    def stop_all(self, *, cause: str = OTHER_CAUSE, resume_at: float | None = None) -> None:
         """Stop all registered sessions and retain the first cancellation cause."""
         with self._lock:
             if not self._stopped:
@@ -269,7 +274,9 @@ class SessionProcesses:
         value = json_object(event)
         if value.get("type") == "result":
             facts["result"] = value
-        if value.get("type") == "rate_limit_event":
-            info = value.get("rate_limit_info")
-            if isinstance(info, dict) and info.get("status") == "rejected":
-                facts["rate"] = info
+        if value.get("type") == RATE_LIMIT_EVENT_TYPE:
+            info: object = value.get(RATE_LIMIT_INFO_KEY)
+            if isinstance(info, dict):
+                rate: dict[str, JsonValue] = json_object(info)
+                if rate.get("status") == REJECTED_STATUS:
+                    facts["rate"] = rate

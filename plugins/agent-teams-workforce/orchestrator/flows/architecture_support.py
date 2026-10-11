@@ -3,24 +3,63 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ParamSpec, TypeVar
+from typing import Final, ParamSpec, TypeVar
 
+# The survey, target and architecture-artifact contracts are generated into their skills, their one
+# definitions.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import archmatrix
 import archresume
 import archstate
+from architecture_artifacts import (
+    CONFORMANCE_SCHEMA_PATH,
+    REVIEW_SCHEMA_PATH,
+    VERDICT_UNSUPPORTED,
+    VERDICT_WRONG,
+    ConformanceResult,
+    ReviewResult,
+    parse_conformance_result,
+    parse_review_result,
+)
+from survey_contract import SURVEY_FILE, BaselineEntry, parse_survey
+from target_contract import (
+    ARCHITECTURE_WORK_FOLDER,
+    CLOSURE_FILE,
+    KEY_OK,
+    KEY_TARGET_DIR,
+    KEY_TARGET_HASHES,
+    TARGET_CHECK_FILE,
+    TARGET_REPORT_NAME,
+    TargetResult,
+    load_target_report,
+    validate_target_report,
+)
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner, strict_json
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.handback_contract import OTHER_CAUSE, PRD_TO_SPEC_PHASES, verdict_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
+from orchestrator.flows.elaboration_support import emit_event
 
-if TYPE_CHECKING:
-    from contracts import TargetResult
+(
+    ARCHITECTURE_PHASE,
+    REPO_SCOPING_PHASE,
+    TRD_AUTHORING_PHASE,
+    SPEC_AUTHORING_PHASE,
+    TASK_DECOMPOSITION_PHASE,
+    TASK_EDGES_PHASE,
+    FINISH_PHASE,
+) = PRD_TO_SPEC_PHASES
+_REJECTING_VERDICTS: Final[frozenset[str]] = frozenset({VERDICT_UNSUPPORTED, VERDICT_WRONG})
 
 PROPOSERS = (
     "integration-pattern-architect",
@@ -179,11 +218,12 @@ class Architecture:
         self.store: ArtifactStore = store
         self.runner: AgentRunner = runner
         self.tools: Tools = tools
-        self.work: Path = context.work / "architecture"
+        dispatch: DispatchArgumentsContract = dispatch_arguments()
+        self.work: Path = context.work / ARCHITECTURE_WORK_FOLDER
         self.work.mkdir(parents=True, exist_ok=True)
-        self.arch: Path = Path(check_type(context.args["archPath"], str)).expanduser().resolve()
-        prd: dict[str, JsonValue] = json_object(context.args["prd"])
-        self.prd: Path = Path(check_type(prd["path"], str)).expanduser().resolve()
+        self.arch: Path = Path(check_type(context.args[dispatch.KEY_ARCH_PATH], str)).expanduser().resolve()
+        prd: dict[str, JsonValue] = json_object(context.args[dispatch.KEY_PRD])
+        self.prd: Path = Path(check_type(prd[dispatch.PRD_PATH], str)).expanduser().resolve()
         self.matrix: Path = matrix
         self.matrix_data: dict[str, JsonValue] = read(matrix)
         self.draft: Path = self.work / "draft"
@@ -192,7 +232,7 @@ class Architecture:
         self.subject: str = str(context.args.get("architectureSubject") or "")
         self.forbid: list[str] = [
             context.bead,
-            str(prd.get("id", "")),
+            str(prd.get(dispatch.PRD_ID, "")),
             self.prd.stem,
         ]
         self.ran: set[Path] = set()
@@ -252,7 +292,7 @@ class Architecture:
             raise TypeError(argument_error)
         result = json_object(result)
         if result.get("error") or result.get("refused") or result.get("ok") is False:
-            raise self.tools.failure(stage, "other", result)
+            raise self.tools.failure(stage, OTHER_CAUSE, result)
         return result
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -298,19 +338,11 @@ class Architecture:
         if not isinstance(seed, bool) or not isinstance(dry_run, bool):
             message: str = "Target policies must be boolean"
             raise TypeError(message)
-        target_path: Path = self.work / "target.json"
+        target_path: Path = self.work / TARGET_REPORT_NAME
+        survey_path: Path = self.work / SURVEY_FILE
+        baseline: list[BaselineEntry] = parse_survey(read(survey_path))["baseline"] if survey_path.is_file() else []
         docs: list[dict[str, JsonValue]] = [
-            document
-            for entry in check_type(
-                read(self.work / "survey.json").get("baseline", []),
-                list[dict[str, JsonValue]],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-            for document in check_type(
-                entry.get("documents", []),
-                list[dict[str, JsonValue]],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
+            {"path": document["path"]} for entry in baseline for document in entry["documents"]
         ]
         docs += [{"path": str(path)} for path in self.draft.rglob("*.md")]
         elements: dict[str, list[str]] = self.call("target", archmatrix.catalog_elements, docs)
@@ -322,19 +354,15 @@ class Architecture:
             sort_keys=True,
         )
         inputs: tuple[str, ...] = (*self.base_inputs(), str(self.draft), binding)
-        previous: dict[str, JsonValue] = read(target_path)
         if not seed and not dry_run and self.store.reusable(inputs, (target_path,)):
-            hashes: dict[str, str] = check_type(
-                previous.get("targetHashes", {}),
-                dict[str, str],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
+            previous: TargetResult = load_target_report(target_path)
+            hashes: dict[str, str] = previous.get(KEY_TARGET_HASHES, {})
             if hashes and all(
                 Path(path).is_file() and self.store.module.sha256_file(Path(path)) == digest
                 for path, digest in hashes.items()
             ):
-                return previous
-        target_result: TargetResult = self.call(
+                return json_object(previous)
+        produced: object = self.call(
             "target",
             archstate.write_target,
             str(self.draft),
@@ -342,26 +370,27 @@ class Architecture:
                 arch_root=str(self.arch),
                 subject=self.subject,
                 forbid=self.forbid,
-                baseline=str(self.work / "survey.json"),
+                baseline=str(survey_path),
                 matrix_snapshot=self.matrix_data,
                 seed=seed,
                 dry_run=dry_run,
             ),
         )
-        result: dict[str, JsonValue] = json_object(target_result)
-        if not seed and not dry_run and result.get("targetDir") and result.get("ok") is True:
-            result["targetHashes"] = {
+        result: TargetResult = validate_target_report(json_object(produced), "archstate.write_target result")
+        target_dir: str | None = result.get(KEY_TARGET_DIR)
+        if not seed and not dry_run and target_dir and result[KEY_OK]:
+            result[KEY_TARGET_HASHES] = {
                 str(path): self.store.module.sha256_file(path)
-                for path in Path(check_type(result["targetDir"], str)).rglob("*")
-                if path.is_file() and path.name != "closure.json" and not path.name.endswith(".meta.json")
+                for path in Path(target_dir).rglob("*")
+                if path.is_file() and path.name != CLOSURE_FILE and not path.name.endswith(".meta.json")
             }
         write_json(
-            self.work / ("target-check.json" if dry_run or seed else "target.json"),
+            self.work / (TARGET_CHECK_FILE if dry_run or seed else TARGET_REPORT_NAME),
             result,
         )
-        if not seed and not dry_run and result.get("targetHashes"):
+        if not seed and not dry_run and result.get(KEY_TARGET_HASHES):
             self.store.accept("architecture:target", inputs, (target_path,))
-        return result
+        return json_object(result)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def agent(self, request: ArchitectureStep) -> dict[str, JsonValue]:
@@ -380,6 +409,7 @@ class Architecture:
         model: str
         effort: str
         model, effort = model_for(request.agent)
+        schema: Path = self.schemas / f"{request.schema}.schema.json"
         step: AgentStep = AgentStep(
             stage=request.stage or f"architecture:{request.output.stem}",
             agent=request.agent,
@@ -387,7 +417,7 @@ class Architecture:
             output=self.work / "candidates" / request.output.name,
             final=request.output,
             outcome=request.outcome,
-            validate=self.schemas / f"{request.schema}.schema.json",
+            validate=schema,
             model=model,
             effort=effort,
             add_dirs=(self.context.work, self.arch, self.prd.parent),
@@ -396,31 +426,20 @@ class Architecture:
             self.ran.add(request.output)
         self.runner.run(step)
         result: dict[str, JsonValue] = read(request.output)
+        verdict: str
         if request.agent == "architecture-decider":
-            verdict: JsonValue = result["verdict"]
-        elif request.schema in {"architecture-review", "conformance"}:
+            verdict = check_type(result["verdict"], str)
+        elif schema.name == REVIEW_SCHEMA_PATH.name:
+            review: ReviewResult = parse_review_result(request.output)
             verdict = (
-                "pass"
-                if result.get("conforms", True)
-                and not any(
-                    f.get("verdict") in {"unsupported", "wrong"}
-                    for f in check_type(
-                        result.get("findings", []),
-                        list[dict[str, JsonValue]],
-                        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-                    )
-                )
-                else "reject"
+                "reject" if any(finding["verdict"] in _REJECTING_VERDICTS for finding in review["findings"]) else "pass"
             )
+        elif schema.name == CONFORMANCE_SCHEMA_PATH.name:
+            conformance: ConformanceResult = parse_conformance_result(request.output)
+            verdict = "pass" if conformance["conforms"] else "reject"
         else:
             return result
-        self.runner.emit(
-            "verdict",
-            phase="architecture",
-            label=request.agent,
-            verdict=verdict,
-            detail=str(request.output),
-        )
+        emit_event(self.runner.emit, verdict_event(ARCHITECTURE_PHASE, request.agent, verdict, str(request.output)))
         return result
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -431,7 +450,7 @@ class Architecture:
             The validated result for this operation.
 
         """
-        return (str(self.prd), str(self.work / "survey.json"))
+        return (str(self.prd), str(self.work / SURVEY_FILE))
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def ledger_input(self, name: str, *, refresh: bool = False) -> Path:

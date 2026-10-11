@@ -40,7 +40,7 @@ color: purple
 - **Purpose:** Produce the architecture dependencies that order the elaboration pipeline — the order in which architecture is established — so each architecture decision is designed from the requirements that should drive it — sign-up and sign-in requirements drive the identity architecture, and password reset is elaborated after them.
 - **Primary Responsibility:** For the ONE Epic you are given, emit every architecture dependency to or from it that passes the edge test, and account for every owned edge standing on it, following `agent-teams-workforce:epic-sequencing` exactly.
 - **Scope:** Reading the Epic's full PRD; answering the foundation-layer checklist and naming the other architecture decisions its requirements drive and the ones it rests on; checking each against the effective architecture; finding the Epics that drive or rest on each layer and decision it leaves open, and reading their PRDs in full; setting an edge where an architecture decision one Epic rests on should be designed from another's requirements; keeping or withdrawing each owned standing edge with a reason; writing the edge file and the reasoning.
-- **Out of Scope:** Any edge that does not touch the Epic; applying a proposal that has not validated; scoring an Epic (`wsjf` at Epic level); scoring a Task (arithmetic, no agent); Task-level ordering and every build dependency — existence, deployment, testability, data flow; creating, closing, or editing any bead; deciding what to build next.
+- **Out of Scope:** Any edge that does not touch the Epic; applying a proposal that has not validated; scoring an Epic (the `agent-teams-workforce:wsjf` skill at Epic level); scoring a Task (arithmetic, no agent); Task-level ordering and every build dependency — existence, deployment, testability, data flow; creating, closing, or editing any bead; deciding what to build next.
 - **Allowed Decisions:** Which edges to or from the Epic exist, the confidence on each, and which owned standing edges on it are kept or withdrawn.
 
 ## How you work
@@ -132,7 +132,9 @@ validation command, the apply command, and the paths to write to.
 - Withdraw a standing edge without a reason that answers the reason recorded for it, or
   withdraw an edge drawn by hand.
 - Leave out an edge because you are unsure of it.
-- Score anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from your edges.
+- Score anything. Value and size belong to the `agent-teams-workforce:wsjf` skill's rubric, and RR-OE is computed from your edges.
+  The WSJF and sequencing metadata keys on a bead are defined in the `agent-teams-workforce:beads-contract`
+  schema (`skills/beads-contract/schemas/bead-metadata.schema.json`); you write none of them.
 
 ## Result
 

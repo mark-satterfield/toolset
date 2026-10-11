@@ -7,18 +7,40 @@ from typing import TYPE_CHECKING, TypedDict
 if TYPE_CHECKING:
     from orchestrator.core.tools import CommandResult
 
-import hashlib
 import json
+import sys
 from pathlib import Path
 
+# The survey and target report contracts are generated into the artifact-handoff skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import archbaseline
 import archrevision
+import jsonartifact
 import jsonschema
+import strictschema
+from contracts import (
+    SEAL_FORM_ADOPTED,
+    SEAL_FORM_V2,
+    FreshnessResult,
+    SealForm,
+    survey_seal_path,
+)
+from survey_contract import (
+    SURVEY_FILE,
+    Survey,
+    SurveyContractError,
+    parse_survey,
+    schema_sha256,
+)
+from target_contract import KEY_SUBJECT_REFUSALS, TargetResult, validate_target_report
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core.handback_contract import OTHER_CAUSE, reused_note
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.flows.architecture_resume import retire_generation
 from orchestrator.flows.architecture_support import Architecture, ArchitectureStep, read
+from orchestrator.flows.elaboration_support import emit_event
 
 
 class RepositorySummary(TypedDict):
@@ -30,14 +52,37 @@ class RepositorySummary(TypedDict):
     lifecycle: str
 
 
-SURVEY_FILES = (
-    "survey.json",
-    "survey.md",
-    "survey.json.meta.json",
-    "survey.md.meta.json",
-    "survey.json.baseline-inputs.json",
-    "survey.json.receipt",
+SURVEY_MARKDOWN: str = "survey.md"
+SURVEY_FILES: tuple[str, ...] = (
+    SURVEY_FILE,
+    SURVEY_MARKDOWN,
+    f"{SURVEY_FILE}.meta.json",
+    f"{SURVEY_MARKDOWN}.meta.json",
+    survey_seal_path(Path(SURVEY_FILE)).name,
+    jsonartifact.receipt_path(Path(SURVEY_FILE)).name,
 )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def saved_survey(path: Path) -> Survey | None:
+    """Read and validate a saved survey against its contract.
+
+    Returns:
+        The typed survey, or None when the file is absent or breaks the survey contract.
+
+    Raises:
+        TypeError: The path is not a Path.
+
+    """
+    if not isinstance(path, Path):
+        argument_error: str = "saved_survey: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    if not path.is_file():
+        return None
+    try:
+        return parse_survey(read(path))
+    except SurveyContractError:
+        return None
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -54,44 +99,37 @@ def current_survey(flow: Architecture, *, adopt: bool = True) -> bool:
     if not (isinstance(flow, Architecture)) or not (isinstance(adopt, bool)):
         argument_error: str = "current_survey: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    form: str | None
-    context_sha: str | None
-    survey: Path = flow.work / "survey.json"
-    seal: dict[str, JsonValue] = read(flow.work / "survey.json.baseline-inputs.json")
-    form = check_type(seal.get("form"), str | None)
-    schema: dict[str, JsonValue] = read(flow.schemas / "survey.schema.json")
-    schema_sha: str = hashlib.sha256(
-        json.dumps(schema, sort_keys=True, separators=(",", ":")).encode(),
-    ).hexdigest()
-    context_sha = schema_sha if form in {"v2", "adopted"} else check_type(seal.get("contextSha"), str | None)
-    freshness: dict[str, JsonValue] = json_object(
-        flow.call(
+    form: SealForm | None
+    context_sha: str
+    survey: Path = flow.work / SURVEY_FILE
+    binding: tuple[SealForm | None, str] | None = archbaseline.survey_binding(survey_seal_path(survey))
+    if binding is None:
+        return False
+    form, context_sha = binding
+    schema_sha: str = schema_sha256()
+    if form is not None:
+        context_sha = schema_sha
+    freshness: FreshnessResult = flow.call(
+        "survey",
+        archbaseline.survey_freshness,
+        survey,
+        archbaseline.FreshnessOptions(context_sha=context_sha, form=form),
+    )
+    if not freshness["current"]:
+        return False
+    saved: Survey | None = saved_survey(survey)
+    if saved is None or not saved["subject"]:
+        return False
+    if form is None and adopt:
+        adopted: FreshnessResult = flow.call(
             "survey",
             archbaseline.survey_freshness,
             survey,
-            archbaseline.FreshnessOptions(context_sha=context_sha, form=form),
-        ),
-    )
-    if not freshness["current"] or not read(survey).get("subject"):
-        return False
-    try:
-        jsonschema.validate(read(survey), schema)
-    except jsonschema.ValidationError:
-        return False
-    if not form and adopt:
-        flow.checked(
-            json_object(
-                flow.call(
-                    "survey",
-                    archbaseline.survey_freshness,
-                    survey,
-                    archbaseline.FreshnessOptions(seal=True, form="adopted", context_sha=schema_sha),
-                ),
-            ),
-            "survey",
+            archbaseline.FreshnessOptions(seal=True, form=SEAL_FORM_ADOPTED, context_sha=schema_sha),
         )
+        flow.checked(adopted, "survey")
         flow.adopted = True
-    flow.runner.emit("note", kind="reused", step="architecture:survey")
+    emit_event(flow.runner.emit, reused_note(step="architecture:survey"))
     return True
 
 
@@ -128,15 +166,15 @@ def prepare_survey(flow: Architecture) -> None:
     write_json(flow.context_path, context_facts)
     if not current_survey(flow):
         produce_survey(flow)
-    flow.subject = flow.subject or str(
-        read(flow.work / "survey.json").get("subject") or flow.prd.stem,
-    )
+    produced: Survey | None = saved_survey(flow.work / SURVEY_FILE)
+    flow.subject = flow.subject or (produced["subject"] if produced is not None else "") or flow.prd.stem
     if flow.subject == flow.prd.stem:
         flow.forbid.remove(flow.prd.stem)
-    result: dict[str, JsonValue] = flow.target(dry_run=True)
+    report: dict[str, JsonValue] = flow.target(dry_run=True)
+    result: TargetResult = validate_target_report(report, "architecture target dry run")
     stage: str = "survey"
-    if result.get("subjectRefusals"):
-        raise flow.tools.failure(stage, "other", result)
+    if result.get(KEY_SUBJECT_REFUSALS):
+        raise flow.tools.failure(stage, OTHER_CAUSE, report)
 
 
 def _survey_repositories(flow: Architecture) -> list[RepositorySummary]:
@@ -158,19 +196,27 @@ def survey_repositories(output: str) -> list[RepositorySummary]:
         Active repository summaries from the required ``repos`` collection.
 
     Raises:
-        TypeError: Output is not JSON text or a repository field has the wrong type.
-        ValueError: The inventory is missing its required repository collection.
+        TypeError: Output is not a JSON object text, or a repository row or field has the wrong type.
+        ValueError: The output is not JSON, or lacks its required repository collection.
 
     """
     if not isinstance(output, str):
         message: str = "Repository inventory output must be JSON text"
         raise TypeError(message)
-    value: dict[str, JsonValue] = json_object(json.loads(output))
+    decoded: object = json.loads(output)
+    if not isinstance(decoded, dict):
+        message = "Repository inventory output must be a JSON object"
+        raise TypeError(message)
+    value: dict[str, JsonValue] = json_object(decoded)
     if "repos" not in value:
         message = "Repository inventory requires the producer's repos collection"
         raise ValueError(message)
+    raw_rows: JsonValue = value["repos"]
+    if not isinstance(raw_rows, list) or any(not isinstance(row, dict) for row in raw_rows):
+        message = "Repository inventory repos must be an array of objects"
+        raise TypeError(message)
     rows: list[dict[str, JsonValue]] = check_type(
-        value["repos"],
+        raw_rows,
         list[dict[str, JsonValue]],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
@@ -219,11 +265,8 @@ def produce_survey(flow: Architecture, *, recheck: bool = False) -> None:
     inputs: tuple[str, ...] = (*map(str, refs), str(repo_file))
     if recheck:
         inputs += (str(flow.ledger_input("recheck")),)
-    survey: Path = flow.work / "survey.json"
-    schema: dict[str, JsonValue] = read(flow.schemas / "survey.schema.json")
-    context_sha: str = hashlib.sha256(
-        json.dumps(schema, sort_keys=True, separators=(",", ":")).encode(),
-    ).hexdigest()
+    survey: Path = flow.work / SURVEY_FILE
+    context_sha: str = schema_sha256()
     for _ in range(2):
         flow.agent(
             ArchitectureStep(
@@ -236,13 +279,11 @@ def produce_survey(flow: Architecture, *, recheck: bool = False) -> None:
                 else "Write the survey of this PRD's capabilities.",
             ),
         )
-        sealed: dict[str, JsonValue] = json_object(
-            flow.call(
-                "survey",
-                archbaseline.survey_freshness,
-                survey,
-                archbaseline.FreshnessOptions(inputs=list(refs), seal=True, form="v2", context_sha=context_sha),
-            ),
+        sealed: FreshnessResult = flow.call(
+            "survey",
+            archbaseline.survey_freshness,
+            survey,
+            archbaseline.FreshnessOptions(inputs=list(refs), seal=True, form=SEAL_FORM_V2, context_sha=context_sha),
         )
         if sealed["current"]:
             break
@@ -250,19 +291,15 @@ def produce_survey(flow: Architecture, *, recheck: bool = False) -> None:
         write_json(error_path, sealed)
         inputs += (str(error_path),)
     else:
-        raise flow.tools.failure(stage, "other", sealed)
-    markdown: Path = flow.work / "survey.md"
-    result: dict[str, JsonValue] = read(survey)
+        raise flow.tools.failure(stage, OTHER_CAUSE, json_object(sealed))
+    markdown: Path = flow.work / SURVEY_MARKDOWN
+    try:
+        result: Survey = parse_survey(read(survey))
+    except SurveyContractError as exc:
+        raise flow.tools.failure(stage, OTHER_CAUSE, {"error": str(exc)}) from exc
     markdown.write_text(
-        f"# {result['subject']}\n\n{result.get('summary', '')}\n\n"
-        + "\n".join(
-            f"- {row['name']}"
-            for row in check_type(
-                result.get("capabilities", []),
-                list[dict[str, JsonValue]],
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-        )
+        f"# {result['subject']}\n\n{result['summary']}\n\n"
+        + "\n".join(f"- {capability['name']}" for capability in result["capabilities"])
         + "\n",
         encoding="utf-8",
     )
@@ -311,7 +348,7 @@ def adopt_result(
         "coordinator-plan" if producer == "architecture-decision-workflow-coordinator" else "architecture-writer"
     )
     try:
-        jsonschema.validate(read(path), read(flow.schemas / f"{schema}.schema.json"))
+        strictschema.validate(read(path), read(flow.schemas / f"{schema}.schema.json"))
     except jsonschema.ValidationError:
         return
     flow.store.accept(

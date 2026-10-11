@@ -70,7 +70,8 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
     `ssbd-hdqid` and `ssbd-guuuz`: all three `current: true`, no errors, no warnings.
   - `bd show ssbd-zzzzzz-nonexistent --json`: exit 1; the JSON error object carries only `error`,
     `hint`, `schema_version`, no error code.
-  - `bd show ssbd-mb689 ssbd-hdqid ssbd-guuuz --json`: all three `elaboration_state=in_progress`.
+  - `bd show ssbd-mb689 ssbd-hdqid ssbd-guuuz --json`: all three carry the elaboration state
+    `bead_metadata.ELABORATION_IN_PROGRESS` (beads-contract schema).
   - `ls <arch>/target/`: only `README.md` (no saved target folder exists).
   - The three Epics' `architecture/candidates/` folders: every complete candidate has the same
     bytes as its final file in `plans/` or `rounds/`; the others are `.checkpoint` and
@@ -82,11 +83,8 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
 
 **Decision.** The orchestrator is a Python package in the plugin, `<orch>/`, with `run.py` as its
 entry point. `supervisor.py` stays the driver: it selects work and starts the orchestrator as a
-child process per dispatch:
-
-```
-<python> <installPath>/orchestrator/run.py prd-to-spec --bead <epic-id> --args <args.json> --handback <handback.json>
-```
+child process per dispatch, with the command line `ops/sdlc-automation/dispatchargs.command` builds
+(the one place that defines the `run.py` options and the scratch file names).
 
 `<python>` is the driver's own interpreter (`sys.executable`), so the orchestrator imports the same
 installed `jsonschema` and `yaml` the portfolio scripts use; no `uv`, no new dependency.
@@ -299,8 +297,10 @@ execution id. Run facts that are not about one file (session ids, model, effort,
 of a failed step) go in the run record `<work>/run.json` (section 4.4), not beside the files.
 
 **This overturns the PLAN recommendation** (a `<flow>/<step>/step.json` layout). Evidence:
-- `beadwrite.write_story` reads `artifact_<key>_sha256` from each spec file's `.meta.json` into the
-  Story bead's metadata.
+- `beadwrite.write_story` reads each spec file's sha256 artifact key
+  (`bead_metadata.artifact_key(kind, "sha256")`, defined in
+  `skills/beads-contract/schemas/bead-metadata.schema.json`) from its `.meta.json` into the Story
+  bead's metadata.
 - The driver's `artifactio.plan` (read by `observe.py` for the dashboard's accepted and stale steps)
   reads `STEPS.md` and the `.meta.json` files.
 - The three saved surveys (CONTEXT 7.13) carry `.meta.json` records in this format, under
@@ -380,7 +380,9 @@ additions and settlements:
 - The driver keeps **no** reuse ruling of its own for elaboration. It stops sending `resume`, stops
   calling `artifactio.set_aside_stale` before an elaboration dispatch, and stops calling
   `artifactio.dispatch_resume` (section 9). It keeps `artifactio.retire_once` (the owner's
-  start-over ruling when an Epic is set `ready`) and `artifactio.plan` as the dashboard's reader.
+  start-over ruling when an Epic's `bead_metadata.KEY_ELABORATION_STATE` is set to
+  `bead_metadata.ELABORATION_READY`, both defined in
+  `skills/beads-contract/schemas/bead-metadata.schema.json`) and `artifactio.plan` as the dashboard's reader.
   Reason: two reuse rulings over the same files disagree; each step now proves its own reuse from
   its recorded inputs, before any session starts.
 
@@ -517,18 +519,24 @@ The driver captures stdout to the run's `.out` file and translates each event in
 callbacks, so `ledger.EVENT_TYPES`, `observe.py`, `outcomes.py`, `runview.py` and the dashboard keep
 their event types.
 
-| Orchestrator event | Fields | The driver calls |
-|---|---|---|
-| `phase` | `phase` (a name in `dispatch.COMPOSITE_PHASES["prd-to-spec"]`), `step`, `repository?` | `on_phase(bead, "prd-to-spec", "▸ " + phase, step=..., repository=...)` |
-| `verdict` | `phase`, `label`, `verdict`, `detail` | `on_verdict(...)` with the same fields |
-| `session` | `state` (`started`/`ended`), `sessionId`, `pid`, `pgid`, `agent`, `step`, `model`, `effort`, and on `ended` `exit`, `cause` | `on_phase(bead, "prd-to-spec", "agent <agent> <state>", **fields)`; the driver also registers `pgid` with `childproc` and `sessionregistry` on `started` and forgets it on `ended` |
-| `heartbeat` | `live` (the session ids streaming), `at` | nothing is written to the ledger; it counts as progress for the dispatch's idle timeout (section 9) |
-| `note` | `kind` (`rounds-warning`, `reused`, `stale`, `task-rerun`), plus its facts | `on_phase(bead, "prd-to-spec", "note " + kind, **fields)` |
-| `fable-wall` | `resetsAt`, `window` | `fablewall.record(resetsAt, window)` |
+The event names, their fields, the session states and the note kinds are defined in one place,
+`orchestrator/core/handback_contract.py` (`EventName`, `OrchestratorEvent` and its member
+TypedDicts, `validate_event`, and the event builders). The driver loads that module through
+`ops/sdlc-automation/handbackcontract.py`, validates every line with `validate_event`, and branches on
+the `Wire` event values. How the driver routes each event:
 
-The orchestrator writes a `heartbeat` every `ATW_HEARTBEAT` seconds (default 300) while any of its
-sessions has written a stream line since the last heartbeat. The `▸` prefix keeps
-`outcomes._phase_name` counting phases as it does today; session and note texts carry no `▸`, so
+- a phase event is announced through `on_phase` with the composite contract's progress prefix;
+- a verdict event goes to `on_verdict` with its fields;
+- a session event is announced through `on_phase`, and the driver registers the session's process
+  group with `childproc` and `sessionregistry` when it starts and forgets it when it ends;
+- a heartbeat writes nothing to the ledger; it counts as progress for the dispatch's idle timeout
+  (section 9);
+- a note is announced through `on_phase` with its kind;
+- a fable-wall event is recorded with `fablewall.record`.
+
+The orchestrator writes a heartbeat every `ATW_HEARTBEAT` seconds (default 300) while any of its
+sessions has written a stream line since the last heartbeat. The progress prefix keeps
+`outcomes._phase_name` counting phases as it does today; session and note texts carry no prefix, so
 they are recorded but never counted as phases. No ledger event type is added.
 
 ### 4.2 Phase names (QUESTIONS 23)
@@ -546,9 +554,9 @@ Stories are named. The orchestrator emits exactly these phase names. Readers cha
   `decision.json`.
 - The per-phase record stays `state/phases/<run stem>.json` (`phaserec.py`), fed by the phase
   events as today.
-- The architecture `rounds-warning` note: `{"event": "note", "kind": "rounds-warning",
-  "phase": "architecture", "rounds": <n>, "drivers": [{"round": <r>, "findings": [<finding
-  ids>], "file": <rounds file path>}]}`, also written into `run.json` and the architecture result.
+- The architecture rounds-warning note (its shape is `handback_contract.RoundsWarningNote`, built
+  by `handback_contract.rounds_warning_note`) is also written into the run record and the
+  architecture result.
 
 ### 4.3 Verdict events (QUESTIONS 24)
 
@@ -560,19 +568,14 @@ counts in `detail`), and per conformance result (`conforms`). Reason: the dashbo
 
 ### 4.4 Handback and run record (QUESTIONS 22)
 
-**Decision.** The handback is a file. `run.py` writes `--handback <file>` atomically before it
-exits, as one JSON object with the key names the workflow result used, so the driver parses it with
-`handbackio.handback_from_result` unchanged:
+**Decision.** The handback is a file. `run.py` writes it atomically before it exits. Its keys, value
+types and value vocabularies (failure classification, failure cause, stop stages, phase statuses,
+refusal codes) are defined in one place, `orchestrator/core/handback_contract.py`
+(`HandbackDocument`, `validate`, `Wire`); the driver loads it through
+`ops/sdlc-automation/handbackcontract.py`.
 
-`{ok, stage, beadId, headline, detailPath, beadsEmitted, lifecycle{owner, start, finish, release,
-done}, refusal?, requiredHumanActions?, artifacts{dir, epicId, phases, filing}, failure?{stage,
-cause, repositories[], resumeAt?}, hierarchy, repoSpan, targetRemoval, storyEdges?,
-crossStoryDependencies, closureEdges, createdRepos?, sessions[{sessionId, agent, step, phase}]}`.
-
-`detailPath` is `<work>/run.json`, the run record (`prd-to-spec.md` step 17): composite, Epic, PRD
-id, outcome, each step with `reused | ran | failed`, its cause and evidence paths, every session
-(`sessionId`, `agent`, `step`, `model`, `effort`, `cwd`, `startedAt`, `endedAt`, `exit`,
-`cause`), and the notes of section 4.1.
+`detailPath` is the run record, whose shape is `orchestrator/core/manifest.py` `RunManifest`; each
+of its sessions is a `handback_contract.Session`. It also carries the notes of section 4.1.
 
 `run.py` exits 0 whenever it wrote a handback, whatever `ok` says; a non-zero exit means it died
 before writing one, and the driver makes its usual environment failure (`no-handback`). Section 6.7
@@ -582,13 +585,10 @@ Keys dropped from the handback: `dispatchFailures` (folded into `failure`), `deg
 sets `failure_origin` from `failure.cause` (`api` and `quota` are `environment`, every other cause
 is `work`) instead of `handbackio.step_defect_origin`, which reads text (section 6.5).
 
-Dispatch arguments (`extra_args`) the orchestrator reads: `prd`, `epic`, `owner`, `reclaim`,
-`beadsRepoPath`, `archPath`, `trdPath`, `designSystem`, `skillspokeRoot`, `executionId`, and a new
-`fableUntil` (section 5.5). Dropped: `resume` (section 3.3), `pluginRoot` (the orchestrator runs
-from its install), `relayExecutionId`, `relayRequestDir`, `relayCaptureScript` (no relay),
-`fableAgentTypes`, `fableRecovery` (section 5.5), `artifactScript` (the orchestrator reads
-`$ATW_ARTIFACT_SCRIPT`, which `headlessenv.child_env` already sets), `accessPatterns`, `spec`
-(section 11.5).
+The dispatch arguments the orchestrator reads, the scratch file names and the `run.py` command line
+are defined in one place, `ops/sdlc-automation/dispatchargs.py` (`DispatchArguments`,
+`build_arguments`, `parse_arguments`, `command`); the plugin reads them through
+`orchestrator/core/driver_contracts.py`.
 
 ### 4.5 Cost attribution and the run unit (QUESTIONS 21)
 
@@ -601,10 +601,10 @@ top-level Claude Code session, so the record lists them:
 - S03d changes `runcost.py`: `measure_run` takes the session list from the handback
   (`dispatch.Handback` gains `sessions: tuple[dict, ...]`), measures each with
   `measure_session(sessionId)` (which already finds a transcript in any project folder through
-  `session_project`), sums the four components, and builds `phases` and `roles` from the session
-  list's `phase` and `agent` instead of workflow `.meta.json` files. `sessionId` on the record
-  becomes the first session's id plus `sessionIds` with all of them; `runcost._scan` keys
-  deduplication by the run log path for records that carry `sessionIds`.
+  `session_project`), sums the four components, and builds the per-phase and per-role totals from
+  the session list instead of workflow `.meta.json` files. The record's shape and its
+  deduplication key are defined in one place, `ops/sdlc-automation/costsidecar.py` (`CostSidecar`,
+  `record_key`).
 - `KNOWN_COMPOSITES` is unchanged.
 
 **What proves a run is running (CONTEXT 7.12).** The Epic shows "running" only while the driver's
@@ -849,7 +849,7 @@ above. The owner-run portfolio commands use the same function and get the same b
 - **`contention` and `bd-timeout`**: retried at the call site, the same call again, with backoff
   starting at 30 s and doubling, with at most three attempts. Exhaustion records an item failure. Each
   attempt re-reads what it needs, so an applied write is updated, never created twice (the writers
-  are keyed by `elab_key`).
+  are keyed by the elaboration key, `bead_metadata.KEY_ELAB_KEY` in the beads-contract schema).
 - **`api` and `quota`**: not retried in the orchestrator. Every live session of the run is stopped,
   completed steps keep their records, and the run returns `ok:false` with `failure.cause` (and
   `failure.resumeAt` for `quota`). The driver's breaker pauses and redispatches; the rerun reuses
@@ -987,7 +987,9 @@ the handback and the driver acts on them exactly as today (`driver-contract.md` 
 - the flow returns `ok:false`, `stage: "requires-human-action"`, and `requiredHumanActions` (a list
   of strings, each naming the fact and what the owner does);
 - the driver's `lane._person_needed` holds the Epic (`elabstate.hold_for_person`:
-  `elaboration_state=""`, `elaboration_state_cause=awaiting-human-action`), and its `human_log`
+  elaboration state `bead_metadata.ELABORATION_AUTHORING`, cause
+  `bead_metadata.CAUSE_AWAITING_HUMAN`, both from
+  `skills/beads-contract/schemas/bead-metadata.schema.json`), and its `human_log`
   writes the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`) with the restore command.
 
 Only owner facts become `requiredHumanActions` (CONTEXT 7.9): the architecture decider's
@@ -1140,7 +1142,7 @@ that is closed or never merges would leave a false record (the verifier's findin
 
 | State | Written when | By | Fields |
 |---|---|---|---|
-| `built` | the Story's pull request **has merged** into the repository's `main`, observed by the step that waits for the merge (the Story deploy's `merge-wait` phase, `dispatch.COMPOSITE_PHASES["story-deploy"]`), and the merge commit is reachable from `origin/main` (`git merge-base --is-ancestor <commit> origin/main` exits 0) | that step (S11) | for each element of the delta items the Story's Tasks cite (`requirement_ids` joined to the Epic's `<work>/delta-items.json`) and whose Task's whole suite passed: `state: built`, `commit` = the merge commit, `task`, `story`, `pr`, `repository` = the Story's repository with `repositorySource: build` |
+| `built` | the Story's pull request **has merged** into the repository's `main`, observed by the step that waits for the merge (the Story deploy's `merge-wait` phase, `dispatch.COMPOSITE_PHASES["story-deploy"]`), and the merge commit is reachable from `origin/main` (`git merge-base --is-ancestor <commit> origin/main` exits 0) | that step (S11) | for each element of the delta items the Story's Tasks cite (the `bead_metadata.KEY_REQUIREMENT_IDS` key of `skills/beads-contract/schemas/bead-metadata.schema.json` joined to the Epic's `<work>/delta-items.json`) and whose Task's whole suite passed: `state: built`, `commit` = the merge commit, `task`, `story`, `pr`, `repository` = the Story's repository with `repositorySource: build` |
 | `deployed` | in the same write, when the Story's deploy to AWS dev was verified (`built-version` ran on a verified deploy) **and** the tree of the commit that was deployed equals the tree of the merge commit (`git rev-parse <deployedCommit>^{tree}` and `<commit>^{tree}` are equal) | the same step (S11) | `state: deployed`, `deployedCommit` = the deployed commit, plus the `built` fields |
 
 When the trees differ (`main` moved between the deploy and the merge), the row is written `built`:
@@ -1315,8 +1317,9 @@ Either returns `requiredHumanActions` and stops repo scoping at stage `repo-crea
   into `write-all-task-edges`.** The acceptance step must produce the exact errors for the one
   corrective retry; `write-all-task-edges` keeps the key validation it already has as the writer.
 - **Which metadata marks a Task as started (QUESTIONS 43).** A Task is started when its status is
-  `in_progress` or `closed`, or any metadata key starting `build_` or `cds_audit_` is present and
-  non-empty (`build_state`, `build_stop_stage`, `cds_audit_*`). Reason: only the build lane writes
+  `in_progress` or `closed`, or any key of the `BUILD_LIFECYCLE_KEYS` or `CDS_AUDIT_KEYS` group of
+  `skills/beads-contract/schemas/bead-metadata.schema.json` (imported from the generated
+  `bead_metadata.py`) is present and non-empty. Reason: only the build lane writes
   those keys, so their presence proves the lane worked on the Task and its Story worktree may hold
   that work.
 - **`blocked` and `deferred` (QUESTIONS 44).** `blocked` with no build key is unstarted (deleted and

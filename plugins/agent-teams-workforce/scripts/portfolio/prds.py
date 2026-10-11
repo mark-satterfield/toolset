@@ -9,17 +9,18 @@ section headings, so a search can be narrowed before any PRD is opened.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
+
+import portfolio_path  # ruff: ignore[unused-import] - puts skills/beads-contract/scripts on sys.path for bead_metadata.
+from bead_metadata import KEY_ELABORATION_STATE
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from beadgraph import Bead, Graph
 
-#: Metadata key set on an Epic by the elaboration pipeline, shown in the index.
-ELAB_KEY = "elaboration_state"
-
 #: The most headings the index lists for one PRD.
-MAX_HEADINGS = 40
+MAX_HEADINGS: Final[int] = 40
 
 
 def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
@@ -31,9 +32,10 @@ def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
 
     Returns:
         Epic id -> the file holding its PRD.
+
     """
     prd_dir.mkdir(parents=True, exist_ok=True)
-    paths = {}
+    paths: dict[str, str] = {}
     for epic in epics:
         path = prd_dir / f"{epic.id}.md"
         path.write_text(f"# {epic.title}\n\n{epic.description}\n", encoding="utf-8")
@@ -42,7 +44,7 @@ def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
 
 
 def headings(description: str) -> list[str]:
-    """The section headings of a PRD.
+    """Return the section headings of a PRD.
 
     Args:
         description: The PRD text.
@@ -55,9 +57,10 @@ def headings(description: str) -> list[str]:
         The text of every line that starts with `#` outside a fenced code block, with the
         `#` characters and the surrounding space stripped, empty ones left out. A `#` line
         inside a fence is a comment in the code, not a section.
+
     """
-    found = []
-    fenced = False
+    found: list[str] = []
+    fenced: bool = False
     for line in description.splitlines():
         if line.lstrip().startswith(("```", "~~~")):
             fenced = not fenced
@@ -71,7 +74,10 @@ def headings(description: str) -> list[str]:
 
 
 def write_index(
-    graph: Graph, epics: list[Bead], paths: dict[str, str], path: Path
+    graph: Graph,
+    epics: list[Bead],
+    paths: dict[str, str],
+    path: Path,
 ) -> None:
     """Write the index of the open Epics' PRDs.
 
@@ -86,18 +92,18 @@ def write_index(
         epics: The Epics to list, in the order to list them.
         paths: Epic id -> the file holding its PRD, from `write_prds`.
         path: The index file to write.
+
     """
     lines = ["# Open Epics"]
     for epic in epics:
         bead = graph.beads.get(epic.id, epic)
-        state = bead.metadata.get(ELAB_KEY) or "unset"
+        state = bead.metadata.get(KEY_ELABORATION_STATE) or "unset"
         found = headings(bead.description)
         sections = "; ".join(found[:MAX_HEADINGS])
         if len(found) > MAX_HEADINGS:
             sections += f"; +{len(found) - MAX_HEADINGS} more headings not listed"
         lines.append(
-            f"- {bead.id} | {bead.title} | elaboration: {state} | "
-            f"PRD: {paths.get(bead.id, '')} | sections: {sections}"
+            f"- {bead.id} | {bead.title} | elaboration: {state} | PRD: {paths.get(bead.id, '')} | sections: {sections}",
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

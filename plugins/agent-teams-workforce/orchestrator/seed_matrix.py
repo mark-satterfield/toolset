@@ -12,10 +12,13 @@ from typing import Literal
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts/portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import archmatrix
+from driver_surface_types import CONTROL_REPO_ENV, DRIVER_DIR_PARTS
 
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import write_seed
 from orchestrator.core.tools import CommandResult, Tools, retry_call
@@ -100,7 +103,7 @@ def add_row(rows: dict[str, dict[str, JsonValue]], item: dict[str, JsonValue], s
         ValueError: Required inventory identity or evidence is missing.
 
     """
-    field: str | str | str | str | str | str | str | str
+    field: str
     if not isinstance(rows, dict) or not isinstance(item, dict) or not isinstance(spec, dict):
         argument_error: str = "add_row inputs violate the declared contract"
         raise TypeError(argument_error)
@@ -215,7 +218,7 @@ def _inventory_rows(sources: dict[str, JsonValue]) -> dict[str, dict[str, JsonVa
 def _index_rows(rows: dict[str, dict[str, JsonValue]]) -> dict[str, list[str]]:
     key: str
     item: dict[str, JsonValue]
-    name: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
+    name: JsonValue
     aliases: dict[str, list[str]] = {}
     for key, item in rows.items():
         if item["kind"] in {"repository", "stack"}:
@@ -276,7 +279,8 @@ def seed(sources: dict[str, JsonValue], previous: dict[str, JsonValue]) -> dict[
     if not isinstance(sources, dict) or not isinstance(previous, dict):
         argument_error: str = "seed inputs violate the declared contract"
         raise TypeError(argument_error)
-    if sources.get("version") != 1 or not isinstance(sources.get("repositories"), list):
+    version: JsonValue = sources.get("version")
+    if type(version) is not int or version != 1 or not isinstance(sources.get("repositories"), list):
         message: str = "expected a version 1 expected-inventory source manifest"
         raise ValueError(message)
     rows: dict[str, dict[str, JsonValue]] = _inventory_rows(sources)
@@ -311,7 +315,7 @@ def publish(path: Path, root: Path) -> None:
         argument_error: str = "publish inputs violate the declared contract"
         raise TypeError(argument_error)
     relative: str = str(path.relative_to(root))
-    tools: Tools = Tools(root / "ops/sdlc-automation/state/matrix-evidence")
+    tools: Tools = Tools(root.joinpath(*DRIVER_DIR_PARTS, "state", "matrix-evidence"))
     tools.git(root, ["add", "--", relative], stage="matrix")
     changed: CommandResult = tools.command(
         ["git", "diff", "--cached", "--quiet", "--", relative],
@@ -335,7 +339,7 @@ def publish(path: Path, root: Path) -> None:
         )
     elif changed.exit:
         stage: str = "matrix"
-        raise tools.failure(stage, "other", changed.to_json())
+        raise tools.failure(stage, OTHER_CAUSE, changed.to_json())
     tools.git(root, ["push", "origin", "main"], stage="matrix")
 
 
@@ -346,8 +350,8 @@ def main() -> None:
     parser.add_argument(
         "--control",
         type=Path,
-        default=os.environ.get("ATW_CONTROL_REPO"),
-        required=not os.environ.get("ATW_CONTROL_REPO"),
+        default=os.environ.get(CONTROL_REPO_ENV),
+        required=not os.environ.get(CONTROL_REPO_ENV),
     )
     parser.add_argument(
         "--source",
@@ -369,9 +373,10 @@ def main() -> None:
     selected_source: Path | None = check_type(args.source, Path | None)
     selected_output: Path | None = check_type(args.output, Path | None)
     no_publish: bool = check_type(args.no_publish, bool)
-    source: Path = selected_source or control / "ops/sdlc-automation/expected-inventory.json"
+    driver: Path = control.joinpath(*DRIVER_DIR_PARTS)
+    source: Path = selected_source or driver / "expected-inventory.json"
     sources: dict[str, JsonValue] = json_object(json.loads(source.read_text(encoding="utf-8")))
-    output: Path = selected_output or control / "ops/sdlc-automation/element-matrix.json"
+    output: Path = selected_output or driver / "element-matrix.json"
     result: dict[str, JsonValue] = retry_call(
         lambda: write_seed(
             output,

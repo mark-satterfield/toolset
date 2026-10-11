@@ -10,6 +10,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "pipeline-contracts" / "scripts"))
+
+from driver_surface_types import CONTROL_REPO_ENV, DRIVER_DIR_PARTS
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 PROBE: str = """import headlessenv
@@ -17,6 +20,8 @@ import fablewall
 import breaker
 import childproc
 import artifactio
+import handbackcontract
+from orchestrator.core import handback_contract
 from orchestrator.core.driver_contracts import HeadlessEnvironment, FableWall, Breaker, ChildProcess
 from orchestrator.core.artifact_contract import ArtifactProducer
 
@@ -25,6 +30,7 @@ wall: FableWall = fablewall
 quota: Breaker = breaker
 process: ChildProcess = childproc
 artifacts: ArtifactProducer = artifactio.ArtifactProducer()
+handback_rules: handbackcontract.HandbackContract = handback_contract
 """
 DEPENDENCIES: tuple[str, ...] = (
     "typeguard",
@@ -39,7 +45,7 @@ CHECK_TIMEOUT: int = 300
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def check_contracts(control_root: Path, plugin_root: Path) -> int:
-    """Type-check real producer assignments without importing or running them.
+    """Type-check the real driver producers against the plugin's contract Protocols.
 
     Returns:
         The static checker's exit status.
@@ -54,13 +60,18 @@ def check_contracts(control_root: Path, plugin_root: Path) -> int:
         raise TypeError(message)
     control_root = control_root.resolve()
     plugin_root = plugin_root.resolve()
-    drivers: Path = control_root / "ops" / "sdlc-automation"
+    drivers: Path = control_root.joinpath(*DRIVER_DIR_PARTS)
     required: list[Path] = [
-        drivers / f"{name}.py" for name in ("headlessenv", "fablewall", "breaker", "childproc", "artifactio")
+        drivers / f"{name}.py"
+        for name in ("headlessenv", "fablewall", "breaker", "childproc", "artifactio", "handbackcontract")
     ]
     required.extend(
-        plugin_root / "orchestrator" / "core" / name for name in ("driver_contracts.py", "artifact_contract.py")
+        plugin_root / "orchestrator" / "core" / name
+        for name in ("driver_contracts.py", "artifact_contract.py", "handback_contract.py")
     )
+    beads_scripts: Path = plugin_root / "skills" / "beads-contract" / "scripts"
+    pipeline_scripts: Path = plugin_root / "skills" / "pipeline-contracts" / "scripts"
+    required.extend((beads_scripts / "bead_metadata.py", pipeline_scripts / "driver_surface_types.py"))
     path: Path
     for path in required:
         if not path.is_file():
@@ -90,8 +101,11 @@ def check_contracts(control_root: Path, plugin_root: Path) -> int:
             str(drivers),
             str(plugin_root),
             str(plugin_root / "scripts" / "portfolio"),
-            str(plugin_root / "skills" / "beads-contract" / "scripts"),
+            str(beads_scripts),
+            str(plugin_root / "skills" / "artifact-handoff"),
+            str(plugin_root / "skills" / "artifact-handoff" / "scripts"),
             str(plugin_root / "skills" / "wsjf" / "scripts"),
+            str(pipeline_scripts),
         ),
     )
     temporary: str
@@ -115,14 +129,14 @@ def main() -> int:
     parser.add_argument(
         "--control-root",
         type=Path,
-        default=os.environ.get("ATW_CONTROL_REPO") or os.environ.get("SKILLSPOKE_CC"),
-        help="Control checkout (defaults to ATW_CONTROL_REPO, then SKILLSPOKE_CC)",
+        default=os.environ.get(CONTROL_REPO_ENV) or os.environ.get("SKILLSPOKE_CC"),
+        help=f"Control checkout (defaults to {CONTROL_REPO_ENV}, then SKILLSPOKE_CC)",
     )
     parser.add_argument("--plugin-root", type=Path, default=Path(__file__).resolve().parents[1])
     args: argparse.Namespace = parser.parse_args()
     if args.control_root is None:
         parser.error(
-            "set ATW_CONTROL_REPO or SKILLSPOKE_CC, or pass --control-root for the real control checkout",
+            f"set {CONTROL_REPO_ENV} or SKILLSPOKE_CC, or pass --control-root for the real control checkout",
         )
     try:
         return check_contracts(check_type(args.control_root, Path), check_type(args.plugin_root, Path))

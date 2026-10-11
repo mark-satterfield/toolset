@@ -11,12 +11,19 @@ of its contract, for that decision and for the readiness process.
 
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command
 `<plugin>/commands/dependency-assessment.md`, the agent `<plugin>/agents/epic-sequencer.md` and its
-skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (sequencing keys),
+skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (bead metadata),
 `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
 `<plugin>/scripts/portfolio/depscore.py` (`assess-plan`, `assess-context`, `validate`,
-`apply-edges`), `edgeset.py`, `assesscontext.py`, `prds.py`. `<driver>` is
-`$ATW_CONTROL_REPO/ops/sdlc-automation`. It calls the flow in
+`apply-edges`), `edgeset.py`, `assesscontext.py`, `prds.py`. `<driver>` is the driver directory
+the `pipeline-contracts` skill defines (`DRIVER_DIR_PARTS` under the control repository its
+`CONTROL_REPO_ENV` variable names). It calls the flow in
 `<orch>/specs/epic/wsjf-scoring.md`.
+
+Bead metadata: every metadata key, key group, value vocabulary and value shape this spec names is
+defined only in `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and is named
+here by the constant `<plugin>/skills/beads-contract/scripts/bead_metadata.py` generates from it
+(`KEY_*` for one key, `*_KEYS` for a key group, `ELABORATION_*` for an elaboration state). This
+spec restates none of their names, values or shapes.
 
 ## Who calls it (the S01f question)
 
@@ -57,13 +64,13 @@ After a successful run (with `apply` true):
   added (`bd dep add <blocked> <blocker> --type tracks`), owned ones stored as `blocks` converted
   to `tracks`, owned ones not proposed removed (withdrawn). Hand-made (unowned) edges are
   unchanged whatever the proposal says.
-- On each blocked Epic touched: `seq_owned_blockers` (comma-separated owned blocker ids),
-  `seq_owned_blockers_at`, `seq_edge_reasons` (JSON keyed by blocker:
-  `{reason, confidence, setBy, setAt}`; `setAt` kept when unchanged), `seq_edge_withdrawn` (JSON
-  keyed by blocker: `{reason, withdrawnBy, withdrawnAt}`; an entry is dropped when the edge is set
-  again).
-- On the assessed Epic: `seq_content_hash` = its judging fingerprint at plan time, and
-  `seq_assessed_at`.
+- On each blocked Epic touched: `KEY_SEQ_OWNED_BLOCKERS`, `KEY_SEQ_OWNED_BLOCKERS_AT`,
+  `KEY_SEQ_EDGE_REASONS` (an entry's set time kept when unchanged) and `KEY_SEQ_EDGE_WITHDRAWN`
+  (an entry is dropped when the edge is set again), each in the shape
+  `skills/beads-contract/schemas/bead-metadata.schema.json` defines for that key, read and written
+  through the types generated into `skills/beads-contract/scripts/bead_metadata.py`.
+- On the assessed Epic: `KEY_SEQ_CONTENT_HASH` = its judging fingerprint at plan time, and
+  `KEY_SEQ_ASSESSED_AT`.
 - `wsjf-scoring` has run over the whole portfolio (see its spec).
 - No edge between two other Epics changes; no Task edge changes.
 - With `apply: false`: the diff and the proposal are in files; beads unchanged; no scoring.
@@ -72,11 +79,14 @@ After a successful run (with `apply` true):
 
 ## 3. Inputs
 
-- Arguments: `epic` (required), `repoPath` (default `$ATW_CONTROL_REPO`), `workDir`, `archPath`
-  (`$ATW_ARCH_PATH`, required by the command), `projectRoot` (`$ATW_PROJECT_ROOT`), `apply`
-  (default true), `priorFailure` (optional; no current caller).
-- beads, read with descriptions: every open Epic (title, description = PRD, `elaboration_state`),
-  every `tracks`/`blocks` edge among Epics, the sequencing keys above on each Epic, the judging
+- Arguments: `epic` (required), `repoPath` (default: the control repository), `workDir`,
+  `archPath` (the architecture root; required by the command), `projectRoot`, `apply`
+  (default true); the control repository, architecture root and project root come from the
+  `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
+  skill, `priorFailure` (optional; no current caller).
+- beads, read with descriptions: every open Epic (title, description = PRD,
+  `KEY_ELABORATION_STATE`), every `tracks`/`blocks` edge among Epics, the `SEQUENCING_KEYS` on each
+  Epic, the judging
   fingerprint (`beads-contract.py content_hash --scope judging`).
 - The architecture under `archPath`: arc42 views and their frontmatter (`subject`, `shows`,
   `lifecycle_state`). Only `lifecycle_state: effective` settles a decision.
@@ -112,8 +122,8 @@ Files (under `<workDir>`):
 
 Bead writes: only through `edgeset.apply_edges` (section 2), in its order: ownership covering
 every edge to be added first, then adds, conversions (remove then add as `tracks`), withdrawals,
-final ownership with reasons and withdrawal records, then the assessed Epic's `seq_content_hash`
-and `seq_assessed_at`. Then the `wsjf-scoring` writes.
+final ownership with reasons and withdrawal records, then the assessed Epic's
+`KEY_SEQ_CONTENT_HASH` and `KEY_SEQ_ASSESSED_AT`. Then the `wsjf-scoring` writes.
 
 No vault writes, no git commits, no ledger events.
 
@@ -127,7 +137,7 @@ validationFile, reasoning} | null, error?}`.
 
 1. `deterministic` **Plan**: `depscore.assess_plan(graph, epic=<epic>, level="epic")` (today
    `depscore.py assess-plan --epic <id> --out assess-plan.json -C <repo>`). Its `fingerprints`
-   are what `apply-edges` records as `seq_content_hash`. Refuse, with no session, when `<epic>` is
+   are what `apply-edges` records as `KEY_SEQ_CONTENT_HASH`. Refuse, with no session, when `<epic>` is
    not an open Epic (`edgeset.scope_defect`).
 2. `deterministic` **Context**: `assesscontext.assess_context(graph, epic, context_dir)` (today
    `depscore.py assess-context --epic <id> --dir context --out context.json`). Writes the corpus,
@@ -154,8 +164,8 @@ validationFile, reasoning} | null, error?}`.
    session, with `validation.json`'s path and the instruction to revise `edges.json` to THE TEST
    (drop an edge that fails it, never keep one to satisfy the validator; report a cycle through
    a hand-made edge instead of forcing it). Then steps 5 and 6 again. Same model and effort.
-8. `deterministic` **Apply**: when step 6 is ok, `edgeset.apply_edges(graph, edges, writer, seen
-   = assess-plan fingerprints, item=<epic>, withdrawn, level="epic")` (today `depscore.py
+8. `deterministic` **Apply**: when step 6 is ok, `edgeset.apply_edges(graph, edges, writer,
+   ApplyScope(seen = assess-plan fingerprints, item=<epic>, withdrawn, level="epic"))` (today `depscore.py
    apply-edges --edges edges.json --plan assess-plan.json --epic <id> [--dry-run] --out
    apply-edges.json`). It validates again against the graph as read now and writes nothing if
    that fails.
@@ -184,7 +194,7 @@ Agents dispatched by the JavaScript, accounted for:
   onto a Task or a missing bead reaches beads and the driver holds the Epic forever.
 - Cycle against every other Epic edge: without it two Epics wait on each other and neither is
   ever elaborated; nothing breaks the cycle.
-- Empty reason on an edge or withdrawal: without it `seq_edge_reasons` records an edge nobody can
+- Empty reason on an edge or withdrawal: without it `KEY_SEQ_EDGE_REASONS` records an edge nobody can
   later answer or withdraw on the merits.
 - Owned standing edge neither kept nor withdrawn (`unaccounted`), withdrawal of an edge that is not
   owned (`withdrawnNotOwned`), both kept and withdrawn: without them a hand-made edge is removed
@@ -248,7 +258,7 @@ Agents dispatched by the JavaScript, accounted for:
   pipeline step runs this flow.
 - 7.8 "Epics wait on unmet Epic dependencies": this flow is the producer of the `tracks` edges
   that `elabstate.unmet_blockers` reads; an edge it writes holds the blocked Epic out of
-  elaboration until the blocker's `elaboration_state` is `done`. It never closes or opens an
+  elaboration until the blocker's `KEY_ELABORATION_STATE` is `ELABORATION_DONE`. It never closes or opens an
   Epic, and it never uses "Epic closed" as a condition (7.6).
 - 7.8 WSJF filter: via step 9 (see the `wsjf-scoring` spec).
 - 7.4 Retries: one corrective pass with the exact findings (specific gap feedback); no rerun on

@@ -17,6 +17,7 @@ from pathlib import Path
 import archmatrix
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from .handback_contract import CONTENTION_CAUSE, OTHER_CAUSE
 from .io import JsonValue, json_object, write_json
 from .models import RunContext, StepError
 from .tool_locks import LockTimeoutError, control_repo, file_lock, seconds
@@ -60,7 +61,7 @@ def read_snapshot(path: Path) -> dict[str, JsonValue]:
         value: dict[str, JsonValue] = json_object(json.loads(path.read_text(encoding="utf-8")))
         json_object(value.get("elements"))
     except (OSError, ValueError, TypeError) as exc:
-        raise StepError(stage, "other", (str(path), str(exc))) from exc
+        raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from exc
     else:
         return value
 
@@ -138,7 +139,7 @@ def snapshot(context: RunContext, tools: Tools) -> Path:
                     break
                 except BlockingIOError as exc:
                     if time.monotonic() >= deadline:
-                        raise StepError(stage, "contention", (str(lock),)) from exc
+                        raise StepError(stage, CONTENTION_CAUSE, (str(lock),)) from exc
                     time.sleep(0.1)
             try:
                 result: dict[str, JsonValue] = read_snapshot(source)
@@ -192,4 +193,4 @@ def write_seed(
                 publish()
             return result
     except LockTimeoutError as exc:
-        raise StepError(stage, "contention", (str(lock),)) from exc
+        raise StepError(stage, CONTENTION_CAUSE, (str(lock),)) from exc

@@ -12,6 +12,8 @@ from pathlib import Path
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
+from driver_surface_types import CONTROL_REPO_ENV
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.constraints import Section2Guard
 from orchestrator.core.models import StepError
@@ -28,7 +30,7 @@ def main() -> None:
     """
     with tempfile.TemporaryDirectory(prefix="atw-guard-") as scratch:
         root = Path(scratch)
-        os.environ["ATW_CONTROL_REPO"] = str(root / "control")
+        os.environ[CONTROL_REPO_ENV] = str(root / "control")
         vault = root / "vault"
         vault.mkdir()
 

@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+from target_contract import KEY_ELEMENT, KEY_ID, KEY_ITEMS
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import row_for, satisfied
 from orchestrator.core.models import StepError
@@ -65,12 +71,12 @@ def project(
     stage = "closure"
     aliases: dict[str, str] = {}
     for row in check_type(
-        all_roots.get("items", []),
+        all_roots.get(KEY_ITEMS, []),
         list[dict[str, JsonValue]],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     ):
-        aliases[check_type(row["id"], str).casefold()] = check_type(row["element"], str)
-        aliases[check_type(row["element"], str).casefold()] = check_type(row["element"], str)
+        aliases[check_type(row[KEY_ID], str).casefold()] = check_type(row[KEY_ELEMENT], str)
+        aliases[check_type(row[KEY_ELEMENT], str).casefold()] = check_type(row[KEY_ELEMENT], str)
     elements = {
         check_type(row["element"], str): row
         for row in check_type(
@@ -83,13 +89,13 @@ def project(
 
     def resolve(name: str) -> str:
         if name.casefold() not in aliases:
-            raise StepError(stage, "other", (f"Unknown walk reference: {name}",))
+            raise StepError(stage, OTHER_CAUSE, (f"Unknown walk reference: {name}",))
         return aliases[name.casefold()]
 
     roots = {
-        check_type(row["element"], str)
+        check_type(row[KEY_ELEMENT], str)
         for row in check_type(
-            current_roots.get("items", []),
+            current_roots.get(KEY_ITEMS, []),
             list[dict[str, JsonValue]],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
@@ -137,7 +143,7 @@ def project(
     rows = []
     for name in sorted(reached - roots):
         if name not in elements:
-            raise StepError(stage, "other", (f"Missing walk evidence for {name}",))
+            raise StepError(stage, OTHER_CAUSE, (f"Missing walk evidence for {name}",))
         rows.append(
             {
                 **elements[name],

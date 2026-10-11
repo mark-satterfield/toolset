@@ -100,12 +100,8 @@ requirements document and the dependency graph are the whole input.
 
 ### At Task level — inherit them
 
-```
-userBusinessValue := parent.wsjf_ubv
-timeCriticality   := parent.wsjf_tc
-confidence        := parent.wsjf_confidence
-```
-
+The Task's User-Business Value, Time Criticality and value confidence are its parent's, as
+recorded on the parent under the metadata keys the schema names (see "Metadata keys" below).
 Copy them. Do not read the Task's own description and form a view: a Task is scoped to one
 agent's work in one repository, so a plumbing Task under a revenue-critical Epic reads as
 "minimal user impact" on its own words and scores 1. That is not a low-value Task; it is
@@ -201,8 +197,8 @@ comparison.
 
 - **Reference jobs are the elaborated Epics**: each Epic whose Tasks all carry a size, with
   its original estimate beside its refined size, the sum of its Tasks. They are read from
-  the tracker (`wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high` on the Epic, and
-  `wsjf_size` on each of its Tasks); the set grows as Epics are elaborated.
+  the tracker (the Epic's recorded estimate and range, and each of its Tasks' recorded size,
+  under the metadata keys the schema names); the set grows as Epics are elaborated.
 - **Until any exist**, judge knowledge and uncertainty from what already exists: the
   architecture document, the existing code, and the other artifacts that show what is
   already decided or built and what must be decided or built from scratch.
@@ -237,17 +233,18 @@ with `aboveScale: true`; report it against the decomposition.
 ### The roll-up — top-down value, bottom-up cost
 
 An Epic's estimate is made before the work is known. Its Tasks are written one by one while
-it is elaborated, so until its elaboration is done (`elaboration_state` = `done`) the Epic is
+it is elaborated, so until its elaboration is finished (its elaboration state, as the
+`agent-teams-workforce:beads-contract` schema defines it) the Epic is
 sized by its judged estimate, never by the sum of the Tasks written so far. Once elaboration is
 done and every Task carries a size, pass those sizes as `childSizes` with the Epic's estimate
 and its range:
 the Epic's size becomes the **plain sum** of its distinct Tasks' positive sizes (a
 missing or non-positive size is left out of the sum), which need not be a
 Fibonacci number, and the score is recomputed from it. Closed Tasks count — the cost is the
-whole job, not what is left. The original estimate stays in `wsjf_size_estimate`.
+whole job, not what is left. The original estimate stays recorded beside the summed size.
 
-A refined size outside the estimate's plausible range is flagged under `outsideRange` and as
-`wsjf_size_outside_range`. It is a prompt to examine the Epic — new work, changed scope, or
+A refined size outside the estimate's plausible range is flagged under `outsideRange`, and
+the script records the flag in metadata. It is a prompt to examine the Epic — new work, changed scope, or
 inconsistent estimation — and never an error.
 
 Value stays top-down: UBV and TC are never re-derived from the children, and RR-OE stays a
@@ -354,33 +351,17 @@ Then, for a person, a short prose section per judged dimension. Keep it under a 
 ## Metadata keys
 
 Recorded as issue **metadata**, merged rather than replaced, never as a note — a score in
-prose is a score no gate can see. The script emits the exact values under `metadata`.
+prose is a score no gate can see. The script emits the exact keys and values under
+`metadata`.
 
-| key | value |
-|---|---|
-| `wsjf` | the score, two decimal places |
-| `wsjf_calculated_at` | ISO 8601 timestamp |
-| `wsjf_rubric` | the level's rubric name |
-| `wsjf_ubv` | User-Business Value |
-| `wsjf_tc` | Time Criticality |
-| `wsjf_value_from` | the parent the value was inherited from, at Task level |
-| `wsjf_rroe` | computed RR-OE |
-| `wsjf_reaches` / `wsjf_unblocks` | the reachability count RR-OE was banded from, under the level's key |
-| `wsjf_cod` | Cost of Delay |
-| `wsjf_size` | the size the score divides by: the estimate's rung, or the sum of the Tasks' sizes |
-| `wsjf_size_source` | `supplied` or `child-rollup` |
-| `wsjf_size_estimate` | the judged size estimate; on an elaborated Epic it stands beside the summed size |
-| `wsjf_size_low` / `wsjf_size_high` | the estimate's plausible range |
-| `wsjf_size_confidence` | confidence in the estimate, integer percent |
-| `wsjf_size_outside_range` | `true` or `false`, on a roll-up whose estimate carries a range |
-| `wsjf_confidence` | value confidence (UBV and TC), integer percent; inherited at Task level |
-| `wsjf_content_hash` | the content fingerprint (`agent-teams-workforce:beads-contract`) of the bead the judged values were judged from — the Epic's PRD or the Task's own content |
-
-`wsjf_ubv`, `wsjf_tc` and `wsjf_confidence` are what a child inherits, and `wsjf_size` is
-what a parent's roll-up sums, so all four are required on every scored item. Every judged
-size also carries `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high` and
-`wsjf_size_confidence`. Values carry
-no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-case words.
+The keys, their value types and their allowed values are defined in one place: the
+`WSJF_KEYS` group of the JSON Schema `schemas/bead-metadata.schema.json` in the
+`agent-teams-workforce:beads-contract` skill. Read them there, and read a bead's recorded
+values with that skill's `metadata get`; this rubric restates none of them. The
+User-Business Value, Time Criticality and value confidence are what a child inherits, and the
+size is what a parent's roll-up sums, so all four are recorded on every scored item; every
+judged size also records its estimate, plausible range and confidence. Values carry no
+character a shell would mis-split: numbers, ISO timestamps, ids and kebab-case words.
 
 ## Scoring errors to avoid
 

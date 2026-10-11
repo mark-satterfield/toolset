@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
+# The driver surface and the target report are each defined once, in a plugin skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+from driver_surface_types import ARCH_PATH_ENV
+from target_contract import (
+    CHANGE_NONE,
+    KEY_ARCHITECTURE_CHANGE,
+    KEY_DELTA_DIR,
+    KEY_OK,
+    KEY_SUBJECT,
+    KEY_SUBJECT_NAME,
+    KEY_TARGET_DIR,
+    TargetResult,
+    validate_target_report,
+)
 from typeguard import CollectionCheckStrategy, typechecked
 
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import snapshot
 from orchestrator.core.models import RunContext, StepError
@@ -23,8 +41,9 @@ from orchestrator.flows.architecture_resume import (
     save_completion,
 )
 from orchestrator.flows.architecture_rounds import owner_actions, run_rounds
-from orchestrator.flows.architecture_support import Architecture
+from orchestrator.flows.architecture_support import ARCHITECTURE_PHASE, Architecture
 from orchestrator.flows.architecture_survey import prepare_survey
+from orchestrator.flows.elaboration_support import emit_event
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -43,37 +62,45 @@ def run(
 
     Raises:
         StepError: The required Epic or PRD path is missing.
+        TypeError: An argument violates the declared input contract.
 
     """
-    arch = context.args.get("archPath") or os.environ.get("ATW_ARCH_PATH")
+    if not isinstance(context, RunContext) or not (matrix_path is None or isinstance(matrix_path, Path)):
+        argument_error: str = "run: arguments do not satisfy the declared input contract"
+        raise TypeError(argument_error)
+    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    arch: JsonValue = context.args.get(dispatch.KEY_ARCH_PATH) or os.environ.get(ARCH_PATH_ENV)
     if not arch:
         return {
             "ok": False,
             "stage": "no-arch-path",
-            "requiredHumanActions": ["Set ATW_ARCH_PATH to the architecture root."],
+            "requiredHumanActions": [f"Set {ARCH_PATH_ENV} to the architecture root."],
         }
-    context.args["archPath"] = arch
-    stage = "input"
-    if not context.bead or not json_object(context.args.get("prd", {})).get("path"):
+    context.args[dispatch.KEY_ARCH_PATH] = arch
+    stage: str = "input"
+    if not context.bead or not json_object(context.args.get(dispatch.KEY_PRD, {})).get(dispatch.PRD_PATH):
         raise StepError(
             stage,
-            "other",
+            OTHER_CAUSE,
             ("Architecture requires an Epic and a PRD path.",),
         )
-    context.stage = "architecture"
-    runner.emit("phase", phase="architecture", step="survey")
-    matrix_path = matrix_path or snapshot(context, tools)
-    flow = Architecture(context, store, runner, tools, matrix_path)
-    saved = completed(flow)
+    context.stage = ARCHITECTURE_PHASE
+    emit_event(runner.emit, phase_event(ARCHITECTURE_PHASE, "survey"))
+    snapshot_path: Path = matrix_path or snapshot(context, tools)
+    flow: Architecture = Architecture(context, store, runner, tools, snapshot_path)
+    saved: dict[str, JsonValue] | None = completed(flow)
     if saved is not None:
         return refresh_closure(flow, saved)
-    checkpoint = approved(flow)
+    checkpoint: dict[str, JsonValue] | None = approved(flow)
+    decision: dict[str, JsonValue]
+    target: dict[str, JsonValue]
     if checkpoint is not None:
-        decision, target = json_object(checkpoint["decision"]), json_object(checkpoint["target"])
+        decision = json_object(checkpoint["decision"])
+        target = json_object(checkpoint["target"])
     else:
         prepare_survey(flow)
         decision = run_rounds(flow)
-        actions = owner_actions(decision, flow.work / "decision.json")
+        actions: list[str] = owner_actions(decision, flow.work / "decision.json")
         if actions:
             return {
                 "ok": False,
@@ -82,16 +109,17 @@ def run(
             }
         target = flow.checked(flow.target(), "target")
         save_approval(flow, target, decision)
-    update = integrate(flow, target)
-    result = closure(flow, target)
-    result = {
-        "ok": True,
-        "subject": flow.subject,
-        "subjectName": target.get("subjectName", flow.subject),
-        "targetDir": target["targetDir"],
-        "deltaDir": target["deltaDir"],
-        "architectureChange": target["architectureChange"],
-        "closure": result,
+    report: TargetResult = validate_target_report(target)
+    update: dict[str, JsonValue] = integrate(flow, report)
+    closure_result: dict[str, JsonValue] = closure(flow, target)
+    result: dict[str, JsonValue] = {
+        KEY_OK: True,
+        KEY_SUBJECT: flow.subject,
+        KEY_SUBJECT_NAME: report.get(KEY_SUBJECT_NAME, flow.subject),
+        KEY_TARGET_DIR: report[KEY_TARGET_DIR],
+        KEY_DELTA_DIR: report[KEY_DELTA_DIR],
+        KEY_ARCHITECTURE_CHANGE: report[KEY_ARCHITECTURE_CHANGE],
+        "closure": closure_result,
         "targetPath": str(flow.work / "target.json"),
         "surveyPath": str(flow.work / "survey.json"),
         "decisionPath": str(flow.work / "decision.json"),
@@ -100,6 +128,6 @@ def run(
         "ledgerPath": str(flow.work / "ledger.json"),
         "rounds": decision["round"],
         "openItems": update.get("openItems", {}),
-        "noArchitectureChange": target["architectureChange"] == "none",
+        "noArchitectureChange": report[KEY_ARCHITECTURE_CHANGE] == CHANGE_NONE,
     }
     return save_completion(flow, result)

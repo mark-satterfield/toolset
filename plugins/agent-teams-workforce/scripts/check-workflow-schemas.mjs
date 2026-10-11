@@ -368,22 +368,106 @@ function declaredPhases(src) {
 }
 
 // `phase('X')`, plus the literal call sites of any one-parameter function that forwards its
-// parameter straight to `phase()` — which is how every composite enters a phase.
+// parameter straight to `phase()` — which is how every composite enters a phase. A one-parameter
+// function that resolves its parameter as a phase id through the composite contract
+// (`compositePhaseTitle(COMPOSITE, id)`, or a `phaseTitle(id)` helper over it) and enters the
+// result is an id wrapper: its literal call sites are phase ids, resolved against composites.json.
 function calledPhases(src) {
   const names = ['phase']
+  const idNames = []
   for (const m of src.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\{/g)) {
     const body = src.slice(m.index, src.indexOf('\n}', m.index) + 2)
     if (new RegExp(`(^|[^\\w.])phase\\(\\s*${m[2]}\\s*\\)`).test(body)) names.push(m[1])
-  }
-  const called = []
-  let computed = 0
-  for (const name of names) {
-    for (const m of src.matchAll(new RegExp(`(^|[^\\w.])${name}\\(\\s*(?:(['"\`])((?:\\\\.|(?!\\2).)*)\\2)?`, 'g'))) {
-      if (m[3] === undefined) computed++
-      else called.push({ title: m[3], line: src.slice(0, m.index).split('\n').length })
+    else if (
+      /(^|[^\w.])phase\(/.test(body) &&
+      new RegExp(`(^|[^\\w.])(compositePhaseTitle\\([^()]*,\\s*|phaseTitle\\(\\s*)${m[2]}\\s*\\)`).test(body)
+    ) {
+      idNames.push(m[1])
     }
   }
-  return { called, computed, wrappers: names.slice(1) }
+  const called = []
+  const calledIds = []
+  let computed = 0
+  const sites = (name, sink) => {
+    for (const m of src.matchAll(new RegExp(`(^|[^\\w.])${name}\\(\\s*(?:(['"\`])((?:\\\\.|(?!\\2).)*)\\2)?`, 'g'))) {
+      if (m[3] === undefined) computed++
+      else sink.push({ value: m[3], line: src.slice(0, m.index).split('\n').length })
+    }
+  }
+  for (const name of names) sites(name, called)
+  for (const name of idNames) sites(name, calledIds)
+  return {
+    called: called.map(({ value, line }) => ({ title: value, line })),
+    calledIds: calledIds.map(({ value, line }) => ({ id: value, line })),
+    computed,
+    wrappers: [...names.slice(1), ...idNames],
+  }
+}
+
+// ── The composite contract ────────────────────────────────────────────────────
+// composites.json in the pipeline-contracts skill is the one definition of each composite's
+// phase ids and titles. A workflow named for a composite there must declare exactly those
+// titles, in that order, in meta.phases, and every phase id it enters must be one of them.
+// Only a composite whose runner is the workflow runner is run by its workflow script
+// (composites.schema.json $defs.compositeId: "Workflow agent-teams-workforce:<id> runs a
+// workflow-runner composite"); a composite the orchestrator, the driver or the probe runs is not
+// held to a workflow file that shares its name.
+const CONTRACT_DIR = path.join(here, '..', 'skills', 'pipeline-contracts', 'schemas')
+const COMPOSITES_PATH = path.join(CONTRACT_DIR, 'composites.json')
+const COMPOSITES_SCHEMA_PATH = path.join(CONTRACT_DIR, 'composites.schema.json')
+const WORKFLOW_RUNNER = 'workflow'
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+// The parts of composites.schema.json this checker relies on, read from the schema itself so the
+// runner vocabulary and id pattern are never retyped here.
+const COMPOSITES_SCHEMA = (() => {
+  const schema = JSON.parse(readFileSync(COMPOSITES_SCHEMA_PATH, 'utf8'))
+  const defs = isPlainObject(schema) && isPlainObject(schema.$defs) ? schema.$defs : null
+  const runners = defs && isPlainObject(defs.runner) ? defs.runner.enum : null
+  const idPattern = defs && isPlainObject(defs.phaseId) ? defs.phaseId.pattern : null
+  if (!Array.isArray(runners) || !runners.every((r) => typeof r === 'string')) {
+    throw new Error(`${COMPOSITES_SCHEMA_PATH} has no $defs.runner.enum string list`)
+  }
+  if (!runners.includes(WORKFLOW_RUNNER)) {
+    throw new Error(`${COMPOSITES_SCHEMA_PATH} $defs.runner.enum ${JSON.stringify(runners)} has no '${WORKFLOW_RUNNER}' runner`)
+  }
+  if (typeof idPattern !== 'string') throw new Error(`${COMPOSITES_SCHEMA_PATH} has no $defs.phaseId.pattern string`)
+  return { runners: new Set(runners), phaseId: new RegExp(idPattern) }
+})()
+
+// composites.json, validated against the schema for every field this checker reads. A drifted
+// file fails here, by name, instead of producing comparisons against a malformed contract.
+const COMPOSITES = (() => {
+  const parsed = JSON.parse(readFileSync(COMPOSITES_PATH, 'utf8'))
+  const composites = isPlainObject(parsed) ? parsed.composites : null
+  if (!isPlainObject(composites)) throw new Error(`${COMPOSITES_PATH} has no composites object`)
+  for (const [id, entry] of Object.entries(composites)) {
+    const where = `${COMPOSITES_PATH} composites.${id}`
+    if (!isPlainObject(entry)) throw new Error(`${where} is not an object`)
+    if (!COMPOSITES_SCHEMA.runners.has(entry.runner)) {
+      throw new Error(`${where}.runner ${JSON.stringify(entry.runner)} is not one of ${JSON.stringify([...COMPOSITES_SCHEMA.runners])}`)
+    }
+    if (!Array.isArray(entry.phases)) throw new Error(`${where}.phases is not an array`)
+    entry.phases.forEach((phase, n) => {
+      if (!isPlainObject(phase) || typeof phase.id !== 'string' || typeof phase.title !== 'string' || !phase.title) {
+        throw new Error(`${where}.phases[${n}] is not a { id, title } object of non-empty strings`)
+      }
+      if (!COMPOSITES_SCHEMA.phaseId.test(phase.id)) {
+        throw new Error(`${where}.phases[${n}].id ${JSON.stringify(phase.id)} does not match ${COMPOSITES_SCHEMA.phaseId}`)
+      }
+    })
+  }
+  return composites
+})()
+
+function compositeOf(file) {
+  const id = file.replace(/\.js$/, '')
+  if (!Object.prototype.hasOwnProperty.call(COMPOSITES, id)) return null
+  const entry = COMPOSITES[id]
+  return entry.runner === WORKFLOW_RUNNER ? { id, phases: entry.phases } : null
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
@@ -431,11 +515,41 @@ for (const file of files) {
   }
 
   const declared = declaredPhases(src)
-  const { called, computed, wrappers } = calledPhases(src)
+  const { called: calledTitles, calledIds, computed, wrappers } = calledPhases(src)
   phaseComputed += computed
   if (declared === null) {
     findings.push({ file, line: 1, hard: true, what: 'meta declares no `phases` — a run has no progress groups to report into' })
     continue
+  }
+  const composite = compositeOf(file)
+  const called = [...calledTitles]
+  for (const { id, line } of calledIds) {
+    const found = composite ? composite.phases.find((entry) => entry.id === id) : undefined
+    if (found) {
+      called.push({ title: found.title, line })
+      continue
+    }
+    findings.push({
+      file,
+      line,
+      hard: true,
+      what: composite
+        ? `enters phase id '${id}', which composites.json does not define for ${composite.id} — compositePhaseTitle throws at that call`
+        : `enters phase id '${id}' through the composite contract, but composites.json defines no workflow-runner composite named ${file.replace(/\.js$/, '')}`,
+    })
+  }
+  if (composite) {
+    const contracted = composite.phases.map((entry) => entry.title)
+    if (JSON.stringify(contracted) !== JSON.stringify(declared)) {
+      findings.push({
+        file,
+        line: 1,
+        hard: true,
+        what:
+          `meta.phases titles ${JSON.stringify(declared)} differ from composites.json ${composite.id} phase titles ` +
+          `${JSON.stringify(contracted)} — change composites.json and regenerate, never the titles in one place only`,
+      })
+    }
   }
   const declaredSet = new Set(declared)
   const calledSet = new Set(called.map((c) => c.title))
@@ -471,7 +585,7 @@ for (const { file, line, why } of unread) console.log(`NOTE  workflows/${file}:$
 console.log(
   findings.length
     ? `\n${findings.length} schema/phase defect(s) across ${files.length} workflow scripts — a malformed schema throws at DISPATCH, mid-run`
-    : `all ${schemas} schema(s) across ${files.length} workflow scripts are well-formed, and every meta.phases title matches a phase entered in the same file` +
+    : `all ${schemas} schema(s) across ${files.length} workflow scripts are well-formed, every meta.phases title matches a phase entered in the same file, and every workflow-runner composite's meta.phases matches composites.json` +
         `${unread.length ? `; ${unread.length} schema expression(s) were not statically readable (listed above)` : ''}` +
         `${phaseComputed ? `; ${phaseComputed} computed phase reference(s) were not text-visible` : ''}`,
 )

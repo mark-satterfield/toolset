@@ -4,17 +4,44 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+# The driver surface and the target report are each defined once, in a plugin skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import beadgraph
+import beads_contract
 import yaml
+from bead_metadata import KEY_ARTIFACT_TRD_PATH, KEY_ARTIFACT_TRD_SHA256
+from driver_surface_types import CONTROL_REPO_ENV
+from target_contract import (
+    ARCHITECTURE_WORK_FOLDER,
+    DELTA_ITEMS_FILE,
+    KEY_ARCHITECTURE_CHANGE,
+    KEY_DELTA_DIR,
+    KEY_ELEMENT,
+    KEY_ITEMS,
+    KEY_NOTE,
+    KEY_TARGET_DIR,
+    TARGET_REPORT_FILE,
+    DeltaResult,
+    load_delta_report,
+)
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agents import AgentRunner, strict_json
+from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import DispatchArgumentsContract, dispatch_arguments
+from orchestrator.core.handback_contract import OTHER_CAUSE, TRD_PHASE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
+from orchestrator.flows.architecture_support import TRD_AUTHORING_PHASE
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _ARGUMENT_ERROR: str = "Arguments violate the trd_authoring input contract"
 
@@ -96,15 +123,14 @@ def run(
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        StepError: The PRD path or architecture target is missing.
 
     """
     args: dict[str, JsonValue]
     work: Path
-    prd_value: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-    target: int | float | str | list[JsonValue] | dict[str, JsonValue] | None
     prd: Path
     arch: Path
+    target: str
+    filing: JsonValue
     if (
         not (isinstance(context, RunContext))
         or not (isinstance(store, ArtifactStore))
@@ -112,14 +138,10 @@ def run(
         or not (isinstance(tools, Tools))
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    stage: str = "input"
     args, work = context.args, context.work
-    context.stage = "trd-authoring"
-    prd_value, target = json_object(args.get("prd", {})).get("path"), args.get("targetDir")
-    if not prd_value or not target:
-        raise StepError(stage, "other", ("PRD path and targetDir are required",))
-    prd, arch = Path(check_type(prd_value, str)).resolve(), Path(check_type(args["archPath"], str)).resolve()
-    inputs: tuple[str, ...] = _trd_inputs(prd, arch, check_type(target, str), work)
+    context.stage = TRD_AUTHORING_PHASE
+    prd, arch, target, filing = _locate(args)
+    inputs: tuple[str, ...] = _trd_inputs(prd, arch, target, work)
     output: Path = work / "trd.md"
     reused: bool = store.reusable(inputs, (output,))
     facts: Path = work / "trd.context.json"
@@ -138,17 +160,17 @@ def run(
         write_json(
             facts,
             {
-                "architectureChange": args.get("architectureChange"),
-                "targetDir": target,
-                "deltaDir": args.get("deltaDir"),
-                "note": args.get("note"),
-                "filingPath": args.get("trdPath"),
+                KEY_ARCHITECTURE_CHANGE: args.get(KEY_ARCHITECTURE_CHANGE),
+                KEY_TARGET_DIR: target,
+                KEY_DELTA_DIR: args.get(KEY_DELTA_DIR),
+                KEY_NOTE: args.get(KEY_NOTE),
+                "filingPath": filing,
             },
         )
         write_json(feedback, {"errors": errors})
         runner.run(
             AgentStep(
-                stage="trd",
+                stage=TRD_PHASE,
                 agent="trd-author",
                 inputs=(*inputs, str(facts), str(feedback)),
                 output=output,
@@ -162,57 +184,75 @@ def run(
             ),
         )
         ids, warnings = document(output, arch)
-    store.accept("trd", inputs, (output,))
+    store.accept(TRD_PHASE, inputs, (output,))
     _mark_trd(context, tools, output)
     return json_object({
         "ok": True,
         "trdPath": str(output),
-        "filingPath": args.get("trdPath"),
+        "filingPath": filing,
         "decisionIds": ids,
         "warnings": warnings,
     })
 
 
+def _locate(args: Mapping[str, JsonValue]) -> tuple[Path, Path, str, JsonValue]:
+    """Read the PRD, architecture root, target folder and filing path from the run arguments.
+
+    Returns:
+        The PRD path, the architecture root, the target folder and the TRD filing path.
+
+    Raises:
+        StepError: The PRD path or the target folder is missing.
+
+    """
+    dispatch: DispatchArgumentsContract = dispatch_arguments()
+    prd_value: JsonValue = json_object(args.get(dispatch.KEY_PRD, {})).get(dispatch.PRD_PATH)
+    target: JsonValue = args.get(KEY_TARGET_DIR)
+    if not prd_value or not target:
+        stage: str = "input"
+        raise StepError(stage, OTHER_CAUSE, (f"PRD path and {KEY_TARGET_DIR} are required",))
+    prd: Path = Path(check_type(prd_value, str)).resolve()
+    arch: Path = Path(check_type(args[dispatch.KEY_ARCH_PATH], str)).resolve()
+    return prd, arch, check_type(target, str), args.get(dispatch.KEY_TRD_PATH)
+
+
 def _mark_trd(context: RunContext, tools: Tools, output: Path) -> None:
     digest: str = hashlib.sha256(output.read_bytes()).hexdigest()
     relative: str = str(output.resolve().relative_to(env_path("SKILLSPOKE_ROOT")))
-    control: Path = env_path("ATW_CONTROL_REPO")
+    control: Path = env_path(CONTROL_REPO_ENV)
 
     def mark() -> None:
-        raw: object = json.loads(tools.bd(["show", context.bead, "--json"], stage="trd"))
+        raw: object = json.loads(tools.bd(["show", context.bead, "--json"], stage=TRD_PHASE))
         bead: dict[str, JsonValue] = json_object(raw[0] if isinstance(raw, list) else raw)
-        metadata: int | float | str | list[JsonValue] | dict[str, JsonValue] = bead.get("metadata") or {}
-        if isinstance(metadata, str):
-            decoded: object = json.loads(metadata)
-            metadata = json_object(decoded)
-        pairs: dict[str, str] = {"artifact_trd_path": relative, "artifact_trd_sha256": digest}
-        if all(json_object(metadata).get(key) == value for key, value in pairs.items()):
+        metadata: dict[str, JsonValue] = json_object(beads_contract.metadata_of(bead))
+        pairs: dict[str, str] = {
+            KEY_ARTIFACT_TRD_PATH: relative,
+            KEY_ARTIFACT_TRD_SHA256: digest,
+        }
+        if all(metadata.get(key) == value for key, value in pairs.items()):
             return
-        tools.portfolio("trd", beadgraph.write_metadata, context.bead, pairs, control)
+        tools.portfolio(TRD_PHASE, beadgraph.write_metadata, context.bead, pairs, control)
 
-    tools.operation("trd", mark)
+    tools.operation(TRD_PHASE, mark)
 
 
 def _trd_inputs(prd: Path, arch: Path, target: str, work: Path) -> tuple[str, ...]:
-    item_path: Path = work / "delta-items.json"
-    elements: list[str] = sorted({
-        check_type(item["element"], str)
-        for item in check_type(
-            strict_json(item_path)["items"],
-            list[dict[str, JsonValue]],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-    })
+    item_path: Path = work / DELTA_ITEMS_FILE
+    report: DeltaResult = load_delta_report(item_path)
+    if KEY_ITEMS not in report:
+        stage: str = "input"
+        raise StepError(stage, OTHER_CAUSE, (f"{item_path} has no {KEY_ITEMS}",))
+    elements: list[str] = sorted({item[KEY_ELEMENT] for item in report[KEY_ITEMS]})
     return (
         *map(
             str,
             (
                 prd,
                 item_path,
-                work / "architecture/decision.md",
-                work / "architecture/target.json",
-                work / "architecture/architecture-update.json",
-                work / "architecture/survey.json",
+                work / ARCHITECTURE_WORK_FOLDER / "decision.md",
+                work / TARGET_REPORT_FILE,
+                work / ARCHITECTURE_WORK_FOLDER / "architecture-update.json",
+                work / ARCHITECTURE_WORK_FOLDER / "survey.json",
                 target,
                 arch / "arc42/02-architecture-constraints",
             ),

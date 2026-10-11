@@ -47,6 +47,31 @@ from typing import Literal, Protocol, assert_never
 
 import wsjf_types
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+# The bead metadata keys are generated from the beads-contract schema, their one definition.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "beads-contract" / "scripts"))
+
+# isort: split
+from bead_metadata import (
+    KEY_WSJF,
+    KEY_WSJF_CALCULATED_AT,
+    KEY_WSJF_COD,
+    KEY_WSJF_CONFIDENCE,
+    KEY_WSJF_REACHES,
+    KEY_WSJF_RROE,
+    KEY_WSJF_RUBRIC,
+    KEY_WSJF_SIZE,
+    KEY_WSJF_SIZE_CONFIDENCE,
+    KEY_WSJF_SIZE_ESTIMATE,
+    KEY_WSJF_SIZE_HIGH,
+    KEY_WSJF_SIZE_LOW,
+    KEY_WSJF_SIZE_OUTSIDE_RANGE,
+    KEY_WSJF_SIZE_SOURCE,
+    KEY_WSJF_TC,
+    KEY_WSJF_UBV,
+    KEY_WSJF_UNBLOCKS,
+    KEY_WSJF_VALUE_FROM,
+)
 from wsjf_types import (
     Estimate,
     Fault,
@@ -78,7 +103,7 @@ LEVELS: dict[str, LevelBase] = {
         "rroeTop": 20,
         "decompositionFaultAbove": None,
         "rollup": True,
-        "reachKey": "wsjf_reaches",
+        "reachKey": KEY_WSJF_REACHES,
     },
     "task": {
         "rubric": "task-wsjf",
@@ -86,7 +111,7 @@ LEVELS: dict[str, LevelBase] = {
         "rroeTop": 20,
         "decompositionFaultAbove": 13,
         "rollup": False,
-        "reachKey": "wsjf_unblocks",
+        "reachKey": KEY_WSJF_UNBLOCKS,
     },
 }
 
@@ -440,12 +465,12 @@ def _confidence(item: Item) -> int | None:
 
 
 #: Size fields of a scored record -> the metadata keys they are stored under.
-SIZE_KEYS = {
-    "sizeEstimate": "wsjf_size_estimate",
-    "sizeLow": "wsjf_size_low",
-    "sizeHigh": "wsjf_size_high",
-    "sizeConfidence": "wsjf_size_confidence",
-    "sizeOutsideRange": "wsjf_size_outside_range",
+SIZE_KEYS: dict[str, str] = {
+    "sizeEstimate": KEY_WSJF_SIZE_ESTIMATE,
+    "sizeLow": KEY_WSJF_SIZE_LOW,
+    "sizeHigh": KEY_WSJF_SIZE_HIGH,
+    "sizeConfidence": KEY_WSJF_SIZE_CONFIDENCE,
+    "sizeOutsideRange": KEY_WSJF_SIZE_OUTSIDE_RANGE,
 }
 
 
@@ -480,15 +505,15 @@ def _metadata(record: ScoreData, params: Level) -> dict[str, str]:
     field: str
     key: str
     pairs: dict[str, str] = {
-        "wsjf": f"{record['wsjf']:.2f}",
-        "wsjf_calculated_at": now_iso(),
-        "wsjf_rubric": params["rubric"],
-        "wsjf_ubv": str(record["userBusinessValue"]),
-        "wsjf_tc": str(record["timeCriticality"]),
-        "wsjf_rroe": str(record["riskReductionOpportunityEnablement"]),
-        "wsjf_cod": str(record["costOfDelay"]),
-        "wsjf_size": str(record["jobSize"]),
-        "wsjf_size_source": record["sizeSource"],
+        KEY_WSJF: f"{record['wsjf']:.2f}",
+        KEY_WSJF_CALCULATED_AT: now_iso(),
+        KEY_WSJF_RUBRIC: params["rubric"],
+        KEY_WSJF_UBV: str(record["userBusinessValue"]),
+        KEY_WSJF_TC: str(record["timeCriticality"]),
+        KEY_WSJF_RROE: str(record["riskReductionOpportunityEnablement"]),
+        KEY_WSJF_COD: str(record["costOfDelay"]),
+        KEY_WSJF_SIZE: str(record["jobSize"]),
+        KEY_WSJF_SIZE_SOURCE: record["sizeSource"],
     }
     if record.get("reaches") is not None:
         pairs[params["reachKey"]] = str(record["reaches"])
@@ -497,9 +522,9 @@ def _metadata(record: ScoreData, params: Level) -> dict[str, str]:
         if fields.get(field) is not None:
             pairs[key] = _render(fields[field])
     if record.get("valueFrom"):
-        pairs["wsjf_value_from"] = str(record["valueFrom"])
+        pairs[KEY_WSJF_VALUE_FROM] = str(record["valueFrom"])
     if record.get("confidence") is not None:
-        pairs["wsjf_confidence"] = str(record["confidence"])
+        pairs[KEY_WSJF_CONFIDENCE] = str(record["confidence"])
     return pairs
 
 

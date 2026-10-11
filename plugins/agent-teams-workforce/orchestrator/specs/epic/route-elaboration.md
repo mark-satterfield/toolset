@@ -3,8 +3,10 @@
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
 Source: `<plugin>/workflows/route-elaboration.js` (`meta.description`), `<plugin>/workflows/ROUTING.md`,
-and the driver's `<driver>/routing.py` and `<driver>/selection.py`. `<driver>` is
-`$ATW_CONTROL_REPO/ops/sdlc-automation`.
+and the driver's `<driver>/routing.py` and `<driver>/selection.py`. `<driver>` is the driver
+directory the `pipeline-contracts` skill defines: `DRIVER_DIR_PARTS` under the control repository,
+defined once as `dirParts` in `schemas/driver-surface.schema.json` and generated into
+`scripts/driver_surface_types.py`.
 
 **Entry.** The only entry into the Epic pipeline is the driver's elaboration lane, which the owner
 starts with `python3 ops/sdlc-automation/keeper.py` (CONTEXT 7.18). There is no `/work-bead` entry
@@ -41,9 +43,10 @@ After a run:
 
 - One bead record: `id`, `type`, `labels`, and (for the reason text only) `parentType`,
   `parentId`, `ancestorTypes`, from the driver's `BeadIndex.routing_bead(id)`.
-- The infrastructure vocabulary `<plugin>/scripts/infra-vocabulary.json` (`types`, `labels`),
-  which `routing.py` reads through `pluginversion.plugin_file`. The JavaScript hardcodes
-  `infra`/`infrastructure` instead.
+- The infrastructure vocabulary the `artifact-handoff` skill defines in
+  `<plugin>/skills/artifact-handoff/schemas/infra-vocabulary.schema.json`, which `routing.py` loads
+  as the generated `<plugin>/skills/artifact-handoff/scripts/infra_vocabulary.py` through
+  `pluginversion.plugin_file` (`routing.INFRA_VOCABULARY_PARTS`).
 
 Label matching applies only when the bead's `type` is not a known type (`by_label`): known types
 are `task`, `bug`, `epic`, `story`, `feature`, `chore`, `docs`, `research`, `spike`, plus the
@@ -81,8 +84,9 @@ pipeline uses. The rewrite keeps one router (`routing.route_elaboration`, where 
 `route-elaboration` flow; S08 deletes `route-elaboration.js` with the `/work-bead` command that was
 its only caller (CONTEXT 7.18). Differences between the two today, which the Python version
 settles:
-- Infrastructure kinds: the JavaScript hardcodes `infra`/`infrastructure`; `routing.py` reads
-  `infra-vocabulary.json`. The vocabulary is the one source.
+- Infrastructure kinds: both read the vocabulary the `artifact-handoff` skill defines
+  (`routing.py` through `routing.infra_types()` and `routing.infra_labels()`, the JavaScript
+  through its `infraVocabulary` argument). The schema is the one source.
 - Story reason text: `routing.py` says a Story run "reconciles the Story with its Spec and emits
   the Task beads parented to it", which is not what happens; the JavaScript's reason (the Story is
   elaborated through its parent Epic) is correct. The verdict is the same; only the reason text
@@ -105,10 +109,11 @@ settles:
 
 ## 7. Failure causes
 
-- Infrastructure vocabulary unreadable or empty: `routing.infra_vocabulary` logs once to stderr and
-  routes with no infrastructure types or labels. Cause `other`; not retried (an unchanged file
-  gives the same result). It cannot misroute elaboration work: Epic/Story/feature rules do not use
-  the vocabulary.
+- Infrastructure vocabulary unavailable (the plugin is not installed, ships no
+  `infra_vocabulary.py`, or the module lacks a name the driver reads): `routing.vocabulary_module()`
+  raises `routing.InfraVocabularyUnavailableError`, which `routing.infra_vocabulary()`,
+  `routing.infra_types()` and `routing.infra_labels()` propagate. Not retried (an unchanged plugin
+  gives the same result).
 - No other failure point: the router is a pure function over its input.
 
 ## 8. Resume points
@@ -124,7 +129,8 @@ None. The verdict is recomputed from the bead each time; it costs nothing and sa
 - 7.11 Deterministic over agentic: routing is code, no agent.
 - 7.8 Owner selection filters: not implemented here. The filters (unscored Tasks, unmet Epic
   dependencies, the mobile Epics `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn` left without
-  `elaboration_state`) stay in `<driver>/selection.py` and `elabstate.py`; the router only
+  an elaboration state, the `bead_metadata.KEY_ELABORATION_STATE` key of
+  `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json`) stay in `<driver>/selection.py` and `elabstate.py`; the router only
   classifies the bead's kind.
 - 7.9 Who gets asked what: a skip is reported, never put to the owner; a Bug's reason names
   triage by a person because only a person files and triages Bugs.

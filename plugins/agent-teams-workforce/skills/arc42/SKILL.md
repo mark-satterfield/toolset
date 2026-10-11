@@ -45,7 +45,8 @@ Before any dispatch, establish the **architecture root**: the folder that holds 
 `arc42/`, `target/` and `built/`.
 
 1. Take the path the caller gives. Otherwise take the path the project's environment sets for its
-   architecture (`ATW_ARCH_PATH` in this plugin's workflows). Either may name the architecture root
+   architecture (in this plugin's workflows, the architecture-root variable `ARCH_PATH_ENV` that the
+   `pipeline-contracts` skill's driver surface defines). Either may name the architecture root
    or its `arc42/` folder; for the `arc42/` folder, the root is its parent.
 2. When neither gives a path, stop and report that both are missing, naming the argument and the
    variable. Do not search for or assume a default location: a guessed root writes the architecture

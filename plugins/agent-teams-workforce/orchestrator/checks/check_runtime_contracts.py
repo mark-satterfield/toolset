@@ -14,10 +14,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/wsjf/scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
 
 import archcatalog
 import archmatrix
 import wsjf
+from driver_surface_types import CONTROL_REPO_ENV, DRIVER_DIR_PARTS
 from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.agent_context import prepare
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
@@ -109,7 +111,7 @@ class RuntimeContracts(unittest.TestCase):
     @staticmethod
     def test_session_preparation_only() -> None:
         """Write private agent configuration without constructing or starting a runner."""
-        control: str = os.environ["ATW_CONTROL_REPO"]
+        control: str = os.environ[CONTROL_REPO_ENV]
         directory: str
         with tempfile.TemporaryDirectory() as directory:
             root: Path = Path(directory)
@@ -136,7 +138,7 @@ class RuntimeContracts(unittest.TestCase):
             mcp: Path = config / ".claude.json"
             mcp.write_text('{"mcpServers":{"fixture-local-probe":{"command":"never-executed"}}}', encoding="utf-8")
             session: Path = root / "session"
-            with patch.dict(os.environ, {"ATW_CONTROL_REPO": control, "CLAUDE_CONFIG_DIR": str(config)}):
+            with patch.dict(os.environ, {CONTROL_REPO_ENV: control, "CLAUDE_CONFIG_DIR": str(config)}):
                 args: list[str] = prepare(plugin, config, session, step, "sonnet")
                 mcp.unlink()
                 with expected_error(ValueError):
@@ -178,7 +180,7 @@ class RuntimeContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root: Path = Path(directory)
             output: Path = root / "result.txt"
-            producer: Path = Path(os.environ["ATW_CONTROL_REPO"]) / "ops/sdlc-automation/artifactio.py"
+            producer: Path = Path(os.environ[CONTROL_REPO_ENV]).joinpath(*DRIVER_DIR_PARTS, "artifactio.py")
             store: ArtifactStore = ArtifactStore(load_artifactio(producer), root, root / "work", "fixture", "fixture")
 
             def action() -> list[str]:
@@ -186,10 +188,7 @@ class RuntimeContracts(unittest.TestCase):
                 return ["typed-result"]
 
             step: DeterministicStep[list[str]] = DeterministicStep("fixture", (), (output,), action)
-            status: str
-            result: list[str] | None
-            status, result = store.execute(step)
-            require(status == "ran" and result == ["typed-result"], "action return contract drift")
+            require(store.execute(step) == ("ran", ["typed-result"]), "action return contract drift")
             require(store.execute(step) == ("reused", None), "reuse return contract drift")
 
     @staticmethod
@@ -222,7 +221,7 @@ class RuntimeContracts(unittest.TestCase):
             work: Path = root / "work"
             work.mkdir()
             context: RunContext = RunContext("fixture", "fixture", {}, work, "local-probe")
-            with patch.dict(os.environ, {"ATW_CONTROL_REPO": str(root), "ATW_ELEMENT_MATRIX": str(source)}):
+            with patch.dict(os.environ, {CONTROL_REPO_ENV: str(root), "ATW_ELEMENT_MATRIX": str(source)}):
                 output: Path = snapshot(context, Tools(work))
             result: dict[str, JsonValue] = read_snapshot(output)
             require(result["elements"] == fixture["elements"], "snapshot data drift")

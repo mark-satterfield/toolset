@@ -1,16 +1,18 @@
 """Read one repository's saved detailing on disk and report only what the workflows branch on.
 
-`depscore.py recon-facts` runs `recon_facts`. The detailing of a repository, saved as
-`recon-<slug>.json` in the Epic's working directory, gives each delta item placed in that
-repository a status (`add`, `modify`, `remove`, `done`, `planned-elsewhere`), the file:line
-evidence for it, its surface, the design source each `ui` item takes (`bundle`, `cds` or
-`none`, with the supplied bundle and build spec of a `bundle` item), and the upstream
-dependency changes. This command reads it against the items placed in the repository and
-prints the small facts: the ids of the items that make work and of those that do not; each
-`ui` work item's design source; the mocks directory; whether the dependencies are current.
-What it had to normalize (a missing or repeated entry, an unknown status, surface or design
-source, a missing artifact, an unusable bundle) is named in `warnings`; only a file that is
-not a detailing at all is not usable.
+`depscore.py recon-facts` runs `recon_facts`. The detailing of a repository is saved as
+`recon-<slug>.json` in the Epic's working directory; its shape, statuses, surfaces, design
+sources and artifact kinds are the artifact-handoff skill's recon contract
+(`skills/artifact-handoff/schemas/recon.schema.json`, generated into `recon_contract.py`), and
+this module defines none of them. The file is validated against that contract: a file that
+does not conform is not usable (`ok` false, the violations named in `problem`).
+
+A conforming detailing is then read against the items placed in the repository, and the small
+facts are printed: the ids of the items that make work and of those that do not; each `ui`
+work item's design source; the mocks directory; whether the dependencies are current. What
+the contract cannot express and had to be settled (an item not placed here, a repeated or
+missing entry, a `ui` work item with no design source, an unusable bundle, absent dependency
+changes) is named in `warnings`.
 
 No item text travels back: the sessions that specify and decompose the repository read the
 file by its path.
@@ -23,61 +25,115 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
-from cdsbundles import DESIGN_SOURCES, KINDS, bundle_problem, read_bundle
+from cdsbundles import artifact_kind, bundle_problem, read_bundle
 
-STATUSES = ("add", "modify", "remove", "done", "planned-elsewhere")
-#: Close synonyms of a status, as a detailing may write them.
-STATUS_SYNONYMS = {
-    "new": "add",
-    "create": "add",
-    "added": "add",
-    "change": "modify",
-    "changed": "modify",
-    "update": "modify",
-    "modified": "modify",
-    "delete": "remove",
-    "removed": "remove",
-    "retire": "remove",
-    "exists": "done",
-    "built": "done",
-    "complete": "done",
-    "planned": "planned-elsewhere",
-}
-WORK_STATUSES = ("add", "modify", "remove")
-SURFACES = ("ui", "service", "infra", "data", "unknown")
-FILE_LINE = re.compile(r"[^\s:]+:\d+")
+# The detailing contract is generated from the artifact-handoff recon schema, its one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
+from recon_contract import (
+    DEFAULT_ARTIFACT_KIND,
+    DEFAULT_DESIGN_SOURCE,
+    DESIGN_SOURCE_BUNDLE,
+    DESIGN_SOURCE_CDS,
+    DESIGN_SOURCE_NONE,
+    KEY_ARTIFACT,
+    KEY_BUILD_SPEC,
+    KEY_BUNDLE,
+    KEY_CHANGE_FINDINGS,
+    KEY_CURRENT,
+    KEY_DEPENDENCY_CHANGES,
+    KEY_DESIGN_SOURCE,
+    KEY_ID,
+    KEY_ITEM,
+    KEY_ITEMS,
+    KEY_KIND,
+    KEY_MOCKS_DIR,
+    KEY_PLANNED_BY,
+    KEY_SECTIONS,
+    KEY_SLUG,
+    KEY_STATUS,
+    KEY_SURFACE,
+    KEY_UI_AUTHORITY,
+    KEY_UI_ITEMS,
+    STATUS_ADD,
+    STATUSES,
+    SURFACE_UI,
+    WORK_STATUSES,
+    ReconContractError,
+    parse_detailing,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from beadcontracts import Bundle
+    from contracts import JsonObject, JsonValue
+    from recon_contract import (
+        ArtifactKind,
+        DependencyChanges,
+        DesignSource,
+        ReconDetailing,
+        ReconItem,
+        ReconStatus,
+        UiArtifact,
+        UiAuthority,
+        UiItem,
+    )
+
 #: At most this many warnings are printed; the count of all of them is always printed.
-MAX_PROBLEMS = 40
+MAX_PROBLEMS: Final = 40
+_SLUG_SEPARATORS: Final = re.compile(r"[^a-z0-9]+")
 
 
 class ReconError(Exception):
     """The saved detailing cannot be read or is not JSON."""
 
 
-def _text(value: object) -> str:
-    """Return a value as stripped text, or empty when it is not a string.
+@dataclass(frozen=True)
+class _Settled:
+    """One placed item's settled status: the detailing's entry, or `add` when it has none."""
 
-    Args:
-        value: Any JSON value.
-
-    Returns:
-        The stripped string, or "".
-    """
-    return value.strip() if isinstance(value, str) else ""
+    id: str
+    status: ReconStatus
+    planned_by: str | None
+    ui: bool
 
 
-def _texts(value: object) -> list[str]:
-    """Return the non-empty strings of a list value.
+@dataclass(frozen=True)
+class _UiWork:
+    """One `ui` work item's settled design source."""
 
-    Args:
-        value: Any JSON value.
+    id: str
+    design_source: DesignSource
+    artifact: UiArtifact | None
+    bundle: str | None
+    build_spec: str | None
+    sections: tuple[str, ...]
 
-    Returns:
-        The stripped strings, in order.
-    """
-    return [_text(x) for x in value if _text(x)] if isinstance(value, list) else []
+    def as_json(self) -> JsonObject:
+        """Return the entry as the `uiWork` member printed for the workflows.
+
+        Returns:
+            `id` and the design source fields, named as the recon contract names them.
+
+        """
+        artifact: JsonValue = (
+            {KEY_KIND: self.artifact[KEY_KIND], KEY_SLUG: self.artifact[KEY_SLUG]} if self.artifact else None
+        )
+        return {
+            KEY_ID: self.id,
+            KEY_DESIGN_SOURCE: self.design_source,
+            KEY_ARTIFACT: artifact,
+            KEY_BUNDLE: self.bundle,
+            KEY_BUILD_SPEC: self.build_spec,
+            KEY_SECTIONS: list(self.sections),
+        }
 
 
 def _load(path: Path) -> object:
@@ -91,253 +147,204 @@ def _load(path: Path) -> object:
 
     Raises:
         ReconError: The file is absent, cannot be read, or is not JSON.
+
     """
     if not path.is_file():
-        msg = f"{path}: no saved detailing at this path"
-        raise ReconError(msg)
+        message: str = f"{path}: no saved detailing at this path"
+        raise ReconError(message)
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        msg = f"{path}: {exc}"
-        raise ReconError(msg) from exc
+        message = f"{path}: {exc}"
+        raise ReconError(message) from exc
+    return raw
 
 
-def _normalize_items(
-    items: list[dict], placed: list[str]
-) -> tuple[list[dict], list[str]]:
-    """Settle the detailing's items on one usable entry per placed item.
+def _settle_items(items: Sequence[ReconItem], placed: Sequence[str]) -> tuple[list[_Settled], list[str]]:
+    """Settle the detailing's items on one entry per placed item.
 
     A placed item with no entry is `add`; a repeated entry keeps the first; an entry for an
-    item not placed here is ignored; a status is mapped from a close synonym, else taken as
-    `modify`; `planned-elsewhere` with no `plannedBy` is `done`; an unknown surface is
-    `unknown`. A work or done status that cites no file:line is only noted.
+    item not placed here is ignored.
 
     Args:
-        items: The items as read.
+        items: The detailing's items, validated against the recon contract.
         placed: The ids of the delta items placed in the repository.
 
     Returns:
-        The items, one per placed id in placement order, and the warnings.
+        The settled items, one per placed id in placement order, and the warnings.
+
     """
-    placed_set = set(placed)
+    placed_set: set[str] = set(placed)
     warnings: list[str] = []
-    first: dict[str, dict] = {}
-    for r in items:
-        if r["id"] not in placed_set:
-            warnings.append(
-                f"{r['id'] or '(no id)'}: not an item placed in this repository; ignored"
-            )
+    first: dict[str, ReconItem] = {}
+    for item in items:
+        item_id: str = item[KEY_ID]
+        if item_id not in placed_set:
+            warnings.append(f"{item_id}: not an item placed in this repository; ignored")
+        elif item_id in first:
+            warnings.append(f"{item_id}: listed more than once; the first entry is used")
+        else:
+            first[item_id] = item
+    settled: list[_Settled] = []
+    for placed_id in placed:
+        entry: ReconItem | None = first.get(placed_id)
+        if entry is None:
+            warnings.append(f"{placed_id}: has no entry; taken as {STATUS_ADD}")
+            settled.append(_Settled(placed_id, STATUS_ADD, None, ui=False))
             continue
-        if r["id"] in first:
-            warnings.append(
-                f"{r['id']}: listed more than once; the first entry is used"
-            )
-            continue
-        first[r["id"]] = r
-    out = []
-    for i in placed:
-        r = first.get(i)
-        if r is None:
-            warnings.append(f"{i}: has no entry; taken as add")
-            r = {
-                "id": i,
-                "status": "add",
-                "evidence": [],
-                "plannedBy": None,
-                "surface": "unknown",
-            }
-        status = r["status"]
-        if status not in STATUSES:
-            mapped = STATUS_SYNONYMS.get(status.lower(), "modify")
-            warnings.append(f"{i}: status {json.dumps(status)} taken as {mapped}")
-            r = r | {"status": mapped}
-        if r["status"] == "planned-elsewhere" and not r["plannedBy"]:
-            warnings.append(
-                f"{i}: planned-elsewhere names no bead in plannedBy; taken as done"
-            )
-            r = r | {"status": "done"}
-        if r["surface"] not in SURFACES:
-            warnings.append(f"{i}: surface {json.dumps(r['surface'])} taken as unknown")
-            r = r | {"surface": "unknown"}
-        if r["status"] != "planned-elsewhere" and not any(
-            FILE_LINE.search(e) for e in r["evidence"]
-        ):
-            warnings.append(f"{i}: {r['status']} cites no file:line")
-        out.append(r)
-    return out, warnings
+        settled.append(
+            _Settled(placed_id, entry[KEY_STATUS], entry.get(KEY_PLANNED_BY), ui=entry[KEY_SURFACE] == SURFACE_UI),
+        )
+    return settled, warnings
 
 
-def _ui_authority(raw: object, work_ui: list[str]) -> dict:
-    """Return the mocks directory and each `ui` work item's design source.
+def _default_artifact(item_id: str) -> UiArtifact:
+    """Return the artifact a `ui` item with none builds: a page named for the item.
 
     Args:
-        raw: The detailing's `uiAuthority` value.
+        item_id: The delta item id.
+
+    Returns:
+        The default artifact kind, with a slug made from the item id.
+
+    """
+    slug: str = _SLUG_SEPARATORS.sub("-", item_id.lower()).strip("-") or DEFAULT_ARTIFACT_KIND
+    return {KEY_KIND: DEFAULT_ARTIFACT_KIND, KEY_SLUG: slug}
+
+
+def _bundle_artifact(held: Bundle, fallback: UiArtifact) -> UiArtifact:
+    """Return the artifact a supplied bundle packages.
+
+    Args:
+        held: The bundle, as `cdsbundles.read_bundle` read it.
+        fallback: The artifact the detailing named, used when the bundle names no known kind.
+
+    Returns:
+        The bundle's kind and slug.
+
+    """
+    kind: ArtifactKind | None = artifact_kind(held["kind"])
+    return {KEY_KIND: kind, KEY_SLUG: held["slug"]} if kind is not None else fallback
+
+
+def _settle_ui(item_id: str, entry: UiItem | None) -> tuple[_UiWork, list[str]]:
+    """Settle one `ui` work item on a design source it can be built from.
+
+    An item the detailing gives no design source takes the contract's default. A `bundle`
+    item whose bundle or build spec cannot be built from takes `cds`; a `bundle` item's
+    artifact is the one its bundle packages. A `bundle` or `cds` item with no artifact gets a
+    page named for the item.
+
+    Args:
+        item_id: The delta item id.
+        entry: The detailing's `uiItems` entry for the item, or None.
+
+    Returns:
+        The settled item and the warnings.
+
+    """
+    warnings: list[str] = []
+    if entry is None:
+        warnings.append(f"{item_id}: has no design source; taken as {DEFAULT_DESIGN_SOURCE}")
+        source: DesignSource = DEFAULT_DESIGN_SOURCE
+        named: UiArtifact | None = None
+    else:
+        source = entry[KEY_DESIGN_SOURCE]
+        named = entry.get(KEY_ARTIFACT)
+    if source == DESIGN_SOURCE_NONE:
+        return _UiWork(item_id, source, None, None, None, ()), warnings
+    artifact: UiArtifact = named if named is not None else _default_artifact(item_id)
+    if named is None:
+        warnings.append(f"{item_id}: names no artifact; taken as {artifact[KEY_KIND]} {artifact[KEY_SLUG]}")
+    if source == DESIGN_SOURCE_BUNDLE and entry is not None:
+        bundle: str = entry.get(KEY_BUNDLE) or ""
+        build_spec: str | None = entry.get(KEY_BUILD_SPEC)
+        problem: str | None = bundle_problem(bundle, build_spec or "")
+        held: Bundle | None = None if problem else read_bundle(Path(bundle))
+        if held is not None:
+            sections: tuple[str, ...] = tuple(entry.get(KEY_SECTIONS, []))
+            return _UiWork(item_id, source, _bundle_artifact(held, artifact), bundle, build_spec, sections), warnings
+        warnings.append(f"{item_id}: bundle {problem or 'unreadable'}; taken as {DESIGN_SOURCE_CDS}")
+    return _UiWork(item_id, DESIGN_SOURCE_CDS, artifact, None, None, ()), warnings
+
+
+def _ui_work(authority: UiAuthority | None, work_ui: Sequence[str]) -> tuple[list[_UiWork], list[str]]:
+    """Return each `ui` work item's settled design source.
+
+    Args:
+        authority: The detailing's `uiAuthority`, or None when it has none.
         work_ui: The ids of the `ui` items that make work.
 
     Returns:
-        `mocksDir` and `uiWork`: one `{id, designSource, artifact, bundle, buildSpec,
-        sections}` per `ui` work item. `designSource` is `bundle`, `cds` or `none` (None when
-        the detailing gives the item none); `artifact` (`{kind, slug}`, as a cds bundle's
-        `bundle.json` names it) is set for a `bundle` or `cds` item; `bundle` and
-        `buildSpec` for a `bundle` item only.
+        One settled entry per `ui` work item, in order, and the warnings.
+
     """
-    ua = raw if isinstance(raw, dict) else {}
-    entries: dict[str, dict] = {}
-    for b in ua.get("uiItems") if isinstance(ua.get("uiItems"), list) else []:
-        if not isinstance(b, dict):
-            continue
-        item = _text(b.get("item"))
-        if item and item not in entries:
-            source = _text(b.get("designSource"))
-            bundled = source == "bundle"
-            raw_art = b.get("artifact") if isinstance(b.get("artifact"), dict) else {}
-            art = {
-                "kind": _text(raw_art.get("kind")),
-                "slug": _text(raw_art.get("slug")),
-            }
-            entries[item] = {
-                "designSource": source or None,
-                "artifact": art if source in ("bundle", "cds") else None,
-                "bundle": _text(b.get("bundle")) or None if bundled else None,
-                "buildSpec": _text(b.get("buildSpec")) or None if bundled else None,
-                "sections": _texts(b.get("sections")) if bundled else [],
-            }
-    blank = {
-        "designSource": None,
-        "artifact": None,
-        "bundle": None,
-        "buildSpec": None,
-        "sections": [],
-    }
-    return {
-        "mocksDir": _text(ua.get("mocksDir")) or None,
-        "uiWork": [{"id": i} | entries.get(i, blank) for i in work_ui],
-    }
+    entries: dict[str, UiItem] = {}
+    for entry in authority[KEY_UI_ITEMS] if authority is not None else []:
+        entries.setdefault(entry[KEY_ITEM], entry)
+    out: list[_UiWork] = []
+    warnings: list[str] = []
+    for item_id in work_ui:
+        settled, problems = _settle_ui(item_id, entries.get(item_id))
+        out.append(settled)
+        warnings.extend(problems)
+    return out, warnings
 
 
-def _normalize_ui(ui_work: list[dict]) -> list[str]:
-    """Settle each `ui` work item on a design source it can be built from.
-
-    A design source outside `bundle`, `cds` and `none` is `cds`. A `bundle` item whose
-    bundle or build spec cannot be built from is `cds`; its artifact is the one its bundle
-    packages. A `bundle` or `cds` item with no artifact gets a `page` named for the item.
-
-    Args:
-        ui_work: The `uiWork` entries; changed in place.
-
-    Returns:
-        The warnings.
-    """
-    warnings = []
-    for item in ui_work:
-        source = item["designSource"]
-        if source not in DESIGN_SOURCES:
-            warnings.append(
-                f"{item['id']}: design source {json.dumps(source)} taken as cds"
-            )
-            source = item["designSource"] = "cds"
-        if source == "none":
-            continue
-        if source == "bundle":
-            problem = bundle_problem(item["bundle"] or "", item["buildSpec"] or "")
-            held = None if problem else read_bundle(Path(item["bundle"]))
-            if problem or held is None:
-                warnings.append(
-                    f"{item['id']}: bundle {problem or 'unreadable'}; taken as cds"
-                )
-                source = item["designSource"] = "cds"
-                item["bundle"] = item["buildSpec"] = None
-                item["sections"] = []
-            else:
-                art = {"kind": held["kind"], "slug": held["slug"]}
-                if (item["artifact"] or {}) != art:
-                    item["artifact"] = art
-        art = item["artifact"] or {}
-        if art.get("kind") not in KINDS or not art.get("slug"):
-            slug = re.sub(r"[^a-z0-9]+", "-", item["id"].lower()).strip("-") or "page"
-            item["artifact"] = {"kind": "page", "slug": slug}
-            warnings.append(f"{item['id']}: names no artifact; taken as page {slug}")
-    return warnings
-
-
-def recon_facts(path: Path, placed: list[str]) -> dict:
+def recon_facts(path: Path, placed: list[str]) -> JsonObject:
     """Check a saved detailing against the items placed in its repository; report the facts.
+
+    A file that is absent, cannot be read, or is not JSON raises `ReconError` (from `_load`).
 
     Args:
         path: The saved detailing, `recon-<slug>.json`.
         placed: The ids of the delta items placed in the repository.
 
     Returns:
-        `file`, `bytes`, `ok`; when not ok, `problem` (the file as a whole is not a
-        detailing). When ok: `warnings`, `itemCount`, `counts` per status,
-        `work` (ids that make work), `idle` (`{id, status, plannedBy}` of the others),
-        `mocksDir`, `uiWork` (each `ui` work item's design source, and for a `bundle`
-        item its bundle and build spec), `dependenciesCurrent` and
-        `dependencyFindings` (the number of invalidating upstream changes).
+        `file`, `bytes`, `ok`; when not ok, `problem` (the file does not conform to the
+        recon contract, each violation named). When ok: `warnings`, `warningCount`,
+        `itemCount`, `counts` per status, `work` (ids that make work), `idle`
+        (`{id, status, plannedBy}` of the others), `mocksDir`, `uiWork` (each `ui` work
+        item's design source, and for a `bundle` item its bundle and build spec),
+        `dependenciesCurrent` and `dependencyFindings` (the number of invalidating upstream
+        changes).
 
     Raises:
-        ReconError: The file is absent, cannot be read, or is not JSON.
+        TypeError: An argument violates the declared input contract.
+
     """
-    body = _load(path)
-    head = {"file": str(path), "bytes": path.stat().st_size}
-    if not isinstance(body, dict):
-        return head | {"ok": False, "problem": "the file is not one JSON object"}
-    raw = body.get("items")
-    if not isinstance(raw, list):
-        return head | {
-            "ok": False,
-            "problem": "the file holds no `items` list (a detailing saved in an earlier "
-            "format, or not a detailing)",
-        }
-    warnings: list[str] = []
-    dc = body.get("dependencyChanges")
-    if not isinstance(dc, dict) or not isinstance(dc.get("current"), bool):
-        warnings.append(
-            "`dependencyChanges.current` is not true or false; taken as true"
-        )
-        dc = {"current": True, "changeFindings": []}
-    items = [
-        {
-            "id": _text(r.get("id")),
-            "status": _text(r.get("status")),
-            "evidence": _texts(r.get("evidence")),
-            "plannedBy": _text(r.get("plannedBy")) or None,
-            "surface": _text(r.get("surface")) or "unknown",
-        }
-        for r in raw
-        if isinstance(r, dict)
+    if not isinstance(path, Path) or not isinstance(placed, list) or not all(isinstance(i, str) for i in placed):
+        message: str = "recon_facts takes a Path and a list of placed item ids"
+        raise TypeError(message)
+    raw: object = _load(path)
+    head: JsonObject = {"file": str(path), "bytes": path.stat().st_size}
+    try:
+        detailing: ReconDetailing = parse_detailing(raw, source=str(path))
+    except ReconContractError as exc:
+        return head | {"ok": False, "problem": str(exc)}
+    items, warnings = _settle_items(detailing[KEY_ITEMS], placed)
+    changes: DependencyChanges | None = detailing.get(KEY_DEPENDENCY_CHANGES)
+    if changes is None:
+        warnings.append(f"`{KEY_DEPENDENCY_CHANGES}` is absent; taken as {KEY_CURRENT}")
+    authority: UiAuthority | None = detailing.get(KEY_UI_AUTHORITY)
+    ui_work, ui_warnings = _ui_work(authority, [i.id for i in items if i.status in WORK_STATUSES and i.ui])
+    warnings += ui_warnings
+    counts: JsonObject = {status: sum(1 for i in items if i.status == status) for status in STATUSES}
+    idle: list[JsonValue] = [
+        {KEY_ID: i.id, KEY_STATUS: i.status, KEY_PLANNED_BY: i.planned_by}
+        for i in items
+        if i.status not in WORK_STATUSES
     ]
-    items, item_warnings = _normalize_items(items, placed)
-    warnings += item_warnings
-    work = [r["id"] for r in items if r["status"] in WORK_STATUSES]
-    ui = _ui_authority(
-        body.get("uiAuthority"),
-        [
-            r["id"]
-            for r in items
-            if r["status"] in WORK_STATUSES and r["surface"] == "ui"
-        ],
-    )
-    warnings += _normalize_ui(ui["uiWork"])
-    findings = dc.get("changeFindings")
-    return (
-        head
-        | {
-            "ok": True,
-            "warnings": warnings[:MAX_PROBLEMS],
-            "warningCount": len(warnings),
-            "itemCount": len(items),
-            "counts": {s: sum(1 for r in items if r["status"] == s) for s in STATUSES},
-            "work": work,
-            "idle": [
-                {"id": r["id"], "status": r["status"], "plannedBy": r["plannedBy"]}
-                for r in items
-                if r["status"] not in WORK_STATUSES
-            ],
-        }
-        | ui
-        | {
-            "dependenciesCurrent": dc["current"],
-            "dependencyFindings": len(findings) if isinstance(findings, list) else 0,
-        }
-    )
+    return head | {
+        "ok": True,
+        "warnings": list(warnings[:MAX_PROBLEMS]),
+        "warningCount": len(warnings),
+        "itemCount": len(items),
+        "counts": counts,
+        "work": [i.id for i in items if i.status in WORK_STATUSES],
+        "idle": idle,
+        KEY_MOCKS_DIR: authority.get(KEY_MOCKS_DIR) if authority is not None else None,
+        "uiWork": [w.as_json() for w in ui_work],
+        "dependenciesCurrent": changes[KEY_CURRENT] if changes is not None else True,
+        "dependencyFindings": len(changes.get(KEY_CHANGE_FINDINGS, [])) if changes is not None else 0,
+    }

@@ -7,13 +7,33 @@ them through the checked relay (see relay.py) rather than from a session reading
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from archbaseline import FreshnessOptions, survey_freshness
 from archevidence import saved_evidence_current
 from archrevision import record_problem
-from contracts import JsonObject, JsonValue, json_object
+from contracts import JsonObject, JsonValue, SealForm, SurveySeal, json_object, read_survey_seal, survey_seal_path
 from typeguard import CollectionCheckStrategy, check_type
+
+# The survey and target report contracts are generated into the artifact-handoff skill, their one definitions.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
+from survey_contract import SURVEY_FILE
+from target_contract import (
+    CLOSURE_FILE,
+    KEY_DELTA_DIR,
+    KEY_DELTA_FILES,
+    KEY_OK,
+    KEY_SUBJECT,
+    KEY_TARGET_DIR,
+    TargetResult,
+    TargetSummary,
+    load_target_report,
+    target_report_path,
+)
 
 
 def _count(report: JsonValue, key: str) -> int:
@@ -34,6 +54,10 @@ def _count(report: JsonValue, key: str) -> int:
 def saved_target(art_dir: Path) -> JsonObject:
     """Read saved target facts without changing its files.
 
+    A saved target report that breaks its schema raises target_contract.TargetContractError, and
+    a target report or survey seal that exists but cannot be read raises OSError; neither is
+    downgraded to an unsaved target.
+
     Args:
         art_dir: The Epic's artifacts directory.
 
@@ -51,39 +75,38 @@ def saved_target(art_dir: Path) -> JsonObject:
         message: str = "art_dir must be a Path"
         raise TypeError(message)
 
-    work: Path = art_dir / "architecture"
-    target: Path = work / "target.json"
+    target: Path = target_report_path(art_dir)
+    work: Path = target.parent
     update: Path = work / "architecture-update.json"
-    saved: JsonObject | None = json_object(json.loads(target.read_text(encoding="utf-8"))) if target.is_file() else None
-    summary: JsonObject = json_object(saved.get("summary") or saved) if saved is not None else {}
+    saved: TargetResult | None = load_target_report(target) if target.is_file() else None
     report: JsonObject = json_object(json.loads(update.read_text(encoding="utf-8"))) if update.is_file() else {}
-    delta_files: JsonValue = saved.get("deltaFiles") if isinstance(saved, dict) else None
-    seal_path: Path = work / "survey.json.baseline-inputs.json"
-    seal: JsonObject = json_object(json.loads(seal_path.read_text(encoding="utf-8"))) if seal_path.is_file() else {}
-    baseline_current: bool = (
-        survey_freshness(work / "survey.json", FreshnessOptions(form=check_type(seal.get("form"), str | None)))[
-            "current"
-        ]
-        if saved
-        else False
-    )
-    revision_problem: str | None = record_problem(work) if saved else None
+    baseline_current: bool = False
+    if saved is not None:
+        survey: Path = work / SURVEY_FILE
+        seal_warnings: list[str] = []
+        seal: SurveySeal | None = read_survey_seal(survey_seal_path(survey), seal_warnings)
+        form: SealForm | None = seal.get("form") if seal is not None else None
+        baseline_current = survey_freshness(survey, FreshnessOptions(form=form))["current"]
+    revision_problem: str | None = record_problem(work) if saved is not None else None
+    summary: TargetSummary | None = saved["summary"] if saved is not None else None
+    delta_dir: str | None = summary.get(KEY_DELTA_DIR) if summary is not None else None
+    delta_files: list[str] | None = saved.get(KEY_DELTA_FILES) if saved is not None else None
     return {
         "found": saved is not None,
-        "ok": summary.get("ok") is True
+        "ok": summary is not None
+        and summary[KEY_OK]
         and baseline_current
         and revision_problem is None
         and saved_evidence_current(str(work)),
         "revisionProblem": revision_problem or "",
-        "subject": summary.get("subject"),
-        "targetDir": summary.get("targetDir"),
-        "deltaDir": summary.get("deltaDir"),
+        "subject": summary.get(KEY_SUBJECT) if summary is not None else None,
+        "targetDir": summary.get(KEY_TARGET_DIR) if summary is not None else None,
+        "deltaDir": delta_dir,
         "deltaFiles": len(delta_files)
-        if isinstance(delta_files, list)
-        else int(check_type(summary.get("deltaFiles") or 0, int | str)),
+        if delta_files is not None
+        else (summary.get(KEY_DELTA_FILES, 0) if summary is not None else 0),
         "integratedFiles": _count(report, "changedFiles") + _count(report, "createdFiles"),
-        "closureSaved": bool(summary.get("deltaDir"))
-        and (Path(str(summary.get("deltaDir"))).parent / "closure.json").is_file(),
+        "closureSaved": bool(delta_dir) and (Path(str(delta_dir)).parent / CLOSURE_FILE).is_file(),
     }
 
 

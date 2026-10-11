@@ -6,24 +6,53 @@ import hashlib
 import json
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol, override, runtime_checkable
+from typing import ParamSpec, Protocol, TypeVar, override, runtime_checkable
 from unittest.mock import patch
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/beads-contract/scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/artifact-handoff/scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import beadwrite
-from beadgraph import Bead
+from bead_metadata import (
+    CDS_AUDIT_PASSED,
+    KEY_BUILD_STOP_STAGE,
+    KEY_CDS_AUDIT_VERDICT,
+    KEY_ELAB_KEY,
+    KEY_REQUIREMENT_IDS,
+)
+from beadgraph import Bead, Graph
 from beadgraph import Writer as TrackerWriter
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.tools import Tools
 from orchestrator.flows import task_state
 from orchestrator.flows.task_decomposition import task_inputs
+from placement_contract import (
+    KEY_FRONTEND,
+    KEY_ITEM_IDS,
+    KEY_MISSING_REPOS,
+    KEY_NO_CODE,
+    KEY_PLACEMENTS,
+    KEY_RATIONALE,
+    KEY_REPO_NAME,
+    KEY_REPO_PATH,
+    KEY_SPAN_RATIONALE,
+    PlacementRuling,
+)
+from target_contract import DELTA_ITEMS_FILE, DeltaItem, DeltaResult
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+# The task decomposition output (tasks.schema.json) has no generated module yet, so its
+# citation key is held here until that contract exports it.
+TASK_REQUIREMENT_IDS: str = "requirementIds"
 
 
 def _objects(value: object) -> list[dict[str, JsonValue]]:
@@ -37,15 +66,6 @@ class SavedTask(Protocol):
     title: str
     elab_key: str
     key: str
-
-
-class FixtureGraph:
-    """Mutable graph used only by the existing replacement-journal check."""
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __init__(self, beads: dict[str, Bead]) -> None:
-        """Bind the graph records used by the isolated fixture."""
-        self.beads = beads
 
 
 class Writer(TrackerWriter):
@@ -80,8 +100,8 @@ class CreatingWriter(Writer):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def save(path: Path, data: dict[str, JsonValue]) -> None:
-    """Evaluate the existing isolated check contract."""
+def save(path: Path, data: Mapping[str, object]) -> None:
+    """Write one fixture document as JSON."""
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -97,19 +117,32 @@ def check() -> None:
 
 
 def _input_facts(work: Path, repo: str) -> None:
-    save(
-        work / "repo-scoping.json",
-        {"placements": [{"repoPath": repo, "itemIds": ["D1", "D2"]}], "noCode": []},
-    )
-    save(
-        work / "delta-items.json",
-        {
-            "items": [
-                {"id": "D1", "element": "service", "requires": ["D2"]},
-                {"id": "D2", "element": "layer", "requires": []},
-            ],
-        },
-    )
+    scoping: PlacementRuling = {
+        KEY_PLACEMENTS: [
+            {
+                KEY_REPO_PATH: repo,
+                KEY_REPO_NAME: "repo",
+                KEY_ITEM_IDS: ["D1", "D2"],
+                KEY_FRONTEND: False,
+                KEY_RATIONALE: "The repository changes for both items.",
+            },
+        ],
+        KEY_MISSING_REPOS: [],
+        KEY_NO_CODE: [],
+        KEY_SPAN_RATIONALE: "One repository carries the delta.",
+    }
+    save(work / "repo-scoping.json", scoping)
+    items: list[DeltaItem] = [
+        {"id": "D1", "element": "service", "views": ["05-building-blocks/service.md"], "requires": ["D2"]},
+        {"id": "D2", "element": "layer", "views": ["05-building-blocks/layer.md"], "requires": []},
+    ]
+    delta: DeltaResult = {
+        "ok": True,
+        "refusals": [],
+        "summary": {"ok": True, "refusals": [], "items": len(items)},
+        "items": items,
+    }
+    save(work / DELTA_ITEMS_FILE, delta)
     save(
         work / "story-repo.json",
         {"title": "Story", "description": "Build", "decisionIds": []},
@@ -124,7 +157,7 @@ def _input_facts(work: Path, repo: str) -> None:
         "key": "T1",
         "title": "Build service",
         "description": "Implement service",
-        "requirementIds": ["D1"],
+        TASK_REQUIREMENT_IDS: ["D1"],
     }
     score: dict[str, JsonValue] = {
         "key": "T1",
@@ -171,7 +204,7 @@ def _input_facts(work: Path, repo: str) -> None:
                     **task,
                     "key": "N1",
                     "title": "Build layer",
-                    "requirementIds": ["D2"],
+                    TASK_REQUIREMENT_IDS: ["D2"],
                 },
             ],
             "edges": [],
@@ -192,25 +225,26 @@ def _preserve_tasks(work: Path, repo: str) -> None:
         "title": "Story",
         "issue_type": "story",
         "status": "open",
-        "metadata": {"elab_key": "story:repo"},
+        "metadata": {KEY_ELAB_KEY: "story:repo"},
     }
     records = []
-    for key, status, metadata in [
+    fixtures: list[tuple[str, str, dict[str, str]]] = [
         ("unstarted", "open", {}),
         ("blocked", "blocked", {}),
         ("started", "in_progress", {}),
         ("closed", "closed", {}),
         ("deferred", "deferred", {}),
-        ("stopped", "open", {"build_stop_stage": "red"}),
-        ("audited", "open", {"cds_audit_result": "passed"}),
-    ]:
+        ("stopped", "open", {KEY_BUILD_STOP_STAGE: "red-unsatisfied"}),
+        ("audited", "open", {KEY_CDS_AUDIT_VERDICT: CDS_AUDIT_PASSED}),
+    ]
+    for key, status, metadata in fixtures:
         records.append(
             {
                 "id": key,
                 "title": key,
                 "issue_type": "task",
                 "status": status,
-                "metadata": {"elab_key": f"task:repo:{key}", **metadata},
+                "metadata": {KEY_ELAB_KEY: f"task:repo:{key}", **metadata},
             },
         )
 
@@ -252,7 +286,7 @@ def _preserve_tasks(work: Path, repo: str) -> None:
         "task",
         "open",
         "story",
-        {"elab_key": saved[0].elab_key},
+        {KEY_ELAB_KEY: saved[0].elab_key},
         (),
     )
     writer.planned = []
@@ -314,6 +348,47 @@ def _preserve_tasks(work: Path, repo: str) -> None:
     report("PASS: unchanged inputs preserve existing Tasks and create only missing Tasks")
 
 
+class JournalTools(Tools):
+    """Run portfolio operations in process and capture the one tracker edge write."""
+
+    added: bool = False
+
+    @override
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def operation[T](self, stage: str, action: Callable[[], T]) -> T:
+        """Run the operation once without retry.
+
+        Returns:
+            The operation result.
+
+        """
+        return action()
+
+    @override
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def portfolio(self, stage: str, operation: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
+        """Call the actual portfolio function directly.
+
+        Returns:
+            The portfolio function result.
+
+        """
+        return operation(*args, **kwargs)
+
+    @override
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def bd(self, args: list[str], *, stage: str, stdin: str | None = None) -> str:
+        """Record the expected dependency re-point instead of running the tracker.
+
+        Returns:
+            Empty tracker output.
+
+        """
+        require(args == ["dep", "add", "outside", "new", "--type", "blocks"], "wrong dependency edge")
+        self.added = True
+        return ""
+
+
 def _journal(work: Path) -> None:
     outgoing = Bead(
         "outside",
@@ -330,7 +405,7 @@ def _journal(work: Path) -> None:
         "task",
         "open",
         "story",
-        {"elab_key": "task:repo:old", "requirement_ids": '["D1"]'},
+        {KEY_ELAB_KEY: "task:repo:old", KEY_REQUIREMENT_IDS: '["D1"]'},
         (),
     )
     new = Bead(
@@ -339,32 +414,12 @@ def _journal(work: Path) -> None:
         "task",
         "open",
         "story",
-        {"elab_key": "task:repo:new", "requirement_ids": '["D1"]'},
+        {KEY_ELAB_KEY: "task:repo:new", KEY_REQUIREMENT_IDS: '["D1"]'},
         (),
     )
-    graph = FixtureGraph({"outside": outgoing, "old": old})
+    graph = Graph({"outside": outgoing, "old": old}, "fixture")
 
-    class FakeTools(Tools):
-        added = False
-
-        @override
-        @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        def operation[T](self, stage: str, action: Callable[[], T]) -> T:
-            return action()
-
-        @override
-        @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        def portfolio[**P, R](self, stage: str, operation: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
-            return operation(*args, **kwargs)
-
-        @override
-        @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        def bd(self, args: list[str], *, stage: str, stdin: str | None = None) -> str:
-            require(args == ["dep", "add", "outside", "new", "--type", "blocks"], "wrong dependency edge")
-            self.added = True
-            return ""
-
-    tools = FakeTools(work / "evidence")
+    tools = JournalTools(work / "evidence")
     with (
         patch.object(task_state, "env_path", return_value=work),
         patch.object(beadwrite, "replace_tasks", side_effect=lambda *_args, **_kwargs: graph.beads.pop("old", None)),

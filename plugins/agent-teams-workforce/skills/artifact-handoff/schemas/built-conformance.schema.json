@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The architecture-conformance-reviewer's result for a built-version correction (built-version.js Correct). It names the built views the effective version now matches and carries no coverage checks. Conformance findings are defined once in architecture-common.schema.json#/$defs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["conforms", "reviewedFiles", "matchedBuiltViews", "findings", "summary"],
+  "properties": {
+    "conforms": {"type": "boolean"},
+    "reviewedFiles": {"type": "array", "items": {"type": "string"}},
+    "matchedBuiltViews": {"type": "array", "items": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "architecture-common.schema.json#/$defs/ConformanceFinding"}
+    },
+    "summary": {"type": "string"}
+  }
+}

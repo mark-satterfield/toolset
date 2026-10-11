@@ -18,14 +18,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ParamSpec, TypeVar
 
+from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
+
+# isort: split
 import beadgraph
 from contracts import JsonInput, JsonObject, json_value
+from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
+from .handback_contract import (
+    BD_TIMEOUT_CAUSE,
+    CONTENTION_CAUSE,
+    NETWORK_CAUSE,
+    OTHER_CAUSE,
+    TOOL_TIMEOUT_CAUSE,
+)
 from .models import RetryExhaustedError, StepError
 from .tool_locks import bd_gate, seconds
 
-RETRY_CAUSES = frozenset({"contention", "bd-timeout", "tool-timeout", "network"})
+RETRY_CAUSES: frozenset[str] = frozenset({CONTENTION_CAUSE, BD_TIMEOUT_CAUSE, TOOL_TIMEOUT_CAUSE, NETWORK_CAUSE})
 _LOG = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _IMPORT_LOCK = threading.RLock()
@@ -91,7 +102,7 @@ def env_path(name: str) -> Path:
     value: str = os.environ.get(name, "").strip()
     stage: str = "input"
     if not value:
-        raise StepError(stage, "other", (f"{name} is required",))
+        raise StepError(stage, OTHER_CAUSE, (f"{name} is required",))
     return Path(value).expanduser().resolve()
 
 
@@ -110,11 +121,11 @@ def vault_path(relative: str) -> Path:
     if not isinstance(relative, str):
         message: str = "Vault relative path must be a string"
         raise TypeError(message)
-    root: Path = env_path("ATW_ARCH_PATH")
+    root: Path = env_path(ARCH_PATH_ENV)
     result: Path = (root / relative).resolve()
     stage: str = "input"
     if not result.is_relative_to(root):
-        raise StepError(stage, "other", (f"path escapes ATW_ARCH_PATH: {relative}",))
+        raise StepError(stage, OTHER_CAUSE, (f"path escapes {ARCH_PATH_ENV}: {relative}",))
     return result
 
 
@@ -279,16 +290,16 @@ class Tools:
                     check=False,
                 )
             except subprocess.TimeoutExpired as exc:
-                raise self.failure(stage, "tool-timeout", {"argv": list(argv), "exception": repr(exc)}) from exc
+                raise self.failure(stage, TOOL_TIMEOUT_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
             except ConnectionError as exc:
-                raise self.failure(stage, "network", {"argv": list(argv), "exception": repr(exc)}) from exc
+                raise self.failure(stage, NETWORK_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
             except OSError as exc:
-                raise self.failure(stage, "other", {"argv": list(argv), "exception": repr(exc)}) from exc
+                raise self.failure(stage, OTHER_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
 
         done: subprocess.CompletedProcess[str] = retry_call(attempt)
         result: CommandResult = CommandResult(tuple(argv), done.returncode, done.stdout, done.stderr)
         if check and result.exit:
-            raise self.failure(stage, "other", result.to_json())
+            raise self.failure(stage, OTHER_CAUSE, result.to_json())
         return result
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -323,7 +334,7 @@ class Tools:
         except StepError, TypeCheckError:
             raise
         except Exception as exc:
-            cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else "other"
+            cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else OTHER_CAUSE
             raise self.failure(
                 stage,
                 cause,
@@ -356,7 +367,7 @@ class Tools:
                 stage,
                 beadgraph.run_bd,
                 args,
-                env_path("ATW_CONTROL_REPO"),
+                env_path(CONTROL_REPO_ENV),
                 stdin,
             ),
             str,
@@ -407,7 +418,7 @@ class Tools:
                 cwd=repo,
             )
             if (repo / lock.stdout.strip()).exists():
-                raise self.failure(stage, "contention", result.to_json())
+                raise self.failure(stage, CONTENTION_CAUSE, result.to_json())
             if args and args[0] == "push":
                 self.command(
                     ["git", "fetch", remote],
@@ -429,10 +440,10 @@ class Tools:
                 )
                 if ancestor.exit == 1:
                     self.git(repo, ["pull", "--rebase", remote, branch], stage=stage)
-                    raise self.failure(stage, "contention", result.to_json())
+                    raise self.failure(stage, CONTENTION_CAUSE, result.to_json())
                 if ancestor.exit:
-                    raise self.failure(stage, "other", ancestor.to_json())
-            raise self.failure(stage, "other", result.to_json())
+                    raise self.failure(stage, OTHER_CAUSE, ancestor.to_json())
+            raise self.failure(stage, OTHER_CAUSE, result.to_json())
 
         return retry_call(attempt)
 
@@ -460,7 +471,7 @@ class Tools:
             except StepError, TypeCheckError:
                 raise
             except Exception as exc:
-                cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else "other"
+                cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else OTHER_CAUSE
                 raise self.failure(
                     stage,
                     cause,

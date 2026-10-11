@@ -13,12 +13,21 @@ contract, for that decision and for the readiness process.
 
 Source: `<plugin>/workflows/wsjf-scoring.js` (`meta.description`), the plugin command
 `<plugin>/commands/wsjf-scoring.md`, the agent `<plugin>/agents/wsjf-scorer.md` and its skills
-(`wsjf`, `beads-contract`), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts
+(`skills/wsjf`, `skills/beads-contract`), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts
 only, `<plugin>/scripts/portfolio/depscore.py` (`score-plan`, `judge-input`, `record`, `score`),
-`scoring.py`, `prds.py`, `beadgraph.py` and `elaboration.py` (`finish`). `<driver>` is
-`$ATW_CONTROL_REPO/ops/sdlc-automation`. Sibling specs: `<orch>/specs/epic/dependency-assessment.md`,
+`scoring.py`, `prds.py`, `beadgraph.py` and `elaboration.py` (`finish`). Environment variables
+are named only in `<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`
+(`$defs.DriverEnvironment`; read `<plugin>/skills/pipeline-contracts/SKILL.md`); this spec writes
+`$<CONSTANT>` for the value of the variable that schema constant names. `<driver>` is
+`$<CONTROL_REPO_ENV>/<DRIVER_DIR_PARTS>`. Sibling specs: `<orch>/specs/epic/dependency-assessment.md`,
 `<orch>/specs/epic/task-dependency-assessment.md`, `<orch>/specs/epic/prd-to-spec.md`,
 `<orch>/specs/epic/task-decomposition.md`.
+
+Bead metadata: every metadata key, key group, value vocabulary and fingerprint field set this spec
+names is defined only in `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and
+is named here by the constant `<plugin>/skills/beads-contract/scripts/bead_metadata.py` generates
+from it (`KEY_*` for one key, `*_KEYS` for a key group, `*_HASH_*` for a fingerprint field set).
+This spec restates none of their names or values.
 
 ## Who calls it (the S01f question)
 
@@ -37,10 +46,10 @@ only, `<plugin>/scripts/portfolio/depscore.py` (`score-plan`, `judge-input`, `re
   `failures.py` reading old `trigger_dispatch` events, and `runcost.FORMER_TRIGGER_COMPOSITES`
   costing old run files.
 - **The driver depends on its output.** `selection._epic_candidates` declines an Epic with no
-  `wsjf` ("a person runs wsjf-scoring to score it"); `selection.build_candidates` and
-  `waiting_build` consider only beads with a `wsjf`; `ordering`, `storyorder`, `storyview` and
-  `observe` rank and display by it (`BeadIndex.wsjf_of` reads metadata `wsjf`, falling back to a
-  `wsjf_score: N` line in `notes`).
+  `KEY_WSJF` value ("a person runs wsjf-scoring to score it"); `selection.build_candidates` and
+  `waiting_build` consider only beads with a `KEY_WSJF` value; `ordering`, `storyorder`,
+  `storyview` and `observe` rank and display by it (`BeadIndex.wsjf_of` reads metadata
+  `KEY_WSJF`, falling back to a score line in `notes`).
 - **The only caller today is the owner**, through `/agent-teams-workforce:wsjf-scoring`, and
   `dependency-assessment` / `task-dependency-assessment` call it after applying edges.
 
@@ -60,37 +69,35 @@ or changes a dependency edge.
 ## 2. Produces and decides
 
 After a successful run:
-- Every open Epic whose judged inputs were missing or changed carries freshly judged `wsjf_ubv`,
-  `wsjf_tc`, `wsjf_confidence` and, unless its size rolls up, `wsjf_size_estimate`,
-  `wsjf_size_low`, `wsjf_size_high`, `wsjf_size_confidence`, all beside `wsjf_content_hash` = its
-  judging fingerprint at plan time.
+- Every open Epic whose judged inputs were missing or changed carries freshly judged value, time
+  criticality and value-confidence keys and, unless its size rolls up, its judged size keys (the
+  `WSJF_KEYS` members `skills/wsjf/scripts/wsjf.py` records as judged), all beside
+  `KEY_WSJF_CONTENT_HASH` = its judging fingerprint at plan time.
 - Every open Task whose size was missing or changed carries freshly judged size keys and
-  `wsjf_content_hash`.
+  `KEY_WSJF_CONTENT_HASH`.
 - With `all` and not `rejudge`, every item with values but no fingerprint ("unfingerprinted") has
-  `wsjf_content_hash` adopted (written) without judging.
-- Every open Epic and Task that the rubric can score carries the computed keys that changed:
-  `wsjf`, `wsjf_calculated_at`, `wsjf_rubric`, `wsjf_rroe`, `wsjf_reaches` (Epic) or
-  `wsjf_unblocks` (Task), `wsjf_cod`, `wsjf_size`, `wsjf_size_source` (`supplied` or
-  `child-rollup`), `wsjf_value_from` (Task), `wsjf_size_outside_range` (Epic sized from Tasks), as
-  `skills/wsjf/scripts/wsjf.py` names them. Unchanged values are not rewritten.
+  `KEY_WSJF_CONTENT_HASH` adopted (written) without judging.
+- Every open Epic and Task that the rubric can score carries the computed `WSJF_KEYS` members
+  that changed (those `skills/wsjf/scripts/wsjf.py` computes for its level; the schema states each
+  key's value domain). Unchanged values are not rewritten.
 - A Task under an unscored Epic, or under no Epic, has no value to inherit and stays unscored
-  (no `wsjf`), so the driver never selects it.
+  (no `KEY_WSJF` value), so the driver never selects it.
 - No edge is created, removed or converted. Nothing is written in a dry run.
 - A result object for the caller: `plan`, `judging`, `judgingFailed`, `record`, `score`,
   `failures` (fields in section 4).
 
 ## 3. Inputs
 
-- Arguments: `repoPath` (beads repository; default `$ATW_CONTROL_REPO`), `workDir`, `archPath`
-  (`$ATW_ARCH_PATH`, required by the command), `projectRoot` (`$ATW_PROJECT_ROOT`, optional),
+- Arguments: `repoPath` (beads repository; default `$<CONTROL_REPO_ENV>`), `workDir`, `archPath`
+  (`$<ARCH_PATH_ENV>`, required by the command), `projectRoot` (`$<PROJECT_ROOT_ENV>`, optional),
   `all`, `rejudge`, `only` (list of ids; no current caller passes it), `dryRun`, `priorFailure`
   (optional text from a failed earlier run; no current caller passes it).
 - beads, read once per run with descriptions (`beadgraph.load(..., with_description=True)`): every
   open Epic and Task, their `parent` lineage, `tracks` edges between Epics and `blocks` edges
-  between Tasks (`Bead.depends_on`), and metadata `elaboration_state`, the judged keys, the
-  computed keys and `wsjf_content_hash`.
-- The judging fingerprint: `beads-contract.py` `content_hash` with `--scope judging` (title,
-  description, issue_type, priority; WSJF, lane, sequencing keys, labels and dependencies nulled).
+  between Tasks (`Bead.depends_on`), and metadata `KEY_ELABORATION_STATE` and the `WSJF_KEYS`
+  members (judged, computed and `KEY_WSJF_CONTENT_HASH`).
+- The judging fingerprint: `beads-contract.py` `content_hash` with `--scope judging`, over
+  `JUDGING_HASH_FIELDS` with only `JUDGING_HASH_PRESENT` hashed by value.
 - The rubric: `<plugin>/skills/wsjf/scripts/wsjf.py` (bands, Fibonacci size scale, snapping,
   roll-up), loaded by `scoring._load_wsjf`.
 - Agent context: the architecture under `archPath` and code under `projectRoot`, read by the
@@ -132,8 +139,8 @@ Files (under `<workDir>`; JSON unless stated):
   sizeOutsideRange, written}`.
 
 Bead writes (all through `beadgraph.Writer.metadata`, i.e. `bd update --set-metadata`, merge):
-- `record`: judged keys + `wsjf_content_hash` per judged item (never writes an empty
-  fingerprint); `wsjf_content_hash` only, per adopted item.
+- `record`: judged keys + `KEY_WSJF_CONTENT_HASH` per judged item (never writes an empty
+  fingerprint); `KEY_WSJF_CONTENT_HASH` only, per adopted item.
 - `score`: the computed keys listed in section 2, per item whose values changed.
 
 No vault writes, no git commits, no ledger events (the flow is not dispatched by the supervisor).
@@ -207,7 +214,7 @@ Agents dispatched by the JavaScript, accounted for:
 - `record` validates every judged value (positive integer, value capped at the rubric's top rung,
   percent range, range widened to contain the estimate) before writing: without it an off-scale
   value reaches beads and the arithmetic divides by or bands it; nothing later re-validates.
-- `record` never writes an empty `wsjf_content_hash`: without it a stale value would read as
+- `record` never writes an empty `KEY_WSJF_CONTENT_HASH`: without it a stale value would read as
   `unfingerprinted` and never be re-judged without `--all --rejudge`.
 - `score` reads a non-positive or unparseable size as absent (item unscored or Epic incomplete,
   named in `score.json`): without it one bad bead aborts the arithmetic for the whole portfolio.
@@ -220,7 +227,7 @@ Agents dispatched by the JavaScript, accounted for:
 
 **Checks dropped**
 - `resolveArgs` / `refuseArgs` (a Python script run through a relay to resolve paths from env
-  vars): the Python entry point reads `os.environ` directly; a missing `ATW_ARCH_PATH` is refused
+  vars): the Python entry point reads `os.environ` directly; a missing `ARCH_PATH_ENV` variable is refused
   by the command before the flow starts.
 - `artifactRevision` input binding and `authorArtifact` candidate-then-publish with a schema check:
   `record` already validates every field it writes and reports an unreadable file under
@@ -255,7 +262,7 @@ Agents dispatched by the JavaScript, accounted for:
 - Step 4/5 judgment files: saved, each with `.meta.json`; fingerprint = the session's
   `<key>.input.json` (the judging fingerprint of each item the session covers) and its other input
   files. A rerun starts no session whose recorded inputs are unchanged.
-- Step 7: its effect is in beads (`wsjf_content_hash` = plan fingerprint). A rerun after step 7
+- Step 7: its effect is in beads (`KEY_WSJF_CONTENT_HASH` = plan fingerprint). A rerun after step 7
   plans none of those items, so it judges nothing again.
 - Step 8: idempotent; a rerun writes only what changed (nothing, if nothing changed).
 - A rerun after any point therefore redoes no session whose inputs are unchanged and starts no
@@ -265,12 +272,12 @@ Agents dispatched by the JavaScript, accounted for:
 
 - 7.17 Epic readiness: Epic WSJF judging and scoring belong to the future readiness process; no
   Epic pipeline step runs this flow, and the pipeline's own finish step writes Task scores only.
-- 7.8 WSJF selection filter: this flow is the producer of the `wsjf` value that
+- 7.8 WSJF selection filter: this flow is the producer of the `KEY_WSJF` value that
   `selection._epic_candidates` (Epics), `selection.build_candidates` and `waiting_build` (Tasks)
-  and the dashboard require. It never writes an empty `wsjf`; an item it cannot score keeps no
-  `wsjf` and so stays out of selection and off the dashboard, which is the filter's intent. It
-  does not filter itself: it scores every open Epic and Task, including the mobile Epics
-  `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn` (their exclusion is by `elaboration_state`, in
+  and the dashboard require. It never writes an empty `KEY_WSJF`; an item it cannot score keeps no
+  `KEY_WSJF` value and so stays out of selection and off the dashboard, which is the filter's
+  intent. It does not filter itself: it scores every open Epic and Task, including the mobile Epics
+  `ssbd-cb6i4`, `ssbd-kfihs`, `ssbd-mx3vn` (their exclusion is by `KEY_ELABORATION_STATE`, in
   `<driver>`).
 - 7.2 Only the owner runs the pipeline: this flow is an owner-run command; no session runs it as
   a test, and `dryRun` exists for the owner, not for rehearsal.

@@ -15,7 +15,7 @@ reviewers and two cost reviewers. The coordinator routes; decider and maintainer
 
 Schema: [survey.schema.json](schemas/survey.schema.json).
 
-Fields and interpretation: The root fields are subject, subjectReason, capabilities, baseline, openTargets, businessConflicts, coverage and summary. Capability names equal baseline ids; requirement references agree. Every PRD capability is assessed, with evidence for applicable architecture/documentation actions and coverage. The embedded baseline is identical to architecture-baseline.schema.json for saved-survey compatibility. New code.state/implementationAction/disposition are unknown/unknown/undetermined; Python derives built-state work from matrix rows. These fields never prove implementation. Python renders readable survey.md from accepted JSON; the agent writes only its one JSON output.
+Fields and interpretation: The schema and its `$defs` define every field, value and rule, including how capabilities match baseline entries (`$defs/Capability`) and the values of a fresh baseline entry (`$defs/FreshBaselineEntry`). Every PRD capability is assessed, with evidence for applicable architecture/documentation actions and coverage. Python derives built-state work from matrix rows; the baseline's code and implementation fields never prove implementation. Python renders readable survey.md from accepted JSON; the agent writes only its one JSON output.
 
 ## architecture-writer
 
@@ -101,7 +101,9 @@ Fields and interpretation: Markdown catalog fields view_type, scope, subject, sh
 
 ## architecture-baseline
 
-Fields and interpretation: The array schema architecture-baseline.schema.json is unchanged for saved surveys; its id/requirements/subjects/documents/code/awsGuidance/actions/rationale/conflicts/current/target/disposition/suitabilityEvidenceRefs hold design assessment. code and implementation fields are legacy context only. Complete means every capability has a matched assessed row with source evidence.
+Schema: [survey.schema.json](schemas/survey.schema.json) `$defs/Baseline`.
+
+Fields and interpretation: The baseline is the survey's baseline array; `$defs/BaselineEntry` defines each entry's fields and values, which hold design assessment. Its code and implementation fields are legacy context only. Complete means every capability has a matched assessed entry with source evidence.
 
 ## trd-document
 
@@ -193,7 +195,7 @@ Fields and interpretation: Python run record execution identity, sessions/phase/
 
 ## handback
 
-Fields and interpretation: Python driver-facing result carries ok/stage/failure/requiredHumanActions/sessions and artifact/repository facts defined by DESIGN 4. Complete means the process outcome and sessions are accurately returned; never an agent assertion of done.
+Not an agent artifact. `orchestrator/run.py` writes it and the driver reads it; no agent session produces or reads it. Its one definition is `orchestrator/core/handback_contract.py`.
 
 ## events
 

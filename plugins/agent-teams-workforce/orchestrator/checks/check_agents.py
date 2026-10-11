@@ -17,13 +17,40 @@ from unittest.mock import patch
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
 
+from driver_surface_types import (
+    ACCOUNT_WINDOWS,
+    CONTROL_REPO_ENV,
+    DRIVER_MODULES,
+    HEADLESSENV_MODULE,
+    MODEL_OVERAGE_TYPE,
+    OUT_OF_CREDITS_REASON,
+    RATE_LIMIT_EVENT_TYPE,
+    RATE_LIMIT_INFO_KEY,
+    REJECTED_STATUS,
+    HeadlessEnvironment,
+    RateLimitEvent,
+    RateLimitInfo,
+)
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifact_contract import ArtifactProducer
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
-from orchestrator.core.driver_contracts import driver_module
+from orchestrator.core.driver_contracts import dispatch_arguments, driver_module
 from orchestrator.core.events import EventWriter
+from orchestrator.core.handback_contract import (
+    EVENT_KEY,
+    OTHER_CAUSE,
+    PRD_TO_SPEC_PHASES,
+    QUOTA_CAUSE,
+    SESSION_ENDED,
+    SESSION_EVENT,
+    SESSION_STARTED,
+    OrchestratorEvent,
+    SessionState,
+    validate_event,
+)
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import AgentStep, RunContext, StepError
 
@@ -75,18 +102,61 @@ mode = os.environ["FAKE_MODE"]
 if mode == "hang":
     time.sleep(10)
 elif mode == "fable" and "--resume" not in args:
-    print(json.dumps({"type": "rate_limit_event", "rate_limit_info": {
-        "status": "rejected", "rateLimitType": "seven_day_overage_included",
-        "overageDisabledReason": "out_of_credits", "resetsAt": 2000000000}}), flush=True)
+    print(os.environ["FAKE_FABLE_EVENT"], flush=True)
 elif mode == "quota":
-    print(json.dumps({"type": "rate_limit_event", "rate_limit_info": {
-        "status": "rejected", "rateLimitType": "five_hour", "resetsAt": 2000000000}}), flush=True)
+    print(os.environ["FAKE_QUOTA_EVENT"], flush=True)
 else:
     output = Path(brief["output"])
     if mode == "success" or (mode in ("missing", "fable") and "--resume" in args):
         output.write_text('{"accepted": true}')
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False}), flush=True)
 """
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def rate_limit_line(info: RateLimitInfo) -> str:
+    """Build one stream-json rate-limit event line from the driver-surface contract.
+
+    Returns:
+        The serialized event the fake executable prints.
+
+    """
+    event: RateLimitEvent = check_type(
+        {"type": RATE_LIMIT_EVENT_TYPE, RATE_LIMIT_INFO_KEY: info},
+        RateLimitEvent,
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+    return json.dumps(event)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def fable_line() -> str:
+    """Build the model-specific out-of-credits refusal the fake prints before a resume.
+
+    Returns:
+        The serialized rate-limit event.
+
+    """
+    return rate_limit_line(
+        RateLimitInfo(
+            status=REJECTED_STATUS,
+            rateLimitType=MODEL_OVERAGE_TYPE,
+            overageDisabledReason=OUT_OF_CREDITS_REASON,
+            resetsAt=RESET_AT,
+        ),
+    )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def quota_line() -> str:
+    """Build the account-window rejection the fake prints in quota mode.
+
+    Returns:
+        The serialized rate-limit event.
+
+    """
+    window: str = min(ACCOUNT_WINDOWS)
+    return rate_limit_line(RateLimitInfo(status=REJECTED_STATUS, rateLimitType=window, resetsAt=RESET_AT))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -166,11 +236,11 @@ def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentSte
     work.mkdir()
     context = RunContext(
         "epic",
-        "prd-to-spec",
+        dispatch_arguments().FLOW_PRD_TO_SPEC,
         {},
         work,
         "fake-run",
-        stage="architecture",
+        stage=PRD_TO_SPEC_PHASES[0],
     )
     store = ArtifactStore(module, root, work, "epic", "fake-run")
     stream = io.StringIO()
@@ -270,11 +340,12 @@ def check_command(
     require(len(runner.context.sessions) == 1, "len(runner.context.sessions) == 1")
     require(runner.run(step) == step.final, "runner.run(step) == step.final")
     require(len(records(root)) == 1, "len(records(root)) == 1")
-    events = [json.loads(line) for line in stream.getvalue().splitlines()]
-    require(
-        [e["state"] for e in events if e["event"] == "session"] == ["started", "ended"],
-        "[e['state'] for e in events if e['event'] == 'session'] == ['started', 'ended']",
-    )
+    states: list[SessionState] = []
+    for line in stream.getvalue().splitlines():
+        event: OrchestratorEvent = validate_event(json.loads(line))
+        if event[EVENT_KEY] == SESSION_EVENT:
+            states.append(event["state"])
+    require(states == [SESSION_STARTED, SESSION_ENDED], "session events are not started then ended")
     report("PASS: designed command/context/brief; accepted file reused without a session")
 
 
@@ -321,7 +392,7 @@ def check_corrective(runner: AgentRunner, step: AgentStep, root: Path) -> None:
     try:
         runner.run(step)
     except StepError as exc:
-        require(exc.cause == "other", "exc.cause == 'other'")
+        require(exc.cause == OTHER_CAUSE, "missing output must fail with the other cause")
     else:
         message = "missing output was accepted"
         raise AssertionError(message)
@@ -349,7 +420,7 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
     try:
         runner.run(step)
     except StepError as exc:
-        require(exc.cause == "quota", "exc.cause == 'quota'")
+        require(exc.cause == QUOTA_CAUSE, "a usage wall must fail with the quota cause")
         require(exc.resume_at == RESET_AT, "exc.resume_at == RESET_AT")
     else:
         message = "quota was accepted"
@@ -388,7 +459,7 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         try:
             fresh.run(step)
         except StepError as exc:
-            require(exc.cause == "other", "exc.cause == 'other'")
+            require(exc.cause == OTHER_CAUSE, "an idle session must fail with the other cause")
         else:
             message = "idle session was accepted"
             raise AssertionError(message)
@@ -407,16 +478,20 @@ def main() -> None:
         values = {
             "PATH": str(root) + os.pathsep + os.environ["PATH"],
             "CLAUDE_CONFIG_DIR": str(root / "config"),
-            "ATW_CONTROL_REPO": str(options.artifact_script.resolve().parents[2]),
+            CONTROL_REPO_ENV: str(options.artifact_script.resolve().parents[2]),
             "FAKE_CAPTURE": str(root / "capture.jsonl"),
+            "FAKE_FABLE_EVENT": fable_line(),
+            "FAKE_QUOTA_EVENT": quota_line(),
             "ATW_SESSION_IDLE": "5",
             "ATW_SESSION_LIMIT": "10",
         }
+        child_env: str = HeadlessEnvironment.child_env.__name__
+        require(child_env in DRIVER_MODULES[HEADLESSENV_MODULE], "child_env is not in the headlessenv driver surface")
         with patch.dict(os.environ, values):
-            headless = driver_module("headlessenv")
+            headless = driver_module(HEADLESSENV_MODULE)
             with patch.object(
                 headless,
-                "child_env",
+                child_env,
                 side_effect=lambda _scratch: dict(os.environ),
             ):
                 runner, step, stream = fixture(root, module)

@@ -1,150 +1,67 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One architecture reviewer's round result (roles reviewer and cost). Coverage checks and the review verdict are defined once in architecture-common.schema.json#/$defs; a loader resolves these references against that file.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "findings",
-    "coverageChecks",
-    "resolutions",
-    "summary"
-  ],
+  "required": ["findings", "coverageChecks", "resolutions", "summary"],
   "properties": {
-    "repairChecks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "repairId",
-          "verdict",
-          "evidence",
-          "files"
-        ],
-        "properties": {
-          "repairId": {
-            "type": "string"
-          },
-          "files": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "verified",
-              "revise"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
-      }
-    },
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/ReviewFinding"}},
     "coverageChecks": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "verdict",
-          "evidence"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "verified",
-              "unsupported",
-              "wrong"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
+      "items": {"$ref": "architecture-common.schema.json#/$defs/CoverageCheck"}
+    },
+    "resolutions": {"type": "array", "items": {"$ref": "#/$defs/ReviewResolution"}},
+    "summary": {"type": "string"},
+    "repairChecks": {"type": "array", "items": {"$ref": "#/$defs/RepairCheck"}},
+    "estimates": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "ReviewFinding": {
+      "description": "The reviewer's verdict on one writer claim, with its evidence and the role that owns the fix.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claimId", "claim", "file", "verdict", "evidence", "owner"],
+      "properties": {
+        "claimId": {"type": "string"},
+        "claim": {"type": "string"},
+        "file": {"type": "string"},
+        "verdict": {"$ref": "architecture-common.schema.json#/$defs/ReviewVerdict"},
+        "evidence": {"type": "string"},
+        "owner": {"type": "string"}
       }
     },
-    "resolutions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "findingId",
-          "verdict",
-          "evidence"
-        ],
-        "properties": {
-          "findingId": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "accepted",
-              "rejected"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          }
-        }
+    "ResolutionVerdict": {
+      "description": "Whether the reviewer accepts a writer's answer to one finding.",
+      "type": "string",
+      "enum": ["accepted", "rejected"]
+    },
+    "ReviewResolution": {
+      "description": "The reviewer's ruling on a writer's answer to one finding, by the finding's id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "verdict", "evidence"],
+      "properties": {
+        "findingId": {"type": "string"},
+        "verdict": {"$ref": "#/$defs/ResolutionVerdict"},
+        "evidence": {"type": "string"}
       }
     },
-    "findings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "claimId",
-          "claim",
-          "file",
-          "verdict",
-          "evidence",
-          "owner"
-        ],
-        "properties": {
-          "claimId": {
-            "type": "string"
-          },
-          "claim": {
-            "type": "string"
-          },
-          "file": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "verified",
-              "unsupported",
-              "wrong"
-            ]
-          },
-          "evidence": {
-            "type": "string"
-          },
-          "owner": {
-            "type": "string"
-          }
-        }
-      }
+    "RepairVerdict": {
+      "description": "Whether one repair is verified or must be revised.",
+      "type": "string",
+      "enum": ["verified", "revise"]
     },
-    "estimates": {
-      "type": "array",
-      "items": {
-        "type": "string"
+    "RepairCheck": {
+      "description": "The reviewer's check of one repair, by its id, with the files it checked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repairId", "verdict", "evidence", "files"],
+      "properties": {
+        "repairId": {"type": "string"},
+        "verdict": {"$ref": "#/$defs/RepairVerdict"},
+        "evidence": {"type": "string"},
+        "files": {"type": "array", "items": {"type": "string"}}
       }
-    },
-    "summary": {
-      "type": "string"
     }
   }
 }

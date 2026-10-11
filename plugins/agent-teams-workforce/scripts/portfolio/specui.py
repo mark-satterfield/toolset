@@ -1,144 +1,139 @@
 #!/usr/bin/env python3
 """The UI design sources of a repository's spec, written into the saved spec document.
 
-A repository's `ui` delta items each have a design source the detailing resolved: `bundle`
-(a cds bundle the owner supplied, specified by its `spec/build-spec.md` and the Section IDs
-the detailing resolved), `cds` (designed with the CDS design system) or `none` (no design
-change). The script knows them, so it writes them into `spec-<slug>.md` itself, as one
-`## UI design sources` section at the end of the document, replacing the section an earlier
-run wrote. The build Tasks carry the same sources in their contracts.
+A repository's `ui` delta items each have a design source the detailing resolved, as the
+artifact-handoff skill's recon schema defines it (`UiItem`). The script writes them into
+`spec-<slug>.md` itself, as one `## UI design sources` section at the end of the document,
+replacing the section an earlier run wrote. The build Tasks carry the same sources in their
+contracts.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import sys
 from pathlib import Path
-from typing import Literal
+from typing import TypeIs
 
-import contracts
 from beadcontracts import UiAppendResult
-from contracts import JsonValue
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, typechecked
 
-#: The heading of the section this module writes.
+# The per-repository detailing contract (its ui items) is generated into the artifact-handoff skill.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
+# isort: split
+from recon_contract import (
+    DESIGN_SOURCE_BUNDLE,
+    DESIGN_SOURCE_CDS,
+    DESIGN_SOURCE_NONE,
+    KEY_UI_ITEMS,
+    DesignSource,
+    UiItem,
+    violations,
+)
+
 _ARGUMENT_ERROR: str = "Arguments violate the specui input contract"
 
-
+#: The heading of the section this module writes.
 HEADING = "## UI design sources"
 
 
 MAX_SECTION_LEVEL = 2
 
+_UI_ITEM_DEFINITION: str = "UiItem"
+
 
 class SpecUiError(Exception):
-    """The items argument is not a list of UI items."""
+    """The UI design sources document cannot be read or does not hold valid UI items."""
 
 
-@dataclass(frozen=True)
-class _UiSource:
-    id: str
-    design_source: Literal["bundle", "cds", "none"]
-    build_spec: str | None
-    sections: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or self.design_source not in {"bundle", "cds", "none"}:
-            raise TypeError(_ARGUMENT_ERROR)
-        if self.build_spec is not None and not isinstance(self.build_spec, str):
-            raise TypeError(_ARGUMENT_ERROR)
-        if not isinstance(self.sections, tuple) or any(not isinstance(value, str) for value in self.sections):
-            raise TypeError(_ARGUMENT_ERROR)
-
-
-def _items(raw: str) -> list[_UiSource]:
-    """Parse the UI items argument.
+def _is_ui_item(value: object, errors: list[str]) -> TypeIs[UiItem]:
+    """Validate one decoded value against the recon schema's `UiItem` definition.
 
     Returns:
-        Each item as {id, designSource, buildSpec, sections}; an item that names no
-        design source is a `bundle` item when it names a build spec, else a `cds` one.
-
-    Raises:
-        SpecUiError: The argument is not a JSON list; an entry with no id is left out.
+        True when the value conforms; each violation is appended to `errors`.
 
     """
-    x: JsonValue
+    found: list[str] = violations(value, _UI_ITEM_DEFINITION)
+    errors.extend(found)
+    return not found
+
+
+def _items(path: Path) -> list[UiItem]:
+    """Read the UI items of a saved UI design sources document.
+
+    Returns:
+        Each item of the document's `uiItems`, validated as the recon schema's `UiItem`.
+
+    Raises:
+        SpecUiError: The file cannot be read, is not JSON, has no `uiItems` list, or an item
+            does not conform to `UiItem`.
+
+    """
     try:
-        value: object = json.loads(raw)
-    except ValueError as exc:
-        msg: str = f"--items is not JSON: {exc}"
+        value: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        msg: str = f"{path}: cannot read the UI design sources: {exc}"
         raise SpecUiError(msg) from exc
-    if not isinstance(value, list):
-        msg = "--items is not a JSON list"
+    if not isinstance(value, dict):
+        msg = f"{path}: the UI design sources are not a JSON object"
         raise SpecUiError(msg)
-    items: list[_UiSource] = []
-    entries: list[contracts.JsonValue] = check_type(
-        value,
-        list[JsonValue],
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    )
-    for x in entries:
-        if not isinstance(x, dict) or not str(x.get("id") or "").strip():
-            continue
-        raw_sections: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = x.get(
-            "sections",
-        )
-        sections: list[str] = (
-            check_type(raw_sections, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-            if raw_sections is not None
-            else []
-        )
-        spec: str | None = check_type(x.get("buildSpec") or "", str).strip() or None
-        source: Literal["bundle", "cds", "none"] = check_type(
-            check_type(x.get("designSource") or "", str).strip() or ("bundle" if spec else "cds"),
-            Literal["bundle", "cds", "none"],
-        )
-        items.append(
-            _UiSource(
-                id=check_type(x["id"], str).strip(),
-                design_source=source,
-                build_spec=spec,
-                sections=tuple(item.strip() for item in sections if item.strip()),
-            ),
-        )
+    entries: object = value.get(KEY_UI_ITEMS)
+    if not isinstance(entries, list):
+        msg = f"{path}: {KEY_UI_ITEMS} is not a JSON list"
+        raise SpecUiError(msg)
+    items: list[UiItem] = []
+    entry: object
+    for index, entry in enumerate(entries):
+        errors: list[str] = []
+        if not _is_ui_item(entry, errors):
+            msg = f"{path}: {KEY_UI_ITEMS}[{index}] is not a ui item: {'; '.join(errors)}"
+            raise SpecUiError(msg)
+        items.append(entry)
     return items
 
 
-def _line(item: _UiSource) -> str:
+def _line(item: UiItem) -> str:
     """One item of the section, as a markdown list entry.
 
     Returns:
         The entry.
 
     """
-    if item.design_source == "bundle":
-        sections: str = ", ".join(item.sections) or "none resolved"
-        return f"- `{item.id}`: bundle; build spec `{item.build_spec or 'not resolved'}`; Section IDs {sections}"
-    if item.design_source == "none":
-        return f"- `{item.id}`: none; it changes no design"
-    return f"- `{item.id}`: cds; designed with the CDS design system"
+    name: str = item["item"]
+    source: DesignSource = item["designSource"]
+    if source == DESIGN_SOURCE_BUNDLE:
+        sections: str = ", ".join(section.strip() for section in item.get("sections", []) if section.strip())
+        build_spec: str = item.get("buildSpec") or "not resolved"
+        return (
+            f"- `{name}`: {DESIGN_SOURCE_BUNDLE}; build spec `{build_spec}`; Section IDs {sections or 'none resolved'}"
+        )
+    if source == DESIGN_SOURCE_NONE:
+        return f"- `{name}`: {DESIGN_SOURCE_NONE}; it changes no design"
+    return f"- `{name}`: {DESIGN_SOURCE_CDS}; designed with the CDS design system"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def spec_ui_append(doc: Path, raw_items: str) -> UiAppendResult:
+def spec_ui_append(doc: Path, ui: Path) -> UiAppendResult:
     """Write the UI design sources section at the end of the saved spec document.
 
     Args:
         doc: The saved spec document, `spec-<slug>.md`.
-        raw_items: The repository's `ui` items as JSON:
-            [{id, designSource?, buildSpec?, sections?}].
+        ui: The saved UI design sources document, `spec-<slug>.ui.json`, whose `uiItems`
+            are the recon schema's `UiItem` rows.
 
     Returns:
         {ok, appended, summary}; `appended` counts the items written. With no items, or no
-        saved document, nothing is written and `appended` is 0.
+        saved document, nothing is written and `appended` is 0. A UI design sources
+        document that cannot be read or holds an invalid item raises `SpecUiError`.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(doc, Path)) or not (isinstance(raw_items, str)):
+    if not (isinstance(doc, Path)) or not (isinstance(ui, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    items: list[_UiSource] = _items(raw_items)
+    items: list[UiItem] = _items(ui)
     if not items or not doc.is_file():
         return {
             "ok": True,

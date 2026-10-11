@@ -8,7 +8,7 @@ A score has two kinds of input.
   its Job Size estimate, all judged from its PRD, which is the Epic's own description; and
   a Task's Job Size estimate, judged from the Task's own content. Every size estimate
   carries a plausible range and a confidence. Each judged value is stored with the
-  content fingerprint of the bead it was judged from, under `wsjf_content_hash`. A value
+  content fingerprint of the bead it was judged from, under `KEY_WSJF_CONTENT_HASH`. A value
   that is missing, or whose fingerprint no longer matches the bead, is always judged. A
   value that is present — current, or carrying no fingerprint — is included only when the
   caller includes items that already have a value; an included value is judged again when
@@ -30,13 +30,27 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import TypedDict
+from typing import TYPE_CHECKING, Final, TypedDict
 
 import beadgraph
 import scoringcontracts
 import wsjf as rubric
-import wsjf_types  # ruff: ignore[typing-only-third-party-import] - Typeguard checks local declarations at runtime.
-from beadgraph import SCOPE_JUDGING, Bead, Graph, Writer, fingerprints
+from bead_metadata import (
+    ELABORATION_DONE,
+    KEY_ELABORATION_STATE,
+    KEY_WSJF_CALCULATED_AT,
+    KEY_WSJF_CONFIDENCE,
+    KEY_WSJF_CONTENT_HASH,
+    KEY_WSJF_SIZE,
+    KEY_WSJF_SIZE_CONFIDENCE,
+    KEY_WSJF_SIZE_ESTIMATE,
+    KEY_WSJF_SIZE_HIGH,
+    KEY_WSJF_SIZE_LOW,
+    KEY_WSJF_TC,
+    KEY_WSJF_UBV,
+    SCOPE_JUDGING,
+)
+from beadgraph import Bead, Graph, Writer, fingerprints
 from contracts import JsonObject, JsonValue
 from prds import write_prds
 from scoringcontracts import (
@@ -54,34 +68,36 @@ from scoringcontracts import (
     ScoreResult,
 )
 from typeguard import CollectionCheckStrategy, typechecked
-from wsjf_types import Item, Unscored  # ruff: ignore[typing-only-third-party-import] - Runtime imports preserve typeguard local-assignment validation.
-from wsjf_types import ScoreResult as RubricResult  # ruff: ignore[typing-only-third-party-import] - Runtime import preserves typeguard local-assignment validation.
 
-#: The metadata key holding the fingerprint of the content a judged value was judged from.
+if TYPE_CHECKING:
+    import wsjf_types
+    from wsjf_types import (
+        Item,
+        Unscored,
+    )
+    from wsjf_types import (
+        ScoreResult as RubricResult,
+    )
+
 _ARGUMENT_ERROR: str = "Arguments violate the scoring input contract"
 
-
-JUDGED_HASH_KEY = "wsjf_content_hash"
+#: The metadata key holding the fingerprint of the content a judged value was judged from.
+#: Re-exported for callers that import it from this module.
+JUDGED_HASH_KEY: Final[str] = KEY_WSJF_CONTENT_HASH
 
 #: Metadata that changes on every write and so never, by itself, justifies one.
-VOLATILE_KEYS = frozenset({"wsjf_calculated_at"})
+VOLATILE_KEYS: Final[frozenset[str]] = frozenset({KEY_WSJF_CALCULATED_AT})
 
 #: The top rung of User-Business Value and Time Criticality in the `wsjf` rubric.
 VALUE_TOP = 20
 
 #: The judged size keys. `record` writes them; `score` reads them and never writes them.
-ESTIMATE_KEY = "wsjf_size_estimate"
-SIZE_JUDGED_KEYS = (
-    ESTIMATE_KEY,
-    "wsjf_size_low",
-    "wsjf_size_high",
-    "wsjf_size_confidence",
+SIZE_JUDGED_KEYS: Final[tuple[str, ...]] = (
+    KEY_WSJF_SIZE_ESTIMATE,
+    KEY_WSJF_SIZE_LOW,
+    KEY_WSJF_SIZE_HIGH,
+    KEY_WSJF_SIZE_CONFIDENCE,
 )
-
-
-#: The Epic lifecycle key `prd-to-spec` writes, and the state at which elaboration is done.
-ELABORATION_KEY = "elaboration_state"
-ELABORATION_DONE = "done"
 
 
 class SizeInputs(TypedDict, total=False):
@@ -198,13 +214,13 @@ def _sized_from_tasks(
         graph: The tracker graph.
         epic: The Epic.
         rollup: Epics to treat as done in this run: `elaboration-finish` scores the Epic
-            before it writes `elaboration_state=done`.
+            before it writes `KEY_ELABORATION_STATE` = `ELABORATION_DONE`.
 
     Returns:
         True when the Epic has Tasks and its elaboration is done.
 
     """
-    done: bool = epic.metadata.get(ELABORATION_KEY) == ELABORATION_DONE or epic.id in rollup
+    done: bool = epic.metadata.get(KEY_ELABORATION_STATE) == ELABORATION_DONE or epic.id in rollup
     return done and bool(_tasks_of(graph, epic))
 
 
@@ -275,7 +291,7 @@ def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
 def _required_judgments(graph: Graph, bead: Bead, level: str) -> tuple[str, ...]:
     if level != "epics":
         return SIZE_JUDGED_KEYS
-    required: tuple[str, ...] = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
+    required: tuple[str, ...] = (KEY_WSJF_UBV, KEY_WSJF_TC, KEY_WSJF_CONFIDENCE)
     return required if _sized_from_tasks(graph, bead) else required + SIZE_JUDGED_KEYS
 
 
@@ -389,10 +405,10 @@ def _size_of(bead: Bead) -> dict[str, int | None]:
 
     """
     return {
-        "jobSize": _size(bead.metadata.get(ESTIMATE_KEY)),
-        "sizeLow": _size(bead.metadata.get("wsjf_size_low")),
-        "sizeHigh": _size(bead.metadata.get("wsjf_size_high")),
-        "sizeConfidence": _int(bead.metadata.get("wsjf_size_confidence")),
+        "jobSize": _size(bead.metadata.get(KEY_WSJF_SIZE_ESTIMATE)),
+        "sizeLow": _size(bead.metadata.get(KEY_WSJF_SIZE_LOW)),
+        "sizeHigh": _size(bead.metadata.get(KEY_WSJF_SIZE_HIGH)),
+        "sizeConfidence": _int(bead.metadata.get(KEY_WSJF_SIZE_CONFIDENCE)),
     }
 
 
@@ -423,7 +439,7 @@ def reference_jobs(graph: Graph) -> list[ReferenceJob]:
         if not _sized_from_tasks(graph, epic):
             continue
         tasks: list[beadgraph.Bead] = _tasks_of(graph, epic)
-        sizes: list[int | None] = [_size(t.metadata.get("wsjf_size")) for t in tasks]
+        sizes: list[int | None] = [_size(t.metadata.get(KEY_WSJF_SIZE)) for t in tasks]
         if any(size is None for size in sizes):
             continue
         estimate: dict[str, int | None] = _size_of(epic)
@@ -583,10 +599,10 @@ def _size_pairs(one: JsonObject, bead_id: str) -> dict[str, str]:
     low: int = min(_positive(one, "sizeLow", bead_id), size)
     high: int = max(_positive(one, "sizeHigh", bead_id), size)
     return {
-        ESTIMATE_KEY: str(size),
-        "wsjf_size_low": str(low),
-        "wsjf_size_high": str(high),
-        "wsjf_size_confidence": str(_percent(one, "sizeConfidence", bead_id)),
+        KEY_WSJF_SIZE_ESTIMATE: str(size),
+        KEY_WSJF_SIZE_LOW: str(low),
+        KEY_WSJF_SIZE_HIGH: str(high),
+        KEY_WSJF_SIZE_CONFIDENCE: str(_percent(one, "sizeConfidence", bead_id)),
     }
 
 
@@ -620,9 +636,9 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: JsonObject) -> dict
     """
     pairs: dict[str, str] = {}
     if level == "epic":
-        pairs["wsjf_ubv"] = str(_value(one, "userBusinessValue", bead.id))
-        pairs["wsjf_tc"] = str(_value(one, "timeCriticality", bead.id))
-        pairs["wsjf_confidence"] = str(_percent(one, "confidence", bead.id))
+        pairs[KEY_WSJF_UBV] = str(_value(one, "userBusinessValue", bead.id))
+        pairs[KEY_WSJF_TC] = str(_value(one, "timeCriticality", bead.id))
+        pairs[KEY_WSJF_CONFIDENCE] = str(_percent(one, "confidence", bead.id))
         if not _sized_from_tasks(graph, bead):
             pairs |= _size_pairs(one, bead.id)
     else:
@@ -758,8 +774,8 @@ def _edges(beads: list[Bead]) -> list[dict[str, str]]:
 def _scoring_size(bead: Bead, *, rolls_up: bool) -> SizeInputs:
     """Return the judged size inputs a bead hands the rubric.
 
-    The estimate is `wsjf_size_estimate`. A bead with no stored estimate whose size does
-    not roll up from Tasks is sized by the `wsjf_size` it carries.
+    The estimate is `KEY_WSJF_SIZE_ESTIMATE`. A bead with no stored estimate whose size does
+    not roll up from Tasks is sized by the `KEY_WSJF_SIZE` it carries.
 
     Args:
         bead: The bead.
@@ -771,7 +787,7 @@ def _scoring_size(bead: Bead, *, rolls_up: bool) -> SizeInputs:
     """
     size: dict[str, int | None] = _size_of(bead)
     if size["jobSize"] is None and not rolls_up:
-        size["jobSize"] = _size(bead.metadata.get("wsjf_size"))
+        size["jobSize"] = _size(bead.metadata.get(KEY_WSJF_SIZE))
     result: SizeInputs = {}
     for_key: int | None = size.get("jobSize")
     if for_key is not None:
@@ -791,7 +807,7 @@ def _scoring_size(bead: Bead, *, rolls_up: bool) -> SizeInputs:
 def _task_size(task: Bead) -> int | None:
     """Return the size a Task scores at in THIS run, not the one it was written with last run.
 
-    `wsjf_size` is written by `_apply`, at the END of a run, so on the run that first
+    `KEY_WSJF_SIZE` is written by `_apply`, at the END of a run, so on the run that first
     judges a decomposed Epic's Tasks it is absent or holds the previous run's number. An
     Epic rolled up from it is therefore one run stale — and on first elaboration it falls
     back to the Epic's pre-decomposition estimate — while reporting nothing. So the Task's
@@ -805,10 +821,10 @@ def _task_size(task: Bead) -> int | None:
         The size, or None when the Task carries neither a judged estimate nor a size.
 
     """
-    estimate: int | None = _size(task.metadata.get(ESTIMATE_KEY))
+    estimate: int | None = _size(task.metadata.get(KEY_WSJF_SIZE_ESTIMATE))
     if estimate is not None:
         return rubric.snap_size(estimate)
-    return _size(task.metadata.get("wsjf_size"))
+    return _size(task.metadata.get(KEY_WSJF_SIZE))
 
 
 def _epic_items(
@@ -838,9 +854,9 @@ def _epic_items(
         tasks: list[beadgraph.Bead] = _tasks_of(graph, epic) if rolls_up else []
         item: Item = {
             "id": epic.id,
-            "userBusinessValue": _int(epic.metadata.get("wsjf_ubv")),
-            "timeCriticality": _int(epic.metadata.get("wsjf_tc")),
-            "confidence": _int(epic.metadata.get("wsjf_confidence")),
+            "userBusinessValue": _int(epic.metadata.get(KEY_WSJF_UBV)),
+            "timeCriticality": _int(epic.metadata.get(KEY_WSJF_TC)),
+            "confidence": _int(epic.metadata.get(KEY_WSJF_CONFIDENCE)),
         }
         size_inputs: SizeInputs = _scoring_size(epic, rolls_up=rolls_up)
         if "jobSize" in size_inputs:
@@ -861,7 +877,7 @@ def _epic_items(
                     {
                         "id": epic.id,
                         "reason": "Tasks carry neither a judged size estimate nor a "
-                        "wsjf_size, so no roll-up: " + ", ".join(unsized),
+                        f"{KEY_WSJF_SIZE}, so no roll-up: " + ", ".join(unsized),
                     },
                 )
         items.append(item)
@@ -887,9 +903,9 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[Item]:
         meta: dict[str, str] = epic.metadata if epic else {}
         item: Item = {
             "id": task.id,
-            "userBusinessValue": _int(meta.get("wsjf_ubv")),
-            "timeCriticality": _int(meta.get("wsjf_tc")),
-            "confidence": _int(meta.get("wsjf_confidence")),
+            "userBusinessValue": _int(meta.get(KEY_WSJF_UBV)),
+            "timeCriticality": _int(meta.get(KEY_WSJF_TC)),
+            "confidence": _int(meta.get(KEY_WSJF_CONFIDENCE)),
             "valueFrom": epic.id if epic else None,
         }
         size_inputs: SizeInputs = _scoring_size(task, rolls_up=False)
@@ -967,7 +983,7 @@ def score(
         writer: The tracker writer; a dry-run writer records the writes instead.
         scope: The ids that may be written, or None for every open Epic and Task.
         rollup: Epics whose size rolls up from their Tasks although their
-            `elaboration_state` is not yet `done`: the Epic `elaboration-finish` is about
+            `KEY_ELABORATION_STATE` is not yet `ELABORATION_DONE`: the Epic `elaboration-finish` is about
             to mark done.
 
     Returns:

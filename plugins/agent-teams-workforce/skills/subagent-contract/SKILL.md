@@ -10,9 +10,12 @@ Perform the role in your definition. The brief gives a bead, input paths, output
 it supplies no procedures or schema. Load the skills in your frontmatter and read the applicable
 contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python handles validation, acceptance, fingerprints and pipeline state.
-Do not invoke a Workflow, another agent, a command runner, a submission helper or StructuredOutput.
-Do not create receipts, revision bindings or checkpoint sidecars. If resumed, inspect and continue
-the existing result and input files; retain completed valid work.
+Do not invoke a Workflow, another agent, a command runner or StructuredOutput. Do not create
+receipts or revision bindings. When the brief carries ARTIFACT CONTRACT DATA, write the progress
+file it names and record a checkpoint or the submission only by running the artifactcontract.py
+commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
+defined by the artifact-handoff skill (schemas/checkpoint.schema.json, $defs/Progress). If resumed,
+inspect and continue the existing result and input files; retain completed valid work.
 
 Only assigned files are writable. Reviewers may write their result, never the reviewed source.
 Never write arc42 section 2, expose secrets or touch apps/marketing repositories. Never run keeper
