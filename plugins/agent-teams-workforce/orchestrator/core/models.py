@@ -11,7 +11,7 @@ from typing import NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .handback_contract import Session
+from .handback_contract import OTHER_CAUSE, Session
 from .io import JsonValue
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
@@ -40,6 +40,21 @@ class StepError(Exception):
 
 class RetryExhaustedError(StepError):
     """A transient operation used its complete bounded retry allowance."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class PipelineDefectError(StepError):
+    """Pipeline code failed, not the item's work; it is classified ``pipeline-code-defect``.
+
+    Its message names the stage and the original exception's type and text, so the handback
+    headline says what broke: ``<stage>: pipeline defect: <Type>: <message>``.
+    """
+
+    def __init__(self, stage: str, error: BaseException, evidence: tuple[str, ...] = ()) -> None:
+        """Attach the stage, the cause ``other`` and the failing exception's type and text."""
+        super().__init__(stage, OTHER_CAUSE, evidence)
+        self.error = error
+        self.args = (f"{stage}: pipeline defect: {type(error).__name__}: {error}",)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

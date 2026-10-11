@@ -25,7 +25,7 @@ from orchestrator.core.handback_contract import (
     diagnostic,
     interrupted_failure,
 )
-from orchestrator.core.models import RetryExhaustedError, StepError
+from orchestrator.core.models import PipelineDefectError, RetryExhaustedError, StepError
 
 
 def _exception_chain(exc: BaseException) -> list[BaseException]:
@@ -77,7 +77,7 @@ def _classification(
     classification: FailureClass
     if any(isinstance(item, SessionCleanupError) for item in chain):
         classification, cause = DEFECT_CLASS, OTHER_CAUSE
-    elif any(isinstance(item, (TypeCheckError, HandbackValidationError)) for item in chain):
+    elif any(isinstance(item, (TypeCheckError, HandbackValidationError, PipelineDefectError)) for item in chain):
         classification = DEFECT_CLASS
     elif (
         setup

@@ -60,7 +60,7 @@ from .handback_contract import (
 )
 from .io import JsonValue, json_object, write_json
 from .manifest import record_session
-from .models import AgentStep, RunContext, SessionFacts, StepError
+from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError
 from .tools import Tools
 
 
@@ -109,17 +109,32 @@ def strict_json(path: Path) -> dict[str, JsonValue]:
 def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
     """Validate an agent output against its declared schema or document check.
 
+    A failure of the output itself (unreadable, not strict JSON, or failing the schema with
+    ``jsonschema.ValidationError``) is the item's problem and goes to the corrective path. Any
+    other failure (the schema file cannot be read, the schema is invalid, a reference cannot be
+    resolved, or the validation machinery raises) is a pipeline-code defect.
+
     Returns:
         The validated JSON object, or None for a Markdown document.
 
     Raises:
         ValueError: A document is empty.
+        ValidationError: The output fails its schema.
+        PipelineDefectError: The schema could not be loaded or applied.
 
     """
     if isinstance(step.validate, Path):
-        result = strict_json(step.output)
-        schema = strict_json(step.validate)
-        strictschema.validate(result, schema)
+        try:
+            schema: dict[str, JsonValue] = strict_json(step.validate)
+        except Exception as exc:
+            raise PipelineDefectError(step.stage, exc, (str(step.validate),)) from exc
+        result: dict[str, JsonValue] = strict_json(step.output)
+        try:
+            strictschema.validate(result, schema, location=step.validate)
+        except jsonschema.ValidationError:
+            raise
+        except Exception as exc:
+            raise PipelineDefectError(step.stage, exc, (str(step.output), str(step.validate))) from exc
         return result
     if not step.output.read_text(encoding="utf-8").strip():
         message = f"empty document: {step.output}"

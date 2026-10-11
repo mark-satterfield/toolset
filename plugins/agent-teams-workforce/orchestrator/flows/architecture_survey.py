@@ -348,7 +348,8 @@ def adopt_result(
         "coordinator-plan" if producer == "architecture-decision-workflow-coordinator" else "architecture-writer"
     )
     try:
-        strictschema.validate(read(path), read(flow.schemas / f"{schema}.schema.json"))
+        schema_path: Path = flow.schemas / f"{schema}.schema.json"
+        strictschema.validate(read(path), read(schema_path), location=schema_path)
     except jsonschema.ValidationError:
         return
     flow.store.accept(
