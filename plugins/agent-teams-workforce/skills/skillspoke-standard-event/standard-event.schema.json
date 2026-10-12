@@ -68,8 +68,7 @@
           "source",
           "timestamps",
           "trace",
-          "lifecycle",
-          "payload"
+          "lifecycle"
         ],
         "properties": {
           "eventId": {

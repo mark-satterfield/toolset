@@ -17,6 +17,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:graphrag-lookup
+- agent-teams-workforce:skillspoke-standard-event
 effort: medium
 isolation: worktree
 color: cyan
@@ -40,7 +41,13 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 Read the PRD, survey, ledger and retained draft. Use the architecture roster in the shared
 contract. Select only specialties justified by a requirement, evidence or unresolved concern;
-there is no fixed producer quota. Write the plan as the artifact-handoff coordinator-plan schema
+there is no fixed producer quota. Read the skillspoke-standard-event skill before selecting an
+event writer: SkillSpoke has one standard event, and shared-events-service builds and publishes
+every event from the values a service passes to its API. Event work exists for a writer when the
+change introduces an event type or an event payload: select event-schema-designer for the event
+type name, the passed values and the payload schema, and domain-event-modeler when the fact, its
+owner or its causal flow is undecided. A service that publishes an existing event type through
+the shared-events-service API is covered by that service's own writer. Write the plan as the artifact-handoff coordinator-plan schema
 (schemas/coordinator-plan.schema.json) defines it; its field descriptions say what each dispatch,
 overlap and the decision readiness record. Route all applicable missing coverage, unreviewed
 claims and open findings. Writers precede reviewers; their file ownership must not overlap.

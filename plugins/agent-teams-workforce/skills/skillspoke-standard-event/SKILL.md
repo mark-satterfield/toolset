@@ -21,7 +21,7 @@ SkillSpoke has one event. Every SkillSpoke event is an instance of it.
 - **Shape:** an OpenAPI 3.0.0 document titled `SkillSpokeEventEnvelope`. Its `AWSEvent` schema is
   the EventBridge event; `AWSEvent.detail` is a `SkillSpokeEvent`.
 - **Reference copy:** [`standard-event.schema.json`](standard-event.schema.json), beside this file,
-  is registry schema version 2. Read field names, required fields, types and enum values from it.
+  is registry schema version 3. Read field names, required fields, types and enum values from it.
 - **Current registry content:** AWS `schemas` `DescribeSchema` with `RegistryName`
   `skillspoke-events` and `SchemaName` `skillspoke@standard-event` in `us-east-1`, called through
   the AWS MCP Server `run_script` tool. The registry content governs when it differs from the
@@ -40,7 +40,7 @@ SkillSpoke has one event. Every SkillSpoke event is an instance of it.
 | `timestamps` | yes | `occurredAt`, `publishedAt` required; `expiresAt` optional |
 | `trace` | yes | `correlationId` required; `causationId`, `parentEventId`, `rootEventId`, `traceId`, `spanId` optional |
 | `lifecycle` | yes | `phase`, `outcome`, `severity`, `isError` required; `statusCode`, `statusSummary`, `statusReason`, `retry`, `details` optional |
-| `payload` | yes | `mode`, `schemaUri`, `contentType` required; `sizeBytes`, `inline`, `reference` optional |
+| `payload` | no | Present when the event has a payload: `mode`, `schemaUri`, `contentType` required; `sizeBytes`, `inline`, `reference` optional |
 | `actor` | no | `actorType`, `actorId`, `actorDisplay` |
 | `identifiers` | no | `tenantId`, `userId`, `executionId`, `resourceType`, `resourceId`, `parentResourceId` |
 | `businessContext` | no | `process`, `step`, `subStep` |
@@ -61,9 +61,14 @@ name, the values the publishing service passes to the API, whether the event has
 payload schema when it has one, the publishers, the consumers, and the delivery and failure
 semantics.
 
-This skill governs the event and its publishing path. Report any architecture view,
-specification or test that shows another service building the event or putting it on the event
-bus to whoever delegated the task, citing the view and this skill.
+This skill governs the event and its publishing path. Report to whoever delegated the task,
+citing the source and this skill: any architecture view, specification or test that shows another
+service building the event or putting it on the event bus, and any difference between the
+standard event and what the `shared-events-service` code accepts.
+
+**When event design work exists.** A change needs event design when it introduces an event type
+or an event payload. A service that publishes an existing event type by calling the
+`shared-events-service` API is implementation work for that service.
 
 ## The events API as a caller uses it
 
@@ -99,9 +104,10 @@ Cognito user-pool authorizer. One request publishes one event.
 | `lifecycle.severity` | yes | `info`, `warning`, `error`, `critical` |
 | `lifecycle.isError` | yes | Boolean |
 | `lifecycle.statusCode`, `lifecycle.statusSummary`, `lifecycle.statusReason`, `lifecycle.retry`, `lifecycle.details` | no | As the standard schema defines them |
-| `payload.mode` | yes | `inline` or `reference` |
-| `payload.schemaUri` | yes | String |
-| `payload.contentType` | yes | String (MIME type) |
+| `payload` | no | Passed when the event has a payload |
+| `payload.mode` | with a payload | `inline` or `reference` |
+| `payload.schemaUri` | with a payload | String |
+| `payload.contentType` | with a payload | String (MIME type) |
 | `payload.inline` | no | The payload content, when `mode` is `inline` |
 | `payload.reference` | no | `storageType`, `location`, `checksum`, `encrypted`, when `mode` is `reference` |
 | `payload.sizeBytes` | no | Integer |
@@ -148,9 +154,8 @@ events have none.
 
 - An event with a payload carries it in `payload.inline` (`payload.mode` `inline`) or points to
   it with `payload.reference` (`payload.mode` `reference`).
-- An event with no payload carries neither `payload.inline` nor `payload.reference`.
-- The `payload` object, with `mode`, `schemaUri` and `contentType`, is required on every event by
-  both `src/event/request_schema.json` and the standard schema.
+- An event with no payload carries no `payload` object.
+- A `payload` object, when present, carries `mode`, `schemaUri` and `contentType`.
 
 **Payload schema.** An event type with a payload may have a payload schema: a schema of the
 content carried in `payload.inline`. A payload schema is the one schema authored for an event.
