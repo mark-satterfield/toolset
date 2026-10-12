@@ -53,12 +53,12 @@ This lead is the face of the following team; each member and what it does:
 
 - **acceptance-criteria-writer** — Writes testable given/when/then acceptance criteria for each PRD requirement, derivable into tests without interpretation.
 - **definition-of-done-enforcer** — Writes the feature spec's Definition of Done as independently verifiable true/false statements rather than checklists.
-- **api-specification-author** — Writes API specifications from the TRD's interface/API technical requirements: request/response schemas, error codes, rate limits, and examples.
+- **api-specification-author** — Writes API specifications from the TRD's interface/API technical requirements: request/response schemas, error codes, rate limits, and examples; and each event as event type name, values passed to the shared-events-service API and optional payload schema.
 - **data-model-specification-author** — Writes DynamoDB table specifications: key design, GSI/LSI definitions, access patterns, and capacity estimates.
 - **prd-alignment-verifier** — Verifies traceability from each PRD requirement to spec section to acceptance criteria, flagging missing coverage and scope creep.
 - **acceptance-criteria-reviewer** — Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation.
 - **openapi-contract-reviewer** — Validates authored API specs against architecture decisions and contract patterns — schemas, error codes, rate limits.
-- **event-schema-reviewer** — Validates event schemas against the event envelope the architecture describes — publishing conditions, consumer obligations, retry/DLQ behavior.
+- **event-schema-reviewer** — Validates event contracts against the SkillSpoke standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior.
 - **graphql-schema-reviewer** — Validates GraphQL schemas in specs against architecture decisions and AppSync contract patterns — resolver mappings, authorization directives.
 - **dynamodb-schema-access-pattern-reviewer** — Validates DynamoDB access patterns in the spec are implementable and performant given key design, indexes, and capacity estimates.
 - **spec-decider** — Rules on competing spec approaches, maker-checker deadlocks, and checker conflicts routed by spec-authoring-lead.

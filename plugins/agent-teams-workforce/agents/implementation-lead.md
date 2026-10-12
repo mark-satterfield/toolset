@@ -54,8 +54,8 @@ This lead is the face of the following team; each member and what it does:
 - **cognito-lambda-trigger-implementer** — Implements Cognito Lambda triggers — sign-up, confirmation, token customization, custom auth challenges — on the chassis the architecture describes.
 - **power-tools-configuration-implementer** — Configures Lambda Power Tools — structured logging, tracing, metrics, idempotency — on Lambdas built on the chassis; configures, never rebuilds.
 - **dynamodb-access-layer-implementer** — Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests.
-- **event-api-client-implementer** — Implements clients publishing events through the publishing path and envelope the effective architecture describes.
-- **event-driven-consumer-implementer** — Implements event consumers on the delivery path the effective architecture describes.
+- **event-api-client-implementer** — Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events.
+- **event-driven-consumer-implementer** — Implements consumers of the SkillSpoke standard event on the delivery path the effective architecture describes.
 - **cds:cds-ui-author** — Builds web UI components and pages with the Configurable Design System (cds), audited against the system before it reports. A `web-ui` Task builds with one design source, settled when the build starts from the bundles supplied then: `bundle` (the supplied cds bundle and its `build-spec.md`), `cds` (designed with the live CDS design system) or `none` (no design change, which needs no cds-ui-author). It ships with the cds plugin.
 - **nextjs-component-implementer** — Implements the non-visual React/Next.js work — component state, data fetching, routing — writing minimum code to pass failing unit tests.
 - **appsync-client-subscription-implementer** — Implements AppSync client subscriptions for real-time web features.

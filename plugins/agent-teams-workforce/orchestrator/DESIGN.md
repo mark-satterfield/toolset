@@ -243,8 +243,10 @@ against it. No brief names it or carries any part of it. It holds:
    frontmatter key `repository` on a view whose `subject` is the element, section 10.7); the CDK
    stack and the construct kind that provision it; its runtime entry (the Lambda handler and the
    chassis superclass it extends, or the container); the data stores it owns with key schema,
-   indexes and access patterns; every API route (method, path, authorizer) and every event (name,
-   envelope, publisher, consumers, delivery path, retry and dead-letter behaviour); its IAM boundary
+   indexes and access patterns; every API route (method, path, authorizer) and every event (event
+   type name, the values the publisher passes to the shared-events-service API, payload schema when
+   the event has a payload, publisher, consumers, delivery path, retry and dead-letter behaviour);
+   its IAM boundary
    (who may call it, what it may call); the configuration it reads and the values it publishes (SSM
    parameter names); its failure behaviour (timeouts, retries, idempotency key); and its
    observability (log, metric and alarm names). The test is: a Task can name the repository,

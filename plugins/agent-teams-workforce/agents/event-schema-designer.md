@@ -21,6 +21,7 @@ skills:
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:skillspoke-standard-event
 effort: medium
 isolation: worktree
 color: cyan
@@ -42,7 +43,11 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Define event names, envelopes, exact fields, validation, versioning and compatibility within the architecture event contract; identify publishers, consumers and delivery/failure semantics.
+Read the skillspoke-standard-event skill before work. For each event the design needs, define: its
+event type name, per the event naming standard that skill points to; the values the publishing
+service passes to the shared-events-service API; whether the event has a payload; and, when it has
+one, its payload schema and `eventSchemaVersion`. Identify each event's publisher, consumers and
+delivery/failure semantics.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

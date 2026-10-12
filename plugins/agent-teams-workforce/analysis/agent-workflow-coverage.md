@@ -103,7 +103,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | event-contract-author | spec-authoring | authoring | Authors event contracts |
 | event-driven-consumer-implementer | tdd-green | Green *(implementer roster)* | Event consumer code |
 | event-flow-tester | integration | Integration *(suite roster)* | EventBridge/SQS/Lambda flow tests |
-| event-schema-designer | architecture | Integrate *(design roster: events)* | Drafts event schemas in envelope format |
+| event-schema-designer | architecture | Integrate *(design roster: events)* | Designs each event's type name, passed values and optional payload schema on the SkillSpoke standard event |
 | event-schema-reviewer | spec-authoring | authoring/review | Reviews event schemas in spec |
 | failure-mode-analyst | architecture | Proposals | Models failure modes per proposal |
 | finops-analyst | deploy | Deploy-readiness *(artifact roster: finops)* | Pre-deploy cost posture |

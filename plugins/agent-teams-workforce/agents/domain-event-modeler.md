@@ -19,6 +19,7 @@ skills:
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:skillspoke-standard-event
 effort: medium
 isolation: worktree
 color: cyan
@@ -40,7 +41,12 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Model domain events, ownership, triggers, payload semantics and causal flows. Connect bounded contexts and distinguish domain meaning from delivery mechanics.
+Read the skillspoke-standard-event skill before work. Model domain events as facts: which fact
+each event states, the bounded context and aggregate that owns it, what triggers it, and the
+causal flow it belongs to. Name the business meaning of the data an event carries; the event type
+name, the values passed to the shared-events-service API and the payload schema are
+event-schema-designer's. Connect bounded contexts and distinguish domain meaning from delivery
+mechanics.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

@@ -56,11 +56,11 @@ conformance reviewer again to correct the effective version from what a Story bu
 | persistence-architecture-specialist | plan | Analyzes DynamoDB schema options, GSI/LSI strategies, single vs |
 | security-architecture-designer | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model |
 | cdk-infrastructure-designer | plan | Analyzes CDK construct options, Lambda boundaries within the chassis, and layer packaging |
-| event-schema-designer | execute | Designs event schemas within the event envelope the effective architecture describes |
+| event-schema-designer | execute | Designs each event a design needs on the SkillSpoke standard event: its event type name, the values the publishing service passes to the shared-events-service API, its payload schema when it has a payload, and its publishers, consumers and delivery/failure semantics |
 | api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. |
 | cost-architecture-reviewer | plan | Estimates cost per architecture option and identifies cost cliffs |
 | bounded-context-mapper | plan | Maps domain boundaries and identifies context relationships |
-| domain-event-modeler | execute | Models domain events, event flows, and event contracts |
+| domain-event-modeler | execute | Models domain events as facts: ownership, triggers, business meaning and causal flows |
 | ubiquitous-language-writer | execute | Captures the ubiquitous language for the bounded context: terms, definitions, and usage rules shared by the domain model and the code. |
 | architecture-pattern-challenger | test | Generates a structurally different alternative for each proposal to force non-obvious paths |
 | architecture-tradeoff-skeptic | test | Attacks trade-off ratings: hidden assumptions, optimistic estimates, unconsidered failure modes. |
@@ -95,12 +95,12 @@ conformance reviewer again to correct the effective version from what a Story bu
 | spec-authoring-lead | orchestrate | Routes maker output to checkers and checker findings back to makers until checkers pass, then routes to Gate 3 |
 | acceptance-criteria-writer | execute | Writes testable acceptance criteria per requirement (given/when/then), specific enough for test agents to derive tests from. |
 | definition-of-done-enforcer | execute | Writes the Definition of Done as independently verifiable statements, not checklists. |
-| api-specification-author | execute | Produces the three interface contract artifacts from the contract drafts in one pass: the API specification (schemas, error codes, rate limits, examples), the event contracts (envelope format, publishing conditions, consumers, retry and DLQ behavior), and the error-handling specification (per failure mode, noting what the chassis handles). |
+| api-specification-author | execute | Produces the three interface contract artifacts from the contract drafts in one pass: the API specification (schemas, error codes, rate limits, examples), the event contracts (event type name, the values passed to the shared-events-service API, payload schema when the event has a payload, publishing conditions, consumers, retry and DLQ behavior), and the error-handling specification (per failure mode, noting what the chassis handles). |
 | data-model-specification-author | execute | Writes DynamoDB table specifications: keys, GSI/LSI, access patterns, capacity estimates. |
 | prd-alignment-verifier | test | Verifies traceability: PRD requirement to spec section to acceptance criteria |
 | acceptance-criteria-reviewer | test | Validates acceptance criteria are testable, complete, and unambiguous. |
 | openapi-contract-reviewer | test | Validates API specifications match the architecture decisions and established contract patterns. |
-| event-schema-reviewer | test | Validates event schemas conform to the event envelope the architecture describes. |
+| event-schema-reviewer | test | Validates event contracts against the SkillSpoke standard event and each event's payload schema. |
 | dynamodb-schema-access-pattern-reviewer | test | Validates the specified access patterns are implementable and performant. |
 | graphql-schema-reviewer | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. |
 | spec-decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back |
@@ -172,9 +172,9 @@ shown the answer is not a checker.
 | implementation-lead | orchestrate | Selects the implementer(s) whose specialties cover a Task, in build order, from the Task's build contract; `tdd-green` dispatches them. |
 | chassis-extension-implementer | execute | Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers. |
 | api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK. |
-| event-api-client-implementer | execute | Implements clients publishing events through the publishing path and envelope the effective architecture describes |
+| event-api-client-implementer | execute | Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events |
 | dynamodb-access-layer-implementer | execute | Implements DynamoDB access patterns from the data model specification: single-table patterns, GSI queries, conditional writes. |
-| event-driven-consumer-implementer | execute | Implements event consumers on the delivery path the effective architecture describes |
+| event-driven-consumer-implementer | execute | Implements consumers of the SkillSpoke standard event on the delivery path the effective architecture describes |
 | power-tools-configuration-implementer | execute | Configures Lambda Power Tools: structured logging, tracing, metrics, idempotency, validation |
 | cognito-lambda-trigger-implementer | execute | Implements Cognito Lambda triggers for authentication flows. |
 | nextjs-component-implementer | execute | Implements the non-visual React/Next.js work (state, data fetching, routing); visual UI goes to cds:cds-ui-author. |

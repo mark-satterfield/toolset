@@ -24,7 +24,10 @@ external guidance by URL and retrieval/version reference, each as survey.schema.
 
 For each affected element the retained views identify its repository, stack, runtime/handler (or
 chassis superclass/container), owned stores with keys/indexes/access patterns, routes with method,
-path and authorizer, and events with envelope, publisher, consumers and delivery path. Show IAM
+path and authorizer, and events with event type name, the values the publisher passes to the
+shared-events-service API, payload schema when the event has a payload, publisher, consumers and
+delivery path (the skillspoke-standard-event skill gives the standard event every event uses and
+its publishing path). Show IAM
 call boundaries, configuration and published SSM parameter names, timeouts, retries, dead letters,
 idempotency keys, and log/metric/alarm names where applicable. A Task can name the repository,
 stack, handler, table, route and event without inventing a design. A subject view's frontmatter
