@@ -257,6 +257,25 @@
         "heldByOthers": {"description": "The differing headings another Epic claims, which are that Epic's to have reviewed.", "type": "array", "items": {"$ref": "#/$defs/HeldHeading"}}
       }
     },
+    "ReviewerScope": {
+      "description": "The review scope one reviewer is handed: the part of a ReviewScope that the criteria of the reviewer's groups apply to. The check step of the architecture flow writes one file for each reviewer the criteria file selects.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "at", "prd", "reviewer", "groups", "criteria", "rows", "headings", "heldByOthers", "trd", "signals"],
+      "properties": {
+        "bead": {"type": "string"},
+        "at": {"$ref": "#/$defs/moment"},
+        "prd": {"$ref": "#/$defs/nodeId"},
+        "reviewer": {"description": "The agent that performs the review.", "type": "string"},
+        "groups": {"description": "The ids of the reviewer groups of architecture-baseline/review-criteria.json that selected this reviewer.", "type": "array", "items": {"type": "string"}},
+        "criteria": {"description": "The ids of the criteria those groups cover.", "type": "array", "items": {"type": "string"}},
+        "rows": {"description": "The unapproved rows; empty when no group of the reviewer covers documents.", "type": "array", "items": {"$ref": "#/$defs/ScopeRow"}},
+        "headings": {"description": "The unapproved headings; empty when no group of the reviewer covers documents.", "type": "array", "items": {"$ref": "#/$defs/ScopeHeading"}},
+        "heldByOthers": {"type": "array", "items": {"$ref": "#/$defs/HeldHeading"}},
+        "trd": {"description": "The path of the TRD when a group of the reviewer covers its requirements; otherwise null.", "type": ["string", "null"]},
+        "signals": {"description": "The non-empty reviewSignals lists of the architecture result that selected the reviewer, by name, each as architecture-result.schema.json holds it.", "type": "object", "additionalProperties": {"type": "array", "items": {}}}
+      }
+    },
     "Node": {
       "type": "object",
       "additionalProperties": false,

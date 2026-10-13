@@ -103,16 +103,21 @@ def concurrent_group(journal: Journal, first: StepId) -> list[StepId]:
 def _inputs(journal: Journal, step: Step) -> StepInputs:
     """Resolve the artifacts a step is handed from the journal.
 
+    An input that has child steps hands over their artifacts too: its result is on them (an
+    agent that started helpers records its result on its last child step, and a step that only
+    contains steps holds nothing itself).
+
     Returns:
-        The artifacts of the steps its ``inputs`` name, in that order.
+        For each step its ``inputs`` name, in that order: that step's artifacts, then those of
+        every step below it in walk order.
 
     """
-    return StepInputs(
-        step["id"],
-        step["description"],
-        stage_of(step),
-        tuple(tuple(source["artifacts"]) for source in step_journal.resolve_inputs(journal, step["id"])),
-    )
+    sources: list[tuple[Artifact, ...]] = []
+    named: StepId
+    for named in step.get("inputs", []):
+        source: Step = step_journal.find_step(journal, named)
+        sources.append(tuple(held for below in step_journal.steps_in_order_from(source) for held in below["artifacts"]))
+    return StepInputs(step["id"], step["description"], stage_of(step), tuple(sources))
 
 
 def _open_leaf(step: Step) -> Step | None:
@@ -286,6 +291,7 @@ class JournalRunner:
             journal_path=self.path,
             context=self.context,
             tools=self.tools,
+            agents=self.agents,
             inputs=inputs,
             saved=StepInputs(step["id"], step["description"], stage_of(step), (saved,)),
         )
@@ -334,9 +340,8 @@ class JournalRunner:
         held: str | None = _held_session(journal, step, launch)
         session: str = held or str(uuid4())
         run: StepRun = self._step_run(self._start(step["id"], session), inputs, saved)
-        labelled: list[tuple[str, Path]] = list(
-            dict.fromkeys([*inputs.labelled_files(), *launch.files, (JOURNAL_LABEL, self.path)]),
-        )
+        handed: list[tuple[str, Path]] = inputs.labelled_files() if launch.hand_inputs else []
+        labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, *launch.files, (JOURNAL_LABEL, self.path)]))
         request: AgentStep = AgentStep(
             stage=stage_of(step),
             agent=step.get("agent", ""),

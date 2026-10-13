@@ -447,6 +447,22 @@ class ReviewScope(TypedDict):
     heldByOthers: list[HeldHeading]
 
 
+class ReviewerScope(TypedDict):
+    """Typed form of #/$defs/ReviewerScope in matrix.schema.json."""
+
+    bead: str
+    at: str
+    prd: NodeId
+    reviewer: str
+    groups: list[str]
+    criteria: list[str]
+    rows: list[ScopeRow]
+    headings: list[ScopeHeading]
+    heldByOthers: list[HeldHeading]
+    trd: str | None
+    signals: dict[str, list[JsonValue]]
+
+
 class ReuseItem(TypedDict):
     """Typed form of #/$defs/ReuseItem in matrix.schema.json."""
 
@@ -910,6 +926,33 @@ def validate_review_scope(value: object, where: str = "review scope") -> ReviewS
         return value
     shown: str = "; ".join(schema_problems(value, "ReviewScope")[:PROBLEMS_SHOWN])
     message: str = f"{where} does not satisfy ReviewScope: {shown}"
+    raise MatrixError(message)
+
+
+def is_reviewer_scope(value: object) -> TypeIs[ReviewerScope]:
+    """Tell whether a value satisfies the ReviewerScope definition.
+
+    Returns:
+        True when the schema accepts the value as one reviewer's scope.
+
+    """
+    return _validator("ReviewerScope").is_valid(value)
+
+
+def validate_reviewer_scope(value: object, where: str = "reviewer scope") -> ReviewerScope:
+    """Validate the review scope one reviewer is handed.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        MatrixError: The value does not satisfy the ReviewerScope definition.
+
+    """
+    if is_reviewer_scope(value):
+        return value
+    shown: str = "; ".join(schema_problems(value, "ReviewerScope")[:PROBLEMS_SHOWN])
+    message: str = f"{where} does not satisfy ReviewerScope: {shown}"
     raise MatrixError(message)
 
 

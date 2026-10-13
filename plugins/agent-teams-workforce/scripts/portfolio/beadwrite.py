@@ -113,7 +113,6 @@ from bead_metadata import (
 )
 from placement_contract import KEY_ITEM_ID, PlacementError, PlacementRuling, parse_placement_ruling
 from recon_contract import DESIGN_SOURCES, DesignSource
-from target_contract import ARCHITECTURE_WORK_FOLDER, CLOSURE_FILE, KEY_ELEMENT
 from task_deps_contract import KIND_INFRASTRUCTURE
 
 #: The metadata keys the build lane writes on a Task; any of them set means the Task was started.
@@ -1795,9 +1794,8 @@ def _closure_context(directory: Path, repos: list[str]) -> _ClosureContext:
     Returns:
         The exact builder and placement facts used to derive edges.
 
-    Raises:
-        HierarchyError: The saved span ruling or architecture closure exists but cannot be
-            read or does not conform to its contract.
+    A saved span ruling that cannot be read or does not conform to its contract raises
+    ``HierarchyError`` from the span reader.
 
     """
     index: int
@@ -1805,24 +1803,6 @@ def _closure_context(directory: Path, repos: list[str]) -> _ClosureContext:
     slug: str
     task: Task
     no_code: set[str] = _no_code(directory)
-    closure: Path = directory / ARCHITECTURE_WORK_FOLDER / CLOSURE_FILE
-    try:
-        data: JsonObject = json_object(json.loads(closure.read_text("utf-8")))
-        satisfied: list[JsonObject] = check_type(
-            data.get("satisfied", []),
-            list[JsonObject],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        elements: list[str] = [
-            check_type(item[KEY_ELEMENT], str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-            for item in satisfied
-        ]
-    except FileNotFoundError:
-        elements = []
-    except (OSError, ValueError, KeyError, TypeCheckError) as exc:
-        message: str = f"cannot read the architecture closure {closure}: {exc}"
-        raise HierarchyError(message) from exc
-    no_code.update(elements)
     slug_story: dict[str, str] = {}
     builds: dict[str, list[str]] = {}
     task_slug: dict[str, str] = {}

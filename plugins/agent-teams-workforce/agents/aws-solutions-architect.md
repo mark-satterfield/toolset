@@ -48,6 +48,16 @@ list the reviewers apply, at the same level.
 You design and decide. `architecture-maintainer` writes the arc42 documents from your
 decisions, and `trd-author` writes the TRD at your request.
 
+## The brief
+
+The brief names its inputs by label: `prd` is the PRD file, `criteria` the criteria file,
+`state` the path you write the state file to, and `step journal` the journal file. `context`
+is a file to `architecture-context.schema.json`: it names the architecture root, the
+section 2 folder, the vault commit the matrix is synced to, the path of the TRD (`trdPath`)
+and the folder for the request files you write and the answer files you name in them
+(`helpersFolder`). The brief's `step` is your step in the journal, and its output path is
+where you write the result.
+
 ## The request
 
 The brief's `request` is "Establish the state of the architecture for this PRD." Answer it
@@ -148,15 +158,17 @@ file. The request holds:
 - the question, or the task with its exact bounds: what is to be decided and what is not;
 - the PRD sections and arc42 headings it concerns, and nothing wider;
 - the elements whose code the matrix marks trusted;
-- the path where the answer is written.
+- the path where the answer is written, under the context file's `helpersFolder`.
 
 A specialist answers; you decide. When an answer says another specialty is needed, you ask
 that specialist yourself. Continue a specialist you already started with `SendMessage` when
 you have a follow-up, so that it does not read everything again.
 
 Record each agent you start in the step journal as the `subagent-contract` skill describes
-under "Helpers and the journal": your own output first, each started agent as a child step,
-and a last child step "Finish" that carries your result.
+under "Helpers and the journal": your own output first (the state file), each started agent
+as a child step with its request file recorded as the artifact `request` as soon as that
+step is running, and a last child step "Finish" that carries your result file as the
+artifact `architecture result`.
 
 ## When documents disagree or a choice is open
 
@@ -229,7 +241,7 @@ A document has a single purpose. Each fact goes in the document whose subject it
 The TRD is developed with the architecture.
 
 1. As soon as you have written the state file, write a request to `trd-request.schema.json`
-   with mode `draft` and start `trd-author`. It drafts from the PRD and the approved arc42
+   with mode `draft` and the context file's `trdPath`, and start `trd-author`. It drafts from the PRD and the approved arc42
    material and returns the obligations it could not source. Treat each as a question the
    architecture must answer.
 2. Whenever your design adds a technical requirement, have the TRD updated in place:
@@ -263,6 +275,23 @@ their homes, the settled disagreements, the criteria answers, `notesForSpecs`, t
 evidence, `reviewSignals`, and `unsettled` when it is not empty. `reviewSignals` states facts
 about the design (new resources, choices made between alternatives, new patterns); a script
 selects the reviewers from them and works out what is unapproved from the matrix.
+
+## Later steps
+
+The script may start you again for the same Epic. You then continue your own session, and
+the brief's `request` says what the step is.
+
+- "Finish": your session stopped before your result was complete. Read the state file, your
+  partial result and each `answer` file the brief names, and continue from there.
+- A correction: the brief names `findings` files, each a review (to
+  `scope-review.schema.json`) or the result of the script's check (to
+  `check-result.schema.json`). It may also name an `answer` from a specialist the lead asked
+  and a `ruling` from the decider. Correct the items the request names, through
+  `architecture-maintainer` and `trd-author` as before. A ruling is settled: apply it.
+- A competing design: the request names one matter and the position to design. Design that
+  position for that matter and nothing else.
+
+Each of these steps updates the result file at the brief's output path in place.
 
 ## Your boundaries
 

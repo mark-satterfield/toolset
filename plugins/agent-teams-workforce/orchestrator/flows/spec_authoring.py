@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipelin
 import beadgraph
 import beadwrite
 import cdsbundles
+import hierarchy
 import specui
 from driver_surface_types import CONTROL_REPO_ENV
 from placement_contract import (
@@ -33,13 +34,9 @@ from placement_contract import (
 from recon_contract import KEY_MOCKS_DIR
 from spec_review_contract import DOCUMENT_CRITERIA, DOCUMENT_DATA_MODEL, DOCUMENT_SPEC, SpecDocument
 from target_contract import (
-    DELTA_ITEMS_FILE,
-    KEY_ARCHITECTURE_CHANGE,
-    KEY_DELTA_DIR,
     KEY_ELEMENT,
     KEY_ID,
     KEY_ITEMS,
-    KEY_TARGET_DIR,
     DeltaItem,
     DeltaResult,
     load_delta_report,
@@ -177,7 +174,7 @@ class SpecAuthoring:
             if (path := p[KEY_REPO_PATH]) is not None and Path(path).resolve() == self.repo
         ]
         ids: set[str] = {item for p in selected for item in p[KEY_ITEM_IDS]}
-        delta: DeltaResult = load_delta_report(self.work / DELTA_ITEMS_FILE)
+        delta: DeltaResult = load_delta_report(self.work / hierarchy.SPAN_ELEMENTS_FILE)
         self.items = [item for item in delta.get(KEY_ITEMS, []) if item[KEY_ID] in ids]
         if not self.items:
             raise StepError(stage, OTHER_CAUSE, (f"no placed items for {self.repo}",))
@@ -189,9 +186,8 @@ class SpecAuthoring:
                 (
                     self.work / "trd.md",
                     self.work / "repo-scoping.json",
-                    self.work / DELTA_ITEMS_FILE,
+                    self.work / hierarchy.SPAN_ELEMENTS_FILE,
                     self.prd,
-                    Path(check_type(args[KEY_TARGET_DIR], str)),
                 ),
             ),
         )
@@ -328,9 +324,6 @@ class SpecAuthoring:
                 "slug": self.slug,
                 "frontend": self.frontend,
                 "items": self.items,
-                KEY_ARCHITECTURE_CHANGE: self.context.args.get(KEY_ARCHITECTURE_CHANGE),
-                KEY_TARGET_DIR: self.context.args[KEY_TARGET_DIR],
-                KEY_DELTA_DIR: self.context.args.get(KEY_DELTA_DIR),
                 self.dispatch.KEY_DESIGN_SYSTEM: self.design,
             },
         )

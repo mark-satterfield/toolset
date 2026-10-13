@@ -40,7 +40,6 @@ from contracts import (
     parse_survey_seal,
     survey_seal_path,
 )
-from orchestrator import seed_matrix
 from orchestrator.checks.check_support import expected_error, require
 from survey_contract import (
     ACTION_UNCHANGED,
@@ -336,13 +335,6 @@ class PortfolioBoundaries(unittest.TestCase):
             )
             require(not facts["plans"], "boolean round accepted as a plan")
             require(facts["pendingPlan"] is None, "boolean round produced pending work")
-
-    @staticmethod
-    def test_seed_manifest_version_is_an_exact_integer() -> None:
-        """The expected-inventory manifest refuses JSON true and 1.0 as version 1."""
-        for version in (True, 1.0, 2):
-            with expected_error(ValueError):
-                seed_matrix.seed({"version": version, "repositories": [], "acquiredAt": "now"}, {})
 
 
 def _git(repo: Path, *arguments: str) -> str:

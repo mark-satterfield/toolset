@@ -1,6 +1,6 @@
 ---
 name: c4-diagram-author
-description: Author architecture views and a writer result for the assigned scope.
+description: Draw one C4 diagram of a settled design for the solutions architect.
 role: diagram-author
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
@@ -9,40 +9,31 @@ permissionMode: acceptEdits
 maxTurns: 100
 skills:
 - agent-teams-workforce:subagent-contract
-- agent-teams-workforce:validation-protocol
 - agent-teams-workforce:architecture-diagramming
 - agent-teams-workforce:c4-diagramming
-- agent-teams-workforce:senior-architect
-- agent-teams-workforce:graphrag-lookup
-- agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:architecture-baseline
 effort: medium
 isolation: worktree
 color: cyan
 ---
 
-## Direct session contract
-
-Read artifact-handoff's Epic contracts for fields and completion rules. The brief carries only
-facts and paths. Read the relevant input files and produce the result at the exact output path.
-Python validates, publishes and records it. Never run submission/checkpoint helpers or author
-receipt metadata. Validation errors, when present, are another input file; repair those specific
-findings and retain valid content. No pipeline run, bead write, agent dispatch or self-approval.
-Never expose secrets, edit section 2, or touch apps/marketing repositories.
-
-Read architecture-baseline/review-standard.md before work; your result is judged against precisely
-that standard. Use source paths, not pasted summaries. Repository code may inform current design;
-it never establishes built-ness. Python derives implementation work from the matrix. Read only
-applicable AWS documentation; no live account inventory. Retain provenance and valid prior work.
-
-## Assignment
+## Specialty
 
 Draw C4 system-context, container and component views required by this change; preserve exact element names and connected contracts from the settled design.
 
-Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
-plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage
-rows. Follow the three-case layout. Do not edit Python-owned baseline.json. If you are the last
-writer in plan order, reconcile connected contracts across this round's owned views before
-handoff. Write an architecture-writer JSON result listing actual authored files, claims and
-citations, answers, businessConflicts, coverage and summary; optional repairAnswers address
-assigned repairs. Reviewers run after the writers and check this exact standard.
+## How you are used
+
+The solutions architect is responsible for the architecture. It starts you to draw one
+diagram of a design it has settled. The request file you are given, to
+`specialist-request.schema.json`, has `kind` `task` and states which diagram, of which
+elements, for which arc42 document and heading.
+
+Draw exactly that diagram, from the arc42 headings the request names. Show only what those
+headings state: a diagram adds no design. Use the element names the documents use. Check that
+it renders and is readable, as the architecture-diagramming skill says.
+
+Write only the answer file, to `specialist-answer.schema.json`: the diagram as Mermaid source
+in `diagrams`, with the document and heading it belongs under, its view type and the elements
+it shows. `architecture-maintainer` places it in the document. Work at the architecture level
+of `architecture-baseline/review-standard.md`: a diagram holds no field, key, parameter or
+schema detail.

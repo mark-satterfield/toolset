@@ -1,4 +1,11 @@
-"""Elaborate one ready Epic into architecture, Specs, Stories and scored Tasks."""
+"""Elaborate one ready Epic: one dispatch is one pass of the loop over the Epic's step journal.
+
+A dispatch claims the Epic, creates the Epic's journal when its file does not exist, with every
+outermost step planned, and runs the journal's steps from the first that is not done until none is
+left or one fails. Nothing but the journal decides where it begins. The claim and its release are
+the dispatch's own lifecycle and not journal steps. The dispatch result is assembled from the
+journal's artifacts, so it is the same whichever dispatch ran a step.
+"""
 
 from __future__ import annotations
 
@@ -7,90 +14,90 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
+from typing import Final, NotRequired, TypedDict
 
-# The driver-surface and target contracts are generated into their skills, their one definitions.
+# The driver-surface and matrix contracts are generated into their skills, their one definitions.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-import archstate
-import beadgraph
 import elaboration
 import elaborationcontracts
-import hierarchy
-import storyedges
-from driver_surface_types import ARCH_PATH_ENV
+from driver_surface_types import ARCH_PATH_ENV, PRD_DIR_ENV
 from elaborationcontracts import Finished, Refused, Released, Started
-from target_contract import (
-    DELTA_FOLDER,
-    DELTA_ITEMS_FILE,
-    KEY_ARCHITECTURE_CHANGE,
-    KEY_DELTA_DIR,
-    KEY_DELTA_EXISTS,
-    KEY_NOTE,
-    KEY_SUBJECT,
-    KEY_TARGET_DIR,
-)
+from matrix_contract import KIND_PRD, Matrix
+from matrixexpertise import refresh
+from matrixstore import CHANGED_BY_SYNC, Stamp, make_id, matrix_path, timestamp, update_matrix
+from matrixsync import Epic, parse_epics, sync_documents, sync_prds
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core import step_journal
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import (
-    DEFECT_CLASS,
     EVENT_KEY,
     FATAL_CLASSES,
-    INTERRUPTED_CLASS,
-    ITEM_CLASS,
     NOTE_EVENT,
     OTHER_CAUSE,
-    PASSED_PHASE,
-    REUSED_PHASE,
-    SETUP_CLASS,
-    SPEC_PHASE_PREFIX,
-    TRD_PHASE,
     VERDICT_EVENT,
-    ArtifactReport,
     EventName,
-    Failure,
-    phase_event,
 )
 from orchestrator.core.io import JsonValue, json_object, write_json
-from orchestrator.core.matrix import read_snapshot, snapshot
+from orchestrator.core.journal_registry import script_step
+from orchestrator.core.journal_run import JournalRunner, open_journal
+from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import RunContext, StepError
-from orchestrator.core.tools import Tools
-from orchestrator.flows import architecture, repo_scoping, spec_authoring, task_decomposition, task_edges, trd_authoring
-from orchestrator.flows.architecture_support import (
-    ARCHITECTURE_PHASE,
-    FINISH_PHASE,
-    REPO_SCOPING_PHASE,
-    SPEC_AUTHORING_PHASE,
-    TASK_DECOMPOSITION_PHASE,
-    TASK_EDGES_PHASE,
-    TRD_AUTHORING_PHASE,
+from orchestrator.core.tools import Tools, env_path
+from orchestrator.flows import architecture_promotion, trd_authoring
+from orchestrator.flows.architecture import first_steps
+from orchestrator.flows.architecture_files import (
+    CONFIRM_TRD,
+    LABEL_CONTEXT,
+    LABEL_PRD,
+    OPEN_RUN,
+    ROLE_ARCHITECT,
+    agents_with_role,
+    context_path,
+    new_context,
+)
+from orchestrator.flows.elaboration_result import journal_result
+from orchestrator.flows.elaboration_steps import (
+    EDGES,
+    MARK_DONE,
+    SCORE,
+    STORY_EDGES,
+    TASKS_CONTAINER,
 )
 from orchestrator.flows.elaboration_support import (
-    PhaseRunner,
-    done_rule,
-    emit_event,
+    ARCHITECTURE_PHASE,
+    enter_phase,
     failed,
     lifecycle,
-    parallel,
     record,
-    repository_failure,
 )
-from orchestrator.flows.target_removal import remove
+from orchestrator.flows.repo_scoping import (
+    SPAN,
+    SPAN_DESCRIPTION,
+    SPAN_PURPOSE,
+)
+
+# isort: split
+# step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from step_journal_contract import (
+    BEAD_TYPE_EPIC,
+    PIPELINE_ELABORATION,
+    BeadId,
+    StepPlan,
+)
 
 _ARGUMENT_ERROR: str = "Arguments violate the prd_to_spec input contract"
-TASK_SCORES_STAGE: Final = "task-scores"
-
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
+ARCHITECTURE: Final = "Architecture"
+SPECS_CONTAINER: Final = "Specs and Stories"
+MATRIX_PRD_ROW: Final = "matrix prd row"
+LIFECYCLE_STAGE: Final = "epic-lifecycle"
+REGISTERED: Final = (architecture_promotion, trd_authoring)
+"""The flow modules imported for the steps they register and nothing else."""
 LOGGER = logging.getLogger(__name__)
-
 
 type JsonObject = dict[str, JsonValue]
 
@@ -104,54 +111,137 @@ class _Lifecycle(TypedDict):
     finish: NotRequired[Finished]
 
 
-class _Repository(TypedDict):
-    repository: str
-    slug: str
-    storyKey: str
-    spec: NotRequired[JsonObject]
-    tasks: NotRequired[JsonObject]
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def outermost_steps() -> list[StepPlan]:
+    """Plan every outermost step of an Epic's elaboration journal.
+
+    Returns:
+        The steps in the order they run. The Architecture and Tasks containers get their steps
+        from the steps before them; the Specs and Stories container is created with the step
+        that reads the repository span.
+
+    """
+    span: StepPlan = {"description": SPAN_DESCRIPTION, "purpose": SPAN_PURPOSE, "script": SPAN, "inputs": ["trd"]}
+    return [
+        {
+            "ref": "open",
+            "description": "Open the run",
+            "purpose": (
+                "Bring the PRD row, the document rows and the expertise list in the matrix up to date, "
+                "and plan the architecture steps"
+            ),
+            "script": OPEN_RUN,
+        },
+        {
+            "ref": "architecture",
+            "description": ARCHITECTURE,
+            "purpose": "The architecture this PRD needs exists, is documented in arc42 and is approved",
+            "inputs": ["open"],
+        },
+        {
+            "ref": "trd",
+            "description": "TRD",
+            "purpose": "The Epic carries one reviewed TRD whose every source resolves",
+            "script": CONFIRM_TRD,
+            "inputs": ["architecture"],
+        },
+        {
+            "ref": "specs",
+            "description": SPECS_CONTAINER,
+            "purpose": "One reviewed spec set and one Story per repository the matrix names for this PRD",
+            "inputs": ["trd"],
+            "steps": [span],
+        },
+        {
+            "ref": "tasks",
+            "description": TASKS_CONTAINER,
+            "purpose": "Every Story has Tasks that name what to build and which shared capabilities to use",
+            "inputs": ["specs"],
+        },
+        {
+            "ref": "edges",
+            "description": "Task edges",
+            "purpose": "A Task that needs another Story's Task built first is blocked by it",
+            "script": EDGES,
+            "inputs": ["specs", "tasks"],
+        },
+        {
+            "ref": "score",
+            "description": "Score the Tasks",
+            "purpose": "Every repository has its Story and its Tasks, and every Task is scored",
+            "script": SCORE,
+            "inputs": ["specs", "tasks", "edges"],
+        },
+        {
+            "ref": "story-edges",
+            "description": "Story edges",
+            "purpose": "A Story that needs another Story first is blocked by it",
+            "script": STORY_EDGES,
+            "inputs": ["score"],
+        },
+        {
+            "description": "Mark the Epic elaborated",
+            "purpose": "The Epic is done with elaboration and its Tasks can be built",
+            "script": MARK_DONE,
+            "inputs": ["story-edges"],
+        },
+    ]
+
+
+def _sync_matrix(bead: str, epics: list[Epic], prd: Path, arch: Path) -> str:
+    """Bring the Epic's PRD row, the document rows and its expertise list up to date in one matrix change.
+
+    Returns:
+        The vault commit the matrix's document rows are now synced to.
+
+    """
+    at: str = timestamp()
+
+    def change(matrix: Matrix) -> str:
+        sync_prds(matrix, epics, env_path(PRD_DIR_ENV), Stamp(at, CHANGED_BY_SYNC))
+        sync_documents(matrix, arch, Stamp(at, CHANGED_BY_SYNC))
+        refresh(matrix, bead, prd.read_text(encoding="utf-8"), Stamp(at, bead))
+        return matrix["documentsSyncedAt"]["vaultCommit"]
+
+    return update_matrix(matrix_path(None, os.environ), change)
+
+
+@script_step(OPEN_RUN)
+def open_run(run: StepRun) -> Completion:
+    """Open the run: the matrix work, the context file, and the first architecture steps.
+
+    Returns:
+        The PRD, the PRD's matrix row and the context file as artifacts, with the architect's
+        step and the check after it planned under the Architecture container.
+
+    Raises:
+        StepError: Beads does not hold the bead as an Epic.
+
+    """
+    enter_phase(run.context, run.agents.emit, ARCHITECTURE_PHASE, OPEN_RUN)
+    dispatch: DispatchArguments = dispatch_arguments()
+    args: JsonObject = run.context.args
+    prd: Path = Path(check_type(json_object(args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
+    arch: Path = Path(check_type(args[dispatch.KEY_ARCH_PATH], str)).resolve()
+    epics: list[Epic] = parse_epics(run.tools.bd(["show", run.bead, "--json"], stage=OPEN_RUN))
+    if [epic.bead for epic in epics] != [run.bead]:
+        raise StepError(OPEN_RUN, OTHER_CAUSE, (f"{run.bead} is not an Epic in beads",))
+    commit: str = run.tools.portfolio(OPEN_RUN, _sync_matrix, run.bead, epics, prd, arch)
+    path: Path = context_path(run.context.work)
+    write_json(path, new_context(run.bead, prd, arch, run.context.work, commit))
+    architect: str = agents_with_role(run.tools.plugin, ROLE_ARCHITECT)[0]
+    return Completion(
+        artifacts=(
+            file_artifact(LABEL_PRD, prd),
+            value_artifact(MATRIX_PRD_ROW, make_id(KIND_PRD, run.bead)),
+            file_artifact(LABEL_CONTEXT, path),
+        ),
+        add=(first_steps(run.step["id"], run.step_named(ARCHITECTURE)["id"], architect),),
+    )
 
 
 def _started(context: RunContext) -> bool:
     return any(row.get("startedAt") is not None for row in context.sessions)
-
-
-def _objects(value: JsonValue) -> list[JsonObject]:
-    return check_type(value, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
-
-def _strings(value: JsonValue) -> list[str]:
-    return check_type(value, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
-
-def _critical(results: list[JsonObject]) -> JsonObject | None:
-    """Pick the result that ends elaboration: a pipeline defect, then a setup failure, then a stop.
-
-    Returns:
-        The critical result, or ``None`` when every failure is an item or transient failure.
-
-    """
-    result: JsonObject
-    ranked: dict[str, JsonObject] = {}
-    for result in results:
-        failure: dict[str, JsonValue] = json_object(result.get("failure", {}))
-        classification: JsonValue = failure.get("classification")
-        if isinstance(classification, str) and classification in FATAL_CLASSES | {INTERRUPTED_CLASS}:
-            ranked.setdefault(classification, result)
-    return next((ranked[key] for key in (DEFECT_CLASS, SETUP_CLASS, INTERRUPTED_CLASS) if key in ranked), None)
-
-
-def _owner(result: JsonObject) -> JsonObject:
-    actions: int | float | str | list[JsonValue] | dict[str, JsonValue] | None = result.get("requiredHumanActions")
-    if actions and _critical([result]) is None:
-        return {
-            **result,
-            "ok": False,
-            "stage": "requires-human-action",
-            "requiredHumanActions": actions,
-            "headline": "Owner facts are required",
-        }
-    return result
 
 
 @dataclass
@@ -160,11 +250,8 @@ class _Elaboration:
     store: ArtifactStore
     runner: AgentRunner
     tools: Tools
-    phases: JsonObject = field(default_factory=dict)
     state: _Lifecycle = field(init=False)
     result: JsonObject = field(init=False)
-    artifacts: ArtifactReport = field(init=False)
-    invoke: PhaseRunner = field(init=False)
     dispatch: DispatchArguments = field(init=False)
 
     def __post_init__(self) -> None:
@@ -174,7 +261,6 @@ class _Elaboration:
             "done": False,
             "claimAttempted": False,
         }
-        self.artifacts = {"dir": str(self.context.work), "epicId": self.context.bead, "phases": {}, "filing": {}}
         self.result = json_object({
             "ok": False,
             "stage": "input",
@@ -183,10 +269,8 @@ class _Elaboration:
             "hierarchy": {"epic": self.context.args.get(self.dispatch.KEY_EPIC, {}), "stories": [], "tasks": []},
             "beadsEmitted": 0,
             "lifecycleDone": False,
-            "artifacts": self.artifacts,
-            "targetRemoval": {"removed": False, "commit": None, "reason": "elaboration incomplete"},
+            "artifacts": {"dir": str(self.context.work), "epicId": self.context.bead, "phases": {}, "filing": {}},
         })
-        self.invoke = PhaseRunner(self.context, self.store, self.runner, self.tools)
 
     def _release(self) -> None:
         if not self.state["claimAttempted"] or self.state["done"] or "release" in self.state:
@@ -225,8 +309,38 @@ class _Elaboration:
             else:
                 self.result.update(release)
 
+    def _journal(self) -> JournalRunner:
+        """Open the Epic's journal: created with its outermost steps when its file does not exist.
+
+        Returns:
+            The runner of the journal.
+
+        """
+        return open_journal(
+            step_journal.journals_directory(self.context.work),
+            BeadId(self.context.bead),
+            BEAD_TYPE_EPIC,
+            PIPELINE_ELABORATION,
+            outermost_steps(),
+            self.runner,
+            self.tools,
+        )
+
+    def _elaborate(self) -> None:
+        """Run the journal's steps and report from the journal, whether the loop ended or a step failed."""
+        loop: JournalRunner = self._journal()
+        failure: JsonObject = {}
+        try:
+            loop.run()
+        except Exception as exc:
+            LOGGER.exception("Elaboration step failed")
+            failure = failed(self.context.stage, exc, agent_started=_started(self.context))
+        reported: JsonObject = journal_result(step_journal.read_journal(loop.path), self.context)
+        self.state["done"] = reported["lifecycleDone"] is True
+        self.result.update({**failure, **reported} if reported.get("requiredHumanActions") else {**reported, **failure})
+
     def _claim_and_elaborate(self) -> None:
-        self.context.stage = "epic-lifecycle"
+        self.context.stage = LIFECYCLE_STAGE
         self.state["claimAttempted"] = True
         start: elaborationcontracts.Started | elaborationcontracts.Refused = lifecycle(
             self.context,
@@ -240,17 +354,18 @@ class _Elaboration:
         if not start["ok"]:
             self.state["claimAttempted"] = False
             self.result.update(
-                stage="epic-lifecycle",
+                stage=LIFECYCLE_STAGE,
                 refusal=json_object(start["refusal"]),
                 headline="Epic lifecycle refused elaboration",
             )
             return
         self.state["owner"] = start["owner"]
-        self.result.update(self._elaborate())
+        self.context.args[self.dispatch.KEY_OWNER] = start["owner"]
+        self._elaborate()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def execute(self, notes: list[JsonValue]) -> JsonObject:
-        """Run elaboration while retaining lifecycle and diagnostic records.
+        """Run one dispatch while retaining lifecycle and diagnostic records.
 
         Returns:
             The recorded flow report.
@@ -271,246 +386,41 @@ class _Elaboration:
             self._release()
         self.result.setdefault(
             "headline",
-            "Epic elaboration finished" if self.result["ok"] else "Epic elaboration incomplete",
+            "Architecture, Specs, Stories and scored Tasks are ready"
+            if self.result["ok"]
+            else "Epic elaboration incomplete",
         )
         self.result["lifecycleDone"] = self.state["done"]
-        return record(self.context, json_object(self.result), self.phases, notes)
+        return record(self.context, json_object(self.result), {}, notes)
 
-    def _architecture(self, matrix: Path | None) -> JsonObject:
-        arch: dict[str, JsonValue] = self.invoke.call(ARCHITECTURE_PHASE, architecture.run, matrix_path=matrix)
-        self.phases[ARCHITECTURE_PHASE] = arch
-        if not arch.get("ok"):
-            return _owner(arch)
-        self.context.args.update({key: arch[key] for key in (KEY_TARGET_DIR, KEY_DELTA_DIR, KEY_ARCHITECTURE_CHANGE)})
-        self.context.args["architectureSubject"] = arch[KEY_SUBJECT]
-        self.context.stage = ARCHITECTURE_PHASE
-        if matrix is None:
-            message: str = "successful architecture phase requires a matrix snapshot"
-            raise ValueError(message)
-        delta: dict[str, JsonValue] = json_object(
-            self.tools.portfolio(
-                ARCHITECTURE_PHASE,
-                archstate.delta_items,
-                str(Path(check_type(arch[KEY_TARGET_DIR], str)) / DELTA_FOLDER),
-                matrix_snapshot=read_snapshot(matrix),
-            ),
-        )
-        write_json(self.context.work / DELTA_ITEMS_FILE, delta)
-        self.context.args.update({
-            KEY_DELTA_DIR: arch[KEY_DELTA_DIR] if delta.get(KEY_DELTA_EXISTS) else "",
-            KEY_NOTE: delta.get(KEY_NOTE, ""),
-        })
-        return arch
 
-    def _scope_and_trd(self, matrix: Path | None) -> tuple[JsonObject, JsonObject]:
-        scope: dict[str, JsonValue]
-        trd: dict[str, JsonValue]
-        scope, trd = parallel(
-            self.context,
-            [
-                lambda: self.invoke.call(REPO_SCOPING_PHASE, repo_scoping.run, matrix_path=matrix),
-                lambda: self.invoke.call(TRD_AUTHORING_PHASE, trd_authoring.run),
-            ],
-        )
-        self.phases.update({REPO_SCOPING_PHASE: scope, TRD_AUTHORING_PHASE: trd})
-        if trd.get("ok"):
-            self.artifacts["phases"][TRD_PHASE] = REUSED_PHASE if trd.get("resumed") else PASSED_PHASE
-            if trd.get("filingPath") is not None:
-                self.artifacts["filing"]["trd.md"] = check_type(trd["filingPath"], str)
-        return scope, trd
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def elaborate(
+    context: RunContext,
+    store: ArtifactStore,
+    runner: AgentRunner,
+    tools: Tools,
+    notes: list[JsonValue],
+) -> JsonObject:
+    """Run one dispatch of an Epic's elaboration with the services given.
 
-    def _specs(self, repos: list[str]) -> list[_Repository]:
-        row: _Repository
-        spec: dict[str, JsonValue]
-        slugs: dict[str, str] = check_type(
-            self.tools.portfolio(SPEC_AUTHORING_PHASE, hierarchy.repo_slugs, repos),
-            dict[str, str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        rows: list[_Repository] = [
-            {"repository": repo, "slug": slug, "storyKey": f"S{index}"}
-            for index, (repo, slug) in enumerate(slugs.items(), 1)
-        ]
-        specs: list[dict[str, JsonValue]] = parallel(self.context, [self._spec_job(row) for row in rows])
-        for row, spec in zip(rows, specs, strict=True):
-            row["spec"] = spec
-            if spec.get("ok"):
-                phase: str = SPEC_PHASE_PREFIX + row["slug"]
-                self.artifacts["phases"][phase] = REUSED_PHASE if spec.get("resumed") else PASSED_PHASE
-        return rows
+    Args:
+        context: The run context of the dispatch.
+        store: The artifact store of the Epic's work directory.
+        runner: The session runner of the dispatch.
+        tools: The deterministic tools of the dispatch.
+        notes: The list the dispatch's note and verdict events are collected in.
 
-    def _spec_job(self, row: _Repository) -> Callable[[], JsonObject]:
-        return lambda: self.invoke.call(
-            SPEC_AUTHORING_PHASE,
-            spec_authoring.run,
-            {
-                "repoPath": row["repository"],
-                "slug": row["slug"],
-                "storyKey": row["storyKey"],
-            },
-        )
+    Returns:
+        The detailed internal report, assembled from the Epic's journal.
 
-    def _task_job(self, row: _Repository) -> Callable[[], JsonObject]:
-        design: dict[str, JsonValue] = json_object(self.context.args.get(self.dispatch.KEY_DESIGN_SYSTEM, {}))
-        return lambda: self.invoke.call(
-            TASK_DECOMPOSITION_PHASE,
-            task_decomposition.run,
-            {
-                "repoPath": row["repository"],
-                "slug": row["slug"],
-                "story": row["spec"]["story"],
-                "specPaths": row["spec"]["specPaths"],
-                "scopingPath": str(self.context.work / "repo-scoping.json"),
-                "itemsPath": str(self.context.work / DELTA_ITEMS_FILE),
-                "uiPath": row["spec"].get("uiPath"),
-                "packagesDir": design.get(self.dispatch.DS_PACKAGES_DIR),
-            },
-        )
-
-    def _tasks(self, rows: list[_Repository]) -> None:
-        row: _Repository
-        tasks: dict[str, JsonValue]
-        eligible: list[_Repository] = [row for row in rows if row["spec"].get("ok")]
-        critical: JsonObject | None = _critical([row["spec"] for row in rows])
-        decomposed: list[dict[str, JsonValue]] = (
-            parallel(self.context, [self._task_job(row) for row in eligible]) if critical is None else []
-        )
-        for row, tasks in zip(eligible if critical is None else [], decomposed, strict=True):
-            row["tasks"] = tasks
-        self.phases["repositories"] = [json_object(row) for row in rows]
-        stories: list[dict[str, JsonValue]] = [json_object(row["spec"]["story"]) for row in eligible]
-        task_records: list[dict[str, JsonValue]] = [
-            task for row in eligible for task in _objects(row.get("tasks", {}).get("tasks", []))
-        ]
-        self.result["hierarchy"] = json_object({
-            "epic": self.context.args.get(self.dispatch.KEY_EPIC, {}),
-            "stories": stories,
-            "tasks": task_records,
-        })
-        self.result["beadsEmitted"] = len(stories) + len(task_records)
-
-    def _edges(self, repos: list[str], complete: bool) -> JsonObject:
-        if not complete:
-            return {"ok": False}
-        try:
-            return task_edges.run(self.context, self.store, self.runner, self.tools, repos)
-        except Exception as exc:
-            LOGGER.exception("Elaboration operation failed")
-            return failed(TASK_EDGES_PHASE, exc, agent_started=_started(self.context))
-
-    def _completion(self, rows: list[_Repository], repos: list[str]) -> JsonObject:
-        records: list[dict[str, JsonValue]] = [json_object(row) for row in rows]
-        critical: JsonObject | None = _critical([
-            value for row in rows for value in (row["spec"], row.get("tasks", {}))
-        ])
-        if critical is not None:
-            failure: dict[str, JsonValue] = json_object(repository_failure(records))
-            original: dict[str, JsonValue] = json_object(critical["failure"])
-            failure.update({key: value for key, value in original.items() if key != "repositories"})
-            return {**critical, "failure": failure}
-        complete: bool = not done_rule(records, True, [])["repositories"]
-        edges: dict[str, JsonValue] = self._edges(repos, complete)
-        self.phases[TASK_EDGES_PHASE] = edges
-        if _critical([edges]) is not None:
-            return edges
-        self.result.update({key: edges[key] for key in ("closureEdges", "crossStoryDependencies") if key in edges})
-        self.context.stage = FINISH_PHASE
-        emit_event(self.runner.emit, phase_event(FINISH_PHASE, TASK_SCORES_STAGE))
-        finish: Finished = lifecycle(
-            self.context,
-            self.tools,
-            FINISH_PHASE,
-            elaboration.finish,
-            owner=self.state["owner"],
-            done=False,
-            scope="epic-tasks",
-        )
-        self.state["finish"] = finish
-        unscored: list[JsonValue] = check_type(
-            json_object(finish["score"])["unscored"],
-            list[JsonValue],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        rule: dict[str, JsonValue] = done_rule(records, bool(edges.get("ok")), unscored)
-        self.phases["done-rule"] = rule
-        if not complete:
-            incomplete: Failure = repository_failure(records)
-            return {"ok": False, "stage": incomplete["stage"], "failure": json_object(incomplete)}
-        if not edges.get("ok"):
-            return edges
-        if not rule["done"]:
-            unscored_failure: Failure = {
-                "stage": TASK_SCORES_STAGE,
-                "cause": OTHER_CAUSE,
-                "classification": ITEM_CLASS,
-                "repositories": [],
-                "unscored": unscored,
-            }
-            return {"ok": False, "stage": unscored_failure["stage"], "failure": json_object(unscored_failure)}
-        self._finish()
-        return {
-            "ok": True,
-            "stage": FINISH_PHASE,
-            "headline": "Architecture, Specs, Stories and scored Tasks are ready",
-        }
-
-    def _elaborate(self) -> JsonObject:
-        scope: JsonObject
-        trd: JsonObject
-        value: dict[str, JsonValue]
-        matrix: Path | None = (
-            snapshot(self.context, self.tools) if self.context.args.get(self.dispatch.KEY_ARCH_PATH) else None
-        )
-        arch: dict[str, JsonValue] = self._architecture(matrix)
-        if not arch.get("ok"):
-            return arch
-        scope, trd = self._scope_and_trd(matrix)
-        critical: JsonObject | None = _critical([scope, trd])
-        if critical is not None:
-            return critical
-        for value in (scope, trd):
-            if not value.get("ok"):
-                return _owner(value)
-        repos: list[str] = _strings(scope["repos"])
-        self.result["repoSpan"] = list(repos)
-        self.result["createdRepos"] = scope.get("createdRepos", [])
-        self.context.args[self.dispatch.KEY_TRD_PATH] = trd["trdPath"]
-        rows: list[_Repository] = self._specs(repos)
-        self._tasks(rows)
-        return self._completion(rows, repos)
-
-    def _story_edges(self) -> storyedges.StoryEdges:
-        repo: Path = Path(check_type(self.context.args[self.dispatch.KEY_BEADS_REPO_PATH], str))
-        graph: beadgraph.Graph = self.tools.portfolio(FINISH_PHASE, beadgraph.load, repo)
-        writer: beadgraph.Writer = self.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
-        return self.tools.portfolio(FINISH_PHASE, storyedges.story_edges, graph, writer)
-
-    def _finish(self) -> None:
-        story_edges: dict[str, JsonValue] = json_object(self.tools.operation(FINISH_PHASE, self._story_edges))
-        self.result["storyEdges"] = story_edges
-        if story_edges.get("ok") is False:
-            stage: str = FINISH_PHASE
-            raise self.tools.failure(stage, OTHER_CAUSE, dict(story_edges))
-        finish: Finished = lifecycle(
-            self.context,
-            self.tools,
-            FINISH_PHASE,
-            elaboration.finish,
-            owner=self.state["owner"],
-            done=True,
-            scope="epic-tasks",
-        )
-        self.state["finish"] = finish
-        self.state["done"] = finish["summary"]["done"]
-        if not self.state["done"]:
-            stage = TASK_SCORES_STAGE
-            raise self.tools.failure(stage, OTHER_CAUSE, json_object(finish))
-        self.result["targetRemoval"] = remove(self.context, self.tools)
+    """
+    return _Elaboration(context, store, runner, tools).execute(notes)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run(context: RunContext) -> JsonObject:
-    """Own the lifecycle once; every phase owns its own saved-work decision.
+    """Own the Epic's claim for one dispatch and run the Epic's journal from where it stands.
 
     Returns:
         The detailed internal report, projected to the wire contract by run.py.
@@ -546,4 +456,4 @@ def run(context: RunContext) -> JsonObject:
         output(event, **facts)
 
     runner: AgentRunner = AgentRunner(context, store, emit=emit)
-    return _Elaboration(context, store, runner, tools).execute(notes)
+    return elaborate(context, store, runner, tools, notes)

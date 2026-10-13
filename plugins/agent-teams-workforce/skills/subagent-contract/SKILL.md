@@ -6,11 +6,13 @@ user-invocable: false
 
 # Direct specialist session
 
-Perform the role in your definition. The brief gives a bead, input paths, output path and outcome;
-it supplies no procedures or schema. Load the skills in your frontmatter and read the applicable
-contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
+Perform the role in your definition. The brief gives a bead, the journal step id, the request,
+input paths and an output path. It names only the inputs this step needs. The skills your
+definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python handles validation, acceptance, fingerprints and pipeline state.
-Do not invoke a Workflow, another agent, a command runner or StructuredOutput. Do not create
+Start another agent only when your definition has a `startsRoles` list, and only agents with
+those roles. An agent that was started by another agent starts no one. Never invoke a Workflow
+or a command runner. Do not create
 receipts or revision bindings. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
@@ -26,8 +28,43 @@ loading every repository's instruction tree.
 
 Missing inputs are named dependencies, not permission to invent facts. Distinguish observed
 facts, assumptions and unresolved questions in the artifact's supported fields. Do not mark your
-own work approved. In elaboration, repository code is evidence of current design detail only;
-the matrix is the sole built-state record, and Python derives implementation work from it.
+own work approved. Code that no pipeline built is a hint of how something
+was once solved and may be stale. A difference between such code and arc42 is never a discrepancy
+and never a finding. The matrix marks each element's code `none`, `legacy`, `built` or `deployed`;
+only `built` and `deployed` code is trusted and is expected to match the architecture.
+
+## Helpers and the journal
+
+An agent that starts other agents inside its own session and then continues follows one pattern,
+with `atw-step-journal` and the journal file its brief names:
+
+1. Write your own output first: the file your definition names as your first output.
+2. When you start your first agent, add it as a child step of your own step
+   (`atw-step-journal add --parent <your step> --agent <agent> --description "<what it does>"
+   --purpose "<why>"`), and add one last child step whose description is "Finish", with yourself
+   as the agent and your own step in its `inputs`. `--steps-json` adds several child steps in one
+   write.
+3. Add each further agent as a child before "Finish" (`--after <sibling id>`). Mark each child
+   running when you start it (`atw-step-journal start --step <id>`), and record the request file
+   you wrote for it at once (`atw-step-journal artifact --step <id> --name request --kind file
+   --path <path>`). When the agent returns, record the file it returned as the artifact `answer`
+   and mark the child done (`atw-step-journal done --step <id>`).
+4. When your work is complete, record your result as the artifact of "Finish", under the name
+   your definition gives it, and mark "Finish" done. Your own step is then done.
+5. After an interruption the script launches the first child that is not done: an agent left
+   running is launched from the `request` file its step holds, and "Finish" is launched as you.
+   Launched for "Finish", read your own output, the `answer` files and your partial result, and
+   continue.
+
+The names are fixed, because the script reads them: `request` (or `question`, for a question file
+to `architecture-question.schema.json`) for what an agent is asked, `answer` for what a specialist
+returned, `ruling` for a decider's ruling, `review` for a review. A step is handed the artifacts
+of the steps its `inputs` name, and of the steps below them.
+
+An agent that adds steps for the script to run, and starts no agent itself, records the file a
+step needs on its own step under the same names and names its own step in that step's `inputs`.
+
+An agent that starts no other agent adds no step.
 
 ## Resource use and incremental review
 
@@ -38,13 +75,13 @@ the matrix is the sole built-state record, and Python derives implementation wor
 
 ## Technical gaps are decided, not escalated
 
-Where the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item.
+Where the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item. No agent ends with "these two documents disagree". Where one statement is in an effective document and the other is not, the effective one stands without discussion. Otherwise the agent responsible for the work settles it and records the settlement in the matrix.
 
 Owner-only facts (credentials, money and destructive actions outside AWS dev), irreconcilable business requirements and section 2 conflicts go through the caller's owner channel. Technical choices remain with the specialists. Never put a technical question to the owner or any person, and never hold work waiting for a technical answer.
 
 ## The approved architecture is authoritative
 
-The approved (effective) architecture and the owner's answers are authoritative. Older documents, repository READMEs and existing code are evidence of the current state: they show what exists and what still has to change, never that the approved architecture or an owner answer is wrong. Where they disagree with the approved architecture, the approved architecture holds and the difference is work to plan, not a conflict to raise. The approved architecture changes only through a reviewed target backed by requirements and evidence, or a reviewed correction from what a Story built.
+The approved (effective) architecture and the owner's answers are authoritative. Older documents, repository READMEs and existing code are evidence of the current state: they show what exists and what still has to change, never that the approved architecture or an owner answer is wrong. Where they disagree with the approved architecture, the approved architecture holds and the difference is work to plan, not a conflict to raise. The approved architecture changes only through the solutions architect's decisions, written by the maintainer and reviewed, or a reviewed correction from what a Story built.
 
 ## AWS evidence authority
 

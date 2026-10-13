@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/artifact-handoff/scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
+from hierarchy import SPAN_ELEMENTS_FILE
 from orchestrator.checks.check_support import expected_error, report, require
 from orchestrator.core.agent_context import brief
 from orchestrator.core.agents import AgentRunner, validate_output
@@ -47,7 +48,6 @@ from spec_review_contract import (
     RulingValue,
     SpecDocument,
 )
-from target_contract import DELTA_ITEMS_FILE, KEY_TARGET_DIR
 
 SLUG: Final[str] = "probe"
 DOCUMENT_TEXT: Final[str] = "---\ndecisionIds: []\n---\n# Specification\n"
@@ -205,9 +205,8 @@ def build_scenario(root: Path, sessions: Sessions) -> Scenario:
     repo: Path = root / "repo"
     arch: Path = root / "arch"
     prd: Path = root / "prd" / "prd.md"
-    target: Path = root / "target"
     directory: Path
-    for directory in (work, repo, arch, prd.parent, target):
+    for directory in (work, repo, arch, prd.parent):
         directory.mkdir(parents=True, exist_ok=True)
     if not prd.exists():
         prd.write_text("# PRD\n", encoding="utf-8")
@@ -231,7 +230,7 @@ def build_scenario(root: Path, sessions: Sessions) -> Scenario:
             },
         )
         write_json(
-            work / DELTA_ITEMS_FILE,
+            work / SPAN_ELEMENTS_FILE,
             {
                 "ok": True,
                 "refusals": [],
@@ -248,7 +247,6 @@ def build_scenario(root: Path, sessions: Sessions) -> Scenario:
             "storyKey": "S1",
             dispatch.KEY_ARCH_PATH: str(arch),
             dispatch.KEY_PRD: {dispatch.PRD_PATH: str(prd)},
-            KEY_TARGET_DIR: str(target),
         },
         work,
         "spec-review-probe",
@@ -297,20 +295,21 @@ def _review_passes(root: Path) -> None:
     reviewer: AgentStep = after[0]
     require(reviewer.agent == REVIEWER, "the review step does not start openapi-contract-reviewer")
     work: Path = scenario.flow.work
-    expected: list[str] = [
-        *(str(step.output) for step in authored),
-        str(work / "trd.md"),
-        str(work / f"spec-{SLUG}.context.json"),
-        str(CRITERIA_PATH),
-    ]
-    require(list(reviewer.inputs) == expected, f"the reviewer is handed {reviewer.inputs}, not {expected}")
+    documents: set[str] = {str(step.output) for step in authored}
+    others: list[str] = [str(work / "trd.md"), str(work / f"spec-{SLUG}.context.json"), str(CRITERIA_PATH)]
+    handed: list[str] = list(reviewer.inputs)
+    # Two authors run at the same time, so the order their sessions were recorded in is not fixed.
+    require(
+        set(handed[: len(documents)]) == documents and handed[len(documents) :] == others,
+        f"the reviewer is handed {handed}, not the documents {sorted(documents)} and then {others}",
+    )
     require(
         not scenario.runner.missing_inputs,
         f"a step names a file no earlier step wrote: {scenario.runner.missing_inputs}",
     )
     sent: object = json.loads(brief("epic", reviewer, [(Path(path).stem, Path(path)) for path in reviewer.inputs]))
     named: list[object] = [item.get("path") for item in sent.get("inputs", [])] if isinstance(sent, dict) else []
-    require(named == [str(Path(path).resolve()) for path in expected], "the reviewer's brief names other files")
+    require(named == [str(Path(path).resolve()) for path in handed], "the reviewer's brief names other files")
     require(
         reviewer.add_dirs == (work, CRITERIA_PATH.parent),
         "the reviewer may read more than its inputs' directories",

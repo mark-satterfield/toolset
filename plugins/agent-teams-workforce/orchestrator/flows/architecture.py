@@ -1,133 +1,301 @@
-"""Architecture phase: survey, bounded approval, canonical integration and Closure."""
+"""The solutions architect's steps, and the sessions of the agents it left running.
+
+One agent, the solutions architect, establishes the architecture a PRD needs. The script starts
+its session, hands it the files its definition names and records what it returns; what the
+architect reads, whom it asks and in what order are its own decisions. The same launch builder
+serves every step that agent performs: the first, its "Finish" after an interruption, a
+correction after findings or after the mechanical check, and a competing design the lead orders.
+
+An agent the architect starts runs inside the architect's session. Only one it left running when
+its session stopped is launched here, from the request file the architect saved for it.
+"""
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
-# The driver surface and the target report are each defined once, in a plugin skill.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from driver_surface_types import ARCH_PATH_ENV
-from target_contract import (
-    CHANGE_NONE,
-    KEY_ARCHITECTURE_CHANGE,
-    KEY_DELTA_DIR,
-    KEY_OK,
-    KEY_SUBJECT,
-    KEY_SUBJECT_NAME,
-    KEY_TARGET_DIR,
-    TargetResult,
-    validate_target_report,
+from architecture_work_contract import (
+    validate_architecture_result,
+    validate_specialist_answer,
+    validate_specialist_request,
+    validate_trd_answer,
+    validate_trd_request,
+    validate_write_request,
+    validate_write_result,
 )
-from typeguard import CollectionCheckStrategy, typechecked
 
-from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
-from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
-from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
-from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.matrix import snapshot
-from orchestrator.core.models import RunContext, StepError
-from orchestrator.core.tools import Tools
-from orchestrator.flows.architecture_closure import closure
-from orchestrator.flows.architecture_integration import integrate
-from orchestrator.flows.architecture_resume import (
-    approved,
-    completed,
-    refresh_closure,
-    save_approval,
-    save_completion,
+from orchestrator.core.journal_registry import agent_step
+from orchestrator.core.journal_steps import (
+    UNDER_CONTAINER,
+    AgentLaunch,
+    Completion,
+    NewStep,
+    StepGroup,
+    StepRun,
+    file_artifact,
+    value_artifact,
 )
-from orchestrator.flows.architecture_rounds import owner_actions, run_rounds
-from orchestrator.flows.architecture_support import ARCHITECTURE_PHASE, Architecture
-from orchestrator.flows.architecture_survey import prepare_survey
-from orchestrator.flows.elaboration_support import emit_event
+from orchestrator.flows.architecture_check import check_step
+from orchestrator.flows.architecture_files import (
+    ARTIFACT_CHECK,
+    ARTIFACT_CONCLUSION,
+    ARTIFACT_REVIEW,
+    ARTIFACT_TRD,
+    LABEL_ANSWER,
+    LABEL_CONTEXT,
+    LABEL_CRITERIA,
+    LABEL_FINDINGS,
+    LABEL_PRD,
+    LABEL_QUESTION,
+    LABEL_REQUEST,
+    LABEL_RESULT,
+    LABEL_RULING,
+    LABEL_STATE,
+    PLUGIN,
+    ROLE_ARCHITECT,
+    ROLE_DIAGRAMS,
+    ROLE_MAINTAINER,
+    ROLE_SPECIALIST,
+    ROLE_STEWARD,
+    ROLE_TRD_AUTHOR,
+    ArchitectureContext,
+    ArchitectureStepError,
+    agents_with_role,
+    checked_file,
+    is_finish,
+    journal_file,
+    output_check,
+    read_context,
+    result_validator,
+)
+from orchestrator.flows.spec_review import CRITERIA_FILE
+
+if TYPE_CHECKING:
+    from architecture_work_contract import (
+        ArchitectureResult,
+        SpecialistRequest,
+        TrdAnswer,
+        TrdRequest,
+        WriteRequest,
+    )
+    from step_journal_contract import Step, StepId, StepPlan
+
+    from orchestrator.core.io import JsonValue
+
+ARCHITECT_DESCRIPTION: Final = "Establish the state of the architecture for this PRD"
+ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs until it is ready for review"
+ARCHITECT_REQUEST: Final = "Establish the state of the architecture for this PRD."
+ARCHITECT_REF: Final = "architect"
+WRITE_REQUEST: Final = "write request"
+WRITTEN: Final = "what was written"
+NO_SOURCE: Final = "obligations with no source"
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def run(
-    context: RunContext,
-    store: ArtifactStore,
-    runner: AgentRunner,
-    tools: Tools,
-    *,
-    matrix_path: Path | None = None,
-) -> dict[str, JsonValue]:
-    """Run.
+def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
+    """Plan the first steps of the Architecture container, for the open-run step.
+
+    Args:
+        opened: The open-run step, whose artifacts the planned steps are handed.
+        container: The Architecture container.
+        architect: The agent that plays the solutions architect.
 
     Returns:
-        The validated architecture artifact result.
-
-    Raises:
-        StepError: The required Epic or PRD path is missing.
-        TypeError: An argument violates the declared input contract.
+        The architect's step and the check that follows it, as the container's first child steps.
 
     """
-    if not isinstance(context, RunContext) or not (matrix_path is None or isinstance(matrix_path, Path)):
-        argument_error: str = "run: arguments do not satisfy the declared input contract"
-        raise TypeError(argument_error)
-    dispatch: DispatchArguments = dispatch_arguments()
-    arch: JsonValue = context.args.get(dispatch.KEY_ARCH_PATH) or os.environ.get(ARCH_PATH_ENV)
-    if not arch:
-        return {
-            "ok": False,
-            "stage": "no-arch-path",
-            "requiredHumanActions": [f"Set {ARCH_PATH_ENV} to the architecture root."],
-        }
-    context.args[dispatch.KEY_ARCH_PATH] = arch
-    stage: str = "input"
-    if not context.bead or not json_object(context.args.get(dispatch.KEY_PRD, {})).get(dispatch.PRD_PATH):
-        raise StepError(
-            stage,
-            OTHER_CAUSE,
-            ("Architecture requires an Epic and a PRD path.",),
-        )
-    context.stage = ARCHITECTURE_PHASE
-    emit_event(runner.emit, phase_event(ARCHITECTURE_PHASE, "survey"))
-    snapshot_path: Path = matrix_path or snapshot(context, tools)
-    flow: Architecture = Architecture(context, store, runner, tools, snapshot_path)
-    saved: dict[str, JsonValue] | None = completed(flow)
-    if saved is not None:
-        return refresh_closure(flow, saved)
-    checkpoint: dict[str, JsonValue] | None = approved(flow)
-    decision: dict[str, JsonValue]
-    target: dict[str, JsonValue]
-    if checkpoint is not None:
-        decision = json_object(checkpoint["decision"])
-        target = json_object(checkpoint["target"])
-    else:
-        prepare_survey(flow)
-        decision = run_rounds(flow)
-        actions: list[str] = owner_actions(decision, flow.work / "decision.json")
-        if actions:
-            return {
-                "ok": False,
-                "stage": "owner-concern",
-                "requiredHumanActions": list(actions),
-            }
-        target = flow.checked(flow.target(), "target")
-        save_approval(flow, target, decision)
-    report: TargetResult = validate_target_report(target)
-    update: dict[str, JsonValue] = integrate(flow, report)
-    closure_result: dict[str, JsonValue] = closure(flow, target)
-    result: dict[str, JsonValue] = {
-        KEY_OK: True,
-        KEY_SUBJECT: flow.subject,
-        KEY_SUBJECT_NAME: report.get(KEY_SUBJECT_NAME, flow.subject),
-        KEY_TARGET_DIR: report[KEY_TARGET_DIR],
-        KEY_DELTA_DIR: report[KEY_DELTA_DIR],
-        KEY_ARCHITECTURE_CHANGE: report[KEY_ARCHITECTURE_CHANGE],
-        "closure": closure_result,
-        "targetPath": str(flow.work / "target.json"),
-        "surveyPath": str(flow.work / "survey.json"),
-        "decisionPath": str(flow.work / "decision.json"),
-        "architectureUpdate": update,
-        "architectureUpdatePath": str(flow.work / "architecture-update.json"),
-        "ledgerPath": str(flow.work / "ledger.json"),
-        "rounds": decision["round"],
-        "openItems": update.get("openItems", {}),
-        "noArchitectureChange": report[KEY_ARCHITECTURE_CHANGE] == CHANGE_NONE,
+    plan: StepPlan = {
+        "ref": ARCHITECT_REF,
+        "description": ARCHITECT_DESCRIPTION,
+        "purpose": ARCHITECT_PURPOSE,
+        "agent": architect,
+        "inputs": [opened],
     }
-    return save_completion(flow, result)
+    return StepGroup((NewStep(plan), check_step([ARCHITECT_REF], corrections=0)), UNDER_CONTAINER, container)
+
+
+def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tuple[tuple[str, Path], ...]:
+    """Name the files of the architect's brief: exactly the labels its definition states.
+
+    Returns:
+        The PRD, the criteria file, the context file and the state path; then each review and
+        each mechanical check result the step is handed, as findings; then each specialist's
+        answer and each ruling the step is handed.
+
+    """
+    findings: list[Path] = [*run.inputs.files(ARTIFACT_REVIEW), *run.inputs.files(ARTIFACT_CHECK)]
+    return (
+        (LABEL_PRD, prd),
+        (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
+        (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
+        (LABEL_STATE, Path(context["statePath"])),
+        *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
+        *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
+        *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
+    )
+
+
+@agent_step(*agents_with_role(PLUGIN, ROLE_ARCHITECT))
+def architect(run: StepRun) -> AgentLaunch:
+    """Build the session of any step the solutions architect performs.
+
+    The resolved inputs say which step it is. A step that is handed findings is a correction; the
+    "Finish" step below the architect's own step continues that step's session; any other step
+    after one of the architect's continues the nearest earlier session the agent holds. The
+    output is always the architecture result, which every step after the first updates in place.
+
+    Returns:
+        The launch: the result file as output, the files the definition names, and what the
+        journal records when the result is accepted.
+
+    """
+    context: ArchitectureContext = read_context(run)
+    prd: Path = journal_file(run, LABEL_PRD)
+    finishing: bool = is_finish(run)
+    holder: Step | None = None if finishing else run.session_holder()
+    continues: bool = finishing or holder is not None
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
+        return Completion(
+            artifacts=(file_artifact(LABEL_RESULT, output), value_artifact(ARTIFACT_CONCLUSION, result["conclusion"])),
+        )
+
+    return AgentLaunch(
+        output=Path(context["resultPath"]),
+        validate=result_validator,
+        outcome="The architecture result of this PRD.",
+        accept=accept,
+        add_dirs=(run.context.work, Path(context["architectureRoot"]), prd.parent),
+        files=_handed_files(run, context, prd),
+        request=None if continues else ARCHITECT_REQUEST,
+        resume_from=None if holder is None else holder["id"],
+        fresh_output=not continues,
+        hand_inputs=False,
+    )
+
+
+def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
+    """Find the request file a helper step is launched from.
+
+    Returns:
+        The artifact name and the path of the request the step itself held when its agent's
+        session stopped, or that the step's inputs hand it.
+
+    Raises:
+        ArchitectureStepError: Neither the step nor its inputs hold a request file.
+
+    """
+    name: str
+    for name in names:
+        held: Path | None = run.saved.optional_file(name) or run.inputs.optional_file(name)
+        if held is not None:
+            return name, held
+    raise ArchitectureStepError(run, f"neither the step nor its inputs hold a request file named one of {names!r}")
+
+
+def _helper_dirs(run: StepRun) -> tuple[Path, ...]:
+    """Name the directories a helper's session may read.
+
+    Returns:
+        The Epic's work directory, the architecture root and the PRD's folder.
+
+    """
+    context: ArchitectureContext = read_context(run)
+    return (run.context.work, Path(context["architectureRoot"]), Path(context["prdPath"]).parent)
+
+
+@agent_step(
+    *agents_with_role(PLUGIN, ROLE_SPECIALIST),
+    *agents_with_role(PLUGIN, ROLE_DIAGRAMS),
+    *agents_with_role(PLUGIN, ROLE_STEWARD),
+)
+def specialist(run: StepRun) -> AgentLaunch:
+    """Build the session of a specialist, a diagram author or the repository steward.
+
+    Returns:
+        The launch from the saved request file: the answer path the request names as output.
+
+    """
+    name: str
+    asked: Path
+    name, asked = _saved_request(run, LABEL_REQUEST, LABEL_QUESTION)
+    request: SpecialistRequest = checked_file(run, asked, validate_specialist_request)
+
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(name, asked), file_artifact(LABEL_ANSWER, output)))
+
+    return AgentLaunch(
+        output=Path(request["answerPath"]),
+        validate=output_check(validate_specialist_answer),
+        outcome="The answer to the request, at the path the request names.",
+        accept=accept,
+        add_dirs=_helper_dirs(run),
+        files=((LABEL_REQUEST, asked),),
+        hand_inputs=False,
+    )
+
+
+@agent_step(*agents_with_role(PLUGIN, ROLE_TRD_AUTHOR))
+def trd_author(run: StepRun) -> AgentLaunch:
+    """Build the session of the TRD author the architect left running.
+
+    Returns:
+        The launch from the saved request file; the TRD it names is kept and updated in place.
+
+    """
+    name: str
+    asked: Path
+    name, asked = _saved_request(run, LABEL_REQUEST)
+    request: TrdRequest = checked_file(run, asked, validate_trd_request)
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        answer: TrdAnswer = checked_file(accepted, output, validate_trd_answer)
+        unsourced: list[JsonValue] = [entry["obligation"] for entry in answer["noSource"]]
+        return Completion(
+            artifacts=(
+                file_artifact(name, asked),
+                file_artifact(ARTIFACT_TRD, Path(request["trdPath"])),
+                file_artifact(LABEL_ANSWER, output),
+                value_artifact(NO_SOURCE, unsourced),
+            ),
+        )
+
+    return AgentLaunch(
+        output=Path(request["answerPath"]),
+        validate=output_check(validate_trd_answer),
+        outcome="The TRD and the answer, each at the path the request names.",
+        accept=accept,
+        add_dirs=_helper_dirs(run),
+        files=((LABEL_REQUEST, asked),),
+        hand_inputs=False,
+    )
+
+
+@agent_step(*agents_with_role(PLUGIN, ROLE_MAINTAINER))
+def maintainer(run: StepRun) -> AgentLaunch:
+    """Build the session of the document maintainer the architect left running.
+
+    Returns:
+        The launch from the saved write request: the result path the request names as output.
+
+    """
+    name: str
+    asked: Path
+    name, asked = _saved_request(run, WRITE_REQUEST, LABEL_REQUEST)
+    request: WriteRequest = checked_file(run, asked, validate_write_request)
+
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(name, asked), file_artifact(WRITTEN, output)))
+
+    return AgentLaunch(
+        output=Path(request["resultPath"]),
+        validate=output_check(validate_write_result),
+        outcome="The arc42 documents written as the request states, and the result at the path it names.",
+        accept=accept,
+        add_dirs=_helper_dirs(run),
+        files=((LABEL_REQUEST, asked),),
+        hand_inputs=False,
+    )

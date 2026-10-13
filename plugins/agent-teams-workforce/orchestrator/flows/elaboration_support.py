@@ -30,6 +30,7 @@ from orchestrator.core.handback_contract import (
     INTERRUPTED_CLASS,
     ITEM_CLASS,
     OTHER_CAUSE,
+    PRD_TO_SPEC_PHASES,
     QUOTA_CAUSE,
     RETRYABLE_CAUSES,
     TRANSIENT_CLASS,
@@ -49,6 +50,17 @@ from orchestrator.core.models import RunContext
 from orchestrator.core.tools import Tools
 
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration_support input contract"
+
+(
+    ARCHITECTURE_PHASE,
+    TRD_AUTHORING_PHASE,
+    REPO_SCOPING_PHASE,
+    SPEC_AUTHORING_PHASE,
+    TASK_DECOMPOSITION_PHASE,
+    TASK_EDGES_PHASE,
+    FINISH_PHASE,
+) = PRD_TO_SPEC_PHASES
+"""The phases of one elaboration, in the order the handback contract lists them."""
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +83,29 @@ def emit_event(sink: EventSink, event: OrchestratorEvent) -> None:
     name: EventName = event[EVENT_KEY]
     facts: dict[str, JsonValue] = {key: value for key, value in json_object(event).items() if key != EVENT_KEY}
     sink(name, **facts)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def enter_phase(
+    context: RunContext,
+    sink: EventSink,
+    phase: PrdToSpecPhase,
+    step: str,
+    repository: str | None = None,
+) -> None:
+    """Record that a step of one phase begins: on the run context and as a phase event.
+
+    Args:
+        context: The run context; its stage becomes the phase, which names the phase of the
+            sessions the step starts.
+        sink: The dispatch's event sink.
+        phase: The phase the step belongs to.
+        step: What the step is called in the event.
+        repository: The repository the step works on, when it works on one.
+
+    """
+    context.stage = phase
+    emit_event(sink, phase_event(phase, step, repository))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -1,4 +1,9 @@
-"""Cross-Story dependency acceptance and deterministic edge writes."""
+"""Cross-Story dependency acceptance and deterministic edge writes.
+
+The prerequisite edges between Stories come from the ``dependsOn`` links of the matrix: the span
+step writes each element's ``requires`` from them, and ``beadwrite.closure_task_edges`` turns those
+into edges between the Tasks that build the elements.
+"""
 
 from __future__ import annotations
 
@@ -13,15 +18,14 @@ import hierarchy
 from task_deps_contract import TaskDepsError, empty_task_deps, narrowed_task_deps_schema, parse_task_deps
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agents import AgentRunner
+from orchestrator.core.agents import AgentRunner, strict_json
 from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, phase_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
-from orchestrator.flows.architecture_support import TASK_EDGES_PHASE, read
-from orchestrator.flows.elaboration_support import emit_event
+from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, emit_event
 
 _ARGUMENT_ERROR: str = "Arguments violate the task_edges input contract"
 
@@ -83,7 +87,7 @@ def run(
         ]
     ] = []
     for index, slug in enumerate(slugs.values(), 1):
-        doc: dict[str, JsonValue] = read(context.work / f"tasks-{slug}.json")
+        doc: dict[str, JsonValue] = strict_json(context.work / f"tasks-{slug}.json")
         rows.append(
             {
                 "story": f"S{index}",
@@ -123,7 +127,7 @@ def run(
     else:
         write_json(final, empty_task_deps())
         store.accept("task-deps", task_paths, (final,))
-    accepted: dict[str, JsonValue] = read(final)
+    accepted: dict[str, JsonValue] = strict_json(final)
     try:
         parse_task_deps(accepted)
     except TaskDepsError as exc:

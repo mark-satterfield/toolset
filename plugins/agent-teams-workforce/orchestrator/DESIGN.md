@@ -94,9 +94,8 @@ Layout:
 | Path | Holds |
 |---|---|
 | `<orch>/run.py` | argument parsing, the flow registry, handback writing, signal handling, the top-level handler of section 6.7 |
-| `<orch>/core/` | the step model, the artifact store and fingerprints, the tools layer (`bd`, git, `gh`, `polyrepo.py`, `cdk`), the agent runner, the section 2 guard, the event writer, the element status matrix module |
-| `<orch>/flows/` | one module per Epic flow: `prd_to_spec.py`, `architecture.py`, `repo_scoping.py`, `trd_authoring.py`, `spec_authoring.py`, `task_decomposition.py` |
-| `<orch>/seed_matrix.py` | the one-time matrix seeding script (section 10.7, PLAN S05a) |
+| `<orch>/core/` | the step journal and its runner, the registry of step code, the agent runner and launcher, the artifact store, the tools layer (`bd`, git, `gh`, `polyrepo.py`, `cdk`), the section 2 guard, the event writer |
+| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `elaboration_steps.py`, `elaboration_result.py`, and the phase functions `spec_authoring.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py` |
 | `<orch>/checks/brief_check.py` | the brief and contract-skill check (section 2.3, PLAN S03e) |
 | `<orch>/checks/run_all.py` | the one command that runs every check in `<orch>/checks/` |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
@@ -135,34 +134,73 @@ separate entries: the only entry into the Epic pipeline is the driver (CONTEXT 7
 
 ## 2. Step model (S02 item 2)
 
-### 2.1 Two kinds of step
+### 2.1 The step journal and its two kinds of step
 
-A flow is plain Python: loops, conditionals and a thread pool calling steps. There is no generic DAG
-engine; no spec needs one. The deepest structure is the architecture review rounds, bounded by the
-absolute round number of section 11.1, not by a loop counter.
+One elaboration dispatch is a loop over the step journal of the Epic
+(`<control>/.claude/workflow-runs/step-journals/<epic-id>.step-journal.json`,
+`core/step_journal.py`, schema `skills/pipeline-contracts/schemas/step-journal.schema.json`). The
+dispatch creates the journal when its file does not exist, with every outermost step planned, then
+asks the journal for the next step, runs it, and repeats until no step is left or one fails
+(`core/journal_run.py`). There is no other cursor: a restart is the same loop on the same file, so
+it begins at the first step without child steps that is not done.
 
-- **Deterministic step**: a Python function with declared inputs (paths and input kinds of section
-  3.2, bead ids) and declared outputs (paths). It either returns a typed result or raises
-  `StepError(stage, cause, evidence)` (section 6).
-- **Agent step**: a declaration with these fields:
+The outermost steps of an Epic's journal are Open the run, Architecture, TRD, Specs and Stories,
+Tasks, Task edges, Score the Tasks, Story edges and Mark the Epic elaborated
+(`flows/prd_to_spec.py` `outermost_steps`). A step with child steps is never run itself. Steps
+found at run time are added by the step that finds them: the open-run step plans the architect's
+step and the check after it, the check plans the reviewers and the promotion, the span step plans
+one spec step per repository, and a spec step plans its repository's Task step.
 
-| Field | Meaning |
-|---|---|
-| `agent` | the agent definition's file stem under `<plugin>/agents/` |
-| `inputs` | the input paths and input kinds that fingerprint the step; the readable ones are listed in the brief |
-| `output` | the one path the agent writes: for a JSON result a candidate path, for a Markdown document its final path |
-| `outcome` | the one-line expected outcome placed in the brief |
-| `validate` | how Python checks the output: the JSON Schema file a JSON result is validated against (used by Python only, never sent to the agent), or the document check (exists, non-empty UTF-8, and where the spec says so the `decisionIds` resolution check) |
-| `final` | for a JSON result, the path Python writes the accepted canonical JSON to |
-| `model`, `effort` | from the table in section 5.4 |
-| `addDirs` | the directories the agent reads (section 5.2) |
-| `corrective` | whether the one corrective retry of section 6.3 applies |
+A step without child steps is one of two kinds, and the registry (`core/journal_registry.py`) finds
+its code:
+
+- **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`):
+  `prd_to_spec.open_run`, `atw-matrix check; atw-matrix unapproved`, `atw-matrix approve`,
+  `trd.confirm`, `atw-matrix prd --closure`, `spec_authoring.run`, `task_decomposition.run`,
+  `task_edges.run`, `elaboration.score`, `storyedges.story_edges`, `elaboration.finish`. A handler
+  returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
+- **Agent step.** The step's `agent` name is the key of a launch builder (`@agent_step(...)`), which
+  is registered by role for every agent whose definition states that role. The builder returns an
+  `AgentLaunch`: the output path, the validator of the output, the one-line outcome, the readable
+  directories, the labelled files of the brief, and an `accept` function that says what the step
+  records when the output is accepted.
+
+Both receive a `StepRun` (`core/journal_steps.py`): the step, the journal, the run context, the
+tools, and the step's inputs resolved from the journal, which are the artifacts, by name, of the
+steps its `inputs` name and of the steps below them. A handler never looks for an earlier output by
+a file name, a glob or a derived path. Parameters of a step planned at run time are a value
+artifact named `for <step id>` on the step that planned it.
+
+The runner marks a step running before its code or its session starts, with the agent session id
+for an agent step. When the output is accepted, one journal change records the step's artifacts,
+adds every step the result plans and marks the step done (`core/journal_changes.py`
+`apply_completion`). A step that raises is marked failed with a structured cause and the dispatch
+ends; the next dispatch starts at that step. A stop request leaves the step running.
+
+An agent that starts other agents in its own session (`aws-solutions-architect`) or plans steps for
+the script (`architecture-team-lead`) adds child steps and a last child step "Finish" under its own
+step with `atw-step-journal`, as the `subagent-contract` skill describes. After such a session the
+runner reads the journal again: a step whose child steps are all done is closed by the runner; a
+child left not done is the next step. An agent left running is launched as its own session from
+the request file its step holds; "Finish" is launched as the same agent, continuing its session.
+
+A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a
+session earlier in the journal continue that session (`claude --resume`); when the conversation is
+gone a new session starts.
+
+When a spec step creates a Story bead and a Task step creates Task beads, the same step creates
+that bead's journal in the same directory (pipeline `deploy` for a Story, `build` for a Task), with
+the creating step as its first, done step and the files the bead's later steps are handed as its
+artifacts.
+
+The dispatch result (the handback, section 4.4) is assembled from the journal's artifacts
+(`flows/elaboration_result.py`), so it is the same whichever dispatch ran a step.
 
 ### 2.2 How `scripts/portfolio/` and the other tools are called
 
-**Decision.** In-process import for every `scripts/portfolio/` module (`archstate`, `archbaseline`,
-`archresume`, `archrevision`, `archrounds`, `archfiles`, `archclosure`, `beadgraph`, `beadwrite`,
-`hierarchy`, `elaboration`, `scoring`, `storyedges`, `cdsbundles`, `specui`, `resumefacts`).
+**Decision.** In-process import for every `scripts/portfolio/` module (`matrixstore`, `matrixsync`,
+`matrixreview`, `matrixquery`, `matrixexpertise`, `beadgraph`, `beadwrite`, `hierarchy`,
+`elaboration`, `scoring`, `storyedges`, `cdsbundles`, `specui`).
 Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through `beadgraph`),
 `git`, `gh`, `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py <cmd> --json`, `cdk`.
 `artifactio.py` (driver code, located by `$ATW_ARTIFACT_SCRIPT`) is loaded in-process with
@@ -181,7 +219,7 @@ Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through 
   (`beadwrite.write_story` in-process), `prd-to-spec.md` step 14 (`elaboration.finish` logic
   in-process).
 - The orchestrator runs from the same plugin version as the modules (section 1). The one piece of
-  code loaded from outside the plugin is `artifactio.py`; section 3.8 sets its compatibility rule.
+  code loaded from outside the plugin is `artifactio.py`; section 3.3 sets its compatibility rule.
 
 **What an in-process call must handle** (the verifier's finding 9):
 - Every deterministic step body runs inside `try ... except Exception`; an exception that is not a
@@ -193,340 +231,96 @@ Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through 
   `KeyboardInterrupt` raised in a worker thread and re-raised by `future.result()` still produces a
   handback.
 - A module that starts a subprocess must give it a timeout. The ones that do not today are listed
-  in section 11.7 and changed in place.
+  in the modules themselves.
 
-`depscore.py` is not rewritten. Where a module function must behave differently, the change is made
-in place in that module by the S04 sub-step that uses it (section 11.7). The glue `depscore.run`
-holds is reproduced by the orchestrator where the specs name it: `elaboration-finish` also runs
-`storyedges.story_edges` (section 11.6); `arch-closure` bound `status_of=bead_status`, which section
-11.7 removes; `arch-delta --save` wrote the file, which the orchestrator writes itself.
+`depscore.py` stays the command line over these modules for the workflows and the owner. The
+orchestrator calls the module functions themselves: the scoring step calls `elaboration.finish`
+and the Story edge step calls `storyedges.story_edges` (section 11.6).
 
-### 2.3 Briefs carry facts only (CONTEXT 7.14)
+### 2.3 Briefs carry facts only
 
-**Decision.** A brief is built in code, never from a prose template, and holds exactly:
+A brief is built in code (`core/agent_context.py` `brief`), never from a prose template, and holds
+exactly:
 
 1. the bead id;
-2. the input file paths (absolute), each with a short label naming what it is (for example
-   `PRD`, `survey`, `plan`, `validation errors`);
+2. the input file paths (absolute), each with a label: either the name of the journal artifact
+   that holds the file, or the label the agent's definition names (for example `prd`, `criteria`,
+   `context`, `review scope`, `findings`, `step journal`);
 3. the output file path (absolute);
-4. a one-line expected outcome (the step's `outcome` field), for example "Write the survey of
-   this PRD's capabilities."
+4. a one-line expected outcome;
+5. for a journal step, `request` (what is asked: the builder's text, or the step's description)
+   and `step` (the journal step id).
 
 It carries no instructions, no rules, no procedures, no schemas and no file content. Everything
 else an agent needs is in its definition (`<plugin>/agents/<name>.md`) and in the skills its
-frontmatter names, which the runner loads (section 5.1). How to read the inputs it is given, what
-its output must contain, and how its output is judged are written there, once.
+front matter names, whose text the launcher puts in the agent's context (section 5.1). The
+validation errors of a corrective retry are written by Python to a file and listed as one more
+input.
 
-What the old briefs carried as facts becomes an input file, never prose:
-- the round number and the agent's own plan entry: the plan file `plans/round<n>-plan-0.json`
-  is an input; the agent's definition says to take its own entry by its agent name;
-- the validation errors of a corrective retry: written by Python to `<output>.errors.json` and
-  listed as an input (section 6.3);
-- the recheck's open findings: `ledger.json` is an input and the outcome line says it is a
-  recheck ("Reassess the capabilities the open findings in the ledger concern.").
+`<orch>/checks/brief_check.py` exits non-zero, naming each finding, when a flow module's brief
+construction holds JSON schema text or prose beyond the fact fields, or when the register
+(`specs/epic/agent-contracts.md`), the index (`specs/epic/INDEX.md`), the agent front matter and
+the shared contract rules disagree: every agent of an agent-facing contract loads a contract skill
+(`artifact-handoff` or `architecture-baseline`), every contract has its rules section in
+`skills/artifact-handoff/epic-contracts.md`, and every named schema exists.
 
-Moving every instruction, rule and schema the Workflow briefs carry today into the agent
-definitions and shared skills is PLAN step S03e; `<orch>/specs/epic/agent-contracts.md` (its
-output) is the table of each agent's definition file, skills, and the contracts it produces and
-reads. S04 builds no brief beyond the four fields above.
+### 2.4 One set of criteria for the architecture team
 
-**Checked by a command, not by a report** (owner, fifth round; CONTEXT 7.14).
-`<orch>/checks/brief_check.py`, built in S03e, exits non-zero, naming each finding, when:
-- a flow module's brief construction holds JSON schema text or prose beyond the four fact fields
-  (it reads the `outcome` strings and every string passed into a brief and allows one line each);
-- for any artifact in `specs/epic/INDEX.md`, its producer and its reviewer or decider (from
-  `specs/epic/agent-contracts.md`) do not list the same contract skill in their frontmatter
-  `skills`.
-S03e is done only when it exits 0 in the independent verifier's own run, with the command and its
-output recorded in `PROGRESS.md`; S04f reruns it.
+`<plugin>/skills/architecture-baseline/review-criteria.json` holds every criterion as data: its id,
+its level (architecture, technical requirement or implementation), its home document and its text;
+the agents responsible for each level; and, for each reviewer group, its reviewer, the criteria it
+covers and the rule that selects it (`appliesWhen`: kinds of unapproved content, and the names of
+review signals in the architect's result). `review-standard.md` beside it is written from that
+file by `skills/artifact-handoff/scripts/review_criteria.py`.
 
-### 2.4 One review standard for the architecture team (QUESTIONS 26)
+`aws-solutions-architect` develops the architecture and the TRD to exactly these criteria and
+answers each architecture and technical-requirement criterion in its result. The reviewers apply
+exactly these and no others, each to the items its group covers. A criterion is satisfied by the
+document that is its home; nobody asks a document for detail below its level. No brief carries any
+part of the criteria: the brief names the criteria file as the input `criteria`.
 
-**Decision.** One file, `<plugin>/skills/architecture-baseline/review-standard.md`, written in
-S03e, is the standard every architecture writer, reviewer, the coordinator and the decider work to.
-It is part of the `architecture-baseline` skill, which each of those agents names in its frontmatter
-`skills` (S03e adds the skill where it is missing); their definitions say that their work is judged
-against it. No brief names it or carries any part of it. It holds:
+### 2.5 Where the contracts and schemas live
 
-1. **What is judged** (today's `DESIGN_REVIEW_STANDARD` and `COVERAGE_RULE`): the acceptance basis
-   (applicable PRD outcomes, settled owner decisions and section 2 constraints, the relevant
-   obligations of `reference/architecture-documentation-model.md`, cited evidence, the retained
-   target and delta); the coverage rule; and the reviewers' own checklist, taken from what the
-   review schema records (`findings[].verdict` `verified | unsupported | wrong`,
-   `coverageChecks`, `repairChecks`) and from the five reviewer and two cost reviewer definitions,
-   so a writer sees in advance every check a reviewer will make.
-2. **The level of implementation detail a view must carry** (CONTEXT 7.21). For every element the
-   target adds or changes, its views together state: the owning repository (also as the catalog
-   frontmatter key `repository` on a view whose `subject` is the element, section 10.7); the CDK
-   stack and the construct kind that provision it; its runtime entry (the Lambda handler and the
-   chassis superclass it extends, or the container); the data stores it owns with key schema,
-   indexes and access patterns; every API route (method, path, authorizer) and every event (event
-   type name, the values the publisher passes to the shared-events-service API, payload schema when
-   the event has a payload, publisher, consumers, delivery path, retry and dead-letter behaviour);
-   its IAM boundary
-   (who may call it, what it may call); the configuration it reads and the values it publishes (SSM
-   parameter names); its failure behaviour (timeouts, retries, idempotency key); and its
-   observability (log, metric and alarm names). The test is: a Task can name the repository,
-   stack, handler, table, route and event without making a design decision of its own.
-3. **The constant rules** of today's `INPUTS_RULE` and `PRD_RULE` (the PRD states what, never how;
-   what counts as an input; citation forms), with one correction: repository code is read only for
-   current design detail, never to judge whether anything is built (CONTEXT 7.23; built-ness comes
-   from the element status matrix, section 10).
-4. **The draft layout rules** of today's `DRAFT_RULES` (the arc42 section layout of the draft and
-   its `delta/` folder; never `02-architecture-constraints/`).
+Every file an agent produces or consumes has one JSON Schema in
+`<plugin>/skills/artifact-handoff/schemas/`. Python validates each result against the same file and
+reads it through a module generated from it: `scripts/architecture_work_contract.py` (from
+`architecture-result.schema.json`, which defines every shape of the architecture team's files
+once; each file has a wrapper schema that refers to its definition), `scripts/matrix_contract.py`
+(from `matrix.schema.json`, including the review scope a reviewer is handed), and the other
+generated contracts the `artifact-handoff` skill lists. An agent of the architecture team finds
+the schemas through the `architecture-baseline` skill; the spec and Task agents through
+`artifact-handoff`. A contract only code produces and consumes is one typed Python module, named in
+the register. No schema text is placed in a prompt.
 
-**Reason.** Reviewers find gaps in nearly every first round because only some briefs carry the
-standard (`architecture.md` step 15), and the owner observed that contracts sent in briefs instead
-of a shared skill are the likely cause (fifth round). One skill loaded by every writer and every
-reviewer makes their expectations the same, and nothing has to be repeated in a prompt.
+## 3. Where a run begins, and what the phases still record
 
-### 2.5 Where the contracts and schemas live (QUESTIONS 27)
+### 3.1 The journal decides
 
-**Decision.** Every artifact contract (its JSON Schema, and how to read, write and interpret it)
-lives in one shared skill that every producer and every reviewer of that artifact loads through its
-frontmatter `skills` (CONTEXT 7.14). The schema files sit in
-`<plugin>/skills/artifact-handoff/schemas/`, beside the three that exist
-(`architecture-writer.schema.json`, `architecture-review.schema.json`,
-`architecture-baseline.schema.json`); S03e decides, per contract, whether its reading and writing
-rules belong in `artifact-handoff` or in a domain skill (for example `architecture-baseline`), and
-records it in `agent-contracts.md`. New schema files: `survey`, `coordinator-plan`, `decision`,
-`maintain`, `conformance`, `closure-walk`, `closure`, `placement` (repo scoping), `task-deps`,
-`tasks`, `tasks-correction`, `spec-ui`, each `<name>.schema.json`. The `REPOSITORIES` and
-`DEPLOYMENTS` schemas are not carried over: their sessions are gone (section 11.1 and
-`architecture.md` old step 30).
+Nothing but the step journal decides whether a step runs: no file hash, timestamp, changed
+document or freshness check. A step's output is recorded as an artifact of the step right after it
+is written (a file by path, or a value such as a reviewer's findings); later steps are handed
+those artifacts from the journal. A missing file is found only when a step reads it, and is then
+that step's failure. An earlier start is made by invalidating a step (`atw-step-journal
+invalidate`), which resets it and every step after it; only the owner asks for it.
 
-Python validates every JSON result against the same file the skill describes. No schema text is
-placed in a prompt.
+Files stay flat under `<work>`, with the architecture part's files under `<work>/architecture/`
+(`specs/epic/INDEX.md` lists them). Run facts that are not about one file (session ids, model,
+effort, timings, the cause of a failed step) go in the run record `<work>/run.json` (section 4.4).
 
-**Reason.** One folder is already the home of result schemas and `archbaseline.SCHEMA_PATH` points
-there; a contract that producer and reviewer both load from the same skill cannot differ between
-them.
+### 3.2 Inside the spec, Task and Task edge steps
 
-## 3. Artifact store, fingerprints and resume (S02 item 3)
+Each of the steps `spec_authoring.run`, `task_decomposition.run` and `task_edges.run` runs one
+phase function of the same name for one repository (or for the Epic) as a single journal step.
+Inside that step the phase function starts its agent sessions through `AgentRunner.run_step`,
+which records each accepted result with `artifactio.record` (`<file>.meta.json`) and does not start
+a session again whose recorded inputs hash as recorded (`ArtifactStore.reusable`). `STEPS.md` keeps
+one line per completed phase step for the dashboard. These records decide nothing about which
+journal step runs.
 
-### 3.1 Layout, record and skip rule
+### 3.3 Compatibility with `artifactio.py`
 
-**Decision.** Files stay where the specs and `INDEX.md` put them: flat under `<work>`, with the
-architecture phase's files under `<work>/architecture/`. Every saved result has a
-`<file>.meta.json` written by `artifactio.record` (the one input-record format of every Epic flow):
-`{artifact, path, epic_id, phase, producer, run_id, created_at, updated_at, sha256, bytes,
-inputs[{path, kind, sha256, ...}]}`. The orchestrator fills `phase` with the step id, `producer`
-with the agent name (or `python` for a deterministic step) and `run_id` with the dispatch's
-execution id. Run facts that are not about one file (session ids, model, effort, timings, the cause
-of a failed step) go in the run record `<work>/run.json` (section 4.4), not beside the files.
-
-**This overturns the PLAN recommendation** (a `<flow>/<step>/step.json` layout). Evidence:
-- `beadwrite.write_story` reads each spec file's sha256 artifact key
-  (`bead_metadata.artifact_key(kind, "sha256")`, defined in
-  `skills/beads-contract/schemas/bead-metadata.schema.json`) from its `.meta.json` into the Story
-  bead's metadata.
-- The driver's `artifactio.plan` (read by `observe.py` for the dashboard's accepted and stale steps)
-  reads `STEPS.md` and the `.meta.json` files.
-- The three saved surveys (CONTEXT 7.13) carry `.meta.json` records in this format, under
-  `<work>/architecture/`.
-- Every spec and `INDEX.md` name these paths; moving files would change every reader for no
-  gain.
-
-**Skip rule.** A step is skipped only when all of these hold:
-1. each of its recorded outputs has a `.meta.json` whose `sha256` equals the file's current sha256;
-2. the recorded inputs **cover every input the step declares**, matched by path and kind (a record
-   that names fewer inputs than the step now declares is not reused);
-3. every recorded input hashes as recorded now (`artifactio.input_problem` returns nothing).
-
-A failed step writes no `.meta.json`, so it is never reused; this is the PLAN's `status: ok`. A
-record made before a step declared one of its current inputs (a legacy record) is not reused, except
-under the two named adoption rules of section 3.4 (the survey) and 3.5 (saved round results).
-
-**What counts as a step's recorded output.** For an agent step, the one file it is declared to
-write. In the architecture rounds that means a writer step's recorded output is its
-`rounds/r<n>-<seq>-<role>-<agent>.json` only: writers edit shared files in `draft/`, and the last
-writer of a round edits files other writers own (`architecture.md` step 15), so no `draft/` file is a
-writer's output. `draft/` is instead a `dir` input of every reviewer, of the decider and of target
-writing, so a lost or edited draft makes those steps rerun.
-
-`STEPS.md` keeps one line per completed step id (`artifactio.complete_step`), written by the
-orchestrator, read only by the dashboard. It decides no reuse.
-
-### 3.2 Input kinds (fingerprints)
-
-`artifactio.hashed_inputs` already computes these kinds; the orchestrator uses them as they are:
-
-| Kind | Fingerprint |
-|---|---|
-| `file` | sha256 of the bytes |
-| `dir` | `artifactio.sha256_tree`: the sorted list of (relative path, sha256) |
-| `missing` | the path did not exist when recorded |
-| `arc42-revision` | the revision record `archrevision` writes (`<work>/architecture/arc42-revision.json`) |
-| `arch-views` | the digest of the effective views whose catalog frontmatter names the listed elements |
-
-Added in S03a (in `artifactio.py`, committed in `<control>` with `rewrite-step: S03a`), additively
-(section 3.8):
-
-| Kind | Fingerprint |
-|---|---|
-| `matrix-rows` | `{"matrix": <path>, "elements": [<element ids>]}`; the sha256 of the canonical JSON of, per element id in sorted order, `{id, satisfied, repository, resolvedIds, stack, expected, purpose, contents}` read from the run's matrix snapshot (section 10.4): `satisfied` is the flag of section 10.5, `repository` the row's repository. `task`, `commit`, `state` beyond the flag, and the timestamps are not hashed. Missing rows hash as unsatisfied with no resolved IDs and null ownership/intent fields; ambiguous aliases retain candidate IDs and remain unsatisfied. `contents` binds sorted contained identities and their ownership/expected/purpose, so changes to a stack's intended children invalidate a stack-name input. Stack/component aliases take precedence over their same-owner repository container; cross-stack or cross-repository ambiguity is preserved. |
-| `value` | `{"name": <fact name>, "value": <JSON value>}`; the sha256 of the canonical JSON of the value. For facts that are not files: the round number of a plan (`architecture.md` §8 "+ n"), a writer's plan entry (the entry object taken from the plan file), the decider's round and correction text. |
-
-Two further fingerprints PLAN item 3 names are defined, and used by no Epic step:
-- **Bead**: the `beads-contract.py` content hash (`content_hash`, scope `judging`). No Epic step
-  records a bead as an input: every bead read happens in a step that always reruns
-  deterministically (Story write, Task write, the rerun case of `task-decomposition`).
-- **Repository**: the `main` commit id (`git -C <repo> rev-parse main`). No Epic step records it
-  (`driver-contract.md` §8: its only user was the removed detailing step). The saved surveys' seal
-  binds `main^{tree}`; section 3.4 decides how that seal is read.
-
-### 3.3 Which inputs fingerprint each step (QUESTIONS 10)
-
-**Decision.** Each spec's resume section is the single source of its step's input list, with these
-additions and settlements:
-
-- `spec:<slug>` (`spec-authoring.md` §8 R1 and R2) also records `targetDir` as a `dir` input.
-  Reason: the makers read the target and delta views; a view edit that leaves `trd.md`,
-  `repo-scoping.json` and `delta-items.json` byte-identical would otherwise leave stale spec
-  documents in place.
-- The architecture rounds' non-file inputs use kind `value` (section 3.2); every reviewer, the
-  decider and target writing record `draft/` as `dir` (section 3.1).
-- The element status matrix is read once per dispatch into a snapshot (section 10.4); the steps that
-  read it record kind `matrix-rows` against that snapshot: `repo-scoping.json` (the rows of the build
-  items' elements) and `<work>/architecture/closure.json` (the rows of the elements in
-  `closure-walk.json`). The survey does not record them (section 3.6).
-- A change of an element's satisfied flag, resolved identity, repository, stack, expected contents or purpose **is meant to reach the Tasks** (CONTEXT 7.5:
-  an upstream change "in a way that affects Tasks"). It changes the Closure's prerequisites and the
-  `partial` case's build items, so `delta-items.json` changes, and every step that records it reruns:
-  the TRD, repo scoping, the spec sets, and the Task sets (whose unstarted Tasks are replaced). A
-  change of a row's `task`, `commit` or timestamps changes nothing (section 3.2), so a build that does
-  not flip satisfaction costs an in-progress Epic nothing.
-- The driver keeps **no** reuse ruling of its own for elaboration. It stops sending `resume`, stops
-  calling `artifactio.set_aside_stale` before an elaboration dispatch, and stops calling
-  `artifactio.dispatch_resume` (section 9). It keeps `artifactio.retire_once` (the owner's
-  start-over ruling when an Epic's `bead_metadata.KEY_ELABORATION_STATE` is set to
-  `bead_metadata.ELABORATION_READY`, both defined in
-  `skills/beads-contract/schemas/bead-metadata.schema.json`) and `artifactio.plan` as the dashboard's reader.
-  Reason: two reuse rulings over the same files disagree; each step now proves its own reuse from
-  its recorded inputs, before any session starts.
-
-### 3.4 Adopting the three saved surveys (CONTEXT 7.13; QUESTIONS 11, 12, 32b)
-
-The saved surveys of `ssbd-mb689`, `ssbd-hdqid` and `ssbd-guuuz` are read in place under
-`<work>/architecture/` and reused when their inputs are unchanged. Steps, in the architecture
-flow's survey step, before any session:
-
-1. **Old seal check.** When the seal (`survey.json.baseline-inputs.json`) has no `form` key (the
-   JavaScript form), call `archbaseline.survey_freshness(survey.json, seal=False)` with
-   `context_sha=None` and no `inputs` or `repos`, so the saved seal's own `inputs`, `repos` and
-   `contextSha` are used exactly as they were sealed. It returns `current: true` today for all three
-   (section 0).
-2. **Validate once.** Parse `survey.json` and validate it against `survey.schema.json`. S03e
-   writes that schema from the JavaScript `SURVEY_SCHEMA` it replaces (same required fields and
-   types; the baseline items are `architecture-baseline.schema.json`, unchanged), so a survey the
-   JavaScript accepted is valid. A survey that still fails is not adopted (step 5).
-3. **Adopt.** When steps 1 and 2 pass, the survey step is reused: no session starts. The existing
-   `survey.json.meta.json` and `survey.md.meta.json` stay the step's records.
-4. **Reseal in the new form, once.** Right after a successful adoption the seal is rewritten with
-   `survey_freshness(seal=True, form="adopted", context_sha=<the saved value>)`: the same `inputs`,
-   the cited documents and evidence, the schema, the saved `contextSha`, **no** repository
-   `main^{tree}` binding, and the key `"form": "adopted"`. This needs the in-place change to
-   `survey_freshness` listed in section 11.7 (today it binds every repository an evidence reference
-   names, whatever `repos` says).
-5. **Not adopted.** When step 1 or 2 fails, the survey is produced again (the cost is accepted; a
-   changed binding cannot be split into "only a repository moved" because the old seal stores one
-   digest, not its parts).
-
-**Which `contextSha` each later run passes (QUESTIONS 12).** "Match" means string equality of the
-seal's `contextSha` with the one passed in. A run reads the seal's `form` first:
-- `form: "adopted"`: it passes the seal's own `contextSha` (the JavaScript value). The comparison of
-  that part is trivially equal by design; everything else in the binding (inputs, cited documents and
-  evidence, schema) is compared as usual. The JavaScript value is not reproduced.
-- `form: "v2"` (a survey produced by the orchestrator): it passes the sha256 of the canonical JSON
-  (sorted keys, no spaces) of `survey.schema.json`. The JavaScript's `prdBody` part is dropped: the
-  driver never sends a PRD body, and the PRD file is already a bound input.
-- no `form` (the JavaScript seal): step 1 above.
-
-**`main^{tree}` (QUESTIONS 11): honoured once, then not bound.** The old seal is read exactly as it
-was written, so adoption is decided by the same rule that sealed it. Resealed and new surveys bind no
-repository tree, because the survey no longer judges code (section 3.6).
-
-**The code-derived fields (QUESTIONS 32b).** The saved surveys' `implementationAction`,
-`code.state` and the `implementationWork` derived from them were judged from code. They are not
-recomputed and the survey is not rerun for them: section 3.6 makes every consumer derive built-ness
-from the element status matrix in Python, so those survey fields are read by nothing that decides
-scope. `survey.json` is never rewritten, so its bytes stay valid, and `contextSha` does not change.
-
-### 3.5 Adopting saved round results
-
-The three Epics also hold round-1 plans and writer results (`plans/round1-plan-0.json`,
-`rounds/r1-1-...json`) whose records bind only the PRD and `arc42-revision`, fewer inputs than the
-writer steps now declare (verifier's finding 3).
-
-**Decision (the second named adoption rule).** In the same run that adopts the survey under section
-3.4, and only then: a saved plan or writer result whose recorded inputs all still hash as recorded is
-re-recorded with the full declared input set (the adopted survey, the PRD, the plan file and the
-writer's plan entry as `value`), taking the current hashes, and reused. Reason: those results were
-produced from exactly the survey just adopted and from the plan they name, and both are unchanged;
-redoing them would spend Fable writer sessions for identical inputs. A saved result in any other
-state (survey not adopted, a recorded input changed) is not reused.
-
-### 3.6 The survey does not depend on the matrix
-
-**Decision.** Built-ness is derived in Python, never asked of the survey session. `implementationWork`
-(the input of `arch-target`'s `baseline.json` and of `arch-delta`) is computed by
-`archbaseline.baseline_facts` from the survey's capabilities **and the matrix snapshot**: a
-capability is implementation work when any element its cited documents show (catalog
-`subject`/`shows`, `archstate._catalog`) is not satisfied (section 10.5), or when the survey marks it
-unknown or in conflict. The survey's own `implementationAction` and `code.state` stay in the file
-for its readers' context and decide nothing. The survey session's definition (S03e) does not ask it
-to judge built-ness. `survey-matrix.json` is not written and the survey seal binds no matrix rows.
-
-**This overrides `architecture.md` steps 5 and 7** (survey seal binding matrix rows; the session
-setting `implementationAction` from the rows). Reason: if the survey bound matrix rows, every merge
-that marks an element `built` would stale every survey that cites that element and rerun an
-850k-token session; a deterministic derivation gives the same answer at no cost, and CONTEXT 7.11
-puts consistency-without-reasoning in code.
-
-### 3.7 Stale architecture work and other resume settlements
-
-- **Stale saved architecture work (QUESTIONS 13).** When `archrevision.check` reports `stale` (a
-  cited arc42 view changed), everything in `<work>/architecture/` is moved to
-  `<work>/stale-<timestamp>/architecture/` **except** the survey files (`survey.json`, `survey.md`,
-  their `.meta.json`, the seal, the receipt), which stay when `survey_freshness` still reports the
-  survey current. Reason: the survey's seal already binds by content every document and evidence path
-  the survey cites, so it is the exact test of whether the survey is stale; `archrevision.check`
-  also binds the views the rounds and decision cite, which the survey does not depend on.
-- **The `delta/closure.json` fallback read (QUESTIONS 14): dropped.** `resumefacts.saved_target`
-  stops looking for `closure.json` in `deltaDir`. Evidence: `<arch>/target/` holds only
-  `README.md`, so no saved target exists that could carry the old location.
-- **`candidates/` in saved work (QUESTIONS 15): ignored.** Evidence: in all three Epics every
-  complete candidate has the same bytes as its final file, and the rest are checkpoint and progress
-  files with no result body (section 0).
-- **Live repository inventory as a repo-scoping input (QUESTIONS 17): not an input.** The
-  inventory changes whenever part B creates a repository, which would make the ruling stale after
-  every run that created one. When a reused ruling's checks are re-applied (`repo-scoping.md`
-  step 3), a `missingRepos` entry whose name the current inventory holds is not a finding: part B
-  records it as `existed: true` with its path.
-- **Other Epics' open Tasks as a Task rerun input (QUESTIONS 18): not an input.** They decide only
-  `blockedByExternal` edges, not the Story's own work; making them an input would delete and
-  recreate a Story's unstarted Tasks whenever another Epic's Tasks change (CONTEXT 7.5: only
-  upstream changes of this Epic replace Tasks).
-- **Cross-Story Task dependencies when one Story changed (QUESTIONS 19): derive all edges again.**
-  `task-deps.json` is fingerprinted by every `tasks-<slug>.json`; any change reruns the one
-  `task-dependency-mapper` session over all Stories. An edge between two unchanged Stories can
-  depend on a Task of a changed Story through ordering, and a partial derivation would need its own
-  rules for that.
-- **Leftover step names in saved `STEPS.md` (QUESTIONS 20): ignored.** The orchestrator decides
-  reuse only from `.meta.json` records, so a stray name (for example `prd-validation`) has no
-  effect. S05 changes `artifactio.plan` to skip step names that are not in its `STEP_ORDER`
-  instead of reporting them stale, and removes `recon:<repo>` from `STEP_ORDER` and `STEP_FILES`.
-  No file is cleaned.
-
-### 3.8 Compatibility with `artifactio.py`
-
-The orchestrator runs from `<installPath>`, which changes only when the owner updates the installed
-plugin, while `artifactio.py` is loaded from the control repository's working tree, which changes on
-every push. Rule: changes to `artifactio.py` are additive only (a new input kind, a new optional
-field; never a renamed or removed function, kind or field). At start, `run.py` checks that the
-functions it calls (`record`, `hashed_inputs`, `input_problem`, `complete_step`, `working_dir`) and
-the input kinds it records exist; a missing one fails the run at stage `input`, cause `other`, before
-any step, naming what is missing.
+`artifactio.py` is driver code, loaded in-process from `$ATW_ARTIFACT_SCRIPT`. The orchestrator
+uses only the functions `core/artifact_contract.py` names, and the driver changes them additively.
 
 ## 4. Ledger, dashboard and cost (S02 item 4)
 
@@ -558,32 +352,22 @@ sessions has written a stream line since the last heartbeat. The progress prefix
 `outcomes._phase_name` counting phases as it does today; session and note texts carry no prefix, so
 they are recorded but never counted as phases. No ledger event type is added.
 
-### 4.2 Phase names (QUESTIONS 23)
+### 4.2 Phase names
 
-**Decision.** `dispatch.COMPOSITE_PHASES["prd-to-spec"]` becomes `("architecture", "repo-scoping",
-"trd-authoring", "spec-authoring", "task-decomposition", "task-edges", "finish")`:
-`prd-reconciliation` is removed (CONTEXT 7.10) and the two composite steps that run after the
-Stories are named. The orchestrator emits exactly these phase names. Readers changed in S05:
+The phases of `prd-to-spec` that the orchestrator emits as phase events are, in run order:
+`architecture`, `trd-authoring`, `repo-scoping`, `spec-authoring`, `task-decomposition`,
+`task-edges`, `finish`. They are defined once as `handback_contract.PrdToSpecPhase`; the composite's
+display list is `skills/pipeline-contracts/schemas/composites.json`. The open-run step enters
+`architecture`, and the steps of the Architecture container run under it; `trd.confirm` enters
+`trd-authoring`; the span step enters `repo-scoping`; each spec step, Task step and the Task edge
+step enters its own phase, with the repository where it has one; the scoring, Story edge and
+marking steps enter `finish`. The handback's `artifacts.phases` holds `trd` and one `spec:<slug>`
+per repository, each read from the journal.
 
-- `phaserec.expected_phases("prd-to-spec")` returns `dispatch.COMPOSITE_PHASES["prd-to-spec"]`
-  instead of parsing `workflows/prd-to-spec.js` (which S08 deletes).
-- `observe.py`'s relay-file view of architecture rounds is replaced by a read of the real result
-  files: `<work>/architecture/plans/round<n>-plan-0.json` (what each round dispatched),
-  `<work>/architecture/rounds/r<n>-<seq>-<role>-<agent>.json` (what came back), and
-  `decision.json`.
-- The per-phase record stays `state/phases/<run stem>.json` (`phaserec.py`), fed by the phase
-  events as today.
-- The architecture rounds-warning note (its shape is `handback_contract.RoundsWarningNote`, built
-  by `handback_contract.rounds_warning_note`) is also written into the run record and the
-  architecture result.
+### 4.3 Verdict events
 
-### 4.3 Verdict events (QUESTIONS 24)
-
-**Decision.** Kept, emitted by Python from the accepted result files, never from text: one
-`verdict` event per accepted decider result (`decision.json` `verdict`), per accepted reviewer
-result (`verdict` = `pass` when no finding is `unsupported` or `wrong`, else `reject`, with the
-counts in `detail`), and per conformance result (`conforms`). Reason: the dashboard shows them today
-(`observe.py` reads `verdict`), and the values are fields of validated files.
+No step of the elaboration emits a verdict event. What a reviewer found, what the lead routed and
+what the decider ruled are artifacts of their journal steps.
 
 ### 4.4 Handback and run record (QUESTIONS 22)
 
@@ -737,36 +521,30 @@ architecture writers and maintainer, under `<arch>`, and reads repositories by a
 worktree would isolate nothing it writes. The working directory is outside every repository
 (section 5.2), so there is no repository to cut a worktree of.
 
-### 5.4 Model and effort per agent (QUESTIONS 3)
+### 5.4 The agents the Epic pipeline launches
 
-**Decision.** The step declaration names the model and effort; the agent's frontmatter is the
-default where this table agrees with it. Where the Epic pipeline's call and the frontmatter
-disagree, the value below is the one used, and the reason is given. The value used is written into
-`agents.json` and passed as `--model` and `--effort`, and recorded in `run.json`.
+Model and effort are the definition's front matter (`model`, `effort`); the launcher passes them as
+`--model` and `--effort` and records them in `run.json`. The flow names agents by the `role` their
+definitions state, never by name, so the roster of a role is the set of definitions that state it.
 
-| Agent | Epic step | Frontmatter | Used | Reason |
-|---|---|---|---|---|
-| `prd-reality-reconciler` | survey, recheck, Closure walk | opus / medium | opus / medium | the expensive assessment; a wrong scope costs every later step |
-| `architecture-boundary-guardian` | Check review, round reviewer | sonnet / low | sonnet / medium | the same review standard as every other reviewer (section 2.4) |
-| `architecture-decision-workflow-coordinator` | round plan | sonnet / medium | sonnet / medium | routing only |
-| 9 proposers (`integration-pattern-architect`, `persistence-architecture-specialist`, `security-architecture-designer`, `cdk-infrastructure-designer`, `event-schema-designer`, `api-contract-designer`, `graphql-schema-designer`, `domain-event-modeler`, `bounded-context-mapper`) | writers | fable / medium | fable / high | design authoring to the implementation-detail level of section 2.4, aimed at approval in round 1 |
-| `architecture-diagram-author`, `c4-diagram-author`, `uml-diagram-author` | writers | sonnet / medium | sonnet / medium | drawing from a settled design |
-| `architecture-pattern-challenger`, `architecture-tradeoff-skeptic`, `failure-mode-analyst` | reviewers | fable / medium | fable / medium | as the frontmatter |
-| `operational-readiness-reviewer` | reviewer | opus / low | opus / medium | one review standard for all reviewers |
-| `cost-architecture-reviewer`, `cost-impact-reviewer` | cost reviewers | sonnet / medium | sonnet / medium | as the frontmatter |
-| `architecture-decider` | decision | opus / high | opus / high | approval authority |
-| `architecture-maintainer` | integration, correction | sonnet / medium | sonnet / medium | applies an approved design |
-| `architecture-conformance-reviewer` | conformance | sonnet / low | sonnet / medium | it gates what becomes effective; nothing re-reviews effective views |
-| `polyrepo-steward` | placement | sonnet / medium | sonnet / high | a wrong placement propagates into every later step (`repo-scoping.md` step 5) |
-| `trd-author` | TRD | fable / medium | fable / medium | as the frontmatter |
-| `api-specification-author` | contracts, UI design sources | sonnet / medium | sonnet / medium | as the frontmatter |
-| `data-model-specification-author` | data model | fable / medium | fable / medium | as the frontmatter |
-| `acceptance-criteria-writer` | criteria | sonnet / medium | sonnet / low | derivation from two finished documents (`spec-authoring.md` step 7) |
-| `task-decomposer` | decomposition, corrective pass | fable / medium | fable / medium | as the frontmatter |
-| `task-dependency-mapper` | cross-Story edges | fable / medium | fable / medium | a bounded read-and-relate job |
+| Agent | Role | Launched |
+|---|---|---|
+| `aws-solutions-architect` | `solutions-architect` | by the script: its first step, a correction, a competing design, its "Finish" |
+| `integration-pattern-architect`, `persistence-architecture-specialist`, `security-architecture-designer`, `cdk-infrastructure-designer`, `event-schema-designer`, `api-contract-designer`, `graphql-schema-designer`, `domain-event-modeler`, `bounded-context-mapper` | `design-specialist` | by the architect in its own session; by the script when left running or when the lead asks for an opinion |
+| `architecture-diagram-author`, `c4-diagram-author`, `uml-diagram-author` | `diagram-author` | by the architect in its own session; by the script when left running |
+| `trd-author` | `trd-author` | by the architect in its own session; by the script when left running |
+| `architecture-maintainer` | `document-maintainer` | by the architect in its own session; by the script when left running |
+| `polyrepo-steward` | `repository-steward` | by the architect in its own session; by the script when left running |
+| `architecture-boundary-guardian`, `failure-mode-analyst`, `architecture-pattern-challenger`, `architecture-tradeoff-skeptic`, `operational-readiness-reviewer`, `cost-architecture-reviewer`, `cost-impact-reviewer`, `trd-validator` | `architecture-reviewer` | by the script, when the rule of its reviewer group selects it; again for a re-check the lead plans |
+| `architecture-team-lead` | `architecture-lead` | by the script, only when a review raised something or the architect's result is unsettled |
+| `architecture-decider` | `decider` | by the script, only for a step the lead plans |
+| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer`, `openapi-contract-reviewer`, `spec-decider` | | inside the step `spec_authoring.run` |
+| `task-decomposer` | | inside the step `task_decomposition.run` |
+| `task-dependency-mapper` | | inside the step `task_edges.run`, when the span has two or more repositories |
 
-`user-story-writer` and the `polyrepo-steward` repository listing are no longer dispatched
-(sections 11.1, 11.5).
+An agent whose definition has `startsRoles` is given an `Agent` tool limited to agents with those
+roles, at depth one; an agent started by another agent starts no one. `ATW_MATRIX_ROLE` is the
+launched agent's role, which decides the `atw-matrix` commands it may run.
 
 ### 5.5 Agents declaring `model: fable` (QUESTIONS 1)
 
@@ -924,20 +702,16 @@ itself leaves the driver's `no-handback`.
 
 ### 7.1 What runs in parallel
 
-One orchestrator process per Epic dispatch; the driver's lanes keep their slots. Inside one run, a
-thread pool runs:
-
-- repo scoping alongside TRD authoring (`prd-to-spec.md` step 8);
-- spec authoring across span repositories, and inside one repository the contracts maker alongside
-  the data-model maker (`spec-authoring.md` steps 3 and 4);
-- task decomposition across Stories (`prd-to-spec.md` step 10);
-- the reviewers of one architecture round (`architecture.md` step 16).
-
-Everything else is sequential, including the writers of a round, in plan order.
+One orchestrator process per Epic dispatch; the driver's lanes keep their slots. Steps run in the
+journal's walk order. The one exception: consecutive sibling steps that each have an agent, have no
+child steps and name only done steps in their inputs run as concurrent sessions
+(`journal_run.concurrent_group`). That is how the reviewers of one review run together.
+Repositories run one after another, each as one spec step and one Task step; inside a spec step
+the contracts author and the data-model author run together.
 
 **The cap.** At most `ATW_ORCH_SESSIONS` agent sessions at once per run (default 4). Steps beyond
-the cap wait in the pool. The account-wide number is this cap times the driver's
-`--elaboration-concurrency`; the owner sets both.
+the cap wait. The account-wide number is this cap times the driver's `--elaboration-concurrency`;
+the owner sets both.
 
 ### 7.2 `bd` writes
 
@@ -968,10 +742,8 @@ Rules, each under `guard.lock`:
 3. **An owner's committed change is accepted.** When section 2 differs but its git status is clean
    and every commit between the snapshot's `HEAD` and the current `HEAD` that touches section 2
    carries no `Pipeline-Run:` trailer, the change is the owner's committed work: the snapshot is
-   retaken, nothing is restored, nothing fails. Every commit the pipeline makes in the vault
-   (`commit_integration`, `remove_target`, `remove_built`; section 11.7) carries the trailer
-   `Pipeline-Run: <execution id>`, and none of them may touch section 2 (`promote` and
-   `write_target` refuse it).
+   retaken, nothing is restored, nothing fails. The promotion step commits only the
+   documents it names, and none of them is in section 2.
 4. **Any other change is restored.** The changed folder is copied to
    `<driver>/state/section2-guard/changed-<timestamp>/` (so an uncommitted edit the owner made at the
    same moment is never lost), section 2 is restored with `archstate.restore_constraints(<arch>,
@@ -988,15 +760,13 @@ depend on which session is blamed. The owner's way to change section 2 while the
 commit the change: a committed change by the owner is accepted, and an uncommitted change made
 while sessions run is restored but kept as a copy and named in the failure record.
 
-### 7.4 Integrating into arc42 across runs
+### 7.4 Two Epics changing arc42 at the same time
 
-**Decision.** Architecture steps 22 to 28 (snapshot before integration, maintainer, measurement,
-conformance, correction, promote, commit and push) and the composite's target removal (step 15)
-run holding an exclusive `fcntl.flock` on `<driver>/state/arch-integrate.lock`. A wait longer than
-`ATW_ARCH_LOCK_WAIT` (default 120 s) is `contention`, retried with the backoff of section 6.3.
-Reason: `archfiles.integration_files` measures the whole arc42 tree against a snapshot; a second
-run's edits made in between would be counted as this run's unreported files, reviewed, promoted and
-committed by it.
+Every change of the matrix is made under the matrix's lock (`matrixstore.update_matrix`). Before
+deciding a fact whose home is an existing heading, the architect claims it (`atw-matrix claim`); a
+heading another Epic in progress holds is that Epic's to have reviewed, and the review scope lists
+it under `heldByOthers`. The promotion step approves and commits only the items of its own Epic's
+reviews, by name.
 
 ## 8. Owner holds and questions (S02 item 8)
 
@@ -1049,220 +819,73 @@ Then, for `prd-to-spec`:
 | `workitems.with_artifact_plan`: `resume`, `_rule_saved_files`, `artifactio.set_aside_stale`, `artifactio.dispatch_resume` | **delete** for `prd-to-spec`; **keep** `_start_over` / `artifactio.retire_once` |
 | `phaserec.expected_phases` reading `prd-to-spec.js` | **change** to `dispatch.COMPOSITE_PHASES` (section 4.2) |
 | `observe.relay_steps` for elaboration | **change** to the rounds and plans files (section 4.2) |
-| `artifactio.plan` | **keep** as the dashboard's reader; skip unknown step names; drop `recon:<repo>` (section 3.7) |
+| `artifactio.plan` | **keep** as the dashboard's reader; skip unknown step names; drop `recon:<repo>` |
 | `runcost.record_run` / `measure_run` | **change** to sum the handback's sessions (section 4.5) |
 | `failurecause.pause_from_cause` | **change** to read `failure.resumeAt` (section 6.5) |
 | `spendguard.LIVE` registration, `sessionregistry`, `childproc` reaping | **keep**, for the orchestrator's group and each session `pgid` it reports |
 | `ledger.EVENT_TYPES` `trigger_plan`, `trigger_dispatch`, and the `trigger_dispatch` branch in `failures.py` | **delete** in S05 (QUESTIONS 25: no producer since commit `64b4adbb`; `ledger.read_all` parses old lines whatever their type, so old ledgers still read) |
 | `routing.route_elaboration` reason texts | **change** in S05 (QUESTIONS 48): a feature returns `skip`, reason "a feature needs a PRD and an Epic; the owner writes the PRD"; the Story reason says the Story is elaborated through its parent Epic; `selection.select_only`'s feature skip reason stops naming `/agent-teams-workforce:start-prd`. Reason: S05 is the step that edits the driver's elaboration path; S08 deletes the command the old texts name |
 
-## 10. Element status matrix (S02 item 10; QUESTIONS 32e, 32f)
+## 10. The matrix
 
-### 10.1 Storage: tracked in git in the control repository
+One JSON file, `<driver>/matrix.json`, tracked in git in the control repository, holds how
+repositories, stacks, elements, PRDs, features, design facts, disagreements and architecture
+documents relate, with each row's approval and the code state of each element. Its shape is
+`<plugin>/skills/artifact-handoff/schemas/matrix.schema.json`; the modules
+`<plugin>/scripts/portfolio/matrix*.py` implement it and `<plugin>/bin/atw-matrix` is the one
+command. Agents use the command; the orchestrator calls the modules in-process.
 
-**Decision.** One JSON file, tracked in git (owner, fifth round; CONTEXT 7.25):
-`$ATW_ELEMENT_MATRIX`, default `<control>/ops/sdlc-automation/element-matrix.json`. The path is in
-the driver's folder but **outside** `ops/sdlc-automation/state/`, which `ops/sdlc-automation/.gitignore`
-ignores.
-
-**Why this path.**
-- It is in the SkillSpoke control repository, which the owner named, and not gitignored.
-- It sits beside the driver that runs both pipelines and holds their other durable record (the
-  ledger), and the driver's folder is tier 2, committed on `main` (CONTEXT 7.1).
-- It is not put in arc42: the matrix is a record of build state that changes on every merge, while
-  the arc42 views describe the architecture without history, status or open items (the
-  documentation model `arc42-verify` checks against); the vault is also a separate repository whose
-  commits the architecture step makes, so build-lane commits there would contend with integration.
-- It is not under `.claude/workflow-runs/`, which is gitignored too
-  (`.claude/workflow-runs/.gitignore` `/artifacts/`).
-
-**Commit and push.** Every change to the file is committed and pushed by the step that makes it
-(CONTEXT 7.25): the seeding script, and the build pipeline's writers of section 10.6. The commit
-stages only this path (`git -C <control> commit --only <path> -m "chore(matrix): <summary>"` with
-the `Pipeline-Run:` trailer), then `git -C <control> push origin main`; a rejected push is
-`contention` (pull with rebase, push again). The pipeline is single-user and single-machine (owner,
-fifth round), so the matrix has one writer machine and one clone; pushing `main` from the primary
-working tree also pushes any of the owner's own local commits that are not yet pushed, which the
-single-user rule accepts. Git history is the matrix's change history; no separate change log is
-kept.
-
-### 10.2 Format and intended containment
-
-The matrix is version 2 JSON with `elements`, `aliases`, `seededAt`, `intentUpdatedAt`,
-`ownerOverrides`, `resolutions` and `unresolved`. Each repository and intended stack has a
-substantive `purpose`, source `evidence` (path, section and exact quote), and `contains` IDs.
-A component records its source label in `name`, its intended behavior in `expected`, its
-`repository` and `stack`, and its resource category in `resourceType`. `physicalName: null`
-means the source provides a logical component label, not an assigned AWS resource name.
-Never turn a descriptive label into a physical resource name: the canonical Resource Naming
-Standard and the domain's explicit naming inputs govern those names.
-
-The owner clarified on 2026-10-09 that services are self-contained: their non-shared tables,
-buckets, queues, topics, APIs, functions and other components deploy in the service's stack.
-There is no mandatory service/data split. Shared infrastructure stays with its explicitly
-assigned owner. Existing split-stack declarations are implementation evidence, not desired
-architecture; they appear under `declaredStacks` on repository rows, not as invented target
-stack requirements. Retired and explicitly deferred repositories remain recorded with their
-purpose/disposition. Unknown component requirements are stated as source gaps, never invented.
-
-The build evidence fields remain `state`, `task`, `story`, `pr`, `commit`, `deployedCommit`,
-`changedAt` and `changedBy`. The seed never asserts built or deployed. Only build writers may
-set that evidence. `repositorySource` distinguishes seed placement from build-confirmed placement.
-
-### 10.3 Identity, aliases and readers
-
-Repository IDs are `repository:<repository>` and stack IDs are
-`stack:<repository>/<stack>`, whitespace-normalized and casefolded. Concrete component IDs are
-`element:<repository>/<stack-or-@repository>/<source-label>`. These are internal inventory keys,
-not AWS names. Identical component labels in different stacks never share build state.
-
-`aliases` maps a normalized source label to all matching IDs. Both portfolio `archmatrix.row_of`
-and orchestrator `matrix.row_for` first resolve exact IDs (including version 1 records), then
-accept an alias only when it identifies one record. Ambiguous aliases return state `unknown`
-and explicit candidate IDs; they may expose a repository only when every candidate has that
-same owner. No generic label such as Amazon DynamoDB proves a specific service table exists.
-Repository scoping and matrix fingerprints use this same resolved meaning. A build writer must
-use the concrete ID, or resolve using its known repository/stack and reject remaining ambiguity;
-it must not update every record sharing a label.
-
-`<orch>/core/matrix.py` retains shared/exclusive `fcntl.flock` on the driver's ignored
-`state/element-matrix.lock`, atomic writes, and the write lock through publication. Lock timeout
-is `contention`; unreadable or invalid JSON is `other`. Missing element is unknown; missing matrix
-is a source error, not an empty inventory.
-
-### 10.4 One snapshot per dispatch
-
-At the start of a dispatch, before any step, the orchestrator reads the matrix once and writes
-`<work>/matrix-snapshot.json` (the rows as read, plus the file's git blob id). Every reader in the
-run (`implementationWork`, the Closure, repo scoping) reads the snapshot, and `matrix-rows` inputs
-hash it (section 3.2), so one run never sees two states.
-
-### 10.5 What counts as satisfied (QUESTIONS 32f)
-
-**Decision.** A row satisfies a reader (the Closure, `implementationWork`) when its state is
-`deployed`, or when its state is `built` and its repository holds no CDK stack (the repository's
-`repository:` row lists no `stack:` rows after seeding). Every other row, and every element with no
-row, is not satisfied and is pulled into the Epic's scope.
-
-**Reason.** `built` means the code is merged with its tests passing. For a repository that deploys,
-a Story's deploy can need the element present in AWS dev (a VPC, a Lambda layer), which only
-`deployed` proves. Pulling a `built`-but-not-deployed element into scope gives it a Task whose Red
-step finds its tests already passing (CONTEXT 7.19) and a Story deploy that deploys it, so the cost
-is small; leaving it out would let a deploy fail for a missing prerequisite. A repository with no
-stack (a library) never reaches `deployed` through a stack deploy, so `built` is the most its
-elements can reach.
-
-### 10.6 Writers: when `built` and `deployed` are written
-
-Neither state is written before the evidence it claims is final. A Task's commits land on its
-Story's feature branch, and the Story's deploy to AWS dev runs from that branch before the pull
-request merges; until the merge, neither the code nor its deploy is on `main`, and a pull request
-that is closed or never merges would leave a false record (the verifier's finding 18). So:
-
-| State | Written when | By | Fields |
-|---|---|---|---|
-| `built` | the Story's pull request **has merged** into the repository's `main`, observed by the step that waits for the merge (the Story deploy's `merge-wait` phase, `dispatch.COMPOSITE_PHASES["story-deploy"]`), and the merge commit is reachable from `origin/main` (`git merge-base --is-ancestor <commit> origin/main` exits 0) | that step (S11) | for each element of the delta items the Story's Tasks cite (the `bead_metadata.KEY_REQUIREMENT_IDS` key of `skills/beads-contract/schemas/bead-metadata.schema.json` joined to the Epic's `<work>/delta-items.json`) and whose Task's whole suite passed: `state: built`, `commit` = the merge commit, `task`, `story`, `pr`, `repository` = the Story's repository with `repositorySource: build` |
-| `deployed` | in the same write, when the Story's deploy to AWS dev was verified (`built-version` ran on a verified deploy) **and** the tree of the commit that was deployed equals the tree of the merge commit (`git rev-parse <deployedCommit>^{tree}` and `<commit>^{tree}` are equal) | the same step (S11) | `state: deployed`, `deployedCommit` = the deployed commit, plus the `built` fields |
-
-When the trees differ (`main` moved between the deploy and the merge), the row is written `built`:
-the merged code was not the code deployed. A later merge that changes an element writes `built`
-again over `deployed` for the same reason. A pull request that closes without merging writes
-nothing. Seeding never writes `state`, `task`, `story`, `pr`, `commit` or `deployedCommit`.
-Elaboration never writes the matrix.
-
-Readers (elaboration only reads, from the snapshot): `archbaseline.baseline_facts` for
-`implementationWork` (section 3.6), the architecture Closure's classification (`architecture.md`
-step 32), and repo scoping's placement facts (`repo-scoping.md` steps 3, 5, 6).
-
-### 10.7 Seeding and source maintenance (corrected S05a)
-
-`<orch>/seed_matrix.py` compiles the reviewed machine input
-`<control>/ops/sdlc-automation/expected-inventory.json` into the status matrix. The source contains
-one record for every eligible steward repository, intended stacks with purpose, intended
-components/services, and precise architecture citations. It is runtime inventory input rather
-than a parallel narrative architecture document. Architecture prose and diagrams are read through
-the pinned Obsidian vault; changes to intent are reviewed into this explicit input.
-
-CDK source declarations may establish observed stack identities without executing the app.
-They cannot establish expected contents. CDK execution is not a prerequisite for seeding.
-Generic catalog headers, technologies, data entities and document titles are not automatically
-materialized as deployable components. Source relationships establish ownership and containment.
-Retired/out-of-scope repositories carry explicit dispositions; genuinely unspecified components
-are reported in `unresolved`, not assigned from source code or guessed from repository names.
-
-Usage: `seed_matrix.py --control <control>`; optional `--source <reviewed-input>` and `--output`.
-`--no-publish` prepares the concrete result for independent review. The default publishes under
-the existing matrix lock. Source-input edits and their generated matrix are committed and pushed
-by the actor making the change. No live pipeline is run to verify the seed.
-
-Rerunning against unchanged reviewed input is deterministic. Existing exact-ID build evidence is
-preserved. Version 1 labels migrate only where the name, known repository and known stack identify
-one component. Any unmatched/ambiguous record carrying build evidence remains as a retained evidence
-record instead of being dropped or copied onto unrelated resources. Old guessed catalog rows with
-no build evidence are replaced by the intended inventory. Build-confirmed ownership is preserved.
-Source acquisition failures from the old executable-CDK inventory do not become intended content.
+- **Approval.** A row or a heading is approved or not. The check step lists what is not approved for
+  an Epic and marks it in review; the promotion step marks what the reviews covered approved,
+  sets the reviewed documents to `lifecycle_state: effective`, and commits and pushes them in the
+  vault. Reviewers see only unapproved content.
+- **Code state.** An element's code is `none`, `legacy`, `built` or `deployed`. Only the build
+  pipeline sets `built` and `deployed`; only that code is trusted. The repository span of an Epic
+  is the elements its features are realized by, and everything those depend on, whose code is
+  neither `built` nor `deployed`.
+- **One home per fact.** A design fact is registered with its one home (document and heading); the
+  command refuses a second home.
+- **Roles.** The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run.
+- **Opening a run.** The open-run step brings the Epic's PRD row, the document rows and the Epic's
+  expertise list up to date in one change.
 
 ## 11. Flow-level decisions
 
 ### 11.1 Architecture
 
-- **The 3-round hard stop (CONTEXT 7.7; the verifier's finding 1).**
-  - The bound is on the **absolute round number read from the saved state**
-    (`archresume.resume_facts`: `last`, `resumeRound`, `pendingPlan`, and the `round` of
-    `decision.json`), never on a counter that starts again on each dispatch. An interrupted or
-    paused run resumes at the saved round and does not gain rounds.
-  - **The Check review counts as round 1.** It is a review of the effective architecture against the
-    PRD (`architecture.md` step 11, saved as round 1's plan and result). When the recheck gives the
-    survey a design scope, the design rounds are rounds 2 and 3.
-  - **A saved round-3 decision other than `approve`** (and other than an owner-concern of the owner
-    kinds, which holds the Epic) fails the run at stage `rounds`, cause `other`, **before any
-    session starts**, on every rerun. No round 4 is planned.
-  - **The decider's one re-ask** after a non-actionable `return` (`architecture.md` step 17) is part
-    of the same round, not a round.
-  - Round resume decides from `decision.json`'s `round` and the recorded `.meta.json` of the round
-    results, not from file modification times: `archrounds.round_facts` is changed in place in S04a
-    (section 11.7).
-- **Repository list without a steward session (QUESTIONS 28).** The survey's repository list comes
-  from `polyrepo.py inventory --json --no-fetch` (the `name`, `path`, `role`, `lifecycle` fields
-  of each record; repositories under `apps/marketing/` and archived ones left out), run in Python.
-  The `polyrepo-steward` session of `architecture.md` step 6 is dropped. Evidence: the inventory
-  record carries exactly the four fields the old `REPOS_SCHEMA` asked the steward for
-  (`polyrepo.py` `record`), and repo scoping already takes the inventory this way
-  (`repo-scoping.md` step 4).
-- **Build items for every case (QUESTIONS 29).** `arch-delta` lists, per case (CONTEXT 7.7):
-  - `partial`: one item per element the `delta/` views show; plus one `implementation-gap` item per
-    element of the future set (the target views of the PRD's capabilities) that the matrix snapshot
-    does not satisfy (section 10.5) and that is not already an item; plus the Closure's
-    prerequisites.
-  - `new`: one item per element the target views show; plus the Closure's prerequisites.
-  - `none`: one `implementation-gap` item per element the cited effective views
-    (`baseline.json` `entries[].documents`) show, **whether or not the matrix satisfies it**; plus
-    the Closure's prerequisites. With no architecture change there is no delta to guarantee an
-    item, and CONTEXT 7.6 gives every Epic Stories and Tasks: a satisfied element still gets a Task,
-    and the build pipeline's tests settle that nothing changes. When the cited views show no
-    element at all, `arch-delta` returns a refusal and repo scoping fails at stage `input`, cause
-    `other` (`repo-scoping.md` step 1).
-- **Agent definitions and skills that describe removed work (QUESTIONS 32c; the verifier's finding
-  20).** PLAN step S03e, which moves every instruction and contract out of briefs, also removes the
-  removed work from the definitions and rewrites the shared skills for direct sessions:
-  - `prd-reality-reconciler.md`: survey without built judgments (section 3.6); Closure as a walk
-    over views only;
-  - `polyrepo-steward.md`: no repository creation during placement, no deployments listing;
-  - `task-decomposer.md`: no item statuses, no `planned-elsewhere`, no `done` items citing code;
-    section 11.6;
-  - `artifact-handoff` and `subagent-contract`: the `machine` mode, the "command runner"
-    acceptance and the `artifactcontract.py` `checkpoint`, `complete` and `submit` helpers are
-    removed; an agent writes its result at the path its brief names and Python validates it.
-  S04 checks the definitions match the flows it builds.
+The Architecture container holds, in order: the architect's step; the check step; then either a
+correction by the architect and a new check, or the lead and a new check, or the reviewers and the
+promotion step, with the lead's step between them when a review raised something.
 
-### 11.2 Repo scoping
+- **The check step** (`flows/architecture_check.py`) judges nothing; every branch is a rule over
+  the matrix, the criteria file and the architect's result. It writes `check-<n>.json`. A problem
+  plans one correction by the architect and a new check, at most 3 times; after that the step
+  fails. With no problem it lists what is not approved, writes `review-scope.json`, and, when the
+  result's conclusion is `unsettled` and no lead has run, plans the lead and a new check. Otherwise
+  it selects the reviewers by the `appliesWhen` rules, writes each its own narrowed scope, and
+  plans one step per reviewer and the promotion after them. A rule that selects no reviewer fails
+  the step.
+- **A review** (`flows/architecture_review.py`) records its file, the findings inside the
+  reviewer's scope and the number dropped as outside it. The first review that holds a finding or
+  a request for alternatives plans one step for the lead after the last reviewer.
+- **The lead** writes its routing and adds the steps it calls for under its own step: a correction
+  by the architect with a re-check by the reviewer that raised the finding, a specialist's opinion,
+  a competing design, or the decider. A routing that rejects every item adds no step.
+- **The decider** is handed one question file and writes one ruling, which it also records in the
+  matrix. A ruling that raises an owner concern fails the step at stage `requires-human-action`.
+- **The promotion step** (`flows/architecture_promotion.py`) refuses while a review raised
+  something and no lead records that every item is resolved. It approves in the matrix, sets the
+  documents to effective, commits and pushes them in the vault, and commits the matrix. An item it
+  cannot approve fails the step, naming each with the reason.
 
-- **Findings left after the corrective pass (QUESTIONS 30): fail**, at stage `repo-scoping`, cause
-  `other`. An item still unplaced, placed twice, or in a never-placed repository would leave work
-  with no Task or put it in the wrong repository, and nothing later places it.
-- **An item placed elsewhere than its matrix row's repository (QUESTIONS 31): a warning.** The
-  target may move an element, and most seeded rows carry no repository or one matched only by name
-  (section 10.7); failing would block correct moves.
+### 11.2 Repository span
+
+The step `atw-matrix prd --closure` (`flows/repo_scoping.py`) reads the span from the matrix; no
+agent places anything. An element with no repository in the matrix, a repository that may hold no
+product element (the control repository, the architecture folder, a marketing repository), and a
+missing repository whose name matches no template each fail the step. It writes
+`span-elements.json` and `repo-scoping.json` and plans one spec step per repository. An Epic whose
+features reach no element to build fails the step.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 
@@ -1286,15 +909,14 @@ exit statuses and JSON fields:
 Either returns `requiredHumanActions` and stops repo scoping at stage `repo-creation` with no cause
 (section 8). A `polyrepo.py create` that fails after a passing preflight is a recorded failure with cause `other` (its result carries only error text, section 6.1).
 
-### 11.4 TRD authoring
+### 11.4 The TRD
 
-- **Filing path for a PRD outside a `prds/` folder (QUESTIONS 33): no rule is added; the case does
-  not reach elaboration.** Evidence: the driver finds PRDs only through `workitems.prd_index`, which
-  globs `prds/*.md`, so every dispatched PRD is in a `prds/` folder and `workitems.trd_path_for`
-  always returns its TRD path.
-- **The 40-requirement and 25,000-character limits (QUESTIONS 34): stay in the agent definition,
-  not checks.** A longer TRD is not wrong output: every requirement in it still cites a source and an
-  element, and the citation check (`trd-authoring.md` step 5) still runs. They fail the check test.
+`trd-author` writes the TRD at the path the architecture context names, at the architect's
+request: drafted as soon as the architect's state file exists, then updated in place. The step
+`trd.confirm` (`flows/trd_authoring.py`) runs after the Architecture container: it checks that the
+TRD has YAML front matter and that every `decisionIds` entry resolves under the architecture root,
+and records the TRD's path and digest on the Epic bead. The driver files the TRD in the vault after
+elaboration is done.
 
 ### 11.5 Spec authoring
 
@@ -1355,60 +977,3 @@ Either returns `requiredHumanActions` and stops repo scoping at stage `repo-crea
 - **`surfaces` when the spec does not settle it (QUESTIONS 47): `null`.** `task-decomposer.md` is
   aligned to the schema (S03e); the bead's description renders null as `unknown (none declared)` as
   `beadwrite` does today.
-
-### 11.7 Scripts changed in place (QUESTIONS 32d, and the verifier's findings 2, 8, 9, 10)
-
-Each is changed in `scripts/portfolio/` by the S04 sub-step that uses it, and called in-process by
-the orchestrator (section 2.2):
-- `hierarchy.WORK_STATUSES` and `hierarchy.derive_prerequisites`, `beadwrite.plan_story_tasks`,
-  `beadwrite.closure_task_edges`: read the work items from `repo-scoping.json` and
-  `delta-items.json` (every placed item is a work item; no status) instead of `recon-*.json`
-  (S04d).
-- `archclosure.write_closure`: takes the classified closure Python builds from the walk and the
-  matrix snapshot (`architecture.md` step 32) and no `status_of` bead read (S04a).
-- `archstate.delta_items` / `arch-delta`: prerequisite fields become `state` (the matrix state read)
-  and `repository` (from the matrix row); `deployedBy` and `plannedBy` are removed (S04a).
-- `archbaseline.baseline_facts`: takes the matrix snapshot and derives `implementationWork` from it
-  (section 3.6) (S04a).
-- `archbaseline.survey_freshness`: binds repository `main^{tree}` only when asked (the JavaScript
-  form of section 3.4 step 1); takes `form` and writes it into the seal; with `form` `adopted` or
-  `v2` it binds no repository tree, including the repositories evidence references name (S04a).
-- `archrounds.round_facts`: decides `resume_round` from `decision.json`'s `round` and the recorded
-  `.meta.json` of the round results instead of file modification times (`newer_results`) (S04a).
-- `archstate.commit_integration`, `archstate.remove_target`, `archstate.remove_built`: every git
-  subprocess gets a timeout (`ATW_GIT_TIMEOUT`, default 120 s), every commit carries the
-  `Pipeline-Run: <execution id>` trailer (section 7.3), and a failure returns
-  `{subcommand, exit, timedOut}` with the failing git subcommand and its exit status (not only a
-  text refusal), so the orchestrator applies the git rows of section 6.1 (S04a, S04e).
-- `beadgraph._bd` and `beadwrite.WRITE_BACKOFF`: section 6.2 and 6.4 (S03b).
-- `resumefacts.saved_target`: drops the `delta/closure.json` fallback (section 3.7) (S04a).
-
-## 12. Requirements map
-
-| CONTEXT rule | Where this design implements it |
-|---|---|
-| 5 Python orchestrates; sessions only for reasoning; paths, not data; zero command-runner sessions; near-zero restart cost | §2 (no step starts a session to run a command; deterministic steps are Python), §2.3 (briefs carry facts only), §3 (reuse decided before any session) |
-| 6 Rewrite intent; check test; hard limits | §2.2, §7.3 (section 2), §5.2 (safety hooks), §10.7 (no marketing repositories), §11.6 (deletion only of unstarted Tasks) |
-| 7.1 Tier 2 | commits and pushes on `main` per PLAN; §10.1 |
-| 7.2 Only the owner runs the pipeline | §5.2 (`pipeline-run-blocker.sh` in every session) |
-| 7.3 Plugin versions | §1 (the driver runs `<installPath>`), §3.8 |
-| 7.4 Retries and structured causes | §6 |
-| 7.5 Task rerun rule | §3.3 (satisfaction changes reach Tasks), §3.7 (QUESTIONS 18), §11.6 (QUESTIONS 43 to 45) |
-| 7.6 Done; no "nothing to build"; one corrective pass; Epic stays open | §6.3, §11.1 (QUESTIONS 29), §11.6 (QUESTIONS 41) |
-| 7.7 Three cases; writers before reviewers; last writer reconciles; 3 rounds | §2.1, §3.1 (writer outputs), §11.1 |
-| 7.8 Selection filters | unchanged in the driver (§9 changes no selection code except reason texts) |
-| 7.9 Who gets asked what | §8, §11.3 |
-| 7.10 Repositories | §11.1 (inventory), §11.2, §11.3 |
-| 7.11 Deterministic over agentic | §2.2, §3.6, §11.5 (Story text) |
-| 7.12 Dashboard truth | §4.5 |
-| 7.13 Saved surveys | §3.4, §3.5 |
-| 7.14 Briefs carry facts only; instructions in definitions; contracts in shared skills; done criteria checked by a command | §2.3 (and `brief_check.py`), §2.4, §2.5, §5.1; PLAN S03e |
-| 7.15 Standing rules | §5.2 and §10.1 (paths from `ATW_*` variables, new ones named), §10.7 (`cdk ls --profile dev`), §5.2 (no person's name: hook scripts matched by file name) |
-| 7.16 Hierarchy; no bug beads | unchanged: the only beads written are Stories and Tasks under the Epic |
-| 7.17 Epic readiness out of scope | §11.6 (Task-only scoring) |
-| 7.18 Entry point | §1 (one flow in the registry, started by the driver) |
-| 7.19, 7.23, 7.24 Existing code; Tasks are activities | §3.6, §11.1, §11.7 |
-| 7.20 Missing prerequisites are built | §10.5, §11.1 |
-| 7.21 arc42 detail gap; same expectations | §2.4 |
-| 7.22 What elaboration produces | the flow registry runs every phase (§1, §4.2) |
-| 7.25 Element status matrix; tracked in git; single-user | §10 |

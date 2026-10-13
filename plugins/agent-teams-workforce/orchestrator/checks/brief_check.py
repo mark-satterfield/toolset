@@ -10,6 +10,7 @@ import re
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the plugin's own generator check with a fixed argv, no shell.
 import sys
 from pathlib import Path
+from typing import Final
 
 import jsonschema
 import yaml
@@ -21,6 +22,10 @@ from driver_surface_types import CONTROL_REPO_ENV
 from survey_contract import BASELINE_REF, SCHEMA_PATH
 
 type SignatureKey = str | tuple[str, str | None, str]
+SCHEMA_SKILL: Final = "artifact-handoff"
+"""The skill whose ``schemas/`` folder holds every contract an agent produces or consumes."""
+CONTRACT_SKILLS: Final[frozenset[str]] = frozenset({SCHEMA_SKILL, "architecture-baseline"})
+"""The skills that tell an agent where its contracts are: an agent of a contract loads one of them."""
 MAX_OUTCOME_LENGTH = 240
 
 FACT_FIELDS = frozenset({"bead", "inputs", "output", "outcome"})
@@ -511,10 +516,11 @@ def _skill_problems(
     row: list[str],
     metadata: dict[str, dict[str, object]],
 ) -> list[str]:
-    """Check an active skill-owned row: the skill, its named schema and every agent loading it.
+    """Check an active skill-owned row: the skill, its named schema and every agent's contract skill.
 
     Returns:
-        The row's findings.
+        The row's findings: a schema that does not exist, a skill that is not a contract skill,
+        and each agent that loads no contract skill.
 
     """
     artifact, _, producers, consumers, skill_cell, _ = row
@@ -522,21 +528,23 @@ def _skill_problems(
     skill_match: re.Match[str] | None = SKILL_SCHEMA.match(skill_cell)
     skill: str = skill_match.group(1) if skill_match else skill_cell
     schema: str | None = skill_match.group(2) if skill_match else None
-    if schema is not None and not (plugin / "skills" / skill / schema).is_file():
-        problems.append(f"{artifact}: missing shared schema {skill} {schema}")
-    if skill != "artifact-handoff":
-        problems.append(f"{artifact}: shared contract skill is not artifact-handoff")
+    if schema is not None and not (plugin / "skills" / SCHEMA_SKILL / schema).is_file():
+        problems.append(f"{artifact}: missing shared schema {SCHEMA_SKILL} {schema}")
+    if skill not in CONTRACT_SKILLS:
+        problems.append(f"{artifact}: shared contract skill is not one of {sorted(CONTRACT_SKILLS)}")
     for actor in (producers + "," + consumers).split(","):
         if actor == "python":
             continue
         if actor not in metadata:
             problems.append(f"{artifact}: unmapped agent {actor}")
-        elif f"agent-teams-workforce:{skill}" not in check_type(
-            metadata[actor].get("skills", []),
-            list[str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        elif not {f"agent-teams-workforce:{name}" for name in CONTRACT_SKILLS} & set(
+            check_type(
+                metadata[actor].get("skills", []),
+                list[str],
+                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+            ),
         ):
-            problems.append(f"{artifact}: {actor} does not load shared contract skill {skill}")
+            problems.append(f"{artifact}: {actor} loads no contract skill ({sorted(CONTRACT_SKILLS)})")
     return problems
 
 

@@ -11,7 +11,7 @@ Producers and reviewers use this same contract; a reviewer cannot add unstated r
 
 The brief contains only a bead id, labeled absolute input paths, an absolute output path, and a
 one-line outcome. Read the named files yourself. Write the complete result to the exact output
-path. Write only assigned outputs and, for architecture writers, the assigned draft views.
+path. Write only assigned outputs.
 For a JSON output write one strict JSON value with unique keys; for a document write nonempty
 UTF-8 Markdown. Do not paste file contents into a response. A final reply may name the result path.
 

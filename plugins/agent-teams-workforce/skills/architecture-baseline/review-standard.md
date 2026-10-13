@@ -2,19 +2,19 @@
 
 # Architecture and TRD criteria
 
-One list. The agents that design the architecture, write the TRD and write the specs work to
-it. Reviewers review against it and against nothing else. Each criterion has a level and a
-home. A criterion is satisfied by its home document. Nobody asks a document for detail below
-its level.
+One list. The solutions architect develops the architecture and the TRD to it, and the spec
+authors develop the specs to it. Reviewers review against it and against nothing else. Each
+criterion has a level and a home. A criterion is satisfied by its home document. Nobody asks
+a document for detail below its level.
 
 ## How to work (all levels)
 
 P1. The acceptance basis is the PRD's business outcomes, settled owner decisions, the
     section 2 constraints and the documentation model's obligations.
 P2. A mechanism named in a PRD is a design input, not a business requirement.
-P3. The design agent whose specialty covers a technical gap decides it with cited evidence.
-    Only business requirements that no design can meet together, or a conflict with section
-    2, reach the owner.
+P3. The solutions architect decides technical gaps with cited evidence, asking a specialist
+    when the gap needs one. Only business requirements that no design can meet together, or
+    a conflict with section 2, reach the owner.
 P4. AWS behaviour is established from AWS documentation through the AWS MCP Server. State
     assumptions, tradeoffs and regional applicability. Never invent scale.
 P5. Cite an arc42 statement by path and heading, guidance by URL, and code by repository,
@@ -67,7 +67,7 @@ T1. Every requirement has a stable id, a kind, a statement with a checkable valu
 T2. Where the design has the element, the TRD carries its obligations: availability,
     latency, security controls, retention, recovery, limits, timeouts and retry counts, that
     logs, metrics and alarms exist, and cost constraints. Cost unit math is kept as evidence
-    in the result of the agent that worked it out.
+    in the solutions architect's result.
 T3. Each shared capability the design uses has one requirement of kind `reuse` naming the
     element, the behaviour and the capability.
 T4. No requirement contradicts an effective arc42 statement or section 2, and none creates

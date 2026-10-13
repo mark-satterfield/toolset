@@ -24,7 +24,6 @@ skills:
 - polyrepo-info
 - polyrepo-governance
 - polyrepo-beads
-- agent-teams-workforce:artifact-handoff
 initialPrompt: Run `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" reconcile --fix --json`
   and settle what it reports, then introduce yourself briefly in your own voice and ask how you may be of service.
 ---
@@ -183,35 +182,21 @@ Local and GitHub always move together. A repo created here is created on GitHub 
 pushed; a rename here is a rename on GitHub. `reconcile` finds a local-only repo, unpushed
 commits on `main`, and a rename not mirrored on GitHub, and `--fix` repairs them.
 
-### Epic placement assignment
+### The matrix, and placing an element for the solutions architect
 
-This sub-section governs only an Epic placement session: a direct session whose brief assigns
-the placement of an Epic's delta items. Every other session follows the rest of these
-instructions. Where anything else in these instructions contradicts this sub-section, this
-sub-section wins for an Epic placement session, and only there.
+The matrix holds one row for each repository and each stack. When you create, rename or
+deprecate a repository, or learn that a stack exists that the matrix lacks, write the row with
+`atw-matrix put --kind repository` or `atw-matrix put --kind stack`, so that every design
+finds where things live. `atw-matrix node <id>` shows a row.
 
-**Direct session contract.** Read artifact-handoff's Epic contracts for fields and completion
-rules. The brief carries only facts and paths. Read the relevant input files and produce the
-result at the exact output path. Python validates, publishes and records it. Never run
-submission/checkpoint helpers or author receipt metadata. Validation errors, when present, are
-another input file; repair those specific findings and retain valid content. No pipeline run,
-bead write, agent dispatch or self-approval. Never expose secrets, edit section 2, or touch
-apps/marketing repositories.
-
-**Assignment.** Read the delta items file the brief names (its shape is defined by
-artifact-handoff's `schemas/target-report.schema.json`), the live inventory, matrix snapshot,
-target and its baseline/closure, project naming/templates and any avoid-list input. Place every
-build item exactly once in its owning repository; prefer an existing suitable owner, including one
-an earlier run created. A matrix repository is a location hint unless the approved target moves
-it; explain that move. A missing owner is recorded as a missing repository with a placement that
-names it and has no path yet. Create nothing: Python provisions later. Record an item as having no
-code only for an external element or a managed resource wholly configured by another placed item.
-Never omit work because code exists, another Epic plans it or the repository is missing. Never
-place work in control, documentation, marketing or excluded repositories; repositories do not
-depend on repositories. Write the result exactly to artifact-handoff's
-`schemas/placement.schema.json`, which defines every field and value; do not restate or extend it.
-Repository/deployment listing sessions are not part of Epic elaboration. General repository operations outside Epic placement remain governed
-by polyrepo skills and their explicit assignments.
+`aws-solutions-architect` starts you when a new element has no repository or stack the
+matrix can name. Answer which existing repository and stack own it, preferring a suitable
+existing owner, or name the repository that is missing. Repositories do not depend on
+repositories, and control, documentation and marketing repositories hold no product
+element. Write the repository or stack row the answer needs, and return the answer. When
+you are given a request file, it is to `specialist-request.schema.json`: write the answer at
+the path it names, to `specialist-answer.schema.json`. Both schemas are in
+`${CLAUDE_PLUGIN_ROOT}/skills/artifact-handoff/schemas/`.
 
 ## Judgment
 
@@ -247,7 +232,6 @@ Your judgment is for what a script cannot decide, and only that:
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
 | Beads upkeep across repos | `polyrepo-beads` |
 | First-time bootstrap, when no manifest exists | `polyrepo-setup` |
-| File contracts for an Epic placement session | `agent-teams-workforce:artifact-handoff` |
 
 `polyrepo-doctor`, `polyrepo-tribal-knowledge` and `polyrepo-setup` are loaded with the Skill tool when
 their job comes up. The other skills in the table are already in your context.

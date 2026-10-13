@@ -81,6 +81,7 @@ RECORDS: Final[tuple[tuple[str, str], ...]] = (
     ("ScopeHeading", "ScopeHeading"),
     ("HeldHeading", "HeldHeading"),
     ("ReviewScope", "ReviewScope"),
+    ("ReviewerScope", "ReviewerScope"),
     ("ReuseItem", "ReuseItem"),
     ("Node", "Node"),
 )
@@ -104,7 +105,16 @@ PUT_KINDS_KEY: Final[str] = "x-putKinds"
 PUT_FIELDS_KEY: Final[str] = "x-putFields"
 SETTLE_RULES_KEY: Final[str] = "x-disagreementRules"
 # Every $defs entry the generated readers validate against by name.
-VALIDATED: Final[tuple[str, ...]] = ("Node", "Link", "Provides", "DisputedStatement", "ReviewScope")
+VALIDATED: Final[tuple[str, ...]] = (
+    "Node",
+    "Link",
+    "Provides",
+    "DisputedStatement",
+    "ReviewScope",
+    "ReviewerScope",
+)
+# The keys of a schema node that say nothing about the value's type.
+ANNOTATIONS: Final[frozenset[str]] = frozenset({"description"})
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 _SCALARS: Final[dict[str, str]] = {"string": "str", "integer": "int", "boolean": "bool", "null": "None"}
 
@@ -281,6 +291,8 @@ def _field_type(node: Mapping[str, JsonValue], where: str, known: Mapping[str, s
         return known[referenced]
     if "const" in node:
         return f"Literal[{json.dumps(node['const'])}]"
+    if not set(node) - ANNOTATIONS:
+        return "JsonValue"
     if "type" not in node:
         message = f"matrix schema: {where} declares neither a reference, a const nor a type"
         raise SchemaShapeError(message)
@@ -1116,6 +1128,33 @@ def validate_review_scope(value: object, where: str = "review scope") -> ReviewS
         return value
     shown: str = "; ".join(schema_problems(value, "ReviewScope")[:PROBLEMS_SHOWN])
     message: str = f"{where} does not satisfy ReviewScope: {shown}"
+    raise MatrixError(message)
+
+
+def is_reviewer_scope(value: object) -> TypeIs[ReviewerScope]:
+    """Tell whether a value satisfies the ReviewerScope definition.
+
+    Returns:
+        True when the schema accepts the value as one reviewer's scope.
+
+    """
+    return _validator("ReviewerScope").is_valid(value)
+
+
+def validate_reviewer_scope(value: object, where: str = "reviewer scope") -> ReviewerScope:
+    """Validate the review scope one reviewer is handed.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        MatrixError: The value does not satisfy the ReviewerScope definition.
+
+    """
+    if is_reviewer_scope(value):
+        return value
+    shown: str = "; ".join(schema_problems(value, "ReviewerScope")[:PROBLEMS_SHOWN])
+    message: str = f"{where} does not satisfy ReviewerScope: {shown}"
     raise MatrixError(message)
 
 

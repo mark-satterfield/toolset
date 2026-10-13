@@ -23,6 +23,7 @@ from typing import Final, Literal
 from typeguard import CollectionCheckStrategy, typechecked
 
 from . import step_journal
+from .agents import AgentRunner
 from .handback_contract import OTHER_CAUSE
 from .models import OutputValidator, RunContext, StepError
 from .tools import Tools
@@ -231,6 +232,8 @@ class StepRun:
     ``inputs`` are the artifacts of the steps the step's ``inputs`` name. ``saved`` are the
     artifacts the step itself held from an earlier, unfinished run of it (for example the request
     file of a helper another agent's session started), read before the step was started again.
+    ``agents`` is the dispatch's session runner, for a step whose code runs sessions of its own
+    and for the event sink of the dispatch.
     """
 
     step: Step
@@ -238,6 +241,7 @@ class StepRun:
     journal_path: Path
     context: RunContext
     tools: Tools
+    agents: AgentRunner
     inputs: StepInputs
     saved: StepInputs
 
@@ -372,22 +376,32 @@ class StepGroup:
     """Steps a result plans at one place of the journal, in the order they run.
 
     A ``ref`` of one plan can be named in the ``inputs`` of a later plan of the same group.
+    ``follows`` places a group that goes after the completing step behind another sibling of it
+    instead. ``unless_agent`` leaves the group out when a step at the place it goes already has
+    that agent and is not done; the journal change decides it, so of several steps that complete
+    at once only one adds the group.
     """
 
     steps: tuple[NewStep, ...]
     where: Where = AFTER_THIS
     container: StepId | None = None
+    follows: StepId | None = None
+    unless_agent: str | None = None
 
     def __post_init__(self) -> None:
         """Require a container exactly when the steps go under one.
 
         Raises:
-            ValueError: The group is empty, or ``container`` and ``where`` disagree.
+            ValueError: The group is empty, ``container`` and ``where`` disagree, or ``follows``
+                is given for a group that does not go after the completing step.
 
         """
         message: str
         if not self.steps:
             message = "a group of planned steps holds at least one step"
+            raise ValueError(message)
+        if self.follows is not None and self.where != AFTER_THIS:
+            message = "a group names the sibling it follows only when it goes after the completing step"
             raise ValueError(message)
         if (self.where == UNDER_CONTAINER) != (self.container is not None):
             message = "a group names a container exactly when its steps go under a container planned earlier"
@@ -424,6 +438,8 @@ class AgentLaunch:
     The runner adds the rest: the brief's inputs are the step's input artifacts by name, then
     ``files``, then the journal file; the request is ``request`` or the step's description; the
     session is the one the journal says to resume, else the one of ``resume_from``, else new.
+    ``hand_inputs`` False keeps the step's input artifacts out of the brief, for an agent whose
+    definition names its input labels: ``files`` then states every one of them.
 
     ``accept`` is called with the validated output path and returns what the step records. It is
     not called when the session marked the step done itself or left child steps under it.
@@ -441,6 +457,7 @@ class AgentLaunch:
     request: str | None = None
     resume_from: StepId | None = None
     fresh_output: bool = True
+    hand_inputs: bool = True
 
 
 type AgentBuilder = Callable[[StepRun], AgentLaunch]

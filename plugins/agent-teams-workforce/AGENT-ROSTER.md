@@ -43,48 +43,45 @@ workflow runs on its own.
 
 ## Architecture Analysis
 
-The `architecture` workflow designs each Epic's change as a target and a delta version of the
-architecture: the coordinator names each round's proposers, diagram authors, reviewers and cost
-reviewers, the decider approves the target, the maintainer integrates it into the effective version
-and the conformance reviewer checks the integration. `built-version` dispatches the maintainer and the
-conformance reviewer again to correct the effective version from what a Story built.
+`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It starts a design specialist or a diagram author for one question or one bounded task, `trd-author` for the TRD and `architecture-maintainer` to write its decisions into arc42. A script selects the reviewers by rule; `architecture-team-lead` routes what a review found, and `architecture-decider` rules on what the team could not settle. `built-version` starts the maintainer and the conformance reviewer to correct the effective documents from what a Story built.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| architecture-decision-workflow-coordinator | orchestrate | Names, round by round, which proposers, reviewers, diagram authors and cost reviewers the architecture step dispatches next, sized to the PRD; the workflow script runs the dispatches. Process only: no design, review or approval authority. |
-| integration-pattern-architect | plan | Analyzes integration options: event API patterns, API Gateway routes, sync vs |
-| persistence-architecture-specialist | plan | Analyzes DynamoDB schema options, GSI/LSI strategies, single vs |
-| security-architecture-designer | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model |
-| cdk-infrastructure-designer | plan | Analyzes CDK construct options, Lambda boundaries within the chassis, and layer packaging |
-| event-schema-designer | execute | Designs each event a design needs on the SkillSpoke standard event: its event type name, the values the publishing service passes to the shared-events-service API, its payload schema when it has a payload, and its publishers, consumers and delivery/failure semantics |
-| api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. |
-| cost-architecture-reviewer | plan | Estimates cost per architecture option and identifies cost cliffs |
-| bounded-context-mapper | plan | Maps domain boundaries and identifies context relationships |
-| domain-event-modeler | execute | Models domain events as facts: ownership, triggers, business meaning and causal flows |
+| aws-solutions-architect | execute | Holds single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are ready for review; starts only the agents a gap needs. |
+| architecture-team-lead | orchestrate | Routes what a review found or what the solutions architect could not settle, so that the team settles it with the least further work. Exists only when there is something to route. |
+| integration-pattern-architect | plan | Answers a question or does a bounded piece of design for the solutions architect on service boundaries, synchronous and event integration, and delivery and failure behaviour. |
+| persistence-architecture-specialist | plan | Answers a question or does a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle. |
+| security-architecture-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on trust boundaries, identities, authorization, IAM, encryption and threat mitigation. |
+| cdk-infrastructure-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on repositories, CDK stacks, where each block runs and shared infrastructure. |
+| event-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on event types, their publishers, consumers and delivery paths. |
+| api-contract-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible. |
+| cost-architecture-reviewer | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the cost of new billable resources. |
+| bounded-context-mapper | plan | Answers a question or does a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership. |
+| domain-event-modeler | execute | Answers a question or does a bounded piece of design for the solutions architect on domain events as facts, who owns each and what triggers it. |
 | ubiquitous-language-writer | execute | Captures the ubiquitous language for the bounded context: terms, definitions, and usage rules shared by the domain model and the code. |
-| architecture-pattern-challenger | test | Generates a structurally different alternative for each proposal to force non-obvious paths |
-| architecture-tradeoff-skeptic | test | Attacks trade-off ratings: hidden assumptions, optimistic estimates, unconsidered failure modes. |
-| architecture-boundary-guardian | test | Validates that no proposal introduces cross-context coupling. |
-| cost-impact-reviewer | test | Stress-tests cost estimates at 10x/100x/1000x scale |
-| operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
-| architecture-decider | approve | Decides, after the team has settled an Epic's draft target, whether it is approved, from the artifacts alone: approves the team's result, choosing where the team left competing solutions, or returns it to a named proposer with the missing due diligence. Generates no evidence of its own. |
+| architecture-pattern-challenger | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: new patterns and the choices made between alternatives. |
+| architecture-tradeoff-skeptic | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the trade-offs behind the choices made. |
+| architecture-boundary-guardian | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: ownership and boundaries, one home per fact, and readable diagrams. |
+| cost-impact-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: changed billable limits and volumes. |
+| operational-readiness-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: how new runtime resources are operated. |
+| architecture-decider | approve | Rules on a matter the architecture team could not settle, between the positions and from the evidence they carry. The last resort. |
 | architecture-impact-analyst | test | Judges what an architecture change reaches: given the views an integration changed, created or deleted, finds every Epic, Story, Task and document citing those views or showing their elements, and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built. Read-only. No workflow currently dispatches it. |
 | architecture-fitness-function-author | execute | Defines testable assertions from the owner's constraints and the patterns the effective architecture establishes, such as 'no service reads another service's table'. No workflow currently dispatches it. |
-| architecture-diagram-author | execute | Draws architecture views of any type in the project's list of diagram and model types, at any scope, for the target or the effective version, from the design it is given. |
-| c4-diagram-author | execute | Draws C4 views (Level 1 System Context, Level 2 Container, Level 3 Component) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
-| uml-diagram-author | execute | Draws UML views (sequence, state, activity, class) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
-| architecture-maintainer | execute | Keeps the effective version of the architecture current: integrates an approved target into the arc42 folders, and corrects the effective version from what was built, updating or deleting every view that shows a changed element, found through the catalog. Never writes section 2. |
+| architecture-diagram-author | execute | Draws one architecture diagram of a settled design for the solutions architect. |
+| c4-diagram-author | execute | Draws one C4 diagram of a settled design for the solutions architect. |
+| uml-diagram-author | execute | Draws one UML diagram of a settled design for the solutions architect. |
+| architecture-maintainer | execute | Writes the solutions architect's decisions into the arc42 documents, each fact in its one home with links from the documents that need it, and corrects the documents from what a Story built. Never writes section 2. |
 | architecture-conformance-reviewer | test | Checks ONE integration of an approved target into the effective version and reports findings without fixing them: the target was applied exactly, every view the catalog lists for each changed element was updated, and no contradicting content was left. |
-| graphql-schema-designer | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track |
-| failure-mode-analyst | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages |
+| graphql-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it. |
+| failure-mode-analyst | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: failure, retry and recovery behaviour. |
 
 ## TRD Authoring (Phase 2.5)
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet. No workflow currently dispatches it. |
-| trd-author | execute | Authors the Technical Requirements Document — the CARRIER that takes the architecture's obligations (uptime, latency, maintainability, security, failover, DR, infrastructure/CDK, observability) into the build chain, alongside the PRD requirements needing technical elaboration. Cites the architecture rather than restating it, so a correct TRD is often very short. |
-| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the owner's constraints and the effective architecture, flagging any requirement that contradicts the architecture. No workflow currently dispatches it. |
+| trd-author | execute | Writes and keeps current the Technical Requirements Document at the solutions architect's request: the technical obligations of this PRD and its architecture, each with a checkable value, a source and the element it applies to. It cites the architecture rather than restating it. |
+| trd-validator | test | Reviews the unapproved TRD requirements of one Epic against the technical-requirement criteria. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or an architecture view, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
 | trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead. No workflow currently dispatches it. |
 
@@ -122,7 +119,7 @@ conformance reviewer again to correct the effective version from what a Story bu
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | Details an approved architecture delta for ONE repository: for each delta item placed there (one element the delta shows), compares what the delta makes it with the code on the repository's main and gives it one status from `$defs/ReconStatus` in `skills/artifact-handoff/schemas/recon.schema.json`, each citing file:line as that schema's `ReconItem` requires, and reports upstream dependency changes. Also writes the architecture step's survey, and in built-version records each difference between a Story's code and the effective views in `built/<subject>/`. |
+| prd-reality-reconciler | test | In `built-version`, records each difference between a Story's code and the effective documents in `built/<element>/`. |
 
 ## Spec Freshness
 

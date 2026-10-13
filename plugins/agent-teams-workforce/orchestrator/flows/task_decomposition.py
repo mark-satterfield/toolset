@@ -17,7 +17,6 @@ import beadwrite
 import hierarchy
 from beadcontracts import PlannedTask, TaskPlan
 from driver_surface_types import CONTROL_REPO_ENV
-from target_contract import DELTA_ITEMS_FILE
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from orchestrator.core.agents import AgentRunner
@@ -54,7 +53,7 @@ def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
         f"spec-{slug}.criteria.md",
         f"story-{slug}.json",
         "repo-scoping.json",
-        DELTA_ITEMS_FILE,
+        hierarchy.SPAN_ELEMENTS_FILE,
     ]
     if ui:
         names.append(f"spec-{slug}.ui.json")

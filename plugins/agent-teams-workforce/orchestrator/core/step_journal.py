@@ -1043,6 +1043,21 @@ def steps_in_order(journal: Journal) -> list[Step]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def steps_in_order_from(step: Step) -> list[Step]:
+    """List a step and every step below it in walk order.
+
+    Args:
+        step: The step to start from.
+
+    Returns:
+        The step, then each step below it before its own child steps, siblings in order; the
+        steps themselves, not copies.
+
+    """
+    return list(_walk([step]))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parent_step(journal: Journal, step_id: StepId) -> Step | None:
     """Find the step that directly contains a step.
 

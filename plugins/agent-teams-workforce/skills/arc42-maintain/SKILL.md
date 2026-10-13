@@ -1,123 +1,82 @@
 ---
 name: arc42-maintain
 description: >-
-  Maintains the effective version of the architecture (the arc42 folders) to the
-  project's architecture documentation model. It integrates an approved target
-  into the effective version, and corrects the effective version from what was
-  built: it finds every view that shows a changed element through the catalog,
-  at every scope, and updates or deletes it, adds the target's new views, and
-  leaves no superseded content beside the new. It writes nothing in section 2,
-  which is the owner's. Use when the user asks to integrate or apply an approved
-  target, bring the architecture up to date with what was built, or update every
-  view that shows an element that changed.
+  Maintains the effective arc42 documents to the project's architecture
+  documentation model. It writes the solutions architect's decisions into the
+  documents, each design fact in its one home with links from every other
+  document that needs it, and corrects the documents from what a Story built.
+  It writes nothing in section 2, which is the owner's. Use when the user asks
+  to write decided design facts into arc42, bring the architecture up to date
+  with what was built, or replace a restated fact with a link to its home.
 triggers:
-  - integrate the approved target
-  - apply the approved design to arc42
+  - write the decisions into arc42
   - update the effective architecture
   - correct the architecture from the build
   - the build differs from the architecture
-  - update every view that shows this
   - keep the architecture current
   - maintain the arc42 documentation
 ---
 
-# arc42 Maintain — keep the effective version current
+# arc42 Maintain — keep the effective documents current
 
-You change the effective version of the architecture, in `arc42/`. It changes in two ways only
-(MODEL, "How a change moves through the versions", steps 5 and 6):
+You change the effective arc42 documents, in `arc42/`. They change in two ways only:
 
-- **Integration.** A target in `target/<subject>/` was approved. Its views replace the effective ones
-  in place, its new views are added, and content it supersedes is updated or deleted.
-- **Correction from built.** `built/<subject>/` records where the build delivered something that
-  differs from the effective version. The effective version is corrected to match what was built.
+- **Decisions.** The solutions architect decided design facts. A write request lists each
+  fact with its statement and reason, its one home (document and heading) and the documents
+  that link to it.
+- **Correction from built.** `built/<element>/` records where a Story's build differs from
+  the approved architecture. The documents are corrected to match what was built.
 
-You do not design. A change that has not been approved is written as a target by `arc42-author`; a
-request to edit an effective view for an unapproved design is refused and routed there.
+The design is the solutions architect's. A fact that is not in the request is not written.
 
 ## Read first
 
 - The MODEL at `reference/architecture-documentation-model.md` under the architecture root, and the
   MENU at `reference/diagram-and-model-types.md`.
-- `../arc42/references/` — the section model, the living-document rules and how views are found
-  through the catalog (`finding-views.md`).
-- `references/update-playbook.md` — the procedure for an integration and for a correction.
-- `references/consistency-rules.md` — what holds across views after every pass.
+- `../arc42/references/arc42-section-model.md` — what each section holds, the one home of each
+  design fact and the level of detail — and `../arc42/references/living-document-rules.md`.
+- `references/consistency-rules.md` — what holds across documents after every pass.
 
-## The procedure, in short
+## The procedure
 
-1. **List the changed elements.** From the target's delta (integration) or from the built views
-   (correction): every element added, changed or removed.
-2. **Find every effective view that shows each one**, through the catalog, at every scope. A changed
-   service shows in the system container view, its domain view, and its own component, data,
-   sequence and deployment views as applicable under the MODEL. Reconcile the approved coverage
-   evidence with actual files, including approved new views absent from the catalog. Follow
-   `../arc42/references/coverage-evidence.md`; an unapproved design gap is reported, not designed here.
-3. **Update or delete each view.** Replace it with the target's view where the target has one; update
-   it in place where the target changed only part of what it shows; delete it where the change
-   removes its subject. Add the target's new views in the section folder the MODEL names, named for
-   their subject.
-4. **Keep the catalog true.** Every view you touch has `view_type`, `scope`, `subject` and `shows`
-   matching what it now shows. Update the affected entry points and adjacent-view links as the
-   MODEL requires; check diagrams, prose and metadata together.
-5. **Check the invariants** in `references/consistency-rules.md` across every view you touched and
-   every view that links to them.
-6. **Report** (below). The files you changed stay `in-review`; the caller moves them to `effective`
-   once a conformance review has approved the integration. Report the disposition of each approved
-   coverage obligation, with actual paths and checks performed; do not approve your own evidence.
+1. **Take each fact of the request in turn.** Write it in its home, under the heading named, in
+   the form its section requires (the section model lists the forms).
+2. **Replace restatements with links.** In every other document the request names, and in every
+   document the matrix lists as describing the same element (`atw-matrix node <id>`), a
+   restatement of the fact becomes a link to the home heading. A fact is stated in one place.
+3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
+   replaced by a link to it.
+4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
+   parameter name, a metric or alarm name, or a schema is returned as below architecture level,
+   unwritten.
+5. **Create a document only for a home path that does not exist**, with the catalog frontmatter
+   (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`) and a file name that names its
+   subject.
+6. **Place and update diagrams.** Place each diagram the request carries; update or redraw a
+   diagram when a fact changes what it shows; check that it renders and reads well.
+7. **Keep the catalog true and check the invariants** in `references/consistency-rules.md` across
+   every document you touched and every document that links to them.
+8. **Report**: each heading changed or created, each link added, each restatement removed, the
+   entries below architecture level, and what could not be applied with the reason. The files you
+   changed stay `in-review`; a script moves them to `effective` after review.
 
 ## Section 2 is the owner's
 
-You write nothing under `arc42/02-architecture-constraints/`, because only the owner writes
-constraints. Content that conflicts with a constraint is reported to the caller: the constraint, the
-conflicting content and the reason.
-
-- A target that conflicts with a constraint is not integrated over it: report it and leave both as
-  they are, because the target is still a proposal.
-- A correction from built is made even when it conflicts with a constraint: the effective
-  architecture is updated to match what was built, whatever the reason for the difference, so it
-  describes the system as it is. Report the conflict with the correction, so the owner can change
-  the build or the constraint.
+You write nothing under `arc42/02-architecture-constraints/`. A fact that conflicts with a
+constraint is reported and left unwritten. A correction from built is made even when it conflicts
+with a constraint, so that the documents describe the system as it is; report the conflict with the
+correction, so the owner can change the build or the constraint.
 
 ## What "in place" means
 
-- A view reads as if its current content were always true. No "previously", no changelog, no
+- A document reads as if its current content were always true: no "previously", no changelog, no
   superseded content kept for reference.
-- No open item is written into any view: questions, referrals, "pending", "TBD", anything addressed
-  to the owner. What is still open goes in the report.
-- Nothing is written as a rule or a decision record. A design outcome is a description of the design.
-- A view names stacks, services and components, never repositories, and never says which repository
-  holds a stack, service or component; the polyrepo-steward is the record of that. A deployed element
-  is named by its stack name from the project's naming standard. A repository name met in a view you
-  touch is replaced with the stack, service or component it stands for.
-
-## Output of a pass
-
-The result of a pass contains four things, carried by the caller's schema:
-
-1. **Changed elements** — the elements the target or the build changed.
-2. **Views changed** — every effective view you updated, added or deleted, by path, with one line
-   each on what it now shows, mapped to the approved coverage obligations and their dispositions.
-3. **Invariant check** — each rule in `references/consistency-rules.md` and whether it holds, with
-   the path of any view that breaks it.
-4. **Not integrated** — anything you could not apply (a conflict with a constraint, a view the
-   catalog could not find, a target that contradicts itself), with the reason.
-
-When applying a change would need information you do not have, stop and record the precise question
-in the result rather than guessing: a contradicting effective version misleads every design that starts from it.
-
-## What you do NOT do
-
-- You do not write targets or design changes. That is `arc42-author`.
-- You do not write section 2.
-- You do not approve your own integration or set files to `effective`.
-- You do not edit PRDs, the TRD or Specs. The phases that own them read the delta.
-- You do not keep a built file once the effective version matches it; report it so the caller removes
-  it.
-
-Consumed by: architecture-conformance-reviewer — checks approved coverage against the integration dispositions and actual files.
+- No open item is written into any document. What is still open goes in the report.
+- A rule is written in section 8 as a design fact with its reason. There are no decision records.
+- A document names stacks, services and components and never repositories; the polyrepo-steward
+  and the matrix are the record of which repository holds each.
 
 ## References
 
-- `references/update-playbook.md` — integration and correction, step by step, with worked examples.
-- `references/consistency-rules.md` — the invariants that hold across views after every pass.
-- `../arc42/references/` — the shared section model, living-document rules and catalog.
+- `references/consistency-rules.md` — the invariants that hold across documents after every pass.
+- `../arc42/references/` — the shared section model and living-document rules.

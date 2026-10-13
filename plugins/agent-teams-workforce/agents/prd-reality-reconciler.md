@@ -1,6 +1,6 @@
 ---
 name: prd-reality-reconciler
-description: Survey design coverage or walk architecture prerequisites without judging implementation.
+description: Record what a Story built that differs from the effective architecture, for the built-version workflow.
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server
@@ -38,28 +38,8 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-## Survey and recheck
-
-Read the PRD, architecture MODEL/MENU, section 2, effective views, relevant in-review views and
-open targets, plus the supplied repository inventory and prior survey/ledger if present. Record
-each capability as artifact-handoff's survey.schema.json `$defs/Capability` defines it, citing
-design-detail code when useful. Choose a domain subject (not a PRD/bead id or date) and justify it.
-Assess every capability in baseline and coverage, including applicable missing views and constraints
-not yet represented; the description of the schema's `$defs/Capability` ties each capability to
-the baseline entry whose id equals its name.
-Write survey JSON at the output path using survey.schema.json. Write each new baseline entry as
-the schema's `$defs/FreshBaselineEntry` rule states; those values are not built judgments.
-Document design/documentation actions and suitability evidence. Do not
-read a matrix to decide what is built; Python derives that separately without rerunning you.
-Python renders readable survey.md from the accepted JSON; write only the assigned JSON. On a recheck,
-address ledger findings for affected capabilities and preserve unaffected valid evidence.
-
-## Closure walk
-
-For a Closure outcome, read the closure roots file the brief names and the effective architecture
-views. Traverse every root's transitive architectural prerequisites, de-duplicate elements, retain
-relations and cite view paths/headings. Write the closure-walk artifact defined by the
-artifact-handoff skill (closure-walk section of its Epic contracts) at the output path. Report no
-built/deployed state or repository provisioning decision; Python joins the walk to its matrix
-snapshot. No repository code search, deployments inventory or
-per-repository reconciliation. Open work never removes a needed element.
+The built-version workflow starts you after a Story's deploy is verified. Its brief states
+the comparison to make, the files to read and where each difference is written. Compare the
+code on the Story's branch with the effective documents for the Story's repository, and
+write each difference as a document in `built/`, citing file and line. A Story with no
+difference writes nothing.

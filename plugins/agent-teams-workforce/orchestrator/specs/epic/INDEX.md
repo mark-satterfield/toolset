@@ -9,33 +9,22 @@ in that spec's Steps section; `driver` means the driver at `<control>/ops/sdlc-a
 index is stale.
 
 Path placeholders:
-- `<work>` = `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (the Epic's artifact directory,
-  `<art>` in some specs); `<arch-work>` = `<work>/architecture/`.
+- `<work>` = `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (the Epic's work directory);
+  `<arch-work>` = `<work>/architecture/`.
 - `<arch>` = the value of the `ARCH_PATH_ENV` driver environment variable, defined by the
   `pipeline-contracts` skill (`<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`):
   the architecture folder of the `skillspoke-docs` vault.
-- `<slug>` = a span repository's artifact slug; `<subject>` = the target's folder name.
+- `<slug>` = a span repository's artifact slug.
 - `<workDir>` = the work directory of an owner-run portfolio flow (`wsjf-scoring`,
   `dependency-assessment`, `task-dependency-assessment`). None of them is part of the Epic
-  pipeline: Epic scoring and Epic dependency assessment belong to the future readiness process
-  (CONTEXT 7.17), and `task-dependency-assessment` is deleted in S08.
+  pipeline.
 
-Open items live only in QUESTIONS.md.
+A step of the Epic's journal is cited by its script key (for example `prd_to_spec.open_run`) or by
+its agent. The journal alone decides where a run begins: no file below is read to decide whether a
+step of the architecture part runs again.
 
-Every `.meta.json` named below is written by `artifactio.record` beside its file and is read by
-the same flow's reuse step (the one input-record format, `driver-contract.md` §8); where it has
-another reader, the row says so.
-
-The element status matrix (CONTEXT 7.25) is written by no Epic flow: it is seeded once with state
-`unknown` (PLAN S05a), and only the build pipeline sets `built` or `deployed`. The Epic flows read
-it in `architecture#5`, `#7` (the survey, through `survey-matrix.json`), `architecture#32` (the
-Closure) and `repo-scoping#3`, `#5`, `#6` (placement). Its tracked location and snapshot contract are settled in DESIGN.md section 10; the matrix and
-snapshot are listed below.
-
-The `prd-reconciliation` step and its files (`recon-<slug>.json`, `recon-<slug>.bundles.json`) are
-removed (CONTEXT 7.10, 7.23). The per-repository detailing contract they carried is defined only by
-`<plugin>/skills/artifact-handoff/schemas/recon.schema.json` (Python: `recon_contract.py`; driver:
-`ops/sdlc-automation/reconcontract.py`).
+Every `.meta.json` named below is written by `artifactio.record` beside its file by the spec
+authoring and Task decomposition phases and is read by the same phase.
 
 The Format column names each file's contract; it never restates fields. A schema file named there
 is under `<plugin>/skills/artifact-handoff/schemas/`.
@@ -46,7 +35,7 @@ is under `<plugin>/skills/artifact-handoff/schemas/`.
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<work>/delta-items.json` | `prd-to-spec#7` (`depscore.py arch-delta --save`) | `repo-scoping#1`, `#3` (input), `#5`, `#6`; `trd-authoring#2` (input), `#3`; `spec-authoring#1` (placed items joined to it), `#5`, `#8` (input); `task-decomposition#2` (input), `#5`, `#9`, `#10`; `prd-to-spec#11` (`closure-edges`) | JSON: `target-report.schema.json` (`target_contract.DeltaResult`; the implementation-work facts come from the element status matrix) |
+| `<control>/.claude/workflow-runs/step-journals/<bead>.step-journal.json` | `prd-to-spec` (created with every outermost step planned when the file does not exist; every step records in it); an agent that starts or plans steps, through `atw-step-journal`; a spec step and a Task step create the journal of each Story and Task they create | `prd-to-spec` (the next step, each step's inputs, the dispatch result); the build and deploy pipelines (the journals of Tasks and Stories) | JSON: `step-journal.schema.json` of the `pipeline-contracts` skill (`step_journal_contract.Journal`) |
 | `<work>/closure-edges.json` | `prd-to-spec#11` (`depscore.py closure-edges --out`) | `prd-to-spec#12` (agent input), `#13` | JSON: `{ edges[{ from, to, reason }], summary.warnings }` |
 | `<work>/candidates/task-deps.json` | `prd-to-spec#12` (agent `task-dependency-mapper`; required when the span has two or more repositories) | `prd-to-spec#12` (Python acceptance) | JSON: `task-deps.schema.json` (`task_deps_contract.TaskDeps`) |
 | `<work>/task-deps.json` (+ `.meta.json`) | `prd-to-spec#12` (accepted copy) | `prd-to-spec#12` (reuse), `#13` | JSON, same shape |
@@ -55,60 +44,51 @@ is under `<plugin>/skills/artifact-handoff/schemas/`.
 | `<work>/run.json` | `prd-to-spec#17` | none: read by the driver (handback `detailPath` -> failure evidence and human-action detail, `driver-contract.md` §4) and the owner | JSON: the run record, `<plugin>/orchestrator/core/manifest.py` `RunManifest` |
 | the handback (`run.py --handback`, and handbacks the driver builds) | `prd-to-spec` (`<plugin>/orchestrator/run.py`, one atomic write when the flow ends); `driver` (`orchestrated.failed_handback`, for a dispatch that raised or was interrupted) | `driver` (`orchestrated.read_handback`, validated with `handback_contract.validate`; `driver-contract.md` §4) | JSON: `<plugin>/orchestrator/core/handback_contract.py` `HandbackDocument` |
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | `driver` (`ledger.append` in `<control>/ops/sdlc-automation/ledger.py`, called by `supervisor.py`, `keeper.py`, `storydeploy.py`, `failures.py`, `execidentity.py`, `telemetry.py`); no Epic flow writes it | `driver` (the `ledger` read functions, called by `outcomes.py`, `observe.py`, `runview.py`, `lane.py`, `repeats.py`, `repeatfail.py`, `keeper.py`, `supervisor.py`, `execidentity.py`, `dashboard.py`; `attemptview.py` interprets the events read) | JSON lines; the event set (`EventType`, `EVENT_TYPES`), the envelope and field-name constants (`KEY_*`) and the typed shape of `handback` events (`HandbackFields`) are defined only by `<control>/ops/sdlc-automation/ledgerevents.py`; the other event types have no typed field shape there |
-| `<arch>/target/<subject>/` (deletion, committed in the vault) | `prd-to-spec#15` (`depscore.py arch-target-remove`) | none: the removal is the end state | git commit in the vault repository |
 
-### Matrix and run inputs (DESIGN sections 4 and 10)
-
-| Path pattern | Producer | Consumers | Format |
-|---|---|---|---|
-| `<control>/ops/sdlc-automation/element-matrix.json` | seed/build Python only | dispatch snapshot | JSON matrix, DESIGN 10 |
-| `<work>/matrix-snapshot.json` | Python dispatch snapshot | Closure classification; placement | JSON matrix snapshot, DESIGN 10 |
-
-### `architecture`
+### The matrix
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<arch-work>/arc42-revision.json` | `architecture#2` (`archrevision.check`), updated by `#21`, `#22`, `#28` (`archrevision.mark`) | `architecture#2` (next run); `driver` (`arc42-revision` input kind of the `architecture` step's record) | JSON: `{ archRoot, revision, files{}, views{}, integrating, recordedAt }` |
-| `<work>/stale-<timestamp>/architecture/` | `architecture#2` (moves stale saved work aside) | none: kept, not deleted, for the owner | the moved files |
-| `<arch-work>/repositories.json` | `architecture#6` (Python inventory; DESIGN 11.1) | `architecture#7` | JSON: `[{ name, path, role, lifecycle }]` |
-| `<arch-work>/survey.json`, `survey.md` (+ `.meta.json`) | `architecture#7` (agent `prd-reality-reconciler`, SURVEY), accepted `#8` | `architecture#5`, `#9`, `#11`, `#12`, `#13`, `#15`, `#16`, `#17`, `#20`, `#23`; `trd-authoring#2` (input), `#3`; `prd-to-spec#5` (`saved-target`) | JSON (`survey.schema.json`) and Markdown |
-| `<arch-work>/survey-matrix.json` (retired by DESIGN 3.6) | `architecture` before `#7` (Python: the element status matrix rows of the listed repositories) | `architecture#7`; `architecture#5` (seal input) | JSON: matrix rows |
-| the survey's seal beside `<arch-work>/survey.json` (`contracts.survey_seal_path`) | `architecture#8` (`survey_freshness(seal=True)`) | `architecture#5` | JSON: `<plugin>/scripts/portfolio/contracts.py` `SurveySeal` |
-| `<arch-work>/ledger.json` | `architecture#4` (`archresume.resume_facts`, after every saving step) | `architecture#11`, `#13`, `#15`, `#16`, `#17`, `#23`, `#25` | JSON (contract version 2) |
-| `<arch-work>/plans/round<n>-plan-0.json` | `architecture#13` (agent coordinator), settled `#14` | `architecture#4`, `#14`, `#15`, `#16` | JSON (`coordinator-plan.schema.json`) |
-| `<arch-work>/rounds/r<n>-<seq>-<role>-<agent>.json` | `architecture#11` (boundary guardian), `#15` (writers), `#16` (reviewers) | `architecture#4`, `#13`, `#17` | JSON (`architecture-writer.schema.json` or `architecture-review.schema.json`) |
-| `<arch-work>/draft/` (views, `delta/`, `draft/baseline.json`) | `architecture#15` (writers); seed `#10` (`arch-target --seed`) | `architecture#16`, `#17`, `#20` | arc42 Markdown views, JSON baseline |
-| `<arch-work>/target-check.json` | `architecture#9`, `#10` (dry-run check) | `architecture#9` (subject refusals, in-process); file: none, retained as diagnostic evidence | JSON: dry-run report (`target-report.schema.json`, `target_contract.TargetResult`) |
-| `<arch-work>/decision.json`, `decision.md` (+ `.meta.json`) | `architecture#17` (agent `architecture-decider`) | `architecture#2` (cited views), `#13`, `#23`, `#25`; `repo-scoping#3` (input); `trd-authoring#2` (input), `#3` | JSON (`decision.schema.json`) and Markdown |
-| `<arch-work>/target.json` | `architecture#20` (`arch-target --out`) | `prd-to-spec#5` (`saved-target`); `repo-scoping#3` (input); `trd-authoring#2` (input); `spec-authoring#1` | JSON: target report (`target-report.schema.json`, `target_contract.TargetResult`) |
-| `<arch>/target/<subject>/` (views, `delta/`, `baseline.json`) | `architecture#20` (`write_target`) | `prd-to-spec#7` (`arch-delta`); `architecture#23`, `#25`, `#29`; `repo-scoping#5`; `trd-authoring#2` (input), `#3`; `spec-authoring#3`, `#4`; deleted by `prd-to-spec#15` | arc42 Markdown (`lifecycle_state: in-review`), JSON baseline |
-| `<arch-work>/integrate-before.json` | `architecture#22` | `architecture#24` | JSON: tree hashes |
-| `<arch-work>/tree-last.json` | `architecture#24` | `architecture#27` | JSON: tree hashes |
-| `<arch-work>/integration-files.json` | `architecture#24` | `architecture#25`, `#26`, `#28` | JSON: `{ touched, deleted, all, unreported, section2, outside, changedSinceLast }` |
-| `<arch-work>/architecture-update.json` (+ `.meta.json`) | `architecture#23`, `#27` (agent `architecture-maintainer`), or `#21` (publication receipt) | `architecture#24`, `#25`; `architecture#4` (`archresume.resume_facts`, `<plugin>/scripts/portfolio/archresume.py`); `<plugin>/scripts/portfolio/resumefacts.py`; `trd-authoring#2` (input) | JSON (`maintain.schema.json`; no generated Python type exists yet) |
-| `<arch-work>/conformance-<n>.json` | `architecture#25` (agent `architecture-conformance-reviewer`) | `architecture#26`, `#27`, `#28` | JSON (`conformance.schema.json`) |
-| `<arch>/arc42/**` except section 2 (edits, `lifecycle_state: effective`, commit and push) | `architecture#23`, `#27` (edits), `#21`, `#28` (`promote`, `commit_integration`) | every later reader of effective views: `trd-authoring#2` (`arch-views` input), `#3`; the makers of `spec-authoring#3`, `#4`; `architecture#31` (the Closure walk); the next run's `architecture#2` | arc42 Markdown; git commits in the vault |
-| `<arch-work>/closure-roots.json` | `architecture#29` (`delta_items(with_closure=False)`) | `architecture#31` | JSON: build roots (`target-report.schema.json`, `target_contract.DeltaResult`) |
-| `<arch-work>/closure-walk.json` | `architecture#31` (agent `prd-reality-reconciler`, CLOSURE walk) | `architecture#32` | JSON (`closure-walk.schema.json`; no generated Python type exists yet) |
-| `<arch-work>/closure.json` | `architecture#32` (Python: the walk joined to the element status matrix) | `architecture#32` (`write_closure`) | JSON (`closure.schema.json`; no generated Python type exists yet) |
-| `<arch>/target/<subject>/closure.json` | `architecture#32` (`archclosure.write_closure`) | `prd-to-spec#5` (`saved-target` `closureSaved`), `#7` (`arch-delta` lists prerequisites); `repo-scoping#5`; `trd-authoring#3`; `spec-authoring#1` (none-case build work) | JSON (`closure.schema.json`; no generated Python type exists yet) |
-| `<arch-work>/tree-start.json`, the legacy survey receipt (`jsonartifact.receipt_path`), `candidates/` (legacy) | the JavaScript (not produced by the new flow) | `architecture` saved work read in place (CONTEXT 7.13; `candidates/` is an open item in QUESTIONS.md) | JSON |
+| `<control>/ops/sdlc-automation/matrix.json` | `atw-matrix` and the matrix modules: step `prd_to_spec.open_run` (PRD row, document rows, expertise), the agents of the architecture team by role, step `atw-matrix check; atw-matrix unapproved` (marks in review), step `atw-matrix approve`; the build pipeline (code state) | the same steps and agents; step `atw-matrix prd --closure` (the repository span) | JSON: `matrix.schema.json` (`matrix_contract.Matrix`) |
 
-### `repo-scoping`
+### Architecture (the steps of the Architecture container)
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<work>/repo-scoping.inventory.json` | `repo-scoping#4` (`polyrepo.py inventory --json`) | `repo-scoping#5`, `#6` | JSON: live repository inventory |
-| `<work>/candidates/repo-scoping.json` | `repo-scoping#5` (agent `polyrepo-steward`, placement only) | `repo-scoping#6` | JSON (`placement.schema.json`, `placement_contract.PlacementRuling`) |
-| `<work>/repo-scoping.json` (+ `.meta.json`) | `repo-scoping#7` | `repo-scoping#3`, `#8`, `#9`; `spec-authoring#1`, `#5`, `#8` (input); `task-decomposition#2` (input), `#5`, `#9`, `#10`; `prd-to-spec#11` (`closure-edges`, incl. `beadwrite._no_code`) | JSON (`placement.schema.json`, `placement_contract.PlacementRuling`) |
-| `<work>/repo-creation.json` (+ `.meta.json`) | `repo-scoping#8` (deterministic, `polyrepo.py create`) | `repo-scoping#9`; `prd-to-spec` (`createdRepos` in the handback; `driver` `decisions.py`) | JSON: `{ created[{ name, repoPath, template, itemIds[], existed }], failures[{ name, template, itemIds[], error, ownerFact }] }` |
-| a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | `repo-scoping#8` (`polyrepo.py create`, from the name and template the steward named) | `spec-authoring`, `task-decomposition` (as a span repository); the Task pipeline | git repository |
+| `<arch-work>/context.json` | step `prd_to_spec.open_run` | every step of the Architecture container and step `trd.confirm` (handed through the journal); `aws-solutions-architect` as `context` | JSON: `architecture-context.schema.json` |
+| `<arch-work>/state.json` | agent `aws-solutions-architect`, before anything else | `trd-author` (named in the TRD request); `aws-solutions-architect` when launched for "Finish" | JSON: `architecture-state.schema.json` |
+| `<arch-work>/result.json` | agent `aws-solutions-architect`; updated in place by its correction, competing-design and "Finish" steps | step `atw-matrix check; atw-matrix unapproved` (criterion answers, conclusion, review signals); every reviewer and the lead as `architecture result` | JSON: `architecture-result.schema.json` |
+| a request file for a specialist, a diagram author or the steward (the architect's under `<arch-work>/helpers/`) | `aws-solutions-architect` for each agent it starts; `architecture-team-lead` when it asks for an opinion | the agent asked; the script, which launches from it an agent left running or a specialist the lead planned (artifact `request`) | JSON: `specialist-request.schema.json` |
+| the answer file a specialist request names | the design specialist, diagram author or `polyrepo-steward` asked | `aws-solutions-architect` (handed as `answer` in a correction or a "Finish" step); `architecture-team-lead` | JSON: `specialist-answer.schema.json` |
+| a TRD request file (under `<arch-work>/helpers/`) | `aws-solutions-architect`: mode `draft` once, then mode `update` | `trd-author`; the script, which launches a `trd-author` left running from it | JSON: `trd-request.schema.json` |
+| the answer file a TRD request names | `trd-author` | `aws-solutions-architect` (the obligations with no source) | JSON: `trd-answer.schema.json` |
+| a write request file (under `<arch-work>/helpers/`) | `aws-solutions-architect` | `architecture-maintainer`; the script, which launches a maintainer left running from it | JSON: `write-request.schema.json` |
+| the result file a write request names | `architecture-maintainer` | `aws-solutions-architect` (entries below architecture level go to the TRD or `notesForSpecs`) | JSON: `write-result.schema.json` |
+| `<arch>/arc42/**` except section 2 (edits; `lifecycle_state: effective`, commit and push after review) | `architecture-maintainer` (edits, `in-review`); step `atw-matrix approve` (sets `effective`, commits and pushes in the vault) | every later reader of the effective documents: the architecture team, `trd-author`, the spec authors, and the next Epic's architect | arc42 Markdown; git commits in the vault |
+| `<arch-work>/check-<n>.json` | step `atw-matrix check; atw-matrix unapproved` (`<n>` is the number of corrections before it) | `aws-solutions-architect` as `findings`, in the correction step planned when the check is not valid | JSON: `check-result.schema.json` |
+| `<arch-work>/review-scope.json` | step `atw-matrix check; atw-matrix unapproved` | step `atw-matrix approve` (the documents to commit) | JSON: `matrix.schema.json` `$defs/ReviewScope` |
+| `<arch-work>/review-scope.<reviewer>.json` | step `atw-matrix check; atw-matrix unapproved`, one for each reviewer the criteria file selects | that reviewer as `review scope`; the script, which drops a finding outside it | JSON: `matrix.schema.json` `$defs/ReviewerScope` |
+| `<arch-work>/reviews/<reviewer>.json` (a re-check: `<reviewer>.<step>.json`; as returned: `.as-returned.json`) | each selected reviewer, at the same time; the reviewer that raised a finding, for its re-check | `architecture-team-lead` and `aws-solutions-architect` as `findings`; step `atw-matrix approve` (refuses while a finding is unresolved) | JSON: `scope-review.schema.json` |
+| `<arch-work>/specialists.json` | the launch of `architecture-team-lead` | `architecture-team-lead` as `specialists` | JSON: `specialists.schema.json` |
+| `<arch-work>/routing-<step>.json` | `architecture-team-lead`, before it adds a step | the script (a routing that sends an item to further work adds a step for it) | JSON: `lead-routing.schema.json` |
+| a question file for the decider (under `<arch-work>/`) | `architecture-team-lead` (artifact `question` of its own step) | `architecture-decider` as `question` | JSON: `architecture-question.schema.json` |
+| `<arch-work>/ruling-<step>.json` | `architecture-decider`, which also records the ruling in the matrix | `architecture-team-lead`; `aws-solutions-architect` as `ruling`; an owner concern in it holds the Epic for the owner | JSON: `architecture-ruling.schema.json` |
+| `<arch-work>/approved.json` | step `atw-matrix approve` | none: evidence, and the failure record when an item could not be approved | JSON: `matrixreview.Approved` |
 
-### `trd-authoring`
+### Repository span (step `atw-matrix prd --closure`)
 
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
-| `<work>/trd.md` (+ `.meta.json`) | `trd-authoring#3` (agent `trd-author`), checked `#4`, `#5`, recorded `#6` | `spec-authoring#1`, `#3`, `#4`, `#5` (input), `#7`; `driver` (lane `artifactio.file_in_vault`; `observe.py` "TRD filed") | Markdown with YAML frontmatter `decisionIds` |
+| `<work>/span-elements.json` | step `atw-matrix prd --closure` (the elements the PRD's features are realized by and what those depend on, not yet built) | the spec steps and the Task steps (artifact `elements`); `hierarchy.closure_task_edges` | JSON: `target-report.schema.json` (`target_contract.DeltaResult`) |
+| `<work>/repo-scoping.json` | step `atw-matrix prd --closure` (each element in the repository its matrix row names) | the spec steps and the Task steps (artifact `span`); `beadwrite` | JSON (`placement.schema.json`, `placement_contract.PlacementRuling`) |
+| `<work>/repo-creation.json` | step `atw-matrix prd --closure` (deterministic, `polyrepo.py create`), only when the matrix names a repository the inventory lacks | `prd-to-spec` (`createdRepos` in the handback; `driver` `decisions.py`) | JSON: `{ created[{ name, repoPath, template, itemIds[], existed }], failures[{ name, template, itemIds[], error, ownerFact }] }` |
+| a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | step `atw-matrix prd --closure` (`polyrepo.py create`, from the name the matrix gives and the template that name matches) | `spec-authoring`, `task-decomposition` (as a span repository); the Task pipeline | git repository |
+
+### TRD
+
+| Path pattern | Producer | Consumers | Format |
+|---|---|---|---|
+| `<work>/trd.md` | `trd-author`, at the architect's request: drafted early, updated in place; confirmed by step `trd.confirm` (every `decisionIds` entry resolves; path and digest on the Epic bead) | `trd-validator` as `trd`; the spec steps and the journals of the Stories and Tasks (artifact `TRD`); `driver` (lane `artifactio.file_in_vault`) | Markdown with YAML front matter `decisionIds` |
 | `<prd dir>/../trds/<stem>-trd.md` in the vault | `driver` (lane `file_in_vault`, after `ELABORATION_DONE`, `driver-contract.md` §4) | none: read by the owner in the vault | Markdown |
 
 ### `spec-authoring`
@@ -175,7 +155,7 @@ allowed values are defined only in `<plugin>/skills/beads-contract/schemas/bead-
 | Command | Fields and metadata keys | Writing step |
 |---|---|---|
 | `depscore.py elaboration-start --epic <id> --owner <token> [--reclaim]` | Epic: `KEY_ELABORATION_STATE` = `ELABORATION_IN_PROGRESS`, `KEY_ELABORATION_STATE_AT` = now, `KEY_ELABORATION_STATE_CAUSE` = `CAUSE_STARTED`, `KEY_ELABORATION_STATE_OWNER` = `<token>` | `prd-to-spec#3` |
-| `beads-contract.py metadata set <epic> ...` | Epic: `artifact_key("trd", "path")`, `artifact_key("trd", "sha256")` | `trd-authoring#7` |
+| `beadgraph.write_metadata` | Epic: `artifact_key("trd", "path")`, `artifact_key("trd", "sha256")` | step `trd.confirm` |
 | `depscore.py write-story` (`beadwrite.write_story`): `bd create --type story --parent <epic>` or one `bd update` | Story: title, description, acceptance, notes `repoPath: <repo>`; metadata `KEY_ELAB_KEY` (`story:<slug>`), `KEY_REPO_PATH`, `KEY_DECISION_IDS`, and the `path`, `meta` and `sha256` artifact keys of kinds `spec`, `spec_data_model`, `spec_criteria` and `story` | `spec-authoring#12` |
 | `bd delete <ids...> --force` (`beadwrite.replace_tasks`) | the Story's unstarted, elaboration-written Task beads (and their edges) | `task-decomposition#4` (case `replaced` only) |
 | `bd create --type task --parent <story> ... --metadata <json> [--deps blocked-by:...]`, `bd update <id> [--title --description] [--set-metadata ...]`, `bd dep add --file -` (`blocks`), `bd dep remove` (`beadwrite.write_task`), in build order, at least one Task per Story, every Task sized | Task: title, description (with the `## Spec contract` block), acceptance, notes `repoPath: <repo>`; metadata `KEY_ELAB_KEY`, `CONTRACT_KEYS` (the Task build contract, `beadwrite.task_metadata`), `KEY_WSJF_SIZE_ESTIMATE`, `KEY_WSJF_SIZE_LOW`, `KEY_WSJF_SIZE_HIGH`, `KEY_WSJF_SIZE_CONFIDENCE` and `KEY_WSJF_CONTENT_HASH`; same-Story `blocks` edges and `blockedByExternal` blockers | `task-decomposition#9` (again after `#11`) |
@@ -192,5 +172,5 @@ allowed values are defined only in `<plugin>/skills/beads-contract/schemas/bead-
 | `artifactio.file_in_vault` bead metadata | Epic: `artifact_key("trd", "vault_path")`; each Story: the `vault_path` artifact keys of kinds `spec`, `spec_data_model`, `spec_criteria` | `driver` (lane, after `ELABORATION_DONE`) |
 | `elabmark.py --set=<state>` | Epic: `KEY_ELABORATION_STATE`, cause `CAUSE_HUMAN` | the owner's CLI (`driver-contract.md` §2) |
 
-`architecture`, `repo-scoping`, `route-elaboration`, `prd-validation` and `gate-enforce` write
-nothing to beads.
+The steps of the Architecture container, the repository span step, `route-elaboration`,
+`prd-validation` and `gate-enforce` write nothing to beads.

@@ -27,6 +27,8 @@ OUTPUT_PATH: Final[Path] = SCRIPTS_DIR / "architecture_work_contract.py"
 DEFINITIONS: Final[str] = "$defs"
 REF_PREFIX: Final[str] = "#/$defs/"
 DRAFT: Final[str] = "https://json-schema.org/draft/2020-12/schema"
+# The Python type of each scalar JSON Schema type a property may have.
+SCALARS: Final[dict[str, str]] = {"string": "str", "boolean": "bool", "integer": "int"}
 
 # (constant prefix, collection constant) for every string vocabulary, keyed by its $defs entry.
 VOCABULARIES: Final[dict[str, tuple[str, str]]] = {
@@ -45,6 +47,9 @@ VOCABULARIES: Final[dict[str, tuple[str, str]]] = {
 # (reader suffix, $defs entry, schema file, who writes it) for every document an agent writes.
 DOCUMENTS: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("architecture_result", "ArchitectureResult", SCHEMA_NAME, "The solutions architect's result"),
+    ("architecture_context", "ArchitectureContext", "architecture-context.schema.json", "The architecture context"),
+    ("check_result", "CheckResult", "check-result.schema.json", "The check step's result"),
+    ("specialist_list", "SpecialistList", "specialists.schema.json", "The list of design specialists"),
     ("architecture_state", "ArchitectureState", "architecture-state.schema.json", "The solutions architect's state"),
     ("specialist_request", "SpecialistRequest", "specialist-request.schema.json", "A request to a specialist"),
     ("specialist_answer", "SpecialistAnswer", "specialist-answer.schema.json", "A specialist's answer"),
@@ -173,8 +178,8 @@ def _field_type(node: Mapping[str, object], where: str, known: Sequence[str]) ->
             raise SchemaShapeError(message)
         return name
     kind: str = _text(node.get("type"), where + "/type")
-    if kind == "string":
-        return "str"
+    if kind in SCALARS:
+        return SCALARS[kind]
     if kind == "array":
         items: dict[str, object] = _node(node.get("items"), where + "/items")
         return f"list[{_field_type(items, where + '/items', known)}]"

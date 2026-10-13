@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "f4e41053f64ce1f1c314cf3f14faa3ffcf5893cc0b34933af456850ddff34c1a"
+SOURCE_SHA256: Final[str] = "19cfc4b591475d421d127c3c9b39c59a9b27ea95c18c3cdd9fef963b34a892cf"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -52,8 +52,8 @@ type PhaseId = Literal[
     "prd",
     "epic",
     "architecture",
-    "repo-scoping",
     "trd-authoring",
+    "repo-scoping",
     "spec-authoring",
     "task-decomposition",
     "task-edges",
@@ -149,8 +149,8 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "prd", "title": "PRD"},
             {"id": "epic", "title": "Epic"},
             {"id": "architecture", "title": "Architecture"},
-            {"id": "repo-scoping", "title": "Repo Scoping"},
             {"id": "trd-authoring", "title": "TRD Authoring"},
+            {"id": "repo-scoping", "title": "Repo Scoping"},
             {"id": "spec-authoring", "title": "Spec Authoring"},
             {"id": "task-decomposition", "title": "Task Decomposition"},
             {"id": "task-edges", "title": "Task Edges"},
@@ -252,8 +252,8 @@ PHASE_TITLES: Final[Mapping[CompositeId, tuple[str, ...]]] = MappingProxyType({
 EVENT_PHASES: Final[Mapping[CompositeId, tuple[PhaseId, ...]]] = MappingProxyType({
     PRD_TO_SPEC: (
         "architecture",
-        "repo-scoping",
         "trd-authoring",
+        "repo-scoping",
         "spec-authoring",
         "task-decomposition",
         "task-edges",

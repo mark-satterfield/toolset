@@ -21,7 +21,7 @@ from orchestrator.core.manifest import RunManifest, manifest_path, read_manifest
 from orchestrator.core.models import RunContext
 
 # Any phase the prd-to-spec composite declares serves; the record does not interpret it.
-from orchestrator.flows.architecture_support import ARCHITECTURE_PHASE
+from orchestrator.flows.elaboration_support import ARCHITECTURE_PHASE
 
 
 def _manifest(path: Path) -> RunManifest:

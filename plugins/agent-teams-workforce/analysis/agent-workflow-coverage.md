@@ -37,7 +37,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | architecture-boundary-guardian | architecture | Challenge | Guards bounded-context boundaries |
 | architecture-conformance-reviewer | — (no workflow) | — | Independent check that one integration applied the approved target |
 | architecture-decider | architecture | Decide + Integrate deadlock | Rules the unified architecture decision |
-| architecture-decision-workflow-coordinator | architecture | Proposals | Frames/fans-out the proposal sub-team |
 | architecture-diagram-author | architecture | Integrate | Mermaid architecture diagrams from ruling |
 | architecture-fitness-function-author | architecture | Integrate | Testable fitness functions from ruling |
 | architecture-maintainer | architecture | Integrate | Integrates the ruling into the effective architecture (maker) |

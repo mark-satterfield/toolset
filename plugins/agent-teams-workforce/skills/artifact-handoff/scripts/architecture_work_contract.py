@@ -107,6 +107,9 @@ OWNER_CONCERN_KINDS: Final[tuple[OwnerConcernKind, ...]] = (
 )
 SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "schemas"
 ARCHITECTURE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-result.schema.json"
+ARCHITECTURE_CONTEXT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-context.schema.json"
+CHECK_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "check-result.schema.json"
+SPECIALIST_LIST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialists.schema.json"
 ARCHITECTURE_STATE_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-state.schema.json"
 SPECIALIST_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-request.schema.json"
 SPECIALIST_ANSWER_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-answer.schema.json"
@@ -137,6 +140,43 @@ class Need(TypedDict):
     state: NeedState
     evidence: list[Citation]
     judgment: str
+
+
+class ArchitectureContext(TypedDict):
+    """Typed form of #/$defs/ArchitectureContext in architecture-result.schema.json."""
+
+    bead: str
+    prdPath: str
+    architectureRoot: str
+    constraintsFolder: str
+    vaultCommit: str
+    matrixCommand: str
+    statePath: str
+    resultPath: str
+    trdPath: str
+    helpersFolder: str
+
+
+class CheckResult(TypedDict):
+    """Typed form of #/$defs/CheckResult in architecture-result.schema.json."""
+
+    valid: bool
+    problems: list[str]
+    unansweredCriteria: list[str]
+    corrections: int
+
+
+class SpecialistEntry(TypedDict):
+    """Typed form of #/$defs/SpecialistEntry in architecture-result.schema.json."""
+
+    agent: str
+    description: str
+
+
+class SpecialistList(TypedDict):
+    """Typed form of #/$defs/SpecialistList in architecture-result.schema.json."""
+
+    specialists: list[SpecialistEntry]
 
 
 class ArchitectureState(TypedDict):
@@ -595,6 +635,87 @@ def validate_architecture_result(value: object, where: str = "ArchitectureResult
         return value
     problems: str = "; ".join(schema_problems(value, "ArchitectureResult"))
     message: str = f"{where} does not satisfy ArchitectureResult: {problems}"
+    raise ArchitectureWorkError(message)
+
+
+def is_architecture_context(value: object) -> TypeIs[ArchitectureContext]:
+    """Tell whether a value satisfies the ArchitectureContext definition.
+
+    Returns:
+        True when the schema accepts the value.
+
+    """
+    return not schema_problems(value, "ArchitectureContext")
+
+
+def validate_architecture_context(value: object, where: str = "ArchitectureContext") -> ArchitectureContext:
+    """Validate a decoded ArchitectureContext document.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        ArchitectureWorkError: The value does not satisfy the ArchitectureContext definition.
+
+    """
+    if is_architecture_context(value):
+        return value
+    problems: str = "; ".join(schema_problems(value, "ArchitectureContext"))
+    message: str = f"{where} does not satisfy ArchitectureContext: {problems}"
+    raise ArchitectureWorkError(message)
+
+
+def is_check_result(value: object) -> TypeIs[CheckResult]:
+    """Tell whether a value satisfies the CheckResult definition.
+
+    Returns:
+        True when the schema accepts the value.
+
+    """
+    return not schema_problems(value, "CheckResult")
+
+
+def validate_check_result(value: object, where: str = "CheckResult") -> CheckResult:
+    """Validate a decoded CheckResult document.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        ArchitectureWorkError: The value does not satisfy the CheckResult definition.
+
+    """
+    if is_check_result(value):
+        return value
+    problems: str = "; ".join(schema_problems(value, "CheckResult"))
+    message: str = f"{where} does not satisfy CheckResult: {problems}"
+    raise ArchitectureWorkError(message)
+
+
+def is_specialist_list(value: object) -> TypeIs[SpecialistList]:
+    """Tell whether a value satisfies the SpecialistList definition.
+
+    Returns:
+        True when the schema accepts the value.
+
+    """
+    return not schema_problems(value, "SpecialistList")
+
+
+def validate_specialist_list(value: object, where: str = "SpecialistList") -> SpecialistList:
+    """Validate a decoded SpecialistList document.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        ArchitectureWorkError: The value does not satisfy the SpecialistList definition.
+
+    """
+    if is_specialist_list(value):
+        return value
+    problems: str = "; ".join(schema_problems(value, "SpecialistList"))
+    message: str = f"{where} does not satisfy SpecialistList: {problems}"
     raise ArchitectureWorkError(message)
 
 

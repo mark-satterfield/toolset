@@ -14,6 +14,8 @@ anything.
 
 ## Before designing
 
+- Ask the matrix first: `atw-matrix find --provides "<the behaviour>"`. Search GraphRAG when the
+  matrix returns nothing.
 - Call `search` with the capability or concept across all repositories (no `repo_id`), and
   again with `repo_id` set to the repository that holds the architecture root (its directory
   name), to answer: is this already solved, documented or planned?

@@ -1,6 +1,6 @@
 {
   "title": "Architecture and TRD criteria",
-  "introduction": "One list. The agents that design the architecture, write the TRD and write the specs work to it. Reviewers review against it and against nothing else. Each criterion has a level and a home. A criterion is satisfied by its home document. Nobody asks a document for detail below its level.",
+  "introduction": "One list. The solutions architect develops the architecture and the TRD to it, and the spec authors develop the specs to it. Reviewers review against it and against nothing else. Each criterion has a level and a home. A criterion is satisfied by its home document. Nobody asks a document for detail below its level.",
   "levels": [
     {
       "id": "all",
@@ -15,21 +15,7 @@
       "idPrefix": "A",
       "heading": "Architecture level: arc42 sections 3 to 8",
       "note": null,
-      "responsible": [
-        "integration-pattern-architect",
-        "bounded-context-mapper",
-        "persistence-architecture-specialist",
-        "security-architecture-designer",
-        "cdk-infrastructure-designer",
-        "event-schema-designer",
-        "domain-event-modeler",
-        "api-contract-designer",
-        "graphql-schema-designer",
-        "architecture-diagram-author",
-        "c4-diagram-author",
-        "uml-diagram-author",
-        "architecture-maintainer"
-      ],
+      "responsible": ["aws-solutions-architect"],
       "reviewPoint": "architecture"
     },
     {
@@ -37,7 +23,7 @@
       "idPrefix": "T",
       "heading": "Technical-requirement level: the TRD",
       "note": null,
-      "responsible": ["trd-author"],
+      "responsible": ["aws-solutions-architect"],
       "reviewPoint": "architecture"
     },
     {
@@ -63,7 +49,7 @@
     {
       "id": "P3",
       "level": "all",
-      "text": "The design agent whose specialty covers a technical gap decides it with cited evidence. Only business requirements that no design can meet together, or a conflict with section 2, reach the owner."
+      "text": "The solutions architect decides technical gaps with cited evidence, asking a specialist when the gap needs one. Only business requirements that no design can meet together, or a conflict with section 2, reach the owner."
     },
     {
       "id": "P4",
@@ -189,7 +175,7 @@
       "id": "T2",
       "level": "technical-requirement",
       "home": "trd",
-      "text": "Where the design has the element, the TRD carries its obligations: availability, latency, security controls, retention, recovery, limits, timeouts and retry counts, that logs, metrics and alarms exist, and cost constraints. Cost unit math is kept as evidence in the result of the agent that worked it out."
+      "text": "Where the design has the element, the TRD carries its obligations: availability, latency, security controls, retention, recovery, limits, timeouts and retry counts, that logs, metrics and alarms exist, and cost constraints. Cost unit math is kept as evidence in the solutions architect's result."
     },
     {
       "id": "T3",

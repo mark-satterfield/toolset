@@ -113,8 +113,8 @@ type SessionState = Literal["started", "ended"]
 type NoteKind = Literal["reused", "rounds-warning", "invalidated", "integration-outside", "warning"]
 type PrdToSpecPhase = Literal[
     "architecture",
-    "repo-scoping",
     "trd-authoring",
+    "repo-scoping",
     "spec-authoring",
     "task-decomposition",
     "task-edges",

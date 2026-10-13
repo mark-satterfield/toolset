@@ -1195,13 +1195,16 @@ def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
         )
 
 
-#: The listing `depscore.py arch-delta --save` writes in the Epic's working directory.
-DELTA_ITEMS_FILE = "delta-items.json"
+#: The file the span step of elaboration writes in the Epic's working directory: the elements the
+#: Epic's Stories build, read from the matrix, each with the ids of the elements it requires.
+SPAN_ELEMENTS_FILE = "span-elements.json"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def delta_requires(directory: Path) -> dict[str, list[str]] | None:
-    """Return each delta item's `requires`, from the saved `delta-items.json`.
+    """Return each item's `requires`, from the saved span elements file.
+
+    The span step writes `requires` from the `dependsOn` links between the elements in the matrix.
 
     Args:
         directory: The Epic's working directory.
@@ -1216,7 +1219,7 @@ def delta_requires(directory: Path) -> dict[str, list[str]] | None:
     """
     if not (isinstance(directory, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / DELTA_ITEMS_FILE
+    path: Path = directory / SPAN_ELEMENTS_FILE
     if not path.is_file():
         return None
     items: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = _read_json(path).get(
@@ -1238,7 +1241,7 @@ def planned_prerequisites(directory: Path) -> dict[str, str]:
         directory: The Epic's working directory.
 
     Returns:
-        Item id -> the bead that plans it; empty when `delta-items.json` is not saved.
+        Item id -> the bead that plans it; empty when the span elements file is not saved.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1246,7 +1249,7 @@ def planned_prerequisites(directory: Path) -> dict[str, str]:
     """
     if not (isinstance(directory, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / DELTA_ITEMS_FILE
+    path: Path = directory / SPAN_ELEMENTS_FILE
     items: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
         _read_json(path).get("items") if path.is_file() else None
     )
@@ -1411,7 +1414,7 @@ def placed_items(directory: Path) -> dict[str, PlacedItem]:
     items: dict[str, contracts.DeltaItem] = {
         check_type(i["id"], str): i
         for i in check_type(
-            _read_json(directory / "delta-items.json")["items"],
+            _read_json(directory / SPAN_ELEMENTS_FILE)["items"],
             list[DeltaItem],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )

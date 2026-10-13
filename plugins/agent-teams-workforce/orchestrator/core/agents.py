@@ -75,6 +75,13 @@ from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, St
 from .skills import epic_expertise
 from .tools import Tools
 
+# isort: split
+# The matrix contract is generated into the artifact-handoff skill, its one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+from matrix_contract import ROLE_ENV, ROLES
+
+PLUGIN_COMMANDS: Final = "bin"
+"""The plugin folder whose commands (``atw-matrix``, ``atw-step-journal``, ``atw-expertise``) a session runs by name."""
 FABLE: Final = "fable"
 FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
 """The model every agent whose definition states Fable runs on while the Fable allowance is spent."""
@@ -636,6 +643,11 @@ class AgentRunner:
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
         agent: AgentDefinition = load_agent(self.plugin, step.agent)
+        env["PATH"] = os.pathsep.join([str(self.plugin / PLUGIN_COMMANDS), env.get("PATH", os.defpath)])
+        if agent.role in ROLES:
+            env[ROLE_ENV] = agent.role
+        else:
+            env.pop(ROLE_ENV, None)
         fable_spent: bool = (
             self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time()
         )

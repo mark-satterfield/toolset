@@ -8,7 +8,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import ParamSpec, Protocol, TypeVar, override, runtime_checkable
+from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeVar, override, runtime_checkable
 from unittest.mock import patch
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -28,6 +28,7 @@ from bead_metadata import (
 )
 from beadgraph import Bead, Graph
 from beadgraph import Writer as TrackerWriter
+from hierarchy import SPAN_ELEMENTS_FILE
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.tools import Tools
@@ -45,7 +46,9 @@ from placement_contract import (
     KEY_SPAN_RATIONALE,
     PlacementRuling,
 )
-from target_contract import DELTA_ITEMS_FILE, DeltaItem, DeltaResult
+
+if TYPE_CHECKING:
+    from target_contract import DeltaItem, DeltaResult
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -142,7 +145,7 @@ def _input_facts(work: Path, repo: str) -> None:
         "summary": {"ok": True, "refusals": [], "items": len(items)},
         "items": items,
     }
-    save(work / DELTA_ITEMS_FILE, delta)
+    save(work / SPAN_ELEMENTS_FILE, delta)
     save(
         work / "story-repo.json",
         {"title": "Story", "description": "Build", "decisionIds": []},

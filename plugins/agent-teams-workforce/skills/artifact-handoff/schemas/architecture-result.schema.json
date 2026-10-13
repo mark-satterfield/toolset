@@ -89,6 +89,54 @@
         "judgment": {"description": "Why the state is what it is.", "type": "string", "minLength": 1}
       }
     },
+    "ArchitectureContext": {
+      "description": "The context file of one Epic's architecture work. The open-run step of the elaboration writes it; every step of the architecture part is handed it, and the solutions architect's brief names it as `context`. It names every path the script chose, so that no agent and no step derives one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "prdPath", "architectureRoot", "constraintsFolder", "vaultCommit", "matrixCommand", "statePath", "resultPath", "trdPath", "helpersFolder"],
+      "properties": {
+        "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
+        "prdPath": {"description": "The PRD file.", "type": "string", "minLength": 1},
+        "architectureRoot": {"description": "The architecture folder of the vault, which holds `arc42/`, `built/` and `reference/`.", "type": "string", "minLength": 1},
+        "constraintsFolder": {"description": "The folder of arc42 section 2, the owner's constraints.", "type": "string", "minLength": 1},
+        "vaultCommit": {"description": "The vault commit the matrix's document rows are synced to.", "type": "string"},
+        "matrixCommand": {"description": "The command that reads and writes the matrix.", "type": "string", "minLength": 1},
+        "statePath": {"description": "Where the solutions architect writes its state file.", "type": "string", "minLength": 1},
+        "resultPath": {"description": "Where the solutions architect writes its result file.", "type": "string", "minLength": 1},
+        "trdPath": {"description": "Where the TRD of this Epic is written and kept; every TRD request names this path.", "type": "string", "minLength": 1},
+        "helpersFolder": {"description": "The folder for the request files the solutions architect writes and the answer files it names in them.", "type": "string", "minLength": 1}
+      }
+    },
+    "CheckResult": {
+      "description": "What the check step of the architecture part found before review: every defect a script can find in the matrix, in the documents it indexes and in the solutions architect's result. The script writes it; when `valid` is false the solutions architect is handed it as `findings` and corrects each problem.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid", "problems", "unansweredCriteria", "corrections"],
+      "properties": {
+        "valid": {"description": "True when the check found no problem.", "type": "boolean"},
+        "problems": {"description": "One sentence for each defect.", "type": "array", "items": {"type": "string"}},
+        "unansweredCriteria": {"description": "The ids of the architecture and technical-requirement criteria the result gives no answer for.", "type": "array", "items": {"type": "string"}},
+        "corrections": {"description": "How many corrections of mechanical defects came before this check.", "type": "integer", "minimum": 0}
+      }
+    },
+    "SpecialistEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "description"],
+      "properties": {
+        "agent": {"description": "The agent's name.", "type": "string", "minLength": 1},
+        "description": {"description": "What the agent's definition says it does.", "type": "string"}
+      }
+    },
+    "SpecialistList": {
+      "description": "The design specialists the lead may ask for an opinion, each with its specialty. The script writes it from the agent definitions whose role is design-specialist; the lead's brief names it as `specialists`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specialists"],
+      "properties": {
+        "specialists": {"type": "array", "items": {"$ref": "#/$defs/SpecialistEntry"}}
+      }
+    },
     "ArchitectureState": {
       "description": "The solutions architect's answer to the request `Establish the state of the architecture for this PRD`, written before it does anything else.",
       "type": "object",

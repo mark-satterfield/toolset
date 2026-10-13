@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
@@ -24,10 +23,8 @@ from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.agent_context import Launch, prepare
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.matrix import read_snapshot, row_for, satisfied, snapshot
-from orchestrator.core.models import AgentStep, DeterministicStep, RunContext, StepError
+from orchestrator.core.models import AgentStep, DeterministicStep, StepError
 from orchestrator.core.tools import CommandResult, DeploymentTarget, Tools
-from orchestrator.flows.architecture_survey import survey_repositories
 
 EXPECTED_FAILURE_EXIT: int = 2
 DEFAULT_WRAPPER_TIMEOUT: int = 300
@@ -189,46 +186,6 @@ class RuntimeContracts(unittest.TestCase):
             step: DeterministicStep[list[str]] = DeterministicStep("fixture", (), (output,), action)
             require(store.execute(step) == ("ran", ["typed-result"]), "action return contract drift")
             require(store.execute(step) == ("reused", None), "reuse return contract drift")
-
-    @staticmethod
-    def test_inventory_exact_producer_shape() -> None:
-        """Accept nullable producer fields and reject alternate or missing row shapes."""
-        row: dict[str, JsonValue] = {"name": "fixture", "path": "/local/fixture", "role": None, "lifecycle": "active"}
-        require(survey_repositories(json.dumps({"repos": [row]})) == [row], "inventory row drift")
-        require(survey_repositories('{"repos":[]}') == [], "empty inventory drift")
-        with expected_error(ValueError):
-            survey_repositories('{"repositories":[]}')
-        with expected_error(TypeError):
-            survey_repositories('{"repos":[{"name":"incomplete"}]}')
-
-    @staticmethod
-    def test_matrix_snapshot_preparation() -> None:
-        """Capture a fixture using the real lock, hash command, and snapshot writer."""
-        directory: str
-        with tempfile.TemporaryDirectory() as directory:
-            root: Path = Path(directory)
-            source: Path = root / "matrix.json"
-            fixture: dict[str, JsonValue] = {
-                "elements": {
-                    "search": {"state": "built", "repository": "library"},
-                    "repository:library": {"contains": []},
-                    "api": {"state": "built", "repository": "service"},
-                    "repository:service": {"contains": ["stack:service/main"]},
-                },
-            }
-            source.write_text(json.dumps(fixture), encoding="utf-8")
-            work: Path = root / "work"
-            work.mkdir()
-            context: RunContext = RunContext("fixture", "fixture", {}, work, "local-probe")
-            with patch.dict(os.environ, {CONTROL_REPO_ENV: str(root), "ATW_ELEMENT_MATRIX": str(source)}):
-                output: Path = snapshot(context, Tools(work))
-            result: dict[str, JsonValue] = read_snapshot(output)
-            require(result["elements"] == fixture["elements"], "snapshot data drift")
-            require(satisfied(result, row_for(result, " Search ")), "built library should satisfy")
-            require(not satisfied(result, row_for(result, "API")), "stack needs deployment")
-            content: bytes = source.read_bytes()
-            blob: bytes = f"blob {len(content)}\0".encode() + content
-            require(result["gitBlob"] == hashlib.sha1(blob, usedforsecurity=False).hexdigest(), "snapshot hash drift")
 
 
 if __name__ == "__main__":

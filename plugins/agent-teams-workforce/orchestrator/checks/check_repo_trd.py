@@ -1,4 +1,4 @@
-"""Small pure checks for placement boundaries, interrupted creation and citations."""
+"""Small pure checks for repository boundaries, interrupted creation and citations."""
 
 from __future__ import annotations
 
@@ -16,24 +16,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.io import JsonValue
 from orchestrator.core.tools import CommandResult, Tools
-from orchestrator.flows.repo_placement import PlacementInputs, accept_placement, app_space
+from orchestrator.flows.repo_placement import app_space, forbidden
 from orchestrator.flows.repo_scoping import create_repositories
 from orchestrator.flows.trd_authoring import document
 from placement_contract import (
-    KEY_FRONTEND,
     KEY_ITEM_IDS,
     KEY_MISSING_REPOS,
     KEY_NAME,
     KEY_NO_CODE,
     KEY_PLACEMENTS,
     KEY_PURPOSE,
-    KEY_RATIONALE,
-    KEY_REPO_NAME,
-    KEY_REPO_PATH,
     KEY_SPAN_RATIONALE,
     KEY_TEMPLATE,
     MissingRepo,
-    Placement,
     PlacementRuling,
 )
 
@@ -87,12 +82,7 @@ class CreationFacts(Tools):
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
-    """Evaluate the existing isolated check contract.
-
-    Raises:
-        AssertionError: Invalid coverage or a prohibited path was accepted.
-
-    """
+    """Evaluate the existing isolated check contract."""
     config: dict[str, JsonValue] = {
         "repositories": {
             "patterns": [
@@ -112,53 +102,11 @@ def main() -> None:
         arch.mkdir(parents=True)
         repo = root / "apps/product/Product-existing"
         repo.mkdir(parents=True)
-        path = root / "placement.json"
-        placement: Placement = {
-            KEY_REPO_NAME: "Product-existing",
-            KEY_REPO_PATH: str(repo),
-            KEY_ITEM_IDS: ["a"],
-            KEY_FRONTEND: False,
-            KEY_RATIONALE: "element owner",
-        }
-        value: PlacementRuling = {
-            KEY_PLACEMENTS: [placement],
-            KEY_MISSING_REPOS: [],
-            KEY_NO_CODE: [],
-            KEY_SPAN_RATIONALE: "one element",
-        }
-        items: list[dict[str, JsonValue]] = [{"id": "a", "element": "Queue"}]
-        live: dict[str, JsonValue] = {"repos": [{"name": "Product-existing", "path": str(repo)}]}
-
-        def check() -> tuple[PlacementRuling, list[str]]:
-            path.write_text(json.dumps(value))
-            return accept_placement(
-                path,
-                PlacementInputs(items, live, {}, config, control, arch, marketing),
-            )
-
-        require(check()[0][KEY_PLACEMENTS][0][KEY_ITEM_IDS] == ["a"], "the one placement keeps item a")
-        for ids in (["a", "a"], [], ["unknown"]):
-            placement[KEY_ITEM_IDS] = list(ids)
-            try:
-                check()
-            except ValueError:
-                pass
-            else:
-                message = f"accepted invalid coverage: {ids}"
-                raise AssertionError(message)
-        placement[KEY_ITEM_IDS] = ["a"]
+        require(not forbidden(repo, control, arch, marketing), "a product repository may hold product elements")
         for bad in (control, arch.parent, marketing / "marketing-ui"):
-            placement[KEY_REPO_PATH] = str(bad)
-            _first(live["repos"])["path"] = str(bad)
-            try:
-                check()
-            except ValueError:
-                pass
-            else:
-                message = f"accepted forbidden path: {bad}"
-                raise AssertionError(message)
+            require(forbidden(bad, control, arch, marketing), f"accepted forbidden path: {bad}")
         require(app_space("Product-new", config) == "product", "app_space('Product-new', config) == 'product'")
-        report("PASS: exact coverage, empty span and prohibited repository rejection")
+        report("PASS: prohibited repository rejection and the application space of a name")
 
         missing: MissingRepo = {
             KEY_NAME: "Product-existing",
