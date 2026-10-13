@@ -66,6 +66,7 @@ from matrix_contract import (
     LINK_RULES,
     LINK_TYPES,
     LINK_USES,
+    REPOSITORY_ROLE_SERVICE,
     REUSE_DUPLICATE,
     REUSE_UNUSED,
     ROLE_ARCHITECTURE_LEAD,
@@ -755,6 +756,12 @@ def _walk_elements(work: Path, where: tuple[str, ...]) -> None:
     steward: tuple[str, ...] = ("put", "--kind", "repository", "--name", "skillspoke-new-service", *where)
     _run(work, *steward, *who, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
     require(_at(_run(work, *steward, role=ROLE_REPOSITORY_STEWARD), "put", "created") is True, "the steward puts it")
+    facts: tuple[str, ...] = ("--repository-role", REPOSITORY_ROLE_SERVICE, "--no-holds-code")
+    described: dict[str, JsonValue] = _run(work, *steward, *facts, role=ROLE_REPOSITORY_STEWARD)
+    require(_at(described, "put", "changed") == ["holdsCode", "repositoryRole"], "the steward states role and code")
+    require(_at(described, "put", "node", "holdsCode") is False, "a repository can be recorded as holding no code")
+    require(_at(described, "put", "node", "code", "state") == CODE_NONE, "holding code is not the code-trust marker")
+    _run(work, *steward, "--repository-role", "product", status=1, role=ROLE_REPOSITORY_STEWARD)
     component: dict[str, JsonValue] = _run(
         work,
         *("put", "--kind", "component", "--name", "proof token component", "--resource-type", "handler"),

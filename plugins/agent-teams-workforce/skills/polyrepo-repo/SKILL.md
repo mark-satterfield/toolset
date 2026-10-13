@@ -133,23 +133,34 @@ judgment, and each has an obvious next step:
 ## The matrix
 
 Every repository and stack has a row in the matrix. The steward owns a repository row's
-`name`, `aliases`, `purpose` and `status`, and a stack row's `repository`. Read and write the
+`name`, `aliases`, `purpose`, `status`, `repositoryRole` and `holdsCode`, and a stack row's
+`repository`. Read and write the
 matrix only through `${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix`, and put the environment
 assignment `ATW_MATRIX_ROLE=repository-steward` on every write command line:
 
 ```bash
-ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --name <name> --status <status>
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --name <name> --purpose "<one line>" --repository-role <role> --holds-code
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --status <status>
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --repository-role <role>
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --holds-code
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --no-holds-code
 ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind stack --name <stack> --repository <repo>
 "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" node repository:<lowercase name>
 "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" check
 ```
 
 Lifecycle is the row's `status`: `deprecated` (deprecated repo), `retired` (archived repo),
-`expected` (planned repo); an active repo has none. The matrix schema has no field for a
-repository's role, and a repository's `code` marker belongs to the build driver; the steward
-writes neither. `create`, `rename`, `deprecate` and the archive repair each update the
-matrix row in the same piece of work (a new row, a row under the new name with the old name
-in `--aliases`, or the new `status`), and `atw-matrix check` must report `"valid": true`
+`expected` (planned repo); an active repo has none.
+
+The first command adds the row of a repository that has none; on a row that exists it
+changes only the fields stated. `--repository-role` takes `service`, `shared-library`, `layer`, `infrastructure`, `web`, `tooling` or `documentation`.
+`--holds-code` records that the repository holds code, `--no-holds-code` that it holds none.
+`holdsCode` is the steward's fact; the row's `code` marker is the code-trust marker, which
+the build driver sets and `put` does not take.
+
+`create`, `rename`, `deprecate` and the archive repair each update the
+matrix row in the same piece of work (a new row with its role and whether it holds code, a
+row under the new name with the old name in `--aliases`, or the new `status`), and `atw-matrix check` must report `"valid": true`
 afterwards. `apps/marketing/` rows are left as they are.
 
 ## Naming patterns

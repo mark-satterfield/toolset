@@ -10,6 +10,7 @@ The options of ``put`` are not listed here: one option exists per row field the 
 put state, in the form the schema's type of that field calls for (:func:`field_options`).
 """
 
+import argparse
 import json
 import re
 import sys
@@ -105,7 +106,6 @@ from matrixwrite import (
 )
 
 if TYPE_CHECKING:
-    import argparse
     from collections.abc import Callable, Mapping
 
 type FieldForm = Literal["text", "many", "flag", "parts", "json"]
@@ -177,8 +177,9 @@ def _field_option(field: str, spec: JsonValue, definitions: Mapping[str, JsonVal
     """Work out how one row field is stated, from the schema's type of it.
 
     Returns:
-        Text for a string or a vocabulary, a flag for a boolean, several strings for a list of
-        strings, one string per property for a closed object of strings, and JSON for the rest.
+        Text for a string or a vocabulary, a flag and its ``--no-`` form for a boolean, several
+        strings for a list of strings, one string per property for a closed object of strings,
+        and JSON for the rest.
 
     """
     described: JsonValue = spec.get("description") if isinstance(spec, dict) else None
@@ -254,7 +255,7 @@ def _stated_field(call: Call, option: FieldOption) -> JsonValue:
     if option.form == FORM_TEXT:
         return call.text(name)
     if option.form == FORM_FLAG:
-        return True if call.flag(name) else None
+        return call.choice(name)
     if option.form == FORM_MANY:
         many: list[JsonValue] = [*call.texts(name)]
         return many or None
@@ -728,7 +729,7 @@ def _add_field(parser: argparse.ArgumentParser, option: FieldOption) -> None:
     if option.form == FORM_TEXT:
         parser.add_argument(name, help=option.description)
     elif option.form == FORM_FLAG:
-        parser.add_argument(name, action="store_true", help=option.description)
+        parser.add_argument(name, action=argparse.BooleanOptionalAction, help=option.description)
     elif option.form == FORM_MANY:
         parser.add_argument(name, nargs="+", help=f"{option.description}; the values given are added")
     elif option.form == FORM_JSON:

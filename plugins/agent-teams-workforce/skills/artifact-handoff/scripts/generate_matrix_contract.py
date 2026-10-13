@@ -43,6 +43,7 @@ VOCABULARIES: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("ApprovalBasis", "BASIS", "APPROVAL_BASES", "approvalBasis"),
     ("CodeState", "CODE", "CODE_STATES", "codeState"),
     ("Status", "STATUS", "STATUSES", "status"),
+    ("RepositoryRole", "REPOSITORY_ROLE", "REPOSITORY_ROLES", "repositoryRole"),
     ("Coverage", "COVERAGE", "COVERAGES", "coverage"),
     ("FeatureType", "FEATURE", "FEATURE_TYPES", "featureType"),
     ("DocumentClass", "CLASS", "DOCUMENT_CLASSES", "documentClass"),
