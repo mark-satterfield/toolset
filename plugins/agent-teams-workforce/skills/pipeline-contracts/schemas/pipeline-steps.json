@@ -186,12 +186,12 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "implementers", "reuseAudit"],
           "records": [
-            {"name": "reuseAudit", "kind": "value", "holds": "{ clean, violations, judgment, unchecked }: whether atw-matrix check-reuse found no violation, each violation and each definition to rule on as text, and the relied-on behaviours that have no use signal"}
+            {"name": "reuseAudit", "kind": "value", "holds": "{ clean, violations, judgment, unchecked }: whether the audit found no violation; each violation as text, those atw-matrix check-reuse found and each definition the shared-capability-reviewer ruled a duplicate; each definition the reviewer ruled on with its ruling and reason; and the relied-on behaviours that have no use signal"}
           ],
           "adds": [
             {"kinds": ["build:implement", "build:green-check", "build:reuse-audit"], "when": "the first audit finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
           ],
-          "limit": "It fails with reuse-violation when violations remain at the audit that follows the correction, and with reuse-audit when atw-matrix check-reuse does not rule"
+          "limit": "It fails with reuse-violation when violations remain at the audit that follows the correction, and with reuse-audit when atw-matrix check-reuse does not rule or the shared-capability-reviewer leaves a definition unruled"
         },
         "build:refactor-snapshot": {
           "description": "Record the work tree as it is before the refactor",
