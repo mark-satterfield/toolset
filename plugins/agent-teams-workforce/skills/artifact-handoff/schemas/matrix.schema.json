@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "matrix.schema.json",
+  "title": "SkillSpoke matrix",
+  "description": "The one definition of the matrix: the index of how repositories, stacks, services, components, libraries, layers, infrastructure, PRDs, features, architecture documents, design facts and disagreements relate, with the approval marker and the code-trust marker. matrix_contract.py is generated from this file; scripts/portfolio/matrix.py is the only reader and writer of a matrix file.",
+  "x-matrixEnv": "ATW_MATRIX",
+  "x-roleEnv": "ATW_MATRIX_ROLE",
+  "x-defaultMatrixPath": ["ops", "sdlc-automation", "matrix.json"],
+  "x-lockDirectory": "state",
+  "x-lockSuffix": ".lock",
+  "x-operatorRole": "operator",
+  "x-documentRoots": {
+    "arc42": "arc42"
+  },
+  "x-factHomeSections": {
+    "context": 3,
+    "strategy": 4,
+    "structure": 5,
+    "provides": 5,
+    "scenario": 6,
+    "deployment": 7,
+    "rule": 8
+  },
+  "x-linkTypes": {
+    "contains": {
+      "reverse": "containedIn",
+      "from": ["repository", "stack", "service"],
+      "to": ["repository", "stack", "component", "library", "layer", "infrastructure"]
+    },
+    "needs": {"reverse": "neededBy", "from": ["prd"], "to": ["feature"]},
+    "uses": {
+      "reverse": "usedBy",
+      "from": ["feature", "service", "component", "library", "layer", "infrastructure"],
+      "to": ["feature"]
+    },
+    "realizedBy": {
+      "reverse": "realizes",
+      "from": ["feature"],
+      "to": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"]
+    },
+    "providedBy": {
+      "reverse": "providerOf",
+      "from": ["feature"],
+      "to": ["service", "component", "library", "layer", "infrastructure"]
+    },
+    "dependsOn": {
+      "reverse": "requiredBy",
+      "from": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"],
+      "to": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"]
+    },
+    "describedBy": {
+      "reverse": "describes",
+      "from": ["repository", "stack", "service", "component", "library", "layer", "infrastructure", "feature", "fact"],
+      "to": ["document"]
+    },
+    "sharedVersionOf": {
+      "reverse": "localVersions",
+      "from": ["service", "component", "library", "layer", "infrastructure"],
+      "to": ["service", "component", "library", "layer", "infrastructure"]
+    },
+    "shownIn": {"reverse": "shows", "from": ["term"], "to": ["document"]}
+  },
+  "x-commands": {
+    "prd": {"writes": false, "anyRole": true},
+    "find": {"writes": false, "anyRole": true},
+    "node": {"writes": false, "anyRole": true},
+    "uses": {"writes": false, "anyRole": true},
+    "disagreements": {"writes": false, "anyRole": true},
+    "summary": {"writes": false, "anyRole": true},
+    "check": {"writes": false, "roles": ["script", "operator"]},
+    "expertise": {"writes": true, "roles": ["script", "hooks"]},
+    "unapproved": {"writes": true, "roles": ["script"]},
+    "put": {"writes": true, "roles": ["solutions-architect", "repository-steward"]},
+    "link": {"writes": true, "roles": ["solutions-architect"]},
+    "claim": {"writes": true, "roles": ["solutions-architect"]},
+    "settle": {"writes": true, "roles": ["solutions-architect", "decider"]},
+    "note-sendback": {"writes": true, "roles": ["architecture-lead"]},
+    "sync-prds": {"writes": true, "roles": ["script", "operator"]},
+    "sync-documents": {"writes": true, "roles": ["script", "solutions-architect", "operator"]},
+    "approve": {"writes": true, "roles": ["script"]},
+    "mark-built": {"writes": true, "roles": ["build-driver"]},
+    "mark-deployed": {"writes": true, "roles": ["build-driver"]},
+    "mark-merged": {"writes": true, "roles": ["build-driver"]},
+    "check-reuse": {"writes": false, "roles": ["build-workflow"]},
+    "add-resource-type": {"writes": true, "roles": ["solutions-architect"]},
+    "carry-over": {"writes": true, "roles": ["operator"]}
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "documentsSyncedAt", "resourceTypes", "nodes"],
+  "properties": {
+    "version": {"const": 3},
+    "documentsSyncedAt": {"$ref": "#/$defs/DocumentsSyncedAt"},
+    "resourceTypes": {
+      "description": "The controlled list of resource types. Skills map to these in their expertiseFor front matter. A new value is added with atw-matrix add-resource-type.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/resourceTypeName"},
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/nodeId"},
+      "additionalProperties": {"$ref": "#/$defs/Node"}
+    }
+  },
+  "$defs": {
+    "nodeId": {
+      "description": "A row id: the row's kind, a colon, and the rest of the id.",
+      "type": "string",
+      "pattern": "^(repository|stack|service|component|library|layer|infrastructure|prd|feature|document|fact|disagreement|term):.+$"
+    },
+    "resourceTypeName": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "moment": {"type": "string", "format": "date-time"},
+    "kind": {
+      "description": "What one row is.",
+      "enum": ["repository", "stack", "service", "component", "library", "layer", "infrastructure", "prd", "feature", "document", "fact", "disagreement", "term"]
+    },
+    "ownerKind": {
+      "description": "The kinds that own code without being placed inside another row.",
+      "enum": ["repository", "service"]
+    },
+    "elementKind": {
+      "description": "The kinds of thing that live in a repository and carry a resource type.",
+      "enum": ["component", "library", "layer", "infrastructure"]
+    },
+    "linkType": {
+      "description": "The relationship a link holds. Each is stored once, on the row it starts from; x-linkTypes names its reverse and the kinds it may join.",
+      "enum": ["contains", "needs", "uses", "realizedBy", "providedBy", "dependsOn", "describedBy", "sharedVersionOf", "shownIn"]
+    },
+    "approvalState": {
+      "description": "The design marker.",
+      "enum": ["unverified", "in-review", "approved", "changed-since-approval"]
+    },
+    "approvalBasis": {"enum": ["reviewed", "carried-from-effective-arc42", "built-correction"]},
+    "codeState": {
+      "description": "The code-trust marker. Only built and deployed code is trusted.",
+      "enum": ["none", "legacy", "built", "deployed"]
+    },
+    "status": {"enum": ["expected", "deferred", "retired", "deprecated", "no-stack", "not-deployed", "unregistered"]},
+    "coverage": {"enum": ["not-assessed", "in-progress", "designed", "approved"]},
+    "featureType": {"enum": ["prd", "supporting"]},
+    "documentClass": {"enum": ["arc42", "reference", "trd", "spec", "other"]},
+    "lifecycle": {"enum": ["effective", "in-review", "draft", "retired"]},
+    "factKind": {"enum": ["context", "strategy", "structure", "provides", "scenario", "deployment", "rule"]},
+    "disagreementRule": {
+      "enum": ["effective-over-non-effective", "home-document", "security-practice", "aws-evidence", "best-practice", "reuse", "section-2", "decider"]
+    },
+    "disagreementStatus": {"enum": ["open", "settled", "applied"]},
+    "interfaceKind": {"enum": ["package", "layer", "service-operation", "construct", "event-api", "infrastructure"]},
+    "role": {
+      "description": "Who is running the command: the value of the x-roleEnv variable, or x-operatorRole when it is not set.",
+      "enum": ["operator", "script", "hooks", "solutions-architect", "repository-steward", "decider", "architecture-lead", "build-driver", "build-workflow"]
+    },
+    "DocumentsSyncedAt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vaultCommit", "at", "dirtyPaths"],
+      "properties": {
+        "vaultCommit": {"description": "The vault commit the document rows were last read at; empty before the first read.", "type": "string"},
+        "at": {"$ref": "#/$defs/moment"},
+        "dirtyPaths": {
+          "description": "The documents that differed from that commit when they were read, so the next read takes them again.",
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        }
+      }
+    },
+    "HeadingHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "approvedHash"],
+      "properties": {
+        "hash": {"description": "The hash of the heading's own text; empty when an approved heading is no longer in the document.", "type": "string"},
+        "approvedHash": {"type": ["string", "null"]}
+      }
+    },
+    "Node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "links", "changed"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nodeId"},
+        "kind": {"$ref": "#/$defs/kind"},
+        "name": {"type": "string", "minLength": 1},
+        "aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "purpose": {"type": "string"},
+        "links": {"type": "array", "items": {"$ref": "#/$defs/Link"}},
+        "approval": {"$ref": "#/$defs/Approval"},
+        "changed": {"$ref": "#/$defs/Change"},
+        "claim": {"$ref": "#/$defs/Claim"},
+
+        "repository": {"type": ["string", "null"]},
+        "stack": {"type": ["string", "null"]},
+        "resourceType": {"type": ["string", "null"]},
+        "shared": {"type": "boolean"},
+        "status": {"$ref": "#/$defs/status"},
+        "code": {"$ref": "#/$defs/Code"},
+
+        "bead": {"type": "string"},
+        "path": {"type": "string"},
+        "hash": {"type": "string"},
+        "coverage": {"$ref": "#/$defs/coverage"},
+        "expertise": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "sendBacks": {"type": "array", "items": {"$ref": "#/$defs/SendBack"}},
+
+        "featureType": {"$ref": "#/$defs/featureType"},
+        "requirements": {"type": "array", "items": {"type": "string"}},
+        "provides": {"type": "array", "items": {"$ref": "#/$defs/Provides"}},
+        "home": {"$ref": "#/$defs/Anchor"},
+
+        "documentClass": {"$ref": "#/$defs/documentClass"},
+        "section": {"type": ["integer", "null"], "minimum": 1, "maximum": 12},
+        "viewType": {"type": ["string", "null"]},
+        "scope": {"type": ["string", "null"]},
+        "subject": {"type": ["string", "null"]},
+        "lifecycle": {"$ref": "#/$defs/lifecycle"},
+        "headings": {"type": "object", "additionalProperties": {"$ref": "#/$defs/HeadingHash"}},
+
+        "statement": {"type": "string"},
+        "factKind": {"$ref": "#/$defs/factKind"},
+        "linkedFrom": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+
+        "statements": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/DisputedStatement"}},
+        "rule": {"$ref": "#/$defs/disagreementRule"},
+        "settledBy": {"type": ["string", "null"]},
+        "reason": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "disagreementStatus": {"$ref": "#/$defs/disagreementStatus"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"anyOf": [{"const": "stack"}, {"$ref": "#/$defs/elementKind"}]}}},
+         "then": {"required": ["repository", "code", "approval"]}},
+        {"if": {"properties": {"kind": {"$ref": "#/$defs/ownerKind"}}},
+         "then": {"required": ["code", "approval"]}},
+        {"if": {"properties": {"kind": {"$ref": "#/$defs/elementKind"}}},
+         "then": {"required": ["resourceType", "shared"]}},
+        {"if": {"properties": {"kind": {"const": "prd"}}},
+         "then": {"required": ["bead", "path", "hash", "coverage", "expertise"]}},
+        {"if": {"properties": {"kind": {"const": "feature"}}},
+         "then": {"required": ["featureType", "approval"]}},
+        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "prd"}}, "required": ["featureType"]},
+         "then": {"required": ["requirements"]}},
+        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "supporting"}}, "required": ["featureType"]},
+         "then": {"required": ["provides", "shared"], "properties": {"shared": {"const": true}}}},
+        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "supporting"}, "provides": {"minItems": 1}}, "required": ["featureType", "provides"]},
+         "then": {"required": ["home"]}},
+        {"if": {"properties": {"kind": {"const": "document"}}},
+         "then": {"required": ["path", "documentClass", "lifecycle", "headings", "approval"]}},
+        {"if": {"properties": {"kind": {"const": "fact"}}},
+         "then": {"required": ["statement", "factKind", "home", "linkedFrom", "approval"]}},
+        {"if": {"properties": {"kind": {"const": "disagreement"}}},
+         "then": {"required": ["statements", "disagreementStatus"]}}
+      ]
+    },
+    "Link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "to"],
+      "properties": {
+        "type": {"$ref": "#/$defs/linkType"},
+        "to": {"$ref": "#/$defs/nodeId"},
+        "heading": {"type": "string"},
+        "provides": {"description": "For a uses link: the ids of the provides entries relied on.", "type": "array", "items": {"type": "string"}},
+        "ambiguous": {"type": "boolean"}
+      }
+    },
+    "Anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "heading"],
+      "properties": {
+        "document": {"type": "string"},
+        "heading": {"type": "string"}
+      }
+    },
+    "Approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"$ref": "#/$defs/approvalState"},
+        "basis": {"$ref": "#/$defs/approvalBasis"},
+        "bead": {"type": "string"},
+        "step": {"description": "The journal step id of the review that approved it.", "type": "string"},
+        "at": {"$ref": "#/$defs/moment"}
+      }
+    },
+    "Code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"$ref": "#/$defs/codeState"},
+        "ref": {"description": "Where the trusted code is: a Story branch until merge, then the default branch.", "type": "string"},
+        "commit": {"type": "string"},
+        "task": {"type": "string"},
+        "story": {"type": "string"},
+        "pr": {"type": "string"},
+        "deployedCommit": {"type": "string"},
+        "stacks": {"type": "array", "items": {"type": "string"}},
+        "at": {"$ref": "#/$defs/moment"}
+      }
+    },
+    "Interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/interfaceKind"},
+        "name": {"type": "string"}
+      }
+    },
+    "Provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "behaviour", "consumersMust", "interface"],
+      "properties": {
+        "id": {"type": "string"},
+        "behaviour": {"description": "What a consumer obtains, in one sentence.", "type": "string"},
+        "consumersMust": {"description": "What a consumer must not implement itself.", "type": "string"},
+        "interface": {"$ref": "#/$defs/Interface"},
+        "useSignals": {"description": "Text patterns that show a consumer uses this capability (an import, a client call, a layer reference).", "type": "array", "items": {"type": "string"}},
+        "duplicateSignals": {"description": "Text patterns that show a consumer is doing this itself (a direct SDK call the capability exists to replace).", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "DisputedStatement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "heading", "text", "lifecycle"],
+      "properties": {
+        "document": {"type": "string"},
+        "heading": {"type": "string"},
+        "line": {"type": "integer"},
+        "text": {"type": "string"},
+        "lifecycle": {"$ref": "#/$defs/lifecycle"}
+      }
+    },
+    "Claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "step", "at"],
+      "properties": {
+        "bead": {"type": "string"},
+        "step": {"type": "string"},
+        "at": {"$ref": "#/$defs/moment"}
+      }
+    },
+    "Change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "by"],
+      "properties": {
+        "at": {"$ref": "#/$defs/moment"},
+        "by": {"description": "A bead id and journal step id, or 'carry-over', or 'sync'. Never a person's name.", "type": "string"}
+      }
+    },
+    "SendBack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "step", "at"],
+      "properties": {
+        "criterion": {"type": "string"},
+        "step": {"type": "string"},
+        "at": {"$ref": "#/$defs/moment"}
+      }
+    }
+  }
+}
