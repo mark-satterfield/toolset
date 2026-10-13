@@ -119,7 +119,8 @@ hand the facts back for the caller to act on.
 | Action | Command |
 |---|---|
 | Create a repo from a template, locally and on GitHub, with its beads setup and its stack in the matrix | `create <name> --space S --template T` |
-| Rename a repo, locally and on GitHub, and the `repository` of its stacks in the matrix | `rename <repo> <new-name>` |
+| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python distribution and import package, and every reference to them in the other repositories (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
+| Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them | `rename <repo> [--also <repo>…]` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `reconcile --fix` archives it `deprecation.archive_after_days` after `deprecated_on` |
@@ -134,6 +135,28 @@ hand the facts back for the caller to act on.
 | Health check and every safe repair, the matrix's stacks included | `doctor --fix` |
 
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+
+### A rename covers every name
+
+A repository's name is not the only name that follows from it. A rename covers the repository
+(clone and GitHub), the stack ids and stack file names inside it, and the Python names: the
+distribution (`name` in `pyproject.toml`, the name published to CodeArtifact) and the import
+package (folder moved with `git mv`). `atw-naming` decides each new name (`name stack`,
+`name cdk-stack-file`, `name python-distribution`, `name python-package`); never compose one by
+hand. Every import, dependency line and written reference to an old name in every other
+repository is rewritten in the same run, except the paths the config's `rename.sweep_exclude`
+lists (records: the matrix, changelogs, beads files). `rename --dry-run` prints all of it before
+anything changes: the name changes, the moves, the files edited in each repository, and which
+repository's pull request waits on which library's release. A real run puts each repository's
+changes in one worktree, one commit and one pull request opened with `skillspoke-pr`, runs the
+repository's own `lint` and `test` tasks first (not for a repository waiting on a library's
+renamed package), and never merges. A repository under `apps/marketing/` is only reported. Use
+`--skip-repo R` for a repository the owner has put off limits: its references are listed and not
+edited.
+
+The name must end in a stack type (`service`, `infra`, `lib`, `web`, `mobile`, `extension`,
+`assets`), so `SkillSpoke-auth-utils` is refused. A repository that the approved architecture
+says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
 ### GitNexus
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --quiet --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["ruamel.yaml>=0.18"]
+# dependencies = ["ruamel.yaml>=0.18", "pyyaml>=6"]
 # ///
 """polyrepo — live facts about the project's repositories, and the manifest kept true to them.
 
@@ -29,7 +29,8 @@ Usage:
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
   polyrepo.py create <name> --space S --template T [--dry-run]
-  polyrepo.py rename <repo> <new-name> [--dry-run]
+  polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
+                     [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
@@ -80,9 +81,22 @@ from ruamel.yaml.error import YAMLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 from driver_surface_types import CONTROL_REPO_ENV
+from name_sweep import (
+    NameSweepError,
+    SweepTarget,
+    apply_moves,
+    build_rules,
+    change_label,
+    plan_changes,
+    planned_moves,
+    read_facts,
+    sweep_repo,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
+
+    from name_sweep import FileEdit, FileMove, NameChange, Namer, Rule
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
@@ -532,6 +546,18 @@ class Config:
     patterns: list[NamingPattern]
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
+    types_cache: tuple[str, ...] | None = None
+
+    def stack_type_names(self) -> tuple[str, ...]:
+        """Return the stack types a repository name's last token may be, read once per run.
+
+        Returns:
+            The types the project's naming rules list.
+
+        """
+        if self.types_cache is None:
+            self.types_cache = stack_types(self)
+        return self.types_cache
 
     def archive_after_days(self) -> int:
         """Return the configured delay between deprecating and archiving a repo; malformed config raises PolyrepoError.
@@ -556,14 +582,34 @@ class Config:
     def classify(self, name: str) -> NamingPattern | None:
         """Return the first naming pattern the name matches.
 
+        An application name must also end in a stack type the project's naming rules list
+        (`service`, `infra`, `lib`, ...): `SkillSpoke-auth-utils` matches the personal-agent
+        regex and is still refused. A name with no hyphen (`SkillSpoke`, the control
+        repository) is exempt, and so are non-application and deprecated names.
+
         Returns:
-            The pattern mapping, or None when no pattern matches.
+            The pattern mapping, or None when no pattern matches or the last token is no stack type.
 
         """
         for p in self.patterns:
             if re.fullmatch(p["regex"], name):
-                return p
+                exempt = p["kind"] != "application" or STACK_NAME_SEPARATOR not in name
+                return p if exempt or holds_stack(name, self.stack_type_names()) else None
         return None
+
+    def naming_problem(self, name: str) -> str:
+        """Say why a name is refused: no pattern matches, or its last token is no stack type.
+
+        Returns:
+            One sentence naming the rule the name breaks.
+
+        """
+        if self.classify(name) is not None:
+            return "it matches a naming pattern, but not an application one"
+        if any(re.fullmatch(p["regex"], name) for p in self.patterns):
+            last = name.rpartition(STACK_NAME_SEPARATOR)[2]
+            return f"its last token {last!r} is not a stack type ({', '.join(self.stack_type_names())})"
+        return "it matches no naming pattern"
 
     def is_owned(self, name: str) -> bool:
         """Tell whether a GitHub repo name belongs to the project.
@@ -1841,7 +1887,7 @@ def _check_naming(cfg: Config, name: str, r: LocalRepo, out: list[Finding]) -> N
     pat = cfg.classify(name)
     if pat is None:
         out.append(
-            Finding("naming-violation", name, "folder name matches no naming pattern"),
+            Finding("naming-violation", name, f"folder name is refused: {cfg.naming_problem(name)}"),
         )
     else:
         space = cfg.expected_space(name)
@@ -3099,7 +3145,7 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     name, space, template = args.name, args.space, args.template
     pat = cfg.classify(name)
     if pat is None or pat["kind"] != "application":
-        msg = f"{name} matches no application naming pattern"
+        msg = f"{name} is refused as an application repository: {cfg.naming_problem(name)}"
         raise PolyrepoError(msg)
     want = cfg.expected_space(name)
     if want != space:
@@ -4343,7 +4389,7 @@ def _rename_plan(
         msg = f"{old} is already named {new}"
         raise PolyrepoError(msg)
     if cfg.classify(new) is None:
-        msg = f"{new} matches no naming pattern"
+        msg = f"{new} is refused: {cfg.naming_problem(new)}"
         raise PolyrepoError(msg)
     r = st.local.get(old) or st.local.get(new)
     parsed = parse_github_url(r.origin_url) if r else None
@@ -4527,20 +4573,459 @@ def _run_rename(
 
 
 def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
-    """Rename a repo: on GitHub and on disk together, repointing origin and the manifest.
+    """Rename a repo with every name it carries: the repository, its stacks and its Python names.
 
-    The new name must match a naming pattern. The beads fleet list (`repos.additional`)
-    is updated with the folder. Anything else outside git, GitHub and the steward's
-    records that names the repo by its old name (docs, workflow artifacts) is the
-    caller's to update.
+    The new name must match a naming pattern and end in a stack type. The repository moves on
+    GitHub and on disk together, origin and the manifest follow, and the beads fleet list
+    (`repos.additional`) is updated with the folder. The stack ids, the stack file names, the
+    Python distribution and the import package are then brought to what `atw-naming` gives
+    for the new name, and every import, dependency line and written reference to an old name
+    in the other repositories is rewritten. Each repository that changes gets one worktree,
+    one commit and one pull request opened with the project's PR command; the plan lists all
+    of it first (`--dry-run` stops there). With no new name only the stack and Python names
+    are brought into line, and `--also` brings those of further repositories into line in the
+    same pull requests, so a repository that several names change still gets one. Anything
+    outside git, GitHub, the repositories and the steward's records that names the repo by its
+    old name (the vault, workflow artifacts) is the caller's to update.
 
     Returns:
         0 on success, 1 when a step failed part way.
 
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
-    (name,) = st.resolve([args.repo])
-    return _run_rename(args, st, name, args.new_name)
+    name, *others = st.resolve([args.repo, *args.also])
+    new: str = args.new_name or name
+    pairs = [(name, new), *[(o, o) for o in others]]
+
+    def names(res: dict[str, object], steps: list[str]) -> bool:
+        return _rename_names(st, args, pairs, res, steps)
+
+    if new == name:
+        return _run_names_only(args, st, [p[0] for p in pairs], names)
+    return _run_rename(args, st, name, new, after=names)
+
+
+def _run_names_only(
+    args: argparse.Namespace,
+    st: State,
+    repos: list[str],
+    names: Callable[[dict[str, object], list[str]], bool],
+) -> int:
+    """Bring the stack and Python names of one or more repos into line without renaming any repository.
+
+    Returns:
+        0 on success, 1 when a step failed.
+
+    """
+    steps: list[str] = []
+    label = ", ".join(repos)
+    res: dict[str, object] = {"repo": repos[0], "repos": repos, "dry_run": args.dry_run, "steps": steps}
+    ok = names(res, steps)
+    if not args.dry_run:
+        append_changelog(st.cfg, f"polyrepo rename {label} (stack and Python names)", steps)
+    finish_records(st.cfg, res)
+    head = f"dry run: names of {label}" if args.dry_run else f"{label}: names"
+    emit(args, res, lambda: "\n".join([head, *[f"  {s}" for s in steps], *_records_line(res)]))
+    return 0 if ok else 1
+
+
+# --------------------------------------------------------------------------------------------
+# the names a rename covers besides the repository (name_sweep.py has the rules)
+
+NAMING_COMMAND = PLUGIN_ROOT / "bin" / "atw-naming"
+NAMING_TIMEOUT = 60
+PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
+PR_TIMEOUT = 900
+PR_AUTOMERGE_NOT_ARMED = 3
+CHECK_TASKS = ("lint", "test")
+CHECK_TIMEOUT = 3600
+CHECK_TAIL_LINES = 15
+TITLE_NAMES = 2
+RENAME_BRANCH = "rename"
+SHARED_BRANCH_SLUG = "python-names"
+KIND_NOUNS: dict[str, str] = {
+    "repository": "repository",
+    "stack": "stack",
+    "stack-file": "stack file",
+    "distribution": "Python distribution",
+    "import-package": "Python package",
+}
+
+
+@dataclasses.dataclass
+class _Subject:
+    """One repository whose names change: the names, the paths that move, the clone."""
+
+    old: str
+    new: str
+    path: Path
+    changes: list[NameChange]
+    moves: list[FileMove]
+    notes: list[str]
+
+
+@dataclasses.dataclass
+class _NamesPlan:
+    """The names a rename changes and every repository it touches."""
+
+    subjects: list[_Subject]
+    rules: list[Rule]
+    edits: dict[str, list[FileEdit]]
+    paths: dict[str, Path]
+    held_back: dict[str, list[tuple[str, FileEdit]]]
+    waits_on: dict[str, list[str]]
+
+    def holders(self) -> list[str]:
+        """Name the repositories whose names change, as they are called after the rename.
+
+        Returns:
+            The names, in the order they were given.
+
+        """
+        return [s.new for s in self.subjects]
+
+    def slug(self) -> str:
+        """Name the branch and worktree these changes share: the one repository's name, else a shared slug.
+
+        Returns:
+            The slug.
+
+        """
+        return self.subjects[0].new.lower() if len(self.subjects) == 1 else SHARED_BRANCH_SLUG
+
+
+def _sweep_git(repo: Path, args: Sequence[str]) -> tuple[int, str, str]:
+    """Run git for a name sweep.
+
+    Returns:
+        (exit status, stdout, stderr).
+
+    """
+    cp = git(repo, *args)
+    return cp.returncode, cp.stdout, cp.stderr
+
+
+def _namer(cfg: Config) -> Namer:
+    """Build the function that asks `atw-naming` for a name.
+
+    Returns:
+        A function from `atw-naming` arguments to the name it prints; a refusal raises NameSweepError.
+
+    """
+    env: dict[str, str | None] = {}
+    if not os.environ.get(CONTROL_REPO_ENV):
+        env[CONTROL_REPO_ENV] = str(cfg.file.parent.parent)
+
+    def name(args: Sequence[str]) -> str:
+        cp = run([str(NAMING_COMMAND), *args], timeout=NAMING_TIMEOUT, env=env)
+        out = cp.stdout.strip()
+        if cp.returncode != 0 or not out:
+            msg = f"atw-naming {' '.join(args)} failed: {_last_line(cp)}"
+            raise NameSweepError(msg)
+        return out
+
+    return name
+
+
+def _rename_settings(cfg: Config) -> tuple[list[str], Path]:
+    """Read the config's `rename` section: the paths a sweep never edits, and the PR command.
+
+    Returns:
+        (fnmatch patterns of repository paths, the PR command).
+
+    """
+    section = _map(cfg.raw.get("rename") or {}, "config rename")
+    excludes = _strs(section.get("sweep_exclude") or [], "rename.sweep_exclude")
+    return excludes, Path(str(section.get("pr_command") or PR_COMMAND_DEFAULT)).expanduser()
+
+
+def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -> tuple[list[_Subject], list[Rule]]:
+    """Plan the names of each repository that changes, and the rewrites they call for.
+
+    Returns:
+        The subjects, and the rules of all of them.
+
+    Raises:
+        NameSweepError: when a repository has no local clone or a name cannot be planned.
+
+    """
+    cfg = st.cfg
+    namer = _namer(cfg)
+    subjects: list[_Subject] = []
+    rules: list[Rule] = []
+    for old, new in pairs:
+        held = st.local.get(old) or st.local.get(new)
+        if held is None:
+            msg = f"{old} has no local clone"
+            raise NameSweepError(msg)
+        path = held.path if dry_run or old == new else held.path.with_name(new)
+        facts = read_facts(_sweep_git, path)
+        changes, notes = plan_changes(old, new, facts, cfg.stack_type_names(), namer)
+        subjects.append(_Subject(old, new, path, changes, planned_moves(changes, facts), notes))
+        rules.extend(build_rules(changes, new))
+    return subjects, rules
+
+
+def _names_plan(st: State, pairs: list[tuple[str, str]], skip: set[str], *, dry_run: bool) -> _NamesPlan:
+    """Plan the names that change and sweep every repository for the references.
+
+    The repositories that change are swept under their new names; the others under their
+    own. Archived and deprecated repositories are not swept. A repository in a skipped space
+    (marketing) or named in `skip` is swept but never edited, so the plan can report what in
+    it uses a renamed name. A repository whose edits use another repository's renamed
+    package waits on it. A name that cannot be planned or a sweep that fails raises the
+    NameSweepError of `name_sweep`.
+
+    Returns:
+        The plan.
+
+    """
+    subjects, rules = _names_subjects(st, pairs, dry_run=dry_run)
+    excludes, _ = _rename_settings(st.cfg)
+    given = {n for pair in pairs for n in pair}
+    paths: dict[str, Path] = {s.new: s.path for s in subjects}
+    spaces: dict[str, str] = {s.new: (st.local.get(s.old) or st.local[s.new]).space for s in subjects}
+    for name, r in st.local.items():
+        if name not in given and st.lifecycle(name) not in LIFECYCLES_INACTIVE:
+            paths[name], spaces[name] = r.path, r.space
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        swept = dict(
+            zip(
+                paths,
+                ex.map(lambda n: sweep_repo(_sweep_git, SweepTarget(n, paths[n]), rules, excludes, write=False), paths),
+                strict=True,
+            ),
+        )
+    plan = _NamesPlan(subjects, rules, {}, paths, {}, {})
+    for name, found in swept.items():
+        if not found:
+            continue
+        reason = "marketing" if spaces[name] in MATRIX_SKIP_SPACES else "skipped" if name in skip else None
+        if reason:
+            plan.held_back.setdefault(reason, []).extend((name, e) for e in found)
+        else:
+            plan.edits[name] = found
+    hit = {label for found in plan.edits.values() for e in found for label in e.labels}
+    for s in subjects:
+        s.changes = [c for c in s.changes if c.kind != "stack" or change_label(c) in hit]
+    packages = {s.new: {change_label(c) for c in s.changes if c.kind == "import-package"} for s in subjects}
+    for name, found in plan.edits.items():
+        used = {label for e in found for label in e.labels}
+        if waits := sorted(h for h, labels in packages.items() if h != name and labels & used):
+            plan.waits_on[name] = waits
+    return plan
+
+
+def _names_lines(plan: _NamesPlan) -> list[str]:
+    """Write the plan as the lines the rename's steps carry.
+
+    Returns:
+        One line per name change, move, edited repository, pull request and repository left alone.
+
+    """
+    lines: list[str] = []
+    for s in plan.subjects:
+        lines.extend(f"name: {KIND_NOUNS[c.kind]} {c.old} -> {c.new}" for c in s.changes if c.kind != "repository")
+        lines.extend(f"note: {n}" for n in s.notes)
+        lines.extend(f"git mv {s.new}: {m.old} -> {m.new}" for m in s.moves)
+    order = sorted(plan.edits, key=lambda n: (n not in plan.holders(), n.lower()))
+    for name in order:
+        found = plan.edits[name]
+        files = ", ".join(f"{e.path} ({e.replacements})" for e in found[:FILES_SHOWN])
+        more = f", and {len(found) - FILES_SHOWN} more" if len(found) > FILES_SHOWN else ""
+        lines.append(f"edit {name}: {len(found)} file(s): {files}{more}")
+    for name in order:
+        line = f"pull request {name}: one worktree, one commit, opened with the project's PR command"
+        if name in plan.waits_on:
+            line += f"; waits on {', '.join(plan.waits_on[name])}, whose new package is not importable until released"
+        lines.append(line)
+    for why, rows in sorted(plan.held_back.items()):
+        what = "marketing repositories are never edited" if why == "marketing" else "named by --skip-repo"
+        lines.extend(f"not edited ({what}) {name}: {e.path}" for name, e in rows)
+    return lines
+
+
+def _names_record(plan: _NamesPlan) -> dict[str, object]:
+    """Write the plan as the JSON the rename reports under `names`.
+
+    Returns:
+        The changes, moves, edits per repository and the files left alone.
+
+    """
+
+    def rows(found: list[FileEdit]) -> list[dict[str, object]]:
+        return [{"path": e.path, "replacements": e.replacements, "kinds": sorted(e.kinds)} for e in found]
+
+    return {
+        "changes": [
+            {"repo": s.new, "kind": c.kind, "old": c.old, "new": c.new} for s in plan.subjects for c in s.changes
+        ],
+        "notes": [n for s in plan.subjects for n in s.notes],
+        "moves": [{"repo": s.new, "old": m.old, "new": m.new} for s in plan.subjects for m in s.moves],
+        "edits": {n: rows(found) for n, found in plan.edits.items()},
+        "waits_on": plan.waits_on,
+        "not_edited": {
+            why: [{"repo": n, "path": e.path, "replacements": e.replacements} for n, e in held]
+            for why, held in plan.held_back.items()
+        },
+    }
+
+
+def _rename_names(
+    st: State,
+    args: argparse.Namespace,
+    pairs: list[tuple[str, str]],
+    res: dict[str, object],
+    steps: list[str],
+) -> bool:
+    """Plan, and unless it is a dry run carry out, the stack and Python name changes of a rename.
+
+    `pairs` is (old name, new name) for each repository whose names change.
+
+    Returns:
+        False when the plan failed or a repository's change did not reach a pull request.
+
+    """
+    try:
+        plan = _names_plan(st, pairs, set(args.skip_repo or []), dry_run=args.dry_run)
+    except (NameSweepError, PolyrepoError) as exc:
+        res["names_error"] = str(exc)
+        steps.append(f"stack and Python names NOT planned: {exc}")
+        return False
+    lines = _names_lines(plan)
+    steps.extend(lines or ["stack and Python names: already what atw-naming gives, no reference to update"])
+    res["names"] = _names_record(plan)
+    if args.dry_run or not plan.edits:
+        return True
+    rows = _names_apply(st.cfg, plan, args)
+    res["pull_requests"] = rows
+    steps.extend(_pr_line(row) for row in rows)
+    return all(row["status"] == "pr-opened" for row in rows)
+
+
+def _pr_line(row: dict[str, object]) -> str:
+    """Write one repository's outcome as a step line.
+
+    Returns:
+        The line.
+
+    """
+    head = f"{row['repo']}: {row['status']}"
+    parts = [str(row[k]) for k in ("pr_url", "error") if row.get(k)]
+    if row.get("waits_on"):
+        parts.append(f"waits on {', '.join(str(w) for w in _seq(row['waits_on'], 'waits_on'))}")
+    return head + (": " + "; ".join(parts) if parts else "")
+
+
+def _names_apply(cfg: Config, plan: _NamesPlan, args: argparse.Namespace) -> list[dict[str, object]]:
+    """Open one pull request for each repository that changes: those that wait on no one first.
+
+    Returns:
+        One row per repository: its status, pull request URL, worktree and any error.
+
+    """
+    settings = _rename_settings(cfg)
+    order = sorted(plan.edits, key=lambda n: (n in plan.waits_on, n not in plan.holders(), n.lower()))
+    return [_apply_repo(cfg, plan, name, settings, args) for name in order]
+
+
+def _apply_repo(
+    cfg: Config,
+    plan: _NamesPlan,
+    name: str,
+    settings: tuple[list[str], Path],
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    """Change one repository in a worktree on its own branch, check it, commit it and open its pull request.
+
+    A repository that waits on the one holding a renamed package is not checked: its code
+    imports a package that does not exist until that one is released.
+
+    Returns:
+        The row for this repository; `status` is `pr-opened` or the step that failed.
+
+    """
+    excludes, pr_command = settings
+    slug = plan.slug()
+    worktree = plan.paths[name] / ".worktrees" / f"{RENAME_BRANCH}-{slug}"
+    row: dict[str, object] = {"repo": name, "status": "failed", "waits_on": plan.waits_on.get(name)}
+    _exclude_worktrees(plan.paths[name])
+    for argv in (
+        ["fetch", "origin", cfg.default_branch],
+        ["worktree", "add", "-b", f"{RENAME_BRANCH}/{slug}", str(worktree), f"origin/{cfg.default_branch}"],
+    ):
+        cp = git(plan.paths[name], *argv, timeout=FETCH_TIMEOUT if argv[0] == "fetch" else GIT_TIMEOUT)
+        if cp.returncode != 0:
+            row["error"] = f"git {argv[0]} failed: {_last_line(cp)}"
+            return row
+    row["worktree"] = str(worktree)
+    try:
+        for s in (s for s in plan.subjects if s.new == name):
+            apply_moves(_sweep_git, worktree, s.moves)
+        sweep_repo(_sweep_git, SweepTarget(name, worktree), plan.rules, excludes, write=True)
+    except NameSweepError as exc:
+        row["error"] = str(exc)
+        return row
+    if name not in plan.waits_on and (failure := _run_checks(worktree)):
+        row.update(status="checks-failed", error=failure)
+        return row
+    title, body = _pr_text(plan, name)
+    message = [body, args.trailer] if args.trailer else [body]
+    for argv in (["add", "-A"], ["commit", "-m", title, *[x for m in message for x in ("-m", m)]]):
+        cp = git(worktree, *argv)
+        if cp.returncode != 0:
+            row.update(status="commit-failed", error=_last_line(cp))
+            return row
+    footer = f"\n\n{args.pr_footer}" if args.pr_footer else ""
+    cp = run([str(pr_command), "--title", title, "--body", body + footer], cwd=worktree, timeout=PR_TIMEOUT)
+    url = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
+    if url and cp.returncode in {0, PR_AUTOMERGE_NOT_ARMED}:
+        row.update(status="pr-opened", pr_url=url)
+        if cp.returncode == PR_AUTOMERGE_NOT_ARMED:
+            row["error"] = f"auto-merge not armed: {_last_line(cp)}"
+    else:
+        row.update(status="pr-failed", error=_last_line(cp))
+    return row
+
+
+def _pr_text(plan: _NamesPlan, name: str) -> tuple[str, str]:
+    """Write the commit subject and the body for one repository's change.
+
+    A repository whose own names change is titled by them; one that only follows another's
+    new names says so.
+
+    Returns:
+        (the `type(scope): description` subject, the body).
+
+    """
+    own = [c for s in plan.subjects if s.new == name for c in s.changes]
+    shown = [f"{KIND_NOUNS[c.kind]} {c.old} to {c.new}" for c in own]
+    if shown:
+        more = f" and {len(shown) - TITLE_NAMES} more" if len(shown) > TITLE_NAMES else ""
+        title = f"refactor(names): rename {', '.join(shown[:TITLE_NAMES])}{more}"
+    else:
+        title = f"refactor(names): follow the new names of {', '.join(h for h in plan.holders() if h != name)}"
+    lines = [f"- {s.new}: {KIND_NOUNS[c.kind]} {c.old} -> {c.new}" for s in plan.subjects for c in s.changes]
+    if name in plan.waits_on:
+        lines.append(f"\nWaits on {', '.join(plan.waits_on[name])}: a new package name is importable once released.")
+    return title, "\n".join(lines)
+
+
+def _run_checks(worktree: Path) -> str | None:
+    """Run the repository's own `lint` and `test` tasks in the worktree, as its Taskfile declares them.
+
+    Returns:
+        None when every declared task passed (or none is declared), else what failed.
+
+    """
+    taskfile = worktree / "Taskfile.yml"
+    declared = set(re.findall(r"(?m)^  ([a-z][\w-]*):\s*$", taskfile.read_text())) if taskfile.is_file() else set()
+    for task in (t for t in CHECK_TASKS if t in declared):
+        cp = run(["task", task], cwd=worktree, timeout=CHECK_TIMEOUT)
+        if cp.returncode != 0:
+            tail = "\n".join((cp.stdout + cp.stderr).strip().splitlines()[-CHECK_TAIL_LINES:])
+            return f"task {task} failed:\n{tail}"
+    return None
 
 
 DEPRECATED_PR_COMMENT = "Closed: this repository is deprecated."
@@ -6422,11 +6907,29 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
 
     s = add(
         "rename",
-        "rename a repo, here and on GitHub, and repoint the manifest",
+        "rename a repo with its stack, Python and written names: GitHub, disk, manifest, one pull request per repo",
     )
     s.add_argument("repo")
-    s.add_argument("new_name")
-    s.add_argument("--dry-run", action="store_true", help="check and plan only")
+    s.add_argument(
+        "new_name",
+        nargs="?",
+        help="the new repository name; omit it to bring only the stack and Python names to what atw-naming gives",
+    )
+    s.add_argument("--dry-run", action="store_true", help="check and print the whole plan, change nothing")
+    s.add_argument(
+        "--also",
+        action="append",
+        default=[],
+        help="a further repo whose stack and Python names are brought into line in the same pull requests",
+    )
+    s.add_argument(
+        "--skip-repo",
+        action="append",
+        default=[],
+        help="a repository whose references are reported and not edited (repeatable)",
+    )
+    s.add_argument("--trailer", help="a line to end each commit message body with")
+    s.add_argument("--pr-footer", help="a line to end each pull request description with")
     s.set_defaults(func=cmd_rename)
 
 
