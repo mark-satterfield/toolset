@@ -119,7 +119,7 @@ its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | In `built-version`, records each difference between a Story's code and the effective documents in `built/<element>/`. |
+| built-architecture-comparer | test | In `built-version`, records each difference between a Story's code and the effective documents in `built/<element>/`. |
 
 ## Spec Freshness
 

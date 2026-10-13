@@ -55,7 +55,7 @@ has no agent reviewer. The rows of the owner-run portfolio workflows carry the c
 A script step writes the Story document, so no step starts user-story-writer (DESIGN 11.5).
 prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer and
 epic-sequencer are started by their own workflows or by a person. No Epic step starts
-architecture-fitness-function-author or ubiquitous-language-writer. prd-reality-reconciler and
+architecture-fitness-function-author or ubiquitous-language-writer. built-architecture-comparer and
 architecture-conformance-reviewer are started by the built-version workflow.
 workflow-command-runner is never an Epic session.
 
