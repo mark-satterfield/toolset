@@ -30,7 +30,7 @@ one place of each:
 | Build and deploy step kinds and up-front plans | `<plugin>/skills/pipeline-contracts/schemas/pipeline-steps.json`, read through `<orch>/core/pipeline_steps.py` |
 | Ledger events | `<driver>/ledgerevents.py` |
 | Run cost sidecar | `<driver>/costsidecar.py` |
-| Fable inventory, recovery arguments and the Fable call log (build and deploy lanes only) | `<driver>/recoverytypes.py` (`ModelInventory`, `WorkflowInventory`, `ReplayLimits`, `RecoveryEnvelope`, `BlockedRecovery`, `CallEvent`); the inventory is produced by `<plugin>/scripts/fable-inventory.py`, and the plugin's Fable shared block reads the recovery arguments with no typed definition (open item, QUESTIONS.md) |
+| Fable inventory, model fallback arguments and the held allowance refusal (build and deploy lanes only) | `<driver>/recoverytypes.py` (`ModelInventory`, `WorkflowInventory`, `BlockedRecovery`); the inventory is produced by `<plugin>/scripts/fable-inventory.py`, and the plugin's Fable shared block (`<plugin>/scripts/shared-blocks/fable.js`) reads the model fallback arguments `fableAgentTypes` and `fableFallback` with no typed definition (open item, QUESTIONS.md) |
 | Relay request, receipt and registered result (build and deploy lanes only) | not defined in one place (open item, QUESTIONS.md): `<plugin>/scripts/portfolio/relayregistry.py`, `<plugin>/scripts/portfolio/relaycapture.py`, the relay shared block of the workflows, and the argument names `<driver>/headless.py` writes |
 | Step journal (one file per bead; the only thing that decides where a run begins) | `<orch>/core/step_journal.py`, schema `<plugin>/skills/pipeline-contracts/schemas/step-journal.schema.json`; the driver loads the module through `<driver>/stepjournal.py`, reads it for the dashboard (`journalprogress.py`), resets it only through `journalstart.py`, and writes one only through `<orch>/port_journal.py` (`journalport.py`) |
 
@@ -254,9 +254,9 @@ Readers and what they need:
 - `phaserec.expected_phases` takes `prd-to-spec`'s phase list from `handback_contract.py`, and
   `outcomes._phase_name` depends on the `PROGRESS_PREFIX` the driver puts before each phase.
 - `observe.py` relay-step views read `artifacts/**/relay/` files that the relay produces.
-- The relay arguments (written by `headless._dispatch_session` only for a fresh launch; a Fable
-  replay reuses the saved workflow arguments) and the Fable recovery arguments (written by
-  `headless._dispatch_with_recovery`, typed in `recoverytypes.py`) exist only for the build and
+- The relay arguments (written by `headless._dispatch_session` for every session it starts) and
+  the model fallback arguments `fableAgentTypes` and `fableFallback` (written by
+  `headless._dispatch_with_recovery`) exist only for the build and
   deploy lanes' Workflow runtime and command runner; an orchestrated dispatch carries neither. The
   workflow result envelope those lanes read has no single definition (§4).
 - Some classification of a build or deploy run reads text: `breaker.pause_of` parses the headline
