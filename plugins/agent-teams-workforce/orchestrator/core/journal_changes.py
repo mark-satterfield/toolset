@@ -13,7 +13,7 @@ from typing import Literal, assert_never
 
 from typeguard import CollectionCheckStrategy, typechecked
 
-from . import step_journal
+from . import pipeline_steps, step_journal
 from .journal_steps import (
     AFTER_THIS,
     UNDER_CONTAINER,
@@ -27,10 +27,6 @@ from .journal_steps import (
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import (
-    BEAD_TYPE_STORY,
-    BEAD_TYPE_TASK,
-    PIPELINE_BUILD,
-    PIPELINE_DEPLOY,
     STATUS_DONE,
     STATUS_PLANNED,
     Artifact,
@@ -169,20 +165,6 @@ def apply_completion(journal: Journal, step_id: StepId, completion: Completion, 
     return step_journal.finish_step(journal, step_id, moment)
 
 
-def _child_pipeline(bead_type: ChildBeadType) -> Pipeline:
-    """Name the pipeline that runs the steps of a Story or a Task.
-
-    Returns:
-        ``deploy`` for a Story, ``build`` for a Task.
-
-    """
-    if bead_type == BEAD_TYPE_STORY:
-        return PIPELINE_DEPLOY
-    if bead_type == BEAD_TYPE_TASK:
-        return PIPELINE_BUILD
-    assert_never(bead_type)
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def create_child_journal(
     directory: Path,
@@ -195,17 +177,18 @@ def create_child_journal(
 
     The journal's first outermost step is the creating step itself, done and holding the files
     the bead's later steps are handed; it is started, given its artifacts and finished before the
-    one file write. When the journal already exists (the creating step is running again) and no
-    step after the first has been started, it is replaced; once a later step has been started it
-    is left as it is.
+    one file write. The steps the bead's pipeline plans up front (``pipeline_steps.plans``)
+    follow the steps given. When the journal already exists (the creating step is running again)
+    and no step after the first has been started, it is replaced; once a later step has been
+    started it is left as it is.
 
     Args:
         directory: The directory that holds step journals (``step_journal.journals_directory``).
         bead: The Story or Task bead id.
         bead_type: ``story`` or ``task``; a Story's journal is for the deploy pipeline and a
             Task's for the build pipeline.
-        steps: The journal's outermost steps: the creating step first, then the steps planned
-            after it when the creating step knows them.
+        steps: The creating step first, then the steps planned after it when the creating step
+            knows them.
         artifacts: What the first step holds.
 
     Returns:
@@ -213,7 +196,8 @@ def create_child_journal(
 
     """
     moment: str = step_journal.timestamp()
-    journal: Journal = step_journal.new_journal(bead, bead_type, _child_pipeline(bead_type), steps)
+    pipeline: Pipeline = pipeline_steps.pipeline_of(bead_type)
+    journal: Journal = step_journal.new_journal(bead, bead_type, pipeline, [*steps, *pipeline_steps.plans(pipeline)])
     opening: StepId = journal["steps"][0]["id"]
     step_journal.start_step(journal, opening, moment)
     artifact: Artifact

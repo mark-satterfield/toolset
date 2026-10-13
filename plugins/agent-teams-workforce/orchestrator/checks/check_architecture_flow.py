@@ -64,7 +64,7 @@ from orchestrator.flows.architecture_files import (
     OPEN_RUN,
 )
 from orchestrator.flows.prd_to_spec import outermost_steps
-from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION
+from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION, PLANNED_FOR_PREFIX
 
 if TYPE_CHECKING:
     from orchestrator.checks.journal_bench import Call
@@ -95,7 +95,7 @@ def names(step: Step) -> list[str]:
         The artifact names in the order recorded.
 
     """
-    return [held["name"] for held in step["artifacts"] if not held["name"].startswith(sj.PLANNED_FOR_PREFIX)]
+    return [held["name"] for held in step["artifacts"] if not held["name"].startswith(PLANNED_FOR_PREFIX)]
 
 
 def values(step: Step, name: str) -> list[JsonValue]:

@@ -35,6 +35,7 @@ VOCABULARIES: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("StepStatus", "STATUS", "STEP_STATUSES", "stepStatus"),
     ("PathKind", "KIND", "PATH_KINDS", "pathKind"),
     ("ValueKind", "KIND", "VALUE_KINDS", "valueKind"),
+    ("ChangeOp", "CHANGE_OP", "CHANGE_OPS", "changeOp"),
 )
 # (alias name, collection constant, member aliases) for a vocabulary that is the union of others.
 VOCABULARY_UNIONS: Final[tuple[tuple[str, str, tuple[str, ...]], ...]] = (
@@ -46,7 +47,7 @@ IDENTIFIERS: Final[tuple[tuple[str, str, str], ...]] = (
     ("StepId", "STEP_ID_PATTERN", "stepId"),
 )
 # Every definitions entry that is a plain string in Python.
-STRINGS: Final[tuple[str, ...]] = ("moment", "text")
+STRINGS: Final[tuple[str, ...]] = ("moment", "text", "stepRef")
 # (alias name, definitions entry) for every oneOf of typed objects.
 UNIONS: Final[tuple[tuple[str, str], ...]] = (("Artifact", "artifact"),)
 # (TypedDict name, definitions entry) for every closed object the module types.
@@ -55,16 +56,25 @@ RECORDS: Final[tuple[tuple[str, str], ...]] = (
     ("ValueArtifact", "valueArtifact"),
     ("Step", "step"),
     ("StepPlan", "stepPlan"),
+    ("PlannedStep", "plannedStep"),
+    ("JournalChange", "journalChange"),
 )
 # The TypedDict of the schema root.
 ROOT_RECORD: Final[str] = "Journal"
-# (constant name, schema key) for every file name suffix the contract fixes.
+# (constant name, schema key) for every text the contract fixes: file name suffixes and log line prefixes.
 SUFFIXES: Final[tuple[tuple[str, str], ...]] = (
     ("JOURNAL_SUFFIX", "x-journalSuffix"),
     ("LOCK_SUFFIX", "x-lockSuffix"),
+    ("PLANNED_FOR_PREFIX", "x-plannedForPrefix"),
+    ("CHANGE_PREFIX", "x-changePrefix"),
+    ("CHANGE_PART_PREFIX", "x-changePartPrefix"),
 )
+# The Python type of every schema type that needs no further reading: an object typed here declares no properties.
+PLAIN_TYPES: Final[dict[str, str]] = {"string": "str", "integer": "int", "object": "dict[str, JsonValue]"}
+# (constant name, schema key) for every whole number the contract fixes.
+NUMBERS: Final[tuple[tuple[str, str], ...]] = (("CHANGE_CHUNK", "x-changeChunk"),)
 # Every definitions entry the generated readers validate against by name.
-VALIDATED: Final[tuple[str, ...]] = ("artifact", "stepPlan", "stepPlans")
+VALIDATED: Final[tuple[str, ...]] = ("artifact", "stepPlan", "stepPlans", "journalChange")
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 
 
@@ -155,6 +165,22 @@ def _text(value: JsonValue, where: str) -> str:
     return value
 
 
+def _whole(value: JsonValue, where: str) -> int:
+    """Narrow a JSON value to a positive whole number.
+
+    Returns:
+        The number.
+
+    Raises:
+        SchemaShapeError: The value is not a positive whole number.
+
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        message: str = f"step journal schema: {where} is not a positive whole number"
+        raise SchemaShapeError(message)
+    return value
+
+
 def _literal(values: Sequence[str]) -> str:
     """Render string values as a Literal type.
 
@@ -227,13 +253,14 @@ def _field_type(node: Mapping[str, JsonValue], where: str, known: Mapping[str, s
     if "type" not in node:
         return "JsonValue"
     kind: str = _text(node["type"], where + "/type")
-    if kind == "string":
-        return "str"
     if kind == "array":
         items: dict[str, JsonValue] = _node(node.get("items"), where + "/items")
         return f"list[{_field_type(items, where + '/items', known)}]"
-    message = f"step journal schema: {where} has type {kind!r}, which the generator does not type"
-    raise SchemaShapeError(message)
+    plain: str | None = PLAIN_TYPES.get(kind)
+    if plain is None or (kind == "object" and "properties" in node):
+        message = f"step journal schema: {where} has type {kind!r}, which the generator does not type"
+        raise SchemaShapeError(message)
+    return plain
 
 
 def _record(node: Mapping[str, JsonValue], name: str, pointer: str, known: Mapping[str, str]) -> list[str]:
@@ -410,6 +437,7 @@ def render(schema: Mapping[str, JsonValue]) -> str:
     suffix_lines: list[str] = [
         f"{constant}: Final = {json.dumps(_text(schema.get(key), key))}" for constant, key in SUFFIXES
     ]
+    suffix_lines.extend(f"{constant}: Final = {_whole(schema.get(key), key)}" for constant, key in NUMBERS)
     record_lines: list[str] = []
     record: str
     entry: str
@@ -638,6 +666,32 @@ def validate_step_plans(value: object, where: str = "step plans") -> list[StepPl
     if is_step_plans(value):
         return value
     message: str = f"{where} does not satisfy stepPlans: " + "; ".join(schema_problems(value, "stepPlans"))
+    raise StepJournalError(message)
+
+
+def is_journal_change(value: object) -> TypeIs[JournalChange]:
+    """Tell whether a value satisfies the journalChange definition.
+
+    Returns:
+        True when the schema accepts the value as one journal change.
+
+    """
+    return not schema_problems(value, "journalChange")
+
+
+def validate_journal_change(value: object, where: str = "journal change") -> JournalChange:
+    """Validate one journal change a workflow script reported.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        StepJournalError: The value does not satisfy the journalChange definition.
+
+    """
+    if is_journal_change(value):
+        return value
+    message: str = f"{where} does not satisfy journalChange: " + "; ".join(schema_problems(value, "journalChange"))
     raise StepJournalError(message)
 '''
 

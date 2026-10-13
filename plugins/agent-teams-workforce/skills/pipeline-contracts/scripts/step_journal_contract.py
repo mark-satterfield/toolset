@@ -21,6 +21,7 @@ type Pipeline = Literal["elaboration", "build", "deploy"]
 type StepStatus = Literal["planned", "running", "done", "failed"]
 type PathKind = Literal["file", "directory"]
 type ValueKind = Literal["value"]
+type ChangeOp = Literal["add", "start", "done", "fail"]
 type ArtifactKind = PathKind | ValueKind
 type Artifact = PathArtifact | ValueArtifact
 
@@ -40,18 +41,27 @@ STATUS_FAILED: Final[Literal["failed"]] = "failed"
 KIND_FILE: Final[Literal["file"]] = "file"
 KIND_DIRECTORY: Final[Literal["directory"]] = "directory"
 KIND_VALUE: Final[Literal["value"]] = "value"
+CHANGE_OP_ADD: Final[Literal["add"]] = "add"
+CHANGE_OP_START: Final[Literal["start"]] = "start"
+CHANGE_OP_DONE: Final[Literal["done"]] = "done"
+CHANGE_OP_FAIL: Final[Literal["fail"]] = "fail"
 
 BEAD_TYPES: Final[tuple[BeadType, ...]] = (BEAD_TYPE_EPIC, BEAD_TYPE_STORY, BEAD_TYPE_TASK)
 PIPELINES: Final[tuple[Pipeline, ...]] = (PIPELINE_ELABORATION, PIPELINE_BUILD, PIPELINE_DEPLOY)
 STEP_STATUSES: Final[tuple[StepStatus, ...]] = (STATUS_PLANNED, STATUS_RUNNING, STATUS_DONE, STATUS_FAILED)
 PATH_KINDS: Final[tuple[PathKind, ...]] = (KIND_FILE, KIND_DIRECTORY)
 VALUE_KINDS: Final[tuple[ValueKind, ...]] = (KIND_VALUE,)
+CHANGE_OPS: Final[tuple[ChangeOp, ...]] = (CHANGE_OP_ADD, CHANGE_OP_START, CHANGE_OP_DONE, CHANGE_OP_FAIL)
 ARTIFACT_KINDS: Final[tuple[ArtifactKind, ...]] = (*PATH_KINDS, *VALUE_KINDS)
 
 BEAD_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^ssbd-[a-z0-9.]+$")
 STEP_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 JOURNAL_SUFFIX: Final = ".step-journal.json"
 LOCK_SUFFIX: Final = ".lock"
+PLANNED_FOR_PREFIX: Final = "for "
+CHANGE_PREFIX: Final = "STEP-JOURNAL "
+CHANGE_PART_PREFIX: Final = "STEP-JOURNAL-PART "
+CHANGE_CHUNK: Final = 4000
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "step-journal.schema.json"
 
 
@@ -99,6 +109,25 @@ class StepPlan(TypedDict):
     script: NotRequired[str]
     inputs: NotRequired[list[str]]
     steps: NotRequired[list[StepPlan]]
+
+
+class PlannedStep(TypedDict):
+    """Typed form of #/definitions/plannedStep in step-journal.schema.json."""
+
+    plan: StepPlan
+    params: NotRequired[dict[str, JsonValue]]
+
+
+class JournalChange(TypedDict):
+    """Typed form of #/definitions/journalChange in step-journal.schema.json."""
+
+    run: str
+    n: int
+    op: ChangeOp
+    step: str
+    artifacts: NotRequired[list[Artifact]]
+    add: NotRequired[list[PlannedStep]]
+    failure: NotRequired[str]
 
 
 class Journal(TypedDict):
@@ -295,4 +324,30 @@ def validate_step_plans(value: object, where: str = "step plans") -> list[StepPl
     if is_step_plans(value):
         return value
     message: str = f"{where} does not satisfy stepPlans: " + "; ".join(schema_problems(value, "stepPlans"))
+    raise StepJournalError(message)
+
+
+def is_journal_change(value: object) -> TypeIs[JournalChange]:
+    """Tell whether a value satisfies the journalChange definition.
+
+    Returns:
+        True when the schema accepts the value as one journal change.
+
+    """
+    return not schema_problems(value, "journalChange")
+
+
+def validate_journal_change(value: object, where: str = "journal change") -> JournalChange:
+    """Validate one journal change a workflow script reported.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        StepJournalError: The value does not satisfy the journalChange definition.
+
+    """
+    if is_journal_change(value):
+        return value
+    message: str = f"{where} does not satisfy journalChange: " + "; ".join(schema_problems(value, "journalChange"))
     raise StepJournalError(message)

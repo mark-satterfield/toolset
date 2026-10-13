@@ -18,8 +18,7 @@ in the journal's directory and moved into place, and every document read or writ
 validated. Nobody edits the JSON by hand; an agent session or a workflow runs the command
 (:func:`main`, one sub-command per operation, one JSON object on stdout).
 
-The step journal is not the workflow run journal (``run_journal_contract.py``) and not the
-supervisor's run log (``ledger.jsonl``).
+The step journal is not the supervisor's run log (``ledger.jsonl``).
 """
 
 import argparse
@@ -47,6 +46,7 @@ from step_journal_contract import (
     JOURNAL_SUFFIX,
     LOCK_SUFFIX,
     PIPELINES,
+    PLANNED_FOR_PREFIX,
     STATUS_DONE,
     STATUS_FAILED,
     STATUS_PLANNED,
@@ -82,8 +82,6 @@ WORKFLOW_RUNS_DIRECTORY: Final = "workflow-runs"
 """The directory of a control repository that holds saved run data, under ``.claude``."""
 JOURNALS_DIRECTORY: Final = "step-journals"
 """The one directory, inside the workflow runs directory, that holds every bead's step journal."""
-PLANNED_FOR_PREFIX: Final = "for "
-"""A value artifact named ``for <step id>`` is held by the step whose result planned that step."""
 EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
 
@@ -172,6 +170,12 @@ class ValidationResult(TypedDict):
     problems: list[str]
 
 
+class ReadResult(TypedDict):
+    """What ``read`` prints: the whole journal, for a workflow script that runs its steps."""
+
+    journal: Journal
+
+
 type CommandResult = (
     StepResult
     | StepsResult
@@ -182,6 +186,7 @@ type CommandResult = (
     | InputsResult
     | Invalidation
     | ValidationResult
+    | ReadResult
 )
 
 
@@ -1704,6 +1709,16 @@ def _run_validate(args: argparse.Namespace) -> Outcome:
     return Outcome({"valid": not problems, "problems": problems}, EXIT_REFUSED if problems else EXIT_OK)
 
 
+def _run_read(args: argparse.Namespace) -> Outcome:
+    """Run ``read``.
+
+    Returns:
+        The validated journal.
+
+    """
+    return Outcome({"journal": read_journal(_journal_argument(args))})
+
+
 _COMMANDS: Final[dict[str, Callable[[argparse.Namespace], Outcome]]] = {
     "create": _run_create,
     "add": _run_add,
@@ -1717,6 +1732,7 @@ _COMMANDS: Final[dict[str, Callable[[argparse.Namespace], Outcome]]] = {
     "inputs": _run_inputs,
     "invalidate": _run_invalidate,
     "validate": _run_validate,
+    "read": _run_read,
 }
 
 
@@ -1787,6 +1803,7 @@ def _parser() -> argparse.ArgumentParser:
         help="set a step and every step after it back to planned",
     )
     commands.add_parser("validate", parents=[where], help="check a journal file against the contract")
+    commands.add_parser("read", parents=[where], help="print the whole journal")
     return parser
 
 

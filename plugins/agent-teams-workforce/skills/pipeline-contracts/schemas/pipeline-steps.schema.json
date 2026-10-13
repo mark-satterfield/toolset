@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/pipeline-steps.schema.json",
+  "title": "Pipeline steps",
+  "description": "The shape of pipeline-steps.json, the one definition of the steps the build pipeline runs for a Task and the deploy pipeline runs for a Story: every kind of step, what it records and reads, which steps its result adds, and the steps planned up front. A step of these pipelines carries its kind as the journal step's script text. orchestrator/core/pipeline_steps.py reads the file for the plugin and the driver; scripts/shared-blocks.mjs copies it into the step-journal shared block every workflow script of these pipelines carries.",
+  "type": "object",
+  "required": ["pipelines"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "pipelines": {
+      "description": "The pipelines, by the pipeline name of the step journal schema.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "deploy"],
+      "properties": {
+        "build": {"$ref": "#/definitions/pipeline"},
+        "deploy": {"$ref": "#/definitions/pipeline"}
+      }
+    }
+  },
+  "definitions": {
+    "text": {
+      "description": "A string that is not empty.",
+      "type": "string",
+      "minLength": 1
+    },
+    "kindKey": {
+      "description": "The key of a step kind: the pipeline name, a colon, and a kebab-case name.",
+      "type": "string",
+      "pattern": "^(build|deploy):[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "runner": {
+      "description": "What runs the steps of a kind: the driver, or the workflow script of that name.",
+      "type": "string",
+      "enum": ["driver", "task-to-deploy", "story-deploy-fix", "built-version"]
+    },
+    "artifactKind": {
+      "description": "The kind of an artifact, as the step journal schema names it.",
+      "type": "string",
+      "enum": ["file", "directory", "value"]
+    },
+    "recorded": {
+      "description": "One artifact a step of the kind records.",
+      "type": "object",
+      "required": ["name", "kind", "holds"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"description": "The artifact's name in the journal.", "$ref": "#/definitions/text"},
+        "kind": {"$ref": "#/definitions/artifactKind"},
+        "holds": {"description": "What the path names, or the shape of the value.", "$ref": "#/definitions/text"}
+      }
+    },
+    "addition": {
+      "description": "Steps the result of a step of the kind adds to the journal.",
+      "type": "object",
+      "required": ["kinds", "when"],
+      "additionalProperties": false,
+      "properties": {
+        "kinds": {
+          "description": "The kinds added, in the order the steps run.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/kindKey"}
+        },
+        "when": {"description": "The result that calls for them.", "$ref": "#/definitions/text"}
+      }
+    },
+    "kind": {
+      "description": "One kind of step.",
+      "type": "object",
+      "required": ["description", "purpose", "runBy", "reads", "records", "adds"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "What a step of the kind does, in plain words. A name in braces is replaced by the parameter of that name the step is handed.",
+          "$ref": "#/definitions/text"
+        },
+        "purpose": {
+          "description": "Why a step of the kind exists. The step that adds one may state the finding that caused it instead.",
+          "$ref": "#/definitions/text"
+        },
+        "runBy": {"$ref": "#/definitions/runner"},
+        "within": {
+          "description": "The kind of the step this kind's steps are child steps of. Absent for a step among the bead's outermost steps.",
+          "$ref": "#/definitions/kindKey"
+        },
+        "params": {
+          "description": "The names of the parameters the step that adds a step of this kind hands it.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/text"}
+        },
+        "reads": {
+          "description": "The names of the artifacts of earlier steps a step of the kind is handed.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/text"}
+        },
+        "records": {
+          "description": "The artifacts a step of the kind records when it is done.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/recorded"}
+        },
+        "adds": {
+          "description": "The steps the result of a step of the kind can add.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/addition"}
+        },
+        "together": {
+          "description": "True when consecutive planned steps of the kind run at the same time.",
+          "type": "boolean"
+        },
+        "waits": {
+          "description": "What a step of the kind stays running for, and is asked again about on each dispatch. Absent for a step that does not wait.",
+          "$ref": "#/definitions/text"
+        },
+        "limit": {
+          "description": "The rule by which a step of the kind declines to add another correction and fails with the cause instead.",
+          "$ref": "#/definitions/text"
+        }
+      }
+    },
+    "pipeline": {
+      "description": "One pipeline: the steps planned up front, the child steps planned when a step first runs, and every kind.",
+      "type": "object",
+      "required": ["plan", "inner", "kinds"],
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The kinds planned up front, in the order the steps run, after the step that created the bead.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/kindKey"}
+        },
+        "inner": {
+          "description": "By the kind of a step a workflow script performs: the kinds of the child steps the script plans under it when it first runs, in the order they run.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/definitions/kindKey"},
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/definitions/kindKey"}
+          }
+        },
+        "kinds": {
+          "description": "Every kind of step of the pipeline, by key.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/definitions/kindKey"},
+          "additionalProperties": {"$ref": "#/definitions/kind"}
+        }
+      }
+    }
+  }
+}

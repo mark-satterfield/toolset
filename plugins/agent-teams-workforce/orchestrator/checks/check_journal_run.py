@@ -42,6 +42,7 @@ from orchestrator.checks.journal_bench import (
     start_helpers,
     write_run,
 )
+from orchestrator.core import pipeline_steps
 from orchestrator.core import step_journal as sj
 from orchestrator.core.agent_context import PipelineStoppedError
 from orchestrator.core.agents import AgentRunner
@@ -69,6 +70,7 @@ from step_journal_contract import (
     PIPELINE_DEPLOY,
     STATUS_DONE,
     STATUS_FAILED,
+    STATUS_PLANNED,
     STATUS_RUNNING,
     BeadId,
     Journal,
@@ -440,12 +442,21 @@ def check_journal_files(root: Path) -> None:
     path: Path = create_child_journal(directory, story, BEAD_TYPE_STORY, [created], [file_artifact("spec", spec)])
     journal: Journal = sj.read_journal(path)
     require(path == sj.journal_path(directory, story) and journal["pipeline"] == PIPELINE_DEPLOY, "a Story's journal")
-    require(sj.is_complete(journal) and journal["steps"][0]["artifacts"] == [file_artifact("spec", spec)], "done")
+    first: Step = journal["steps"][0]
+    require(first["status"] == STATUS_DONE and first["artifacts"] == [file_artifact("spec", spec)], "done")
+    planned: list[str] = [step.get("script", "") for step in journal["steps"][1:]]
+    require(planned == list(pipeline_steps.definition(PIPELINE_DEPLOY).plan), "the deploy plan follows")
+    require(all(step["status"] == STATUS_PLANNED for step in journal["steps"][1:]), "every planned step is planned")
     create_child_journal(directory, story, BEAD_TYPE_STORY, [created], [file_artifact("trd", spec)])
     require(sj.read_journal(path)["steps"][0]["artifacts"] == [file_artifact("trd", spec)], "created again: replaced")
     task: Path = create_child_journal(directory, BeadId("ssbd-check.3"), BEAD_TYPE_TASK, [created], [])
-    require(sj.read_journal(task)["pipeline"] == PIPELINE_BUILD, "a Task's journal is for the build pipeline")
-    report("PASS: one journals directory; a Story's and a Task's journal are created with their first step done")
+    built: Journal = sj.read_journal(task)
+    require(built["pipeline"] == PIPELINE_BUILD, "a Task's journal is for the build pipeline")
+    require(
+        [step.get("script", "") for step in built["steps"][1:]] == list(pipeline_steps.definition(PIPELINE_BUILD).plan),
+        "the build plan follows",
+    )
+    report("PASS: one journals directory; a Story's and a Task's journal hold their first step done and their plan")
 
 
 def main() -> None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# atw-step-journal <create|add|start|done|fail|artifact|next|artifacts|inputs|invalidate|validate> ...
+# atw-step-journal <create|add|start|done|fail|artifact|next|artifacts|inputs|invalidate|validate|read> ...
 # — reads and changes the step journal of one bead (the checklist of the steps a pipeline runs
 # for it). orchestrator/core/step_journal.py is the command; the journal's shape is
 # skills/pipeline-contracts/schemas/step-journal.schema.json. Give the journal file with

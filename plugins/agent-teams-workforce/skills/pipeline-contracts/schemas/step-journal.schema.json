@@ -2,9 +2,13 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/step-journal.schema.json",
   "title": "Step journal",
-  "description": "The step journal of one bead (an Epic, a Story or a Task): the checklist of the steps a pipeline runs for that bead. It lists the planned steps, grows as a step adds child steps, and each step is marked off right after its output is written. A restarted run begins at the first step that is not done, and a later step takes an earlier step's outputs from the artifacts recorded here. This file is the one definition of the journal's shape, of its vocabularies and of the step plans the command takes: scripts/generate_step_journal_contract.py renders scripts/step_journal_contract.py (the Python types, the constants and the validating readers) from it, and orchestrator/checks/check_step_journal_contract.py fails when that module is stale. orchestrator/core/step_journal.py is the only reader and writer of a step journal file, and bin/atw-step-journal is how an agent session or a workflow calls it; nobody edits the JSON by hand. That module also enforces the three rules a JSON Schema cannot state: every step id is unique in the journal, every id in a step's inputs names a step of the journal, and a step whose status is done has no child step that is not done.",
+  "description": "The step journal of one bead (an Epic, a Story or a Task): the checklist of the steps a pipeline runs for that bead. It lists the planned steps, grows as a step adds child steps, and each step is marked off right after its output is written. A restarted run begins at the first step that is not done, and a later step takes an earlier step's outputs from the artifacts recorded here. This file is the one definition of the journal's shape, of its vocabularies, of the step plans the command takes and of the journal change a workflow script reports on its log (definitions/journalChange): scripts/generate_step_journal_contract.py renders scripts/step_journal_contract.py (the Python types, the constants and the validating readers) from it, and orchestrator/checks/check_step_journal_contract.py fails when that module is stale. orchestrator/core/step_journal.py is the only reader and writer of a step journal file, and bin/atw-step-journal is how an agent session or a workflow calls it; nobody edits the JSON by hand. That module also enforces the three rules a JSON Schema cannot state: every step id is unique in the journal, every id in a step's inputs names a step of the journal, and a step whose status is done has no child step that is not done.",
   "x-journalSuffix": ".step-journal.json",
   "x-lockSuffix": ".lock",
+  "x-plannedForPrefix": "for ",
+  "x-changePrefix": "STEP-JOURNAL ",
+  "x-changePartPrefix": "STEP-JOURNAL-PART ",
+  "x-changeChunk": 4000,
   "type": "object",
   "required": ["bead", "beadType", "pipeline", "steps"],
   "additionalProperties": false,
@@ -253,6 +257,90 @@
       "type": "array",
       "minItems": 1,
       "items": {"$ref": "#/definitions/stepPlan"}
+    },
+    "changeOp": {
+      "description": "What one journal change does: add (plan child steps under a running step), start (mark a step running), done (record a step's artifacts, plan the steps that follow it and mark it done) or fail (mark a step failed with its cause).",
+      "type": "string",
+      "enum": ["add", "start", "done", "fail"]
+    },
+    "stepRef": {
+      "description": "How a journal change names a step: the id of a step of the journal, or the ref a step plan of an earlier change of the same run carried.",
+      "type": "string",
+      "minLength": 1
+    },
+    "plannedStep": {
+      "description": "One step a journal change plans, with what the step is handed.",
+      "type": "object",
+      "required": ["plan"],
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The step to add. Its ref names the step in later changes of the same run; an entry of its inputs is a ref of the same run or the id of a step of the journal.",
+          "$ref": "#/definitions/stepPlan"
+        },
+        "params": {
+          "description": "The parameters the new step is handed. They are recorded on the step the change names as the value artifact named 'for <new step id>', and that step joins the new step's inputs.",
+          "type": "object"
+        }
+      }
+    },
+    "journalChange": {
+      "description": "One change a workflow script reports for the journal of the bead it works on. The script writes it on its log as one line, the x-changePrefix followed by this object as JSON; an object longer than x-changeChunk characters is written as x-changePartPrefix lines, each '<n> <i>/<k> <text>', whose texts joined in order are the JSON. The driver applies each change once, in the order of n, with orchestrator/core/journal_lines.py.",
+      "type": "object",
+      "required": ["run", "n", "op", "step"],
+      "additionalProperties": false,
+      "properties": {
+        "run": {
+          "description": "The run the driver named when it dispatched the workflow; a change of another run is not applied.",
+          "$ref": "#/definitions/text"
+        },
+        "n": {
+          "description": "The position of this change among the changes of its run, from 1; a change whose n was already applied is not applied again.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "op": {
+          "description": "What the change does.",
+          "$ref": "#/definitions/changeOp"
+        },
+        "step": {
+          "description": "The step the change is about: for add, the running step the new steps go under.",
+          "$ref": "#/definitions/stepRef"
+        },
+        "artifacts": {
+          "description": "With done: everything the step produced.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/artifact"}
+        },
+        "add": {
+          "description": "With add: the child steps to add under the step, in the order they run. With done: the steps the result calls for, added right after the step among its siblings, in the order they run.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/plannedStep"}
+        },
+        "failure": {
+          "description": "With fail: why the step failed.",
+          "$ref": "#/definitions/text"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"op": {"const": "fail"}}},
+          "then": {"required": ["failure"]},
+          "else": {"not": {"required": ["failure"]}}
+        },
+        {
+          "if": {"properties": {"op": {"const": "add"}}},
+          "then": {"required": ["add"], "properties": {"add": {"minItems": 1}}}
+        },
+        {
+          "if": {"properties": {"op": {"enum": ["start", "fail"]}}},
+          "then": {"not": {"anyOf": [{"required": ["artifacts"]}, {"required": ["add"]}]}}
+        },
+        {
+          "if": {"properties": {"op": {"const": "add"}}},
+          "then": {"not": {"required": ["artifacts"]}}
+        }
+      ]
     }
   }
 }
