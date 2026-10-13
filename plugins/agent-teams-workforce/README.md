@@ -35,7 +35,7 @@ node "$ATW_PLUGIN_ROOT/scripts/report-release-coherence.cjs" \
   --mcp-config "$PWD/.mcp.json"
 ```
 
-Set these variables for the environment being evaluated; the project and MCP file arguments are optional. The report names registered releases, compares rendered MCP agent copies, flags foreign/missing/different copies, resolves internal skill names in the selected release and reports declarations in the supplied MCP file. Exact content matches cannot prove provenance or what an already-running session loaded. External skills, merged MCP configuration and live server health require owner verification. After publishing, update/reload the intended release before evaluating changed behavior. The report never synchronizes copies, updates installations, starts workflows or changes authentication.
+Set these variables for the environment being evaluated; the project and MCP file arguments are optional. The report names registered releases, compares rendered MCP agent copies, flags foreign/missing/different copies, resolves each skill an agent names (a `agent-teams-workforce:` name in the selected release; an unprefixed name in the release, then the project's `.claude/skills`, then the configuration directory's `skills`, with `missing` listing every place searched) and reports declarations in the supplied MCP file. Exact content matches cannot prove provenance or what an already-running session loaded. External skills, merged MCP configuration and live server health require owner verification. After publishing, update/reload the intended release before evaluating changed behavior. The report never synchronizes copies, updates installations, starts workflows or changes authentication.
 
 
 ## Dispatch retry policy

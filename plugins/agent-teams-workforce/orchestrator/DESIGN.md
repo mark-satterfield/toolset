@@ -98,9 +98,26 @@ Layout:
 | `<orch>/flows/` | one module per Epic flow: `prd_to_spec.py`, `architecture.py`, `repo_scoping.py`, `trd_authoring.py`, `spec_authoring.py`, `task_decomposition.py` |
 | `<orch>/seed_matrix.py` | the one-time matrix seeding script (section 10.7, PLAN S05a) |
 | `<orch>/checks/brief_check.py` | the brief and contract-skill check (section 2.3, PLAN S03e) |
+| `<orch>/checks/run_all.py` | the one command that runs every check in `<orch>/checks/` |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
 
 There is no brief template folder: a brief is built in code from facts only (section 2.3).
+
+**Running the checks.** One command runs every check script in `<orch>/checks/` (each Python file
+there with a `__main__` entry point, found by listing the directory), supplies `--artifact-script`
+and `--survey-dir` to the checks that declare them, prints one line per check and the full output
+of each failure, and exits non-zero unless every check passed:
+
+```sh
+"$SKILLSPOKE_CC/.venv/bin/python" "$ATW_PLUGIN_ROOT/orchestrator/checks/run_all.py"
+```
+
+The control repository comes from `ATW_CONTROL_REPO`, then `SKILLSPOKE_CC`, or `--control-repo`. A
+check that needs a saved survey is tried against the saved architecture directories under
+`<control repo>/.claude/workflow-runs/artifacts/*/architecture`, newest first, because a saved
+survey stops being reusable when the documents and repository trees it is bound to change; with
+none saved the check is reported `SKIPPED` and the command exits non-zero. No hook runs this
+command.
 
 The flow registry holds one flow, `prd-to-spec`. Its phases are functions called by it, not
 separate entries: the only entry into the Epic pipeline is the driver (CONTEXT 7.18).

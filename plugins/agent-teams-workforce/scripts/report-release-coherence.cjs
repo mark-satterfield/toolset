@@ -73,9 +73,17 @@ function report(options) {
   }
   const skillResolution = [...skills].sort().map((name) => {
     const parts = name.split(':');
-    const internal = parts.length === 1 || parts[0] === 'agent-teams-workforce';
-    const resolved = internal ? path.join(root, 'skills', parts.at(-1), 'SKILL.md') : null;
-    return { name, status: !internal ? 'external-not-verified' : fs.existsSync(resolved) ? 'present' : 'missing', path: resolved };
+    if (parts.length > 1 && parts[0] !== 'agent-teams-workforce') return { name, status: 'external-not-verified', path: null };
+    const inWorkflow = path.join(root, 'skills', parts.at(-1), 'SKILL.md');
+    if (fs.existsSync(inWorkflow)) return { name, status: 'present', path: inWorkflow };
+    // An unprefixed name is not this plugin's own skill by rule: the host also resolves it to a project or user skill.
+    const elsewhere = parts.length > 1 ? [] : [
+      ...(project ? [['present-in-project', path.join(project, '.claude/skills', name, 'SKILL.md')]] : []),
+      ['present-in-config-dir', path.join(config, 'skills', name, 'SKILL.md')],
+    ];
+    const found = elsewhere.find(([, file]) => fs.existsSync(file));
+    if (found) return { name, status: found[0], path: found[1] };
+    return { name, status: 'missing', path: inWorkflow, searched: [inWorkflow, ...elsewhere.map(([, file]) => file)] };
   });
   return {
     workflow: { root, version: manifest?.version || null }, configDir: config, project,
