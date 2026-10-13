@@ -4952,7 +4952,15 @@ def _apply_repo(
     _exclude_worktrees(plan.paths[name])
     for argv in (
         ["fetch", "origin", cfg.default_branch],
-        ["worktree", "add", "-b", f"{RENAME_BRANCH}/{slug}", str(worktree), f"origin/{cfg.default_branch}"],
+        [
+            "worktree",
+            "add",
+            "--no-track",
+            "-b",
+            f"{RENAME_BRANCH}/{slug}",
+            str(worktree),
+            f"origin/{cfg.default_branch}",
+        ],
     ):
         cp = git(plan.paths[name], *argv, timeout=FETCH_TIMEOUT if argv[0] == "fetch" else GIT_TIMEOUT)
         if cp.returncode != 0:
