@@ -9,6 +9,7 @@
         "build:regression-validate",
         "build:baseline",
         "build:select-implementers",
+        "build:refactor-snapshot",
         "build:refactor",
         "build:refactor-check",
         "build:docs-audit",
@@ -177,13 +178,22 @@
           ],
           "adds": []
         },
+        "build:refactor-snapshot": {
+          "description": "Record the work tree as it is before the refactor",
+          "purpose": "A refactor that is repeated or undone goes back to the tree the green suite ran on, not to a tree an unfinished refactor changed",
+          "runBy": "task-to-deploy",
+          "reads": ["worktree"],
+          "records": [
+            {"name": "refactorSnapshot", "kind": "value", "holds": "the git tree id of the work tree before the refactor, a string"}
+          ],
+          "adds": []
+        },
         "build:refactor": {
           "description": "Refactor the code the implementers changed",
           "purpose": "The change is left clear and free of duplication without changing behavior",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand", "changedFiles"],
+          "reads": ["worktree", "suiteCommand", "changedFiles", "refactorSnapshot"],
           "records": [
-            {"name": "refactorSnapshot", "kind": "value", "holds": "the git tree id of the work tree before the refactor, a string"},
             {"name": "refactorChangedFiles", "kind": "value", "holds": "the files the refactor changed, read from git against the snapshot"},
             {"name": "refactorReverted", "kind": "value", "holds": "whether the refactor gave up and the tree was put back at the snapshot, a boolean"}
           ],

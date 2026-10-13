@@ -238,26 +238,30 @@ const stepJournal = (() => {
           } catch (err) {
             out = { fail: { stage: step.kind, message: `the step threw: ${String((err && err.message) || err).slice(0, 400)}` } }
           }
+          if (out && typeof out === 'object' && !out.fail) return out
           const stop = interrupted()
           if (stop) return { fail: { stage: stop.stage, message: stop.message, interrupted: true } }
           return out && typeof out === 'object' ? out : { fail: { stage: step.kind, message: 'the step returned nothing' } }
+        }
+        /** Runs one step and reports it done or failed as soon as its own work ends; returns its failure, or null. */
+        const settle = async (step) => {
+          const out = await attempt(step)
+          if (out.fail) {
+            this.fail(step, out.fail)
+            return { ok: false, step, fail: out.fail }
+          }
+          this.done(step, Array.isArray(out.artifacts) ? out.artifacts : [], Array.isArray(out.add) ? out.add : [])
+          return null
         }
         for (;;) {
           const first = this.next()
           if (!first) return { ok: true }
           const group = this.together(first)
           for (const step of group) this.start(step)
-          const outcomes = group.length === 1 ? [await attempt(group[0])] : await parallel(group.map((step) => () => attempt(step)))
-          let failed = null
-          group.forEach((step, index) => {
-            const out = outcomes[index] || { fail: { stage: step.kind, message: 'the step returned nothing' } }
-            if (out.fail) {
-              this.fail(step, out.fail)
-              failed = failed || { ok: false, step, fail: out.fail }
-            } else {
-              this.done(step, Array.isArray(out.artifacts) ? out.artifacts : [], Array.isArray(out.add) ? out.add : [])
-            }
-          })
+          const failures = group.length === 1 ? [await settle(group[0])] : await parallel(group.map((step) => () => settle(step).catch((thrown) => ({ thrown }))))
+          const broken = failures.find((held) => held && held.thrown)
+          if (broken) throw broken.thrown
+          const failed = failures.find(Boolean)
           if (failed) return failed
         }
       },

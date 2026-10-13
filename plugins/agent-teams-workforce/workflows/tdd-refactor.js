@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    "Shared-tail mini \u2014 TDD Refactor. gitfacts.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitfacts.py puts the tree back at the snapshot. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With restoreTo (a snapshot tree id the refactor recorded) gitfacts.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
+    "Shared-tail mini \u2014 TDD Refactor. gitfacts.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitfacts.py puts the tree back at the snapshot. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With snapshotTree (a tree id the caller recorded before the refactor) it takes no snapshot and uses that one. With restoreTo (a snapshot tree id the refactor recorded) gitfacts.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -694,7 +694,7 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green, feedback?: string, restoreTo?: string, relay?: { runner, dir } }
+// args: { contract, green, feedback?: string, snapshotTree?: string, restoreTo?: string, relay?: { runner, dir } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -838,7 +838,9 @@ if (restoreTo) {
 
 const ledgerOf = (mode, ok) => ({ phase: 'refactor', beadId, chosen: ['code-refactoring-specialist'], mode, ok })
 
-const snap = await gitfacts('refactor-snapshot', ['snapshot', '--tree', repo])
+// A caller that recorded the tree before this run passes it as snapshotTree; no snapshot is taken then.
+const givenSnapshot = str(a.snapshotTree)
+const snap = givenSnapshot ? { facts: { tree: givenSnapshot } } : await gitfacts('refactor-snapshot', ['snapshot', '--tree', repo])
 if (snap.error) {
   return dispatchOutcome({
     ok: false,
