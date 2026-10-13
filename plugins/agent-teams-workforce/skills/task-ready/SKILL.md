@@ -1,6 +1,6 @@
 ---
 name: task-ready
-description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run when a Task is claimed for work — `/next-task` runs it on the candidates before dispatching one. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores the verdict as the readiness gate keys the beads-contract metadata schema defines, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
+description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run before a Task is worked. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores the verdict as the readiness gate keys the beads-contract metadata schema defines, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
 ---
 
 # Task Ready — Content Completeness Gate
@@ -14,9 +14,8 @@ has no custom fields, so it uses the marker-comment fallback described below.
 
 ## What this skill is for
 
-**Quality control on a Task's CONTENT, at the moment the Task is claimed for work.** It
-runs over a candidate before anyone works it — `/next-task` runs it on the candidates in
-WSJF order — and answers one question: does this Task say enough for someone to work it,
+**Quality control on a Task's CONTENT, before the Task is worked.** It
+runs over a candidate before anyone works it and answers one question: does this Task say enough for someone to work it,
 and if not, what is missing. That is its whole purpose, and running it there is what keeps
 an incomplete Task from being dispatched.
 

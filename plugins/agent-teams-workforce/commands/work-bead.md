@@ -1,15 +1,15 @@
 ---
-description: "Route one bead: build a Task with task-to-deploy, or report where an Epic's elaboration stands"
+description: "Route one bead and report where its pipeline stands: the next step of its step journal"
 argument-hint: "<bead-id>"
 allowed-tools: [Bash, Read, Workflow]
 ---
 
 # Work a bead
 
-Route `$ARGUMENTS` through the router that owns its kind. A Task is built by dispatching
-`task-to-deploy`. An Epic or a Story is elaboration work, which the pipeline's driver runs; for
-those this command dispatches nothing and reports where the Epic's elaboration stands. Do not
-implement anything yourself and do not hand-roll a phase.
+Route `$ARGUMENTS` through the router that owns its kind, then report where its pipeline stands.
+This command dispatches no pipeline. The pipeline's driver runs every build, deploy and
+elaboration: it opens the bead's step journal, starts the run, and writes each step's result to
+the journal while the run works. Do not implement anything yourself and do not hand-roll a step.
 
 ## 1. Resolve the bead
 
@@ -47,8 +47,8 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
 `python3 $ROOT/skills/artifact-handoff/scripts/infra_vocabulary.py`, passed as it stands.
 
 Supply `parentType` and `ancestorTypes` from the parent chain. A Task is routed to
-`task-to-deploy` (which runs its Infra Intent phase for an infrastructure Task) with or without them;
-they only change the router's `reason`. A bead labelled `human` is skipped.
+`task-to-deploy` (which adds its infrastructure step for an infrastructure Task) with or without
+them; they only change the router's `reason`. A bead labelled `human` is skipped.
 
 **Epic, Story, or Feature — ELABORATION work:**
 
@@ -72,113 +72,46 @@ The router returns `{action, composite, reason}`:
 
 | action | What to do |
 | --- | --- |
-| `work` | Dispatch that composite (step 3b, then 4) |
-| `elaborate` | **Go to step 5.** Nothing is dispatched from here: the pipeline's driver runs elaboration. |
-| `skip` | **Stop.** Report the id and the reason. Do not dispatch anything. |
+| `work` | **Go to step 4** with the Task. Nothing is dispatched from here: the pipeline's driver runs the build. |
+| `elaborate` | **Go to step 4** with the Epic. Nothing is dispatched from here: the pipeline's driver runs elaboration. |
+| `skip` | **Stop.** Report the id and the reason. |
 
 A skip is an outcome, not an obstacle. Never relabel a bead to make it routable —
 a skip's reason names what the bead needs, and a new label is never it.
 
-## 3b. The worktree — owned by the composite, not by this command
+## 4. Where the bead's pipeline stands
 
-Skip any thought of provisioning a tree here. **The composite establishes its own
-worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `<repo>/.worktrees/<bead>-<repo>`, inside the repository it belongs to
-on a feature branch. Its return value is the sole source of `contract.repoPath`, and every
-writing phase inherits it. When it establishes no tree, or the tree is on a default branch
-or a detached HEAD, the run stops before any writing phase.
+A Task is built by `task-to-deploy`, a workflow script the driver dispatches with the Task's
+step journal. An Epic is elaborated by `prd-to-spec`, which runs in the Python orchestrator
+(`$ROOT/orchestrator/run.py`) and which the driver starts. A Story is elaborated through its
+parent Epic and deployed by the driver once its last Task is done: for a Story, report both its
+own journal and its parent Epic's. A Story with no parent Epic, and a feature: report the
+router's reason and stop.
 
-**So pass the contract's repository as it stands.** It is the repository the
-Task's contract names, not a worktree you built. A resumed run finds its earlier tree
-anyway: `workspace` recognises a linked worktree on a feature branch for this bead and
-reuses it.
-
-## 4. Dispatch — `work` only
-
-Read the Task's build contract with the `beads-contract` CLI — it is the one authority on
-what a Task carries:
+One dispatch is one pass over the bead's step journal; it begins at the first step the journal
+does not mark done. Print that step:
 
 ```bash
-python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
-```
-
-Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
-repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
-the requirement ids and the architecture views the Task was designed against — every field the
-schema's build-contract projection defines (`$ROOT/skills/beads-contract/schemas/bead-metadata.schema.json`).
-Pass it as-is, adding the Task's `type` and `labels`; do not rebuild it by hand and do not drop
-fields from it. If `missing` names the repository, the Task's build contract is incomplete:
-elaboration records the repository on the Task, so report the id and that reason and stop — never
-work out a repository yourself.
-
-```
-Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: <the contract's bead>,
-         infraVocabulary: <the object passed to the router>,
-         pluginRoot: "$ROOT",
-         designSystem: {packagesDir: "<host-configured packages directory>"}}})
-```
-
-`<composite>` is the one the router named, `task-to-deploy`. `infraVocabulary` is required: the
-composite refuses to start without it, and with the Task's `type` and `labels` it tells
-`task-to-deploy` an infrastructure Task. `designSystem.packagesDir` is the host's folder of
-supplied cds bundles; a `web-ui` Task picks up a mockup placed there any time before it is
-built. Omit it when the host configures none. The composite's `workspace` phase turns the
-contract's repository into the worktree; do not pre-cut one.
-
-Then go to step 6.
-
-## 5. Elaborate — `elaborate` only
-
-The bead is an Epic, a Story or a feature. **This command dispatches no elaboration.**
-`prd-to-spec` runs in the Python orchestrator (`$ROOT/orchestrator/run.py`), and the pipeline's
-driver starts it: the driver's elaboration lane selects the Epic, builds its dispatch arguments
-and reads its handback. There is no workflow script for it, and a session does not start the
-orchestrator or the driver.
-
-A Story is elaborated through its parent Epic: `prd-to-spec` takes an Epic and its PRD. For a
-Story, take its parent Epic from the parent chain (step 1) and continue below with that Epic.
-A Story with no parent Epic, and a feature: report the router's reason and stop.
-
-One elaboration dispatch is one pass over the Epic's step journal; it begins at the first step
-the journal does not mark done. Print that step:
-
-```bash
-atw-step-journal next --dir "$ATW_CONTROL_REPO/.claude/workflow-runs/step-journals" --bead <epic id>
+atw-step-journal next --dir "$ATW_CONTROL_REPO/.claude/workflow-runs/step-journals" --bead <bead id>
 ```
 
 `ATW_CONTROL_REPO` is the `CONTROL_REPO_ENV` variable of the `pipeline-contracts` skill
 (`$ROOT/skills/pipeline-contracts/schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`);
 if it is unset, report `ATW_CONTROL_REPO is unset` and stop. When the command reports that it
-cannot read the journal file, the Epic has no step journal: report that. Read the Epic's
-elaboration state with
+cannot read the journal file, the bead has no step journal yet: report that. A step whose
+status is `failed` carries its cause in `failure`; report it verbatim.
+
+For an Epic, read its elaboration state with
 `python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" metadata get <epic id>`.
 
-Then go to step 6. Write nothing: the run writes the Stories, the Tasks and their edges itself.
+Write nothing: the run writes the journal, the Stories, the Tasks and their edges itself.
 
-## 6. Report
+## 5. Report
 
 One line each, no more:
 
-- which composite ran, and why the router chose it; for an `elaborate`, that the pipeline's
-  driver runs elaboration and this command dispatched nothing, with the Epic's elaboration
-  state and the step its journal names next
-- the phase it reached
-- for a Task, the Story worktree and branch the work was committed on, and the commit (a Task
-  deploys nothing and opens no pull request: its Story deploys and opens one pull request once
-  its last Task is done)
-- the `stage` and `headline` of a run that stopped, **verbatim**
+- which composite owns the bead, and why the router chose it
+- that the pipeline's driver runs it and this command dispatched nothing
+- the step the bead's journal names next, with its status, and the cause of a failed step
+- for an Epic, its elaboration state
 - what you did NOT do
-- when the result carries `cdsAudit`, its verdict and finding count
-
-When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped.
-The `cds-audit` command writes the schema's cds audit keys (the `CDS_AUDIT_KEYS` group of
-`$ROOT/skills/beads-contract/schemas/bead-metadata.schema.json`) and refuses a verdict outside
-its allowed values; do not write those keys with `metadata set`:
-
-```bash
-python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" cds-audit <id> '<the result's cdsAudit, as JSON>'
-```
-
-If the run stops, report it. Do not work around it, do not edit the workflow
-mid-run, and do not fall back to a subagent beside the pipeline.

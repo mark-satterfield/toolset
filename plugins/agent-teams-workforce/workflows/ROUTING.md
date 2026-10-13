@@ -16,7 +16,7 @@ before writing one.**
 | Composite | Front-end | For |
 |---|---|---|
 | `prd-to-spec` | not a workflow script: the Python orchestrator (`orchestrator/run.py`), started by the pipeline's driver. One dispatch claims the Epic and runs the steps of the Epic's step journal from the first that is not done: Open the run → Architecture → TRD → Specs and Stories (one container of steps per repository) → Tasks (one per repository) → Task edges → Score the Tasks → Apply the done rule → Story edges → Mark the Epic elaborated | a feature with no implementation-ready contract yet. It elaborates an existing Epic; the claim refuses, with a named reason, one that is not open, whose elaboration is done, or that another run owns. The driver selects only an Epic that is scored, has a PRD that resolves, waits on no Epic whose elaboration is not done, and is ready, or in progress with no live owner. In the Architecture step `aws-solutions-architect` establishes the architecture the PRD needs in the arc42 documents and has the TRD written; reviewers selected by rule review the unapproved content; a script approves it in the matrix and makes the reviewed documents effective. An owner concern of the decider, or a GitHub sign-in the run needs to create a repository, holds the Epic for a person. The repository span is read from the matrix: the elements the PRD's features are realized by, and what those depend on, that no pipeline has built, grouped by repository. Per repository, the spec steps write the contracts, the data model and the acceptance criteria, one review settles its findings, and the Story bead is written; the Task steps decompose the Story into sized Tasks, one step per Task bead write (an open Task of another Epic in the same repository that plans the work gets a `blocks` edge instead of a duplicate). Each step writes what it authors into beads itself, keyed by the elaboration key. The Task edges between Stories are written, the Tasks are scored, the done rule requires a Story and Tasks for every repository, and the Epic is marked elaborated. `orchestrator/specs/epic/prd-to-spec.md` describes it. |
-| `task-to-deploy` | workspace (the Story's branch) → infra-intent (an infrastructure Task) → baseline suite-run → red loop → green loop → refactor → documentation → final suite-run → commit | work whose spec/contract already exists and is implementation-ready — the Task's build contract names its repository, its spec documents and the architecture views it is designed against, and the run builds to it without ruling any architecture of its own. An infrastructure Task (a type or label in the infrastructure vocabulary, rule 2 below) runs `infra-intent` first and has `cdk-stack-author` as its Green implementer |
+| `task-to-deploy` | a workflow script the pipeline's driver dispatches with the Task's step journal. It runs the journal's steps from the first that is not done (`skills/pipeline-contracts/schemas/pipeline-steps.json`, pipeline `build`): workspace (the Story's branch) → infra-intent (an infrastructure Task) → regression scope → baseline suite-run → test agents and a Red check → implementers and a Green check → refactor → documentation → final suite-run → regression evidence → commit | work whose spec/contract already exists and is implementation-ready — the Task's build contract names its repository, its spec documents and the architecture views it is designed against, and the run builds to it without ruling any architecture of its own. An infrastructure Task (a type or label in the infrastructure vocabulary, rule 2 below) runs `infra-intent` first and has `cdk-stack-author` as its Green implementer |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior. **On-demand only** — nothing routes here automatically; a bug reaches it after a person triages it (see [A Bug is never routed](#a-bug-is-never-routed)) |
 
 ## Type / label → composite
@@ -119,8 +119,9 @@ None of it is a script in this folder. One tick:
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
    (`atw-bd update --status` / claim), so a second runner can't grab the same bead.
 3. **Route it.** Call `route-build` with `{ bead }` for a Task or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. A Bug can be handed to either — both skip it, naming triage. Neither reads `childCount`.
-   - composite is a build composite → run that composite on-demand, dispatched by path
-     (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
+   - composite is `task-to-deploy` → the pipeline's driver dispatches it: the driver opens the Task's
+     step journal, names the run, and applies the journal changes the workflow reports while it runs.
+     A session dispatches nothing and reports where the Task's journal stands.
    - composite is `prd-to-spec` → dispatch nothing and report it: elaboration is not a workflow
      script, and the pipeline's driver runs it.
    - composite is null → **report the skip** (id + reason) and leave the bead's
@@ -152,19 +153,20 @@ So the driver is a caller of the Workflow tool, never a workflow script. Two exi
 
 | Driver | What it is | When it drives |
 |---|---|---|
-| **The orchestrating session** (`/loop`, or `/agent-teams-workforce:next-task` / `:work-bead` one bead at a time) | A Claude Code session running the loop below with the Workflow tool | Interactive and semi-attended work |
-| **An external supervisor the host project provides** | A process that claims beads, dispatches headless sessions for the build composites, starts the Python orchestrator for `prd-to-spec`, and journals every run | Long unattended campaigns, and every elaboration |
+| **The orchestrating session** (`/loop`, or `/agent-teams-workforce:work-bead` one bead at a time) | A Claude Code session that routes a bead and reports where its pipeline stands | Routing, and the workflows a session runs itself (the portfolio workflows, `prd-creation`, `prd-validation`) |
+| **An external supervisor the host project provides** | A process that claims beads, opens each bead's step journal, dispatches headless sessions for the build composite and the workflow steps of a Story's deploy, applies the journal changes they report, and starts the Python orchestrator for `prd-to-spec` | Every build, every deploy and every elaboration |
 
 The consequence is worth stating plainly: **"unattended" is only as unattended as
 whatever is driving it.** A `/loop` sweep stops when its session stops. An external
 supervisor survives a session ending, and it is not part of this plugin.
 
-### Both run modes use the same composites
+### A build or a deploy continues from its step journal
 
-- **On-demand:** `Workflow({ scriptPath: '.../workflows/bug-fix.js', args: { bead } })`
-  (etc.) for a chosen bead — the operator picks the composite.
-- **Unattended:** `/loop` self-paces over `atw-bd ready`, using `route-build` to pick
-  the composite per bead. Same composites, same minis — only the selection differs.
+`task-to-deploy`, `story-deploy-fix` and `built-version` run the steps of a bead's step journal. A run
+that stopped is continued by the next dispatch, which begins at the first step the journal does not
+mark done; nothing else decides where a run begins. The workflow reads the journal once, at its start,
+and reports each change on its log as a `STEP-JOURNAL` line; the driver applies each line to the
+journal file with `orchestrator/core/journal_lines.py`.
 
 ### Dispatch by path, not by name
 
@@ -177,7 +179,6 @@ the revision that existed when it began, so a fix landed mid-session never takes
 effect; and the tool call records only the name, so nothing afterwards can
 establish which revision actually ran. A run that looks reproducible is not.
 
-`scriptPath` pins the artifact under execution, and `resumeFromRunId` continues
-a run whose revision is already pinned. Name dispatch is refused by
+`scriptPath` pins the artifact under execution. Name dispatch is refused by
 `pre-tool-workflow-dispatch-guard.cjs`, which detects the stale-snapshot form
 and names the path-pinned replacement.
