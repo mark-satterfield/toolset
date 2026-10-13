@@ -67,13 +67,12 @@ Each question below is answered from the matrix alone, without reading documents
 | Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
 | Q17 | Which app does this stack belong to, and which stacks belong to this app? | One app for a stack; the list of stacks for an app. |
 | Q18 | Which arc42 documents describe this service, component or piece of infrastructure? | A list of documents, each with the heading that describes it and whether the document is effective. |
-| Q19 | Which stack is this Story or Task placed in and what does it build, and which Stories and Tasks are placed in this stack? | One stack with its repository and the things built; for a stack, the open Stories and Tasks placed in it, each with its Epic. |
-| Q20 | What rests on this architecture document, feature, service, component, piece of infrastructure or stack? | The features, constraints and dependents that rest on it, the requirements and Epics those serve, and the open Stories and Tasks that build it. For a component, this includes which requirements of which PRDs it implements. |
-| Q21 | Which other Epics share a feature, architecture document, service, component or stack with this Epic, or drive or rest on the same architecture decision? | A list of Epics, each with what is shared and how. |
-| Q22 | What does this stack publish and deploy, and which commands test, publish and deploy it? | Whether it publishes a package, deploys with CDK, or both, and the three commands. |
-| Q23 | Which stacks hold infrastructure of a given resource type? | A list of stacks, each with the matching infrastructure. |
-| Q24 | Which expertise does this Epic need? | A list of skills. |
-| Q25 | Which stacks does this repository hold? | A list of stacks. |
+| Q19 | What rests on this architecture document, feature, service, component, piece of infrastructure or stack? | The features, constraints and dependents that rest on it, the requirements and Epics those serve. For a component, this includes which requirements of which PRDs it implements. |
+| Q20 | Which other Epics share a feature, architecture document, service, component or stack with this Epic, or drive or rest on the same architecture decision? | A list of Epics, each with what is shared and how. |
+| Q21 | What does this stack publish and deploy, and which commands test, publish and deploy it? | Whether it publishes a package, deploys with CDK, or both, and the three commands. |
+| Q22 | Which stacks hold infrastructure of a given resource type? | A list of stacks, each with the matching infrastructure. |
+| Q23 | Which expertise does this Epic need? | A list of skills. |
+| Q24 | Which stacks does this repository hold? | A list of stacks. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
@@ -101,7 +100,6 @@ This list is not complete.
 | Package | One Python package: a custom library published to CodeArtifact, or a third-party package. |
 | Layer | One AWS Lambda layer. It contains packages and is used by Lambdas. |
 | Repository | Where a stack's source can currently be found. An attribute of a stack. |
-| Story and Task | One open Story or Task, by its beads id, placed in the stack it lands in, with the things it builds. |
 
 ### 3.2 The relationships
 
@@ -364,3 +362,14 @@ the pipeline assumes, and it never blocks a step:
   is needed or becomes known: in elaboration, in build, in deploy and in repository work. A
   fact that becomes known at a step and is recorded only later, or elsewhere, is found again
   by scanning.
+
+### Stories and Tasks
+
+- **R40.** The matrix records no Story and no Task. Beads is the authority for both.
+- **R41.** A Task states in full what it builds, using the matrix's ids for the stack, the
+  components and the shared capabilities. Elaboration reads the matrix to write that into
+  the Task, and may reference architecture documents and other detail the matrix led it to.
+- **R42.** Three things are answered by a script that reads open Task beads and matches
+  their ids against the matrix, not by entries in the matrix: which entries a Story built
+  (for the verified mark); which open work from other Epics touches an entry; which open
+  Tasks a change affects.
