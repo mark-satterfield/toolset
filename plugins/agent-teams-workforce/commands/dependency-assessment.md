@@ -21,9 +21,10 @@ PRDs in full, and applies the edge test in both directions. It proposes every ed
 the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on
 it. Code refuses any edge that does not touch the Epic, a cycle, an unaccounted standing edge
 and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
-The session validates its proposal and runs apply-edges, which validates it again and
-writes nothing unless it passes. A proposal that does not validate stops the run, naming
-the Epic and each finding, and writes nothing.
+The session checks its proposal with the validate command and writes nothing to beads. The
+workflow validates the proposal and runs apply-edges, which validates it again and writes
+nothing unless it passes. A proposal that does not validate stops the run, naming the Epic
+and each finding, and writes nothing.
 
 It writes, unless `--propose` is given.
 
@@ -81,13 +82,12 @@ From the workflow's result:
   edges themselves are in the file `edges.resultFile` names: every edge added, converted or
   removed as `blocker -> blocked` from its `plan.add`, `plan.convert` and `plan.remove`, and
   every withdrawal with its reason from its `withdrawn`. Then the reasoning file
-  (`reasoning`) and the edges the sequencer was unsure of (`unsure`). When `edges.applied` is
-  false, its `reason`, or the validation defects.
-- `assessment.relatedRead` — the Epics whose PRDs the session read in full.
+  (`edges.reasoning`), which holds the Epics whose PRDs the session read in full and the edges
+  the sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
+  defects.
 - `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct
-  the PRD, or the hand-made edge a cycle runs through, then assess the Epic again. Under the
-  ops triggers the Epic is assessed again once its content changes.
+  the PRD, or the hand-made edge a cycle runs through, then assess the Epic again.
 - With `--propose`: `edges.proposed`, then the counts and the edges read from
   `edges.resultFile` as above — there they are the diff that would be written — the proposed
   edge set with its reasons (`edgesFile`) and the reasoning (`reasoning`).

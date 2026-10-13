@@ -73,9 +73,9 @@ From the workflow's result:
   `unfingerprinted`, `current`), and how many stored values were adopted.
 - `judging` — per level, the sessions run, the items judged, and the ids of the items
   whose session failed (for Tasks, the failed groups too, in `failedGroups`).
-- `judgingFailed` — every Epic and Task a failed judging session left unjudged, with
-  `error`. A failed session fails the run (`ok: false`): those items keep no new value and
-  stay to judge, while the judgments that did return are recorded and scored.
+- `judgingFailed` — every Epic and Task a failed judging session left unjudged. Those items
+  keep no new value and stay to judge, while the judgments that did return are recorded and
+  scored; a failed session does not by itself make `ok` false.
 - `record` — values written and adopted; `rejected`, each judgment refused — a value off
   the rubric's scale, an item judged twice, or an item the plan did not name — with its
   reason from `<workDir>/record.json`; `unreadable`, each judgment file that could not be

@@ -55,7 +55,7 @@ scored.
 
 `meta.description` says the session "runs apply-edges"; the code and the session's brief say the
 opposite (the session must not write to beads; the workflow validates and applies). This spec
-follows the code: Python applies.
+follows the code: the workflow applies.
 
 ## 2. Produces and decides
 
@@ -79,11 +79,13 @@ After a successful run (with `apply` true):
 
 ## 3. Inputs
 
-- Arguments: `epic` (required), `repoPath` (default: the control repository), `workDir`,
-  `archPath` (the architecture root; required by the command), `projectRoot`, `apply`
+- Arguments: `epic` (required), `repoPath` (default: the control repository), `pluginRoot`,
+  `workDir`, `archPath` (the architecture root; required by the command), `projectRoot`, `apply`
   (default true); the control repository, architecture root and project root come from the
   `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
-  skill, `priorFailure` (optional; no current caller).
+  skill. Optional, passed by no current caller: `priorFailure` (text put at the head of the
+  brief), `contextDir` (default `<workDir>/context`), `corpusReady` (passes `--corpus-ready` to
+  `assess-context`), `score` (false skips the scoring step).
 - beads, read with descriptions: every open Epic (title, description = PRD,
   `KEY_ELABORATION_STATE`), every `tracks`/`blocks` edge among Epics, the `SEQUENCING_KEYS` on each
   Epic, the judging
@@ -103,17 +105,29 @@ Files (under `<workDir>`):
   elaborationState, prdPath}, standing: [{from, to, type, owned, reason, confidence, setBy,
   setAt}], withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath,
   summary: {epic, openEpics, standing, withdrawn, owned, handMade}}`.
-- `edges.json` (written by the agent): `{edges: [{from, to, reason, confidence: high|medium|low,
-  archCheck, answers?}], withdrawn: [{from, to, reason}]}`; nothing is stamped into it.
-- `edges.json.meta.json` (new, step 5): `artifactio.record` of `edges.json` with inputs
-  `context.json` and the `context/` directory (kind `dir`): the one input-record format of every
-  Epic flow.
+- `candidates/edges.json` (written by the agent): the proposal, `{edges: [{from, to, reason,
+  confidence: high|medium|low, archCheck, answers?}], withdrawn: [{from, to, reason}]}`. Beside
+  it the agent writes its progress file `candidates/edges.json.progress.json`, and
+  `artifactcontract.py` writes the checkpoint `candidates/edges.json.checkpoint` from it. Both
+  are defined by `skills/artifact-handoff/schemas/checkpoint.schema.json`; the checkpoint is
+  bound to the candidate path, the digest of the proposal schema and the input revision (step 3).
+- `edges.json`: the accepted proposal. `jsonartifact.py` checks the candidate against the
+  proposal schema and publishes it in canonical JSON; nothing is stamped into it.
+  `edges.json.receipt` holds `{artifactPath, sha256, bytes, schemaSha256, revision}` for the
+  published bytes, `edges.json.prev` the proposal it replaced when the two differ, and
+  `edges.json.publish` exists only while a publish is under way.
 - `reasoning.md` (written by the agent): the foundation checklist answers, per-edge and
   per-withdrawal reasoning, related PRDs read, validation findings, uncertainty.
-- `validation.json`: `edgeset.validate` result: `{ok, level, edgeCount, withdrawnCount, scope,
-  badScope, outsideScope, missingReason, missingArchCheck, readdsWithdrawn, unaccounted,
-  withdrawnNotOwned, keptAndWithdrawn, notEpicToEpic, cycle, dangling, selfEdges, ontoClosed,
-  fromClosed, duplicates}`.
+- `validation.json` (written by the agent's own check of its candidate, `depscore.py validate
+  ... | tee validation.json`): the `edgeset.validate` result: `{ok, level, edgeCount,
+  withdrawnCount, scope, badScope, outsideScope, missingReason, missingArchCheck,
+  readdsWithdrawn, unaccounted, withdrawnNotOwned, keptAndWithdrawn, notEpicToEpic, cycle,
+  dangling, selfEdges, ontoClosed, fromClosed, duplicates}`. The workflow's own validation of
+  `edges.json` (step 7) is saved in its relay file.
+- `relay/`: one numbered file per `depscore.py` command with its full result
+  (`relay/<nnn>-<command>.json`), the source receipts the input revision is made from
+  (`relay/assessment-inputs.json`), and the acceptance receipt (`relay/accepted-edges.json`,
+  with `relay/accepted-edges.json.probe` for the reuse check).
 - `apply-edges.json` (or `apply-edges-dry-run.json`): `edgeset.apply_edges` result: `{applied,
   dryRun, level, scope, planned, sequencedRecorded, validation, added, converted, removed,
   unchanged, withdrawn: [{from, to, reason}], reasonsRecorded, withdrawalsRecorded, plan: {add,
@@ -127,67 +141,82 @@ final ownership with reasons and withdrawal records, then the assessed Epic's
 
 No vault writes, no git commits, no ledger events.
 
-Result: `{ok, stage: "done" | "Assess" | "Score", beadId, headline, apply, settled, workDir, epic,
-assessment: {edgesPath, reasoningPath, edgeCount, withdrawnCount, valid, applySummary},
-edges: {added, converted, removed, unchanged, withdrawn, applied, proposed, resultFile, edgesFile,
-reasoning, reason?}, scoring: <wsjf-scoring result>, stop: {epic, findings, edgesFile,
-validationFile, reasoning} | null, error?}`.
+Result: `{ok, stage: "done" | "Assess" | "Score" | "args" | "agent-dispatch-failed", beadId,
+headline, apply, settled, workDir, epic, assessment: {edgesPath, reasoningPath, edgeCount,
+withdrawnCount, valid, saved, applySummary} | {failed: true, error?}, edges: {added, converted,
+removed, unchanged, withdrawn, applied, proposed, resultFile, edgesFile, reasoning,
+uncertaintyPath, reason?}, scoring: <wsjf-scoring result> | null, stop: {epic, findings,
+edgesFile, validationFile, reasoning} | null, error?, dispatchFailed, dispatchFailures}`.
 
 ## 5. Steps
 
-1. `deterministic` **Plan**: `depscore.assess_plan(graph, epic=<epic>, level="epic")` (today
-   `depscore.py assess-plan --epic <id> --out assess-plan.json -C <repo>`). Its `fingerprints`
-   are what `apply-edges` records as `KEY_SEQ_CONTENT_HASH`. Refuse, with no session, when `<epic>` is
-   not an open Epic (`edgeset.scope_defect`).
-2. `deterministic` **Context**: `assesscontext.assess_context(graph, epic, context_dir)` (today
-   `depscore.py assess-context --epic <id> --dir context --out context.json`). Writes the corpus,
-   the index and `context.json`.
-3. `deterministic` **Reuse**: if `edges.json` exists and every input recorded in its `.meta.json`
-   (`context.json` and the `context/` directory) hashes as recorded, skip step 4.
-4. `agent` **Assess**: `epic-sequencer`. Input paths: `context/prd/<epic>.md`, `context/prd/`,
-   `context/index.md`, `context.json`, `archPath`; `priorFailure` text when given. Brief: THE
-   TEST and the nine foundation layers (network and egress; identity and authorization; data
-   stores and data residency; event platform; API shape; chassis and runtime; configuration and
-   secrets; observability; environments), the eight-step order the JavaScript gives, the edge
-   file format, "do not write to beads". The session may run `depscore.py validate --edges
-   edges.json --epic <id>` itself, inside its own session, to check its file. Output files:
-   `edges.json`, `reasoning.md`. Model `opus` (agent frontmatter), effort `medium` (frontmatter
-   and JS), `maxTurns` 240. Opus is right: the session reads many full PRDs and makes the
-   architecture judgments the edges encode, and a wrong or missing edge orders elaboration wrongly
-   with nothing downstream to catch it. One session; nothing runs in parallel. It runs inside the
-   session runner's section 2 guard (`driver-contract.md` §8): `epic-sequencer` holds Write and
-   reads `archPath`.
-5. `deterministic` **Record**: `artifactio.record` of `edges.json` with the step 3 inputs.
-6. `deterministic` **Validate**: `edgeset.validate(graph, edges, epic, withdrawn, "epic")` (today
-   `depscore.py validate --edges edges.json --epic <id>`). Writes `validation.json`.
-7. `agent` **Correct** (only when step 6 is not ok, at most once): `epic-sequencer` again, new
-   session, with `validation.json`'s path and the instruction to revise `edges.json` to THE TEST
-   (drop an edge that fails it, never keep one to satisfy the validator; report a cycle through
-   a hand-made edge instead of forcing it). Then steps 5 and 6 again. Same model and effort.
-8. `deterministic` **Apply**: when step 6 is ok, `edgeset.apply_edges(graph, edges, writer,
-   ApplyScope(seen = assess-plan fingerprints, item=<epic>, withdrawn, level="epic"))` (today `depscore.py
-   apply-edges --edges edges.json --plan assess-plan.json --epic <id> [--dry-run] --out
-   apply-edges.json`). It validates again against the graph as read now and writes nothing if
-   that fails.
-9. `deterministic` **Score**: when applied and not a dry run, run the `wsjf-scoring` flow
-   in-process with `workDir = <workDir>/scoring` and the same `repoPath`, `archPath`,
-   `projectRoot`.
-10. `deterministic` **Result**: assemble the result (section 4); `stop` when the proposal did not
-    validate after step 7.
+Each step is what `workflows/dependency-assessment.js` does. Every `depscore.py` and
+`jsonartifact.py` command runs through the relay (the `relay` shared block, `relayrun.py` and a
+`workflow-command-runner` session), and the script branches only on the checked copy of what the
+command printed.
 
-Every `depscore.py` call the JavaScript sent through `relay.js` / `relayrun.py` /
-`workflow-command-runner` (assess-plan, assess-context, validate, apply-edges) is a direct call
-in steps 1, 2, 6 and 8; its `artifactRevision` and `authorArtifact` relay calls are replaced by
-steps 3 and 5. The nested `settleWorkflow('wsjf-scoring')` is the in-process call in step 9.
+1. `deterministic` **Plan**: `depscore.py assess-plan --epic <id> --out assess-plan.json -C
+   <repo>` (`depscore.assess_plan`). Its `fingerprints` are what `apply-edges` records as
+   `KEY_SEQ_CONTENT_HASH`.
+2. `deterministic` **Context**: `depscore.py assess-context --epic <id> --dir <contextDir> --out
+   context.json` (`assesscontext.assess_context`). Writes the corpus, the index and
+   `context.json`. When step 1 or 2 fails, no session starts and the result's `edges.reason`
+   says the context could not be written.
+3. `deterministic` **Input revision**: `jsonartifact.py --source context.json --source
+   <contextDir>` fingerprints the two inputs (a file by its SHA-256 and size; a directory by the
+   relative path, SHA-256 and size of every file in it). The input revision is the SHA-256 of
+   those receipts together with the Epic id and scope. When the fingerprint command fails, the
+   revision is made from the two paths alone.
+4. `deterministic` **Reuse**: `jsonartifact.py --candidate candidates/edges.json --final
+   edges.json --schema-json <proposal schema> --revision <input revision> --probe --recover`.
+   - `edges.json` is reused, and no session starts, when its bytes match `edges.json.receipt`
+     and the receipt's `schemaSha256` and `revision` equal the current proposal schema digest and
+     input revision.
+   - Otherwise, when `candidates/edges.json.checkpoint` is bound to the same candidate path,
+     schema digest and revision and its status is `complete`, the candidate is accepted as in
+     step 6 and no session starts.
+   - When that checkpoint's status is `blocked`, the run stops with the checkpoint's reason and
+     its remaining items (`ARTIFACT_BLOCKED`).
+   - In every other case step 5 runs.
+5. `agent` **Assess**: `epic-sequencer`. The brief names `context/prd/<epic>.md`, `context/prd/`,
+   `context/index.md`, `context.json` and `archPath`, carries the `priorFailure` text when given,
+   and states THE TEST and the nine foundation layers (network and egress; identity and
+   authorization; data stores and data residency; event platform; API shape; chassis and
+   runtime; configuration and secrets; observability; environments), the eight-step order, the
+   proposal format and that the session runs no command that writes to beads. It ends with the
+   artifact contract data: the candidate path, the progress file path, the input revision and
+   the `artifactcontract.py` commands (`validate`, `checkpoint`, `complete`, `submit`, `status`)
+   bound to them. The session writes `candidates/edges.json` and `reasoning.md`, checks the
+   candidate with `depscore.py validate --edges candidates/edges.json --epic <id> | tee
+   validation.json` and revises it until `ok` is true or it records why it cannot be. Model
+   `opus` (agent frontmatter), effort `medium` (frontmatter and JS), `maxTurns` 240. One session;
+   nothing runs in parallel.
+6. `deterministic` **Accept**: the step 4 command without `--probe`. `jsonartifact.py` checks
+   the candidate against the proposal schema and publishes it as `edges.json` with
+   `edges.json.receipt` (section 4), and reports the counts of `edges` and `withdrawn`. A
+   candidate that fails the schema is not published and the run ends at stage `Assess` with
+   nothing written to beads.
+7. `deterministic` **Validate**: `depscore.py validate --edges edges.json --epic <id>`
+   (`edgeset.validate`); its result is saved in its relay file. An Epic id that is not an open
+   Epic is refused here (`badScope`). When the result is not `ok`, nothing is applied, the result
+   carries `stop`, and the workflow starts no second session.
+8. `deterministic` **Apply**: when step 7 is ok, `depscore.py apply-edges --edges edges.json
+   --plan assess-plan.json --epic <id> [--dry-run] --out apply-edges.json`
+   (`edgeset.apply_edges`). It validates again against the graph as read now and writes nothing
+   if that fails.
+9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
+   is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
+   <workDir>/scoring` and the same `repoPath`, `pluginRoot`, `archPath` and `projectRoot`.
+10. `deterministic` **Result**: assemble the result (section 4).
 
-Agents dispatched by the JavaScript, accounted for:
-- `epic-sequencer`: kept, step 4 (and step 7 for the one corrective pass).
-- `workflow-command-runner` (every relay call): dropped; replaced by direct steps.
+Agents the workflow dispatches:
+- `epic-sequencer`: step 5, at most one session a run.
+- `workflow-command-runner`: one session for each relay call of steps 1 to 4 and 6 to 8.
 - The `wsjf-scoring` workflow's agents: see `<orch>/specs/epic/wsjf-scoring.md`.
 
-## 6. Checks kept / Checks dropped
+## 6. Checks
 
-**Checks kept** (all in `edgeset.validate`, run in step 6 and again inside `apply_edges`)
+**In `edgeset.validate`** (run in step 7 and again inside `apply_edges`)
 - Edge does not touch the Epic (`outsideScope`): without it one Epic's assessment rewrites edges
   between two other Epics; nothing later re-assesses them.
 - Both ends are Epics (`notEpicToEpic`), no dangling id, no self-edge: without it a `tracks` edge
@@ -202,55 +231,57 @@ Agents dispatched by the JavaScript, accounted for:
 - Closed ends are filtered out before applying: without it an edge onto a closed Epic is written.
 - `apply_edges` writes ownership before adding an edge: without it a crash leaves an unowned edge
   no later assessment may withdraw.
-- Hard limit: no write to arc42 section 2; this flow's own steps write nothing in the vault, and
-  the session runner's guard covers the agent session.
+
+**In `jsonartifact.py`** (steps 4 and 6)
+- The candidate is valid against the proposal schema before it becomes `edges.json`.
+- `edges.json` is read as accepted only when its bytes match `edges.json.receipt`.
+- An accepted `edges.json` is reused only for the same proposal schema digest and the same input
+  revision, so a change to `context.json` or to any file under the context directory starts a
+  new session.
 
 **Checks the intent requires that the code does not enforce** (recorded, not settled: outside this rewrite, CONTEXT 7.17)
 - Missing `archCheck` (`missingArchCheck`) and re-adding a withdrawn edge without `answers`
   (`readdsWithdrawn`) are reported by `validate` but are not part of `ok`, although the session's
   brief, the command text and `README.md` say they are refused.
-
-**Checks dropped**
-- `resolveArgs` / `refuseArgs` relay script: Python reads env vars directly.
-- `artifactRevision` / `authorArtifact` (candidate file, schema check, publish under an input
-  revision): the authoritative check is `validate` + `apply_edges`'s own re-validation; a
-  malformed file fails `read_edges` and is reported. Step 3 covers the revision's resume job.
-- `contextDir` and `--corpus-ready`: only the deleted triggers' "seed once, assess many" pass used
-  them.
-- `score: false`: only the deleted triggers passed it ("assess each, then score once"). A second
-  scoring run judges nothing new (fingerprints unchanged) and only redoes the arithmetic.
-- The relay `noResult` / `agent-dispatch-failed` stage: there is no runner.
+- The workflow itself guards no write to arc42 section 2: its own steps write nothing in the
+  vault, and the `epic-sequencer` session holds Write and reads `archPath`.
 
 ## 7. Failure causes
 
-- Steps 1, 2, 6, 8 `bd` read or write (`beadgraph.GraphError`): its `cause` field gives
+- Steps 1, 2, 7, 8 `bd` read or write (`beadgraph.GraphError`): its `cause` field gives
   `bd-timeout`, `contention` or `other`. The field exists, but `beadgraph._bd` chooses it from
-  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (QUESTIONS.md item 6). Retry reasonable for the first two with backoff (30 s doubling, cap 30
-  min).
-- Step 1 scope refused (not an open Epic) or `SequencingError`: `other`; not retried.
-- Step 4/7 session: `api` / `quota` from the headless runner's structured result (breaker);
-  retry reasonable. Returned with no `edges.json`, or an unreadable one: `other`; not retried on
-  unchanged input; record the failed item.
-- Step 6 not ok after the one corrective pass: `other`; not retried; the run stops with `stop`.
-  When the cycle runs through a hand-made edge (`owned: false`), that is an owner fact (the owner
-  made the edge): the finding goes to the owner inbox (`ownerinbox.py`, `$ATW_OWNER_INBOX`).
-  Otherwise record the failure.
-- Step 8 refused (the graph changed between 6 and 8 and validation now fails): `contention`;
-  rerun from step 1 is reasonable (the tracker moved).
+  `bd`'s standard error, which CONTEXT 7.4 does not accept as structured (QUESTIONS.md item 6).
+  The workflow does not retry the command; the run ends at stage `Assess` with the error in
+  `edges.reason`.
+- A relay call whose runner session returns nothing: stage `agent-dispatch-failed`, with the
+  dispatch named in `dispatchFailures`.
+- Step 5 session: a transient dispatch failure is retried by the bounded dispatch policy inside
+  the workflow; a dispatch interruption ends the run as `paused` and `resumable`. A session that returns with no candidate, or with one that fails the schema: stage
+  `Assess`; the tracker keeps its current edges.
+- Step 7 not ok: the run stops with `stop`, naming the Epic and every finding. A cycle through a
+  hand-made edge (`owned: false`) is among those findings and in the reasoning document; the
+  owner corrects the edge or the PRD and assesses the Epic again.
+- Step 8 refused (the graph changed between 7 and 8 and validation now fails): stage `Assess`
+  with the findings in `stop`; a rerun reads the tracker again.
 - Step 9 fails: as in the `wsjf-scoring` spec; the applied edges stand; `ok` false at stage
   `Score`.
-- `relay`: no producer in this flow.
 
 ## 8. Resume points
 
-- Steps 1 and 2: recomputed every run (cheap, no session).
-- Step 4 (and 7): `edges.json` + `reasoning.md`, with `edges.json.meta.json`; fingerprint =
-  `context.json` and the corpus and index files under `context/` (the Epic's and every open Epic's
-  PRD, the standing and withdrawn edges). A rerun with unchanged recorded inputs starts no session.
+- Steps 1 to 3: recomputed every run (no `epic-sequencer` session).
+- Step 5: saved as `edges.json` with `edges.json.receipt`. A rerun in the same `workDir` starts
+  no session when the input revision is unchanged, that is when `context.json` and every file
+  under the context directory have the same bytes (the Epic's and every open Epic's PRD, the
+  index, the standing and withdrawn edges). A session that was interrupted leaves
+  `candidates/edges.json` with its progress file and checkpoint; a rerun with the same input
+  revision accepts a checkpoint marked `complete` without a session, and otherwise starts a
+  session that continues those files.
 - Step 8: idempotent (`apply_edges` writes nothing for an unchanged proposal). A rerun after it
   writes nothing again.
 - Step 9: resumes as `wsjf-scoring` does; after a scoring failure a rerun redoes only scoring.
-- A rerun needs the same `workDir`; not designed here, the flow being outside this rewrite (CONTEXT 7.17).
+- A rerun resumes only with the same `workDir`. The command gives every run a new one
+  (`<repo>/.claude/workflow-runs/dependency-assessment/<UTC time>`), so a run the command starts
+  begins at step 1 with nothing saved.
 
 ## 9. Requirements that apply
 
@@ -261,8 +292,8 @@ Agents dispatched by the JavaScript, accounted for:
   elaboration until the blocker's `KEY_ELABORATION_STATE` is `ELABORATION_DONE`. It never closes or opens an
   Epic, and it never uses "Epic closed" as a condition (7.6).
 - 7.8 WSJF filter: via step 9 (see the `wsjf-scoring` spec).
-- 7.4 Retries: one corrective pass with the exact findings (specific gap feedback); no rerun on
-  unchanged input.
+- 7.4 Retries: the session checks its own candidate with `validate` and revises it before it
+  returns; the workflow starts no second session on unchanged input.
 - 7.9 Who gets asked: only a cycle through the owner's hand-made edge reaches the owner.
 - 7.11 Deterministic over agentic: corpus, index, fingerprints, validation and the diff are code;
   only the edge judgment is agent work.

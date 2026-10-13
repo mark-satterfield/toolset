@@ -116,19 +116,19 @@ is under `<plugin>/skills/artifact-handoff/schemas/`.
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
 | `<workDir>/score-plan.json` | `wsjf-scoring#1` (`scoring.plan`) | `wsjf-scoring#2`, `#3`, `#7` | JSON: `{ judge, adopt, fingerprints, summary }` |
-| `<workDir>/judge-input-epic.json`, `judge-input-task.json` | `wsjf-scoring#2` (`scoring.judge_input`) | `wsjf-scoring#4`, `#5`, `#6` (input) | JSON: `{ level, items, referenceJobs, summary }` |
-| `<workDir>/prd/<epic-id>.md` | `wsjf-scoring#2` | `wsjf-scoring#4`, `#6` (input) | Markdown: `# <title>` + bead description |
-| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` | `wsjf-scoring#4`, `#5` (agent `wsjf-scorer`), recorded `#6` | `wsjf-scoring#3`, `#7` | JSON: `{ rubric, scores[], unscored[] }` |
+| `<workDir>/judge-input-epic.json`, `judge-input-task.json` | `wsjf-scoring#2` (`scoring.judge_input`) | `wsjf-scoring#3` (input), `#5` | JSON: `{ level, items, referenceJobs, summary }` |
+| `<workDir>/prd/<epic-id>.md` | `wsjf-scoring#2` | `wsjf-scoring#3` (input), `#5` | Markdown: `# <title>` + bead description |
+| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` | `wsjf-scoring#6` (`jsonartifact.py`), from the candidate `judgments/<level>/candidates/<key>.json` the agent `wsjf-scorer` writes in `#5` | `wsjf-scoring#4`, `#7` | JSON: `{ rubric, scores[], unscored[] }` |
 | `<workDir>/record.json` | `wsjf-scoring#7` (`scoring.record`) | `wsjf-scoring#9` | JSON: `{ written, adopted, rejected, missing, unreadable, summary }` |
 | `<workDir>/score.json` | `wsjf-scoring#8` (`scoring.score`) | `wsjf-scoring#9` | JSON: `{ epics[], tasks[], unscored, incomplete, cycles, summary }` |
 | `<workDir>/assess-plan.json` | `dependency-assessment#1`; `task-dependency-assessment#1` | `dependency-assessment#8`; `task-dependency-assessment#8` | JSON: `{ level, scope, unassessed, fingerprints, summary }` |
-| `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#4`, `#7` | Markdown |
-| `<workDir>/context.json` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#4`, `#7` | JSON: `{ epic\|task, standing[], withdrawn[], corpusDir, indexPath, summary }` |
-| `<workDir>/edges.json` | `dependency-assessment#4`, `#7` (agent `epic-sequencer`); `task-dependency-assessment#4`, `#7` (agent `task-dependency-mapper`); recorded `#5` | the same flow's `#3`, `#6`, `#8` | JSON: `{ edges[], withdrawn[] }` |
-| `<workDir>/reasoning.md` | the same agent steps (`#4`, `#7`) | none: read by the owner | Markdown |
-| `<workDir>/validation.json` | `dependency-assessment#6`; `task-dependency-assessment#6` | the same flow's `#7`, `#10` (Epic) / `#11` (Task) | JSON: `edgeset.validate` result |
-| `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | `dependency-assessment#8`; `task-dependency-assessment#8` (with `storyEdges` from `#9`) | the same flow's `#10` (Epic) / `#11` (Task) | JSON: `edgeset.apply_edges` result |
-| `<workDir>/scoring/` | `dependency-assessment#9`; `task-dependency-assessment#10` (the `wsjf-scoring` flow in-process) | as in the `wsjf-scoring` rows | as above |
+| `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#5` | Markdown |
+| `<workDir>/context.json` | `dependency-assessment#2`; `task-dependency-assessment#2` | the same flow's `#3` (input), `#5` | JSON: `{ epic\|task, standing[], withdrawn[], corpusDir, indexPath, summary }` |
+| `<workDir>/edges.json` | the same flow's `#6` (`jsonartifact.py`), from the candidate `candidates/edges.json` the agent writes in `#5` (`epic-sequencer`; `task-dependency-mapper`) | the same flow's `#4`, `#7`, `#8` | JSON: `{ edges[], withdrawn[] }` |
+| `<workDir>/reasoning.md` | the same agent step (`#5`) | none: read by the owner | Markdown |
+| `<workDir>/validation.json` | the agent's own check of its candidate in `dependency-assessment#5`; `task-dependency-assessment#5` | the same flow's `#10` (named in `stop` when step 7 saved no relay file) | JSON: `edgeset.validate` result |
+| `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | `dependency-assessment#8`; `task-dependency-assessment#8` (with `storyEdges`) | the same flow's `#10` | JSON: `edgeset.apply_edges` result |
+| `<workDir>/scoring/` | `dependency-assessment#9`; `task-dependency-assessment#9` (the `wsjf-scoring` workflow) | as in the `wsjf-scoring` rows | as above |
 
 `route-elaboration`, `prd-validation` and `gate-enforce` produce no artifact in the Epic pipeline.
 
@@ -151,10 +151,10 @@ allowed values are defined only in `<plugin>/skills/beads-contract/schemas/bead-
 | `elaboration.release`, with the dispatch's owner token | Epic: `KEY_ELABORATION_STATE_OWNER` emptied (when still this run's token) | `prd-to-spec`, when a dispatch ends before the Epic's mark |
 | *Rows below to `storyedges.story_edges` belong to the owner-run portfolio flows, which are not part of the Epic pipeline (CONTEXT 7.17). Two are shared: `scoring.score` and `storyedges.story_edges` also run inside `prd-to-spec`.* | | |
 | `scoring.record` (`depscore.py record`): `bd update --set-metadata` | Epic: `KEY_WSJF_UBV`, `KEY_WSJF_TC`, `KEY_WSJF_CONFIDENCE`, `scoring.SIZE_JUDGED_KEYS` (only when its size does not roll up from Tasks) and `KEY_WSJF_CONTENT_HASH`; Task: `scoring.SIZE_JUDGED_KEYS` and `KEY_WSJF_CONTENT_HASH`; adopted items: `KEY_WSJF_CONTENT_HASH` only | `wsjf-scoring#7` |
-| `scoring.score` (`depscore.py score`): `bd update --set-metadata` | the `WSJF_KEYS` the rubric's score row carries, less `scoring.SIZE_JUDGED_KEYS` (`scoring._apply`), on every open Epic and Task whose value changed | `wsjf-scoring#8` (also run by `dependency-assessment#9`, `task-dependency-assessment#10`) |
+| `scoring.score` (`depscore.py score`): `bd update --set-metadata` | the `WSJF_KEYS` the rubric's score row carries, less `scoring.SIZE_JUDGED_KEYS` (`scoring._apply`), on every open Epic and Task whose value changed | `wsjf-scoring#8` (also run by `dependency-assessment#9`, `task-dependency-assessment#9`) |
 | `edgeset.apply_edges` (`depscore.py apply-edges`): `bd dep add --type tracks`, conversions, removals, `bd update --set-metadata` | Epic `tracks` edges touching the Epic; on each blocked Epic `KEY_SEQ_OWNED_BLOCKERS`, `KEY_SEQ_OWNED_BLOCKERS_AT`, `KEY_SEQ_EDGE_REASONS`, `KEY_SEQ_EDGE_WITHDRAWN`; on the assessed Epic `KEY_SEQ_CONTENT_HASH`, `KEY_SEQ_ASSESSED_AT` | `dependency-assessment#8` |
 | `edgeset.apply_edges` with `level="task"` | Task `blocks` edges touching the Task and the same `KEY_SEQ_*` keys on Tasks | `task-dependency-assessment#8` |
-| `storyedges.story_edges` | Story `blocks` edges and `KEY_STORY_OWNED_BLOCKERS`, `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS` | `task-dependency-assessment#9` (and inside `prd-to-spec`) |
+| `storyedges.story_edges` | Story `blocks` edges and `KEY_STORY_OWNED_BLOCKERS`, `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS` | `task-dependency-assessment#8` (and inside `prd-to-spec`) |
 | `elabstate.hold_for_person` | Epic: `KEY_ELABORATION_STATE` = `ELABORATION_AUTHORING`, `KEY_ELABORATION_STATE_AT` = now, `KEY_ELABORATION_STATE_CAUSE` = `CAUSE_AWAITING_HUMAN`, `KEY_ELABORATION_STATE_OWNER` emptied | `driver` (from `requiredHumanActions`, `driver-contract.md` §4); no Epic flow writes it |
 | `artifactio.file_in_vault` bead metadata | Epic: `artifact_key("trd", "vault_path")`; each Story: the `vault_path` artifact keys of kinds `spec`, `spec_data_model`, `spec_criteria` | `driver` (lane, after `ELABORATION_DONE`) |
 | `elabmark.py --set=<state>` | Epic: `KEY_ELABORATION_STATE`, cause `CAUSE_HUMAN` | the owner's CLI (`driver-contract.md` §2) |

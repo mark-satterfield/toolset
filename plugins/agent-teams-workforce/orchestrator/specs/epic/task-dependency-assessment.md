@@ -80,9 +80,10 @@ After a successful run (with `apply` true):
 
 ## 3. Inputs
 
-- Arguments: `task` (required), `repoPath` (default: the control repository), `workDir`,
-  `archPath` (the architecture root), `projectRoot`, `apply` (default true), `priorFailure`
-  (optional). The control repository, architecture root and project root come from the
+- Arguments: `task` (required), `repoPath` (default: the control repository), `pluginRoot`,
+  `workDir`, `archPath` (the architecture root), `projectRoot`, `apply` (default true),
+  `priorFailure` (optional text put at the head of the brief), `score` (optional; false skips
+  the scoring step). The control repository, architecture root and project root come from the
   `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
   skill.
 - beads, read with descriptions: every open Task (title, description, status, `parent` lineage to
@@ -103,14 +104,22 @@ Files (under `<workDir>`):
   repoPath, path}, standing: [{from, to, type, owned, reason, confidence, setBy, setAt}],
   withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath, summary: {task,
   openTasks, standing, owned, handMade, withdrawn}}`.
-- `edges.json` (agent): `{edges: [{from, to, reason, confidence, answers?}], withdrawn: [{from,
-  to, reason}]}`; nothing is stamped into it. No `archCheck` at Task level.
-- `edges.json.meta.json` (new, step 5): `artifactio.record` with inputs `context.json` and the
-  `context/` directory, as in the Epic spec.
+- `candidates/edges.json` (agent): the proposal, `{edges: [{from, to, reason, confidence,
+  answers?}], withdrawn: [{from, to, reason}]}`. No `archCheck` at Task level. Beside it the
+  agent's progress file `candidates/edges.json.progress.json` and the checkpoint
+  `candidates/edges.json.checkpoint` that `artifactcontract.py` writes from it, as in the Epic
+  spec.
+- `edges.json`: the accepted proposal, published by `jsonartifact.py` in canonical JSON with
+  `edges.json.receipt` (`{artifactPath, sha256, bytes, schemaSha256, revision}`),
+  `edges.json.prev` and, during a publish, `edges.json.publish`, as in the Epic spec; nothing is
+  stamped into it.
 - `reasoning.md` (agent): what the Task consumes and provides, per-edge and per-withdrawal
   reasoning, related Tasks read, findings, uncertainty.
-- `validation.json`: `edgeset.validate(level="task")` (as in the Epic spec, with `notTaskToTask`
-  in place of `notEpicToEpic`; `missingArchCheck` is always empty).
+- `validation.json` (written by the agent's own check of its candidate): the
+  `edgeset.validate(level="task")` result (as in the Epic spec, with `notTaskToTask` in place of
+  `notEpicToEpic`; `missingArchCheck` is always empty). The workflow's own validation of
+  `edges.json` is saved in its relay file.
+- `relay/`: as in the Epic spec.
 - `apply-edges.json` / `apply-edges-dry-run.json`: `edgeset.apply_edges` result plus
   `storyEdges` (the `story_edges` result: `summary {added, removed, ...}`, or `{ok: false,
   error}`, or on refusal `refusedStories`, `conflicts`, `cycles`).
@@ -126,51 +135,57 @@ edge outcome.
 
 ## 5. Steps
 
-1. `deterministic` **Plan**: `depscore.assess_plan(graph, level="task", task=<task>)` (today
-   `depscore.py assess-plan --level task --task <id> --out assess-plan.json -C <repo>`). Refuse,
-   with no session, when `edgeset.scope_defect(graph, task, "task")` names a defect: not an open
-   Task, or a Task elaboration wrote (`KEY_ELAB_KEY`).
-2. `deterministic` **Context**: `assesscontext.task_context(graph, task, context_dir)` (today
-   `depscore.py assess-context --task <id> --dir context --out context.json`).
-3. `deterministic` **Reuse**: skip step 4 when `edges.json` exists and every input recorded in
-   its `.meta.json` (`context.json`, the `context/` directory) hashes as recorded.
-4. `agent` **Assess**: `task-dependency-mapper` (assignment: one Task created outside
-   elaboration). Input paths: `context/task/<task>.md`, `context/task/`, `context/index.md`,
-   `context.json`; `priorFailure` when given. Brief: THE TEST (consumes/provides; both ends are
-   Tasks; when in doubt leave it out), the seven-step order the JavaScript gives, the file format,
-   "do not write to beads". The session may run `depscore.py validate --edges edges.json --task
-   <id>` itself. Outputs: `edges.json`, `reasoning.md`. Model `fable` (agent frontmatter), effort
-   `medium` (frontmatter and JS), `maxTurns` 100. Right-sized: reading a bounded set of Task
-   descriptions for consume/provide matches is narrower than the Epic test; a missing edge is
-   caught only at build time (a Task built before its provider), so a capable model is kept. One
-   session; nothing in parallel. It runs inside the session runner's section 2 guard
-   (`driver-contract.md` §8).
-5. `deterministic` **Record**: `artifactio.record` of `edges.json` with the step 3 inputs.
-6. `deterministic` **Validate**: `edgeset.validate(graph, edges, task, withdrawn, "task")`.
-7. `agent` **Correct** (only when step 6 is not ok, at most once): `task-dependency-mapper`, new
-   session, with `validation.json` and the instruction to revise to THE TEST. Then 5 and 6 again.
-8. `deterministic` **Apply**: `edgeset.apply_edges(..., ApplyScope(..., item=<task>, level="task"))` with the
-   plan's fingerprints (today `depscore.py apply-edges --edges edges.json --plan assess-plan.json
-   --task <id> [--dry-run] --out apply-edges.json`).
-9. `deterministic` **Story edges**: when applied and not a dry run, reload the graph and run
-   `storyedges.story_edges(graph, writer)` (today done inside `depscore.py apply-edges` for
-   `--task`). A refusal is reported, not a run failure.
-10. `deterministic` **Score**: when applied and not a dry run, the `wsjf-scoring` flow in-process
-    with `workDir = <workDir>/scoring`.
-11. `deterministic` **Result**.
+Each step is what `workflows/task-dependency-assessment.js` does. Every `depscore.py` and
+`jsonartifact.py` command runs through the relay, as in the Epic spec.
 
-Relay calls mapped: assess-plan, assess-context, validate, apply-edges (with its Story-edge pass)
-become steps 1, 2, 6, 8, 9; `artifactRevision` / `authorArtifact` become steps 3 and 5; the nested
-`settleWorkflow('wsjf-scoring')` becomes step 10.
+1. `deterministic` **Plan**: `depscore.py assess-plan --level task --task <id> --out
+   assess-plan.json -C <repo>` (`depscore.assess_plan`).
+2. `deterministic` **Context**: `depscore.py assess-context --task <id> --dir context --out
+   context.json` (`assesscontext.task_context`). When step 1 or 2 fails, no session starts.
+3. `deterministic` **Input revision**: `jsonartifact.py --source context.json --source context`
+   fingerprints the two inputs; the input revision is the SHA-256 of those receipts together
+   with the Task id and scope, as in the Epic spec.
+4. `deterministic` **Reuse**: `jsonartifact.py --candidate candidates/edges.json --final
+   edges.json --schema-json <proposal schema> --revision <input revision> --probe --recover`,
+   with the four outcomes of the Epic spec's step 4: an accepted `edges.json` with the same
+   schema digest and input revision is reused and no session starts; a candidate whose
+   checkpoint is `complete` under the same binding is accepted with no session; a `blocked`
+   checkpoint stops the run; otherwise step 5 runs.
+5. `agent` **Assess**: `task-dependency-mapper` (assignment: one Task created outside
+   elaboration). The brief names `context/task/<task>.md`, `context/task/`, `context/index.md`
+   and `context.json`, carries `priorFailure` when given, and states THE TEST (consumes or
+   provides; both ends are Tasks; when in doubt leave it out), the seven-step order, the proposal
+   format and that the session runs no command that writes to beads. It ends with the artifact
+   contract data, as in the Epic spec. The session writes `candidates/edges.json` and
+   `reasoning.md`, and checks the candidate with `depscore.py validate --edges
+   candidates/edges.json --task <id> | tee validation.json`, revising it until `ok` is true or
+   it records why it cannot be. Model `fable` (agent frontmatter), effort `medium` (frontmatter
+   and JS), `maxTurns` 100. One session; nothing in parallel.
+6. `deterministic` **Accept**: the step 4 command without `--probe`; the candidate is checked
+   against the proposal schema and published as `edges.json` with its receipt.
+7. `deterministic` **Validate**: `depscore.py validate --edges edges.json --task <id>`
+   (`edgeset.validate` at level `task`); its result is saved in its relay file. A Task that is
+   not open, or that elaboration wrote (`KEY_ELAB_KEY`), is refused here (`badScope`). When the
+   result is not `ok`, nothing is applied, the result carries `stop`, and the workflow starts no
+   second session.
+8. `deterministic` **Apply and Story edges**: when step 7 is ok, `depscore.py apply-edges --edges
+   edges.json --plan assess-plan.json --task <id> [--dry-run] --out apply-edges.json`
+   (`edgeset.apply_edges`), which for `--task` also re-derives the Story-to-Story edges
+   (`storyedges.story_edges`) and reports them as `storyEdges`. A Story edge refusal is
+   reported in the headline and is not a run failure.
+9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
+   is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
+   <workDir>/scoring`.
+10. `deterministic` **Result**.
 
-Agents dispatched by the JavaScript, accounted for:
-- `task-dependency-mapper`: kept, step 4 (and step 7).
-- `workflow-command-runner`: dropped; replaced by direct steps.
+Agents the workflow dispatches:
+- `task-dependency-mapper`: step 5, at most one session a run.
+- `workflow-command-runner`: one session for each relay call of steps 1 to 4 and 6 to 8.
 - The `wsjf-scoring` workflow's agents: see `<orch>/specs/epic/wsjf-scoring.md`.
 
-## 6. Checks kept / Checks dropped
+## 6. Checks
 
-**Checks kept** (in `edgeset.validate`, step 6 and again inside `apply_edges`)
+**In `edgeset.validate`** (step 7 and again inside `apply_edges`)
 - Scope refusal of a Task elaboration wrote (`KEY_ELAB_KEY`): without it this flow and elaboration
   both own that Task's edges and overwrite each other; nothing reconciles them.
 - Edge outside the Task, ends not both open Tasks (`notTaskToTask`), dangling, self-edge: without
@@ -184,40 +199,41 @@ Agents dispatched by the JavaScript, accounted for:
   `story_edges` run (from this flow or `elaboration-finish`) derives from that same contradictory
   input, so nothing later clears it.
 
+**In `jsonartifact.py`** (steps 4 and 6): the schema check, the receipt check and the reuse
+condition of the Epic spec.
+
 **Checks the intent requires that the code does not enforce**
 - Re-adding a withdrawn edge without `answers` (`readdsWithdrawn`) is reported but not part of
   `ok`. Not settled: the flow is deleted in S08.
 
-**Checks dropped**
-- `resolveArgs` / `refuseArgs`, `artifactRevision`, `authorArtifact`, relay `noResult`, and
-  `score: false`: same reasons as in the Epic spec.
-
 ## 7. Failure causes
 
 As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differences:
-- Step 1 scope refusal for a `KEY_ELAB_KEY` Task: `other`; not retried; reported (the Task's edges
+- Step 7 scope refusal for a `KEY_ELAB_KEY` Task: the run stops with `stop` (the Task's edges
   are elaboration's).
-- Step 9 `story_edges` fails to read the tracker (`GraphError`): recorded in `storyEdges`
-  (`bd-timeout` / `contention` / `other` as for any `bd` call); the applied Task edges stand; a
-  rerun of step 9 alone is reasonable for the transient causes. `elaboration-finish` also re-runs
-  `story_edges`, which repairs the Story order later.
-- A cycle through a hand-made Task edge goes to the owner inbox (owner fact); other validation
-  failures are recorded without failed-run repair dispatch.
+- Step 8 `story_edges` fails to read the tracker (`GraphError`): recorded in `storyEdges`
+  (`bd-timeout` / `contention` / `other` as for any `bd` call); the applied Task edges stand.
+  `elaboration-finish` also re-runs `story_edges`, which repairs the Story order later.
+- A cycle through a hand-made Task edge is among the findings in `stop` and in the reasoning
+  document.
 
 ## 8. Resume points
 
-- Steps 1, 2: recomputed every run.
-- Step 4 (and 7): `edges.json` + `reasoning.md`, with `edges.json.meta.json` recording
-  `context.json` and the corpus and index files; unchanged recorded inputs start no session.
-- Step 8: idempotent. Step 9: idempotent (writes only changed Story edges and keys). Step 10:
+- Steps 1 to 3: recomputed every run.
+- Step 5: saved as `edges.json` with `edges.json.receipt`. A rerun in the same `workDir` starts
+  no session when the input revision is unchanged, that is when `context.json` and every file
+  under `context/` have the same bytes. An interrupted session's candidate, progress file and
+  checkpoint are continued as in the Epic spec.
+- Step 8: idempotent; the Story edge pass writes only changed Story edges and keys. Step 9:
   resumes as `wsjf-scoring` does.
-- A stable `workDir` would be needed; none is designed, because the flow is deleted in S08.
+- A rerun resumes only with the same `workDir`; no command starts this workflow, so the caller
+  of the Workflow tool chooses it.
 
 ## 9. Requirements that apply
 
 - 7.16 Hierarchy and sources of work: every Task is created by elaboration, so this flow has no
   input to assess; it is deleted in S08 and not rewritten.
-- 7.8 "Tasks with no WSJF score are never considered": via step 10. A Task created outside
+- 7.8 "Tasks with no WSJF score are never considered": via step 9. A Task created outside
   elaboration under no Epic, or under an unscored Epic, gets no `KEY_WSJF` value and so is never selected by
   `selection.build_candidates`; this flow does not work around that.
 - 7.8 "Unbuildable Tasks are hidden": the `blocks` edges this flow writes are what makes a Task
