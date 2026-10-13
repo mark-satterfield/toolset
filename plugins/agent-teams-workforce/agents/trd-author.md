@@ -15,6 +15,7 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:architecture-baseline
 effort: medium
 isolation: worktree
 color: teal
@@ -47,3 +48,11 @@ Aim for at most 40 requirements, fewer than 60 words each and about 25,000 chara
 without dropping required obligations; these are authoring guidance, not automated rejection gates.
 Write only the assigned UTF-8 TRD. Python checks existence/citations; no agent checker or filing
 session follows. Requirements describe what; Specs and Tasks supply detailed how.
+
+Write to criteria T1 to T6 of architecture-baseline/review-standard.md: they say what a TRD
+requirement holds. The architecture documents hold the design and its reasons and no limit,
+lifetime, retention period, timeout or retry count; the TRD is the home of those obligations,
+each with its checkable value. Where the PRD, section 2 and the architecture documents give no
+value for an obligation the design needs, decide the value from AWS documentation and the stated
+scale, and cite what it rests on. A route path, a field name, a key name, a parameter name and a
+schema are settled in the specs.

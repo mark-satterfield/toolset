@@ -257,6 +257,24 @@ No vault writes, no git commits.
 8. **deterministic** — Check the criteria document exists and is non-empty; `artifactio.record`
    it with inputs `[<art>/trd.md, <art>/repo-scoping.json, <art>/delta-items.json, <PRD path>,
    <art>/spec-<slug>.md, <art>/spec-<slug>.data-model.md]`.
+   8b. **agent, with deterministic routing** — The spec review
+   (`orchestrator/flows/spec_review.py`, called once from `SpecAuthoring.review`). One
+   `openapi-contract-reviewer` session (`sonnet`, effort `low`) reads the three documents,
+   `<art>/trd.md`, `<art>/spec-<slug>.context.json` and
+   `<plugin>/skills/architecture-baseline/review-criteria.json`, and writes
+   `<art>/spec-<slug>.review.json`: its findings against the implementation-level criteria (I1 to
+   I7). Python drops a finding whose criterion is not at that level. No finding: nothing more
+   runs. Otherwise each document with a finding goes once to the agent that wrote it, in
+   authoring order, with the review; the agent corrects the document in place or disputes the
+   finding, and writes `<art>/spec-<slug>.<document>.correction.json`. The criteria document is
+   also worked on when the contracts or data-model document changed. A corrected document is
+   checked as in steps 5 and 8 and recorded again. A dispute starts one `spec-decider` session
+   (`opus`, effort `high`) that writes `<art>/spec-<slug>.ruling.json`; a finding it upholds goes
+   back to that document's author as a directive (`spec-<slug>.<document>.revision.json`), and
+   nothing follows that. The result is `<art>/spec-<slug>.review-outcome.json`, recorded against
+   the documents as they stand, the TRD, the context and the criteria file, so a later run with
+   those unchanged repeats no review. A reviewer, author or decider session that fails raises as
+   any session failure of this flow does, and the Story is not written.
 9. **deterministic** — Compute `decisionIds`: read the YAML frontmatter `decisionIds` of
    `spec-<slug>.md` and `spec-<slug>.data-model.md` (checked in step 5); union, strip, deduplicate
    in order. The saved documents decide; no maker metadata JSON is read. Skipped on a reused spec set (the
@@ -299,7 +317,8 @@ Agents accounted for: `api-specification-author` (kept, step 3, now also choosin
 sources), `data-model-specification-author` (kept, step 4), `acceptance-criteria-writer` (kept,
 step 7), `user-story-writer` (kept, step 10, see QUESTIONS.md),
 `agent-teams-workforce:workflow-command-runner` (dropped: every call is a deterministic step).
-Not dispatched today and not added: `openapi-contract-reviewer`, `spec-decider`,
+`openapi-contract-reviewer` (step 8b, the one spec review of a repository) and `spec-decider`
+(step 8b, only for a disputed finding). Not dispatched and not added:
 `definition-of-done-enforcer`, `prd-alignment-verifier` (see QUESTIONS.md).
 
 ## 6. Checks kept / Checks dropped

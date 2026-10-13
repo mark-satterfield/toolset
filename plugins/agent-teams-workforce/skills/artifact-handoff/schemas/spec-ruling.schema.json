@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The decider's ruling on disputed spec review findings is defined once, as spec-review.schema.json#/$defs/SpecRuling.",
+  "$ref": "spec-review.schema.json#/$defs/SpecRuling"
+}

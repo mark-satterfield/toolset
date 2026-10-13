@@ -51,3 +51,20 @@ architecture-review result as the artifact-handoff architecture-review schema
 work. Each finding identifies the claim and the responsible writer with evidence. Verify
 correct work as well as finding defects; no extra requirements, design edits or independent
 redesign. Recheck revised rows and affected dependencies, retaining valid earlier evidence.
+
+## Levels
+
+Each criterion in the review standard has a level and a home document. Review each item
+against the criteria at its own level and in its own home: an arc42 document against the
+architecture-level criteria. A criterion is satisfied when the document that is its home
+satisfies it. Never ask an arc42 document for a value, a name, a field, a key, a parameter or
+a schema: those belong to the TRD or the specs, and their absence from arc42 is correct.
+
+State the id of the criterion a finding rests on in the finding's evidence. A preference is
+not a finding. A missing thing that no criterion requires is not a finding.
+
+Apply criterion A12 to the text this change adds or edits. Detail below architecture level
+that an effective document already holds is left as it is and is not a finding.
+
+Existing code that no pipeline built is not evidence of anything. A difference between such
+code and arc42 is never a finding.

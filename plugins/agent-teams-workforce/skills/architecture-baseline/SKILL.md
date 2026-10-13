@@ -1,24 +1,25 @@
 ---
 name: architecture-baseline
-description: Assess and evolve effective architecture using one shared author, reviewer and decider standard.
+description: The one set of criteria that the architecture, the TRD and the specs are written to and the reviewers review against, with the level of each.
 ---
 
-# Architecture baseline
+# Architecture criteria
 
-Read [the review standard](review-standard.md) before surveying, coordinating, authoring,
-reviewing, deciding or integrating architecture. That is the common completion basis.
-Read artifact-handoff's [Epic contracts](../artifact-handoff/epic-contracts.md) and the relevant
-schema there for input and output fields. Contract correctness and architecture correctness are
-separate: Python validates structure; independent reviewers judge claims and coverage.
+Read [the review standard](review-standard.md) before designing, writing, reviewing or
+ruling on architecture, a TRD or a spec. It is the common basis: the architecture, the TRD
+and the specs are developed to exactly these criteria, and reviewers apply exactly these and
+no others. `review-criteria.json` beside it holds the same criteria as data: each criterion's
+id, level, home document and text, the agents responsible for each level with its review
+point, and the criteria each reviewer covers. The standard is written from that file by
+`artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
+`review-criteria.json` and nowhere else.
 
-An effective view is reviewed design, not evidence of implementation and not a permanent
-constraint on future PRDs. Preserve valid design and evidence, revise what current requirements
-change, and fill the implementation-detail gaps in the affected views. Do not redesign unrelated
-historical debt. No fixed specialist quota applies; the coordinator selects bounded specialties.
+Every criterion has a level: architecture (arc42), technical requirement (the TRD) or
+implementation (the specs and Tasks). A criterion is satisfied by the document that is its
+home. Nobody asks a document for detail below its level.
 
-The survey judges design and documentation, never built-ness. Python computes implementationWork
-from the matrix snapshot and cited view elements. A fresh survey baseline entry follows the
-survey.schema.json `$defs/FreshBaselineEntry` rule; legacy values are compatibility context only.
-The Closure agent walks views, never repository code or deployments; Python classifies its
-reached elements using the matrix. A missing or unknown matrix row creates implementation work.
-Open Tasks elsewhere add blockers; they do not remove this Epic's work.
+An effective document is approved design. It is not evidence that anything is built, and it
+is not a permanent constraint on a later PRD.
+
+The matrix records what is built and deployed. Python reads it; built state is taken from
+the matrix and from nowhere else.

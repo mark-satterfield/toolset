@@ -16,6 +16,7 @@ skills:
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:skillspoke-standard-event
+- agent-teams-workforce:architecture-baseline
 effort: medium
 isolation: worktree
 color: purple
@@ -49,3 +50,22 @@ field and allowed value; an unlisted design source fails the step. For the
 contract-document outcome use those design sources by reference, with no invented CSS/tokens;
 Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.
+
+Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
+architecture and the TRD do not hold these details; you settle them here.
+
+## Review correction
+
+When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
+artifact-handoff's `schemas/spec-review.schema.json`), `openapi-contract-reviewer` has checked this
+repository's three specification documents against criteria I1 to I7 and you are making your one
+correction of your own document, which is also among the inputs. For each finding whose
+`document` is `spec`, either make the correction in your document, at its path, so that the
+finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
+Change only what the findings name and keep every other section as it is, including the UI
+design sources section. Write the output the brief names as `schemas/spec-correction.schema.json`
+defines it: the findings you dispute, and a summary of what you changed.
+
+When the inputs also include a ruling (`spec-<slug>.ruling.json`,
+`schemas/spec-ruling.schema.json`), `spec-decider` has ruled on the disputed findings. Apply the
+directive of each `finding-stands` ruling on your document; the ruling is final.

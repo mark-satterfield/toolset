@@ -7,9 +7,72 @@ validates accepted files; human-readable summaries are navigation, never evidenc
 A JSON schema must not be pasted into a brief. Input facts such as round number, own plan entry,
 repository and validation errors travel in referenced files.
 
-All architecture agents also read architecture-baseline/review-standard.md. The roster consists
+All architecture agents also read architecture-baseline/review-standard.md, which holds every
+criterion a document is judged by, and the `architecture-rounds` section below, which holds how
+a round works. The roster consists
 of the nine proposers and three diagram authors in agent-contracts.md, its five architecture
 reviewers and two cost reviewers. The coordinator routes; decider and maintainer are separate.
+
+## architecture-rounds
+
+How the architecture rounds work. The criteria a document must meet are in
+architecture-baseline/review-standard.md and nowhere else; this section is procedure only.
+
+Reading. Read the documentation model and the list of diagram and model types at the paths the
+architecture context file gives (`modelPath`, `menuPath`): the model supplies obligations, the
+list supplies document types. Read effective documents, relevant in-review content, open targets
+and build records for the affected elements at every scope. An open target's baseline revision
+may be stale: validate it against the current effective documents before reuse. Cite evidence as
+survey.schema.json `$defs/EvidenceRef` defines it. Reading test source never proves execution.
+Refresh only changed or insufficient evidence. No AWS account inventory is required or permitted.
+
+Coverage. Inventory the subjects the requirements and connected contracts need, independently of
+the catalog: a missing document is an obligation too. Each coverage row is a survey.schema.json
+`$defs/CoverageRow`; that schema defines its fields, its status, action and disposition values,
+and the rules pairing them. Keep each row's id stable across rounds, name its model obligation,
+and list absent document paths too. Coverage is judged at architecture level: a row is covered
+when the architecture-level criteria of the review standard are met for its subject, and detail
+the standard places in the TRD or the specs is never a coverage gap. A status claiming the
+obligation is sufficiently covered needs evidence; an obligation whose coverage cannot yet be
+determined takes the action the schema provides for that case; an action that leaves documents
+as they are, or marks them inapplicable, needs a concrete reason. Give a row the
+`$defs/CoverageDisposition` value for unrelated historical debt only with evidence it affects
+neither this change nor its dependencies; retain its honest status and summarize it. Independent
+verification makes it nonblocking, and unrelated historical debt is left as it is.
+
+Draft. Draft documents use the arc42 section layout (03/04 only when affected, 05 building
+blocks, 06 runtime, 07 deployment, 08 crosscutting). Copy an effective document to the same
+relative path before editing it. Extend a shared document that suffices; create a new one only
+for a reader question no document answers. Catalog every shown element. Name files for their
+subjects, never a bead, PRD id or date. A draft holds no ADR, history, rule or open-item
+document. Documents are Markdown, with Mermaid when their type requires it; verify rendering,
+readability, semantics and links, and report real limitations.
+
+Three cases. Partial change: future documents plus delta/ of the change alone. Entirely new:
+future documents are also the delta, without a duplicated delta folder. No change: no authored
+document, one current/future set and its note, no delta. Python writes baseline.json; agents
+read it and leave it out of their authored files. Design agents edit only the draft, and leave
+02-architecture-constraints as it is there too. Only architecture-maintainer integrates approved
+changes into canonical arc42. Python promotes and commits.
+
+Sequence. Read your own dispatch entry in the supplied round plan; its fields and allowed values
+are defined only in schemas/coordinator-plan.schema.json. Design agents run in plan order before
+any reviewer; the last one reconciles connected documents across the round's owned files and
+resolves contradictions between them within that scope. There is no designOwner field and no
+permanent lead; the coordinator selects bounded specialties, with no fixed quota. Return claims,
+coverage and explicit fixed or disputed answers with evidence. Reviewers run afterward and leave
+the draft as it is: they check their assigned rows independently and return id, verdict and
+evidence for each, with claim findings and resolutions. Later rounds recheck changed claims,
+changed documents and affected dependencies, retaining valid checks. The decider checks diligence
+from artifacts, not evidence it generates. The Check review is round 1 and total review rounds
+cannot exceed 3, including resumed runs.
+
+Survey and closure. The survey judges design and documentation, never built state. Python
+computes implementationWork from the matrix snapshot and the cited elements. A fresh survey
+baseline entry follows the survey.schema.json `$defs/FreshBaselineEntry` rule. The closure walk
+reads documents, never repository code or deployments; Python classifies the elements it reaches
+from the matrix, and a missing or unknown matrix row creates implementation work. Open Tasks
+elsewhere add blockers; they do not remove this Epic's work.
 
 ## survey
 
@@ -97,7 +160,7 @@ Fields and interpretation: uiItems use item (placed item id), designSource, reas
 
 ## architecture-views
 
-Fields and interpretation: Markdown catalog fields view_type, scope, subject, shows, lifecycle_state and repository; diagrams and prose match the shared architecture review standard. Effective/target/delta/built are versions, not interchangeable review states. Complete means required affected scopes and exact implementation contracts are present. Draft/target/baseline files are Python-owned except assigned view contents.
+Fields and interpretation: Markdown catalog fields view_type, scope, subject, shows, lifecycle_state and repository; diagrams and prose meet the architecture-level criteria of architecture-baseline/review-standard.md. Effective/target/delta/built are versions, not interchangeable review states. Complete means those criteria are met at every affected scope; detail the standard places in the TRD or the specs stays out of these documents. Draft/target/baseline files are Python-owned except assigned view contents.
 
 ## architecture-baseline
 
@@ -120,6 +183,28 @@ Fields and interpretation: Nonempty UTF-8 Markdown with decisionIds; owned store
 ## criteria-document
 
 Fields and interpretation: Nonempty UTF-8 Markdown with stable acceptance criterion and DoD ids linked to PRD/TRD/spec sections. State observable pass conditions and preserve source testStrategy if present. Complete means applicable behavior/boundaries and non-unit-testable human checks are represented without invented scope. Tasks reference these ids.
+
+## spec-review
+
+Schema: [spec-review.schema.json](schemas/spec-review.schema.json).
+
+Fields and interpretation: findings each name id, document (spec, data-model or criteria), criterion (an implementation-level id of architecture-baseline/review-criteria.json), location, observation, correction and doneWhen; summary says what was reviewed. The one reviewer reads the three specification documents, the TRD, the repository context and the criteria file. Complete means every placed item was checked against every implementation-level criterion that applies to it; an empty findings list means the documents meet them. Python drops a finding whose criterion is not at the implementation level.
+
+## spec-correction
+
+Schema: [spec-correction.schema.json](schemas/spec-correction.schema.json).
+
+Fields and interpretation: disputes name findingId, reason and evidence; summary says what changed. The author of a document writes it for its one correction: every finding on its document that it does not dispute is corrected in the document itself, at the document's path. Complete means each finding on the document is either corrected so that its doneWhen holds or disputed with a checkable reason, and a document derived from a corrected one agrees with it. The same contract carries the author's revision after a ruling, where the ruling's directives are applied and nothing is disputed.
+
+## spec-ruling
+
+Schema: [spec-ruling.schema.json](schemas/spec-ruling.schema.json).
+
+Fields and interpretation: rulings name findingId, ruling (finding-stands or document-stands), reason and directive; summary says what was ruled. Complete means every disputed finding has exactly one ruling, grounded in the review, the author's reason and the criterion the finding names, with a directive for each finding that stands. A dispute with no ruling leaves the document as its author left it.
+
+## spec-review-outcome
+
+Not an agent artifact. `orchestrator/flows/spec_review.py` writes it when a repository's spec review is over and reads it to decide whether the review is repeated; its one definition is `SpecReviewOutcome` in that module.
 
 ## delta-items
 

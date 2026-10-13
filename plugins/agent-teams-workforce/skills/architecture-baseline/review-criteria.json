@@ -1,0 +1,308 @@
+{
+  "title": "Architecture and TRD criteria",
+  "introduction": "One list. The agents that design the architecture, write the TRD and write the specs work to it. Reviewers review against it and against nothing else. Each criterion has a level and a home. A criterion is satisfied by its home document. Nobody asks a document for detail below its level.",
+  "levels": [
+    {
+      "id": "all",
+      "idPrefix": "P",
+      "heading": "How to work (all levels)",
+      "note": null,
+      "responsible": [],
+      "reviewPoint": null
+    },
+    {
+      "id": "architecture",
+      "idPrefix": "A",
+      "heading": "Architecture level: arc42 sections 3 to 8",
+      "note": null,
+      "responsible": [
+        "integration-pattern-architect",
+        "bounded-context-mapper",
+        "persistence-architecture-specialist",
+        "security-architecture-designer",
+        "cdk-infrastructure-designer",
+        "event-schema-designer",
+        "domain-event-modeler",
+        "api-contract-designer",
+        "graphql-schema-designer",
+        "architecture-diagram-author",
+        "c4-diagram-author",
+        "uml-diagram-author",
+        "architecture-maintainer"
+      ],
+      "reviewPoint": "architecture"
+    },
+    {
+      "id": "technical-requirement",
+      "idPrefix": "T",
+      "heading": "Technical-requirement level: the TRD",
+      "note": null,
+      "responsible": ["trd-author"],
+      "reviewPoint": "architecture"
+    },
+    {
+      "id": "implementation",
+      "idPrefix": "I",
+      "heading": "Implementation level: the specs and the Tasks",
+      "note": "These are not reviewed in the architecture review. They are listed here so that everyone can see where each detail lives.",
+      "responsible": ["api-specification-author", "data-model-specification-author"],
+      "reviewPoint": "specs"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "P1",
+      "level": "all",
+      "text": "The acceptance basis is the PRD's business outcomes, settled owner decisions, the section 2 constraints and the documentation model's obligations."
+    },
+    {
+      "id": "P2",
+      "level": "all",
+      "text": "A mechanism named in a PRD is a design input, not a business requirement."
+    },
+    {
+      "id": "P3",
+      "level": "all",
+      "text": "The design agent whose specialty covers a technical gap decides it with cited evidence. Only business requirements that no design can meet together, or a conflict with section 2, reach the owner."
+    },
+    {
+      "id": "P4",
+      "level": "all",
+      "text": "AWS behaviour is established from AWS documentation through the AWS MCP Server. State assumptions, tradeoffs and regional applicability. Never invent scale."
+    },
+    {
+      "id": "P5",
+      "level": "all",
+      "text": "Cite an arc42 statement by path and heading, guidance by URL, and code by repository, revision and file:line. Code that no pipeline built is a hint and is never evidence that arc42 is wrong; only code the matrix marks built or deployed is expected to match."
+    },
+    {
+      "id": "P6",
+      "level": "all",
+      "text": "One design fact lives in one home. Every other document links to it."
+    },
+    {
+      "id": "P7",
+      "level": "all",
+      "text": "Never write section 2. Only architecture-maintainer writes arc42. A script promotes."
+    },
+    {
+      "id": "P8",
+      "level": "all",
+      "text": "A finding names the criterion id, the item, the observation with its path and heading, and a bounded correction with a condition that shows it is done. A preference is not a finding. Something no criterion requires is not a finding."
+    },
+    {
+      "id": "P9",
+      "level": "all",
+      "text": "A review covers only content that is not yet approved. A re-check covers only the corrected items."
+    },
+    {
+      "id": "A1",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "A spec author can name the building block, its repository and stack, the owner of each store, each interface and its caller, and each event type and its publisher without inventing a design."
+    },
+    {
+      "id": "A2",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Section 5 names each building block the PRD needs, what it is responsible for and what it owns. Each store has one owning block and a statement of what it holds."
+    },
+    {
+      "id": "A3",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Each interface is named with the block that exposes it and who may call it. Trust boundaries are explicit: who may call each boundary and what each runtime may call."
+    },
+    {
+      "id": "A4",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Each event type is named in the event catalog with its publisher, its consumers and its delivery path."
+    },
+    {
+      "id": "A5",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Section 6 shows, for each important scenario and each failure the PRD's outcomes depend on, which building blocks interact and in what order. Retry, dead-letter and idempotent behaviour are stated as behaviour."
+    },
+    {
+      "id": "A6",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Section 7 says where each block runs and which stack holds each resource. Values shared between stacks are named as shared, by the mechanism section 2 fixes."
+    },
+    {
+      "id": "A7",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Each rule that applies across blocks is a design fact in section 8 with its reason, in the form \"Because of X, the address is verified by Y\"."
+    },
+    {
+      "id": "A8",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "No fact is stated in two documents. Section 6 links to a rule; it does not restate it."
+    },
+    {
+      "id": "A9",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Every behaviour a shared service, component, layer or library provides is taken from it. A behaviour more than one service needs has a shared home, whose section 5 document states under \"Provides\" what consumers obtain from it and must not implement."
+    },
+    {
+      "id": "A10",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "The front matter of each document records repository, view_type, scope, subject, shows and lifecycle_state."
+    },
+    {
+      "id": "A11",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Names of blocks, stores, interfaces and event types agree across documents."
+    },
+    {
+      "id": "A12",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Every document stays at architecture level and within its single purpose: no route method or path, field name, key or index name, parameter name, metric or alarm name, or schema, and no fact outside the document's subject."
+    },
+    {
+      "id": "A13",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "The design meets each PRD outcome it concerns and no section 2 constraint is broken."
+    },
+    {
+      "id": "A14",
+      "level": "architecture",
+      "home": "arc42",
+      "text": "Each diagram renders, is readable, and agrees with the text beside it."
+    },
+    {
+      "id": "T1",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "Every requirement has a stable id, a kind, a statement with a checkable value, a source and the element it applies to."
+    },
+    {
+      "id": "T2",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "Where the design has the element, the TRD carries its obligations: availability, latency, security controls, retention, recovery, limits, timeouts and retry counts, that logs, metrics and alarms exist, and cost constraints. Cost unit math is kept as evidence in the result of the agent that worked it out."
+    },
+    {
+      "id": "T3",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "Each shared capability the design uses has one requirement of kind `reuse` naming the element, the behaviour and the capability."
+    },
+    {
+      "id": "T4",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "No requirement contradicts an effective arc42 statement or section 2, and none creates an element."
+    },
+    {
+      "id": "T5",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "Every PRD requirement that needs a technical obligation has one."
+    },
+    {
+      "id": "T6",
+      "level": "technical-requirement",
+      "home": "trd",
+      "text": "A requirement says what, with a value. It does not say how, and it holds no name or shape that belongs to a spec."
+    },
+    {
+      "id": "I1",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Each route has its method, path, authorizer, request and response fields and status codes."
+    },
+    {
+      "id": "I2",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Each store has its key attribute names, indexes, access patterns and expiry attribute."
+    },
+    {
+      "id": "I3",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Each event has the values passed to the shared-events-service API, its payload schema and its schema version."
+    },
+    {
+      "id": "I4",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Configuration names, SSM parameter names, and log, metric and alarm names are present and are generated with atw-naming."
+    },
+    {
+      "id": "I5",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Idempotency key fields and timeout settings are stated."
+    },
+    {
+      "id": "I6",
+      "level": "implementation",
+      "home": "specs",
+      "text": "Exact contract fields agree between the producer's spec and the consumer's spec."
+    },
+    {
+      "id": "I7",
+      "level": "implementation",
+      "home": "specs",
+      "text": "A Task can name the repository, stack, handler, table, route, event and the shared capabilities it must use without inventing a design."
+    }
+  ],
+  "reviewerGroups": [
+    {
+      "id": "ownership-boundary",
+      "reviewer": "architecture-boundary-guardian",
+      "criteria": ["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14"]
+    },
+    {
+      "id": "runtime-failure",
+      "reviewer": "failure-mode-analyst",
+      "criteria": ["A5"]
+    },
+    {
+      "id": "pattern",
+      "reviewer": "architecture-pattern-challenger",
+      "criteria": ["A2", "A9"]
+    },
+    {
+      "id": "tradeoff",
+      "reviewer": "architecture-tradeoff-skeptic",
+      "criteria": ["P4"]
+    },
+    {
+      "id": "operations",
+      "reviewer": "operational-readiness-reviewer",
+      "criteria": ["T2", "A6"]
+    },
+    {
+      "id": "cost-new",
+      "reviewer": "cost-architecture-reviewer",
+      "criteria": ["T2"]
+    },
+    {
+      "id": "cost-changed",
+      "reviewer": "cost-impact-reviewer",
+      "criteria": ["T2"]
+    },
+    {
+      "id": "trd",
+      "reviewer": "trd-validator",
+      "criteria": ["T1", "T2", "T3", "T4", "T5", "T6"]
+    },
+    {
+      "id": "specs",
+      "reviewer": "openapi-contract-reviewer",
+      "criteria": ["I1", "I2", "I3", "I4", "I5", "I6", "I7"]
+    }
+  ]
+}

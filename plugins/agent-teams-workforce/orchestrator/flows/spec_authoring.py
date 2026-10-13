@@ -31,6 +31,7 @@ from placement_contract import (
     parse_placement_ruling,
 )
 from recon_contract import KEY_MOCKS_DIR
+from spec_review_contract import DOCUMENT_CRITERIA, DOCUMENT_DATA_MODEL, DOCUMENT_SPEC, SpecDocument
 from target_contract import (
     DELTA_ITEMS_FILE,
     KEY_ARCHITECTURE_CHANGE,
@@ -53,6 +54,13 @@ from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import AgentStep, RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.spec_authoring_ui import normalize_ui
+from orchestrator.flows.spec_review import (
+    CRITERIA_FILE,
+    ReviewedDocument,
+    SpecReviewOutcome,
+    SpecReviewScope,
+    SpecReviewStep,
+)
 from orchestrator.flows.trd_authoring import document
 
 _ARGUMENT_ERROR: str = "Arguments violate the spec_authoring input contract"
@@ -202,6 +210,40 @@ class SpecAuthoring:
         self.facts = self.work / f"spec-{self.slug}.context.json"
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def requests(self) -> tuple[SpecRequest, SpecRequest, SpecRequest]:
+        """Name the author request of each specification document, in authoring order.
+
+        Returns:
+            The requests for the contracts, the data model and the acceptance criteria.
+
+        """
+        return (
+            SpecRequest(
+                "api-specification-author",
+                self.docs[0],
+                self.inputs + ((str(self.ui),) if self.frontend else ()),
+                "API, event and error contracts for this repository's placed items.",
+                lambda path: document(path, self.arch),
+            ),
+            SpecRequest(
+                "data-model-specification-author",
+                self.docs[1],
+                self.inputs,
+                "Data model specification for this repository's placed items.",
+                lambda path: document(path, self.arch),
+                model="fable",
+            ),
+            SpecRequest(
+                "acceptance-criteria-writer",
+                self.docs[2],
+                self.inputs + tuple(map(str, self.docs[:2])),
+                "Acceptance criteria and definition of done for the saved specifications.",
+                nonempty,
+                effort="low",
+            ),
+        )
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def record(self, inputs: tuple[str, ...], outputs: tuple[Path, ...]) -> None:
         """Record artifact receipts; a receipt write failure is raised, never downgraded.
 
@@ -303,47 +345,62 @@ class SpecAuthoring:
         pool: ThreadPoolExecutor
         if self.frontend:
             self.ui_sources()
-        contract_inputs: tuple[str, ...] = self.inputs + ((str(self.ui),) if self.frontend else ())
+        contracts: SpecRequest
+        data_model: SpecRequest
+        criteria: SpecRequest
+        contracts, data_model, criteria = self.requests()
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures: list[Future[None]] = [
-                pool.submit(
-                    self.author,
-                    SpecRequest(
-                        "api-specification-author",
-                        self.docs[0],
-                        contract_inputs,
-                        "API, event and error contracts for this repository's placed items.",
-                        lambda path: document(path, self.arch),
-                    ),
-                ),
-                pool.submit(
-                    self.author,
-                    SpecRequest(
-                        "data-model-specification-author",
-                        self.docs[1],
-                        self.inputs,
-                        "Data model specification for this repository's placed items.",
-                        lambda path: document(path, self.arch),
-                        model="fable",
-                    ),
-                ),
-            ]
+            futures: list[Future[None]] = [pool.submit(self.author, contracts), pool.submit(self.author, data_model)]
             for future in futures:
                 future.result()
         if self.frontend:
             self.tools.portfolio("author", specui.spec_ui_append, self.docs[0], self.ui)
-            self.record(contract_inputs, (self.docs[0],))
-        criteria_inputs: tuple[str, ...] = self.inputs + tuple(map(str, self.docs[:2]))
-        self.author(
-            SpecRequest(
-                "acceptance-criteria-writer",
-                self.docs[2],
-                criteria_inputs,
-                "Acceptance criteria and definition of done for the saved specifications.",
-                nonempty,
-                effort="low",
+            self.record(contracts.inputs, (self.docs[0],))
+        self.author(criteria)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def review(self) -> SpecReviewOutcome:
+        """Have the written specification documents reviewed, once, and carry each finding to its end.
+
+        This is the one call that runs the spec review of this repository; its returned result
+        is also the file ``SpecReviewStep.result_path`` names.
+
+        Returns:
+            What the review came to.
+
+        """
+        kinds: tuple[SpecDocument, ...] = (DOCUMENT_SPEC, DOCUMENT_DATA_MODEL, DOCUMENT_CRITERIA)
+        step: SpecReviewStep = SpecReviewStep(
+            SpecReviewScope(
+                stage=self.stage,
+                slug=self.slug,
+                work=self.work,
+                trd=self.work / "trd.md",
+                facts=self.facts,
+                criteria=self.runner.plugin / CRITERIA_FILE,
+                documents=tuple(
+                    ReviewedDocument(
+                        kind=kind,
+                        path=request.output,
+                        agent=request.agent,
+                        inputs=request.inputs,
+                        check=check_type(request.validate, Callable[[Path], object]),
+                        model=request.model,
+                        effort=request.effort,
+                        derived_from=(DOCUMENT_SPEC, DOCUMENT_DATA_MODEL) if kind == DOCUMENT_CRITERIA else (),
+                    )
+                    for kind, request in zip(kinds, self.requests(), strict=True)
+                ),
+                author_dirs=(self.work, self.arch, self.prd.parent, self.repo),
             ),
+            self.store,
+            self.runner,
+            self.record,
         )
+        ended: SpecReviewOutcome = step.run()
+        self.ran = self.ran or step.ran
+        self.warnings.extend(ended["warnings"])
+        return ended
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def story_document(self) -> dict[str, JsonValue]:
@@ -436,6 +493,7 @@ def run(
     flow: SpecAuthoring = SpecAuthoring(context, store, runner, tools)
     context.stage = "spec-authoring"
     flow.documents()
+    flow.review()
     body: dict[str, JsonValue] = flow.story_document()
     written: dict[str, JsonValue] = flow.write_story()
     if flow.ran:

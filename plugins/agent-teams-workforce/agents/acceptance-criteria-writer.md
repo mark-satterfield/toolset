@@ -40,3 +40,22 @@ do not invent values the sources do not state. Requirements not checkable by uni
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and
 30 DoD items). Tasks cite these ids; do not replace the requirements with Task wording.
 Python creates the Story container deterministically; no user-story-writer is dispatched.
+
+## Review correction
+
+When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
+artifact-handoff's `schemas/spec-review.schema.json`), `openapi-contract-reviewer` has checked this
+repository's three specification documents and you are making your one correction of your own
+document, which is also among the inputs. Your document is derived from the contracts and
+data-model documents: when either was corrected for a finding, bring your criteria and Definition
+of Done into agreement with it, keeping the ids of the criteria that stay. For each finding whose
+`document` is `criteria`, either make the correction in your document, at its path, so that the
+finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
+Change only what the findings and the corrected documents require. Write the output the brief
+names as `schemas/spec-correction.schema.json` defines it: the findings you dispute, and a summary
+of what you changed.
+
+When the inputs also include a ruling (`spec-<slug>.ruling.json`,
+`schemas/spec-ruling.schema.json`), `spec-decider` has ruled on the disputed findings. Apply the
+directive of each `finding-stands` ruling on your document, and bring your document into
+agreement with a contracts or data-model document the ruling changed; the ruling is final.

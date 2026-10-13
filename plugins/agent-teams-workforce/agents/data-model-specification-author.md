@@ -16,6 +16,7 @@ skills:
 - agent-teams-workforce:dynamodb
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:architecture-baseline
 effort: medium
 isolation: worktree
 color: purple
@@ -39,3 +40,22 @@ data item without judging existing code satisfied. Write the assigned nonempty U
 document with decisionIds frontmatter and exact source references. A surface with no applicable
 work gets a short reasoned not-applicable document. Do not create infrastructure or change the
 architecture. Contract makers run in parallel; acceptance criteria consume both completed files.
+
+Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
+architecture and the TRD do not hold these details; you settle them here.
+
+## Review correction
+
+When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
+artifact-handoff's `schemas/spec-review.schema.json`), `openapi-contract-reviewer` has checked this
+repository's three specification documents against criteria I1 to I7 and you are making your one
+correction of your own document, which is also among the inputs. For each finding whose
+`document` is `data-model`, either make the correction in your document, at its path, so that the
+finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
+Change only what the findings name and keep every other section as it is. Write the output the
+brief names as `schemas/spec-correction.schema.json` defines it: the findings you dispute, and a
+summary of what you changed.
+
+When the inputs also include a ruling (`spec-<slug>.ruling.json`,
+`schemas/spec-ruling.schema.json`), `spec-decider` has ruled on the disputed findings. Apply the
+directive of each `finding-stands` ruling on your document; the ruling is final.

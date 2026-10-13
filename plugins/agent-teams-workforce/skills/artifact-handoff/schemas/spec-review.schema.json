@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spec review",
+  "description": "The review of one repository's specification documents against the implementation-level criteria of architecture-baseline/review-criteria.json, and the two documents that can follow it: an author's correction and the decider's ruling on a dispute. The root is the reviewer's result; spec-correction.schema.json and spec-ruling.schema.json refer to the other two.",
+  "$ref": "#/$defs/SpecReview",
+  "$defs": {
+    "SpecDocument": {
+      "description": "Which of the repository's three specification documents: `spec` is spec-<slug>.md, `data-model` is spec-<slug>.data-model.md, `criteria` is spec-<slug>.criteria.md.",
+      "type": "string",
+      "enum": ["spec", "data-model", "criteria"]
+    },
+    "RulingValue": {
+      "description": "`finding-stands`: the reviewer is right and the author applies the directive. `document-stands`: the document stays as its author left it.",
+      "type": "string",
+      "enum": ["finding-stands", "document-stands"]
+    },
+    "Finding": {
+      "description": "One defect in one specification document, measured against one implementation-level criterion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "document", "criterion", "location", "observation", "correction", "doneWhen"],
+      "properties": {
+        "id": {
+          "description": "The reviewer's name for this finding, unique in the review: F1, F2 and so on.",
+          "type": "string",
+          "pattern": "^F[1-9][0-9]*$"
+        },
+        "document": {
+          "$ref": "#/$defs/SpecDocument"
+        },
+        "criterion": {
+          "description": "The id of the implementation-level criterion the document does not meet, as architecture-baseline/review-criteria.json states it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "description": "The heading in the document where the defect is, or where the missing detail belongs.",
+          "type": "string",
+          "minLength": 1
+        },
+        "observation": {
+          "description": "What the document says or lacks, stated as a fact a reader can check.",
+          "type": "string",
+          "minLength": 1
+        },
+        "correction": {
+          "description": "The bounded change that removes the defect.",
+          "type": "string",
+          "minLength": 1
+        },
+        "doneWhen": {
+          "description": "The condition that shows the correction is made.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SpecReview": {
+      "description": "The reviewer's result. An empty findings list means the three documents meet the implementation-level criteria.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "summary"],
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Finding"
+          }
+        },
+        "summary": {
+          "description": "One or two sentences on what was reviewed and what was found.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Dispute": {
+      "description": "A finding the author of the document did not apply, with its reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "reason", "evidence"],
+      "properties": {
+        "findingId": {
+          "description": "The id of the disputed finding, as the review states it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "description": "Why the document is right as it stands.",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "description": "Where the reason can be checked: a path and heading, or a documentation URL.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SpecCorrection": {
+      "description": "An author's result for its one correction of its own document. Every finding on the document that is not listed in disputes is corrected in the document.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disputes", "summary"],
+      "properties": {
+        "disputes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Dispute"
+          }
+        },
+        "summary": {
+          "description": "One or two sentences on what was changed in the document.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Ruling": {
+      "description": "The decider's ruling on one disputed finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "ruling", "reason", "directive"],
+      "properties": {
+        "findingId": {
+          "description": "The id of the disputed finding, as the review states it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ruling": {
+          "$ref": "#/$defs/RulingValue"
+        },
+        "reason": {
+          "description": "Why this side prevails, from the evidence the two sides gave.",
+          "type": "string",
+          "minLength": 1
+        },
+        "directive": {
+          "description": "For `finding-stands`, the change the author makes in the document. For `document-stands`, an empty string.",
+          "type": "string"
+        }
+      }
+    },
+    "SpecRuling": {
+      "description": "The decider's result: one ruling for each disputed finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rulings", "summary"],
+      "properties": {
+        "rulings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ruling"
+          }
+        },
+        "summary": {
+          "description": "One or two sentences on what was ruled.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

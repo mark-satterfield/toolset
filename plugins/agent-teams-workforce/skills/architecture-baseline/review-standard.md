@@ -1,83 +1,93 @@
-# Shared architecture completion and review standard
+<!-- GENERATED from review-criteria.json by review_criteria.py. Edit review-criteria.json. -->
 
-## Authority and evidence
+# Architecture and TRD criteria
 
-Applicable PRD business outcomes, settled owner decisions, section 2 constraints and the relevant
-architecture documentation MODEL obligations are the acceptance basis. Read the MODEL and MENU
-paths in the architecture root's reference directory; MODEL supplies obligations, MENU supplies
-view types. PRD text describes what users get; implementation mechanisms are design inputs, not
-business requirements. Technical gaps are decided by specialists with cited evidence. Only
-irreconcilable business requirements or section 2 conflicts reach the architecture owner channel.
-AWS documentation through the AWS MCP Server and applicable skills establishes AWS behavior;
-state assumptions, tradeoffs and regional applicability. Never invent hypothetical scale.
+One list. The agents that design the architecture, write the TRD and write the specs work to
+it. Reviewers review against it and against nothing else. Each criterion has a level and a
+home. A criterion is satisfied by its home document. Nobody asks a document for detail below
+its level.
 
-Read effective views, relevant in-review canonical content, open targets and build records for
-affected elements at every scope. Check section 2 and non-effective content not represented in
-effective views, even for an unchanged capability. An open target's baseline revision may be
-stale: validate it against current effective views before reuse. Code on main may supply current
-design detail; it never proves built status. No AWS account inventory is required or permitted.
-Cite views by absolute path and unique heading, code by repository, main revision and file:line,
-external guidance by URL and retrieval/version reference, each as survey.schema.json
-`$defs/EvidenceRef` defines it. Reading test source never proves execution. Refresh only changed or insufficient evidence.
+## How to work (all levels)
 
-## Implementation detail that must be present
+P1. The acceptance basis is the PRD's business outcomes, settled owner decisions, the
+    section 2 constraints and the documentation model's obligations.
+P2. A mechanism named in a PRD is a design input, not a business requirement.
+P3. The design agent whose specialty covers a technical gap decides it with cited evidence.
+    Only business requirements that no design can meet together, or a conflict with section
+    2, reach the owner.
+P4. AWS behaviour is established from AWS documentation through the AWS MCP Server. State
+    assumptions, tradeoffs and regional applicability. Never invent scale.
+P5. Cite an arc42 statement by path and heading, guidance by URL, and code by repository,
+    revision and file:line. Code that no pipeline built is a hint and is never evidence that
+    arc42 is wrong; only code the matrix marks built or deployed is expected to match.
+P6. One design fact lives in one home. Every other document links to it.
+P7. Never write section 2. Only architecture-maintainer writes arc42. A script promotes.
+P8. A finding names the criterion id, the item, the observation with its path and heading,
+    and a bounded correction with a condition that shows it is done. A preference is not a
+    finding. Something no criterion requires is not a finding.
+P9. A review covers only content that is not yet approved. A re-check covers only the
+    corrected items.
 
-For each affected element the retained views identify its repository, stack, runtime/handler (or
-chassis superclass/container), owned stores with keys/indexes/access patterns, routes with method,
-path and authorizer, and events with event type name, the values the publisher passes to the
-shared-events-service API, payload schema when the event has a payload, publisher, consumers and
-delivery path (the skillspoke-standard-event skill gives the standard event every event uses and
-its publishing path). Show IAM
-call boundaries, configuration and published SSM parameter names, timeouts, retries, dead letters,
-idempotency keys, and log/metric/alarm names where applicable. A Task can name the repository,
-stack, handler, table, route and event without inventing a design. A subject view's frontmatter
-records repository (null when genuinely undecided); it also carries view_type, scope, subject,
-shows and lifecycle_state. Exact contract fields and identifiers agree across producer/consumer
-views; ownership, authorization, retention, failure behavior and cost unit math are explicit.
+## Architecture level: arc42 sections 3 to 8
 
-## Coverage and findings
+A1.  A spec author can name the building block, its repository and stack, the owner of each
+     store, each interface and its caller, and each event type and its publisher without
+     inventing a design.
+A2.  Section 5 names each building block the PRD needs, what it is responsible for and what
+     it owns. Each store has one owning block and a statement of what it holds.
+A3.  Each interface is named with the block that exposes it and who may call it. Trust
+     boundaries are explicit: who may call each boundary and what each runtime may call.
+A4.  Each event type is named in the event catalog with its publisher, its consumers and its
+     delivery path.
+A5.  Section 6 shows, for each important scenario and each failure the PRD's outcomes depend
+     on, which building blocks interact and in what order. Retry, dead-letter and idempotent
+     behaviour are stated as behaviour.
+A6.  Section 7 says where each block runs and which stack holds each resource. Values shared
+     between stacks are named as shared, by the mechanism section 2 fixes.
+A7.  Each rule that applies across blocks is a design fact in section 8 with its reason, in
+     the form "Because of X, the address is verified by Y".
+A8.  No fact is stated in two documents. Section 6 links to a rule; it does not restate it.
+A9.  Every behaviour a shared service, component, layer or library provides is taken from
+     it. A behaviour more than one service needs has a shared home, whose section 5 document
+     states under "Provides" what consumers obtain from it and must not implement.
+A10. The front matter of each document records repository, view_type, scope, subject, shows
+     and lifecycle_state.
+A11. Names of blocks, stores, interfaces and event types agree across documents.
+A12. Every document stays at architecture level and within its single purpose: no route
+     method or path, field name, key or index name, parameter name, metric or alarm name, or
+     schema, and no fact outside the document's subject.
+A13. The design meets each PRD outcome it concerns and no section 2 constraint is broken.
+A14. Each diagram renders, is readable, and agrees with the text beside it.
 
-Inventory relevant subjects from requirements and connected contracts independently of existing
-catalog hits: missing views are obligations too. Each coverage row is an artifact-handoff
-survey.schema.json `$defs/CoverageRow`; that schema defines its fields, its status, action and
-disposition values, and the rules pairing them. Keep each row's id stable across rounds, name
-its MODEL obligation, and list absent view paths too. After authoring, a status claiming the
-obligation is sufficiently covered needs evidence; an obligation whose coverage cannot yet be
-determined takes the action the schema provides for that case; an action that leaves views as they are, or
-marks them inapplicable, needs a concrete reason. Give a row the `$defs/CoverageDisposition`
-value for unrelated historical debt only with evidence it affects neither this change nor its
-dependencies; retain its honest status and summarize it. Independent verification makes it
-nonblocking.
+## Technical-requirement level: the TRD
 
-Reviewers check assigned rows independently and return id/verdict/evidence for each, plus claim
-findings and resolutions. A missing obligation can be a finding without a prior author claim.
-Each defect cites the violated requirement, constraint or contract, observed evidence, responsible
-author and bounded repair. Review only against this standard: no preferred redesign, invented
-requirements or demand for unrelated new proposals. Later rounds recheck changed claims/views and
-affected dependencies, retaining valid checks. Report new concrete defects even in retained work.
+T1. Every requirement has a stable id, a kind, a statement with a checkable value, a source
+    and the element it applies to.
+T2. Where the design has the element, the TRD carries its obligations: availability,
+    latency, security controls, retention, recovery, limits, timeouts and retry counts, that
+    logs, metrics and alarms exist, and cost constraints. Cost unit math is kept as evidence
+    in the result of the agent that worked it out.
+T3. Each shared capability the design uses has one requirement of kind `reuse` naming the
+    element, the behaviour and the capability.
+T4. No requirement contradicts an effective arc42 statement or section 2, and none creates
+    an element.
+T5. Every PRD requirement that needs a technical obligation has one.
+T6. A requirement says what, with a value. It does not say how, and it holds no name or
+    shape that belongs to a spec.
 
-## Draft and three cases
+## Implementation level: the specs and the Tasks
 
-Draft views use the arc42 section layout (03/04 only when affected, 05 building blocks, 06 runtime,
-07 deployment, 08 crosscutting). Copy an effective view before editing it at the same relative
-path. Extend sufficient shared views; create new ones only for uncovered reader questions.
-Catalog every shown element. Name files for their subjects, never a bead, PRD id or date. No ADR,
-history, rule or open-item document belongs in a view. Views are Markdown, with Mermaid when
-required by their type; verify rendering/readability/semantics/links and report real limitations.
+These are not reviewed in the architecture review. They are listed here so that everyone can
+see where each detail lives.
 
-Partial change: future views plus delta/ of the change alone. Entirely new: future views are also
-the delta, without a duplicated delta folder. No change: no authored view, one current/future set
-and its note, no delta. Python writes baseline.json; agents read it but never edit/list it as an
-authored file. Never write 02-architecture-constraints, even inside draft. Writers edit only draft;
-only the maintainer integrates approved changes into canonical arc42. Python promotes and commits.
-
-## Sequencing and reconciliation
-
-Read your own dispatch entry in the supplied round plan. The plan's fields and allowed values are
-defined only in `skills/artifact-handoff/schemas/coordinator-plan.schema.json`; read them there.
-Writers run in plan order before any reviewer;
-the last writer reconciles connected views across the round's owned files. There is no designOwner
-field or permanent lead author. Resolve cross-view contract contradictions within that scope.
-Return claims, coverage and explicit fixed/disputed answers with evidence. Reviewers run afterward
-and never edit draft. The decider checks diligence from artifacts, not evidence it generates.
-The Check review is round 1 and total review rounds cannot exceed 3, including resumed runs.
+I1. Each route has its method, path, authorizer, request and response fields and status
+    codes.
+I2. Each store has its key attribute names, indexes, access patterns and expiry attribute.
+I3. Each event has the values passed to the shared-events-service API, its payload schema
+    and its schema version.
+I4. Configuration names, SSM parameter names, and log, metric and alarm names are present
+    and are generated with atw-naming.
+I5. Idempotency key fields and timeout settings are stated.
+I6. Exact contract fields agree between the producer's spec and the consumer's spec.
+I7. A Task can name the repository, stack, handler, table, route, event and the shared
+    capabilities it must use without inventing a design.
