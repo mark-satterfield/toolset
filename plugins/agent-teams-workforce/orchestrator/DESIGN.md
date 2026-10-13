@@ -2,18 +2,11 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-Step S02 of the pipeline rewrite. This document decides how the Epic (elaboration) pipeline runs
-once the Workflow scripts are gone: where the code lives, how a step is declared, how saved work is
-reused, how agent sessions are started and costed, how failures get a structured cause, what runs
-in parallel, how owner questions travel, what the driver stops doing, and how the element status
-matrix is stored and fed. Every later step (S03 to S05a) builds from it. Where this document and a
-spec under `specs/epic/` differ, this document is the later decision and wins; each such case is
-named where it is decided.
-
-Revised the same day for the independent verifier's 21 findings
-(`claude-inbox/pipeline-python-rewrite/S02-findings.md`) and the owner's fifth-round rulings
-(briefs carry facts only; the matrix is tracked in git; the pipeline is single-user and
-single-machine).
+This document describes how the Epic (elaboration) pipeline runs as a Python orchestrator: where
+the code lives, how a step is declared and run, where a run begins, how agent sessions are started
+and costed, how failures get a structured cause, what runs in parallel, how owner questions travel,
+what the driver does for the elaboration lane, and how the matrix is stored and fed. The documents
+under `specs/epic/` describe each part of the flow step by step.
 
 Names used throughout:
 
@@ -22,7 +15,7 @@ Names used throughout:
 - `<control>` = `$ATW_CONTROL_REPO` (today `/Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke`)
 - `<driver>` = `<control>/ops/sdlc-automation`
 - `<work>` = `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (the Epic's working directory;
-  `artifactio.working_dir`)
+  `core/io.py` `work_directory`)
 - `<arch>` = `$ATW_ARCH_PATH`
 - `<config>` = `$CLAUDE_CONFIG_DIR` of the pipeline (today `~/.claude-skillspoke`)
 - `<installPath>` = the installed plugin the pipeline runs, from `pluginversion.running_dir()`
@@ -203,8 +196,6 @@ The dispatch result (the handback, section 4.4) is assembled from the journal's 
 `elaboration`, `scoring`, `storyedges`, `cdsbundles`, `specui`).
 Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through `beadgraph`),
 `git`, `gh`, `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py <cmd> --json`, `cdk`.
-`artifactio.py` (driver code, located by `$ATW_ARTIFACT_SCRIPT`) is loaded in-process with
-`importlib`, as `beadgraph._contract()` already loads `beads-contract.py`.
 
 **This overturns the PLAN recommendation** (subprocess for `depscore.py` subcommands). Evidence:
 - `depscore.py` is a CLI over these modules (its docstring lists each subcommand as a call into
@@ -218,8 +209,8 @@ Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through 
   library functions directly (no `depscore.py` subprocess)"), `spec-authoring.md` step 12
   (`beadwrite.write_story` in-process), `prd-to-spec.md` step 14 (`elaboration.finish` logic
   in-process).
-- The orchestrator runs from the same plugin version as the modules (section 1). The one piece of
-  code loaded from outside the plugin is `artifactio.py`; section 3.3 sets its compatibility rule.
+- The orchestrator runs from the same plugin version as the modules (section 1). The driver modules
+  it loads from the control repository are the ones `core/driver_contracts.py` names.
 
 **What an in-process call must handle** (the verifier's finding 9):
 - Every deterministic step body runs inside `try ... except Exception`; an exception that is not a
@@ -307,20 +298,21 @@ Files stay flat under `<work>`, with the architecture part's files under `<work>
 (`specs/epic/INDEX.md` lists them). Run facts that are not about one file (session ids, model,
 effort, timings, the cause of a failed step) go in the run record `<work>/run.json` (section 4.4).
 
-### 3.2 Inside the spec, Task and Task edge steps
+### 3.2 The spec, Task and Task edge steps
 
-Each of the steps `spec_authoring.run`, `task_decomposition.run` and `task_edges.run` runs one
-phase function of the same name for one repository (or for the Epic) as a single journal step.
-Inside that step the phase function starts its agent sessions through `AgentRunner.run_step`,
-which records each accepted result with `artifactio.record` (`<file>.meta.json`) and does not start
-a session again whose recorded inputs hash as recorded (`ArtifactStore.reusable`). `STEPS.md` keeps
-one line per completed phase step for the dashboard. These records decide nothing about which
-journal step runs.
+Every step of spec authoring, the spec review, Task decomposition, the Task edges and the finish is
+its own journal step, planned by the step that discovers it: the span step plans one container per
+repository, each repository's first step plans that repository's steps, a review plans the
+correction its result calls for, a plan plans one step per Task bead write. `specs/epic/` lists
+them. No step keeps a record of its own about what is done: no receipt beside a file, no input
+hash, no list of completed steps. A step that writes a bead finds the bead by its elaboration key,
+so running it again after an invalidation updates that bead and creates no second one.
 
-### 3.3 Compatibility with `artifactio.py`
+### 3.3 What the orchestrator names itself
 
-`artifactio.py` is driver code, loaded in-process from `$ATW_ARTIFACT_SCRIPT`. The orchestrator
-uses only the functions `core/artifact_contract.py` names, and the driver changes them additively.
+The orchestrator names the Epic's work directory (`core/io.py` `work_directory`) and the directory
+that holds step journals (`core/step_journal.py` `journals_directory`). It loads no artifact code
+from the driver.
 
 ## 4. Ledger, dashboard and cost (S02 item 4)
 
@@ -569,13 +561,12 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
 
 ### 5.6 Output, validation, timeouts, kill and session id
 
-- **Output.** The agent writes its result to the path the brief names: a JSON result to
-  `<work>/candidates/<name>.json` (or under `<work>/architecture/candidates/`), a Markdown document
-  to its final path. The runner reads the file, never the transcript. A JSON candidate is parsed
-  strictly (duplicate keys refused) and validated against its schema; on success Python writes the
-  canonical JSON to the final path and records its `.meta.json`. A document is checked as its
-  spec says and recorded. When the file is missing or invalid after a normal session end, the one
-  corrective retry of section 6.3 runs.
+- **Output.** The agent writes its result to the path the brief names: a JSON result or a Markdown document
+  to its final path. The runner reads the file, never the transcript. A JSON result is parsed
+  strictly (duplicate keys refused) and validated against its schema where it was written; a
+  document is checked as its spec says. An accepted output is recorded as an artifact of its
+  journal step. When the file is missing or invalid after a normal session end, the one corrective
+  retry of section 6.3 runs.
 - **Session id.** The runner generates the UUID and passes `--session-id`; nothing is parsed out of
   the stream to find it. The transcript is `<config>/projects/<slug of the session cwd>/<uuid>.jsonl`
   (`harnesspaths.project_dir` rule).
@@ -705,9 +696,9 @@ itself leaves the driver's `no-handback`.
 One orchestrator process per Epic dispatch; the driver's lanes keep their slots. Steps run in the
 journal's walk order. The one exception: consecutive sibling steps that each have an agent, have no
 child steps and name only done steps in their inputs run as concurrent sessions
-(`journal_run.concurrent_group`). That is how the reviewers of one review run together.
-Repositories run one after another, each as one spec step and one Task step; inside a spec step
-the contracts author and the data-model author run together.
+(`journal_run.concurrent_group`). That is how the reviewers of one review run together, and the
+contracts author and the data-model author of one repository. Repositories run one after another,
+each in its own container of steps.
 
 **The cap.** At most `ATW_ORCH_SESSIONS` agent sessions at once per run (default 4). Steps beyond
 the cap wait. The account-wide number is this cap times the driver's `--elaboration-concurrency`;
@@ -920,60 +911,48 @@ elaboration is done.
 
 ### 11.5 Spec authoring
 
-- **Pass-through inputs with no producer (QUESTIONS 36): dropped.** `accessPatterns` and `spec` are
-  not dispatch arguments (section 4.4); the data-model maker derives access patterns from the PRD,
-  TRD and views, as it does today when none are sent.
-- **The Story's title and description are deterministic; the `user-story-writer` session is
-  dropped (QUESTIONS 37).** `story-<slug>.json` = `{title: "<repository name>: <PRD title>",
-  description: <a fixed template listing the repository, the placed items (id and element) and the
-  three spec document paths>, decisionIds}`. Reason: the Story is a single-repository container
-  (CONTEXT 7.16); nothing reads its prose to decide anything; the session costs a full startup per
-  repository for text a template produces (CONTEXT 7.11). This overrides `spec-authoring.md` steps
-  10 and 11: step 10 is removed, and step 11 writes the template.
-- **`outOfRepoFindings` (QUESTIONS 38): dropped**, with the session that produced it; nothing
-  consumed it (`spec-authoring.md` §6 checks dropped).
-- **An independent review pass of the spec set (QUESTIONS 39): none is added.** The makers work from
-  an architecture that was reviewed and approved and from a TRD whose citations are checked; the
-  spec documents' citations are checked deterministically (step 5); the check test is a test for
-  keeping a check, and today's pipeline has no spec review to keep. S07 measures whether spec
-  defects show up in the build lane.
-- **Skipping a maker whose surface no item touches (QUESTIONS 40): not done.** No structured field
-  says which surface an item touches; a guess could drop a document the Tasks cite. A maker with
-  nothing to specify writes a short "not applicable" document, which its definition allows (S03e).
-- **UI design sources (QUESTIONS 32a): confirmed** as `spec-authoring.md` places them. The
-  contracts maker (`api-specification-author`) writes `<work>/candidates/spec-<slug>.ui.json` for a
-  repository whose placement has `frontend: true`; which placed items are UI items is the maker's
-  judgment; Python checks the file against the supplied bundles and the placed item ids (step 6).
-  The steward's `frontend` flag is the only structured field that says a repository holds UI.
+- **The Story's title and description are deterministic.** `story-<slug>.json` is `{title:
+  "<repository name>: <PRD title>", description: <a fixed template listing the repository, the
+  placed items (id and element) and the three spec document paths>, decisionIds}`. The Story is a
+  single-repository container and nothing reads its prose to decide anything, so no session writes
+  it.
+- **One review per repository.** `openapi-contract-reviewer` checks the three documents against the
+  implementation-level criteria. A finding goes once to the author of the document it names; a
+  disputed finding goes to `spec-decider`; an upheld finding goes back to that author. Each of these
+  sessions is its own journal step, planned by the step whose result calls for it
+  (`specs/epic/spec-authoring.md`).
+- **Every author writes its document.** No structured field says which surface an item touches, so
+  no author is skipped; an author with nothing to specify writes a short "not applicable" document.
+- **UI design sources.** For a repository whose placement has `frontend: true`, the contracts author
+  (`api-specification-author`) writes `<work>/candidates/spec-<slug>.ui.json`; which placed items
+  are UI items is its judgment; Python checks the file against the supplied bundles and the placed
+  item ids. The `frontend` flag of the placement is the only structured field that says a repository
+  holds UI.
 
 ### 11.6 Task decomposition and finish
 
-- **The Task scope of the finish step (QUESTIONS 41).** `elaboration.finish` is changed in place to
-  take a scope: with `scope="epic-tasks"` it calls `scoring.score` with the write scope limited to
-  the Tasks under the Epic and no Epic roll-up, and writes no Epic WSJF key. The "every Task
-  scored" check reads the result's `unscored` list filtered to the Epic's Task ids. The
-  orchestrator calls it in-process (section 2.2). Step 14c then calls `storyedges.story_edges`
-  after `elaboration.finish`, as `depscore.run` does for `elaboration-finish`.
-- **The task-deps schema check (QUESTIONS 42): kept in the orchestrator's acceptance, not merged
-  into `write-all-task-edges`.** The acceptance step must produce the exact errors for the one
-  corrective retry; `write-all-task-edges` keeps the key validation it already has as the writer.
-- **Which metadata marks a Task as started (QUESTIONS 43).** A Task is started when its status is
-  `in_progress` or `closed`, or any key of the `BUILD_LIFECYCLE_KEYS` or `CDS_AUDIT_KEYS` group of
+- **The Task scope of the scoring steps.** `elaboration.finish` takes a scope: with
+  `scope="epic-tasks"` it calls `scoring.score` with the write scope limited to the Tasks under the
+  Epic and no Epic roll-up, and writes no Epic WSJF key. Step `elaboration.score` calls it without
+  marking the Epic, step `elaboration.done_rule` reads the Tasks it left unscored, step
+  `storyedges.story_edges` writes the Story edges, and step `elaboration.finish` calls it again to
+  mark the Epic.
+- **The task-deps schema check is the mapper session's output check.** The session's output is
+  validated against the schema narrowed to the span's Task names, so the exact errors reach the one
+  corrective retry; `write_all_task_edges` keeps the key validation it has as the writer.
+- **Which metadata marks a Task as started.** A Task is started when its status is neither `open`
+  nor `blocked`, or any key of the `BUILD_LIFECYCLE_KEYS` or `CDS_AUDIT_KEYS` group of
   `skills/beads-contract/schemas/bead-metadata.schema.json` (imported from the generated
-  `bead_metadata.py`) is present and non-empty. Reason: only the build lane writes
-  those keys, so their presence proves the lane worked on the Task and its Story worktree may hold
-  that work.
-- **`blocked` and `deferred` (QUESTIONS 44).** `blocked` with no build key is unstarted (deleted and
-  recreated on a `replaced` rerun): it is a dependency state. `deferred` is kept like a started
-  Task: a person set it, and recreating the Task would erase that ruling.
-- **Deleting a Task another Epic's Task depends on (QUESTIONS 45): re-point.** Before the delete,
-  the orchestrator records every `blocks` edge from a Task outside the Story onto a Task it is about
-  to delete, with the deleted Task's cited work items. After the new set is written, each recorded
-  edge is added onto every new Task that cites at least one of the same work items. An edge with no
-  such new Task is recorded as a warning in `run.json` and the failure evidence, not re-added.
-- **A `web-ui` Task citing UI items of two artifacts (QUESTIONS 46): warn and keep the first**, as
-  `hierarchy.check_cds_contract` does. `task-decomposer.md` is aligned to that (S03e). Reason: the
-  planner can settle it deterministically; refusing would fail the Story for a normalization.
-- **`surfaces` when the spec does not settle it (QUESTIONS 47): `null`.** `task-decomposer.md` is
-  aligned to the schema (S03e); the bead's description renders null as `unknown (none declared)` as
-  `beadwrite` does today.
+  `bead_metadata.py`) is present and non-empty. Only the build lane writes those keys, so their
+  presence proves the lane worked on the Task and its Story worktree may hold that work. A `deferred`
+  Task counts as started: a person set it.
+- **A Task bead the plan no longer names.** When a decomposition runs again, an unstarted Task bead
+  that elaboration wrote and that no Task of the new plan matches is deleted after the plan's Tasks
+  are written (`beadwrite.retire_superseded_tasks`). Before the delete, each `blocks` edge from a
+  Task outside the Story onto it is added onto every written Task that cites at least one of the
+  same work items. An edge with no such Task is recorded as a warning, not re-added.
+- **A `web-ui` Task citing UI items of two artifacts: warn and keep the first**, as
+  `hierarchy.check_cds_contract` does. The planner can settle it deterministically; refusing would
+  fail the Story for a normalization.
+- **`surfaces` when the spec does not settle it: `null`.** The bead's description renders null as
+  `unknown (none declared)`.

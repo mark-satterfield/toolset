@@ -1,9 +1,11 @@
-"""Check one elaboration dispatch: the journal it creates and the result it assembles from it.
+"""Check one elaboration dispatch from the open-run step to the Epic's mark, and the result it assembles.
 
-No agent, workflow or pipeline is started: sessions are stand-ins, and the Epic's claim, beads and
-the push are stood in. A dispatch creates the Epic's journal with every outermost step, runs it,
-and reports from the journal; a second dispatch runs no earlier step again and reports the same.
-The check also covers the result a finished journal gives, and the items the span step reads
+No agent, workflow or pipeline is started: sessions are stand-ins, and beads, the matrix read, the
+repository inventory, the push and the Epic's lifecycle are stood in. One dispatch of a small Epic
+creates the Epic's journal, runs every step and reports the Story and the Tasks from the journal;
+the Story and each Task have a journal of their own whose first step is done and holds the files
+their later steps are handed. A second dispatch on the finished journal launches no session and
+makes no bead call, and reports the same. The check also covers the items the span step reads
 from the matrix.
 """
 
@@ -14,7 +16,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -22,107 +24,91 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-co
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/artifact-handoff/scripts"))
 
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, HEADLESSENV_MODULE, STOP_FILE_ENV, HeadlessEnvironment
-from matrix_contract import Matrix, Node, NodeId
-from orchestrator.checks.architecture_bench import BEAD, STAMP, ArchBench
-from orchestrator.checks.architecture_standins import Scenario, install
+from orchestrator.checks.architecture_bench import BEAD, STAMP
 from orchestrator.checks.check_architecture_flow import OUTERMOST
 from orchestrator.checks.check_support import report, require
+from orchestrator.checks.elaboration_bench import SERVICE, ElabBench, matrix_node, require_done
 from orchestrator.core import step_journal as sj
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import load_artifactio
 from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.handback_contract import PASSED_PHASE, TRD_PHASE, wire_result
 from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.journal_steps import value_artifact
 from orchestrator.core.manifest import manifest_path
 from orchestrator.flows import prd_to_spec
-from orchestrator.flows.elaboration_result import journal_result
-from orchestrator.flows.elaboration_steps import LIFECYCLE_DONE, SPEC_RESULT, TASKS_RESULT
+from orchestrator.flows.architecture_files import ARTIFACT_TRD
+from orchestrator.flows.elaboration_files import (
+    CRITERIA,
+    DATA_MODEL,
+    SPEC,
+    STORY_DOCUMENT,
+    TASK_KEY,
+    TASKS_FILE,
+    objects,
+)
 from orchestrator.flows.elaboration_support import FINISH_PHASE
-from orchestrator.flows.repo_scoping import ARTIFACT_REPOSITORIES, SPAN, span_items
-from typeguard import check_type
+from orchestrator.flows.repo_scoping import span_items
+from step_journal_contract import BEAD_TYPE_STORY, BEAD_TYPE_TASK, PIPELINE_BUILD, PIPELINE_DEPLOY, BeadId
 
 if TYPE_CHECKING:
-    from orchestrator.core.artifact_contract import ArtifactProducer
-    from orchestrator.core.models import RunContext
-    from orchestrator.core.tools import Tools
-    from step_journal_contract import Journal, Step, StepPlan
+    from matrix_contract import Matrix, Node, NodeId
+    from step_journal_contract import Journal
     from target_contract import DeltaItem
 
-REPOSITORY: Final = "/repositories/Product-auth-service"
-EMITTED: Final = 3
+HANDED: list[str] = [SPEC, DATA_MODEL, CRITERIA, ARTIFACT_TRD, STORY_DOCUMENT]
+"""The files a Story's later steps are handed, by artifact name."""
 
 
-def _lifecycle(_context: RunContext, _tools: Tools, _stage: str, operation: object, /, **facts: object) -> object:
-    """Stand in for the Epic's claim and its release: no bead is read or written.
+def require_child_journal(bench: ElabBench, bead: str, bead_type: str, pipeline: str, names: list[str]) -> None:
+    """Require the journal of a Story or a Task: its kind, its pipeline, and a done first step with its files."""
+    journal: Journal = sj.read_journal(sj.journal_path(bench.path.parent, BeadId(bead)))
+    require((journal["beadType"], journal["pipeline"]) == (bead_type, pipeline), f"the journal of {bead}: {journal}")
+    first = journal["steps"][0]
+    require(first["status"] == "done", f"the first step of {bead}'s journal is done")
+    held: list[str] = [artifact["name"] for artifact in first["artifacts"]]
+    require(held == names, f"the first step of {bead}'s journal holds {held}, not {names}")
+    for artifact in first["artifacts"]:
+        if artifact["kind"] != "value":
+            require(Path(artifact["path"]).is_file(), f"{artifact['name']} of {bead} is a file that exists")
 
-    Returns:
-        A granted claim for the start, and an empty record for any other lifecycle operation.
 
-    """
-    return (
-        {"ok": True, "owner": facts.get("owner", "check")}
-        if getattr(operation, "__name__", "") == "start"
-        else {"ok": True}
-    )
-
-
-def check_dispatch(root: Path, module: ArtifactProducer) -> None:
-    """Check two dispatches of one Epic: the journal, the report, and nothing run twice."""
-    bench: ArchBench = ArchBench(root / "dispatch", module)
-    install(bench, Scenario(work=False))
-    with patch.dict(os.environ, bench.environment()), patch.object(prd_to_spec, "lifecycle", _lifecycle):
-        first, second = (
-            prd_to_spec.elaborate(bench.context, bench.agents.store, bench.agents, bench.tools, []) for _ in range(2)
-        )
+def check_dispatch(root: Path) -> None:
+    """Check two dispatches of one small Epic: every step, the report, the journals, and nothing run twice."""
+    bench: ElabBench = ElabBench(root / "dispatch", repositories=(SERVICE,))
+    with bench.patched():
+        first: dict[str, JsonValue] = prd_to_spec.elaborate(bench.context, bench.agents, bench.tools, [])
+        done: tuple[int, int, int] = (len(bench.sessions.calls), len(bench.beads.calls), len(bench.tools.calls))
+        second: dict[str, JsonValue] = prd_to_spec.elaborate(bench.context, bench.agents, bench.tools, [])
+        again: tuple[int, int, int] = (len(bench.sessions.calls), len(bench.beads.calls), len(bench.tools.calls))
     journal: Journal = bench.journal()
     require([step["description"] for step in journal["steps"]] == OUTERMOST, "the journal has every outermost step")
     require(journal["pipeline"] == "elaboration" and journal["beadType"] == "epic", "an Epic's elaboration journal")
-    require(first["ok"] is False and json_object(first["failure"])["stage"] == SPAN, f"the span step failed: {first}")
-    require(json_object(first["artifacts"])["phases"] == {TRD_PHASE: PASSED_PHASE}, "the TRD phase is reported")
-    require(first["repoSpan"] == [] and first["beadsEmitted"] == 0 and first["lifecycleDone"] is False, "no bead yet")
-    require(all(count == 1 for count in bench.counts.values()), f"the second dispatch ran no session: {bench.counts}")
-    require(second["artifacts"] == first["artifacts"] and second["stage"] == first["stage"], "the same report again")
-    following: Step | None = sj.next_step(journal)
-    require(following is not None and following.get("script") == SPAN, "the journal stands at the span step")
+    require_done(bench)
+    require(first["ok"] is True and first["stage"] == FINISH_PHASE and first["lifecycleDone"] is True, f"done: {first}")
+    hierarchy: dict[str, JsonValue] = json_object(first["hierarchy"])
+    stories: list[dict[str, JsonValue]] = objects(hierarchy["stories"])
+    tasks: list[dict[str, JsonValue]] = objects(hierarchy["tasks"])
+    beads: list[str] = [str(record["id"]) for record in bench.beads.of_kind("story")]
+    require([story["id"] for story in stories] == beads, f"the Story comes from the journal: {stories}")
+    written: list[str] = [str(record["id"]) for record in bench.beads.of_kind("task")]
+    require(
+        [task["id"] for task in tasks] == written and len(written) == 1,
+        f"the Task comes from the journal: {tasks}",
+    )
+    require(first["beadsEmitted"] == len(beads) + len(written), "the beads emitted are the Story and its Task")
+    require(first["repoSpan"] == [str(bench.paths[SERVICE])], f"the repository span: {first['repoSpan']}")
+    slug: str = str(stories[0]["elabKey"]).removeprefix("story:")
+    phases: JsonValue = json_object(first["artifacts"])["phases"]
+    require(phases == {TRD_PHASE: PASSED_PHASE, f"spec:{slug}": PASSED_PHASE}, f"the phases reported: {phases}")
+    require("closureEdges" in first and "crossStoryDependencies" in first and "storyEdges" in first, "the edges")
     wire_result(first)
     require(manifest_path(bench.work).is_file(), "the run record is written")
-    report("PASS: a dispatch creates the journal, reports from it, and a second dispatch repeats no step")
-
-
-def check_finished_report(bench_root: Path, module: ArtifactProducer) -> None:
-    """Check the report a finished journal gives: Stories, Tasks, the span and the lifecycle mark."""
-    bench: ArchBench = ArchBench(bench_root / "finished", module)
-    plans: list[StepPlan] = [{"description": "Everything", "purpose": "A finished run", "script": "check.everything"}]
-    journal: Journal = sj.new_journal(BEAD, "epic", "elaboration", plans)
-    step = journal["steps"][0]["id"]
-    story: dict[str, JsonValue] = {"id": "ssbd-arch.1.1", "elabKey": "story:auth", "repoPath": REPOSITORY}
-    sj.start_step(journal, step, STAMP.at)
-    for artifact in (
-        value_artifact(ARTIFACT_REPOSITORIES, [REPOSITORY]),
-        value_artifact(SPEC_RESULT, {"ok": True, "story": story, "specPaths": []}),
-        value_artifact(TASKS_RESULT, {"ok": True, "repoPath": REPOSITORY, "tasks": [{"id": "t1"}, {"id": "t2"}]}),
-        value_artifact(LIFECYCLE_DONE, True),
-    ):
-        sj.record_artifact(journal, step, artifact)
-    sj.finish_step(journal, step, STAMP.at)
-    result: dict[str, JsonValue] = journal_result(journal, bench.context)
-    require(result["ok"] is True and result["stage"] == FINISH_PHASE and result["lifecycleDone"] is True, "finished")
-    require(result["repoSpan"] == [REPOSITORY] and result["beadsEmitted"] == EMITTED, f"the span and beads: {result}")
-    require(json_object(result["artifacts"])["phases"] == {"spec:auth": PASSED_PHASE}, "the spec phase by its slug")
-    require(json_object(result["hierarchy"])["stories"] == [story], "the Stories come from the journal")
-    report("PASS: a finished journal gives the span, the Stories, the Tasks and the lifecycle mark")
-
-
-def _node(key: str, kind: str, name: str, **fields: object) -> tuple[NodeId, Node]:
-    """Build one matrix row for the span check.
-
-    Returns:
-        The row's id and the row.
-
-    """
-    node: dict[str, object] = {"id": key, "kind": kind, "name": name, "links": [], "changed": STAMP.change(), **fields}
-    return NodeId(key), check_type(node, Node)
+    require_child_journal(bench, beads[0], BEAD_TYPE_STORY, PIPELINE_DEPLOY, HANDED)
+    require_child_journal(bench, written[0], BEAD_TYPE_TASK, PIPELINE_BUILD, [*HANDED, TASKS_FILE, TASK_KEY])
+    report("PASS: one dispatch runs every step, reports the Story and the Task, and creates their journals")
+    require(again == done, f"the second dispatch launched a session or called beads or a tool: {done} then {again}")
+    same: tuple[str, ...] = ("ok", "stage", "hierarchy", "beadsEmitted", "artifacts", "repoSpan", "lifecycleDone")
+    require(all(second[name] == first[name] for name in same), "the second dispatch reports the same")
+    report("PASS: a dispatch on a finished journal launches no session, makes no bead call and reports the same")
 
 
 def check_span_items() -> None:
@@ -131,9 +117,15 @@ def check_span_items() -> None:
     table: str = "infrastructure:infra/infra/table"
     done: str = "library:lib/@repository/lib"
     rows: list[tuple[NodeId, Node]] = [
-        _node(f"prd:{BEAD}", "prd", "PRD", links=[{"type": "needs", "to": "feature:proof"}]),
-        _node("feature:proof", "feature", "Proof", featureType="prd", links=[{"type": "realizedBy", "to": handler}]),
-        _node(
+        matrix_node(f"prd:{BEAD}", "prd", "PRD", links=[{"type": "needs", "to": "feature:proof"}]),
+        matrix_node(
+            "feature:proof",
+            "feature",
+            "Proof",
+            featureType="prd",
+            links=[{"type": "realizedBy", "to": handler}],
+        ),
+        matrix_node(
             handler,
             "component",
             "Handler",
@@ -141,8 +133,8 @@ def check_span_items() -> None:
             code={"state": "none"},
             links=[{"type": "dependsOn", "to": table}, {"type": "dependsOn", "to": done}],
         ),
-        _node(table, "infrastructure", "Table", repository="Product-identity-infra", code={"state": "legacy"}),
-        _node(done, "library", "Library", repository="shared-lib", code={"state": "built"}),
+        matrix_node(table, "infrastructure", "Table", repository="Product-identity-infra", code={"state": "legacy"}),
+        matrix_node(done, "library", "Library", repository="shared-lib", code={"state": "built"}),
     ]
     matrix: Matrix = {
         "version": 3,
@@ -160,17 +152,20 @@ def check_span_items() -> None:
 def main() -> None:
     """Run the dispatch checks in a temporary directory with stand-in sessions."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
+    parser.add_argument("--control-repo", required=True, type=Path)
     options: argparse.Namespace = parser.parse_args()
-    script: Path = options.artifact_script
-    module: ArtifactProducer = load_artifactio(script)
+    control: Path = options.control_repo
+    # The driver's modules read the installed plugin, so they are loaded before the check's own
+    # configuration directory takes the place of the real one.
+    with patch.dict(os.environ, {CONTROL_REPO_ENV: str(control.resolve())}):
+        driver_module(HEADLESSENV_MODULE)
     directory: str
     with tempfile.TemporaryDirectory() as directory:
         root: Path = Path(directory).resolve()
         (root / "config").mkdir()
         values: dict[str, str] = {
             "CLAUDE_CONFIG_DIR": str(root / "config"),
-            CONTROL_REPO_ENV: str(script.resolve().parents[2]),
+            CONTROL_REPO_ENV: str(control.resolve()),
             "ATW_ORCH_SESSIONS": "4",
         }
         with (
@@ -186,8 +181,7 @@ def main() -> None:
                 HeadlessEnvironment.child_env.__name__,
                 side_effect=lambda _scratch: dict(os.environ),
             ):
-                check_dispatch(root, module)
-                check_finished_report(root, module)
+                check_dispatch(root)
                 check_span_items()
 
 

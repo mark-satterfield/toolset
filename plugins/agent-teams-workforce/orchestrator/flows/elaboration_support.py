@@ -8,7 +8,6 @@ import sys
 import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Concatenate, ParamSpec, TypeVar
 
@@ -18,8 +17,6 @@ import beadgraph
 from driver_surface_types import STOP_FILE_ENV, STOP_FILE_MODE
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.events import EventSink
 from orchestrator.core.handback import failure_for
@@ -42,7 +39,6 @@ from orchestrator.core.handback_contract import (
     parse_diagnostic,
     parse_failure_class,
     phase_event,
-    reused_note,
 )
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.manifest import manifest_path, record_run
@@ -140,74 +136,6 @@ def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: b
         "repository": repository,
         "failure": failure,
     })
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-@dataclass
-class PhaseRunner:
-    """Bind one run's services while giving each phase independent mutable inputs."""
-
-    context: RunContext
-    store: ArtifactStore
-    runner: AgentRunner
-    tools: Tools
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including collection members."""
-        check_type(self.context, RunContext, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.store, ArtifactStore, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.runner, AgentRunner, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.tools, Tools, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
-    def call(
-        self,
-        name: PrdToSpecPhase,
-        function: Callable[Concatenate[RunContext, ArtifactStore, AgentRunner, Tools, P], dict[str, JsonValue]],
-        additions: dict[str, JsonValue] | None = None,
-        *args: P.args,
-        **kwargs: P.kwargs,
-    ) -> dict[str, JsonValue]:
-        """Execute one phase with shared cleanup and private stage/arguments.
-
-        Returns:
-            The successful phase result or its classified failure.
-
-        Raises:
-            TypeError: An argument violates the declared input contract.
-
-        """
-        if (
-            not (isinstance(name, str))
-            or not (callable(function))
-            or not (isinstance(additions, dict) or additions is None)
-        ):
-            raise TypeError(_ARGUMENT_ERROR)
-        local: RunContext = replace(self.context, stage=name, args={**self.context.args, **(additions or {})})
-        child: AgentRunner = AgentRunner(
-            local,
-            self.store,
-            plugin=self.runner.plugin,
-            emit=self.runner.emit,
-            executable=self.runner.executable,
-        )
-        child.share_processes(self.runner)
-        repository: str | None = check_type(local.args.get("repoPath"), str | None)
-        emit_event(self.runner.emit, phase_event(name, name, repository))
-        try:
-            result: dict[str, JsonValue] = function(local, self.store, child, self.tools, *args, **kwargs)
-            if result.get("resumed"):
-                emit_event(self.runner.emit, reused_note(phase=name, repository=repository))
-        except Exception as exc:
-            _LOGGER.exception("Phase %s failed", name)
-            return failed(
-                local.stage,
-                exc,
-                str(local.args.get("repoPath", "")),
-                agent_started=any(row.get("startedAt") is not None for row in local.sessions),
-            )
-        else:
-            return result
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

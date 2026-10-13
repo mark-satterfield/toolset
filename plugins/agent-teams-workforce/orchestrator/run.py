@@ -23,9 +23,9 @@ if __package__ in {None, ""}:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "pipeline-contracts" / "scripts"))
 
 from composites_contract import ORCHESTRATED, PRD_TO_SPEC
+from driver_surface_types import CONTROL_REPO_ENV
 
 from orchestrator.core.agent_context import SessionCleanupError
-from orchestrator.core.artifacts import load_artifactio
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback import failure_for, stop_stage
 from orchestrator.core.handback_contract import (
@@ -39,8 +39,9 @@ from orchestrator.core.handback_contract import (
     rejected,
     wire_result,
 )
-from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.io import JsonValue, json_object, work_directory, write_json
 from orchestrator.core.models import RunContext, StepError
+from orchestrator.core.tools import env_path
 from orchestrator.flows.prd_to_spec import run as elaborate
 
 type SignalHandler = Callable[[int, FrameType | None], None] | int | None
@@ -90,7 +91,7 @@ def _context(contract: DispatchArguments, bead: str, flow_name: str, path: Path)
         raise TypeError(_not_contract(contract))
     raw: object = json.loads(path.read_text(encoding="utf-8"))
     args: dict[str, JsonValue] = json_object(dict(contract.parse_arguments(raw)))
-    work: Path = check_type(load_artifactio().working_dir(bead), Path)
+    work: Path = work_directory(env_path(CONTROL_REPO_ENV), bead)
     run_id: str = check_type(args[contract.KEY_EXECUTION_ID], str)
     return RunContext(bead, flow_name, args, work, run_id)
 

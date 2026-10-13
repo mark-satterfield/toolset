@@ -1,411 +1,461 @@
-"""The review of one repository's specification documents, and what follows a finding.
+"""The review of one repository's specification documents, each session a step of the journal.
 
-One reviewer session reads the documents against the implementation-level criteria. A finding
-goes once to the author of the document it names. A finding an author disputes goes to the
-decider, and a finding the decider upholds goes back to that author as a directive. A document
-derived from one that changed is brought into agreement by its own author in the same pass.
+One reviewer session reads the documents against the implementation-level criteria. Its step
+plans what its result calls for: a finding goes once to the author of the document it names, in
+the order the documents are written, each as its own step. A step that ends plans the next: the
+next document with a finding, a document derived from one that changed, and, when an author
+disputed a finding, the decider. A finding the decider upholds goes back to that author as a
+directive, again one step per document. Nothing here decides whether a step runs again: the
+journal does.
 """
 
 from __future__ import annotations
 
+import hashlib
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import TYPE_CHECKING, Final, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from review_criteria import LEVEL_IMPLEMENTATION, load_criteria
 from spec_review_contract import (
+    DOCUMENT_CRITERIA,
+    DOCUMENT_DATA_MODEL,
+    DOCUMENT_SPEC,
     RULING_FINDING_STANDS,
     SPEC_CORRECTION_SCHEMA_PATH,
-    SPEC_DOCUMENTS,
     SPEC_REVIEW_SCHEMA_PATH,
     SPEC_RULING_SCHEMA_PATH,
-    Dispute,
-    Finding,
-    RulingValue,
-    SpecCorrection,
     SpecDocument,
-    SpecReview,
-    SpecRuling,
     validate_spec_correction,
     validate_spec_review,
     validate_spec_ruling,
 )
-from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agents import AgentRunner, strict_json
-from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import json_object, write_json
-from orchestrator.core.models import AgentStep, StepError
+from orchestrator.core.journal_registry import agent_step
+from orchestrator.core.journal_steps import (
+    AgentLaunch,
+    Completion,
+    NewStep,
+    StepGroup,
+    StepRun,
+    file_artifact,
+    value_artifact,
+)
+from orchestrator.core.models import StepError
+from orchestrator.flows.architecture_files import ARTIFACT_TRD, LABEL_CRITERIA
+from orchestrator.flows.elaboration_files import (
+    AUTHOR_CONTRACTS,
+    AUTHOR_CRITERIA,
+    AUTHOR_DATA_MODEL,
+    CONTEXT,
+    CRITERIA,
+    DATA_MODEL,
+    DECIDER,
+    REVIEWER,
+    SPEC,
+    WARNINGS,
+    WORK,
+    Repository,
+    objects,
+    repository,
+    strings,
+)
+from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
+from orchestrator.flows.spec_authoring import (
+    WORK_DOCUMENT,
+    WORK_UI,
+    author_dirs,
+    author_files,
+    document_check,
+    spec_document,
+    ui_sources,
+)
 
-_ARGUMENT_ERROR: Final[str] = "Arguments violate the spec_review input contract"
+if TYPE_CHECKING:
+    from spec_review_contract import SpecCorrection, SpecReview, SpecRuling
+    from step_journal_contract import Artifact, Step, StepPlan
 
-REVIEWER: Final[str] = "openapi-contract-reviewer"
-DECIDER: Final[str] = "spec-decider"
-CRITERIA_FILE: Final[str] = "skills/architecture-baseline/review-criteria.json"
+    from orchestrator.core.io import JsonValue
 
-REVIEW_RESULT: Final[str] = "Review of this repository's specification documents against the implementation criteria."
-CORRECTION_RESULT: Final[str] = "Correction of this specification document for the spec review findings."
-RULING_RESULT: Final[str] = "Ruling on each disputed spec review finding."
-REVISION_RESULT: Final[str] = "Revision of this specification document to the directives of the ruling."
+CRITERIA_FILE: Final = "skills/architecture-baseline/review-criteria.json"
 
-type Recorder = Callable[[tuple[str, ...], tuple[Path, ...]], None]
+type Pass = Literal["correction", "revision"]
+WORK_CORRECTION: Final[Pass] = "correction"
+WORK_REVISION: Final[Pass] = "revision"
+"""What a step of an author agent, planned by a step of the review, does."""
+ORDER: Final[tuple[SpecDocument, ...]] = (DOCUMENT_SPEC, DOCUMENT_DATA_MODEL, DOCUMENT_CRITERIA)
+"""The documents in the order they are written: a document follows every one it is derived from."""
+DERIVED_FROM: Final[dict[SpecDocument, frozenset[SpecDocument]]] = {
+    DOCUMENT_SPEC: frozenset(),
+    DOCUMENT_DATA_MODEL: frozenset(),
+    DOCUMENT_CRITERIA: frozenset({DOCUMENT_SPEC, DOCUMENT_DATA_MODEL}),
+}
+ARTIFACT_OF: Final[dict[SpecDocument, str]] = {
+    DOCUMENT_SPEC: SPEC,
+    DOCUMENT_DATA_MODEL: DATA_MODEL,
+    DOCUMENT_CRITERIA: CRITERIA,
+}
+AUTHOR_OF: Final[dict[SpecDocument, str]] = {
+    DOCUMENT_SPEC: AUTHOR_CONTRACTS,
+    DOCUMENT_DATA_MODEL: AUTHOR_DATA_MODEL,
+    DOCUMENT_CRITERIA: AUTHOR_CRITERIA,
+}
+
+REVIEW: Final = "spec review"
+FINDINGS: Final = "spec review findings"
+DROPPED: Final = "spec review findings dropped"
+CORRECTION: Final = "spec correction"
+REVISION: Final = "spec revision"
+WORKED: Final = "spec review document worked on"
+RULING: Final = "spec ruling"
+UPHELD: Final = "spec review findings upheld"
+"""The names of the artifacts the steps of the review record."""
+DOCUMENT: Final = "document"
+
+REVIEW_RESULT: Final = "Review of this repository's specification documents against the implementation criteria."
+CORRECTION_RESULT: Final = "Correction of this specification document for the spec review findings."
+RULING_RESULT: Final = "Ruling on each disputed spec review finding."
+REVISION_RESULT: Final = "Revision of this specification document to the directives of the ruling."
 
 
-class SpecReviewOutcome(TypedDict):
-    """What one repository's spec review came to; the file the flow records when the review is over.
+def _kind(value: JsonValue) -> SpecDocument:
+    """Narrow a recorded document kind.
 
-    ``findings`` are the ids of the findings the review holds against an implementation-level
-    criterion; ``dropped`` the ids it holds against anything else, which go no further.
-    ``corrected`` and ``revised`` name the documents an author worked on again, after the review
-    and after the ruling. ``disputed`` are the finding ids an author did not apply and ``upheld``
-    those of them the decider ruled for.
+    Returns:
+        The kind.
+
+    Raises:
+        ValueError: The value is not a specification document kind.
+
     """
-
-    review: str
-    findings: list[str]
-    dropped: list[str]
-    corrected: list[SpecDocument]
-    disputed: list[str]
-    upheld: list[str]
-    revised: list[SpecDocument]
-    warnings: list[str]
-
-
-@dataclass(frozen=True)
-class ReviewedDocument:
-    """One specification document: who wrote it, from what, and how it is checked."""
-
     kind: SpecDocument
-    path: Path
-    agent: str
-    inputs: tuple[str, ...]
-    check: Callable[[Path], object]
-    derived_from: tuple[SpecDocument, ...] = ()
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __post_init__(self) -> None:
-        """Validate the fields before any session is started for the document.
-
-        Raises:
-            ValueError: The kind or a kind in ``derived_from`` is not a specification document.
-
-        """
-        check_type(self.path, Path)
-        check_type(self.agent, str)
-        check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.check, Callable[[Path], object])
-        if self.kind not in SPEC_DOCUMENTS or any(kind not in SPEC_DOCUMENTS for kind in self.derived_from):
-            message: str = f"not a specification document kind: {self.kind!r} / {self.derived_from!r}"
-            raise ValueError(message)
+    for kind in ORDER:
+        if value == kind:
+            return kind
+    message: str = f"not a specification document kind: {value!r}"
+    raise ValueError(message)
 
 
-@dataclass(frozen=True)
-class SpecReviewScope:
-    """Everything one repository's spec review is handed.
+def _finding(identifier: str, kind: str) -> dict[str, JsonValue]:
+    """Build the record of one finding the review sends to an author.
 
-    ``documents`` are in authoring order: a document comes after every document it is derived
-    from. ``author_dirs`` are the directories an author session may read, as when it wrote.
+    Returns:
+        The finding's id and the document it names.
+
     """
-
-    stage: str
-    slug: str
-    work: Path
-    trd: Path
-    facts: Path
-    criteria: Path
-    documents: tuple[ReviewedDocument, ...]
-    author_dirs: tuple[Path, ...]
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __post_init__(self) -> None:
-        """Validate the fields and the order of the documents.
-
-        Raises:
-            ValueError: A document kind is repeated, or a document precedes one it is derived from.
-
-        """
-        check_type(self.stage, str)
-        check_type(self.slug, str)
-        value: Path
-        for value in (self.work, self.trd, self.facts, self.criteria):
-            check_type(value, Path)
-        check_type(
-            self.documents,
-            tuple[ReviewedDocument, ...],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        check_type(self.author_dirs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        seen: list[SpecDocument] = []
-        document: ReviewedDocument
-        for document in self.documents:
-            if document.kind in seen or any(kind not in seen for kind in document.derived_from):
-                message: str = f"specification documents are repeated or out of authoring order at {document.kind!r}"
-                raise ValueError(message)
-            seen.append(document.kind)
+    return {"id": identifier, DOCUMENT: kind}
 
 
-@dataclass(frozen=True)
-class _Seat:
-    """Who runs one session of this step, reading which directories."""
+def _records(run: StepRun, own: dict[str, JsonValue] | None, phase: Pass) -> list[dict[str, JsonValue]]:
+    """Read what the steps of one pass recorded: those the step is handed, then its own.
 
-    agent: str
-    dirs: tuple[Path, ...]
+    Returns:
+        One record per document an author worked on in the pass, in the order they ran.
 
-
-@dataclass
-class _Pass:
-    """What one pass of author sessions did."""
-
-    worked: list[SpecDocument]
-    changed: set[SpecDocument]
-    disputes: dict[str, Path]
-    warnings: list[str]
+    """
+    earlier: list[dict[str, JsonValue]] = [held for held in objects(run.inputs.values(WORKED)) if held[WORK] == phase]
+    return [*earlier, *([] if own is None else [own])]
 
 
-class SpecReviewStep:
-    """One repository's spec review, from the reviewer session to the recorded result."""
+def _findings(run: StepRun, phase: Pass) -> list[dict[str, JsonValue]]:
+    """Read the findings one pass sends to the authors.
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __init__(
-        self,
-        scope: SpecReviewScope,
-        store: ArtifactStore,
-        runner: AgentRunner,
-        record: Recorder,
-    ) -> None:
-        """Bind the scope, the receipt store, the session runner and the receipt writer.
+    Returns:
+        The findings the review holds against an implementation criterion; in the revision
+        pass, those of them the decider upheld.
 
-        Raises:
-            TypeError: An argument violates the declared input contract.
+    """
+    kept: list[dict[str, JsonValue]] = objects(run.inputs.value(FINDINGS))
+    if phase == WORK_CORRECTION:
+        return kept
+    upheld: list[str] = strings(run.inputs.optional_value(UPHELD, []))
+    return [finding for finding in kept if finding["id"] in upheld]
 
-        """
-        if (
-            not isinstance(scope, SpecReviewScope)
-            or not isinstance(store, ArtifactStore)
-            or not isinstance(runner, AgentRunner)
-            or not callable(record)
-        ):
-            raise TypeError(_ARGUMENT_ERROR)
-        self.scope: SpecReviewScope = scope
-        self.store: ArtifactStore = store
-        self.runner: AgentRunner = runner
-        self.record: Recorder = record
-        self.ran: bool = False
-        self.review_path: Path = scope.work / f"spec-{scope.slug}.review.json"
-        self.ruling_path: Path = scope.work / f"spec-{scope.slug}.ruling.json"
-        self.result_path: Path = scope.work / f"spec-{scope.slug}.review-outcome.json"
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def review_inputs(self) -> tuple[str, ...]:
-        """Name the files the reviewer is handed: the documents, the TRD, the context and the criteria.
+def _plan(run: StepRun, held: Repository, work: str, agent: str, kind: SpecDocument | None) -> StepGroup:
+    """Plan the next step of the review, after the step that ends.
 
-        Returns:
-            The paths, the documents first, in authoring order.
+    Returns:
+        One step, handed everything the ending step was handed and what it records.
 
-        """
-        return (
-            *(str(document.path) for document in self.scope.documents),
-            str(self.scope.trd),
-            str(self.scope.facts),
-            str(self.scope.criteria),
-        )
+    """
+    name: str = Path(held.path).name
+    description: str = f"Rule on the disputed review findings of {name}"
+    if kind is not None and work == WORK_CORRECTION:
+        description = f"Correct the {kind} document of {name} for the review's findings"
+    elif kind is not None:
+        description = f"Revise the {kind} document of {name} to the ruling"
+    plan: StepPlan = {
+        "description": description,
+        "purpose": "Every finding against the implementation criteria is settled",
+        "agent": agent,
+        "inputs": list(dict.fromkeys([*run.step.get("inputs", []), run.step["id"]])),
+    }
+    params: dict[str, JsonValue] = {WORK: work}
+    if kind is not None:
+        params[DOCUMENT] = kind
+    return StepGroup((NewStep(plan, params),))
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def run(self) -> SpecReviewOutcome:
-        """Review the documents and carry every finding to its end, or reuse a recorded result.
 
-        A recorded result is reused while the documents, the TRD, the context and the criteria
-        are the bytes it was recorded against, so a review is not repeated for unchanged specs.
-        A session that fails raises StepError from the runner and nothing is recorded.
+def following(run: StepRun, own: dict[str, JsonValue] | None, phase: Pass) -> tuple[StepGroup, ...]:
+    """Plan what the result of a step of the review calls for.
 
-        Returns:
-            The result, as recorded in ``result_path``.
+    Args:
+        run: The step that ends.
+        own: What that step records about the document it worked on; None for the reviewer and
+            the decider, which open a pass.
+        phase: The pass the next author step belongs to.
 
-        """
-        if self.store.reusable(self.review_inputs(), (self.result_path,)):
-            return check_type(
-                strict_json(self.result_path),
-                SpecReviewOutcome,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-        self.ran = True
-        review: SpecReview = self._review()
+    Returns:
+        The step for the next document, in writing order, that has a finding of the pass or is
+        derived from a document that changed in it; when the correction pass is over and an
+        author disputed a finding, the decider's step; otherwise nothing.
+
+    """
+    held: Repository = repository(run.inputs)
+    records: list[dict[str, JsonValue]] = _records(run, own, phase)
+    findings: list[dict[str, JsonValue]] = _findings(run, phase)
+    worked: list[SpecDocument] = [_kind(record[DOCUMENT]) for record in records]
+    changed: set[SpecDocument] = {_kind(record[DOCUMENT]) for record in records if record["changed"] is True}
+    start: int = 0 if not worked else ORDER.index(worked[-1]) + 1
+    kind: SpecDocument
+    for kind in ORDER[start:]:
+        if any(finding[DOCUMENT] == kind for finding in findings) or changed & DERIVED_FROM[kind]:
+            return (_plan(run, held, phase, AUTHOR_OF[kind], kind),)
+    if phase == WORK_CORRECTION and any(strings(record["disputed"]) for record in records):
+        return (_plan(run, held, "ruling", DECIDER, None),)
+    return ()
+
+
+def _documents(run: StepRun) -> tuple[tuple[str, Path], ...]:
+    """Name the three spec documents a step of the review is handed.
+
+    Returns:
+        The contracts, the data model and the criteria, each with its artifact name.
+
+    """
+    return tuple((name, run.inputs.file(name)) for name in (SPEC, DATA_MODEL, CRITERIA))
+
+
+@agent_step(REVIEWER)
+def reviewer(run: StepRun) -> AgentLaunch:
+    """Build the one reviewer session of a repository's specification documents.
+
+    Returns:
+        The launch: the review as output; when it is accepted, the findings held against an
+        implementation criterion are recorded and the first author step they call for is planned.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, REVIEWER, held.path)
+    criteria: Path = run.tools.plugin / CRITERIA_FILE
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        review: SpecReview = validate_spec_review(strict_json(output), str(output))
         allowed: frozenset[str] = frozenset(
-            entry.id for entry in load_criteria(self.scope.criteria).at_level(LEVEL_IMPLEMENTATION)
+            entry.id for entry in load_criteria(criteria).at_level(LEVEL_IMPLEMENTATION)
         )
-        findings: list[Finding] = [finding for finding in review["findings"] if finding["criterion"] in allowed]
-        dropped: list[str] = [finding["id"] for finding in review["findings"] if finding["criterion"] not in allowed]
-        warnings: list[str] = [
-            f"spec review finding {identifier} names no implementation-level criterion and was dropped"
-            for identifier in dropped
+        kept: list[JsonValue] = [
+            _finding(finding["id"], finding["document"])
+            for finding in review["findings"]
+            if finding["criterion"] in allowed
         ]
-        ended: SpecReviewOutcome = {
-            "review": str(self.review_path),
-            "findings": [finding["id"] for finding in findings],
-            "dropped": dropped,
-            "corrected": [],
-            "disputed": [],
-            "upheld": [],
-            "revised": [],
-            "warnings": warnings,
-        }
-        if findings:
-            corrections: _Pass = self._author_pass(findings, (self.review_path,), "correction", CORRECTION_RESULT)
-            ended["corrected"] = corrections.worked
-            ended["disputed"] = sorted(corrections.disputes)
-            warnings.extend(corrections.warnings)
-            upheld: list[Finding] = self._ruling(findings, corrections.disputes, warnings)
-            ended["upheld"] = sorted({finding["id"] for finding in upheld})
-            if upheld:
-                revisions: _Pass = self._author_pass(
-                    upheld,
-                    (self.review_path, self.ruling_path),
-                    "revision",
-                    REVISION_RESULT,
-                )
-                ended["revised"] = revisions.worked
-                warnings.extend(revisions.warnings)
-                warnings.extend(
-                    f"spec review finding {identifier} was disputed again after the ruling; the ruling stands"
-                    for identifier in sorted(revisions.disputes)
-                )
-        return self._finish(ended)
-
-    def _finish(self, ended: SpecReviewOutcome) -> SpecReviewOutcome:
-        """Write and record the result: the one place this step's result becomes an artifact.
-
-        Returns:
-            The result written.
-
-        """
-        write_json(self.result_path, json_object(ended))
-        self.record(self.review_inputs(), (self.result_path,))
-        return ended
-
-    def _session(self, name: str, seat: _Seat, inputs: tuple[str, ...], schema: Path, outcome: str) -> Path:
-        """Run one session of this step and accept its JSON result under the given schema.
-
-        Returns:
-            The accepted result file, ``spec-<slug>.<name>.json`` in the work directory.
-
-        """
-        file_name: str = f"spec-{self.scope.slug}.{name}.json"
-        return self.runner.run(
-            AgentStep(
-                stage=f"{self.scope.stage}:{name}",
-                agent=seat.agent,
-                inputs=inputs,
-                output=self.scope.work / "candidates" / file_name,
-                final=self.scope.work / file_name,
-                validate=schema,
-                outcome=outcome,
-                add_dirs=(*seat.dirs, self.scope.criteria.parent),
-            ),
+        dropped: list[JsonValue] = [
+            finding["id"] for finding in review["findings"] if finding["criterion"] not in allowed
+        ]
+        recorded: StepRun = _with(accepted, value_artifact(FINDINGS, kept))
+        return Completion(
+            artifacts=(file_artifact(REVIEW, output), value_artifact(FINDINGS, kept), value_artifact(DROPPED, dropped)),
+            add=following(recorded, None, WORK_CORRECTION),
         )
 
-    def _review(self) -> SpecReview:
-        """Run the one reviewer session for this repository.
+    return AgentLaunch(
+        output=run.context.work / f"spec-{held.slug}.review.json",
+        validate=SPEC_REVIEW_SCHEMA_PATH,
+        outcome=REVIEW_RESULT,
+        accept=accept,
+        add_dirs=(run.context.work, criteria.parent),
+        files=(
+            *_documents(run),
+            (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
+            (CONTEXT, run.inputs.file(CONTEXT)),
+            (LABEL_CRITERIA, criteria),
+        ),
+        hand_inputs=False,
+    )
 
-        Returns:
-            The review, validated.
 
-        """
-        seat: _Seat = _Seat(REVIEWER, (self.scope.work,))
-        accepted: Path = self._session("review", seat, self.review_inputs(), SPEC_REVIEW_SCHEMA_PATH, REVIEW_RESULT)
-        return validate_spec_review(strict_json(accepted), str(accepted))
+def _with(run: StepRun, *recorded: Artifact) -> StepRun:
+    """Hand a step, for planning, what it is about to record as well as what it was handed.
 
-    def _author_pass(self, findings: list[Finding], basis: tuple[Path, ...], name: str, outcome: str) -> _Pass:
-        """Send each document's findings to its author, once, in authoring order.
+    Returns:
+        The step with the artifacts it records added after its inputs.
 
-        A document with no finding of its own is also worked on when a document it is derived
-        from changed in this pass, so the set stays in agreement.
+    """
+    return replace(run, inputs=replace(run.inputs, sources=(*run.inputs.sources, recorded)))
 
-        Returns:
-            The documents worked on, those whose bytes changed, each disputed finding id with
-            the file that states the dispute, and the warnings raised.
 
-        Raises:
-            StepError: A document no longer passes its own check after its author worked on it.
+def _digest(path: Path) -> str:
+    """Hash a document, to tell afterwards whether its author changed it.
 
-        """
-        done: _Pass = _Pass([], set(), {}, [])
-        document: ReviewedDocument
-        dispute: Dispute
-        for document in self.scope.documents:
-            own: set[str] = {finding["id"] for finding in findings if finding["document"] == document.kind}
-            if not own and not done.changed.intersection(document.derived_from):
-                continue
-            stage: str = f"{document.kind}.{name}"
-            before: str = check_type(self.store.module.sha256_file(document.path), str)
-            accepted: Path = self._session(
-                stage,
-                _Seat(document.agent, self.scope.author_dirs),
-                tuple(
-                    dict.fromkeys((
-                        *document.inputs,
-                        str(self.scope.facts),
-                        str(document.path),
-                        *(str(path) for path in basis),
-                    )),
-                ),
-                SPEC_CORRECTION_SCHEMA_PATH,
-                outcome,
+    Returns:
+        The SHA-256 of its bytes.
+
+    """
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def correction(run: StepRun) -> AgentLaunch:
+    """Build the session in which an author works on its document again, after the review or the ruling.
+
+    The session continues the one in which the author wrote the document, when the journal holds it.
+
+    Returns:
+        The launch: the author's account of what it applied and disputed as output; when it is
+        accepted the document is checked again, what the step did is recorded, and the next
+        step of the review is planned.
+
+    A document that no longer passes its own check after its author worked on it fails the step.
+
+    """
+    held: Repository = repository(run.inputs)
+    params: dict[str, JsonValue] = dict(run.params())
+    phase: Pass = WORK_REVISION if params.get(WORK) == WORK_REVISION else WORK_CORRECTION
+    kind: SpecDocument = _kind(params.get(DOCUMENT))
+    name: str = ARTIFACT_OF[kind]
+    path: Path = run.inputs.file(name)
+    before: str = _digest(path)
+    stage: str = f"{kind}.{phase}"
+    resumed: bool = "session" in run.step
+    writing: Step | None = run.earlier_sibling(AUTHOR_OF[kind])
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, f"{kind}.{phase}", held.path)
+    basis: list[tuple[str, Path]] = [(REVIEW, run.inputs.file(REVIEW))]
+    if phase == WORK_REVISION:
+        basis.append((RULING, run.inputs.file(RULING)))
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        account: SpecCorrection = validate_spec_correction(strict_json(output), str(output))
+        try:
+            document_check(accepted, name)(path)
+        except (OSError, ValueError) as exc:
+            raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from exc
+        own: set[JsonValue] = {finding["id"] for finding in _findings(accepted, phase) if finding[DOCUMENT] == kind}
+        disputed: list[JsonValue] = [d["findingId"] for d in account["disputes"] if d["findingId"] in own]
+        foreign: list[JsonValue] = [
+            f"{AUTHOR_OF[kind]} disputed {d['findingId']}, which is no finding on its document"
+            for d in account["disputes"]
+            if d["findingId"] not in own
+        ]
+        if phase == WORK_REVISION:
+            foreign.extend(
+                f"spec review finding {identifier} was disputed again after the ruling; the ruling stands"
+                for identifier in disputed
             )
-            correction: SpecCorrection = validate_spec_correction(strict_json(accepted), str(accepted))
-            try:
-                document.check(document.path)
-            except (OSError, ValueError) as exc:
-                self.store.invalidate((document.path,))
-                failed: str = f"{self.scope.stage}:{stage}"
-                raise StepError(failed, OTHER_CAUSE, (str(document.path), str(exc))) from exc
-            self.record(document.inputs, (document.path,))
-            done.worked.append(document.kind)
-            if check_type(self.store.module.sha256_file(document.path), str) != before:
-                done.changed.add(document.kind)
-            for dispute in correction["disputes"]:
-                if dispute["findingId"] in own:
-                    done.disputes[dispute["findingId"]] = accepted
-                else:
-                    done.warnings.append(
-                        f"{document.agent} disputed {dispute['findingId']}, which is no finding on its document",
-                    )
-        return done
-
-    def _ruling(self, findings: list[Finding], disputes: dict[str, Path], warnings: list[str]) -> list[Finding]:
-        """Run the one decider session for every disputed finding of this repository.
-
-        No dispute starts no session. A disputed finding the decider gives no ruling on leaves
-        its document as the author left it, with a warning.
-
-        Returns:
-            The disputed findings the decider upheld.
-
-        """
-        if not disputes:
-            return []
-        accepted: Path = self._session(
-            "ruling",
-            _Seat(DECIDER, self.scope.author_dirs),
-            (
-                str(self.review_path),
-                *dict.fromkeys(str(path) for path in disputes.values()),
-                *(str(document.path) for document in self.scope.documents),
-                str(self.scope.trd),
-                str(self.scope.criteria),
-            ),
-            SPEC_RULING_SCHEMA_PATH,
-            RULING_RESULT,
-        )
-        ruling: SpecRuling = validate_spec_ruling(strict_json(accepted), str(accepted))
-        ruled: dict[str, RulingValue] = {
-            entry["findingId"]: entry["ruling"] for entry in ruling["rulings"] if entry["findingId"] in disputes
+        record: dict[str, JsonValue] = {
+            WORK: phase,
+            DOCUMENT: kind,
+            "changed": resumed or _digest(path) != before,
+            "disputed": disputed,
         }
-        warnings.extend(
-            f"spec review finding {identifier} was disputed and not ruled on; its document stands"
-            for identifier in sorted(set(disputes) - set(ruled))
+        return Completion(
+            artifacts=(
+                file_artifact(CORRECTION if phase == WORK_CORRECTION else REVISION, output),
+                file_artifact(name, path),
+                value_artifact(WORKED, record),
+                value_artifact(WARNINGS, foreign),
+            ),
+            add=following(accepted, record, phase),
         )
-        return [finding for finding in findings if ruled.get(finding["id"]) == RULING_FINDING_STANDS]
+
+    return AgentLaunch(
+        output=run.context.work / f"spec-{held.slug}.{kind}.{phase}.json",
+        validate=SPEC_CORRECTION_SCHEMA_PATH,
+        outcome=CORRECTION_RESULT if phase == WORK_CORRECTION else REVISION_RESULT,
+        accept=accept,
+        add_dirs=(*author_dirs(run, held), (run.tools.plugin / CRITERIA_FILE).parent),
+        files=tuple(dict.fromkeys((*author_files(run, name), (name, path), *basis))),
+        resume_from=None if writing is None or "session" not in writing else writing["id"],
+        hand_inputs=False,
+    )
+
+
+@agent_step(DECIDER)
+def decider(run: StepRun) -> AgentLaunch:
+    """Build the one decider session for every disputed finding of a repository.
+
+    Returns:
+        The launch: the ruling as output; when it is accepted the upheld findings are recorded
+        and the first revision step they call for is planned.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, DECIDER, held.path)
+    criteria: Path = run.tools.plugin / CRITERIA_FILE
+    disputed: set[str] = {
+        identifier for record in _records(run, None, WORK_CORRECTION) for identifier in strings(record["disputed"])
+    }
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        ruling: SpecRuling = validate_spec_ruling(strict_json(output), str(output))
+        ruled: dict[str, str] = {
+            entry["findingId"]: entry["ruling"] for entry in ruling["rulings"] if entry["findingId"] in disputed
+        }
+        upheld: list[JsonValue] = [*sorted(key for key, value in ruled.items() if value == RULING_FINDING_STANDS)]
+        unruled: list[JsonValue] = [
+            f"spec review finding {identifier} was disputed and not ruled on; its document stands"
+            for identifier in sorted(disputed - set(ruled))
+        ]
+        recorded: StepRun = _with(accepted, value_artifact(UPHELD, upheld))
+        return Completion(
+            artifacts=(
+                file_artifact(RULING, output),
+                value_artifact(UPHELD, upheld),
+                value_artifact(WARNINGS, unruled),
+            ),
+            add=following(recorded, None, WORK_REVISION),
+        )
+
+    return AgentLaunch(
+        output=run.context.work / f"spec-{held.slug}.ruling.json",
+        validate=SPEC_RULING_SCHEMA_PATH,
+        outcome=RULING_RESULT,
+        accept=accept,
+        add_dirs=(*author_dirs(run, held), criteria.parent),
+        files=(
+            (REVIEW, run.inputs.file(REVIEW)),
+            *((CORRECTION, path) for path in dict.fromkeys(run.inputs.files(CORRECTION))),
+            *_documents(run),
+            (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
+            (LABEL_CRITERIA, criteria),
+        ),
+        hand_inputs=False,
+    )
+
+
+@agent_step(AUTHOR_CONTRACTS, AUTHOR_DATA_MODEL, AUTHOR_CRITERIA)
+def author(run: StepRun) -> AgentLaunch:
+    """Build the session of any step an author of a spec document performs.
+
+    The parameters the planning step handed say which: choosing UI design sources, writing the
+    document, correcting it after the review, or revising it after the ruling.
+
+    Returns:
+        The launch of that kind of step.
+
+    Raises:
+        StepError: The step was handed no kind of work this agent performs.
+
+    """
+    work: JsonValue = run.params().get(WORK)
+    if work == WORK_UI:
+        return ui_sources(run)
+    if work == WORK_DOCUMENT:
+        return spec_document(run)
+    if work in {WORK_CORRECTION, WORK_REVISION}:
+        return correction(run)
+    evidence: str = f"step {run.step['id']} ({run.step['description']}) is handed no work for its agent: {work!r}"
+    raise StepError(run.inputs.stage, OTHER_CAUSE, (evidence,))

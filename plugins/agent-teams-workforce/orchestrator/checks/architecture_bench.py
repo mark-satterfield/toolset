@@ -39,7 +39,6 @@ from orchestrator.checks.check_support import require
 from orchestrator.checks.journal_bench import StandIns
 from orchestrator.core import step_journal as sj
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.events import EventWriter
 from orchestrator.core.frontmatter import split_front_matter
@@ -55,7 +54,6 @@ from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION, BeadId, 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from orchestrator.core.artifact_contract import ArtifactProducer
     from orchestrator.core.io import JsonValue
 
 BEAD: Final[BeadId] = BeadId("ssbd-arch.1")
@@ -316,7 +314,6 @@ class ArchBench:
     """One scenario's Epic: its work directory, vault, matrix, services and stand-in sessions."""
 
     root: Path
-    module: ArtifactProducer
     sessions: StandIns = field(default_factory=StandIns)
     counts: Counter[str] = field(default_factory=Counter)
     fail_once: set[str] = field(default_factory=set)
@@ -345,10 +342,8 @@ class ArchBench:
             "check-run",
             stage=ARCHITECTURE_PHASE,
         )
-        store: ArtifactStore = ArtifactStore(self.module, self.root, self.work, BEAD, "check-run")
         self.agents: AgentRunner = AgentRunner(
             self.context,
-            store,
             plugin=make_plugin(self.root),
             emit=EventWriter(io.StringIO()),
         )

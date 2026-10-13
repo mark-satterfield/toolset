@@ -20,7 +20,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import Final
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -45,7 +45,6 @@ from orchestrator.checks.journal_bench import (
 from orchestrator.core import step_journal as sj
 from orchestrator.core.agent_context import PipelineStoppedError
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import load_artifactio
 from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_changes import create_child_journal
@@ -78,9 +77,6 @@ from step_journal_contract import (
     StepJournalError,
     StepPlan,
 )
-
-if TYPE_CHECKING:
-    from orchestrator.core.artifact_contract import ArtifactProducer
 
 HELPED: Final[list[StepPlan]] = [
     {
@@ -143,12 +139,12 @@ def check_whole_run(bench: Bench) -> None:
     report("PASS: a whole run from an absent journal; artifacts, inputs and the record of each planned step")
 
 
-def check_restart(root: Path, module: ArtifactProducer) -> None:
+def check_restart(root: Path) -> None:
     """Check that a restart begins at exactly the step where the run stopped, at every boundary."""
     index: int
     key: str
     for index, key in enumerate(ORDER):
-        failed: Bench = Bench(root / f"failed-{index}", module)
+        failed: Bench = Bench(root / f"failed-{index}")
         write_run(failed)
         failed.fail_once.add(key)
         with expected_error(RuntimeError if key != AUTHOR else StepError):
@@ -168,7 +164,7 @@ def check_restart(root: Path, module: ArtifactProducer) -> None:
         if key == AUTHOR:
             first, second = failed.sessions.calls
             require(second.resume and second.session == first.session, "an unfinished step's session is resumed")
-        killed: Bench = Bench(root / f"killed-{index}", module)
+        killed: Bench = Bench(root / f"killed-{index}")
         write_run(killed)
         dispatch: JournalRunner = killed.runner(PLANS)
         for _ in range(index):
@@ -254,16 +250,16 @@ def helped_run(bench: Bench, *, interrupted: bool) -> None:
     bench.sessions.behaviours.update({"architect": establish, "helper": answer})
 
 
-def check_helpers(root: Path, module: ArtifactProducer) -> None:
+def check_helpers(root: Path) -> None:
     """Check an agent that adds helper steps and "Finish" under its own step, whole and interrupted."""
-    whole: Bench = Bench(root / "helpers", module)
+    whole: Bench = Bench(root / "helpers")
     helped_run(whole, interrupted=False)
     whole.runner(HELPED).run()
     owner: Step = whole.step("Establish the architecture")
     require(owner["status"] == STATUS_DONE and sj.is_complete(whole.journal()), "the runner closes the parent")
     require(len(owner["steps"]) == TOGETHER and not whole.counts, "no helper is launched and nothing is accepted")
     require(len(whole.sessions.calls) == 1, "the agent's one session did all of it")
-    broken: Bench = Bench(root / "interrupted", module)
+    broken: Bench = Bench(root / "interrupted")
     helped_run(broken, interrupted=True)
     with expected_error(StepError):
         broken.runner(HELPED).run()
@@ -319,9 +315,9 @@ def reviewed_run(bench: Bench, failing: str | None = None) -> list[tuple[str, st
     return events
 
 
-def check_together(root: Path, module: ArtifactProducer) -> None:
+def check_together(root: Path) -> None:
     """Check which sibling agent steps run as concurrent sessions, and how a failure among them ends."""
-    bench: Bench = Bench(root / "together", module)
+    bench: Bench = Bench(root / "together")
     events: list[tuple[str, str]] = reviewed_run(bench)
     dispatch: JournalRunner = bench.runner(REVIEWED)
     require(dispatch.run_next(), "the scope step ran")
@@ -337,7 +333,7 @@ def check_together(root: Path, module: ArtifactProducer) -> None:
         rechecked.resume and rechecked.session == bench.step("Review one").get("session"),
         "a step continues the session of the step its launch names",
     )
-    failing: Bench = Bench(root / "one-fails", module)
+    failing: Bench = Bench(root / "one-fails")
     reviewed_run(failing, "Review two")
     with expected_error(StepError):
         failing.runner(REVIEWED).run()
@@ -346,14 +342,14 @@ def check_together(root: Path, module: ArtifactProducer) -> None:
     report("PASS: sibling agent steps with done inputs run together; one failure ends the dispatch after the group")
 
 
-def check_failures(root: Path, module: ArtifactProducer) -> None:
+def check_failures(root: Path) -> None:
     """Check a step with no registered code, a stopped step, and a session whose conversation is gone."""
-    bare: Bench = Bench(root / "unregistered", module)
+    bare: Bench = Bench(root / "unregistered")
     with expected_error(StepError) as unregistered:
         bare.runner(PLANS).run()
     require("no handler is registered" in unregistered[0].evidence[0], "a step with no handler says so")
     require(bare.step("Open the run")["status"] == STATUS_FAILED, "and is marked failed")
-    halted: Bench = Bench(root / "stopped", module)
+    halted: Bench = Bench(root / "stopped")
 
     @halted.registry.script_step(OPEN)
     def stop(_run: StepRun) -> Completion:
@@ -364,7 +360,7 @@ def check_failures(root: Path, module: ArtifactProducer) -> None:
         halted.runner(PLANS).run()
     stopped: Step = halted.step("Open the run")
     require(stopped["status"] == STATUS_RUNNING and "failure" not in stopped, "a stop leaves the step running")
-    gone: Bench = Bench(root / "lost", module)
+    gone: Bench = Bench(root / "lost")
     write_run(gone)
     gone.fail_once.add(AUTHOR)
     with expected_error(StepError):
@@ -379,9 +375,9 @@ def check_failures(root: Path, module: ArtifactProducer) -> None:
     report("PASS: an unregistered step fails; a stop leaves its step running; a lost conversation starts again")
 
 
-def check_placements(root: Path, module: ArtifactProducer) -> None:
+def check_placements(root: Path) -> None:
     """Check steps planned under the planning step itself and under a container planned earlier."""
-    bench: Bench = Bench(root / "placed", module)
+    bench: Bench = Bench(root / "placed")
     seen: list[str] = []
 
     @bench.registry.script_step("check.plan")
@@ -455,17 +451,20 @@ def check_journal_files(root: Path) -> None:
 def main() -> None:
     """Run the journal runner checks in a temporary directory with stand-in sessions."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
+    parser.add_argument("--control-repo", required=True, type=Path)
     options: argparse.Namespace = parser.parse_args()
-    script: Path = options.artifact_script
-    module: ArtifactProducer = load_artifactio(script)
+    control: Path = options.control_repo
+    # The driver's modules read the installed plugin, so they are loaded before the check's own
+    # configuration directory takes the place of the real one.
+    with patch.dict(os.environ, {CONTROL_REPO_ENV: str(control.resolve())}):
+        driver_module(HEADLESSENV_MODULE)
     directory: str
     with tempfile.TemporaryDirectory() as directory:
         root: Path = Path(directory).resolve()
         (root / "config").mkdir()
         values: dict[str, str] = {
             "CLAUDE_CONFIG_DIR": str(root / "config"),
-            CONTROL_REPO_ENV: str(script.resolve().parents[2]),
+            CONTROL_REPO_ENV: str(control.resolve()),
             "ATW_ORCH_SESSIONS": "4",
         }
         with patch.dict(os.environ, values), patch.object(AgentRunner, "_version", lambda _runner: None):
@@ -475,14 +474,14 @@ def main() -> None:
             child_env: str = HeadlessEnvironment.child_env.__name__
             headless: object = driver_module(HEADLESSENV_MODULE)
             with patch.object(headless, child_env, side_effect=lambda _scratch: dict(os.environ)):
-                whole: Bench = Bench(root / "whole", module)
+                whole: Bench = Bench(root / "whole")
                 check_whole_run(whole)
                 check_invalidation(whole)
-                check_restart(root, module)
-                check_helpers(root, module)
-                check_together(root, module)
-                check_placements(root, module)
-                check_failures(root, module)
+                check_restart(root)
+                check_helpers(root)
+                check_together(root)
+                check_placements(root)
+                check_failures(root)
                 check_journal_files(root / "files")
 
 

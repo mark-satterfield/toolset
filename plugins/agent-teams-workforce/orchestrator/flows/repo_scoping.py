@@ -60,6 +60,13 @@ from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, Step
 from orchestrator.core.models import StepError
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.architecture_files import HUMAN_ACTION_STAGE
+from orchestrator.flows.elaboration_files import (
+    ARTIFACT_CREATION,
+    ARTIFACT_ELEMENTS,
+    ARTIFACT_REPOSITORIES,
+    ARTIFACT_SPAN,
+    SPEC_CONTEXT,
+)
 from orchestrator.flows.elaboration_support import REPO_SCOPING_PHASE, enter_phase
 from orchestrator.flows.repo_placement import app_space, forbidden
 
@@ -67,16 +74,14 @@ if TYPE_CHECKING:
     from step_journal_contract import StepPlan
 
 SPAN: Final = "atw-matrix prd --closure"
-SPECS: Final = "spec_authoring.run"
-"""The script keys of the span step and of the step it plans for each repository."""
+"""The script key of the span step."""
 SPAN_DESCRIPTION: Final = "Read the repositories this PRD involves from the matrix"
 SPAN_PURPOSE: Final = "The repository span and the elements each repository builds come from the matrix"
 SPECS_PURPOSE: Final = "The repository has one reviewed spec set and one Story"
 SPAN_FILE: Final = "repo-scoping.json"
-ARTIFACT_SPAN: Final = "span"
-ARTIFACT_ELEMENTS: Final = "elements"
-ARTIFACT_REPOSITORIES: Final = "repositories"
-ARTIFACT_CREATION: Final = "repository creation"
+ELEMENTS_FILE: Final = "span-elements.json"
+"""The files the span step writes in the Epic's work directory: the placements and the elements."""
+CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 CREATION_STAGE: Final = "repo-creation"
 FRONTEND_KIND: Final = "frontend"
 
@@ -363,11 +368,12 @@ def _ruling(
     return ruling
 
 
-def _spec_steps(run: StepRun, repos: list[str]) -> tuple[StepGroup, ...]:
-    """Plan one spec step per repository of the span, after the span step.
+def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tuple[StepGroup, ...]:
+    """Plan one container per repository of the span, each with its first step, after the span step.
 
     Returns:
-        The group, or nothing for an empty span.
+        The group, or nothing for an empty span. A container is named for its repository; its
+        first step gathers what the repository builds and plans the repository's other steps.
 
     """
     slugs: dict[str, str] = check_type(
@@ -375,15 +381,26 @@ def _spec_steps(run: StepRun, repos: list[str]) -> tuple[StepGroup, ...]:
         dict[str, str],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
+    frontend: set[str] = {
+        check_type(placement[KEY_REPO_PATH], str) for placement in ruling[KEY_PLACEMENTS] if placement["frontend"]
+    }
     steps: list[NewStep] = []
     for index, (repo, slug) in enumerate(slugs.items(), 1):
-        plan: StepPlan = {
-            "description": f"Write the specs and the Story of {Path(repo).name}",
-            "purpose": SPECS_PURPOSE,
-            "script": SPECS,
+        name: str = Path(repo).name
+        first: StepPlan = {
+            "description": f"Gather what {name} builds",
+            "purpose": CONTEXT_PURPOSE,
+            "script": SPEC_CONTEXT,
             "inputs": [run.step["id"], *run.step.get("inputs", [])],
         }
-        steps.append(NewStep(plan, {"repoPath": repo, "slug": slug, "storyKey": f"S{index}"}))
+        params: dict[str, JsonValue] = {
+            "repoPath": repo,
+            "slug": slug,
+            "storyKey": f"S{index}",
+            "frontend": repo in frontend,
+        }
+        container: StepPlan = {"description": name, "purpose": SPECS_PURPOSE}
+        steps.append(NewStep(container, children=(NewStep(first, params),)))
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
@@ -417,7 +434,7 @@ def span(run: StepRun) -> Completion:
         "summary": {"ok": True, "refusals": [], "items": len(items)},
         "items": items,
     }
-    elements_path: Path = work / hierarchy.SPAN_ELEMENTS_FILE
+    elements_path: Path = work / ELEMENTS_FILE
     write_json(elements_path, elements)
     artifacts = [file_artifact(ARTIFACT_ELEMENTS, elements_path)]
     if ruling[KEY_MISSING_REPOS]:
@@ -438,5 +455,5 @@ def span(run: StepRun) -> Completion:
     held: list[JsonValue] = list(repos)
     return Completion(
         artifacts=(file_artifact(ARTIFACT_SPAN, span_path), *artifacts, value_artifact(ARTIFACT_REPOSITORIES, held)),
-        add=_spec_steps(run, repos),
+        add=_spec_steps(run, ruling, repos),
     )

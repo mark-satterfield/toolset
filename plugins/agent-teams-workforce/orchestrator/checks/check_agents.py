@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
 from unittest.mock import patch
+from uuid import uuid4
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -35,8 +36,6 @@ from driver_surface_types import (
 )
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifact_contract import ArtifactProducer
-from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.driver_contracts import dispatch_arguments, driver_module
 from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import (
@@ -190,7 +189,7 @@ def records(root: Path) -> list[Capture]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentStep, io.StringIO]:
+def fixture(root: Path) -> tuple[AgentRunner, AgentStep, io.StringIO]:
     """Evaluate the existing isolated check contract.
 
     Returns:
@@ -252,9 +251,8 @@ def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentSte
         "fake-run",
         stage=PRD_TO_SPEC_PHASES[0],
     )
-    store = ArtifactStore(module, root, work, "epic", "fake-run")
     stream = io.StringIO()
-    runner = AgentRunner(context, store, plugin=plugin, emit=EventWriter(stream))
+    runner = AgentRunner(context, plugin=plugin, emit=EventWriter(stream))
     step = AgentStep(
         "survey",
         "sample",
@@ -262,10 +260,19 @@ def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentSte
         work / "candidate.json",
         "Write the survey.",
         schema,
-        work / "result.json",
         (root,),
     )
     return runner, step, stream
+
+
+def session(runner: AgentRunner, step: AgentStep, root: Path) -> Path:
+    """Run one step as one new session, handed the fixture's source file.
+
+    Returns:
+        The validated output path.
+
+    """
+    return runner.run_session(step, [("source", root / "source.md")], session=str(uuid4()))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -277,7 +284,7 @@ def check_command(
 ) -> None:
     """Evaluate the existing isolated check contract."""
     os.environ["FAKE_MODE"] = "success"
-    require(runner.run(step) == step.final, "runner.run(step) == step.final")
+    require(session(runner, step, root) == step.output, "the session returns the output path")
     row = records(root)[0]
     args = row["argv"]
     require(
@@ -351,15 +358,13 @@ def check_command(
     )
     require(not Path(row["cwd"]).exists(), "completed session directory was not removed")
     require(len(runner.context.sessions) == 1, "len(runner.context.sessions) == 1")
-    require(runner.run(step) == step.final, "runner.run(step) == step.final")
-    require(len(records(root)) == 1, "len(records(root)) == 1")
     states: list[SessionState] = []
     for line in stream.getvalue().splitlines():
         event: OrchestratorEvent = validate_event(json.loads(line))
         if event[EVENT_KEY] == SESSION_EVENT:
             states.append(event["state"])
     require(states == [SESSION_STARTED, SESSION_ENDED], "session events are not started then ended")
-    report("PASS: designed command/context/brief; accepted file reused without a session")
+    report("PASS: designed command, context and brief; one session, started then ended")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -375,9 +380,8 @@ def check_corrective(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         step,
         stage="missing",
         output=root / "missing.json",
-        final=root / "fixed.json",
     )
-    require(runner.run(step) == step.final, "runner.run(step) == step.final")
+    require(session(runner, step, root) == step.output, "the corrected session returns the output path")
     first, second = records(root)[-2:]
     require("--resume" in second["argv"], "'--resume' in second['argv']")
     require(
@@ -399,18 +403,17 @@ def check_corrective(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         step,
         stage="never",
         output=root / "never.json",
-        final=root / "not-accepted.json",
     )
     before = len(records(root))
     try:
-        runner.run(step)
+        session(runner, step, root)
     except StepError as exc:
         require(exc.cause == OTHER_CAUSE, "missing output must fail with the other cause")
     else:
         message = "missing output was accepted"
         raise AssertionError(message)
     require(len(records(root)) == before + CORRECTION_ATTEMPTS, "len(records(root)) == before + CORRECTION_ATTEMPTS")
-    require(not check_type(step.final, Path).exists(), "not check_type(step.final, Path).exists()")
+    require(not step.output.exists(), "an output that was never written does not exist")
     report("PASS: missing output resumes same UUID with exact errors; correction stops after one retry")
 
 
@@ -427,11 +430,10 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         step,
         stage="quota",
         output=root / "quota.json",
-        final=root / "quota-final.json",
     )
     before = len(records(root))
     try:
-        runner.run(step)
+        session(runner, step, root)
     except StepError as exc:
         require(exc.cause == QUOTA_CAUSE, "a usage wall must fail with the quota cause")
         require(exc.resume_at == RESET_AT, "exc.resume_at == RESET_AT")
@@ -439,11 +441,10 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         message = "quota was accepted"
         raise AssertionError(message)
     require(len(records(root)) == before + 1, "len(records(root)) == before + 1")
-    require(not check_type(step.final, Path).exists(), "not check_type(step.final, Path).exists()")
+    require(not step.output.exists(), "a session stopped by the usage wall leaves no output")
     report("PASS: structured usage wall raises quota with resume time, without retry")
     fresh = AgentRunner(
         runner.context,
-        runner.store,
         plugin=runner.plugin,
         emit=runner.emit,
     )
@@ -451,11 +452,10 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
         step,
         stage="fable",
         output=root / "fable.json",
-        final=root / "fable-final.json",
     )
     write_agent(fresh.plugin, "fable")
     os.environ["FAKE_MODE"] = "fable"
-    require(fresh.run(step) == step.final, "fresh.run(step) == step.final")
+    require(session(fresh, step, root) == step.output, "the session resumed on Opus returns the output path")
     first, second = records(root)[-2:]
     require(first["agents"]["atw-sample"]["model"] == "fable", "first['agents']['atw-sample']['model'] == 'fable'")
     require(second["agents"]["atw-sample"]["model"] == "opus", "second['agents']['atw-sample']['model'] == 'opus'")
@@ -467,10 +467,9 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
             step,
             stage="idle",
             output=root / "idle.json",
-            final=root / "idle-final.json",
         )
         try:
-            fresh.run(step)
+            session(fresh, step, root)
         except StepError as exc:
             require(exc.cause == OTHER_CAUSE, "an idle session must fail with the other cause")
         else:
@@ -483,15 +482,19 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
 def main() -> None:
     """Evaluate the existing isolated check contract."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
+    parser.add_argument("--control-repo", required=True, type=Path)
     options = parser.parse_args()
-    module = load_artifactio(options.artifact_script)
+    control: Path = options.control_repo
+    # The driver's modules read the installed plugin, so they are loaded before the check's own
+    # configuration directory takes the place of the real one.
+    with patch.dict(os.environ, {CONTROL_REPO_ENV: str(control.resolve())}):
+        driver_module(HEADLESSENV_MODULE)
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory).resolve()
         values = {
             "PATH": str(root) + os.pathsep + os.environ["PATH"],
             "CLAUDE_CONFIG_DIR": str(root / "config"),
-            CONTROL_REPO_ENV: str(options.artifact_script.resolve().parents[2]),
+            CONTROL_REPO_ENV: str(control.resolve()),
             "FAKE_CAPTURE": str(root / "capture.jsonl"),
             "FAKE_FABLE_EVENT": fable_line(),
             "FAKE_QUOTA_EVENT": quota_line(),
@@ -507,7 +510,7 @@ def main() -> None:
                 child_env,
                 side_effect=lambda _scratch: dict(os.environ),
             ):
-                runner, step, stream = fixture(root, module)
+                runner, step, stream = fixture(root)
                 check_command(runner, step, root, stream)
                 check_corrective(runner, step, root)
                 check_quota(runner, step, root)

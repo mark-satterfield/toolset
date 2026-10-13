@@ -18,12 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-co
 import archcatalog
 import archmatrix
 import wsjf
-from driver_surface_types import CONTROL_REPO_ENV, DRIVER_DIR_PARTS
+from driver_surface_types import CONTROL_REPO_ENV, HEADLESSENV_MODULE
 from orchestrator.checks.check_support import expected_error, require
 from orchestrator.core.agent_context import Launch, prepare
-from orchestrator.core.artifacts import ArtifactStore, load_artifactio
+from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.models import AgentStep, DeterministicStep, StepError
+from orchestrator.core.models import AgentStep, StepError
 from orchestrator.core.tools import CommandResult, DeploymentTarget, Tools
 
 EXPECTED_FAILURE_EXIT: int = 2
@@ -109,6 +109,9 @@ class RuntimeContracts(unittest.TestCase):
     def test_session_preparation_only() -> None:
         """Write private agent configuration without constructing or starting a runner."""
         control: str = os.environ[CONTROL_REPO_ENV]
+        # The driver's modules read the installed plugin, so they are loaded before the fixture's own
+        # configuration directory takes the place of the real one.
+        driver_module(HEADLESSENV_MODULE)
         directory: str
         with tempfile.TemporaryDirectory() as directory:
             root: Path = Path(directory)
@@ -127,7 +130,6 @@ class RuntimeContracts(unittest.TestCase):
                 root / "output",
                 "Prepare only.",
                 root / "schema",
-                None,
             )
             config: Path = root / "config"
             config.mkdir()
@@ -168,24 +170,6 @@ class RuntimeContracts(unittest.TestCase):
                 archmatrix.catalog_elements(documents) == {"Search": [str(path)], "Index": [str(path)]},
                 "runtime boundary probe failed",
             )
-
-    @staticmethod
-    def test_deterministic_result_preserves_type() -> None:
-        """Pass a concrete result through real artifact execution and reuse."""
-        directory: str
-        with tempfile.TemporaryDirectory() as directory:
-            root: Path = Path(directory)
-            output: Path = root / "result.txt"
-            producer: Path = Path(os.environ[CONTROL_REPO_ENV]).joinpath(*DRIVER_DIR_PARTS, "artifactio.py")
-            store: ArtifactStore = ArtifactStore(load_artifactio(producer), root, root / "work", "fixture", "fixture")
-
-            def action() -> list[str]:
-                output.write_text("fixture", encoding="utf-8")
-                return ["typed-result"]
-
-            step: DeterministicStep[list[str]] = DeterministicStep("fixture", (), (output,), action)
-            require(store.execute(step) == ("ran", ["typed-result"]), "action return contract drift")
-            require(store.execute(step) == ("reused", None), "reuse return contract drift")
 
 
 if __name__ == "__main__":

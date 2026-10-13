@@ -63,34 +63,6 @@ class PipelineDefectError(StepError):
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
-class DeterministicStep[T]:
-    """A deterministic action with explicitly declared input and output files."""
-
-    stage: str
-    inputs: tuple[str, ...]
-    outputs: tuple[Path, ...]
-    action: Callable[[], T]
-    reusable: bool = True
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries.
-
-        Raises:
-            TypeError: The action is not callable.
-
-        """
-        check_type(self.stage, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.outputs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        if not callable(self.action):
-            message: str = "Deterministic step action must be callable"
-            raise TypeError(message)
-        check_type(self.reusable, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-@dataclass(frozen=True)
 class AgentStep:
     """A bounded agent request and its exact output validation contract.
 
@@ -105,7 +77,6 @@ class AgentStep:
     output: Path
     outcome: str
     validate: Path | OutputValidator
-    final: Path | None
     add_dirs: tuple[Path, ...] = ()
     corrective: bool = True
     request: str | None = None
@@ -137,7 +108,6 @@ class AgentStep:
             Path | OutputValidator,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
-        check_type(self.final, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.add_dirs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.corrective, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 

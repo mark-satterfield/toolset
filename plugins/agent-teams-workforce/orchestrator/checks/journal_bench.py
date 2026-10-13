@@ -21,7 +21,6 @@ from orchestrator.core import step_journal as sj
 from orchestrator.core.agent_context import AGENT_PREFIX
 from orchestrator.core.agent_process import SessionProcesses, SessionRequest
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import PRD_TO_SPEC_PHASES
@@ -44,7 +43,6 @@ from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION, BeadId, 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from orchestrator.core.artifact_contract import ArtifactProducer
 
 BEAD: Final[BeadId] = BeadId("ssbd-check.1")
 TOGETHER: Final = 3
@@ -143,7 +141,6 @@ class Bench:
     """One scenario's services, counters and injected failures, in its own directory."""
 
     root: Path
-    module: ArtifactProducer
     registry: Registry = field(default_factory=Registry)
     sessions: StandIns = field(default_factory=StandIns)
     counts: Counter[str] = field(default_factory=Counter)
@@ -172,10 +169,8 @@ class Bench:
             "check-run",
             stage=PRD_TO_SPEC_PHASES[0],
         )
-        store: ArtifactStore = ArtifactStore(self.module, self.root, self.work, BEAD, "check-run")
         self.agents: AgentRunner = AgentRunner(
             context,
-            store,
             plugin=self.root / "plugin",
             emit=EventWriter(io.StringIO()),
         )

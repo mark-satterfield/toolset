@@ -118,25 +118,6 @@ class TaskInputSummary(TypedDict):
     unverified: int
 
 
-class TaskInputs(TypedDict):
-    """Describe the task inputs wire record."""
-
-    ok: bool
-    saved: bool
-    recorded: bool
-    changedInputs: list[InputChange]
-    unverified: list[str]
-    unchanged: bool
-    summary: TaskInputSummary
-
-
-class InputChange(TypedDict):
-    """Describe the input change wire record."""
-
-    path: str
-    why: str
-
-
 class PlannedWrite(TypedDict):
     """Describe the planned write wire record."""
 
@@ -262,6 +243,35 @@ class TaskReplacement(TypedDict):
     summary: ReplacementSummary
 
 
+class RepointedEdge(TypedDict):
+    """One `blocks` edge moved from a deleted Task onto a Task that now builds the same item."""
+
+    dependent: str
+    deleted: str
+    replacement: str
+
+
+class SupersededSummary(TypedDict):
+    """Count what retiring a Story's superseded Tasks did."""
+
+    deleted: int
+    repointed: int
+    warnings: int
+
+
+class SupersededTasks(TypedDict):
+    """What retiring the Task beads a Story's saved Tasks no longer name did."""
+
+    ok: bool
+    story: str
+    deleted: list[ReplacedTask]
+    repointed: list[RepointedEdge]
+    warnings: list[str]
+    dryRun: bool
+    planned: list[PlannedWrite]
+    summary: SupersededSummary
+
+
 class PlacedItem(DeltaItem, TypedDict):
     """An architecture item with its declared repository placement."""
 
@@ -379,18 +389,10 @@ class TaskCorrection(TypedDict):
     uncited: list[str]
 
 
-class StoryWriteOptions(TypedDict):
-    """Name the repository and source root for one Story write."""
-
-    slug: str
-    repo: str
-    root: Path | None
-
-
-class TaskWriteOptions(StoryWriteOptions, TypedDict):
-    """Supply the local Task key and optional dependencies and design bundle."""
+class TaskWriteOptions(TypedDict):
+    """Supply the local Task key, the project root and optional dependencies and design bundle."""
 
     key: str
+    root: Path | None
     external: NotRequired[list[str] | None]
     packages_dir: NotRequired[str | None]
-    missing_only: NotRequired[bool]

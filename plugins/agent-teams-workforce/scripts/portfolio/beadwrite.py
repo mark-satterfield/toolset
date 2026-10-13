@@ -1,7 +1,7 @@
 """Write one Story, one Task, or one Task's edges to Tasks in other Stories into beads.
 
-Each command writes ONE bead. It reads the document its elaboration step saved in the Epic's
-working directory and is keyed by the durable elaboration key: a Story or Task no bead under its
+Each command writes ONE bead. It reads the documents its caller hands it by path (`StoryFiles`,
+`SpanStories`) and is keyed by the durable elaboration key: a Story or Task no bead under its
 parent carries is created, an open one that carries it is updated where it differs, and any
 other is left as it is. The plans (`plan_story_tasks`, `plan_task_edges`) read the saved
 documents only and run no `bd` command. A write that fails raises `GraphError` from the
@@ -10,7 +10,6 @@ writer, and a rerun repairs it, because every write is keyed.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Iterator
@@ -33,17 +32,16 @@ from beadcontracts import (
     EdgeCounts,
     EdgePlan,
     ExistingTask,
-    InputChange,
     OtherTask,
     PlacedItem,
     PlannedTask,
     ReplacedTask,
+    RepointedEdge,
     StoryWrite,
-    StoryWriteOptions,
+    SupersededTasks,
     TaskCorrection,
     TaskEdge,
     TaskEdgeWrite,
-    TaskInputs,
     TaskPlan,
     TaskReplacement,
     TaskWrite,
@@ -64,19 +62,20 @@ from hierarchy import (
     SIZE_KEYS,
     HierarchyError,
     ReadTaskOptions,
+    SpanStories,
+    StoryFiles,
     Task,
     build_order,
     check_cds_contract,
     check_detailed_work,
     delta_requires,
     derive_prerequisites,
-    detailed_items,
     elab_slug,
     item_briefs,
+    placed_items,
     read_story,
     read_task_deps,
     read_tasks,
-    repo_slugs,
     size_metadata,
     str_list,
     take_warnings,
@@ -84,7 +83,7 @@ from hierarchy import (
     work_items,
 )
 from scoring import JUDGED_HASH_KEY
-from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 # isort: split
 from bead_metadata import (
@@ -168,25 +167,6 @@ def _same(stored: JsonValue, wanted: str) -> bool:
     if stored is None:
         return False
     return same_value(stored, wanted) or str(stored).lower() == wanted.lower()
-
-
-def _rel(directory: Path, root: Path | None) -> str | None:
-    """Return the working directory relative to the project root.
-
-    Args:
-        directory: The Epic's working directory.
-        root: The project root, or None.
-
-    Returns:
-        The relative path, or None when there is no root or the directory is outside it.
-
-    """
-    if root is None:
-        return None
-    try:
-        return str(directory.resolve().relative_to(root.resolve()))
-    except ValueError:
-        return None
 
 
 def _strategy_line(strategy: JsonObject | None) -> str:
@@ -541,22 +521,14 @@ def _assign_keys(tasks: list[Task], slug: str, work: list[str] | None) -> None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def plan_tasks(
-    directory: Path,
-    rel: str | None,
-    slug: str,
-    repo: str,
-    packages_dir: str | None = None,
-) -> list[Task]:
+def plan_tasks(files: StoryFiles, root: Path | None, packages_dir: str | None = None) -> list[Task]:
     """Return a Story's saved Tasks, each with its durable key, in build order.
 
-    Reads `story-<slug>.json` and `tasks-<slug>.json` only; runs no `bd` command.
+    Reads the Story document, the Tasks file and the span's two files; runs no `bd` command.
 
     Args:
-        directory: The Epic's working directory.
-        rel: The directory relative to the project root, or None.
-        slug: The Story's repository slug.
-        repo: The Story's repository.
+        files: The repository's saved files.
+        root: The project root spec references are recorded relative to, or None.
         packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
@@ -567,41 +539,41 @@ def plan_tasks(
 
     """
     if (
-        not (isinstance(directory, Path))
-        or not (isinstance(rel, str) or rel is None)
-        or not (isinstance(slug, str))
-        or not (isinstance(repo, str))
+        not (isinstance(files, StoryFiles))
+        or not (isinstance(root, Path) or root is None)
         or not (isinstance(packages_dir, str) or packages_dir is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    saved: hierarchy.Story = read_story(directory, rel, repo, slug)
+    saved: hierarchy.Story = read_story(files, root)
     tasks: list[hierarchy.Task] = read_tasks(
-        directory,
-        rel,
-        ReadTaskOptions(slug, repo, saved.decision_ids, packages_dir),
+        files,
+        root,
+        ReadTaskOptions(files.slug, files.repo, saved.decision_ids, packages_dir),
     )
-    check_detailed_work(directory, slug, tasks)
-    tasks = derive_prerequisites(directory, slug, tasks)
-    check_cds_contract(slug, tasks)
-    _assign_keys(tasks, slug, work_items(directory, slug))
+    check_detailed_work(files, tasks)
+    tasks = derive_prerequisites(files, tasks)
+    check_cds_contract(files.slug, tasks)
+    _assign_keys(tasks, files.slug, work_items(files))
     return tasks
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def write_story(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
-    graph: Graph,
-    writer: Writer,
-    epic_id: str,
-    directory: Path,
-    *,
-    slug: str,
-    repo: str,
-    root: Path | None,
-) -> StoryWrite:
-    """Write one Story once; the orchestrator owns retries with a fresh graph.
+def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *, root: Path | None) -> StoryWrite:
+    """Write one repository's Story under the Epic from its saved Story document.
+
+    The Story is found by its elaboration key `story:<slug>` among the Epic's Stories: one that
+    exists is refreshed where it differs and is open, and is never created a second time.
+
+    Args:
+        graph: The tracker graph, read with descriptions.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        files: The repository's saved files.
+        root: The project root artifact paths are recorded relative to.
 
     Returns:
-        The computed write story result.
+        The Story, what was done to it, the keyed Tasks already under it, and the open
+        Tasks of other Epics built in the same repository.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -611,53 +583,13 @@ def write_story(  # ruff: ignore[too-many-arguments] - the caller's facts, one e
         isinstance(graph, Graph),
         isinstance(writer, Writer),
         isinstance(epic_id, str),
-        isinstance(directory, Path),
-        isinstance(slug, str),
-        isinstance(repo, str),
+        isinstance(files, StoryFiles),
         isinstance(root, Path) or root is None,
     )):
         raise TypeError(_ARGUMENT_ERROR)
-    return _write_story(
-        graph,
-        writer,
-        epic_id,
-        directory,
-        slug=slug,
-        repo=repo,
-        root=root,
-    )
-
-
-def _write_story(
-    graph: Graph,
-    writer: Writer,
-    epic_id: str,
-    directory: Path,
-    **options: Unpack[StoryWriteOptions],
-) -> StoryWrite:
-    """Write one repository's Story under the Epic from its saved `story-<slug>.json`.
-
-    Args:
-        graph: The tracker graph, read with descriptions.
-        writer: The tracker writer; a dry-run writer records the writes instead.
-        epic_id: The Epic.
-        directory: The Epic's working directory.
-        slug: The repository's slug.
-        repo: The repository.
-        root: The project root artifact paths are recorded relative to.
-
-    Returns:
-        The Story, what was done to it, the keyed Tasks already under it, and the open
-        Tasks of other Epics built in the same repository.
-
-    """
-    slug: str
-    repo: str
-    root: Path | None
-    check_type(options, StoryWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    slug, repo, root = options["slug"], options["repo"], options["root"]
-
-    story: hierarchy.Story = read_story(directory, _rel(directory, root), repo, slug)
+    slug: str = files.slug
+    repo: str = files.repo
+    story: hierarchy.Story = read_story(files, root)
     bead: beadgraph.Bead | None = _story_of(graph, epic_id, slug)
     existing: list[ExistingTask] = []
     if bead is None:
@@ -807,49 +739,38 @@ def _planned_task(task: Task) -> PlannedTask:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def plan_story_tasks(
-    directory: Path,
-    *,
-    slug: str,
-    repo: str,
-    root: Path | None,
-    packages_dir: str | None = None,
-) -> TaskPlan:
+def plan_story_tasks(files: StoryFiles, *, root: Path | None, packages_dir: str | None = None) -> TaskPlan:
     """Return a Story's Tasks in build order with their durable keys; runs no `bd` command.
 
     Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
-        repo: The Story's repository.
+        files: The repository's saved files.
         root: The project root spec paths are recorded relative to.
         packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
         Each Task's local key, elaboration key, title and the local keys it depends on, and
-        `uncited`: the work items of the repository's detailing no Task cites.
+        `uncited`: the items placed in the repository that no Task cites.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
     if (
-        not (isinstance(directory, Path))
-        or not (isinstance(slug, str))
-        or not (isinstance(repo, str))
+        not (isinstance(files, StoryFiles))
         or not (isinstance(root, Path) or root is None)
         or not (isinstance(packages_dir, str) or packages_dir is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
     take_warnings()
-    tasks: list[hierarchy.Task] = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
+    tasks: list[hierarchy.Task] = plan_tasks(files, root, packages_dir)
     warnings: list[str] = take_warnings()
-    uncited: list[str] = uncited_work(directory, slug, tasks)
+    uncited: list[str] = uncited_work(files, tasks)
     return {
         "ok": True,
-        "slug": slug,
+        "slug": files.slug,
         "warnings": warnings,
         "uncited": uncited,
-        "uncitedItems": item_briefs(directory, slug, uncited),
+        "uncitedItems": item_briefs(files, uncited),
         "unsized": [t.key for t in tasks if not t.sizes],
         "tasks": [_planned_task(task) for task in tasks],
         "summary": {"tasks": len(tasks), "warnings": len(warnings)},
@@ -871,57 +792,6 @@ def _write_json(path: Path, value: JsonObject) -> None:
     temp: Path = path.with_name(f".{path.name}.tmp")
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", "utf-8")
     temp.replace(path)
-
-
-def _rebind_input(directory: Path, name: str) -> list[str]:
-    """Record a rewritten file's new content hash wherever it is a recorded input.
-
-    The saved files of the Epic's working directory record the hash of each input they
-    were built from (`<file>.meta.json`); a file amended in place would make them stale.
-
-    Args:
-        directory: The Epic's working directory.
-        name: The rewritten file's name in that directory.
-
-    Returns:
-        The records updated.
-
-    Raises:
-        HierarchyError: A receipt cannot be read or is not a JSON object.
-
-    """
-    meta_path: Path
-    entry: JsonObject
-    path: Path = directory / name
-    digest: str = hashlib.sha256(path.read_bytes()).hexdigest()
-    updated: list[str] = []
-    for meta_path in sorted(directory.rglob("*.meta.json")):
-        try:
-            meta: JsonObject = json_object(json.loads(meta_path.read_text("utf-8")))
-        except (OSError, ValueError, TypeCheckError) as exc:
-            message: str = f"cannot read the artifact receipt {meta_path}: {exc}"
-            raise HierarchyError(message) from exc
-        changed: bool = False
-        if meta_path.name == f"{name}.meta.json":
-            meta["sha256"], meta["bytes"] = digest, path.stat().st_size
-            changed = True
-        for entry in check_type(
-            meta.get("inputs") or [],
-            list[JsonObject],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ):
-            recorded: str = str(entry.get("path") or "") if isinstance(entry, dict) else ""
-            if (
-                entry.get("kind") == "file"
-                and recorded.endswith(f"{directory.name}/{name}")
-                and entry.get("sha256") != digest
-            ):
-                entry["sha256"] = digest
-                changed = True
-        if changed:
-            _write_json(meta_path, meta)
-            updated.append(meta_path.name)
-    return updated
 
 
 def _local_keys(start: list[JsonObject]) -> Iterator[str]:
@@ -968,11 +838,10 @@ class _TaskCorrection:
     keys: set[str]
     resized: list[str]
 
-    def __init__(self, directory: Path, slug: str, correction: Path) -> None:
-        if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(correction, Path)):
+    def __init__(self, files: StoryFiles, correction: Path) -> None:
+        if not (isinstance(files, StoryFiles)) or not (isinstance(correction, Path)):
             raise TypeError(_ARGUMENT_ERROR)
-        self.directory: Path = directory
-        self.slug: str = slug
+        self.files: StoryFiles = files
         self.correction: Path = correction
 
     def execute(self) -> TaskCorrection:
@@ -986,7 +855,7 @@ class _TaskCorrection:
 
         """
         task: JsonObject
-        self.path = self.directory / f"tasks-{self.slug}.json"
+        self.path = self.files.tasks_file
         self.saved = json_object(json.loads(self.path.read_text("utf-8")))
         self.fix = json_object(json.loads(self.correction.read_text("utf-8")))
         if "noWork" in self.fix:
@@ -997,7 +866,7 @@ class _TaskCorrection:
             list[JsonObject],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
-        self.work = set(work_items(self.directory, self.slug))
+        self.work = set(work_items(self.files))
         self.cited = {i for t in self.existing for i in str_list(t.get(ARG_REQUIREMENT_IDS))}
         self.gap = self.work - self.cited
         self.original_scores = {
@@ -1096,8 +965,10 @@ class _TaskCorrection:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> TaskCorrection:
-    """Merge one gap repair while retaining existing Tasks and authored inputs.
+def add_corrective_tasks(files: StoryFiles, *, correction: Path) -> TaskCorrection:
+    """Merge one gap repair into the Story's Tasks file while retaining its Tasks.
+
+    A correction merged a second time adds nothing: its Tasks cite items the first merge covered.
 
     Returns:
         The accepted and rejected correction details.
@@ -1106,9 +977,9 @@ def add_corrective_tasks(directory: Path, *, slug: str, correction: Path) -> Tas
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(correction, Path)):
+    if not (isinstance(files, StoryFiles)) or not (isinstance(correction, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    return _TaskCorrection(directory, slug, correction).execute()
+    return _TaskCorrection(files, correction).execute()
 
 
 def _cited_ids(value: JsonValue) -> list[str]:
@@ -1214,124 +1085,8 @@ def _match_tasks(
     return matched, [b for b in free if b.id not in used]
 
 
-#: The suffix of the input record the artifact script writes beside a saved file.
-META_SUFFIX = ".meta.json"
-
 #: The statuses of a Task no one has started building.
 UNSTARTED = frozenset({"open", "blocked", "deferred"})
-
-
-def _record_root(path: Path, meta: JsonValue, root: Path | None) -> Path | None:
-    """Return the root an artifact record's paths are relative to.
-
-    The record names the saved file itself (`path`) relative to that root, so the root is
-    what the file's absolute path holds before it. The caller's root is used when the
-    record's own path resolves under it.
-
-    Args:
-        path: The saved file.
-        meta: Its parsed record, or None.
-        root: The caller's project root, or None.
-
-    Returns:
-        The root, or None when neither the caller nor the record gives one.
-
-    """
-    named: str = str(meta.get("path") or "") if isinstance(meta, dict) else ""
-    if not named or Path(named).is_absolute():
-        return root
-    if root is not None and (root / named).resolve() == path.resolve():
-        return root
-    full: Path = path.resolve()
-    parts: tuple[str, ...] = Path(named).parts
-    if len(full.parts) > len(parts) and full.parts[-len(parts) :] == parts:
-        return Path(*full.parts[: -len(parts)])
-    return root
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def tasks_inputs(directory: Path, *, slug: str, root: Path | None) -> TaskInputs:
-    """Whether a Story's saved Tasks were decomposed from the inputs they record, unchanged.
-
-    The artifact script records, beside `tasks-<slug>.json`, the content hash of every input
-    it was decomposed from (`tasks-<slug>.json.meta.json`): the Spec documents and the Story,
-    which carry every change upstream of them (PRD, architecture, TRD, detailing). Each file
-    input is hashed again and compared. Runs no `bd` command.
-
-    Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
-        root: The project root the recorded input paths are relative to, or None; when
-            it is None or does not hold the saved file, `_record_root` derives it.
-
-    Returns:
-        `saved` (the file exists), `recorded` (its input record was read), `changedInputs`
-        (each recorded input that changed or is gone, with why), `unverified` (each recorded
-        input that could not be checked), and `unchanged`: True only when the file is saved,
-        its record names at least one input, and every input checks out unchanged.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-        HierarchyError: The saved file's receipt exists but cannot be read or parsed.
-
-    """
-    entry: JsonValue
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(root, Path) or root is None):
-        raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / f"tasks-{slug}.json"
-    meta_path: Path = path.with_name(path.name + META_SUFFIX)
-    changed: list[InputChange] = []
-    unverified: list[str] = []
-    meta: JsonObject | None = None
-    if path.is_file():
-        try:
-            meta = json_object(json.loads(meta_path.read_text("utf-8")))
-        except FileNotFoundError:
-            meta = None
-        except (OSError, ValueError, TypeCheckError) as exc:
-            message: str = f"cannot read the artifact receipt {meta_path}: {exc}"
-            raise HierarchyError(message) from exc
-    inputs: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
-        meta.get("inputs") if meta is not None else None
-    )
-    root = _record_root(path, meta, root)
-    for entry in (
-        check_type(inputs, list[JsonValue], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        if isinstance(inputs, list)
-        else []
-    ):
-        if not isinstance(entry, dict):
-            unverified.append("(an entry naming no path)")
-            continue
-        name: str = str(entry.get("path") or "") if isinstance(entry, dict) else ""
-        recorded: str = str(entry.get("sha256") or "") if isinstance(entry, dict) else ""
-        given: Path = Path(name)
-        source: Path | None = given if given.is_absolute() else (root / given if root else None)
-        if not name or not recorded or entry.get("kind") != "file" or source is None:
-            unverified.append(name or "(an entry naming no path)")
-            continue
-        if not source.is_file():
-            changed.append({"path": name, "why": "no longer exists"})
-        elif hashlib.sha256(source.read_bytes()).hexdigest() != recorded:
-            changed.append(
-                {"path": name, "why": "changed since the Tasks were decomposed"},
-            )
-    saved: bool = path.is_file()
-    checked: bool = bool(inputs) and not unverified
-    return {
-        "ok": True,
-        "saved": saved,
-        "recorded": isinstance(meta, dict),
-        "changedInputs": changed,
-        "unverified": unverified,
-        "unchanged": saved and checked and not changed,
-        "summary": {
-            "saved": saved,
-            "unchanged": saved and checked and not changed,
-            "changed": len(changed),
-            "unverified": len(unverified),
-        },
-    }
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1425,22 +1180,26 @@ def _judged_hash(title: str, text: str, priority: JsonValue) -> str:
 def write_task(
     writer: Writer,
     epic_id: str,
-    directory: Path,
+    files: StoryFiles,
     **options: Unpack[TaskWriteOptions],
 ) -> TaskWrite:
-    """Write one Task once; the keyed implementation reads the current Story's Tasks.
+    """Write one Task of a Story from its saved Tasks file.
+
+    The Task is found by its elaboration key among the Story's Task beads: one that exists is
+    refreshed where it differs, or left as it is once building has started, and is never created
+    a second time.
 
     Returns:
-        The computed write task result.
+        The Task identity, content action, edges, and warnings.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)) or not (isinstance(directory, Path)):
+    if not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)) or not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
     check_type(options, TaskWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    return _write_task(writer, epic_id, directory, **options)
+    return _TaskWriter(writer, epic_id, files, options).execute()
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1449,7 +1208,7 @@ class _TaskWriter:
 
     writer: Writer
     epic_id: str
-    directory: Path
+    files: StoryFiles
     options: TaskWriteOptions
     slug: str
     repo: str
@@ -1457,7 +1216,6 @@ class _TaskWriter:
     root: Path | None
     external: list[str] | None
     packages_dir: str | None
-    missing_only: bool
     tasks: list[Task]
     by_key: dict[str, Task]
     task: Task
@@ -1483,30 +1241,25 @@ class _TaskWriter:
     task_id: str
     action: str
 
-    def __init__(self, writer: Writer, epic_id: str, directory: Path, options: TaskWriteOptions) -> None:
+    def __init__(self, writer: Writer, epic_id: str, files: StoryFiles, options: TaskWriteOptions) -> None:
         if (
             not (isinstance(writer, Writer))
             or not (isinstance(epic_id, str))
-            or not (isinstance(directory, Path))
+            or not (isinstance(files, StoryFiles))
             or not (isinstance(options, dict))
         ):
             raise TypeError(_ARGUMENT_ERROR)
         self.writer = writer
         self.epic_id = epic_id
-        self.directory = directory
+        self.files = files
         self.options = options
 
     def _prepare_options(self) -> None:
         check_type(self.options, TaskWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        self.slug, self.repo, self.key, self.root = (
-            self.options["slug"],
-            self.options["repo"],
-            self.options["key"],
-            self.options["root"],
-        )
+        self.slug, self.repo = self.files.slug, self.files.repo
+        self.key, self.root = self.options["key"], self.options["root"]
         self.external = self.options.get("external")
         self.packages_dir = self.options.get("packages_dir")
-        self.missing_only = self.options.get("missing_only", False)
         if not self.repo.strip():
             msg: str = f"Task {self.key} of story:{self.slug} has no repository: a Task is never written without one"
             raise HierarchyError(msg)
@@ -1525,17 +1278,11 @@ class _TaskWriter:
         dep: str
         self._prepare_options()
         take_warnings()
-        self.tasks = plan_tasks(
-            self.directory,
-            _rel(self.directory, self.root),
-            self.slug,
-            self.repo,
-            self.packages_dir,
-        )
+        self.tasks = plan_tasks(self.files, self.root, self.packages_dir)
         self.by_key = {t.key: t for t in self.tasks}
         task: hierarchy.Task | None = self.by_key.get(self.key)
         if task is None:
-            msg = f"tasks-{self.slug}.json has no Task {self.key}"
+            msg = f"{self.files.tasks_file.name} has no Task {self.key}"
             raise HierarchyError(msg)
         self.task = task
         self.stories = _keyed(
@@ -1550,7 +1297,7 @@ class _TaskWriter:
         self.priority = {str(r["id"]): r.get("priority") for r in self.records}
         self.beads = sorted((bead_of(r) for r in self.records), key=lambda b: b.id)
         self.keyed = _keyed(self.beads)
-        self.items = detailed_items(self.directory)
+        self.items = placed_items(self.files.scope)
         self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
 
         def found(t: Task) -> Bead | None:
@@ -1628,8 +1375,8 @@ class _TaskWriter:
             self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
             self.edges["added"] = len(self.blockers) + len(self.outer)
             self.outside = self.outer
-        elif task_started(self.bead) or self.missing_only:
-            self.task_id, self.action = (self.bead.id, "unchanged-started" if task_started(self.bead) else "unchanged")
+        elif task_started(self.bead):
+            self.task_id, self.action = (self.bead.id, "unchanged-started")
         else:
             self.task_id = self.bead.id
             self.action = (
@@ -1654,29 +1401,15 @@ class _TaskWriter:
             )
 
 
-def _write_task(writer: Writer, epic_id: str, directory: Path, **options: Unpack[TaskWriteOptions]) -> TaskWrite:
-    """Write one Task through its typed preparation and persistence stages.
-
-    Returns:
-        The Task identity, content action, edges, and warnings.
-
-    """
-    return _TaskWriter(writer, epic_id, directory, options).execute()
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def span_tasks(
-    directory: Path,
-    repos: list[str],
-) -> tuple[dict[str, str], list[tuple[str, str]], dict[str, str]]:
+def span_tasks(span: SpanStories) -> tuple[dict[str, str], list[tuple[str, str]], dict[str, str]]:
     """Return every saved Task of the span by its `S<i>-<local key>` name.
 
-    The Story of the repository at index i of the span is `S<i+1>`. Reads the saved
-    documents only; runs no `bd` command.
+    The Story at index i of the span is `S<i+1>`. Reads the saved documents only; runs no
+    `bd` command.
 
     Args:
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
 
     Returns:
         Name -> the Story's slug, the `(from, to)` edges within each Story by name, and
@@ -1687,21 +1420,18 @@ def span_tasks(
 
     """
     index: int
-    repo: str
-    slug: str
+    files: StoryFiles
     t: Task
-    if not (isinstance(directory, Path)) or not (isinstance(repos, list)):
+    if not (isinstance(span, SpanStories)):
         raise TypeError(_ARGUMENT_ERROR)
     slug_of: dict[str, str] = {}
     intra: list[tuple[str, str]] = []
     elab: dict[str, str] = {}
-    for index, (repo, slug) in enumerate(repo_slugs(repos).items()):
-        if not (directory / f"tasks-{slug}.json").is_file():
-            continue
+    for index, files in enumerate(span.stories):
         story: str = f"S{index + 1}"
-        for t in plan_tasks(directory, None, slug, repo):
+        for t in plan_tasks(files, None):
             name: str = f"{story}-{t.key}"
-            slug_of[name] = slug
+            slug_of[name] = files.slug
             elab[name] = t.elab_key or ""
             intra += [(f"{story}-{d}", name) for d in t.depends_on]
     return slug_of, intra, elab
@@ -1754,27 +1484,23 @@ def _accept(
     return accepted, rejected, pairs
 
 
-def _no_code(directory: Path) -> set[str]:
-    """Return the delta items the saved span ruling records as having no code here.
+def _no_code(span_file: Path) -> set[str]:
+    """Return the items the span file records as having no code here.
 
     Args:
-        directory: The Epic's working directory.
+        span_file: The span file.
 
     Returns:
-        Their ids; empty when `repo-scoping.json` is not saved.
+        Their ids.
 
     Raises:
-        HierarchyError: `repo-scoping.json` exists but cannot be read or does not conform to
-            the placement contract.
+        HierarchyError: The span file cannot be read or does not conform to the placement contract.
 
     """
-    path: Path = directory / "repo-scoping.json"
     try:
-        ruling: PlacementRuling = parse_placement_ruling(json.loads(path.read_text(encoding="utf-8")))
-    except FileNotFoundError:
-        return set()
+        ruling: PlacementRuling = parse_placement_ruling(json.loads(span_file.read_text(encoding="utf-8")))
     except (OSError, ValueError, PlacementError) as exc:
-        message: str = f"cannot read the saved span ruling {path}: {exc}"
+        message: str = f"cannot read the span file {span_file}: {exc}"
         raise HierarchyError(message) from exc
     return {entry[KEY_ITEM_ID].strip() for entry in ruling["noCode"] if entry[KEY_ITEM_ID].strip()}
 
@@ -1788,33 +1514,30 @@ class _ClosureContext:
     slug_story: dict[str, str]
 
 
-def _closure_context(directory: Path, repos: list[str]) -> _ClosureContext:
+def _closure_context(span: SpanStories) -> _ClosureContext:
     """Read placements and saved Task builders for prerequisite closure.
 
     Returns:
         The exact builder and placement facts used to derive edges.
 
-    A saved span ruling that cannot be read or does not conform to its contract raises
+    A span file that cannot be read or does not conform to its contract raises
     ``HierarchyError`` from the span reader.
 
     """
     index: int
-    repo: str
-    slug: str
+    files: StoryFiles
     task: Task
-    no_code: set[str] = _no_code(directory)
+    no_code: set[str] = _no_code(span.scope.span)
     slug_story: dict[str, str] = {}
     builds: dict[str, list[str]] = {}
     task_slug: dict[str, str] = {}
-    for index, (repo, slug) in enumerate(repo_slugs(repos).items()):
-        slug_story[slug] = f"S{index + 1}"
-        if not (directory / f"tasks-{slug}.json").is_file():
-            continue
-        for task in plan_tasks(directory, None, slug, repo):
+    for index, files in enumerate(span.stories):
+        slug_story[files.slug] = f"S{index + 1}"
+        for task in plan_tasks(files, None):
             name: str = f"S{index + 1}-{task.key}"
-            task_slug[name] = slug
+            task_slug[name] = files.slug
             builds[name] = task.requirement_ids
-    return _ClosureContext(detailed_items(directory), no_code, builds, task_slug, slug_story)
+    return _ClosureContext(placed_items(span.scope), no_code, builds, task_slug, slug_story)
 
 
 def _required_builders(name: str, item: str, requirement: str, context: _ClosureContext) -> tuple[list[str], list[str]]:
@@ -1850,7 +1573,7 @@ def _required_builders(name: str, item: str, requirement: str, context: _Closure
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def closure_task_edges(directory: Path, repos: list[str]) -> ClosureEdges:
+def closure_task_edges(span: SpanStories) -> ClosureEdges:
     """Derive cross-Story edges from placements and declared requires relations.
 
     Returns:
@@ -1867,13 +1590,13 @@ def closure_task_edges(directory: Path, repos: list[str]) -> ClosureEdges:
     found: list[str]
     missing: list[str]
     source: str
-    if not (isinstance(directory, Path)) or not (isinstance(repos, list)):
+    if not (isinstance(span, SpanStories)):
         raise TypeError(_ARGUMENT_ERROR)
-    requires: dict[str, list[str]] | None = delta_requires(directory)
+    requires: dict[str, list[str]] | None = delta_requires(span.scope.elements)
     edges: list[TaskEdge] = []
     warnings: list[str] = []
     if requires is not None:
-        context: _ClosureContext = _closure_context(directory, repos)
+        context: _ClosureContext = _closure_context(span)
         seen: set[tuple[str, str]] = set()
         for name, items in context.builds.items():
             for item in items:
@@ -1900,15 +1623,14 @@ def closure_task_edges(directory: Path, repos: list[str]) -> ClosureEdges:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def plan_task_edges(directory: Path, repos: list[str]) -> EdgePlan:
+def plan_task_edges(span: SpanStories) -> EdgePlan:
     """Return the saved Task edges between Stories, checked; runs no `bd` command.
 
     The edges are those `closure_task_edges` derives from the delta's `requires`
-    relations, then the mapper's saved `task-deps.json` edges.
+    relations, then the edges of the mapper's file, when the span names one.
 
     Args:
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
 
     Returns:
         The accepted edges, the rejected ones, each blocked Task's blockers by name, and
@@ -1928,19 +1650,17 @@ def plan_task_edges(directory: Path, repos: list[str]) -> EdgePlan:
     edge: TaskEdge
     frm: str
     to: str
-    if not (isinstance(directory, Path)) or not (isinstance(repos, list)):
+    if not (isinstance(span, SpanStories)):
         raise TypeError(_ARGUMENT_ERROR)
-    closure: beadcontracts.ClosureEdges = closure_task_edges(directory, repos)
+    closure: beadcontracts.ClosureEdges = closure_task_edges(span)
     warnings: list[str] = list(closure["warnings"])
     standing: set[tuple[str, str]] = {(e["from"], e["to"]) for e in closure["edges"]}
-    mapped: list[beadcontracts.TaskEdge] = (
-        read_task_deps(directory) if (directory / "task-deps.json").is_file() or not standing else []
-    )
+    mapped: list[beadcontracts.TaskEdge] = read_task_deps(span.task_deps) if span.task_deps is not None else []
     saved: list[TaskEdge] = [
         *closure["edges"],
         *(e for e in mapped if (str(e.get("from") or ""), str(e.get("to") or "")) not in standing),
     ]
-    slug_of, intra, _elab = span_tasks(directory, repos)
+    slug_of, intra, _elab = span_tasks(span)
     accepted, rejected, _pairs = _accept(saved, slug_of)
     pairs: set[tuple[str, str]] = set()
     kept: list[TaskEdge] = []
@@ -1971,12 +1691,11 @@ def plan_task_edges(directory: Path, repos: list[str]) -> EdgePlan:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def write_task_edges(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
+def write_task_edges(
     graph: Graph,
     writer: Writer,
     epic_id: str,
-    directory: Path,
-    repos: list[str],
+    span: SpanStories,
     *,
     name: str,
 ) -> TaskEdgeWrite:
@@ -1989,8 +1708,7 @@ def write_task_edges(  # ruff: ignore[too-many-arguments] - the caller's facts, 
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
         name: The Task, as `S<i>-<local key>`.
 
     Returns:
@@ -2010,13 +1728,12 @@ def write_task_edges(  # ruff: ignore[too-many-arguments] - the caller's facts, 
         isinstance(graph, Graph),
         isinstance(writer, Writer),
         isinstance(epic_id, str),
-        isinstance(directory, Path),
-        isinstance(repos, list),
+        isinstance(span, SpanStories),
         isinstance(name, str),
     )):
         raise TypeError(_ARGUMENT_ERROR)
-    plan: beadcontracts.EdgePlan = plan_task_edges(directory, repos)
-    slug_of, _intra, elab = span_tasks(directory, repos)
+    plan: beadcontracts.EdgePlan = plan_task_edges(span)
+    slug_of, _intra, elab = span_tasks(span)
     warnings: list[str] = []
 
     def bead_named(n: str) -> Bead | None:
@@ -2078,19 +1795,13 @@ def write_task_edges(  # ruff: ignore[too-many-arguments] - the caller's facts, 
     }
 
 
-def _task_beads(
-    graph: Graph,
-    epic_id: str,
-    directory: Path,
-    repos: list[str],
-) -> dict[str, Bead]:
+def _task_beads(graph: Graph, epic_id: str, span: SpanStories) -> dict[str, Bead]:
     """Return the bead of every saved Task of the span that beads holds, by its name.
 
     Args:
         graph: The tracker graph.
         epic_id: The Epic.
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
 
     Returns:
         `S<i>-<local key>` -> the Task's bead.
@@ -2101,7 +1812,7 @@ def _task_beads(
     elab: dict[str, str]
     name: str
     slug: str
-    slug_of, _intra, elab = span_tasks(directory, repos)
+    slug_of, _intra, elab = span_tasks(span)
     out: dict[str, Bead] = {}
     for name, slug in slug_of.items():
         story: beadgraph.Bead | None = _story_of(graph, epic_id, slug)
@@ -2111,19 +1822,13 @@ def _task_beads(
     return out
 
 
-def _carrying(
-    graph: Graph,
-    epic_id: str,
-    directory: Path,
-    repos: list[str],
-) -> list[str]:
+def _carrying(graph: Graph, epic_id: str, span: SpanStories) -> list[str]:
     """Return the saved Tasks whose open bead carries a blocker in another of the Epic's Stories.
 
     Args:
         graph: The tracker graph.
         epic_id: The Epic.
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
 
     Returns:
         The Tasks, as `S<i>-<local key>`.
@@ -2134,18 +1839,17 @@ def _carrying(
     }
     return [
         name
-        for name, bead in _task_beads(graph, epic_id, directory, repos).items()
+        for name, bead in _task_beads(graph, epic_id, span).items()
         if bead.status == OPEN and any(story_of.get(b) not in {None, bead.parent} for b in bead.blockers)
     ]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def write_all_task_edges(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
+def write_all_task_edges(
     graph: Graph,
     writer: Writer,
     epic_id: str,
-    directory: Path,
-    repos: list[str],
+    span: SpanStories,
     *,
     also: list[str],
 ) -> AllEdgeWrite:
@@ -2159,8 +1863,7 @@ def write_all_task_edges(  # ruff: ignore[too-many-arguments] - the caller's fac
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        directory: The Epic's working directory.
-        repos: The span, in its ruled order.
+        span: The Stories of the span, in span order, with their saved files.
         also: Tasks, as `S<i>-<local key>`, whose edges to other Stories are
             written even when the saved edges name no blocker for them.
 
@@ -2176,19 +1879,18 @@ def write_all_task_edges(  # ruff: ignore[too-many-arguments] - the caller's fac
         isinstance(graph, Graph),
         isinstance(writer, Writer),
         isinstance(epic_id, str),
-        isinstance(directory, Path),
-        isinstance(repos, list),
+        isinstance(span, SpanStories),
         isinstance(also, list),
     )):
         raise TypeError(_ARGUMENT_ERROR)
-    plan: beadcontracts.EdgePlan = plan_task_edges(directory, repos)
+    plan: beadcontracts.EdgePlan = plan_task_edges(span)
     names: list[str] = list(
         dict.fromkeys(
-            [*plan["blockers"], *also, *_carrying(graph, epic_id, directory, repos)],
+            [*plan["blockers"], *also, *_carrying(graph, epic_id, span)],
         ),
     )
     written: list[beadcontracts.TaskEdgeWrite] = [
-        write_task_edges(graph, writer, epic_id, directory, repos, name=name) for name in names
+        write_task_edges(graph, writer, epic_id, span, name=name) for name in names
     ]
     tasks: list[beadcontracts.TaskEdgeSummary] = [w["summary"] for w in written]
     warnings: list[str] = list(
@@ -2214,6 +1916,105 @@ def write_all_task_edges(  # ruff: ignore[too-many-arguments] - the caller's fac
             "warnings": len(warnings),
             **totals,
         },
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
+    graph: Graph,
+    writer: Writer,
+    epic_id: str,
+    files: StoryFiles,
+    *,
+    root: Path | None,
+    packages_dir: str | None = None,
+) -> SupersededTasks:
+    """Delete the unstarted Task beads a Story's saved Tasks no longer name.
+
+    A Task bead elaboration wrote under the Story that no saved Task matches and that no one has
+    started is superseded. Each `blocks` edge from a Task of another Story onto it is first added
+    onto every written Task that cites an item it cited; then the superseded beads are deleted.
+    Run again, it adds no edge twice and finds nothing left to delete.
+
+    Args:
+        graph: The tracker graph, read after the Story's Tasks were written.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        files: The repository's saved files.
+        root: The project root spec references are recorded relative to.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
+
+    Returns:
+        The Story, the beads deleted, the edges moved, and a warning for each edge onto a deleted
+        bead that no written Task replaces.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+        HierarchyError: The Epic has no Story for the repository.
+
+    """
+    dependent: Bead
+    blocker: str
+    target: str
+    if not all((
+        isinstance(graph, Graph),
+        isinstance(writer, Writer),
+        isinstance(epic_id, str),
+        isinstance(files, StoryFiles),
+        isinstance(root, Path) or root is None,
+        isinstance(packages_dir, str) or packages_dir is None,
+    )):
+        raise TypeError(_ARGUMENT_ERROR)
+    tasks: list[Task] = plan_tasks(files, root, packages_dir)
+    take_warnings()
+    story: Bead | None = _story_of(graph, epic_id, files.slug)
+    if story is None:
+        msg: str = f"{epic_id} has no Story story:{files.slug}"
+        raise HierarchyError(msg)
+    beads: list[Bead] = sorted(_children(graph, story.id, "task"), key=lambda bead: bead.id)
+    matched: dict[str, Bead]
+    left: list[Bead]
+    matched, left = _match_tasks(tasks, beads, files.slug, placed_items(files.scope))
+    cited: dict[str, set[str]] = {
+        bead.id: set(_cited_ids(bead.metadata.get(KEY_REQUIREMENT_IDS))) for bead in left if not task_started(bead)
+    }
+    builds: dict[str, set[str]] = {
+        matched[task.key].id: set(task.requirement_ids) for task in tasks if task.key in matched
+    }
+    repointed: list[RepointedEdge] = []
+    warnings: list[str] = []
+    for dependent in sorted(graph.beads.values(), key=lambda bead: bead.id):
+        if dependent.kind != "task" or dependent.parent == story.id:
+            continue
+        for blocker in [held for held in dependent.blockers if held in cited]:
+            targets: list[str] = [bead for bead, items in builds.items() if items & cited[blocker]]
+            if not targets:
+                warnings.append(f"no written Task replaces {blocker}, which blocked {dependent.id}")
+            for target in targets:
+                if target not in dependent.blockers:
+                    writer.bd(["dep", "add", dependent.id, target, "--type", "blocks"])
+                repointed.append({"dependent": dependent.id, "deleted": blocker, "replacement": target})
+    deleted: list[ReplacedTask] = [
+        {
+            "id": bead.id,
+            "title": bead.title,
+            "elabKey": str(bead.metadata.get(KEY_ELAB_KEY) or ""),
+            "status": bead.status,
+        }
+        for bead in left
+        if bead.id in cited
+    ]
+    if deleted:
+        writer.bd(["delete", *(entry["id"] for entry in deleted), "--force"])
+    return {
+        "ok": True,
+        "story": story.id,
+        "deleted": deleted,
+        "repointed": repointed,
+        "warnings": warnings,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+        "summary": {"deleted": len(deleted), "repointed": len(repointed), "warnings": len(warnings)},
     }
 
 

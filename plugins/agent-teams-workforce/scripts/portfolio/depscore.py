@@ -86,8 +86,6 @@
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     add-tasks            merge a corrective pass into a Story's saved Tasks and detailing;
                          no `bd` call
-    tasks-inputs         whether a Story's saved Tasks were decomposed from the inputs they
-                         record, unchanged; no `bd` call
     replace-tasks        delete a Story's unstarted Task beads before its Tasks are
                          decomposed again (an input upstream of them changed)
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -130,7 +128,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract and artifact-handoff scripts on sys.path before the contract imports below.
 
@@ -175,7 +173,6 @@ from beadwrite import (
     plan_story_tasks,
     plan_task_edges,
     replace_tasks,
-    tasks_inputs,
     write_all_task_edges,
     write_story,
     write_task,
@@ -195,7 +192,7 @@ from edgeset import (
     withdraw_edge,
 )
 from elaboration import LifecycleError, finish, release, start
-from hierarchy import HierarchyError
+from hierarchy import HierarchyError, SpanFiles, SpanStories, StoryFiles, repo_slugs
 from reconfacts import ReconError, recon_facts
 from resumefacts import saved_span, saved_target
 from scoring import ScoringError, judge_input, plan, record, score
@@ -819,13 +816,6 @@ def _configure_command_16(sub: _Subcommands, common: argparse.ArgumentParser) ->
         "ones its saved blockedByExternal names",
     )
 
-    tin: argparse.ArgumentParser = sub.add_parser(
-        "tasks-inputs",
-        help="whether a Story's saved Tasks were decomposed from the inputs they record, "
-        "unchanged; runs no `bd` command",
-        parents=[common],
-    )
-
     rpt: argparse.ArgumentParser = sub.add_parser(
         "replace-tasks",
         help="delete a Story's unstarted Task beads before its Tasks are decomposed again",
@@ -842,7 +832,7 @@ def _configure_command_16(sub: _Subcommands, common: argparse.ArgumentParser) ->
         help="which input upstream of the Tasks changed",
     )
 
-    for task_parser in (pta, adt, wta, tin, rpt):
+    for task_parser in (pta, adt, wta, rpt):
         task_parser.add_argument(
             "--dir",
             required=True,
@@ -2135,6 +2125,51 @@ class _GraphCommand:
     item: str | None
 
 
+SPAN_FILE: Final = "repo-scoping.json"
+ELEMENTS_FILE: Final = "span-elements.json"
+TASK_DEPS_FILE: Final = "task-deps.json"
+"""The names a command given `--dir` reads the span's files and the mapper's edges under."""
+
+
+def _story_files(directory: Path, slug: str, repo: str) -> StoryFiles:
+    """Name the saved files of one Story for a command that is given a directory and a slug.
+
+    A command line names a directory; the files are the ones an elaboration saves there under
+    these names. Library callers hand each path themselves.
+
+    Returns:
+        The Story's files in ``directory``.
+
+    """
+    return StoryFiles(
+        slug,
+        repo,
+        SpanFiles(directory / SPAN_FILE, directory / ELEMENTS_FILE),
+        directory / f"story-{slug}.json",
+        (
+            directory / f"spec-{slug}.md",
+            directory / f"spec-{slug}.data-model.md",
+            directory / f"spec-{slug}.criteria.md",
+        ),
+        directory / f"tasks-{slug}.json",
+    )
+
+
+def _span_stories(directory: Path, repos: list[str]) -> SpanStories:
+    """Name the saved files of every Story of a span for a command that is given a directory.
+
+    Returns:
+        The Stories in span order, with the mapper's edges file when the directory holds one.
+
+    """
+    deps: Path = directory / TASK_DEPS_FILE
+    return SpanStories(
+        SpanFiles(directory / SPAN_FILE, directory / ELEMENTS_FILE),
+        tuple(_story_files(directory, slug, repo) for repo, slug in repo_slugs(repos).items()),
+        deps if deps.is_file() else None,
+    )
+
+
 def _dispatch_plan_tasks(args: _CommandOptions, head: JsonObject) -> JsonObject:
     """Execute the plan-tasks command selected by the CLI.
 
@@ -2145,25 +2180,10 @@ def _dispatch_plan_tasks(args: _CommandOptions, head: JsonObject) -> JsonObject:
     return json_object({
         **head,
         **plan_story_tasks(
-            _required_path(args.dir),
-            slug=_required_text(args.slug),
-            repo=_required_text(args.repo),
+            _story_files(_required_path(args.dir), _required_text(args.slug), _required_text(args.repo)),
             root=args.project_root,
             packages_dir=args.packages_dir,
         ),
-    })
-
-
-def _dispatch_tasks_inputs(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the tasks-inputs command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **tasks_inputs(_required_path(args.dir), slug=_required_text(args.slug), root=args.project_root),
     })
 
 
@@ -2177,8 +2197,7 @@ def _dispatch_add_tasks(args: _CommandOptions, head: JsonObject) -> JsonObject:
     return json_object({
         **head,
         **add_corrective_tasks(
-            _required_path(args.dir),
-            slug=_required_text(args.slug),
+            _story_files(_required_path(args.dir), _required_text(args.slug), _required_text(args.repo)),
             correction=_required_path(args.correction),
         ),
     })
@@ -2191,7 +2210,10 @@ def _dispatch_plan_task_edges(args: _CommandOptions, head: JsonObject) -> JsonOb
         The selected command result.
 
     """
-    return json_object({**head, **plan_task_edges(_required_path(args.dir), split_ids(_required_text(args.repos)))})
+    return json_object({
+        **head,
+        **plan_task_edges(_span_stories(_required_path(args.dir), split_ids(_required_text(args.repos)))),
+    })
 
 
 def _dispatch_arch_approve(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -2418,7 +2440,10 @@ def _dispatch_closure_edges(args: _CommandOptions, head: JsonObject) -> JsonObje
         The selected command result.
 
     """
-    return json_object({**head, **closure_task_edges(_required_path(args.dir), split_ids(_required_text(args.repos)))})
+    return json_object({
+        **head,
+        **closure_task_edges(_span_stories(_required_path(args.dir), split_ids(_required_text(args.repos)))),
+    })
 
 
 def _dispatch_arch_target_remove(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -2580,9 +2605,7 @@ def _dispatch_write_task(args: _CommandOptions, head: JsonObject, writer: Writer
         **write_task(
             writer,
             _required_text(args.epic),
-            _required_path(args.dir),
-            slug=_required_text(args.slug),
-            repo=_required_text(args.repo),
+            _story_files(_required_path(args.dir), _required_text(args.slug), _required_text(args.repo)),
             key=_required_text(args.key),
             root=args.project_root,
             external=split_ids(_required_text(args.blocked_by_external)),
@@ -2612,9 +2635,7 @@ def _dispatch_write_story(context: _GraphCommand) -> JsonObject:
             graph,
             writer,
             _required_text(args.epic),
-            _required_path(args.dir),
-            slug=_required_text(args.slug),
-            repo=_required_text(args.repo),
+            _story_files(_required_path(args.dir), _required_text(args.slug), _required_text(args.repo)),
             root=args.project_root,
         ),
     })
@@ -2641,8 +2662,7 @@ def _dispatch_write_task_edges(context: _GraphCommand) -> JsonObject:
             graph,
             writer,
             _required_text(args.epic),
-            _required_path(args.dir),
-            split_ids(_required_text(args.repos)),
+            _span_stories(_required_path(args.dir), split_ids(_required_text(args.repos))),
             name=_required_text(args.task),
         ),
     })
@@ -2669,8 +2689,7 @@ def _dispatch_write_all_task_edges(context: _GraphCommand) -> JsonObject:
             graph,
             writer,
             _required_text(args.epic),
-            _required_path(args.dir),
-            split_ids(_required_text(args.repos)),
+            _span_stories(_required_path(args.dir), split_ids(_required_text(args.repos))),
             also=split_ids(args.also) if args.also else [],
         ),
     })
@@ -3037,7 +3056,6 @@ def _dispatch_elaboration_release(context: _GraphCommand) -> JsonObject:
 
 _EARLY_COMMANDS: dict[str, Callable[[_CommandOptions, JsonObject], JsonObject]] = {
     "plan-tasks": _dispatch_plan_tasks,
-    "tasks-inputs": _dispatch_tasks_inputs,
     "add-tasks": _dispatch_add_tasks,
     "plan-task-edges": _dispatch_plan_task_edges,
     "arch-approve": _dispatch_arch_approve,

@@ -19,17 +19,14 @@ PROBE: str = """import headlessenv
 import fablewall
 import breaker
 import childproc
-import artifactio
 import handbackcontract
 from orchestrator.core import handback_contract
 from orchestrator.core.driver_contracts import HeadlessEnvironment, FableWall, Breaker, ChildProcess
-from orchestrator.core.artifact_contract import ArtifactProducer
 
 headless: HeadlessEnvironment = headlessenv
 wall: FableWall = fablewall
 quota: Breaker = breaker
 process: ChildProcess = childproc
-artifacts: ArtifactProducer = artifactio.ArtifactProducer()
 handback_rules: handbackcontract.HandbackContract = handbackcontract.HandbackContract(
     wire=handback_contract.wire,
     validate=handback_contract.validate,
@@ -70,12 +67,10 @@ def check_contracts(control_root: Path, plugin_root: Path) -> int:
     plugin_root = plugin_root.resolve()
     drivers: Path = control_root.joinpath(*DRIVER_DIR_PARTS)
     required: list[Path] = [
-        drivers / f"{name}.py"
-        for name in ("headlessenv", "fablewall", "breaker", "childproc", "artifactio", "handbackcontract")
+        drivers / f"{name}.py" for name in ("headlessenv", "fablewall", "breaker", "childproc", "handbackcontract")
     ]
     required.extend(
-        plugin_root / "orchestrator" / "core" / name
-        for name in ("driver_contracts.py", "artifact_contract.py", "handback_contract.py")
+        plugin_root / "orchestrator" / "core" / name for name in ("driver_contracts.py", "handback_contract.py")
     )
     beads_scripts: Path = plugin_root / "skills" / "beads-contract" / "scripts"
     pipeline_scripts: Path = plugin_root / "skills" / "pipeline-contracts" / "scripts"

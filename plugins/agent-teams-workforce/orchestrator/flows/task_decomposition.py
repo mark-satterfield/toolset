@@ -1,443 +1,497 @@
-"""Decompose one repository's specifications, preserving completed build work."""
+"""One repository's Tasks, as steps of the Epic's journal.
+
+The Story bead write plans one container per repository under the Tasks container with its first
+step, the decomposition context. That step plans the decomposer session and the plan step. The
+plan step reads the Tasks file the decomposer wrote and plans what the plan calls for: a correction
+session and a second plan step when an item is uncited or a Task is unsized; otherwise one step per
+Task bead write, the step that retires the Task beads the plan no longer names, and the written
+record. A Task bead write is its own step, so the journal says which Task beads are written.
+"""
 
 from __future__ import annotations
 
-import re
+import json
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Final
 
-# The driver surface and target report contracts are defined in these skill script directories.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-import beadcontracts
+# The bead metadata keys are generated from the beads-contract schema, their one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
 import beadgraph
 import beadwrite
 import hierarchy
-from beadcontracts import PlannedTask, TaskPlan
-from driver_surface_types import CONTROL_REPO_ENV
-from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
+from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
+from typeguard import CollectionCheckStrategy, check_type
 
-from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore
+from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
-from orchestrator.core.models import AgentStep, RunContext, StepError
-from orchestrator.core.tools import Tools, env_path
-from orchestrator.flows.task_state import replace, repoint, snapshot, task_facts
+from orchestrator.core.journal_changes import create_child_journal
+from orchestrator.core.journal_registry import agent_step, script_step
+from orchestrator.core.journal_steps import (
+    AgentLaunch,
+    Completion,
+    NewStep,
+    StepGroup,
+    StepRun,
+    file_artifact,
+    value_artifact,
+)
+from orchestrator.core.models import StepError
+from orchestrator.flows.elaboration_files import (
+    ARTIFACT_ELEMENTS,
+    ARTIFACT_SPAN,
+    CRITERIA,
+    DATA_MODEL,
+    DECOMPOSER,
+    PLACED_ITEMS,
+    REPOSITORY,
+    SPEC,
+    STORY,
+    STORY_DOCUMENT,
+    TASK,
+    TASK_CONTEXT,
+    TASK_CONTEXT_FILE,
+    TASK_CORRECTION,
+    TASK_EDGE_COUNTS,
+    TASK_GAPS,
+    TASK_KEY,
+    TASK_PLAN,
+    TASK_PLAN_RECORD,
+    TASK_RECORD,
+    TASK_RETIRE,
+    TASK_WRITE,
+    TASKS_FILE,
+    TASKS_RESULT,
+    UI_SOURCES,
+    WORK,
+    Repository,
+    control_repository,
+    creating,
+    handed_on,
+    objects,
+    project_root,
+    repository,
+    repository_of,
+    span_files,
+    story_files,
+    strings,
+)
+from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
+from orchestrator.flows.spec_authoring import design_system
 
-_ARGUMENT_ERROR: str = "Arguments violate the task_decomposition input contract"
+# isort: split
+# The journal modules put the pipeline-contracts scripts directory on sys.path.
+from step_journal_contract import BEAD_TYPE_TASK, BeadId
+
+if TYPE_CHECKING:
+    from beadcontracts import TaskPlan
+    from step_journal_contract import Artifact, Step, StepPlan
+
+WORK_DECOMPOSE: Final = "decompose"
+WORK_GAPS: Final = "gaps"
+"""What a step of the decomposer does: the decomposition, or the correction of its gaps."""
+GAPS_BEFORE: Final = "gaps before the correction"
+RETIRED: Final = "tasks retired"
+TASK_WARNINGS: Final = "task warnings"
+TASKS_WRITTEN: Final = "tasks written"
+SCHEMAS: Final = "skills/artifact-handoff/schemas"
+UNCITED_STAGE: Final = "uncited-items"
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def task_inputs(work: Path, slug: str, *, ui: bool) -> tuple[str, ...]:
-    """Collect the task inputs for one repository.
+def _packages(run: StepRun) -> str | None:
+    """Read the packages directory a cited cds bundle must sit in.
 
     Returns:
-        The validated task result.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
+        The directory the dispatch's design system names, or None.
 
     """
-    if not (isinstance(work, Path)) or not (isinstance(slug, str)) or not (isinstance(ui, bool)):
-        raise TypeError(_ARGUMENT_ERROR)
-    names: list[str] = [
-        f"spec-{slug}.md",
-        f"spec-{slug}.data-model.md",
-        f"spec-{slug}.criteria.md",
-        f"story-{slug}.json",
-        "repo-scoping.json",
-        hierarchy.SPAN_ELEMENTS_FILE,
+    return check_type(design_system(run).get(dispatch_arguments().DS_PACKAGES_DIR), str | None)
+
+
+def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
+    """Describe a Task bead that exists to the decomposer.
+
+    Returns:
+        Its id, title, elaboration key, the start of its description, its status and the items
+        it cites.
+
+    """
+    raw: str | list[str] = bead.metadata.get(KEY_REQUIREMENT_IDS, [])
+    decoded: object = json.loads(raw) if isinstance(raw, str) and raw else raw
+    cited: list[JsonValue] = list(
+        check_type(decoded, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
+    )
+    return {
+        "id": bead.id,
+        "title": bead.title,
+        "elabKey": bead.metadata.get(KEY_ELAB_KEY),
+        "description": bead.description[:2000],
+        "status": bead.status,
+        ARG_REQUIREMENT_IDS: cited,
+    }
+
+
+@script_step(TASK_CONTEXT)
+def context(run: StepRun) -> Completion:
+    """Gather what one repository's Tasks are decomposed from, and plan the decomposition.
+
+    The Tasks that exist under the Story and that are started, or that elaboration did not
+    write, are handed to the decomposer so it reuses them.
+
+    Returns:
+        The repository, the task context file and the placed items file as artifacts, with the
+        decomposer's step and the plan step planned after this one.
+
+    """
+    held: Repository = repository_of(dict(run.params()), TASK_CONTEXT)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_CONTEXT, held.path)
+    story: str = check_type(json_object(run.inputs.value(STORY))["id"], str)
+    control: Path = control_repository()
+
+    def read() -> beadgraph.Graph:
+        return run.tools.portfolio(TASK_CONTEXT, beadgraph.load, control, with_description=True)
+
+    graph: beadgraph.Graph = run.tools.operation(TASK_CONTEXT, read)
+    existing: list[JsonValue] = [
+        task_facts(bead)
+        for bead in graph.beads.values()
+        if bead.parent == story
+        and bead.kind == "task"
+        and (beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:"))
     ]
-    if ui:
-        names.append(f"spec-{slug}.ui.json")
-    return tuple(str(work / name) for name in names)
+    others: JsonValue = check_type(
+        run.tools.portfolio(TASK_CONTEXT, beadwrite.other_epic_tasks, graph, run.bead, held.path),
+        JsonValue,
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
+    write_json(facts, {"existingTasks": existing, "otherEpicTasks": others, "repoPath": held.path, "slug": held.slug})
+    placed: dict[str, JsonValue] = json_object(
+        run.tools.portfolio(TASK_CONTEXT, hierarchy.placed_items, span_files(run.inputs)),
+    )
+    items: Path = run.context.work / f"tasks-{held.slug}.items.json"
+    write_json(items, {"items": [item for item in placed.values() if json_object(item)["slug"] == held.slug]})
+    name: str = Path(held.path).name
+    upstream: list[str] = list(run.step.get("inputs", []))
+    decompose: StepPlan = {
+        "ref": "decompose",
+        "description": f"Decompose the Story of {name} into Tasks",
+        "purpose": "Every placed item has a sized Task that builds it",
+        "agent": DECOMPOSER,
+        "inputs": upstream,
+    }
+    planning: StepPlan = {
+        "description": f"Plan the Task beads of {name}",
+        "purpose": "The Tasks are in build order, every item is cited and every Task is sized",
+        "script": TASK_PLAN,
+        "inputs": ["decompose", *upstream],
+    }
+    return Completion(
+        artifacts=(
+            value_artifact(REPOSITORY, held.facts()),
+            file_artifact(TASK_CONTEXT_FILE, facts),
+            file_artifact(PLACED_ITEMS, items),
+        ),
+        add=(StepGroup((NewStep(decompose, {WORK: WORK_DECOMPOSE}), NewStep(planning, {}))),),
+    )
 
 
-class TaskDecomposition:
-    """Author and preserve tasks for one repository Story."""
+@agent_step(DECOMPOSER)
+def decomposer(run: StepRun) -> AgentLaunch:
+    """Build the session of a step the decomposer performs: the decomposition, or its correction.
 
-    context: RunContext
-    store: ArtifactStore
-    runner: AgentRunner
-    tools: Tools
-    work: Path
-    slug: str
-    repo: str
-    output: Path
-    facts: Path
-    items: Path
-    inputs: tuple[str, ...]
-    packages: str | None
+    The correction continues the session of the decomposition, when the journal holds it.
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def __init__(
-        self,
-        context: RunContext,
-        store: ArtifactStore,
-        runner: AgentRunner,
-        tools: Tools,
-    ) -> None:
-        """Bind one repository and its task artifact contracts.
+    Returns:
+        The launch: the Tasks file, or the correction file, as output, checked against its schema.
 
-        Raises:
-            TypeError: An argument violates the declared input contract.
-            StepError: The artifact slug or repository path is invalid.
+    """
+    held: Repository = repository(run.inputs)
+    correcting: bool = run.params().get(WORK) == WORK_GAPS
+    enter_phase(
+        run.context,
+        run.agents.emit,
+        TASK_DECOMPOSITION_PHASE,
+        UNCITED_STAGE if correcting else WORK_DECOMPOSE,
+        held.path,
+    )
+    labels: tuple[str, ...] = (SPEC, DATA_MODEL, CRITERIA, STORY_DOCUMENT, ARTIFACT_SPAN, ARTIFACT_ELEMENTS)
+    files: list[tuple[str, Path]] = [(label, run.inputs.file(label)) for label in labels]
+    sources: Path | None = run.inputs.optional_file(UI_SOURCES)
+    if sources is not None:
+        files.append((UI_SOURCES, sources))
+    files.extend((label, run.inputs.file(label)) for label in (TASK_CONTEXT_FILE, PLACED_ITEMS))
+    if correcting:
+        files.extend((label, run.inputs.file(label)) for label in (TASKS_FILE, TASK_GAPS))
+    earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
+    name: str = TASK_CORRECTION if correcting else TASKS_FILE
 
-        """
-        if (
-            not (isinstance(context, RunContext))
-            or not (isinstance(store, ArtifactStore))
-            or not (isinstance(runner, AgentRunner))
-            or not (isinstance(tools, Tools))
-        ):
-            raise TypeError(_ARGUMENT_ERROR)
-        self.context, self.store, self.runner, self.tools = (
-            context,
-            store,
-            runner,
-            tools,
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(name, output),))
+
+    return AgentLaunch(
+        output=run.context.work / (f"tasks-{held.slug}.correction.json" if correcting else f"tasks-{held.slug}.json"),
+        validate=run.tools.plugin / SCHEMAS / ("tasks-correction.schema.json" if correcting else "tasks.schema.json"),
+        outcome=(
+            "Task and size corrections for the recorded coverage gaps."
+            if correcting
+            else "Build activities, dependencies and sizes for this repository's placed items."
+        ),
+        accept=accept,
+        add_dirs=(run.context.work, Path(held.path)),
+        files=tuple(files),
+        corrective=not correcting,
+        resume_from=None if earlier is None or "session" not in earlier else earlier["id"],
+        hand_inputs=False,
+    )
+
+
+def _correction_steps(run: StepRun, name: str) -> StepGroup:
+    """Plan the correction of a plan's gaps and the plan step that follows it.
+
+    Returns:
+        The decomposer's correction step and a second plan step, after the plan step.
+
+    """
+    handed: list[str] = [*run.step.get("inputs", []), run.step["id"]]
+    correct: StepPlan = {
+        "ref": "correction",
+        "description": f"Correct the uncited items and unsized Tasks of {name}",
+        "purpose": "Every placed item has a sized Task that builds it",
+        "agent": DECOMPOSER,
+        "inputs": handed,
+    }
+    again: StepPlan = {
+        "description": f"Plan the Task beads of {name} with the correction",
+        "purpose": "The Tasks are in build order, every item is cited and every Task is sized",
+        "script": TASK_PLAN,
+        "inputs": ["correction", *handed],
+    }
+    return StepGroup((NewStep(correct, {WORK: WORK_GAPS}), NewStep(again, {})))
+
+
+def _write_steps(run: StepRun, name: str, planned: TaskPlan) -> StepGroup:
+    """Plan one step per Task bead write, then the retiring step and the written record.
+
+    Returns:
+        The steps in build order, after the plan step.
+
+    """
+    handed: list[str] = list(run.step.get("inputs", []))
+    steps: list[NewStep] = []
+    written: list[str] = []
+    for index, task in enumerate(planned["tasks"], 1):
+        written.append(f"task-{index}")
+        write: StepPlan = {
+            "ref": written[-1],
+            "description": f"Write the Task bead {task['key']} of {name}: {task['title']}",
+            "purpose": "The Story has this Task as a bead",
+            "script": TASK_WRITE,
+            "inputs": handed,
+        }
+        steps.append(NewStep(write, {"key": task["key"]}))
+    retire: StepPlan = {
+        "ref": "retire",
+        "description": f"Retire the Task beads of {name} the plan no longer names",
+        "purpose": "The Story's unstarted Task beads are the plan's, and no edge points at a deleted one",
+        "script": TASK_RETIRE,
+        "inputs": [*handed, *written],
+    }
+    record: StepPlan = {
+        "description": f"Record the Tasks written for {name}",
+        "purpose": "The run can report the Story's Tasks",
+        "script": TASK_RECORD,
+        "inputs": [*handed, *written, "retire"],
+    }
+    return StepGroup((*steps, NewStep(retire, {}), NewStep(record, {})))
+
+
+@script_step(TASK_PLAN)
+def plan(run: StepRun) -> Completion:
+    """Read the Tasks the decomposer wrote and plan what they call for.
+
+    A correction the step is handed is merged into the Tasks file first.
+
+    Returns:
+        For a plan with an uncited item, an unsized Task or no Task: the gaps file, with the
+        correction and a second plan step planned. Otherwise the plan's record, with one step
+        per Task bead write, the retiring step and the written record planned.
+
+    Raises:
+        StepError: The plan still has a gap after the correction.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_PLAN, held.path)
+    files: hierarchy.StoryFiles = story_files(run.inputs)
+    correction: Path | None = run.inputs.optional_file(TASK_CORRECTION)
+    merged: dict[str, JsonValue] = {}
+    if correction is not None:
+        merged = json_object(
+            run.tools.portfolio(TASK_PLAN, beadwrite.add_corrective_tasks, files, correction=correction),
         )
-        self.work = context.work
-        self.slug = str(context.args["slug"])
-        stage: str = "input"
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", self.slug) or self.slug in {".", ".."}:
-            raise StepError(stage, OTHER_CAUSE, ("invalid Task artifact slug",))
-        if not context.args.get("repoPath"):
-            raise StepError(stage, OTHER_CAUSE, ("repoPath is required",))
-        self.repo = str(Path(check_type(context.args["repoPath"], str)).resolve())
-        self.output = self.work / f"tasks-{self.slug}.json"
-        self.facts = self.work / f"tasks-{self.slug}.context.json"
-        self.items = self.work / f"tasks-{self.slug}.items.json"
-        self.inputs = task_inputs(
-            self.work,
-            self.slug,
-            ui=bool(context.args.get("uiPath")),
-        )
-        self.packages = check_type(context.args.get("packagesDir"), str | None)
-        self.warnings: list[str] = []
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def portfolio(self, function: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
-        """Dispatch a task portfolio operation.
-
-        Returns:
-            The validated task result.
-
-        Raises:
-            TypeError: An argument violates the declared input contract.
-
-        """
-        if not (callable(function)):
-            raise TypeError(_ARGUMENT_ERROR)
-        return self.tools.portfolio(
-            "decompose",
-            function,
-            *args,
-            **kwargs,
-        )
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def record(self) -> None:
-        """Record the accepted task output and its inputs.
-
-        Raises:
-            TypeCheckError: An artifact contract is invalid.
-
-        """
-        stage: str = "task-record"
-        try:
-            self.store.accept(f"tasks:{self.slug}", self.inputs, (self.output,))
-        except TypeCheckError:
-            raise
-        except Exception as exc:
-            raise self.tools.failure(
-                stage,
-                OTHER_CAUSE,
-                {"error": repr(exc)},
-            ) from exc
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def author(
-        self,
-        output: Path,
-        inputs: tuple[str, ...],
-        outcome: str,
-        schema: str,
-        *,
-        corrective: bool = True,
-    ) -> None:
-        """Run task authoring against the requested schema.
-
-        Raises:
-            TypeError: An argument violates the declared input contract.
-
-        """
-        if (
-            not (isinstance(output, Path))
-            or not (isinstance(inputs, tuple))
-            or not (isinstance(outcome, str))
-            or not (isinstance(schema, str))
-            or not (isinstance(corrective, bool))
-        ):
-            raise TypeError(_ARGUMENT_ERROR)
-        self.runner.run(
-            AgentStep(
-                stage="decompose" if corrective else "uncited-items",
-                agent="task-decomposer",
-                inputs=inputs,
-                output=self.work / "candidates" / output.name,
-                final=output,
-                validate=self.runner.plugin / "skills/artifact-handoff/schemas" / schema,
-                outcome=outcome,
-                add_dirs=(self.work, Path(self.repo)),
-                corrective=corrective,
+    planned: TaskPlan = run.tools.portfolio(
+        TASK_PLAN,
+        beadwrite.plan_story_tasks,
+        files,
+        root=project_root(),
+        packages_dir=_packages(run),
+    )
+    uncited: list[JsonValue] = list(planned["uncited"])
+    unsized: list[JsonValue] = list(planned["unsized"])
+    name: str = Path(held.path).name
+    if not planned["tasks"] or uncited or unsized:
+        if correction is not None:
+            stage: str = UNCITED_STAGE if planned["tasks"] else WORK_DECOMPOSE
+            raise StepError(stage, OTHER_CAUSE, (str(files.tasks_file), str(correction), str(merged)))
+        gaps: Path = run.context.work / f"tasks-{held.slug}.gaps.json"
+        write_json(gaps, {"uncitedItems": planned["uncitedItems"], "unsized": unsized, "empty": not planned["tasks"]})
+        return Completion(
+            artifacts=(
+                file_artifact(TASK_GAPS, gaps),
+                value_artifact(GAPS_BEFORE, {"uncited": uncited, "unsized": unsized}),
             ),
+            add=(_correction_steps(run, name),),
         )
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def plan(self) -> TaskPlan:
-        """Read the current task plan.
-
-        Returns:
-            The validated task result.
-
-        """
-        return self.portfolio(
-            beadwrite.plan_story_tasks,
-            self.work,
-            slug=self.slug,
-            repo=self.repo,
-            root=self.store.root,
-            packages_dir=self.packages,
-        )
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def correction(self, plan: TaskPlan) -> dict[str, JsonValue]:
-        """Correct recorded task coverage and sizing gaps.
-
-        Returns:
-            The validated task result.
-
-        Raises:
-            TypeError: An argument violates the declared input contract.
-            StepError: Coverage or sizing remains incomplete.
-
-        """
-        if not (isinstance(plan, dict)):
-            raise TypeError(_ARGUMENT_ERROR)
-        gaps: Path = self.work / f"tasks-{self.slug}.gaps.json"
-        write_json(
-            gaps,
-            {
-                "uncitedItems": plan["uncitedItems"],
-                "unsized": list(plan["unsized"]),
-                "empty": not plan["tasks"],
-            },
-        )
-        output: Path = self.work / f"tasks-{self.slug}.correction.json"
-        self.author(
-            output,
-            (*self.inputs, str(self.output), str(self.items), str(gaps)),
-            "Task and size corrections for the recorded coverage gaps.",
-            "tasks-correction.schema.json",
-            corrective=False,
-        )
-        merged: dict[str, JsonValue] = json_object(
-            self.portfolio(
-                beadwrite.add_corrective_tasks,
-                self.work,
-                slug=self.slug,
-                correction=output,
-            ),
-        )
-        self.record()
-        after: beadcontracts.TaskPlan = self.plan()
-        if not after["tasks"] or after["uncited"] or after["unsized"]:
-            stage: str = "decompose" if not after["tasks"] else "uncited-items"
-            raise StepError(
-                stage,
-                OTHER_CAUSE,
-                (str(gaps), str(output), str(merged)),
-            )
-        return {
-            "uncitedBefore": list(plan["uncited"]),
-            "uncitedAfter": list(after["uncited"]),
-            "unsizedBefore": list(plan["unsized"]),
-            "unsizedAfter": list(after["unsized"]),
+    coverage: dict[str, JsonValue] = {}
+    if correction is not None:
+        before: dict[str, JsonValue] = json_object(run.inputs.value(GAPS_BEFORE))
+        coverage = {
+            "uncitedBefore": before["uncited"],
+            "uncitedAfter": uncited,
+            "unsizedBefore": before["unsized"],
+            "unsizedAfter": unsized,
             **merged,
         }
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def write(
-        self,
-        plan: TaskPlan,
-        *,
-        missing_only: bool,
-    ) -> tuple[list[dict[str, JsonValue]], dict[str, int]]:
-        """Write tasks and accumulate their measured dependency changes.
-
-        Returns:
-            The validated task result.
-
-        Raises:
-            TypeError: An argument violates the declared input contract.
-
-        """
-        task: PlannedTask
-        key: str
-        if not (isinstance(plan, dict)) or not (isinstance(missing_only, bool)):
-            raise TypeError(_ARGUMENT_ERROR)
-        written: list[dict[str, JsonValue]] = []
-        edges: dict[str, int] = {"added": 0, "removed": 0, "standing": 0}
-        for task in plan["tasks"]:
-
-            def attempt(task: PlannedTask = task) -> dict[str, JsonValue]:
-                writer: beadgraph.Writer = self.tools.portfolio(
-                    "task-write",
-                    beadgraph.Writer,
-                    env_path(CONTROL_REPO_ENV),
-                )
-                return json_object(
-                    self.tools.portfolio(
-                        "task-write",
-                        beadwrite.write_task,
-                        writer,
-                        self.context.bead,
-                        self.work,
-                        slug=self.slug,
-                        repo=self.repo,
-                        key=task["key"],
-                        root=self.store.root,
-                        packages_dir=self.packages,
-                        missing_only=missing_only,
-                    ),
-                )
-
-            result: dict[str, JsonValue] = self.tools.operation("task-write", attempt)
-            written.append(json_object(result["task"]))
-            self.warnings.extend(
-                check_type(result["warnings"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
-            )
-            for key in edges:
-                edges[key] += check_type(json_object(result["edges"])[key], int)
-        return written, edges
+    warnings: list[JsonValue] = list(planned["warnings"])
+    keys: list[JsonValue] = [task["key"] for task in planned["tasks"]]
+    record: dict[str, JsonValue] = {"tasks": keys, "warnings": warnings, "coverage": coverage}
+    return Completion(
+        artifacts=(value_artifact(TASK_PLAN_RECORD, record),),
+        add=(_write_steps(run, name, planned),),
+    )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def run(
-    context: RunContext,
-    store: ArtifactStore,
-    runner: AgentRunner,
-    tools: Tools,
-) -> dict[str, JsonValue]:
-    """Decompose one Story while retaining completed build work.
+@script_step(TASK_WRITE)
+def write_task(run: StepRun) -> Completion:
+    """Write one Task bead of a Story and create its journal.
+
+    The Task is found by its elaboration key under the Story, so a second run of this step
+    refreshes the Task it wrote and creates no other.
 
     Returns:
-        The recorded task, dependency, and replacement outcome.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
+        The Task as the dispatch reports it, the counts of its edges, and the write's warnings.
 
     """
-    graph: beadgraph.Graph
-    story: beadgraph.Bead
-    tasks: list[beadgraph.Bead]
-    written: list[dict[str, JsonValue]]
-    edges: dict[str, int]
-    if (
-        not (isinstance(context, RunContext))
-        or not (isinstance(store, ArtifactStore))
-        or not (isinstance(runner, AgentRunner))
-        or not (isinstance(tools, Tools))
-    ):
-        raise TypeError(_ARGUMENT_ERROR)
-    context.stage = "task-decomposition"
-    flow: TaskDecomposition = TaskDecomposition(context, store, runner, tools)
-    graph, story, tasks = tools.operation(
-        "input",
-        lambda: snapshot(tools, context.bead, flow.slug),
+    held: Repository = repository(run.inputs)
+    key: str = check_type(run.params().get("key"), str)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_WRITE, held.path)
+    files: hierarchy.StoryFiles = story_files(run.inputs)
+    control: Path = control_repository()
+
+    def attempt() -> dict[str, JsonValue]:
+        writer: beadgraph.Writer = run.tools.portfolio(TASK_WRITE, beadgraph.Writer, control)
+        return json_object(
+            run.tools.portfolio(
+                TASK_WRITE,
+                beadwrite.write_task,
+                writer,
+                run.bead,
+                files,
+                key=key,
+                root=project_root(),
+                packages_dir=_packages(run),
+            ),
+        )
+
+    written: dict[str, JsonValue] = run.tools.operation(TASK_WRITE, attempt)
+    task: dict[str, JsonValue] = json_object(written["task"])
+    handed: list[Artifact] = [*handed_on(run.inputs, TASKS_FILE), value_artifact(TASK_KEY, key)]
+    create_child_journal(
+        run.journal_path.parent,
+        BeadId(check_type(task["id"], str)),
+        BEAD_TYPE_TASK,
+        [creating(run)],
+        handed,
     )
-    fresh: dict[str, JsonValue] = json_object(
-        flow.portfolio(beadwrite.tasks_inputs, flow.work, slug=flow.slug, root=store.root),
+    return Completion(
+        artifacts=(
+            value_artifact(TASK, task),
+            value_artifact(TASK_EDGE_COUNTS, written["edges"]),
+            value_artifact(TASK_WARNINGS, written["warnings"]),
+        ),
     )
-    unchanged: bool = check_type(fresh["unchanged"], bool) and store.reusable(flow.inputs, (flow.output,))
-    facts: dict[str, JsonValue] = json_object({
-        "deleted": [],
-        "kept": [task_facts(b) for b in tasks],
-        "reason": "unchanged inputs",
-    })
-    if not unchanged:
-        reason: str = check_type(context.args.get("upstreamChange") or "", str) or str(
-            fresh["changedInputs"] or "no current Task receipt",
+
+
+@script_step(TASK_RETIRE)
+def retire(run: StepRun) -> Completion:
+    """Delete the Story's unstarted Task beads the plan no longer names, moving edges onto their replacements.
+
+    Returns:
+        What was deleted and which edges moved.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_RETIRE, held.path)
+    files: hierarchy.StoryFiles = story_files(run.inputs)
+    control: Path = control_repository()
+
+    def attempt() -> dict[str, JsonValue]:
+        graph: beadgraph.Graph = run.tools.portfolio(TASK_RETIRE, beadgraph.load, control, with_description=True)
+        writer: beadgraph.Writer = run.tools.portfolio(TASK_RETIRE, beadgraph.Writer, control)
+        return json_object(
+            run.tools.portfolio(
+                TASK_RETIRE,
+                beadwrite.retire_superseded_tasks,
+                graph,
+                writer,
+                run.bead,
+                files,
+                root=project_root(),
+                packages_dir=_packages(run),
+            ),
         )
-        facts = replace(tools, context.bead, flow.slug, flow.work, reason)
-        graph, story, tasks = tools.operation(
-            "input",
-            lambda: snapshot(tools, context.bead, flow.slug),
-        )
-        write_json(
-            flow.facts,
-            {
-                "existingTasks": facts["kept"],
-                "otherEpicTasks": flow.portfolio(
-                    beadwrite.other_epic_tasks,
-                    graph,
-                    context.bead,
-                    flow.repo,
-                ),
-                "repoPath": flow.repo,
-                "slug": flow.slug,
-            },
-        )
-        items: dict[str, JsonValue] = json_object(
-            tools.portfolio("decompose", hierarchy.placed_items, flow.work),
-        )
-        write_json(
-            flow.items,
-            {"items": [v for v in items.values() if json_object(v)["slug"] == flow.slug]},
-        )
-        flow.author(
-            flow.output,
-            (*flow.inputs, str(flow.facts), str(flow.items)),
-            "Build activities, dependencies and sizes for this repository's placed items.",
-            "tasks.schema.json",
-        )
-        flow.record()
-    plan: beadcontracts.TaskPlan = flow.plan()
-    coverage: dict[str, JsonValue] = {}
-    if not plan["tasks"] or plan["uncited"] or plan["unsized"]:
-        coverage = flow.correction(plan)
-        plan = flow.plan()
-    written, edges = flow.write(plan, missing_only=unchanged)
-    flow.warnings.extend(repoint(tools, context.bead, flow.slug, flow.work))
-    flow.warnings.extend(
-        check_type(plan["warnings"], list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS),
-    )
-    rerun: dict[str, int | float | str | list[JsonValue] | dict[str, JsonValue] | None] = {
-        "case": "unchanged" if unchanged else "replaced" if facts["deleted"] or facts["kept"] else "new",
-        "reason": facts["reason"],
-        "changedInputs": fresh["changedInputs"],
-        "deleted": facts["deleted"],
-        "kept": facts["kept"],
+
+    retired: dict[str, JsonValue] = run.tools.operation(TASK_RETIRE, attempt)
+    return Completion(artifacts=(value_artifact(RETIRED, retired), value_artifact(TASK_WARNINGS, retired["warnings"])))
+
+
+@script_step(TASK_RECORD)
+def record(run: StepRun) -> Completion:
+    """Record what was written for one repository's Tasks, from the steps that wrote them.
+
+    Returns:
+        The written record's file and the repository's result as the done rule and the dispatch
+        result read it.
+
+    """
+    held: Repository = repository(run.inputs)
+    story: dict[str, JsonValue] = json_object(run.inputs.value(STORY))
+    planned: dict[str, JsonValue] = json_object(run.inputs.value(TASK_PLAN_RECORD))
+    tasks: list[dict[str, JsonValue]] = objects(run.inputs.values(TASK))
+    counts: list[dict[str, JsonValue]] = objects(run.inputs.values(TASK_EDGE_COUNTS))
+    warnings: list[JsonValue] = [
+        *strings(planned["warnings"]),
+        *(warning for held_warnings in run.inputs.values(TASK_WARNINGS) for warning in strings(held_warnings)),
+    ]
+    edges: dict[str, JsonValue] = {
+        name: sum(check_type(count[name], int) for count in counts) for name in ("added", "removed", "standing")
     }
-    result: dict[str, JsonValue] = json_object({
+    summary: dict[str, JsonValue] = {
+        action: sum(task["action"] == action for task in tasks) for action in ("created", "updated", "unchanged")
+    }
+    rows: list[JsonValue] = list(tasks)
+    result: dict[str, JsonValue] = {
         "ok": True,
-        "rerun": rerun,
-        "repoPath": flow.repo,
-        "story": {"id": story.id, "elabKey": f"story:{flow.slug}"},
-        "tasks": written,
+        "repoPath": held.path,
+        "story": {"id": story["id"], "elabKey": story["elabKey"]},
+        "tasks": rows,
         "edges": edges,
-        "coverage": coverage,
-        "warnings": flow.warnings,
-        "summary": {key: sum(t["action"] == key for t in written) for key in ("created", "updated", "unchanged")},
-    })
-    write_json(flow.work / f"tasks-{flow.slug}.written.json", result)
-    (flow.work / f"tasks-{flow.slug}.replacement.json").unlink(missing_ok=True)
-    return result
+        "coverage": planned["coverage"],
+        "warnings": warnings,
+        "summary": summary,
+    }
+    path: Path = run.context.work / f"tasks-{held.slug}.written.json"
+    write_json(path, result)
+    return Completion(artifacts=(file_artifact(TASKS_WRITTEN, path), value_artifact(TASKS_RESULT, result)))

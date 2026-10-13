@@ -15,7 +15,6 @@ from typing import Final, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
-from .artifacts import ArtifactStore
 from .handback_contract import OTHER_CAUSE, Session
 from .io import JsonValue, write_json
 from .models import RunContext, StepError
@@ -119,14 +118,14 @@ def _finalize(target: Path, final: RunManifest) -> None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def record_session(context: RunContext, store: ArtifactStore, row: Session) -> None:
+def record_session(context: RunContext, row: Session) -> None:
     """Upsert a session row by its id, validating every existing row before preserving it.
 
     Raises:
         StepError: A session record could not be persisted.
 
     """
-    target: Path = manifest_path(store.work)
+    target: Path = manifest_path(context.work)
     with _LOCK:
         try:
             _update_manifest(context, target, row)

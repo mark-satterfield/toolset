@@ -349,7 +349,6 @@ class JournalRunner:
             output=launch.output,
             outcome=launch.outcome,
             validate=launch.validate,
-            final=None,
             add_dirs=launch.add_dirs,
             corrective=launch.corrective,
             request=launch.request or step["description"],

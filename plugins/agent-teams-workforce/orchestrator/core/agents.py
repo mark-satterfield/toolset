@@ -1,4 +1,4 @@
-"""Direct reasoning sessions; files and receipts, never transcript prose, decide success."""
+"""Direct reasoning sessions; files, never transcript prose, decide success."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 
@@ -41,7 +41,6 @@ from .agent_context import (
     prepare,
 )
 from .agent_process import SessionProcesses, SessionRequest
-from .artifacts import ArtifactStore
 from .constraints import Section2Guard
 from .driver_contracts import (
     DispatchArguments,
@@ -66,10 +65,9 @@ from .handback_contract import (
     SessionState,
     fable_wall_event,
     heartbeat_event,
-    reused_note,
     session_event,
 )
-from .io import JsonValue, json_object, write_json
+from .io import JsonValue, json_object, safe_key, write_json
 from .manifest import record_session
 from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError
 from .skills import epic_expertise
@@ -251,15 +249,13 @@ class AgentRunner:
     def __init__(
         self,
         context: RunContext,
-        store: ArtifactStore,
         *,
         plugin: Path | None = None,
         emit: EventSink | None = None,
         executable: str = "claude",
     ) -> None:
-        """Bind dispatch state, artifact storage and the session executable."""
+        """Bind dispatch state and the session executable."""
         self.context = context
-        self.store = store
         self.plugin = plugin or Path(__file__).resolve().parents[2]
         self.emit = emit or EventWriter()
         self.executable = shutil.which(executable) or executable
@@ -297,214 +293,6 @@ class AgentRunner:
                 raise StepError(stage, OTHER_CAUSE, ("Claude Code 2.1.281 or later is required",))
             self._version_checked = True
 
-    def _inputs(self, step: AgentStep) -> list[tuple[str, Path]]:
-        facts = check_type(
-            self.store.module.hashed_inputs(list(step.inputs), self.store.root),
-            list[dict[str, JsonValue]],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        return [
-            (
-                Path(check_type(item["path"], str)).stem,
-                check_type(self.store.module.from_record(check_type(item["path"], str), self.store.root), Path),
-            )
-            for item in facts
-            if item["kind"] not in {"value", "git-main"}
-        ]
-
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def run(self, step: AgentStep) -> Path:
-        """Reuse an accepted output, or accept a new result with bounded correction.
-
-        Returns:
-            The accepted artifact path.
-
-        Raises:
-            PipelineStoppedError: The supervisor requested a stop between steps.
-            SessionSetupError: Session configuration failed before launch.
-            StepError: Execution or output validation failed.
-
-        """
-        final = step.final or step.output
-        try:
-            return self._run_step(step, final)
-        except PipelineStoppedError, SessionSetupError:
-            raise
-        except StepError as exc:
-            if exc.cause in ACCOUNT_CAUSES:
-                self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
-            raise
-        except Exception as exc:
-            evidence = self.context.work / f"{self.store.module.safe_key(step.stage)}.runner-error.txt"
-            evidence.parent.mkdir(parents=True, exist_ok=True)
-            evidence.write_text(traceback.format_exc(), encoding="utf-8")
-            raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
-
-    def _run_step(self, step: AgentStep, final: Path) -> Path:
-        if self.store.reusable(step.inputs, (final,)):
-            _emit(self.emit, reused_note(step=step.stage))
-            return final
-        self.store.invalidate((final,))
-        saved_errors: Path | None = None
-        if self.store.fingerprint_matches(step.inputs, step.output):
-            # A saved output from unchanged inputs is reused, never discarded and redone.
-            try:
-                result: dict[str, JsonValue] | None = validate_output(step)
-            except CONTENT_FAILURES as exc:
-                saved_errors = _write_errors(step, exc)
-                if not step.corrective:
-                    raise StepError(step.stage, OTHER_CAUSE, (str(saved_errors),)) from exc
-            else:
-                _emit(self.emit, reused_note(step=step.stage))
-                return self._accept_result(step, final, result)
-        try:
-            self._version()
-        except (OSError, ValueError, StepError) as exc:
-            raise SessionSetupError(str(exc)) from exc
-        with self.context.session_slots:
-            return self._execute(step, final, saved_errors)
-
-    def _execute(self, step: AgentStep, final: Path, saved_errors: Path | None) -> Path:
-        try:
-            directory = Path(tempfile.mkdtemp(prefix="atw-session-"))
-        except OSError as exc:
-            raise SessionSetupError(str(exc)) from exc
-        try:
-            return self._execute_in_directory(step, final, directory, saved_errors)
-        finally:
-            with _finalization("remove temporary session directory"):
-                shutil.rmtree(directory)
-
-    def _setup_request(
-        self,
-        step: AgentStep,
-        session_id: str,
-        directory: Path,
-        *,
-        keep_output: bool,
-    ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], Launch, Session]:
-        scratch = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
-        env = check_type(
-            child_environment(scratch),
-            dict[str, str],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-        inputs = self._inputs(step)
-        agent: AgentDefinition = load_agent(self.plugin, step.agent)
-        fable_spent: bool = (
-            self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time()
-        )
-        launch: Launch = Launch(
-            model_replacements=FABLE_REPLACEMENT if fable_spent else MappingProxyType({}),
-            expertise=epic_expertise(self.context.bead, os.environ),
-        )
-        row: Session = {
-            "sessionId": session_id,
-            "cwd": str(directory),
-            "phase": self.context.stage,
-            "step": step.stage,
-            "agent": step.agent,
-            "model": launch_model(agent, launch),
-            "effort": agent.effort,
-        }
-        record_session(self.context, self.store, row)
-        step.output.parent.mkdir(parents=True, exist_ok=True)
-        if not keep_output:
-            # Reaching here without keep_output means the saved output's inputs changed or were
-            # never recorded, so it cannot be attributed to this session's inputs.
-            step.output.unlink(missing_ok=True)
-        self.store.record_fingerprint(step.inputs, step.output)
-        return scratch, env, inputs, launch, row
-
-    def _execute_in_directory(
-        self,
-        step: AgentStep,
-        final: Path,
-        directory: Path,
-        saved_errors: Path | None,
-    ) -> Path:
-        """Keep one private cwd through corrective and model-fallback resumes.
-
-        Returns:
-            The accepted artifact path.
-
-        Raises:
-            SessionSetupError: Agent configuration is invalid or unavailable.
-            StepError: An output remains invalid after correction.
-
-        """
-        session_id = str(uuid4())
-        try:
-            scratch, env, inputs, launch, row = self._setup_request(
-                step,
-                session_id,
-                directory,
-                keep_output=saved_errors is not None,
-            )
-        except (OSError, ValueError, KeyError, ImportError) as exc:
-            raise SessionSetupError(str(exc)) from exc
-        resume = False
-        # A saved output that failed validation is corrected once in a new session, as a
-        # fresh output that failed validation is corrected once in its own session.
-        corrective = saved_errors is not None
-        if saved_errors is not None:
-            inputs.append(("validation errors", saved_errors))
-        attempt = 0
-        while True:
-            _check_stop()
-            attempt += 1
-            command = [
-                self.executable,
-                "-p",
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--resume" if resume else "--session-id",
-                session_id,
-            ]
-            try:
-                command.extend(
-                    prepare(
-                        self.plugin,
-                        Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).expanduser(),
-                        directory,
-                        step,
-                        launch,
-                    ),
-                )
-            except (OSError, ValueError, KeyError, ImportError) as exc:
-                raise SessionSetupError(str(exc)) from exc
-            stream = scratch / f"{self.store.module.safe_key(step.stage)}-{session_id}-{attempt}.stream.jsonl"
-            facts = self._session(
-                command=command,
-                prompt=brief(self.context.bead, step, inputs, corrective=corrective),
-                env=env,
-                stream=stream,
-                row=row,
-            )
-            info = facts["rate"]
-            if info is not None and is_refusal(info) and row["model"] == FABLE:
-                with self._lock:
-                    self.context.model_policy["fable_until"] = reset_of(info) or exhausted_reset(info) or 0
-                    self.context.model_policy["fable_blocked"] = not bool(self.context.model_policy["fable_until"])
-                self._emit_fable_wall(info)
-                launch, resume = replace(launch, model_replacements=FABLE_REPLACEMENT), True
-                row["model"] = FABLE_REPLACEMENT[FABLE]
-                record_session(self.context, self.store, row)
-                continue
-            self._check_session(step, facts, stream)
-            try:
-                result = validate_output(step)
-            except CONTENT_FAILURES as exc:
-                errors = _write_errors(step, exc)
-                if corrective or not step.corrective:
-                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from exc
-                inputs.append(("validation errors", errors))
-                corrective = resume = True
-                continue
-            return self._accept_result(step, final, result)
-            return final
-
     def _emit_fable_wall(self, info: dict[str, JsonValue]) -> None:
         """Report the Fable refusal with the reset now in the model policy and its rate-limit window."""
         window: JsonValue = info.get("rateLimitType")
@@ -515,22 +303,6 @@ class AgentRunner:
                 window if isinstance(window, str) else None,
             ),
         )
-
-    def _accept_result(self, step: AgentStep, final: Path, result: dict[str, JsonValue] | None) -> Path:
-        """Write a validated result to its final path and record its receipt.
-
-        Returns:
-            The accepted artifact path.
-
-        """
-        if step.final is not None:
-            write_json(final, result)
-        self._record_output(step, final)
-        return final
-
-    def _record_output(self, step: AgentStep, final: Path) -> None:
-        """Record the validated output's receipt; a receipt failure is raised, never downgraded."""
-        self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def run_session(
@@ -545,14 +317,15 @@ class AgentRunner:
         """Run one step of a step journal as one session, with the session id the caller chose.
 
         The step journal alone decides whether a step runs, so nothing here looks at an earlier
-        output or at a receipt: the session is launched, its output is validated with one
+        output: the session is launched, its output is validated with one
         corrective resume, a Fable refusal is resumed on the replacement model, the stream is
         logged and the session row is recorded in the run record. The validated output stays at
         ``step.output``. A session that was asked to resume and ended without running a turn
-        raises ``SessionNotResumedError``, a ``StepError``.
+        raises ``SessionNotResumedError``, a ``StepError``. A session id that is not a UUID raises
+        ``ValueError``.
 
         Args:
-            step: The request; ``final`` must be None.
+            step: The request.
             inputs: The files the brief names, each with its label, in order.
             session: The session id, a UUID. The session's working directory is named for it, so
                 a later dispatch that resumes the id runs in the same directory.
@@ -565,15 +338,11 @@ class AgentRunner:
             ``step.output``.
 
         Raises:
-            ValueError: ``session`` is not a UUID, or ``step.final`` is set.
             PipelineStoppedError: The supervisor requested a stop between sessions.
             SessionSetupError: Session configuration failed before launch.
             StepError: Execution or output validation failed.
 
         """
-        if step.final is not None:
-            message: str = f"a journal step's output stays at its output path; {step.stage} names a final path"
-            raise ValueError(message)
         identifier: str = str(UUID(session))
         try:
             return self._run_session(step, list(inputs), identifier, resume=resume, fresh_output=fresh_output)
@@ -584,7 +353,7 @@ class AgentRunner:
                 self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
             raise
         except Exception as exc:
-            evidence: Path = self.context.work / f"{self.store.module.safe_key(step.stage)}.runner-error.txt"
+            evidence: Path = self.context.work / f"{safe_key(step.stage)}.runner-error.txt"
             evidence.parent.mkdir(parents=True, exist_ok=True)
             evidence.write_text(traceback.format_exc(), encoding="utf-8")
             raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
@@ -636,7 +405,7 @@ class AgentRunner:
             is recorded in the run record.
 
         """
-        scratch: Path = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
+        scratch: Path = self.context.work / "scratch" / safe_key(self.context.run_id)
         env: dict[str, str] = check_type(
             child_environment(scratch),
             dict[str, str],
@@ -664,7 +433,7 @@ class AgentRunner:
             "model": launch_model(agent, launch),
             "effort": agent.effort,
         }
-        record_session(self.context, self.store, row)
+        record_session(self.context, row)
         step.output.parent.mkdir(parents=True, exist_ok=True)
         return scratch, env, launch, row
 
@@ -722,7 +491,7 @@ class AgentRunner:
                 )
             except (OSError, ValueError, KeyError, ImportError) as exc:
                 raise SessionSetupError(str(exc)) from exc
-            stream: Path = scratch / f"{self.store.module.safe_key(step.stage)}-{session_id}-{attempt}.stream.jsonl"
+            stream: Path = scratch / f"{safe_key(step.stage)}-{session_id}-{attempt}.stream.jsonl"
             facts: SessionFacts = self._session(
                 command=command,
                 prompt=brief(self.context.bead, step, inputs, corrective=corrective),
@@ -738,7 +507,7 @@ class AgentRunner:
                 self._emit_fable_wall(info)
                 launch, resume = replace(launch, model_replacements=FABLE_REPLACEMENT), True
                 row["model"] = FABLE_REPLACEMENT[FABLE]
-                record_session(self.context, self.store, row)
+                record_session(self.context, row)
                 continue
             if asked_to_resume and attempt == 1 and _never_ran(facts):
                 raise SessionNotResumedError(step.stage, OTHER_CAUSE, (str(stream),))
@@ -772,7 +541,7 @@ class AgentRunner:
             nonlocal pid
             pid = value
             row.update({"pid": pid, "pgid": pid, "startedAt": time.time(), "endedAt": None})
-            record_session(self.context, self.store, row)
+            record_session(self.context, row)
             emit_session(self.emit, row, SESSION_STARTED)
 
         try:
@@ -817,7 +586,7 @@ class AgentRunner:
                 if pid is not None:
                     cause = failure_cause or (self._cause(facts) if facts else OTHER_CAUSE)
                     row.update({"endedAt": time.time(), "exit": facts["exit"] if facts else None, "cause": cause})
-                    record_session(self.context, self.store, row)
+                    record_session(self.context, row)
                     emit_session(self.emit, row, SESSION_ENDED)
 
     @staticmethod

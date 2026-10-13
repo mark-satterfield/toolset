@@ -20,15 +20,16 @@ from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import stage_of
 from orchestrator.core.models import RunContext
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, CONFIRM_TRD, HUMAN_ACTION_STAGE
-from orchestrator.flows.elaboration_steps import (
+from orchestrator.flows.elaboration_files import (
+    ARTIFACT_CREATION,
+    ARTIFACT_REPOSITORIES,
     EDGES_RESULT,
     LIFECYCLE_DONE,
-    SPEC_RESULT,
+    STORY,
     STORY_EDGES_RESULT,
-    TASKS_RESULT,
+    TASK,
 )
 from orchestrator.flows.elaboration_support import FINISH_PHASE
-from orchestrator.flows.repo_scoping import ARTIFACT_CREATION, ARTIFACT_REPOSITORIES
 
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
@@ -85,18 +86,14 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
         context: The run context, for the Epic, the work directory and the dispatch arguments.
 
     Returns:
-        The repository span, the Stories and Tasks, the artifact report, the edges, whether the
+        The repository span, the Stories and the Tasks written so far, the artifact report, the edges, whether the
         Epic's lifecycle is done, and the stage the journal stands at; for a journal whose next
         step failed with an owner concern, the owner's required actions.
 
     """
     dispatch: DispatchArguments = dispatch_arguments()
-    specs: list[JsonObject] = [json_object(value) for value in _values(journal, SPEC_RESULT)]
-    decomposed: list[JsonObject] = [json_object(value) for value in _values(journal, TASKS_RESULT)]
-    stories: list[JsonValue] = [spec["story"] for spec in specs]
-    tasks: list[JsonValue] = [
-        task for result in decomposed for task in check_type(result.get("tasks", []), list[JsonValue])
-    ]
+    stories: list[JsonValue] = _values(journal, STORY)
+    tasks: list[JsonValue] = _values(journal, TASK)
     report: ArtifactReport = {"dir": str(context.work), "epicId": context.bead, "phases": {}, "filing": {}}
     if any(True for _ in _artifacts(journal, ARTIFACT_TRD) if _.get("kind") == "file"):
         confirmed: list[Step] = [
@@ -109,8 +106,8 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
             filing: JsonValue = context.args.get(dispatch.KEY_TRD_PATH)
             if isinstance(filing, str) and filing:
                 report["filing"]["trd.md"] = filing
-    for spec in specs:
-        slug: str = check_type(json_object(spec["story"]).get("elabKey", ""), str).removeprefix("story:")
+    for story in stories:
+        slug: str = check_type(json_object(story).get("elabKey", ""), str).removeprefix("story:")
         if slug:
             report["phases"][SPEC_PHASE_PREFIX + slug] = PASSED_PHASE
     following: Step | None = step_journal.next_step(journal)

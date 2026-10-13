@@ -15,9 +15,9 @@ path. Write only assigned outputs.
 For a JSON output write one strict JSON value with unique keys; for a document write nonempty
 UTF-8 Markdown. Do not paste file contents into a response. A final reply may name the result path.
 
-Python validates the file against the schema, checks declared document citations, publishes the
-canonical JSON, and records input/output fingerprints. The agent does not accept its own result,
-write receipts, compute revision bindings, submit StructuredOutput, or run artifact checkpoint or
+Python validates the file against the schema, checks declared document citations and records the
+file in the step journal. The agent does not accept its own result, compute revision bindings,
+submit StructuredOutput, or run artifact checkpoint or
 submission helpers. There is no machine mode or command-runner handoff in direct sessions.
 A structurally valid artifact is not automatically a semantically correct one.
 

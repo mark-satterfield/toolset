@@ -31,7 +31,6 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import (
@@ -48,7 +47,14 @@ from orchestrator.core.journal_run import JournalRunner, open_journal
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
-from orchestrator.flows import architecture_promotion, trd_authoring
+from orchestrator.flows import (
+    architecture_promotion,
+    elaboration_steps,
+    spec_review,
+    task_decomposition,
+    task_edges,
+    trd_authoring,
+)
 from orchestrator.flows.architecture import first_steps
 from orchestrator.flows.architecture_files import (
     CONFIRM_TRD,
@@ -60,14 +66,17 @@ from orchestrator.flows.architecture_files import (
     context_path,
     new_context,
 )
-from orchestrator.flows.elaboration_result import journal_result
-from orchestrator.flows.elaboration_steps import (
-    EDGES,
+from orchestrator.flows.elaboration_files import (
+    DONE_RULE_STEP,
+    EDGE_CLOSURE,
+    EDGES_CONTAINER,
     MARK_DONE,
     SCORE,
+    SPECS_CONTAINER,
     STORY_EDGES,
     TASKS_CONTAINER,
 )
+from orchestrator.flows.elaboration_result import journal_result
 from orchestrator.flows.elaboration_support import (
     ARCHITECTURE_PHASE,
     enter_phase,
@@ -92,10 +101,16 @@ from step_journal_contract import (
 
 _ARGUMENT_ERROR: str = "Arguments violate the prd_to_spec input contract"
 ARCHITECTURE: Final = "Architecture"
-SPECS_CONTAINER: Final = "Specs and Stories"
 MATRIX_PRD_ROW: Final = "matrix prd row"
 LIFECYCLE_STAGE: Final = "epic-lifecycle"
-REGISTERED: Final = (architecture_promotion, trd_authoring)
+REGISTERED: Final = (
+    architecture_promotion,
+    trd_authoring,
+    spec_review,
+    task_decomposition,
+    task_edges,
+    elaboration_steps,
+)
 """The flow modules imported for the steps they register and nothing else."""
 LOGGER = logging.getLogger(__name__)
 
@@ -118,10 +133,17 @@ def outermost_steps() -> list[StepPlan]:
     Returns:
         The steps in the order they run. The Architecture and Tasks containers get their steps
         from the steps before them; the Specs and Stories container is created with the step
-        that reads the repository span.
+        that reads the repository span, and the Task edges container with the step that derives
+        the edges the elements' requirements make.
 
     """
     span: StepPlan = {"description": SPAN_DESCRIPTION, "purpose": SPAN_PURPOSE, "script": SPAN, "inputs": ["trd"]}
+    closure: StepPlan = {
+        "description": "Derive the Task edges the elements' requirements make",
+        "purpose": "A Task that builds an element is blocked by the Tasks that build what it requires",
+        "script": EDGE_CLOSURE,
+        "inputs": ["specs", "tasks"],
+    }
     return [
         {
             "ref": "open",
@@ -160,24 +182,31 @@ def outermost_steps() -> list[StepPlan]:
         },
         {
             "ref": "edges",
-            "description": "Task edges",
+            "description": EDGES_CONTAINER,
             "purpose": "A Task that needs another Story's Task built first is blocked by it",
-            "script": EDGES,
             "inputs": ["specs", "tasks"],
+            "steps": [closure],
         },
         {
             "ref": "score",
             "description": "Score the Tasks",
-            "purpose": "Every repository has its Story and its Tasks, and every Task is scored",
+            "purpose": "Every Task has a WSJF score",
             "script": SCORE,
-            "inputs": ["specs", "tasks", "edges"],
+            "inputs": ["edges"],
+        },
+        {
+            "ref": "done-rule",
+            "description": "Apply the done rule",
+            "purpose": "Every repository has its Story and its Tasks, and every Task is scored",
+            "script": DONE_RULE_STEP,
+            "inputs": ["specs", "tasks", "score"],
         },
         {
             "ref": "story-edges",
             "description": "Story edges",
             "purpose": "A Story that needs another Story first is blocked by it",
             "script": STORY_EDGES,
-            "inputs": ["score"],
+            "inputs": ["done-rule"],
         },
         {
             "description": "Mark the Epic elaborated",
@@ -247,7 +276,6 @@ def _started(context: RunContext) -> bool:
 @dataclass
 class _Elaboration:
     context: RunContext
-    store: ArtifactStore
     runner: AgentRunner
     tools: Tools
     state: _Lifecycle = field(init=False)
@@ -395,18 +423,11 @@ class _Elaboration:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def elaborate(
-    context: RunContext,
-    store: ArtifactStore,
-    runner: AgentRunner,
-    tools: Tools,
-    notes: list[JsonValue],
-) -> JsonObject:
+def elaborate(context: RunContext, runner: AgentRunner, tools: Tools, notes: list[JsonValue]) -> JsonObject:
     """Run one dispatch of an Epic's elaboration with the services given.
 
     Args:
         context: The run context of the dispatch.
-        store: The artifact store of the Epic's work directory.
         runner: The session runner of the dispatch.
         tools: The deterministic tools of the dispatch.
         notes: The list the dispatch's note and verdict events are collected in.
@@ -415,7 +436,7 @@ def elaborate(
         The detailed internal report, assembled from the Epic's journal.
 
     """
-    return _Elaboration(context, store, runner, tools).execute(notes)
+    return _Elaboration(context, runner, tools).execute(notes)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -444,8 +465,6 @@ def run(context: RunContext) -> JsonObject:
         raise StepError(stage, OTHER_CAUSE, ("Epic, beadsRepoPath and readable PRD path are required",))
     context.work.mkdir(parents=True, exist_ok=True)
     args[dispatch.KEY_ARCH_PATH] = args.get(dispatch.KEY_ARCH_PATH) or os.environ.get(ARCH_PATH_ENV, "")
-    root: Path = Path(check_type(args.get(dispatch.KEY_SKILLSPOKE_ROOT) or os.environ["SKILLSPOKE_ROOT"], str))
-    store: ArtifactStore = ArtifactStore(load_artifactio(), root, context.work, context.bead, context.run_id)
     tools: Tools = Tools(context.work / "evidence")
     notes: list[JsonValue] = []
     output: EventWriter = EventWriter()
@@ -455,5 +474,5 @@ def run(context: RunContext) -> JsonObject:
             notes.append({EVENT_KEY: event, **facts})
         output(event, **facts)
 
-    runner: AgentRunner = AgentRunner(context, store, emit=emit)
-    return elaborate(context, store, runner, tools, notes)
+    runner: AgentRunner = AgentRunner(context, emit=emit)
+    return elaborate(context, runner, tools, notes)

@@ -92,10 +92,6 @@ Schema: [spec-ruling.schema.json](schemas/spec-ruling.schema.json).
 
 Fields and interpretation: rulings name findingId, ruling (finding-stands or document-stands), reason and directive; summary says what was ruled. Complete means every disputed finding has exactly one ruling, grounded in the review, the author's reason and the criterion the finding names, with a directive for each finding that stands. A dispute with no ruling leaves the document as its author left it.
 
-## spec-review-outcome
-
-Not an agent artifact. `orchestrator/flows/spec_review.py` writes it when a repository's spec review is over and reads it to decide whether the review is repeated; its one definition is `SpecReviewOutcome` in that module.
-
 ## closure-edges
 
 Fields and interpretation: Python-derived prerequisite edges between Tasks of different Stories, from the requires relations of the span elements and the Task ids. These edges stand; task-dependency-mapper adds only nonduplicate justified edges. Complete means every resolved prerequisite relation is represented with qualified task keys.
@@ -145,10 +141,6 @@ Not an agent artifact. `orchestrator/run.py` writes it and the driver reads it; 
 ## events
 
 Fields and interpretation: Python JSON-line ledger events expose phase/verdict/session/process facts; driver translates existing callbacks. Complete means truthful observed transitions, no inferred running state.
-
-## steps
-
-Fields and interpretation: Python completed step ids in STEPS.md, dashboard navigation only. Complete means a validated recorded output exists; this list never determines reuse.
 
 ## retired
 

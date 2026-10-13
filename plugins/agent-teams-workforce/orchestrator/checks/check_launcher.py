@@ -100,7 +100,7 @@ def step_for(agent: str, root: Path) -> AgentStep:
         The step.
 
     """
-    return AgentStep("probe", agent, (), root / "output.json", "Prepare only.", root / "schema.json", None, (root,))
+    return AgentStep("probe", agent, (), root / "output.json", "Prepare only.", root / "schema.json", (root,))
 
 
 def check_skill_text(roots: SkillRoots) -> None:
@@ -348,7 +348,6 @@ def check_expertise(plugin: Path, root: Path) -> None:
         root / "output.json",
         "Prepare only.",
         root / "schema.json",
-        None,
         request="State what the lead asked.",
         journal_step=StepId(STEP_ID),
     )
@@ -356,17 +355,17 @@ def check_expertise(plugin: Path, root: Path) -> None:
     require(sent["request"] == "State what the lead asked.", "the brief carries the request")
     require(sent["step"] == STEP_ID, "the brief carries the journal step id")
     with expected_error(ValueError):
-        AgentStep("probe", "plain", (), root / "o", "Outcome.", root / "s", None, journal_step=StepId("not-a-step-id"))
+        AgentStep("probe", "plain", (), root / "o", "Outcome.", root / "s", journal_step=StepId("not-a-step-id"))
     report("PASS: expertise declarations, the Epic's recorded expertise, and the request and step brief fields")
 
 
 def main() -> None:
     """Run the launcher checks against the real plugin and a made-up one."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
+    parser.add_argument("--control-repo", required=True, type=Path)
     options: argparse.Namespace = parser.parse_args()
-    script: Path = options.artifact_script
-    control: Path = script.resolve().parents[2]
+    named: Path = options.control_repo
+    control: Path = named.resolve()
     config: Path = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).expanduser()
     directory: str
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {CONTROL_REPO_ENV: str(control)}):

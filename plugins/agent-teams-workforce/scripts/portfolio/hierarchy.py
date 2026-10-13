@@ -1,15 +1,16 @@
 """Readers for the Story and Task documents an Epic's elaboration saves.
 
-prd-to-spec saves each step's output into the Epic's working directory: `story-<slug>.json`
-for a repository's Story, `tasks-<slug>.json` for that Story's decomposition, and
-`task-deps.json` for the Task edges between Stories. These readers turn those files into the
-Stories and Tasks `beadwrite` writes into beads. A Task's `key` is its local decomposition
-key (`T3`); `depends_on` holds local keys of the same Story.
+prd-to-spec saves a Story document and a Tasks file for each repository, and one file of Task
+edges between Stories. Every reader is handed the path of each file it reads (`StoryFiles`,
+`SpanFiles`, `SpanStories`) and derives none. These readers turn those files into the Stories
+and Tasks `beadwrite` writes into beads. A Task's `key` is its local decomposition key (`T3`);
+`depends_on` holds local keys of the same Story.
 """
 
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 import sys
@@ -51,7 +52,6 @@ from recon_contract import (
     UiAuthority,
     UiItem,
     read_detailing,
-    recon_file_name,
 )
 from recon_contract import ArtifactKind as UiArtifactKind
 
@@ -120,6 +120,83 @@ _BEAD_DESIGN_SOURCE: Final[dict[DesignSource, CdsDesignSource]] = {
 
 class HierarchyError(ValueError):
     """The saved documents do not describe a Story or Tasks that can be written."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+@dataclass(frozen=True)
+class SpanFiles:
+    """The two files an elaboration's span step wrote, each at the path the caller was handed.
+
+    ``span`` holds the placements: which repository builds which items. ``elements`` holds the
+    items themselves, each with the ids of the items it requires.
+    """
+
+    span: Path
+    elements: Path
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+@dataclass(frozen=True)
+class StoryFiles:
+    """The saved files of one repository's Story, each at the path the caller was handed.
+
+    ``specs`` are the contracts, data-model and criteria documents, in that order. ``tasks`` is
+    the Tasks file, once the Story is decomposed. ``detailing`` is the repository's detailing
+    file, when one was written.
+    """
+
+    slug: str
+    repo: str
+    scope: SpanFiles
+    story: Path
+    specs: tuple[Path, ...] = ()
+    tasks: Path | None = None
+    detailing: Path | None = None
+
+    @property
+    def tasks_file(self) -> Path:
+        """The Tasks file of a Story that is decomposed.
+
+        Raises:
+            HierarchyError: The caller handed no Tasks file.
+
+        """
+        if self.tasks is None:
+            msg: str = f"no Tasks file was handed for story:{self.slug}"
+            raise HierarchyError(msg)
+        return self.tasks
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+@dataclass(frozen=True)
+class SpanStories:
+    """The Stories of an Epic's span, in span order, and the mapper's edges file when there is one.
+
+    The Story at index i is named ``S<i+1>`` in an edge between Stories.
+    """
+
+    scope: SpanFiles
+    stories: tuple[StoryFiles, ...]
+    task_deps: Path | None = None
+
+
+def recorded_path(path: Path, root: Path | None) -> str | None:
+    """Return a file's path as a bead records it: relative to the project root.
+
+    Args:
+        path: The file.
+        root: The project root, or None.
+
+    Returns:
+        The relative path, or None when there is no root or the file is not under it.
+
+    """
+    if root is None:
+        return None
+    try:
+        return str(path.resolve().relative_to(root.resolve()))
+    except ValueError:
+        return None
 
 
 #: What reading a Story's Tasks normalized instead of refusing, since `take_warnings` last ran.
@@ -301,23 +378,24 @@ def _read_json(path: Path) -> JsonObject:
     return json_object(data)
 
 
-def _meta_sha(path: Path) -> str | None:
-    """Return the sha256 the recorder wrote beside an artifact, when there is one.
+def _content_sha(path: Path) -> str:
+    """Return the SHA-256 of a saved file's bytes, as a bead records it.
 
     Args:
-        path: The artifact.
+        path: The file.
 
     Returns:
-        The hash, or None.
+        The digest.
+
+    Raises:
+        HierarchyError: The file cannot be read.
 
     """
     try:
-        meta: object = json.loads(Path(f"{path}.meta.json").read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return None
-    fields: JsonObject = json_object(meta) if isinstance(meta, dict) else {}
-    sha: JsonValue = fields.get("sha256")
-    return sha if isinstance(sha, str) and sha else None
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        msg: str = f"{path.name} could not be read: {exc}"
+        raise HierarchyError(msg) from exc
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -494,32 +572,29 @@ def build_order(keys: list[str], edges: list[tuple[str, str]]) -> list[str] | No
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_story(directory: Path, rel: str | None, repo: str, slug: str) -> Story:
-    """Return the Story a repository's saved `story-<slug>.json` carries.
+def read_story(files: StoryFiles, root: Path | None) -> Story:
+    """Return the Story a repository's saved Story document carries.
 
     Args:
-        directory: The Epic's working directory.
-        rel: The directory, relative to the project root, or None.
-        repo: The repository.
-        slug: Its artifact slug.
+        files: The repository's saved files.
+        root: The project root the spec documents and the Story document are recorded
+            relative to, or None to record none of them.
 
     Returns:
-        The Story, with the metadata it is written with.
+        The Story, with the metadata it is written with: for the Story document and each spec
+        document under the root, its path and the SHA-256 of its bytes.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
     kind: ArtifactKind
-    name: str
-    if (
-        not (isinstance(directory, Path))
-        or not (isinstance(rel, str) or rel is None)
-        or not (isinstance(repo, str))
-        or not (isinstance(slug, str))
-    ):
+    path: Path
+    if not (isinstance(files, StoryFiles)) or not (isinstance(root, Path) or root is None):
         raise TypeError(_ARGUMENT_ERROR)
-    saved: dict[str, contracts.JsonValue] = _read_json(directory / f"story-{slug}.json")
+    repo: str = files.repo
+    slug: str = files.slug
+    saved: dict[str, contracts.JsonValue] = _read_json(files.story)
     metadata: dict[str, str] = {KEY_ELAB_KEY: f"story:{slug}", KEY_REPO_PATH: repo}
     decisions: list[str] = list(dict.fromkeys(_loose_list(saved.get(ARG_DECISION_IDS))))
     if decisions:
@@ -528,20 +603,16 @@ def read_story(directory: Path, rel: str | None, repo: str, slug: str) -> Story:
             separators=(",", ":"),
             ensure_ascii=False,
         )
-    if rel:
-        entries: list[tuple[ArtifactKind, str]] = [
-            (kind, f"spec-{slug}.{aspect}.md" if aspect else f"spec-{slug}.md")
-            for aspect, kind in SPEC_ASPECT_KIND.items()
-        ]
-        entries.append(("story", f"story-{slug}.json"))
-        for kind, name in entries:
-            if not (directory / name).is_file():
-                continue
-            metadata[artifact_key(kind, "path")] = f"{rel}/{name}"
-            metadata[artifact_key(kind, "meta")] = f"{rel}/{name}.meta.json"
-            sha: str | None = _meta_sha(directory / name)
-            if sha:
-                metadata[artifact_key(kind, "sha256")] = sha
+    entries: list[tuple[ArtifactKind, Path]] = [
+        *zip(SPEC_ASPECT_KIND.values(), files.specs, strict=False),
+        ("story", files.story),
+    ]
+    for kind, path in entries:
+        named: str | None = recorded_path(path, root)
+        if named is None:
+            continue
+        metadata[artifact_key(kind, "path")] = named
+        metadata[artifact_key(kind, "sha256")] = _content_sha(path)
     criteria: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = saved.get(
         ARG_ACCEPTANCE_CRITERIA,
     )
@@ -736,13 +807,12 @@ def _supplied_bundle(entry: UiItem, named: UiArtifact | None, warn: str) -> UiDe
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def ui_authority(
-    directory: Path,
-    slug: str,
+    detailing_file: Path | None,
     packages_dir: str | None = None,
 ) -> dict[str, UiDesign]:
     """Return the design source of each `ui` delta item the detailing resolved.
 
-    Reads `uiAuthority.uiItems` of the repository's saved detailing (`recon_file_name(slug)`),
+    Reads `uiAuthority.uiItems` of the repository's saved detailing,
     validated against the artifact-handoff recon contract. Each item takes `bundle` (a cds
     bundle the owner supplied packages it), `cds` (it changes design and is designed with the
     CDS design system) or `none` (it changes no design). A `bundle` item whose bundle or build
@@ -750,31 +820,27 @@ def ui_authority(
     default artifact kind named for the item. Each is noted in `take_warnings`.
 
     Args:
-        directory: The Epic's working directory.
-        slug: The Story's repository slug.
+        detailing_file: The repository's detailing file, or None when none was written.
         packages_dir: The packages directory a cited bundle must sit in, or None.
 
     Returns:
         Per delta item id its design: the source, and for a `bundle` item the bundle path
         and its build-spec citations (the absolute `build-spec.md` path, followed by
-        `#<Section ID>` for each Section it builds). An absent detailing yields no designs.
+        `#<Section ID>` for each Section it builds). No detailing yields no designs.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if (
-        not (isinstance(directory, Path))
-        or not (isinstance(slug, str))
-        or not (isinstance(packages_dir, str) or packages_dir is None)
+    if not (isinstance(detailing_file, Path) or detailing_file is None) or not (
+        isinstance(packages_dir, str) or packages_dir is None
     ):
         raise TypeError(_ARGUMENT_ERROR)
     del packages_dir
-    name: str = recon_file_name(slug)
-    path: Path = directory / name
-    if not path.is_file():
+    if detailing_file is None:
         return {}
-    detailing: ReconDetailing = read_detailing(path)
+    name: str = detailing_file.name
+    detailing: ReconDetailing = read_detailing(detailing_file)
     authority: UiAuthority | None = detailing.get(KEY_UI_AUTHORITY)
     designs: dict[str, UiDesign] = {}
     for entry in authority[KEY_UI_ITEMS] if authority is not None else []:
@@ -892,26 +958,18 @@ def check_cds_contract(slug: str, tasks: list[Task]) -> None:
         t.cds_build_specs = own
 
 
-def _spec_refs(directory: Path, rel: str | None, slug: str) -> list[str]:
-    """Return the Story's spec documents on disk a Task may cite, relative to the project root.
+def _spec_refs(files: StoryFiles, root: Path | None) -> list[str]:
+    """Return the Story's spec documents a Task may cite, relative to the project root.
 
     Args:
-        directory: The Epic's working directory.
-        rel: The directory, relative to the project root, or None.
-        slug: The Story's repository slug.
+        files: The repository's saved files.
+        root: The project root, or None.
 
     Returns:
-        The references.
+        The references; none without a root.
 
     """
-    names: tuple[str, str, str] = (
-        f"spec-{slug}.md",
-        f"spec-{slug}.data-model.md",
-        f"spec-{slug}.criteria.md",
-    )
-    if not rel:
-        return []
-    return [f"{rel}/{name}" for name in names if (directory / name).is_file()]
+    return [named for path in files.specs if (named := recorded_path(path, root)) is not None]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -943,12 +1001,12 @@ class _TaskSources:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_tasks(directory: Path, rel: str | None, options: ReadTaskOptions) -> list[Task]:
-    """Return the Tasks a Story's saved `tasks-<slug>.json` carries, in build order.
+def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -> list[Task]:
+    """Return the Tasks a Story's saved Tasks file carries, in build order.
 
     Args:
-        directory: The Epic's working directory.
-        rel: The directory, relative to the project root, or None.
+        files: The repository's saved files.
+        root: The project root spec references are recorded relative to, or None.
         options: Repository placement, inherited Story decisions, and bundle location.
 
     Returns:
@@ -964,15 +1022,15 @@ def read_tasks(directory: Path, rel: str | None, options: ReadTaskOptions) -> li
     edges: list[tuple[str, str]]
     left: list[tuple[str, str]]
     if (
-        not (isinstance(directory, Path))
-        or not (isinstance(rel, str) or rel is None)
+        not (isinstance(files, StoryFiles))
+        or not (isinstance(root, Path) or root is None)
         or not (isinstance(options, ReadTaskOptions))
     ):
         raise TypeError(_ARGUMENT_ERROR)
     slug: str = options.slug
-    saved: dict[str, contracts.JsonValue] = _read_json(directory / f"tasks-{slug}.json")
+    saved: dict[str, contracts.JsonValue] = _read_json(files.tasks_file)
     if not isinstance(saved.get("tasks"), list):
-        msg: str = f"tasks-{slug}.json holds no `tasks` list"
+        msg: str = f"{files.tasks_file.name} holds no `tasks` list"
         raise HierarchyError(msg)
     raw: list[contracts.JsonObject] = check_type(
         saved["tasks"],
@@ -991,11 +1049,11 @@ def read_tasks(directory: Path, rel: str | None, options: ReadTaskOptions) -> li
         raise HierarchyError(message)
     sources: _TaskSources = _TaskSources(
         options,
-        _spec_refs(directory, rel, slug),
+        _spec_refs(files, root),
         json_object(saved[ARG_TEST_STRATEGY]) if isinstance(saved.get(ARG_TEST_STRATEGY), dict) else None,
         edges,
         scores,
-        ui_authority(directory, slug, options.packages_dir)
+        ui_authority(files.detailing, options.packages_dir)
         if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
     )
@@ -1118,166 +1176,103 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def work_items(directory: Path, slug: str) -> list[str]:
+def work_items(files: StoryFiles) -> list[str]:
     """Every item placed in the repository is work; no built-state judgment.
 
     Returns:
-        The computed work items result.
+        The ids of the items the span places in the Story's repository.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)):
+    if not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
-    return [key for key, item in placed_items(directory).items() if item["slug"] == slug]
+    return [key for key, item in placed_items(files.scope).items() if item["slug"] == files.slug]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def uncited_work(directory: Path, slug: str, tasks: list[Task]) -> list[str]:
+def uncited_work(files: StoryFiles, tasks: list[Task]) -> list[str]:
     """Return the work items of a repository that no Task cites in its `requirementIds`.
 
     Args:
-        directory: The Epic's working directory.
-        slug: The repository slug.
+        files: The repository's saved files.
         tasks: The Story's Tasks.
 
     Returns:
-        The ids the detailing marks add, modify or remove and no Task cites, in the
-        detailing's order; empty when every one is cited or there is none.
+        The ids placed in the repository that no Task cites, in the span's order; empty when
+        every one is cited or there is none.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(tasks, list)):
+    if not (isinstance(files, StoryFiles)) or not (isinstance(tasks, list)):
         raise TypeError(_ARGUMENT_ERROR)
     cited: set[str] = {r for t in tasks for r in t.requirement_ids}
-    return [i for i in work_items(directory, slug) or [] if i not in cited]
+    return [i for i in work_items(files) if i not in cited]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def item_briefs(directory: Path, slug: str, ids: list[str]) -> list[PlacedItem]:
+def item_briefs(files: StoryFiles, ids: list[str]) -> list[PlacedItem]:
     """Return architecture facts for the precise uncited items.
 
     Returns:
-        The computed item briefs result.
+        The placed items of the Story's repository among ``ids``, in that order.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(ids, list)):
+    if not (isinstance(files, StoryFiles)) or not (isinstance(ids, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    items: dict[str, beadcontracts.PlacedItem] = placed_items(directory)
-    return [items[key] for key in ids if key in items and items[key]["slug"] == slug]
+    items: dict[str, beadcontracts.PlacedItem] = placed_items(files.scope)
+    return [items[key] for key in ids if key in items and items[key]["slug"] == files.slug]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
+def check_detailed_work(files: StoryFiles, tasks: list[Task]) -> None:
     """Warn when a Task cites no placed item; never classify existing code.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(tasks, list)):
+    if not (isinstance(files, StoryFiles)) or not (isinstance(tasks, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    listed: list[str] = work_items(directory, slug)
-    if listed is None:
-        return
-    work: set[str] = set(listed)
+    work: set[str] = set(work_items(files))
     idle: list[str] = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
         _WARNINGS.append(
-            f"tasks-{slug}.json: {', '.join(idle)} cite no placed item in requirementIds "
+            f"{files.tasks_file.name}: {', '.join(idle)} cite no placed item in requirementIds "
             f"({', '.join(sorted(work)) or 'none here'})",
         )
 
 
-#: The file the span step of elaboration writes in the Epic's working directory: the elements the
-#: Epic's Stories build, read from the matrix, each with the ids of the elements it requires.
-SPAN_ELEMENTS_FILE = "span-elements.json"
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def delta_requires(directory: Path) -> dict[str, list[str]] | None:
-    """Return each item's `requires`, from the saved span elements file.
+def delta_requires(elements: Path) -> dict[str, list[str]] | None:
+    """Return each item's `requires`, from the span's elements file.
 
     The span step writes `requires` from the `dependsOn` links between the elements in the matrix.
 
     Args:
-        directory: The Epic's working directory.
+        elements: The elements file.
 
     Returns:
-        Item id -> the ids it needs built first; None when the listing is not saved or no
-        item carries `requires` (a delta with no prerequisite closure).
+        Item id -> the ids it needs built first; None when no item carries `requires`.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)):
+    if not (isinstance(elements, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / SPAN_ELEMENTS_FILE
-    if not path.is_file():
-        return None
-    items: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = _read_json(path).get(
-        "items",
-    )
+    items: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = _read_json(
+        elements,
+    ).get("items")
     if not isinstance(items, list) or not any(isinstance(i, dict) and "requires" in i for i in items):
         return None
     return {str(i.get("id")): str_list(i.get("requires")) for i in items if isinstance(i, dict) and i.get("id")}
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def planned_prerequisites(directory: Path) -> dict[str, str]:
-    """Return the prerequisite items an open bead of another Epic already plans.
-
-    Such an item is placed in no repository: its bead is the plan, and the Tasks that need
-    it are blocked by that bead.
-
-    Args:
-        directory: The Epic's working directory.
-
-    Returns:
-        Item id -> the bead that plans it; empty when the span elements file is not saved.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-
-    """
-    if not (isinstance(directory, Path)):
-        raise TypeError(_ARGUMENT_ERROR)
-    path: Path = directory / SPAN_ELEMENTS_FILE
-    items: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
-        _read_json(path).get("items") if path.is_file() else None
-    )
-    return {
-        str(i["id"]): str(i["plannedBy"]).strip()
-        for i in (items if isinstance(items, list) else [])
-        if isinstance(i, dict)
-        and i.get("id")
-        and i.get("kind") == "prerequisite"
-        and i.get("state") == "planned"
-        and str(i.get("plannedBy") or "").strip()
-    }
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def detailed_items(directory: Path) -> dict[str, PlacedItem]:
-    """Compatibility name for the declared placement map; contains no status labels.
-
-    Returns:
-        The computed detailed items result.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-
-    """
-    if not (isinstance(directory, Path)):
-        raise TypeError(_ARGUMENT_ERROR)
-    return placed_items(directory)
 
 
 def _task_builders(tasks: list[Task]) -> dict[str, list[str]]:
@@ -1297,7 +1292,7 @@ def _task_builders(tasks: list[Task]) -> dict[str, list[str]]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[Task]:
+def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
     """Derive in-Story prerequisite edges from placed architecture items.
 
     Missing builders remain coverage findings. Cross-repository prerequisites are
@@ -1305,7 +1300,7 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
     Cyclic derived edges are dropped and reported as normalization warnings.
 
     Returns:
-        The computed derive prerequisites result.
+        The Tasks in build order, each with the prerequisites derived for it.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1318,12 +1313,13 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
     left: list[tuple[str, str]]
     frm: str
     to: str
-    if not (isinstance(directory, Path)) or not (isinstance(slug, str)) or not (isinstance(tasks, list)):
+    if not (isinstance(files, StoryFiles)) or not (isinstance(tasks, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    requires: dict[str, list[str]] | None = delta_requires(directory)
+    slug: str = files.slug
+    requires: dict[str, list[str]] | None = delta_requires(files.scope.elements)
     if requires is None:
         return tasks
-    detailed: dict[str, beadcontracts.PlacedItem] = detailed_items(directory)
+    detailed: dict[str, beadcontracts.PlacedItem] = placed_items(files.scope)
     builders: dict[str, list[str]] = _task_builders(tasks)
     problems: list[str] = []
     saved_edges: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on]
@@ -1342,7 +1338,7 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
                         f"{t.key} builds {x}, which requires {y}; no Task of this Story builds it",
                     )
                 t.depends_on.extend(k for k in found if k not in t.depends_on)
-    _WARNINGS.extend(f"tasks-{slug}.json: {p}" for p in problems)
+    _WARNINGS.extend(f"{files.tasks_file.name}: {p}" for p in problems)
     by_key: dict[str, Task] = {t.key: t for t in tasks}
     nodes: list[str] = [t.key for t in tasks]
     derived: list[tuple[str, str]] = [
@@ -1352,7 +1348,7 @@ def derive_prerequisites(directory: Path, slug: str, tasks: list[Task]) -> list[
     for frm, to in left:
         by_key[to].depends_on.remove(frm)
         _WARNINGS.append(
-            f"tasks-{slug}.json: the derived edge {frm} -> {to} closes a cycle; dropped",
+            f"{files.tasks_file.name}: the derived edge {frm} -> {to} closes a cycle; dropped",
         )
     return _ordered_tasks(nodes, tasks, by_key)
 
@@ -1366,11 +1362,11 @@ def _ordered_tasks(nodes: list[str], tasks: list[Task], by_key: dict[str, Task])
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_task_deps(directory: Path) -> list[TaskEdge]:
+def read_task_deps(path: Path) -> list[TaskEdge]:
     """Return the saved Task edges between Stories.
 
     Args:
-        directory: The Epic's working directory.
+        path: The mapper's edges file.
 
     Returns:
         The edges as saved (`from`, `to`, `kind`, `reason`; ends are
@@ -1380,9 +1376,9 @@ def read_task_deps(directory: Path) -> list[TaskEdge]:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)):
+    if not (isinstance(path, Path)):
         raise TypeError(_ARGUMENT_ERROR)
-    saved: dict[str, contracts.JsonValue] = _read_json(directory / "task-deps.json")
+    saved: dict[str, contracts.JsonValue] = _read_json(path)
     return check_type(
         saved.get("edges") or [],
         list[TaskEdge],
@@ -1391,21 +1387,20 @@ def read_task_deps(directory: Path) -> list[TaskEdge]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def placed_items(directory: Path) -> dict[str, PlacedItem]:
+def placed_items(scope: SpanFiles) -> dict[str, PlacedItem]:
     """Join declared placements to architecture items, without inspecting code.
 
     Returns:
-        The computed placed items result.
+        Item id -> the item with the slug and the path of the repository it is placed in.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(directory, Path)):
+    if not (isinstance(scope, SpanFiles)):
         raise TypeError(_ARGUMENT_ERROR)
-    scope: dict[str, contracts.JsonValue] = _read_json(directory / "repo-scoping.json")
     placements: list[contracts.JsonObject] = check_type(
-        scope["placements"],
+        _read_json(scope.span)["placements"],
         list[JsonObject],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
@@ -1414,7 +1409,7 @@ def placed_items(directory: Path) -> dict[str, PlacedItem]:
     items: dict[str, contracts.DeltaItem] = {
         check_type(i["id"], str): i
         for i in check_type(
-            _read_json(directory / SPAN_ELEMENTS_FILE)["items"],
+            _read_json(scope.elements)["items"],
             list[DeltaItem],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )

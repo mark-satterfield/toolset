@@ -45,7 +45,6 @@ from orchestrator.checks.architecture_standins import (
 from orchestrator.checks.check_support import expected_error, report, require
 from orchestrator.core import step_journal as sj
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.artifacts import load_artifactio
 from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture import ARCHITECT_DESCRIPTION, ARCHITECT_PURPOSE, ARCHITECT_REQUEST
@@ -64,7 +63,6 @@ from orchestrator.flows.architecture_files import (
 
 if TYPE_CHECKING:
     from orchestrator.checks.journal_bench import Call
-    from orchestrator.core.artifact_contract import ArtifactProducer
     from orchestrator.core.io import JsonValue
     from step_journal_contract import Journal, Step
 
@@ -77,6 +75,7 @@ OUTERMOST: Final[list[str]] = [
     "Tasks",
     "Task edges",
     "Score the Tasks",
+    "Apply the done rule",
     "Story edges",
     "Mark the Epic elaborated",
 ]
@@ -104,14 +103,14 @@ def values(step: Step, name: str) -> list[JsonValue]:
     return [held["value"] for held in step["artifacts"] if held["kind"] == "value" and held["name"] == name]
 
 
-def started(root: Path, module: ArtifactProducer, name: str, scenario: Scenario) -> ArchBench:
+def started(root: Path, name: str, scenario: Scenario) -> ArchBench:
     """Make one scenario's bench with its stand-ins registered.
 
     Returns:
         The bench.
 
     """
-    bench: ArchBench = ArchBench(root / name, module)
+    bench: ArchBench = ArchBench(root / name)
     install(bench, scenario)
     return bench
 
@@ -132,14 +131,14 @@ def architecture(bench: ArchBench) -> list[Step]:
     return bench.step("Architecture")["steps"]
 
 
-def check_work_needed(root: Path, module: ArtifactProducer) -> ArchBench:
+def check_work_needed(root: Path) -> ArchBench:
     """Check walk-through 1: architecture work with two questions, a maintainer and three reviewers.
 
     Returns:
         The bench, for the checks that continue from its finished journal.
 
     """
-    bench: ArchBench = started(root, module, "work", Scenario())
+    bench: ArchBench = started(root, "work", Scenario())
     run(bench)
     journal: Journal = bench.journal()
     require([step["description"] for step in journal["steps"]] == OUTERMOST, "the outermost steps, in order")
@@ -205,9 +204,9 @@ def check_work_needed(root: Path, module: ArtifactProducer) -> ArchBench:
     return bench
 
 
-def check_already_approved(root: Path, module: ArtifactProducer) -> None:
+def check_already_approved(root: Path) -> None:
     """Check walk-through 2: everything approved, so the TRD's reviewer alone, and no vault commit."""
-    bench: ArchBench = started(root, module, "approved", Scenario(work=False))
+    bench: ArchBench = started(root, "approved", Scenario(work=False))
     run(bench)
     owner, check, review, promote = architecture(bench)
     require([child.get("agent") for child in owner["steps"]] == [TRD_AUTHOR, ARCHITECT], "one helper and Finish")
@@ -218,12 +217,12 @@ def check_already_approved(root: Path, module: ArtifactProducer) -> None:
     report("PASS: walk-through 2: the TRD's reviewer alone, promotion without a vault commit")
 
 
-def check_restarts(root: Path, module: ArtifactProducer) -> None:
+def check_restarts(root: Path) -> None:
     """Check that a restart of walk-through 1 lands on exactly the next step, at every boundary."""
     once: dict[str, int] = dict.fromkeys([ARCHITECT, *WORK_REVIEWERS], 1)
     boundaries: int = 0
     for stop in range(1, 6):
-        killed: ArchBench = started(root, module, f"killed-{stop}", Scenario())
+        killed: ArchBench = started(root, f"killed-{stop}", Scenario())
         with patch.dict(os.environ, killed.environment()):
             loop = killed.runner()
             for _ in range(stop):
@@ -233,7 +232,7 @@ def check_restarts(root: Path, module: ArtifactProducer) -> None:
         require(killed.tools.count("push") == 1 and killed.tools.count("bd", "show") == TWICE, "script steps ran once")
         boundaries += 1
     for key in (ARCHITECT, *WORK_REVIEWERS):
-        failed: ArchBench = started(root, module, f"failed-{key}", Scenario())
+        failed: ArchBench = started(root, f"failed-{key}", Scenario())
         failed.fail_once.add(key)
         with expected_error(StepError):
             run(failed)
@@ -242,7 +241,7 @@ def check_restarts(root: Path, module: ArtifactProducer) -> None:
         again: Call = [call for call in failed.sessions.calls if call.agent == key][-1]
         require(again.resume, f"{key}: the failed step's session is resumed")
     for word in ("bd", "push"):
-        broken: ArchBench = started(root, module, f"failed-{word}", Scenario())
+        broken: ArchBench = started(root, f"failed-{word}", Scenario())
         broken.tools.fail_once.add(word)
         with expected_error(RuntimeError):
             run(broken)
@@ -265,9 +264,9 @@ def check_invalidation(bench: ArchBench) -> None:
     report("PASS: an invalidation from the check step reruns the check, its reviewers, the promotion and the TRD step")
 
 
-def check_findings(root: Path, module: ArtifactProducer) -> None:
+def check_findings(root: Path) -> None:
     """Check a finding: the lead, one correction, the re-check, promotion; and the decider when it stays disputed."""
-    bench: ArchBench = started(root, module, "finding", Scenario(finding=True))
+    bench: ArchBench = started(root, "finding", Scenario(finding=True))
     run(bench)
     steps: list[Step] = architecture(bench)
     require(
@@ -303,7 +302,7 @@ def check_findings(root: Path, module: ArtifactProducer) -> None:
         list(lead_call.inputs) == ["findings", "architecture result", "criteria", "specialists", "step journal"],
         f"the lead's labels: {list(lead_call.inputs)}",
     )
-    disputed: ArchBench = started(root, module, "disputed", Scenario(finding=True, disputed=True))
+    disputed: ArchBench = started(root, "disputed", Scenario(finding=True, disputed=True))
     run(disputed)
     require(disputed.counts[DECIDER] == 1 and disputed.counts[LEAD] == THRICE, f"the decider: {disputed.counts}")
     require(disputed.counts[ARCHITECT] == TWICE, "a disputed item never goes to the architect a second time")
@@ -311,14 +310,14 @@ def check_findings(root: Path, module: ArtifactProducer) -> None:
     report("PASS: a finding goes to the lead, one resumed correction and re-check; a disputed one to the decider")
 
 
-def check_unsettled_and_mechanical(root: Path, module: ArtifactProducer) -> None:
+def check_unsettled_and_mechanical(root: Path) -> None:
     """Check a result the architect could not settle, and a mechanical defect before any reviewer."""
-    unsettled: ArchBench = started(root, module, "unsettled", Scenario(unsettled=True))
+    unsettled: ArchBench = started(root, "unsettled", Scenario(unsettled=True))
     run(unsettled)
     order: list[str | None] = [step.get("agent") or step.get("script") for step in architecture(unsettled)]
     require(order == [ARCHITECT, CHECK, LEAD, CHECK, *WORK_REVIEWERS, APPROVE], f"unsettled goes to the lead: {order}")
     require(unsettled.counts[DECIDER] == 1 and unsettled.counts[LEAD] == TWICE, "the lead sends it to the decider")
-    mechanical: ArchBench = started(root, module, "mechanical", Scenario(mechanical=True))
+    mechanical: ArchBench = started(root, "mechanical", Scenario(mechanical=True))
     run(mechanical)
     steps: list[Step] = architecture(mechanical)
     order = [step.get("agent") or step.get("script") for step in steps]
@@ -336,17 +335,20 @@ def check_unsettled_and_mechanical(root: Path, module: ArtifactProducer) -> None
 def main() -> None:
     """Run the architecture flow checks in a temporary directory with stand-in sessions."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
+    parser.add_argument("--control-repo", required=True, type=Path)
     options: argparse.Namespace = parser.parse_args()
-    script: Path = options.artifact_script
-    module: ArtifactProducer = load_artifactio(script)
+    control: Path = options.control_repo
+    # The driver's modules read the installed plugin, so they are loaded before the check's own
+    # configuration directory takes the place of the real one.
+    with patch.dict(os.environ, {CONTROL_REPO_ENV: str(control.resolve())}):
+        driver_module(HEADLESSENV_MODULE)
     directory: str
     with tempfile.TemporaryDirectory() as directory:
         root: Path = Path(directory).resolve()
         (root / "config").mkdir()
         values: dict[str, str] = {
             "CLAUDE_CONFIG_DIR": str(root / "config"),
-            CONTROL_REPO_ENV: str(script.resolve().parents[2]),
+            CONTROL_REPO_ENV: str(control.resolve()),
             "ATW_ORCH_SESSIONS": "4",
         }
         recorded: list[str] = []
@@ -363,13 +365,13 @@ def main() -> None:
                 HeadlessEnvironment.child_env.__name__,
                 side_effect=lambda _scratch: dict(os.environ),
             ):
-                finished: ArchBench = check_work_needed(root, module)
+                finished: ArchBench = check_work_needed(root)
                 require(recorded == [BEAD], "the TRD is marked on the Epic bead once")
-                check_already_approved(root, module)
+                check_already_approved(root)
                 check_invalidation(finished)
-                check_restarts(root, module)
-                check_findings(root, module)
-                check_unsettled_and_mechanical(root, module)
+                check_restarts(root)
+                check_findings(root)
+                check_unsettled_and_mechanical(root)
 
 
 if __name__ == "__main__":

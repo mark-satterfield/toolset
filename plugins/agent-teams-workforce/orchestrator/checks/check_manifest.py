@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 from composites_contract import PRD_TO_SPEC
 from orchestrator.checks.check_support import report, require
-from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.handback_contract import Session  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from orchestrator.core.io import JsonValue  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from orchestrator.core.manifest import RunManifest, manifest_path, read_manifest, record_run, record_session
@@ -46,7 +45,6 @@ def main() -> None:
     """Evaluate the existing isolated check contract."""
     with tempfile.TemporaryDirectory() as temporary:
         root: Path = Path(temporary)
-        store: ArtifactStore = ArtifactStore(load_artifactio(), root, root, "epic", "run-one")
         context: RunContext = RunContext("epic", PRD_TO_SPEC, {}, root, "run-one")
         target: Path = manifest_path(root)
         rows: list[Session] = [
@@ -62,9 +60,9 @@ def main() -> None:
             for i in range(8)
         ]
         with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(lambda row: record_session(context, store, row), rows))
+            list(pool.map(lambda row: record_session(context, row), rows))
         resumed: Session = {**rows[0], "model": "opus"}
-        record_session(context, store, resumed)
+        record_session(context, resumed)
         recorded: RunManifest = _manifest(target)
         require(len(recorded["sessions"]) == len(rows), "len(recorded['sessions']) == len(rows)")
         require(len(context.sessions) == len(rows), "len(context.sessions) == len(rows)")
@@ -77,7 +75,7 @@ def main() -> None:
         notes: list[JsonValue] = ["final"]
         written: Path = record_run(context, "prd-one", result, phases, notes)
         require(written == target, "record_run writes the run record at manifest_path")
-        record_session(context, store, {**rows[1], "model": "opus"})
+        record_session(context, {**rows[1], "model": "opus"})
         merged: RunManifest = _manifest(target)
         require(merged.get("prdId") == "prd-one", "prdId survives a later session upsert")
         require(merged.get("result") == result, "result survives a later session upsert")
@@ -85,7 +83,7 @@ def main() -> None:
         require(merged.get("notes") == notes, "notes survive a later session upsert")
         require(len(merged["sessions"]) == len(rows), "the final record keeps every session row")
         context.run_id = "run-two"
-        record_session(context, store, {**rows[0], "sessionId": "new"})
+        record_session(context, {**rows[0], "sessionId": "new"})
         require(
             [row["sessionId"] for row in context.sessions] == ["new"],
             "[row['sessionId'] for row in context.sessions] == ['new']",

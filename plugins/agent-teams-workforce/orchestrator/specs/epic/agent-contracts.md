@@ -90,10 +90,8 @@ Retired, legacy and out-of-scope rows are coverage dispositions, not new dispatc
 | `<work>/span-elements.json` | span-elements | python | api-specification-author,data-model-specification-author,task-decomposer | artifact-handoff `schemas/target-report.schema.json` | span-elements (`target_contract.DeltaResult`) |
 | `<work>/repo-scoping.json` | placement | python | api-specification-author,data-model-specification-author,task-decomposer | artifact-handoff `schemas/placement.schema.json` | placement (`placement_contract.PlacementRuling`) |
 | `<work>/closure-edges.json` | closure-edges | python | task-dependency-mapper | artifact-handoff | closure-edges |
-| `<work>/candidates/task-deps.json` | task-deps | task-dependency-mapper | python | artifact-handoff | task-deps |
-| `<work>/task-deps.json` (+ `.meta.json`) | task-deps | python | python | artifact-handoff | task-deps |
+| `<work>/task-deps.json` | task-deps | task-dependency-mapper | python | artifact-handoff | task-deps |
 | `<work>/task-edges/all.json` | task-edges | python | python | artifact-handoff | task-edges |
-| `<work>/STEPS.md` | steps | python | python | artifact-handoff | steps |
 | the handback (`run.py --handback`, and handbacks the driver builds) | handback | python | python | none | `<plugin>/orchestrator/core/handback_contract.py` `HandbackDocument` |
 | `<work>/run.json` | run-manifest | python | python | none | `<plugin>/orchestrator/core/manifest.py` `RunManifest` |
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | events | python | python | none | `<control>/ops/sdlc-automation/ledgerevents.py` |
@@ -102,26 +100,20 @@ Retired, legacy and out-of-scope rows are coverage dispositions, not new dispatc
 | `<prd dir>/../trds/<stem>-trd.md` in the vault | trd-document | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff | trd-document |
 | `<work>/spec-<slug>.bundles.json` | bundles | python | python | artifact-handoff | bundles |
 | `<work>/candidates/spec-<slug>.ui.json` | spec-ui | api-specification-author | task-decomposer | artifact-handoff | spec-ui |
-| `<work>/spec-<slug>.ui.json` (+ `.meta.json`) | spec-ui | python | task-decomposer | artifact-handoff | spec-ui |
-| `<work>/spec-<slug>.md` (+ `.meta.json`) | spec-document | api-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | spec-document |
-| `<work>/spec-<slug>.data-model.md` (+ `.meta.json`) | data-model-document | data-model-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | data-model-document |
-| `<work>/spec-<slug>.criteria.md` (+ `.meta.json`) | criteria-document | acceptance-criteria-writer | task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | criteria-document |
-| `<work>/candidates/spec-<slug>.review.json` | spec-review | openapi-contract-reviewer | python | artifact-handoff `schemas/spec-review.schema.json` | spec-review (`spec_review_contract.SpecReview`) |
-| `<work>/spec-<slug>.review.json` (+ `.meta.json`) | spec-review | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer,spec-decider | artifact-handoff `schemas/spec-review.schema.json` | spec-review (`spec_review_contract.SpecReview`) |
-| `<work>/candidates/spec-<slug>.<document>.correction.json`, `spec-<slug>.<document>.revision.json` | spec-correction | api-specification-author,data-model-specification-author,acceptance-criteria-writer | python | artifact-handoff `schemas/spec-correction.schema.json` | spec-correction (`spec_review_contract.SpecCorrection`) |
-| `<work>/spec-<slug>.<document>.correction.json`, `spec-<slug>.<document>.revision.json` (+ `.meta.json`) | spec-correction | python | spec-decider | artifact-handoff `schemas/spec-correction.schema.json` | spec-correction (`spec_review_contract.SpecCorrection`) |
-| `<work>/candidates/spec-<slug>.ruling.json` | spec-ruling | spec-decider | python | artifact-handoff `schemas/spec-ruling.schema.json` | spec-ruling (`spec_review_contract.SpecRuling`) |
-| `<work>/spec-<slug>.ruling.json` (+ `.meta.json`) | spec-ruling | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/spec-ruling.schema.json` | spec-ruling (`spec_review_contract.SpecRuling`) |
-| `<work>/spec-<slug>.review-outcome.json` (+ `.meta.json`) | spec-review-outcome | python | python | none | `<plugin>/orchestrator/flows/spec_review.py` `SpecReviewOutcome` |
+| `<work>/spec-<slug>.ui.json` | spec-ui | python | task-decomposer | artifact-handoff | spec-ui |
+| `<work>/spec-<slug>.md` | spec-document | api-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | spec-document |
+| `<work>/spec-<slug>.data-model.md` | data-model-document | data-model-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | data-model-document |
+| `<work>/spec-<slug>.criteria.md` | criteria-document | acceptance-criteria-writer | task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | criteria-document |
+| `<work>/spec-<slug>.review.json` | spec-review | openapi-contract-reviewer | api-specification-author,data-model-specification-author,acceptance-criteria-writer,spec-decider | artifact-handoff `schemas/spec-review.schema.json` | spec-review (`spec_review_contract.SpecReview`) |
+| `<work>/spec-<slug>.<document>.correction.json`, `spec-<slug>.<document>.revision.json` | spec-correction | api-specification-author,data-model-specification-author,acceptance-criteria-writer | spec-decider | artifact-handoff `schemas/spec-correction.schema.json` | spec-correction (`spec_review_contract.SpecCorrection`) |
+| `<work>/spec-<slug>.ruling.json` | spec-ruling | spec-decider | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/spec-ruling.schema.json` | spec-ruling (`spec_review_contract.SpecRuling`) |
 | `<work>/story-<slug>.draft.json` (retired by DESIGN 11.5) | retired | python | python | none | retired |
-| `<work>/story-<slug>.json` (+ `.meta.json`) | story | python | task-decomposer | artifact-handoff | story |
+| `<work>/story-<slug>.json` | story | python | task-decomposer | artifact-handoff | story |
 | the filed Spec documents in the vault | filed-documents | python | python | artifact-handoff | filed-documents |
 | `<work>/tasks-<slug>.items.json` | task-items | python | python | artifact-handoff | task-items |
 | `<work>/tasks-<slug>.context.json` | task-context | python | python | artifact-handoff | task-context |
-| `<work>/candidates/tasks-<slug>.json` | tasks | task-decomposer | task-dependency-mapper | artifact-handoff | tasks |
-| `<work>/tasks-<slug>.json` (+ `.meta.json`) | tasks | python | task-dependency-mapper | artifact-handoff | tasks |
-| `<work>/candidates/tasks-<slug>.correction.json` | tasks-correction | task-decomposer | python | artifact-handoff | tasks-correction |
-| `<work>/tasks-<slug>.correction.json` (+ `.meta.json`) | tasks-correction | python | python | artifact-handoff | tasks-correction |
+| `<work>/tasks-<slug>.json` | tasks | task-decomposer | task-dependency-mapper | artifact-handoff | tasks |
+| `<work>/tasks-<slug>.correction.json` | tasks-correction | task-decomposer | python | artifact-handoff | tasks-correction |
 | `<workDir>/score-plan.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/judge-input-epic.json`, `judge-input-task.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/prd/<epic-id>.md` | out-of-scope | python | python | none | out-of-scope |

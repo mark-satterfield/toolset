@@ -9,11 +9,10 @@ user-invocable: false
 Perform the role in your definition. The brief gives a bead, the journal step id, the request,
 input paths and an output path. It names only the inputs this step needs. The skills your
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
-Write the result file; Python handles validation, acceptance, fingerprints and pipeline state.
+Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
 Start another agent only when your definition has a `startsRoles` list, and only agents with
 those roles. An agent that was started by another agent starts no one. Never invoke a Workflow
-or a command runner. Do not create
-receipts or revision bindings. When the brief carries ARTIFACT CONTRACT DATA, write the progress
+or a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
 defined by the artifact-handoff skill (schemas/checkpoint.schema.json, $defs/Progress). If resumed,

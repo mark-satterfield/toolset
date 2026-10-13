@@ -1,9 +1,8 @@
 """Run every check script in this directory; print one line per check and exit non-zero unless all pass.
 
 A check is any Python file beside this one that has a `__main__` entry point, so a new check is
-picked up without registration. A check that declares `--artifact-script` or `--survey-dir`
-receives it: the artifact script is `ops/sdlc-automation/artifactio.py` of the control repository,
-and the survey directory is a saved architecture directory of that repository.
+picked up without registration. A check that declares `--control-repo` or `--survey-dir`
+receives it: the control repository, or a saved architecture directory of that repository.
 
 A saved survey is bound to the documents and repository trees it was made from, so it stops being
 reusable when they change. A check that declares `--survey-dir` is therefore run against the saved
@@ -24,11 +23,10 @@ from pathlib import Path
 from typing import Final, assert_never
 
 CONTROL_REPO_VARIABLES: Final[tuple[str, ...]] = ("ATW_CONTROL_REPO", "SKILLSPOKE_CC")
-ARTIFACT_SCRIPT: Final[Path] = Path("ops/sdlc-automation/artifactio.py")
 SAVED_ARCHITECTURE_GLOB: Final[str] = ".claude/workflow-runs/artifacts/*/architecture"
 SURVEY_FILE: Final[str] = "survey.json"
 ENTRY_POINT: Final[str] = 'if __name__ == "__main__":'
-OPTION_ARTIFACT_SCRIPT: Final[str] = "--artifact-script"
+OPTION_CONTROL_REPO: Final[str] = "--control-repo"
 OPTION_SURVEY_DIR: Final[str] = "--survey-dir"
 DECLARED_OPTION: Final[re.Pattern[str]] = re.compile(r'add_argument\(\s*"(--[a-z][a-z-]*)"')
 DEFAULT_TIMEOUT_SECONDS: Final[int] = 300
@@ -56,8 +54,8 @@ class Result:
 class Supplies:
     """The value available for each option a check may declare, or why it is unavailable."""
 
-    artifact_script: Path | None
-    artifact_script_problem: str
+    control_repo: Path | None
+    control_repo_problem: str
     survey_dirs: tuple[Path, ...]
     survey_dir_problem: str
 
@@ -129,11 +127,10 @@ def supplies(control: Path | None, survey_dir: Path | None) -> Supplies:
     if control is None:
         unnamed: str = f"control repository not named (set {CONTROL_REPO_VARIABLES[-1]} or pass --control-repo)"
         return Supplies(None, unnamed, named, "" if named else unnamed)
-    script: Path = control / ARTIFACT_SCRIPT
     directories: tuple[Path, ...] = named or saved_architectures(control)
     return Supplies(
-        script if script.is_file() else None,
-        "" if script.is_file() else f"no artifact script at {script}",
+        control if control.is_dir() else None,
+        "" if control.is_dir() else f"no control repository at {control}",
         directories,
         "" if directories else f"no saved architecture directory under {control / SAVED_ARCHITECTURE_GLOB}",
     )
@@ -155,10 +152,10 @@ def attempts(check: Path, available: Supplies) -> list[list[str]] | str:
         raise TypeError(argument_error)
     declared: set[str] = set(DECLARED_OPTION.findall(check.read_text(encoding="utf-8")))
     fixed: list[str] = []
-    if OPTION_ARTIFACT_SCRIPT in declared:
-        if available.artifact_script is None:
-            return available.artifact_script_problem
-        fixed.extend((OPTION_ARTIFACT_SCRIPT, str(available.artifact_script)))
+    if OPTION_CONTROL_REPO in declared:
+        if available.control_repo is None:
+            return available.control_repo_problem
+        fixed.extend((OPTION_CONTROL_REPO, str(available.control_repo)))
     if OPTION_SURVEY_DIR not in declared:
         return [fixed]
     if not available.survey_dirs:

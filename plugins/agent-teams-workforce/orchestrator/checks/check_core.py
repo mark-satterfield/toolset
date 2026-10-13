@@ -1,106 +1,55 @@
-"""Small isolated checks for artifact reuse and additive fingerprint kinds."""
+"""Small isolated checks of the core's file helpers: the work directory, safe names and JSON files."""
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 import tempfile
 from pathlib import Path
 
-from typeguard import CollectionCheckStrategy, check_type, typechecked
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-# orchestrator.core.artifacts imports the generated driver-surface contract from its skill.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 
-from orchestrator.checks.check_support import report, require
-from orchestrator.core.artifact_contract import ArtifactProducer
-from orchestrator.core.artifacts import ArtifactStore, load_artifactio
-from orchestrator.core.handback_contract import REUSED_PHASE
-from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.models import DeterministicStep
+from orchestrator.checks.check_support import expected_error, report, require
+from orchestrator.core.agents import strict_json
+from orchestrator.core.io import WORK_DIRECTORY_PARTS, safe_key, work_directory, write_json
+
+LONGEST: int = 120
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def check_resume(module: ArtifactProducer, root: Path) -> None:
-    """Evaluate the existing isolated check contract."""
-    source, output = root / "input.txt", root / "output.txt"
-    source.write_text("one")
-    work = root / "work"
-    work.mkdir()
-    store = ArtifactStore(module, root, work, "epic", "run")
-    calls = []
-
-    def produce() -> None:
-        calls.append(1)
-        output.write_text(source.read_text())
-
-    step = DeterministicStep("copy", (str(source),), (output,), produce)
-    require(store.execute(step)[0] == "ran", "store.execute(step)[0] == 'ran'")
-    require(store.execute(step)[0] == REUSED_PHASE, "store.execute(step)[0] == REUSED_PHASE")
-    source.write_text("two")
-    require(store.execute(step)[0] == "ran", "store.execute(step)[0] == 'ran'")
-    require(len(calls) == len(("initial", "changed")), "initial and changed inputs each execute once")
-    output.write_text("tampered")
-    require(not store.reusable(step.inputs, step.outputs), "not store.reusable(step.inputs, step.outputs)")
-    store.execute(step)
-    extra = root / "extra.txt"
-    extra.write_text("new dependency")
+def check_names(root: Path) -> None:
+    """Check the name an identifier is given as a path segment, and an Epic's work directory."""
+    require(safe_key("ssbd-q5km.1") == "ssbd-q5km.1", "a bead id is already a safe name")
+    require(safe_key("  a/b c  ") == "a_b_c", "other characters become one underscore, none at the ends")
+    require(len(safe_key("x" * 300)) == LONGEST, "a safe name is cut to 120 characters")
+    work: Path = work_directory(root, "ssbd-q5km.1")
     require(
-        not store.reusable((*step.inputs, str(extra)), step.outputs),
-        "not store.reusable((*step.inputs, str(extra)), step.outputs)",
+        work == root.joinpath(*WORK_DIRECTORY_PARTS, "ssbd-q5km.1"),
+        "the work directory is under the control repository",
     )
-    value = 'value:{"name":"round","value":1}'
-    store.accept("copy", (*step.inputs, value), step.outputs)
-    require(store.reusable((*step.inputs, value), step.outputs), "store.reusable((*step.inputs, value), step.outputs)")
-    require(
-        not store.reusable((*step.inputs, value.replace(":1", ":2")), step.outputs),
-        "not store.reusable((*step.inputs, value.replace(':1', ':2')), step.outputs)",
-    )
-    report("PASS: unchanged inputs skip; edits, tampering, added dependencies and changed values rerun")
+    require(work.parent.parent.name == "workflow-runs", "the work directory is two levels under workflow-runs")
+    with expected_error(ValueError):
+        work_directory(root, "///")
+    report("PASS: safe names and the Epic work directory")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def check_matrix(module: ArtifactProducer, root: Path) -> None:
-    """Evaluate the existing isolated check contract."""
-    matrix = root / "matrix.json"
-    data: dict[str, JsonValue] = {
-        "elements": {
-            "service": {"state": "built", "repository": "repo"},
-            "repository:repo": {"contains": ["stack:repo/main"]},
-        },
-    }
-    matrix.write_text(json.dumps(data))
-    raw = "matrix-rows:" + json.dumps(
-        {"matrix": str(matrix), "elements": ["service", "unknown"]},
-    )
-    hashed = check_type(
-        module.hashed_inputs([raw], root),
-        list[dict[str, JsonValue]],
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    )
-    before = hashed[0]
-    json_object(json_object(data["elements"])["service"])["task"] = "different-task"
-    matrix.write_text(json.dumps(data))
-    require(module.input_problem(before, root) is None, "module.input_problem(before, root) is None")
-    json_object(json_object(data["elements"])["service"])["state"] = "deployed"
-    matrix.write_text(json.dumps(data))
-    require(module.input_problem(before, root) is not None, "module.input_problem(before, root) is not None")
-    report("PASS: matrix fingerprints ignore tracking facts and detect satisfaction changes")
+def check_json(root: Path) -> None:
+    """Check that a JSON file is written whole and read back strictly."""
+    path: Path = root / "nested" / "value.json"
+    write_json(path, {"b": 1, "a": [True, None]})
+    require(strict_json(path) == {"a": [True, None], "b": 1}, "a written object is read back")
+    require(not list(path.parent.glob("tmp*")), "no temporary file is left beside it")
+    path.write_text('{"a": 1, "a": 2}', encoding="utf-8")
+    with expected_error(ValueError):
+        strict_json(path)
+    report("PASS: JSON files are written whole and a duplicate key is refused")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
-    """Evaluate the existing isolated check contract."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-script", required=True, type=Path)
-    options = parser.parse_args()
-    module = load_artifactio(options.artifact_script)
+    """Run the checks in a temporary directory."""
+    directory: str
     with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory)
-        check_resume(module, root)
-        check_matrix(module, root)
+        root: Path = Path(directory)
+        check_names(root)
+        check_json(root)
 
 
 if __name__ == "__main__":
