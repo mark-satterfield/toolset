@@ -33,6 +33,7 @@ from step_journal_contract import (
     BEAD_TYPE_TASK,
     PIPELINE_BUILD,
     PIPELINE_DEPLOY,
+    STATUS_PLANNED,
     BeadId,
     BeadType,
     Journal,
@@ -485,12 +486,62 @@ def ensure_planned(journal: Journal, moment: str) -> list[Step]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def outdated_plan(journal: Journal) -> list[Step]:
+    """List the steps of an unstarted up-front plan that is not the plan its pipeline makes now.
+
+    A journal of a pipeline this module does not define raises ``PipelineStepsError``.
+
+    Args:
+        journal: The journal of a Story or a Task.
+
+    Returns:
+        The outermost steps that carry a kind of the pipeline, when every one of them is planned
+        and their kinds, in order, are not the pipeline's up-front plan. Empty when a step of the
+        pipeline has started, when the journal holds no step of the pipeline, and when the steps
+        are the up-front plan.
+
+    """
+    found: PipelineDefinition = definition(journal["pipeline"])
+    held: list[Step] = [step for step in journal["steps"] if step.get("script") in found.kinds]
+    if any(step["status"] != STATUS_PLANNED or step["steps"] for step in held):
+        return []
+    if tuple(step.get("script") for step in held) == found.plan:
+        return []
+    return held
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def replan(journal: Journal, moment: str) -> list[Step]:
+    """Replace an unstarted up-front plan with the plan the journal's pipeline makes now.
+
+    The steps :func:`outdated_plan` lists are taken out and the present up-front plan is added
+    after the last outermost step that remains. A journal with nothing to replace is left as it
+    is, so calling this again changes nothing.
+
+    Args:
+        journal: The journal of a Story or a Task; changed in place.
+        moment: The present date-time, as ``step_journal.timestamp`` gives it.
+
+    Returns:
+        The steps added; empty when the journal's plan was left as it is.
+
+    """
+    outdated: set[str] = {step["id"] for step in outdated_plan(journal)}
+    if not outdated:
+        return []
+    journal["steps"] = [step for step in journal["steps"] if step["id"] not in outdated]
+    return step_journal.add_steps(journal, plans(journal["pipeline"]), moment)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def open_journal(directory: Path, bead: BeadId, bead_type: BeadType) -> Path:
     """Make the journal of a Story or a Task hold its pipeline's up-front steps.
 
     A bead with no journal gets one whose steps are the up-front plan. A journal that holds only
-    the step that created the bead gets the plan after that step. A journal that already holds
-    the plan is not written. No step's status changes.
+    the step that created the bead gets the plan after that step. A journal whose plan no step
+    has started, and whose plan is not the one the pipeline makes now, gets the present plan in
+    its place. A journal that already holds the present plan, or a plan a step of has started,
+    is not written. No step's status changes.
 
     Args:
         directory: The directory that holds step journals (``step_journal.journals_directory``).
@@ -515,6 +566,8 @@ def open_journal(directory: Path, bead: BeadId, bead_type: BeadType) -> Path:
         raise PipelineStepsError(message)
     if not is_planned(existing):
         step_journal.update_journal(path, lambda journal: ensure_planned(journal, step_journal.timestamp()))
+    elif outdated_plan(existing):
+        step_journal.update_journal(path, lambda journal: replan(journal, step_journal.timestamp()))
     return path
 
 
