@@ -3096,7 +3096,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "dry_run": args.dry_run,
         "steps": [
             f"render the {args.template} template into {dest}",
-            "write the shared AGENTS.md block",
+            "write the shared AGENTS.md blocks, including GitNexus",
+            "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
                 "run the template's setup task (task install) and verify .venv/bin/python, "
@@ -3107,6 +3108,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
             "add it to the beads fleet list (repos.additional)",
+            "index it once with the pinned GitNexus (gitnexus-reindex.sh)",
         ],
     }
     if args.dry_run:
@@ -3120,7 +3122,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     agents.write_text(
         _with_blocks(
             agents.read_text() if agents.exists() else None,
-            _blocks_for(_agents_blocks(cfg), name),
+            _blocks_for(_agents_blocks(cfg), name, args.space),
             name,
         ),
     )
@@ -3142,7 +3144,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             [
                 f"{name}: created at {dest} and pushed to GitHub"
                 + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
-                + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else ""),
+                + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
+                + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
                 *_records_line(res),
             ],
         ),
@@ -3206,6 +3209,8 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         res["environment"] = env_res
         if env_res["problems"]:
             res["environment_error"] = "; ".join(env_res["problems"])
+    if args.space not in GITNEXUS_SKIP_SPACES:
+        res["gitnexus_files"] = gitnexus_install(cfg, dest)
     must(git(dest, "add", "-A"))
     must(
         git(
@@ -3217,6 +3222,10 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         ),
     )
     create_on_github(cfg, name, dest)
+    if args.space not in GITNEXUS_SKIP_SPACES:
+        failure = gitnexus_index(cfg, dest)
+        if failure:
+            res["gitnexus_error"] = failure
 
 
 def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
@@ -3250,6 +3259,11 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         code = 1
     elif res.get("environment"):
         log.append(f"environment set up: {'; '.join(_strs(_map(res['environment'], 'environment')['steps'], 'steps'))}")
+    if res.get("gitnexus_error"):
+        log.append(f"GitNexus index FAILED: {res['gitnexus_error']}")
+        code = 1
+    elif res.get("gitnexus_files") is not None:
+        log.append("GitNexus installed and indexed once with the pinned version")
     if args.lifecycle not in LIFECYCLES_INACTIVE and args.space not in BEADS_SKIP_SPACES:
         try:
             done = beads_setup(
@@ -4754,6 +4768,32 @@ class AgentsBlock:
     marker: str
     text: str
     exclude: frozenset[str]
+    exclude_spaces: frozenset[str] = frozenset()
+    legacy: str = ""
+
+    def render(self, name: str) -> str:
+        """Return the block text for one repo: `{{repo}}` becomes the repo's name.
+
+        Returns:
+            The text to write.
+
+        """
+        return self.text.replace("{{repo}}", name)
+
+    def legacy_pattern(self) -> re.Pattern[str] | None:
+        """Return the regex of the older unmarked section this block replaces, if it has one.
+
+        The older section is `<!-- <legacy>:start -->` to `<!-- <legacy>:end -->` with the
+        blank lines after it.
+
+        Returns:
+            The compiled pattern, or None when the block replaces no older section.
+
+        """
+        if not self.legacy:
+            return None
+        m = re.escape(self.legacy)
+        return re.compile(rf"<!-- {m}:start -->.*?<!-- {m}:end -->\n*", re.DOTALL)
 
     def pattern(self) -> re.Pattern[str]:
         """Return the regex matching this block, markers included, whatever its BEGIN note.
@@ -4834,6 +4874,8 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
                 marker,
                 f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->",
                 frozenset(_strs(spec.get("exclude") or [], "agents_sync exclude")),
+                frozenset(_strs(spec.get("exclude_spaces") or [], "agents_sync exclude_spaces")),
+                str(spec.get("legacy_marker") or ""),
             ),
         )
     if not out:
@@ -4842,14 +4884,15 @@ def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
     return out
 
 
-def _blocks_for(blocks: list[AgentsBlock], name: str) -> list[AgentsBlock]:
+def _blocks_for(blocks: list[AgentsBlock], name: str, space: str = "") -> list[AgentsBlock]:
     """Return the blocks a repo receives.
 
     Returns:
-        The blocks whose exclude list does not name the repo.
+        The blocks whose exclude list does not name the repo and whose excluded spaces do not
+        include the repo's app space.
 
     """
-    return [b for b in blocks if name not in b.exclude]
+    return [b for b in blocks if name not in b.exclude and space not in b.exclude_spaces]
 
 
 def _literal(text: str) -> Callable[[re.Match[str]], str]:
@@ -4876,7 +4919,16 @@ def _with_blocks(text: str | None, blocks: list[AgentsBlock], name: str) -> str:
     out = f"# {name}\n" if text is None else text
     for b in blocks:
         rx = b.pattern()
-        out = rx.sub(_literal(b.text), out, count=1) if rx.search(out) else out.rstrip("\n") + "\n\n" + b.text + "\n"
+        legacy = b.legacy_pattern()
+        body = b.render(name)
+        if rx.search(out):
+            out = rx.sub(_literal(body), out, count=1)
+            if legacy is not None:
+                out = legacy.sub("", out)
+        elif legacy is not None and legacy.search(out):
+            out = legacy.sub(_literal(body + "\n\n"), out, count=1)
+        else:
+            out = out.rstrip("\n") + "\n\n" + body + "\n"
     return out
 
 
@@ -4889,6 +4941,9 @@ def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
     """
     for b in blocks:
         text = b.pattern().sub("", text)
+        legacy = b.legacy_pattern()
+        if legacy is not None:
+            text = legacy.sub("", text)
     return text
 
 
@@ -5007,7 +5062,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     repos = [
         (r, own)
         for r in _local_repos(cfg, args.repo)
-        if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name))
+        if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name, r.space))
     ]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
@@ -5035,6 +5090,171 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         return "\n".join(lines)
 
     emit(args, {"repos": results, "counts": counts, "not_current": len(bad)}, text)
+    return 1 if bad else 0
+
+
+# GitNexus ---------------------------------------------------------------------------------
+# Every non-marketing repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
+# skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in AGENTS.md (an agents-sync
+# block). The sources are files of the control repo named by the config's `gitnexus` section.
+# Re-indexing is `gitnexus-reindex.sh`, which runs the one pinned GitNexus version.
+
+GITNEXUS_RC = ".gitnexusrc"
+GITNEXUS_SKILLS = ".claude/skills/gitnexus"
+GITNEXUS_IGNORE = ".gitnexus"
+GITNEXUS_SKIP_SPACES = ("marketing",)
+GITNEXUS_INDEX_TIMEOUT = 3600
+
+
+@dataclasses.dataclass(frozen=True)
+class GitNexusSources:
+    """The control repo files every repo's GitNexus setup is copied from."""
+
+    rc: Path
+    skills: Path
+    reindex: Path
+
+
+def _gitnexus_sources(cfg: Config) -> GitNexusSources:
+    """Resolve the config's `gitnexus` section to the source files.
+
+    Returns:
+        The sources.
+
+    Raises:
+        PolyrepoError: when a key is missing or its file or folder does not exist.
+
+    """
+    gc = _map(cfg.raw.get("gitnexus") or {}, "config gitnexus")
+    found: dict[str, Path] = {}
+    for key in ("rc_file", "skills_dir", "reindex_script"):
+        v = gc.get(key)
+        if not isinstance(v, str) or not v:
+            msg = f"config gitnexus.{key} is missing"
+            raise PolyrepoError(msg)
+        f = (cfg.file.parent / v).resolve()
+        if not (f.is_dir() if key == "skills_dir" else f.is_file()):
+            msg = f"config gitnexus.{key}: {f} not found"
+            raise PolyrepoError(msg)
+        found[key] = f
+    return GitNexusSources(found["rc_file"], found["skills_dir"], found["reindex_script"])
+
+
+def _gitnexus_plan(src: GitNexusSources, repo: Path) -> dict[str, bytes]:
+    """Return the files a repo needs written for its GitNexus setup, path to new content.
+
+    Returns:
+        Repo-relative path to content; empty when the repo is complete.
+
+    """
+    plan: dict[str, bytes] = {}
+    rc = repo / GITNEXUS_RC
+    if not rc.is_file():
+        plan[GITNEXUS_RC] = src.rc.read_bytes()
+    gi = repo / ".gitignore"
+    cur = gi.read_text(encoding="utf-8") if gi.is_file() else ""
+    if not any(ln.strip().rstrip("/").lstrip("/") == GITNEXUS_IGNORE for ln in cur.splitlines()):
+        plan[".gitignore"] = (
+            (cur.rstrip("\n") + f"\n\n# GitNexus index data\n{GITNEXUS_IGNORE}/\n").lstrip("\n").encode()
+        )
+    for f in sorted(src.skills.rglob("*")):
+        if not f.is_file() or f.name == ".DS_Store":
+            continue
+        rel = f"{GITNEXUS_SKILLS}/{f.relative_to(src.skills).as_posix()}"
+        dest = repo / rel
+        if not dest.is_file() or dest.read_bytes() != f.read_bytes():
+            plan[rel] = f.read_bytes()
+    return plan
+
+
+def gitnexus_install(cfg: Config, repo: Path) -> list[str]:
+    """Write a repo's missing or outdated GitNexus files (no commit).
+
+    Returns:
+        The repo-relative paths written.
+
+    """
+    plan = _gitnexus_plan(_gitnexus_sources(cfg), repo)
+    for rel, data in plan.items():
+        dest = repo / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    return sorted(plan)
+
+
+def gitnexus_index(cfg: Config, repo: Path) -> str | None:
+    """Index one repo with the pinned GitNexus, through the control repo's reindex script.
+
+    Returns:
+        None on success, else the failure text.
+
+    """
+    cp = run([str(_gitnexus_sources(cfg).reindex), str(repo)], timeout=GITNEXUS_INDEX_TIMEOUT)
+    return None if cp.returncode == 0 else f"gitnexus-reindex.sh exited {cp.returncode}: {_last_line(cp)}"
+
+
+def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: bool) -> dict[str, object]:
+    """Bring one repo's GitNexus files current, committing and pushing them when write is set.
+
+    Returns:
+        {repo, state, files} plus, when it wrote, the status and any detail.
+
+    """
+    plan = _gitnexus_plan(src, r.path)
+    res: dict[str, object] = {"repo": r.name, "state": "outdated" if plan else "current", "files": sorted(plan)}
+    if not plan or not write:
+        return res
+    b = cfg.default_branch
+    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch != b:
+        return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
+    dirty = git_out(r.path, "status", "--porcelain", "--", *plan)
+    if dirty:
+        return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
+    for rel, data in plan.items():
+        dest = r.path / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    try:
+        _commit_paths(r.path, sorted(plan), "chore(gitnexus): install the pinned GitNexus configuration and skills")
+    except GitFailedError as exc:
+        return {**res, "status": "failed", "detail": str(exc)}
+    cp = git(r.path, "push", "origin", b, timeout=120)
+    if cp.returncode != 0:
+        return {**res, "status": "committed", "detail": f"push failed: {_last_line(cp)}"}
+    return {**res, "status": "pushed"}
+
+
+def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Give every non-marketing repo its GitNexus configuration and skills, committing and pushing each.
+
+    Returns:
+        0 when every repo is current (or was brought current and pushed), else 1.
+
+    """
+    src = _gitnexus_sources(cfg)
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo)
+        if not r.name.startswith("deprecated-") and r.space not in GITNEXUS_SKIP_SPACES
+    ]
+    write = not args.check and not args.dry_run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))
+    if write:
+        bad = [x for x in results if x["state"] != "current" and x["status"] != "pushed"]
+    else:
+        bad = [x for x in results if x["state"] != "current"]
+
+    def text() -> str:
+        lines = [f"{len(results)} repos, {len([x for x in results if x['state'] != 'current'])} not current"]
+        for x in results:
+            if x["state"] == "current":
+                continue
+            lines.append(f"  {x['repo']}: {x.get('status', 'would update')} {x.get('detail', '')}".rstrip())
+        return "\n".join(lines)
+
+    emit(args, {"repos": results, "not_current": len(bad)}, text)
     return 1 if bad else 0
 
 
@@ -5444,6 +5664,7 @@ SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
+    "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
@@ -5453,6 +5674,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
+    "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
     "deprecated-prs --fix": [
@@ -5511,6 +5733,17 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
             _finding(check, str(f["repo"]), str(f["kind"]), str(f["detail"]))
             for f in rows
             if f.get("status") in {"open", "failed", "planned"}
+        ]
+    if check == "gitnexus-sync":
+        return [
+            _finding(
+                check,
+                str(r["repo"]),
+                str(r["state"]),
+                "GitNexus files out of date: " + ", ".join(_strs(r.get("files") or [], "files")),
+            )
+            for r in (_map(x, "gitnexus-sync repo") for x in _seq(data.get("repos") or [], "repos"))
+            if r.get("state") != "current"
         ]
     if check == "agents-sync":
         return [
@@ -5978,6 +6211,15 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.set_defaults(func=cmd_agents_sync)
+
+    s = add(
+        "gitnexus-sync",
+        "give every non-marketing repo its GitNexus configuration and skills",
+    )
+    s.add_argument("--check", action="store_true", help="report repos out of date")
+    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.set_defaults(func=cmd_gitnexus_sync)
 
     s = add(
         "templates-check",

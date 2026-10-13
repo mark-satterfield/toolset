@@ -22,6 +22,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 |---|---|---|
 | `reconcile` | `reconcile` | no open finding; a deprecated or archived repo with no local clone is normal (`deprecate` deletes the clone) and raises none |
 | `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated has the current shared `AGENTS.md` blocks |
+| `gitnexus-sync` | `gitnexus-sync --check` | every non-marketing repo that is not deprecated has `.gitnexusrc`, the `.gitnexus` ignore rule and the current `.claude/skills/gitnexus/` |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every non-deprecated, non-archived repo on disk, in every app space except marketing | no anomaly |
 | `beads-setup` | `beads-setup --check`: every non-deprecated, non-archived repo (whatever its lifecycle, `planned` included; `apps/marketing/` excluded) has `.beads/config.yaml`, `metadata.json` and `.beads/.gitignore` committed, an entry in the beads fleet list, and a `.gitignore` with the beads and standard ignores | no gap |
 | `beads-fleet` | `beads-fleet`: the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`), which `com.skillspoke.beads-fleet-watch` watches | every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed |
@@ -38,7 +39,7 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and then
+`doctor --fix` runs `reconcile --fix`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix` and then
 `deprecated-prs --fix` before the checks; each commits and pushes what it changed.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes

@@ -126,13 +126,18 @@ hand the facts back for the caller to act on.
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search across repos | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` blocks | `agents-sync` (`--check` to report only) |
+| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block) | `agents-sync` (`--check` to report only) |
+| Give every non-marketing repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Check or repair a repo's development environment | `environment <repo>` (`--fix` repairs it) |
 | Health check and every safe repair | `doctor --fix` |
 
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+
+### GitNexus
+
+Every repo except those under `apps/marketing/` has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run `npx gitnexus` or a bare `gitnexus` in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
 
 ### Development environment
 
