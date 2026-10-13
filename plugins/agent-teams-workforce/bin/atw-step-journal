@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# atw-step-journal <create|add|start|done|fail|artifact|next|artifacts|inputs|invalidate|validate> ...
+# — reads and changes the step journal of one bead (the checklist of the steps a pipeline runs
+# for it). orchestrator/core/step_journal.py is the command; the journal's shape is
+# skills/pipeline-contracts/schemas/step-journal.schema.json. Give the journal file with
+# --journal, or its directory and bead with --dir and --bead. Prints one JSON object on stdout.
+# The command needs typeguard and jsonschema (scripts/requirements.txt), which the python3 on
+# PATH does not always have, so uv supplies them.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' \
+  python -P "$here/../orchestrator/core/step_journal.py" "$@"

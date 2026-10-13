@@ -1,0 +1,250 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/step-journal.schema.json",
+  "title": "Step journal",
+  "description": "The step journal of one bead (an Epic, a Story or a Task): the checklist of the steps a pipeline runs for that bead. It lists the planned steps, grows as a step adds child steps, and each step is marked off right after its output is written. A restarted run begins at the first step that is not done, and a later step takes an earlier step's outputs from the artifacts recorded here. This file is the one definition of the journal's shape, of its vocabularies and of the step plans the command takes: scripts/generate_step_journal_contract.py renders scripts/step_journal_contract.py (the Python types, the constants and the validating readers) from it, and orchestrator/checks/check_step_journal_contract.py fails when that module is stale. orchestrator/core/step_journal.py is the only reader and writer of a step journal file, and bin/atw-step-journal is how an agent session or a workflow calls it; nobody edits the JSON by hand. That module also enforces the three rules a JSON Schema cannot state: every step id is unique in the journal, every id in a step's inputs names a step of the journal, and a step whose status is done has no child step that is not done.",
+  "x-journalSuffix": ".step-journal.json",
+  "x-lockSuffix": ".lock",
+  "type": "object",
+  "required": ["bead", "beadType", "pipeline", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "bead": {
+      "description": "The id of the bead this journal is about.",
+      "$ref": "#/definitions/beadId"
+    },
+    "beadType": {
+      "description": "The kind of bead this journal is about.",
+      "$ref": "#/definitions/beadType"
+    },
+    "pipeline": {
+      "description": "The pipeline whose steps this journal lists.",
+      "$ref": "#/definitions/pipeline"
+    },
+    "started": {
+      "description": "When the first step of this journal was marked running.",
+      "$ref": "#/definitions/moment"
+    },
+    "finished": {
+      "description": "When every step of this journal became done. Absent while any step is not done.",
+      "$ref": "#/definitions/moment"
+    },
+    "steps": {
+      "description": "The outermost steps, in the order they run.",
+      "type": "array",
+      "items": {"$ref": "#/definitions/step"}
+    }
+  },
+  "definitions": {
+    "beadId": {
+      "description": "The id of a bead.",
+      "type": "string",
+      "pattern": "^ssbd-[a-z0-9.]+$"
+    },
+    "beadType": {
+      "description": "The kind of a bead.",
+      "type": "string",
+      "enum": ["epic", "story", "task"]
+    },
+    "pipeline": {
+      "description": "A pipeline that runs steps for a bead.",
+      "type": "string",
+      "enum": ["elaboration", "build", "deploy"]
+    },
+    "stepStatus": {
+      "description": "Where a step stands: planned (not started), running (started and not finished), done (its own work is recorded done and every child step is done) or failed.",
+      "type": "string",
+      "enum": ["planned", "running", "done", "failed"]
+    },
+    "pathKind": {
+      "description": "The kind of an artifact that is on disk.",
+      "type": "string",
+      "enum": ["file", "directory"]
+    },
+    "valueKind": {
+      "description": "The kind of an artifact that is a value held in the journal.",
+      "type": "string",
+      "enum": ["value"]
+    },
+    "moment": {
+      "description": "A date and time with its UTC offset.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "stepId": {
+      "description": "The id of a step: a UUID, unique in the journal, that never changes.",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "text": {
+      "description": "A string that is not empty.",
+      "type": "string",
+      "minLength": 1
+    },
+    "pathArtifact": {
+      "description": "A file or a directory a step produced.",
+      "type": "object",
+      "required": ["name", "kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The name a later step asks for this artifact by.",
+          "$ref": "#/definitions/text"
+        },
+        "kind": {
+          "description": "Whether the artifact is a file or a directory.",
+          "$ref": "#/definitions/pathKind"
+        },
+        "path": {
+          "description": "Where the file or directory is.",
+          "$ref": "#/definitions/text"
+        }
+      }
+    },
+    "valueArtifact": {
+      "description": "A value a step produced, held in the journal.",
+      "type": "object",
+      "required": ["name", "kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The name a later step asks for this artifact by.",
+          "$ref": "#/definitions/text"
+        },
+        "kind": {
+          "description": "Marks the artifact as a value.",
+          "$ref": "#/definitions/valueKind"
+        },
+        "value": {
+          "description": "The value itself, any JSON."
+        }
+      }
+    },
+    "artifact": {
+      "description": "One thing a step produced: a file or a directory, which carries a path, or a value, which carries the value. It carries exactly one of path and value, and no timestamp.",
+      "oneOf": [
+        {"$ref": "#/definitions/pathArtifact"},
+        {"$ref": "#/definitions/valueArtifact"}
+      ]
+    },
+    "step": {
+      "description": "One step. A step may have an agent, or a script, or neither (a step that only contains child steps); never both. A step is done only when its own work is recorded done and every child step is done.",
+      "type": "object",
+      "required": ["id", "description", "purpose", "status", "artifacts", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The id of this step: a UUID, unique in the journal, that never changes.",
+          "$ref": "#/definitions/stepId"
+        },
+        "description": {
+          "description": "What the step does, in plain words.",
+          "$ref": "#/definitions/text"
+        },
+        "purpose": {
+          "description": "Why the step exists: the need or the finding that caused it.",
+          "$ref": "#/definitions/text"
+        },
+        "agent": {
+          "description": "The agent that performs the step. Absent when a script performs it or when the step only contains child steps.",
+          "$ref": "#/definitions/text"
+        },
+        "script": {
+          "description": "The script that performs the step. Absent when an agent performs it or when the step only contains child steps.",
+          "$ref": "#/definitions/text"
+        },
+        "status": {
+          "description": "Where the step stands.",
+          "$ref": "#/definitions/stepStatus"
+        },
+        "started": {
+          "description": "When the step was last marked running.",
+          "$ref": "#/definitions/moment"
+        },
+        "finished": {
+          "description": "When the step became done.",
+          "$ref": "#/definitions/moment"
+        },
+        "inputs": {
+          "description": "The ids of the steps whose artifacts this step reads.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/stepId"}
+        },
+        "artifacts": {
+          "description": "Everything the step itself produced.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/artifact"}
+        },
+        "steps": {
+          "description": "The child steps, in the order they run. Any step may contain child steps to any depth, any number of them and of any kind.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/step"}
+        },
+        "failure": {
+          "description": "Why the step failed. Present only when status is failed.",
+          "$ref": "#/definitions/text"
+        }
+      },
+      "allOf": [
+        {"not": {"required": ["agent", "script"]}},
+        {
+          "if": {"required": ["failure"]},
+          "then": {"properties": {"status": {"const": "failed"}}}
+        }
+      ]
+    },
+    "stepPlan": {
+      "description": "A step to add to a journal, before it has an id: what the create and add operations take. It is never stored; the operation turns it into a planned step with a new id.",
+      "type": "object",
+      "required": ["description", "purpose"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "description": "A name that lives only inside one call: a later plan of the same call names it in inputs to read this step's artifacts.",
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "description": "What the step does, in plain words.",
+          "$ref": "#/definitions/text"
+        },
+        "purpose": {
+          "description": "Why the step exists: the need or the finding that caused it.",
+          "$ref": "#/definitions/text"
+        },
+        "agent": {
+          "description": "The agent that performs the step.",
+          "$ref": "#/definitions/text"
+        },
+        "script": {
+          "description": "The script that performs the step.",
+          "$ref": "#/definitions/text"
+        },
+        "inputs": {
+          "description": "The steps whose artifacts this step reads: each entry is the ref of an earlier plan of the same call, or the id of a step already in the journal.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/text"}
+        },
+        "steps": {
+          "description": "The child steps to add with this one, in the order they run. Only a plan with neither agent nor script has them: the child steps of a step with an agent or a script come from its result and are added while it is running.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/stepPlan"}
+        }
+      },
+      "allOf": [
+        {"not": {"required": ["agent", "script"]}},
+        {
+          "if": {"anyOf": [{"required": ["agent"]}, {"required": ["script"]}]},
+          "then": {"properties": {"steps": {"maxItems": 0}}}
+        }
+      ]
+    },
+    "stepPlans": {
+      "description": "The outermost steps a new journal starts with, in the order they run; at least one.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/stepPlan"}
+    }
+  }
+}
