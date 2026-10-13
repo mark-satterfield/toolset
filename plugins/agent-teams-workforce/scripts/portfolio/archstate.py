@@ -26,7 +26,7 @@ one item per element, for the phases that make Specs and Tasks from the delta.
 mention, so a step checks that a repository it created is one the target names.
 `depscore.py arch-target-remove` runs `remove_target`, which deletes `target/<subject>/` once
 the Specs and Tasks made from its delta are written, and commits the removal.
-`depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<subject>/` files
+`depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<element>/` files
 the effective version has been corrected to match, and commits the removal.
 """
 

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent / "schemas" / "survey.schema.json"
-SCHEMA_SHA256: Final[str] = "2d82b70047eec467f0e0f280dccca587dc0d0942cfc6fc19a01495753b5d9de6"
+SCHEMA_SHA256: Final[str] = "ebd375e63f2192408fa62726a6c200e1b0182b57402ede9deee5343c51d35084"
 SURVEY_FILE: Final[str] = "survey.json"
 BASELINE_REF: Final[str] = "#/$defs/Baseline"
 
@@ -528,7 +528,7 @@ class BaselineEntry(TypedDict):
 
 
 class Survey(TypedDict):
-    """The architecture survey an Epic's prd-reality-reconciler saves as survey.json in the Epic work directory.
+    """The architecture survey saved as survey.json in an Epic's work directory.
 
     This file is the one definition of the survey and of the architecture baseline ($defs/Baseline).
     skills/artifact-handoff/survey_contract.py is generated from it by scripts/gen_survey_contract.py; never restate a

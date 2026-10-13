@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "survey.json",
-  "description": "The architecture survey an Epic's prd-reality-reconciler saves as survey.json in the Epic work directory. This file is the one definition of the survey and of the architecture baseline ($defs/Baseline). skills/artifact-handoff/survey_contract.py is generated from it by scripts/gen_survey_contract.py; never restate a field or value elsewhere.",
+  "description": "The architecture survey saved as survey.json in an Epic's work directory. This file is the one definition of the survey and of the architecture baseline ($defs/Baseline). skills/artifact-handoff/survey_contract.py is generated from it by scripts/gen_survey_contract.py; never restate a field or value elsewhere.",
   "type": "object",
   "additionalProperties": false,
   "required": [

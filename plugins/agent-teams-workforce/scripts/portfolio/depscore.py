@@ -66,7 +66,7 @@
                          no `bd` call
     arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
                          holding it; no `bd` call
-    arch-built-remove    delete the `built/<subject>/` files the effective version now matches
+    arch-built-remove    delete the `built/<element>/` files the effective version now matches
                          and commit the removal in the repository holding them; no `bd` call
     arch-commit          commit the architecture files an integration changed, staging only
                          those paths, and push the branch; no `bd` call
@@ -1330,7 +1330,7 @@ def _configure_command_43(sub: _Subcommands, common: argparse.ArgumentParser) ->
     """Register one command family and its arguments."""
     abr: argparse.ArgumentParser = sub.add_parser(
         "arch-built-remove",
-        help="delete built/<subject>/ files the effective version now matches and commit "
+        help="delete built/<element>/ files the effective version now matches and commit "
         "the removal; runs no `bd` command",
         parents=[common],
     )
