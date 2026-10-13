@@ -166,12 +166,26 @@ contains packages and is used by Lambdas.
 the moment it is read. That says nothing about whether it covers the PRD in hand: the same
 document may need additions as the next feature is designed.
 
-**Implementation.** A piece of information about implementation is verified when the code
-has been built and tested and has passed. That always includes its CI/CD and its CDK. This
-is the whole definition. Whether something is currently deployed is not recorded and has no
-bearing on verified: the environment is a development environment where stacks are deployed
-and torn down freely. Until code is verified it is a hint, and a difference between code and
-an arc42 document is not a finding.
+**Implementation.** A piece of information in the matrix is verified when the code that
+makes it real has been built and tested and has passed. That always includes its CI/CD and
+its CDK. This is the whole definition. Whether something is currently deployed is not
+recorded and has no bearing on verified: the environment is a development environment where
+stacks are deployed and torn down freely.
+
+Verified applies to any piece of information in the matrix, an entry or a relationship, and
+is not limited to code. "This service uses the chassis" is a relationship, and it is planned
+until a build proves it.
+
+Everything in the matrix is used, verified or not. Verified never decides whether an entry
+or a relationship is read, linked to, designed against or built on. The mark changes what
+the pipeline assumes, and it never blocks a step:
+
+- **Not verified** means "this still has to be made real". The entry or relationship
+  describes what is designed or planned, and it is theoretical until proven. The pipeline
+  uses it like any other and assumes it may still have to be built. Existing code for it is
+  a hint, and a difference between that code and an arc42 document is not a finding.
+- **Verified** means "this is real". The entry or relationship describes something that
+  exists. The pipeline counts on it existing, and its code is trusted.
 
 ## 4. How the matrix is kept
 
@@ -179,7 +193,7 @@ an arc42 document is not a finding.
 |---|---|---|
 | Seeded | The matrix starts with what is known today: every existing stack and the repository that holds it; the purpose of each stack; every Epic and its PRD; the services, components and infrastructure the architecture documents describe, mapped to the stacks and repositories that are their home in code. | The seeding work, once, from the repositories, beads and the effective arc42 documents. |
 | Filled in and corrected | As elaboration runs: the features derived from PRD requirements; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
-| Confirmed | Information is marked verified once the code, including its CI/CD and its CDK, has been built and tested and has passed. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
+| Confirmed | Information, an entry or a relationship, is marked verified once the code, including its CI/CD and its CDK, has been built and tested and has passed. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
 ## 5. Requirements
@@ -278,12 +292,20 @@ an arc42 document is not a finding.
   this requirement", because an effective document can be trusted and still not cover the
   PRD in hand.
 - **R24.** The matrix marks each piece of information as verified or not verified,
-  separately from every other piece.
+  separately from every other piece. A piece of information is an entry or a relationship;
+  the mark applies to both and is not limited to code. A verified entry or relationship
+  describes something that exists: the pipeline counts on it existing and trusts its code.
+  An entry or relationship that is not verified describes what is designed or planned and
+  is theoretical until a build proves it.
 - **R25.** The build pipeline marks information verified only when the code has been built
   and tested and has passed, and that always includes its CI/CD and its CDK. Nothing else
   marks it. No elaboration step reads code to decide whether something is built. Whether
   something is currently deployed is not recorded and has no bearing on verified.
-- **R26.** The matrix presents existing code that no build has verified as a hint only, so
+- **R26.** The pipeline uses everything in the matrix, verified or not. Verified never
+  decides whether an entry or a relationship is read, linked to, designed against or built
+  on, and it never blocks a step. The mark changes only what the pipeline assumes: an entry
+  or relationship that is not verified may still have to be built, and a verified one is
+  real. The matrix presents existing code that no build has verified as a hint only, so
   that an architecture agent does not treat a difference between that code and arc42 as a
   finding.
 
