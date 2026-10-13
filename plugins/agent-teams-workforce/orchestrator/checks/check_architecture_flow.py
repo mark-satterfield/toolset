@@ -69,7 +69,7 @@ from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION, PLANNED_
 if TYPE_CHECKING:
     from orchestrator.checks.journal_bench import Call
     from orchestrator.core.io import JsonValue
-    from step_journal_contract import Journal, Step
+    from step_journal_contract import Artifact, Journal, Step
 
 WORK_REVIEWERS: Final[list[str]] = [GUARDIAN, REVIEWERS["runtime-failure"], REVIEWERS["trd"]]
 OUTERMOST: Final[list[str]] = [
@@ -269,6 +269,28 @@ def check_invalidation(bench: ArchBench) -> None:
     report("PASS: an invalidation from the check step reruns the check, its reviewers, the promotion and the TRD step")
 
 
+def check_lead_planned_again(root: Path) -> None:
+    """Check a start at the review that planned the lead, when another review holds the finding."""
+    bench: ArchBench = started(root, "finding-restart", Scenario(finding=True))
+    run(bench)
+    found, later = (step["id"] for step in architecture(bench)[2:4])
+
+    def restart(journal: Journal) -> None:
+        holder: Step = sj.find_step(journal, found)
+        records: list[Artifact] = [held for held in holder["artifacts"] if held["name"].startswith(PLANNED_FOR_PREFIX)]
+        holder["artifacts"] = [held for held in holder["artifacts"] if held not in records]
+        sj.find_step(journal, later)["artifacts"].extend(records)
+        sj.invalidate_from(journal, later, sj.timestamp())
+
+    with patch.dict(os.environ, bench.environment()):
+        sj.update_journal(bench.path, restart)
+        require(LEAD not in [step.get("agent") for step in architecture(bench)], "the lead's step is removed")
+        bench.run_architecture()
+    agents: list[str | None] = [step.get("agent") or step.get("script") for step in architecture(bench)]
+    require(agents == [ARCHITECT, CHECK, *WORK_REVIEWERS, LEAD, APPROVE], f"the lead is planned again: {agents}")
+    require(bench.step(PROMOTE_DESCRIPTION)["status"] == "done", "the promotion follows the lead planned again")
+
+
 def check_findings(root: Path) -> None:
     """Check a finding: the lead, one correction, the re-check, promotion; and the decider when it stays disputed."""
     bench: ArchBench = started(root, "finding", Scenario(finding=True))
@@ -312,6 +334,7 @@ def check_findings(root: Path) -> None:
     require(disputed.counts[DECIDER] == 1 and disputed.counts[LEAD] == THRICE, f"the decider: {disputed.counts}")
     require(disputed.counts[ARCHITECT] == TWICE, "a disputed item never goes to the architect a second time")
     require(disputed.step(PROMOTE_DESCRIPTION)["status"] == "done", "the promotion follows the ruling")
+    check_lead_planned_again(root)
     report("PASS: a finding goes to the lead, one resumed correction and re-check; a disputed one to the decider")
 
 

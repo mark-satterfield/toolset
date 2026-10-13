@@ -227,10 +227,16 @@ def helped_run(bench: Bench, *, interrupted: bool) -> None:
         asked: Path = run.saved.file("request")
 
         def accept(_accepted: StepRun, output: Path) -> Completion:
-            return Completion(artifacts=(file_artifact("request", asked), file_artifact("answer", output)))
+            return Completion(artifacts=(file_artifact("answer", output),))
 
-        schema: Path = bench.root / "schema.json"
-        return AgentLaunch(bench.work / "answer.json", schema, "Answer.", accept, files=(("request", asked),))
+        return AgentLaunch(
+            bench.work / "answer.json",
+            bench.root / "schema.json",
+            "Answer.",
+            accept,
+            files=(("request", asked),),
+            keep=(file_artifact("request", asked),),
+        )
 
     def establish(call: Call) -> None:
         call.output.write_text('{"accepted": true}', encoding="utf-8")
@@ -279,6 +285,17 @@ def check_helpers(root: Path) -> None:
         "the helper's request and answer are recorded",
     )
     require(sj.is_complete(broken.journal()) and not broken.counts["architect.accept"], "the parent is closed")
+    again: Bench = Bench(root / "interrupted-twice")
+    helped_run(again, interrupted=True)
+    again.fail_once.add("helper.session")
+    with expected_error(StepError):
+        again.runner(HELPED).run()
+    with expected_error(StepError):
+        again.runner(HELPED).run()
+    kept: list[str] = [held["name"] for held in again.step("Question two")["artifacts"]]
+    require(kept == ["request"], f"a helper launched again and failed still holds its request: {kept}")
+    again.runner(HELPED).run()
+    require(sj.is_complete(again.journal()), "a helper that failed after its relaunch is launched from its request")
     report("PASS: an agent's helper steps and Finish close its step; an interrupted one resumes at the helper")
 
 

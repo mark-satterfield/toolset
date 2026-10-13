@@ -239,7 +239,7 @@ def specialist(run: StepRun) -> AgentLaunch:
     request: SpecialistRequest = checked_file(run, asked, validate_specialist_request)
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
-        return Completion(artifacts=(file_artifact(name, asked), file_artifact(LABEL_ANSWER, output)))
+        return Completion(artifacts=(file_artifact(LABEL_ANSWER, output),))
 
     return AgentLaunch(
         output=Path(request["answerPath"]),
@@ -249,6 +249,7 @@ def specialist(run: StepRun) -> AgentLaunch:
         add_dirs=_helper_dirs(run),
         files=((LABEL_REQUEST, asked),),
         hand_inputs=False,
+        keep=(file_artifact(name, asked),),
     )
 
 
@@ -270,7 +271,6 @@ def trd_author(run: StepRun) -> AgentLaunch:
         unsourced: list[JsonValue] = [entry["obligation"] for entry in answer["noSource"]]
         return Completion(
             artifacts=(
-                file_artifact(name, asked),
                 file_artifact(ARTIFACT_TRD, Path(request["trdPath"])),
                 file_artifact(LABEL_ANSWER, output),
                 value_artifact(NO_SOURCE, unsourced),
@@ -285,6 +285,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
         add_dirs=_helper_dirs(run),
         files=((LABEL_REQUEST, asked),),
         hand_inputs=False,
+        keep=(file_artifact(name, asked),),
     )
 
 
@@ -302,7 +303,7 @@ def maintainer(run: StepRun) -> AgentLaunch:
     request: WriteRequest = checked_file(run, asked, validate_write_request)
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
-        return Completion(artifacts=(file_artifact(name, asked), file_artifact(WRITTEN, output)))
+        return Completion(artifacts=(file_artifact(WRITTEN, output),))
 
     return AgentLaunch(
         output=Path(request["resultPath"]),
@@ -312,4 +313,5 @@ def maintainer(run: StepRun) -> AgentLaunch:
         add_dirs=_helper_dirs(run),
         files=((LABEL_REQUEST, asked),),
         hand_inputs=False,
+        keep=(file_artifact(name, asked),),
     )

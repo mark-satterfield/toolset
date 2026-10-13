@@ -21,6 +21,7 @@ from architecture_work_contract import (
     validate_scope_review,
 )
 from matrix_contract import validate_reviewer_scope
+from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
 from orchestrator.core.handback_contract import OTHER_CAUSE
@@ -135,12 +136,12 @@ def _in_scope(finding: ScopeFinding, scope: ReviewerScope) -> bool:
     )
 
 
-def _lead_group(run: StepRun) -> StepGroup:
-    """Plan the lead's step after the last reviewer of a review, unless one is planned already.
+def _review_group(run: StepRun) -> tuple[list[Step], StepId]:
+    """List the reviews of the group a review belongs to, and the step before the promotion.
 
     Returns:
-        The group: one step for the lead, handed every review of the group, placed before the
-        promotion step.
+        Every agent step with the review's inputs that comes before the promotion step in the
+        review's container, and the id of the step the promotion step follows.
 
     Raises:
         ArchitectureStepError: No promotion step follows the reviewer in its container.
@@ -155,23 +156,49 @@ def _lead_group(run: StepRun) -> StepGroup:
     ]
     if not later:
         raise ArchitectureStepError(run, "no promotion step follows the review in its container")
-    reviews: list[StepId] = [
-        step["id"] for step in siblings[: later[0]] if "agent" in step and step.get("inputs") == run.step.get("inputs")
+    reviews: list[Step] = [
+        step for step in siblings[: later[0]] if "agent" in step and step.get("inputs") == run.step.get("inputs")
     ]
-    lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
+    return reviews, siblings[later[0] - 1]["id"]
+
+
+def _holds_raised(step: Step) -> bool:
+    """Tell whether a done review holds something for the lead to route.
+
+    Returns:
+        True when the step is done and holds a finding or a request for alternatives.
+
+    """
+    return step["status"] == STATUS_DONE and any(
+        held["kind"] == "value" and (held["name"] == ALTERNATIVES or (held["name"] == FINDINGS and bool(held["value"])))
+        for held in step["artifacts"]
+    )
+
+
+def _lead_group(reviews: list[Step], follows: StepId, lead: str) -> StepGroup:
+    """Plan the lead's step after the last reviewer of a review, unless one is planned already.
+
+    Returns:
+        The group: one step for the lead, handed every review of the group, placed before the
+        promotion step.
+
+    """
     plan: StepPlan = {
         "description": FINDINGS_LEAD_DESCRIPTION,
         "purpose": FINDINGS_LEAD_PURPOSE,
         "agent": lead,
-        "inputs": list(reviews),
+        "inputs": [step["id"] for step in reviews],
     }
-    return StepGroup((NewStep(plan),), follows=siblings[later[0] - 1]["id"], unless_agent=lead)
+    return StepGroup((NewStep(plan),), follows=follows, unless_agent=lead)
 
 
 def _accept_review(run: StepRun, output: Path, scope_path: Path, *, original: bool) -> Completion:
     """Record a review: its file, the findings inside the reviewer's scope, and the lead when needed.
 
-    A review file or a scope file that does not satisfy its contract raises
+    The lead is planned by an original review when it, or a done review of its group, holds a
+    finding or a request for alternatives, so the lead's step is planned again by whichever
+    review of the group runs again. A review file or a scope file that does not satisfy its
+    contract, or an original review that no promotion step follows, raises
     ``ArchitectureStepError``.
 
     Returns:
@@ -193,8 +220,14 @@ def _accept_review(run: StepRun, output: Path, scope_path: Path, *, original: bo
     artifacts.append(value_artifact(FINDINGS, held))
     if review["alternativesRequested"]:
         artifacts.append(value_artifact(ALTERNATIVES, len(review["alternativesRequested"])))
-    routed: bool = original and bool(kept or review["alternativesRequested"])
-    return Completion(artifacts=tuple(artifacts), add=(_lead_group(run),) if routed else ())
+    if not original:
+        return Completion(artifacts=tuple(artifacts))
+    reviews: list[Step]
+    follows: StepId
+    reviews, follows = _review_group(run)
+    routed: bool = bool(kept or review["alternativesRequested"]) or any(_holds_raised(step) for step in reviews)
+    lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
+    return Completion(artifacts=tuple(artifacts), add=(_lead_group(reviews, follows, lead),) if routed else ())
 
 
 @agent_step(*agents_with_role(PLUGIN, ROLE_REVIEWER))

@@ -444,7 +444,8 @@ class AgentLaunch:
     ``accept`` is called with the validated output path and returns what the step records. It is
     not called when the session marked the step done itself or left child steps under it.
     ``fresh_output`` False keeps a file already at ``output`` for a session that starts, for a
-    document the agent updates in place.
+    document the agent updates in place. ``keep`` is recorded on the step in the journal change
+    that starts it, so what the step is launched from is on the step at every later start.
     """
 
     output: Path
@@ -458,6 +459,7 @@ class AgentLaunch:
     resume_from: StepId | None = None
     fresh_output: bool = True
     hand_inputs: bool = True
+    keep: tuple[Artifact, ...] = ()
 
 
 type AgentBuilder = Callable[[StepRun], AgentLaunch]

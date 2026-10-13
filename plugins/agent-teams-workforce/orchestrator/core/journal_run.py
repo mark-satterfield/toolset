@@ -296,17 +296,22 @@ class JournalRunner:
             saved=StepInputs(step["id"], step["description"], stage_of(step), (saved,)),
         )
 
-    def _start(self, step_id: StepId, session: str | None = None) -> Step:
-        """Mark a step running in the journal.
+    def _start(self, step_id: StepId, session: str | None = None, keep: tuple[Artifact, ...] = ()) -> Step:
+        """Mark a step running in the journal, holding ``keep``, as one change.
 
         Returns:
             The running step.
 
         """
-        return step_journal.update_journal(
-            self.path,
-            lambda journal: step_journal.start_step(journal, step_id, step_journal.timestamp(), session=session),
-        )
+
+        def change(journal: Journal) -> Step:
+            running: Step = step_journal.start_step(journal, step_id, step_journal.timestamp(), session=session)
+            artifact: Artifact
+            for artifact in keep:
+                running = step_journal.record_artifact(journal, step_id, artifact)
+            return running
+
+        return step_journal.update_journal(self.path, change)
 
     def _complete(self, step_id: StepId, completion: Completion) -> None:
         """Record a step's result in the journal as one change."""
@@ -339,7 +344,7 @@ class JournalRunner:
         launch: AgentLaunch = check_type(builder(self._step_run(step, inputs, saved)), AgentLaunch)
         held: str | None = _held_session(journal, step, launch)
         session: str = held or str(uuid4())
-        run: StepRun = self._step_run(self._start(step["id"], session), inputs, saved)
+        run: StepRun = self._step_run(self._start(step["id"], session, launch.keep), inputs, saved)
         handed: list[tuple[str, Path]] = inputs.labelled_files() if launch.hand_inputs else []
         labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, *launch.files, (JOURNAL_LABEL, self.path)]))
         request: AgentStep = AgentStep(
