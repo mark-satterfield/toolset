@@ -15,13 +15,12 @@ Commands:
         repository's default branch. With B, how many commits HEAD has that origin/B lacks
         (`--fetch-base` fetches origin B first; `--unset-base-upstream` unsets an upstream
         that is origin/B, so nothing pushes to the default branch).
-    provision --repo R --branch B --path P [--stash-label L]
+    provision --repo R --branch B --path P
         Reuse the worktree registered for branch B or at P, or cut one at P on B from
         origin/<default>. A worktree lives inside its own repository: P must be
-        R/.worktrees/<name>, and a reused tree found anywhere else is moved to P.
-        With L, a reused tree's uncommitted changes are stashed under a
-        message naming L. Reports the tree, its branch, whether it was reused, the default
-        branch, the git-common-dir, the stash entry and what was worked around (`blocked`).
+        R/.worktrees/<name>, and a reused tree found anywhere else is moved to P. A reused
+        tree is left as it is. Reports the tree, its branch, whether it was reused, the default
+        branch, the git-common-dir and what was worked around (`blocked`).
     hash-files --tree T [FILE ...]
         The git blob hash of each FILE in T (`missing` when it is not a file), and
         `treeDigest`: the SHA-256 of HEAD, the status and the content of every changed or
@@ -38,7 +37,6 @@ Commands:
 from __future__ import annotations
 
 import argparse
-import datetime
 import hashlib
 import json
 import os
@@ -100,7 +98,6 @@ class ProvisionResult(TypedDict):
     reused: bool
     defaultBranch: str
     gitCommonDir: str | None
-    stashed: str
     blocked: list[str]
 
 
@@ -446,35 +443,6 @@ def cut_worktree(
         raise GitError(failure_message(repo, add, added))
 
 
-def stash_changes(tree: str, label: str, blocked: list[str]) -> str:
-    """Stash a reused tree's uncommitted changes under a message naming the run.
-
-    Args:
-        tree: The tree.
-        label: The run's label.
-        blocked: Where to note what was worked around.
-
-    Returns:
-        The `git stash list -n 1` line, or "" when nothing was stashed.
-
-    """
-    if not status_lines(tree):
-        return ""
-    stamp: str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    git(
-        tree,
-        "stash",
-        "push",
-        "--include-untracked",
-        "-m",
-        f"abandoned run {label} {stamp}",
-    )
-    entry: str = out(tree, "stash", "list", "-n", "1") or ""
-    if status_lines(tree):
-        blocked.append(f"{tree} still has uncommitted changes after the stash")
-    return entry
-
-
 def require_default_branch(repo: str) -> str:
     """Return the repository's default branch, which provisioning cannot do without.
 
@@ -544,7 +512,6 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     repo: str = args.repo
     branch: str = args.branch
     path: str = args.path
-    stash_label: str = args.stash_label
     blocked: list[str] = []
     home: Path = Path(repo).resolve() / WORKTREES_DIRNAME
     if Path(path).resolve().parent != home:
@@ -555,9 +522,6 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     tree: str = reused_tree or path
     if not reused_tree:
         cut_worktree(repo, branch, path, default, blocked)
-    stashed: str = ""
-    if reused_tree and stash_label:
-        stashed = stash_changes(tree, stash_label, blocked)
     facts: TreeFacts = tree_facts(tree)
     on: str = facts.get("branch") or ""
     ok: bool = bool(facts.get("isGitTree")) and on not in {"", "HEAD", default}
@@ -572,7 +536,6 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
         "reused": reused_tree is not None,
         "defaultBranch": default,
         "gitCommonDir": facts.get("gitCommonDir"),
-        "stashed": stashed,
         "blocked": blocked,
     }
 
@@ -738,7 +701,6 @@ def build_parser() -> argparse.ArgumentParser:
     prov.add_argument("--repo", required=True)
     prov.add_argument("--branch", required=True)
     prov.add_argument("--path", required=True)
-    prov.add_argument("--stash-label", default="")
     hashes: argparse.ArgumentParser = sub.add_parser("hash-files", help="blob hashes and the work tree digest")
     hashes.add_argument("--tree", required=True)
     hashes.add_argument("files", nargs="*")

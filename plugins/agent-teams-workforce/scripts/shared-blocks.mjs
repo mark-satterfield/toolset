@@ -58,6 +58,12 @@ export const SHARED_BLOCKS = Object.freeze([
     requiredIn: ['built-version.js', 'deploy-mechanism.js', 'story-deploy-fix.js'],
   },
   {
+    name: 'step-journal',
+    canonical: 'scripts/shared-blocks/step-journal.js',
+    filledFrom: 'skills/pipeline-contracts/schemas/{step-journal.schema,pipeline-steps}.json',
+    requiredIn: ['built-version.js', 'story-deploy-fix.js', 'task-to-deploy.js'],
+  },
+  {
     name: 'fable',
     canonical: 'scripts/shared-blocks/fable.js',
     filledFrom: 'skills/pipeline-contracts/schemas/driver-surface.schema.json',
@@ -183,6 +189,20 @@ export const canonicalBlock = (name) => {
   }
   if (name === 'story-deploy-args') {
     return fillPlaceholders(name, text, [['/* STORY_DEPLOY_ARGS_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)]])
+  }
+  if (name === 'step-journal') {
+    const contracts = join('skills', 'pipeline-contracts', 'schemas')
+    const schema = JSON.parse(pluginText(join(contracts, 'step-journal.schema.json')))
+    const wire = {
+      changePrefix: schema['x-changePrefix'],
+      changePartPrefix: schema['x-changePartPrefix'],
+      changeChunk: schema['x-changeChunk'],
+      plannedForPrefix: schema['x-plannedForPrefix'],
+    }
+    return fillPlaceholders(name, text, [
+      ['/* STEP_JOURNAL_WIRE */ {}', JSON.stringify(wire)],
+      ['/* PIPELINE_STEPS */ {}', pluginJson(join(contracts, 'pipeline-steps.json'))],
+    ])
   }
   if (name === 'architecture-artifacts') {
     const common = 'architecture-common.schema.json'

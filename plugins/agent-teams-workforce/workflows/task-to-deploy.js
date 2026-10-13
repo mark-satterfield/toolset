@@ -1,26 +1,25 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes and independently reviewed cumulative regression mappings have fresh per-test execution evidence. Preserves prior PRD obligations unless an accepted source explicitly supersedes them; scopes cross-repository checks by actual impact. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task first selects the design source it builds with from the bundles supplied now (depscore.py cds-bundles on designSystem.packagesDir): a cds Task whose artifact has a supplied bundle builds from that bundle, a bundle Task builds from the newest bundle of its artifact and stops blocked-upstream when none remains, a none Task is unchanged; then audits the files it changed by that design source — against the cds bundle the owner supplied (bundle) with the cds plugin's tools/audit-app.py, cds:audit-against-system ruling the findings the script cannot rule on; against the live CDS design system with cds:audit-against-system (cds); not at all for a change with no design impact (none) — sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when required cds configuration, design artifacts or capabilities remain unresolved), returning the verdict, with the design source and bundle used, as cdsAudit and the design source as designSource; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. Every deterministic step — the cds bundle selection (depscore.py cds-bundles), the cds audit script, the fingerprint of Red's test files and of the work tree around each Green round, and the git and suite steps of its minis — runs through relayrun.py, whose result reaches the workflow checked; the relay runner is pluginRoot's (else the plugin registry's) and the relay files go in relay.dir (else a mkdtemp directory), and each mini gets a numbered directory of its own. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
+    "Builds a Task on its Story's branch by running the steps its step journal lists, from the first step that is not done. The driver names the journal file and the run (journal: { path, run }); the workflow reads the journal once through the checked relay (bin/atw-step-journal read) and reports every change on its log as a STEP-JOURNAL line the driver applies: step started, step done with its artifacts and the steps its result adds, step failed with its cause. Each step takes its inputs from the artifacts earlier steps recorded, so a restarted build continues on the tree as the stopped run left it. The steps and what each records, reads and adds are defined in skills/pipeline-contracts/schemas/pipeline-steps.json (pipeline build): the Story's worktree; for a web-ui Task the design source (the newest cds bundle supplied for its artifact); for an infrastructure Task the provisioning intent; the regression scope, assessed, reviewed and validated; the baseline run of the suite command the repository declares; failing tests from each test agent the contract's surfaces call for, judged by a suite run that adds another round when Red does not hold; the implementers selected and run one after another, judged by a suite run that adds a ruling on the tests they name or another round when the suite is not green; a refactor, undone when the suite goes red; for a web-ui Task an audit against its design source, whose violations go back to the implementers once; the documentation audit and one update per documentation agent it assigns; a final suite run; the regression mapping, its review and its verification; and the commit to the Story's branch. A step that cannot go on fails with its cause (red-unsatisfied, no-progress, blocked-upstream, green-modified-tests, cds-audit and others) and the run stops there. Every deterministic step runs through relayrun.py with relay.runner (else pluginRoot's), and its relay files go under relay.dir, the Task's own directory, the same on every dispatch. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }, with step naming the step that failed.",
   phases: [
-    { title: 'Workspace', detail: "establishes or reuses the Story's worktree every writing phase operates in" },
+    { title: 'Workspace', detail: "establishes or reuses the Story's worktree, and selects a web-ui Task's design source" },
     { title: 'Infra Intent', detail: 'authors the provisioning intent for an infrastructure Task' },
-    { title: 'Regression Scope', detail: 'independently maps changed components to current and prior requirements and required test layers' },
+    { title: 'Regression Scope', detail: 'maps the change to current and earlier requirements, reviews and validates the scope' },
     { title: 'Baseline', detail: "resolves the repository's suite command and runs it before any change" },
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Refactor' },
-    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its supplied cds bundle or the live CDS design system, by its design source, and sends violations back through the Green loop once" },
+    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its design source" },
     { title: 'Documentation' },
-    { title: 'Commit', detail: 'runs the suite a final time and commits the Task to the Story branch' },
-    { title: 'Run Ledger', detail: 'writes the run journal on every exit path' },
+    { title: 'Commit', detail: 'runs the suite a final time, verifies the regression evidence and commits the Task to the Story branch' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 const ownedCoreContracts = "---\nname: subagent-contract\ndescription: Bounded specialist work in direct sessions, with file outputs and independent validation.\nuser-invocable: false\n---\n\n# Direct specialist session\n\nPerform the role in your definition. The brief gives a bead, the journal step id, the request,\ninput paths and an output path. It names only the inputs this step needs. The skills your\ndefinition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.\nWrite the result file; Python validates it, records it in the step journal and keeps pipeline state.\nStart another agent only when your definition has a `startsRoles` list, and only agents with\nthose roles. An agent that was started by another agent starts no one. Never invoke a Workflow\nor a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress\nfile it names and record a checkpoint or the submission only by running the artifactcontract.py\ncommands it gives; never write a checkpoint sidecar any other way. The progress file's fields are\ndefined by the artifact-handoff skill (schemas/checkpoint.schema.json, $defs/Progress). If resumed,\ninspect and continue the existing result and input files; retain completed valid work.\n\nOnly assigned files are writable. Reviewers may write their result, never the reviewed source.\nNever write arc42 section 2, expose secrets or touch apps/marketing repositories. Never run keeper\nor supervisor. Agents do not write pipeline beads; Python owns those writes. If reading beads is\nneeded, use the central atw-bd wrapper from beads-contract. No agent creates a bug or loose Task.\nRead repository AGENTS.md before an authorized repository edit; input-only reads do not require\nloading every repository's instruction tree.\n\nMissing inputs are named dependencies, not permission to invent facts. Distinguish observed\nfacts, assumptions and unresolved questions in the artifact's supported fields. Do not mark your\nown work approved. Code that no pipeline built is a hint of how something\nwas once solved and may be stale. A difference between such code and arc42 is never a discrepancy\nand never a finding. The matrix marks each element's code `none`, `legacy`, `built` or `deployed`;\nonly `built` and `deployed` code is trusted and is expected to match the architecture.\n\n## Helpers and the journal\n\nAn agent that starts other agents inside its own session and then continues follows one pattern,\nwith `atw-step-journal` and the journal file its brief names:\n\n1. Write your own output first: the file your definition names as your first output.\n2. When you start your first agent, add it as a child step of your own step\n   (`atw-step-journal add --parent <your step> --agent <agent> --description \"<what it does>\"\n   --purpose \"<why>\"`), and add one last child step whose description is \"Finish\", with yourself\n   as the agent and your own step in its `inputs`. `--steps-json` adds several child steps in one\n   write.\n3. Add each further agent as a child before \"Finish\" (`--after <sibling id>`). Mark each child\n   running when you start it (`atw-step-journal start --step <id>`), and record the request file\n   you wrote for it at once (`atw-step-journal artifact --step <id> --name request --kind file\n   --path <path>`). When the agent returns, record the file it returned as the artifact `answer`\n   and mark the child done (`atw-step-journal done --step <id>`).\n4. When your work is complete, record your result as the artifact of \"Finish\", under the name\n   your definition gives it, and mark \"Finish\" done. Your own step is then done.\n5. After an interruption the script launches the first child that is not done: an agent left\n   running is launched from the `request` file its step holds, and \"Finish\" is launched as you.\n   Launched for \"Finish\", read your own output, the `answer` files and your partial result, and\n   continue.\n\nThe names are fixed, because the script reads them: `request` (or `question`, for a question file\nto `architecture-question.schema.json`) for what an agent is asked, `answer` for what a specialist\nreturned, `ruling` for a decider's ruling, `review` for a review. A step is handed the artifacts\nof the steps its `inputs` name, and of the steps below them.\n\nAn agent that adds steps for the script to run, and starts no agent itself, records the file a\nstep needs on its own step under the same names and names its own step in that step's `inputs`.\n\nAn agent that starts no other agent adds no step.\n\n## Resource use and incremental review\n\n- Use tokens conscientiously without compromising required correctness, completeness, safety or evidence. Before a material optional expansion, identify its unresolved need and expected benefit in existing progress. Routine tools need no justification. Do not add a report, review pass, token quota or human approval gate for this rule; omit optional work with no concrete benefit.\n- Makers and reviewers use the same applicable requirements, constraints and completion criteria. Review determines actual correctness, including passing sound work; finding more failures is not success. Do not invent requirements or turn stylistic preferences into blocking defects. Preserve necessary safety and regression checks.\n- Use the caller's finding format to identify the affected location, requirement/dependency at risk, observed evidence and actionable correction with a verifiable pass condition. Distinguish defects, missing evidence and proposed new requirements. Never claim unperformed checks passed.\n- Revise original artifacts incrementally. Retain valid work and applicable evidence. Rereview changed scope and affected dependencies; reopen accepted work only when new evidence or demonstrated impact invalidates its earlier evidence, and state why. Preserve required independent review.\n\n## Technical gaps are decided, not escalated\n\nWhere the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item. No agent ends with \"these two documents disagree\". Where one statement is in an effective document and the other is not, the effective one stands without discussion. Otherwise the agent responsible for the work settles it and records the settlement in the matrix.\n\nOwner-only facts (credentials, money and destructive actions outside AWS dev), irreconcilable business requirements and section 2 conflicts go through the caller's owner channel. Technical choices remain with the specialists. Never put a technical question to the owner or any person, and never hold work waiting for a technical answer.\n\n## The approved architecture is authoritative\n\nThe approved (effective) architecture and the owner's answers are authoritative. Older documents, repository READMEs and existing code are evidence of the current state: they show what exists and what still has to change, never that the approved architecture or an owner answer is wrong. Where they disagree with the approved architecture, the approved architecture holds and the difference is work to plan, not a conflict to raise. The approved architecture changes only through the solutions architect's decisions, written by the maintainer and reviewed, or a reviewed correction from what a Story built.\n\n## AWS evidence authority\n\nBefore any AWS claim, design choice or question, check the AWS MCP Server documentation tools (`search_documentation`, `read_documentation`, `retrieve_skill`) and the relevant AWS plugin skills (`aws-core:*`, for example `aws-core:aws-cdk`, `aws-core:aws-serverless`, `aws-core:aws-iam`, `aws-core:aws-networking`, `aws-core:aws-well-architected-review`), including the applicable Well-Architected principles. A question AWS documentation can answer is answered from it and never reaches the owner. Retain source references and the concrete tradeoffs. Existing generated architecture and model recollection do not establish correctness. Makers and reviewers use this same evidence criterion.\n\nApply guidance to stated requirements, deployment, usage and cost constraints rather than hypothetical scale. Where AWS guidance conflicts with a business requirement or a section 2 constraint, the requirement or constraint holds: record the conflict and the design that honours it, and do not silently substitute a preferred AWS pattern. Missing required MCP/skill access is a named blocker or uncertainty, never a passed check. Coordinators may research and route AWS questions, but cannot author or approve designs.\n"
 const ownedArtifactContract = "---\nname: artifact-handoff\ndescription: Shared file contracts for direct specialist sessions; producers and consumers read the same schemas and completion rules.\n---\n\n# Direct artifact handoff\n\nRead [Epic contracts](epic-contracts.md) for the artifact assigned to this session, including its\nfields, interpretation and completion criteria. JSON schemas are in [schemas/](schemas/).\nProducers and reviewers use this same contract; a reviewer cannot add unstated requirements.\n\nThe brief contains only a bead id, labeled absolute input paths, an absolute output path, and a\none-line outcome. Read the named files yourself. Write the complete result to the exact output\npath. Write only assigned outputs.\nFor a JSON output write one strict JSON value with unique keys; for a document write nonempty\nUTF-8 Markdown. Do not paste file contents into a response. A final reply may name the result path.\n\nPython validates the file against the schema, checks declared document citations and records the\nfile in the step journal. The agent does not accept its own result, compute revision bindings,\nsubmit StructuredOutput, or run artifact checkpoint or\nsubmission helpers. There is no machine mode or command-runner handoff in direct sessions.\nA structurally valid artifact is not automatically a semantically correct one.\n\nOn a corrective pass, read the labeled validation-errors input and the existing output, repair the\nspecific findings and affected references, and preserve valid work. On interruption retain the\nactual files; resumption continues those files. Do not fabricate completion for missing reasoning.\nNamed missing inputs or remaining uncertainties belong in the contract's existing evidence fields;\nnever add fields to a closed schema or return a success reference for absent work.\n\n## Generated contract types\n\nEach schema in [schemas/](schemas/) is the one definition of its contract. Python code never\nrestates a key, type or allowed value: it imports the module that\n`scripts/generate_contract_types.py` generates from the schema, and\n`scripts/check_contract_types.py` fails when a generated module is stale. Run\n`python3 scripts/generate_contract_types.py` after changing a schema.\n\n| Schema | Generated module |\n|---|---|\n| `schemas/task-deps.schema.json` (Cross-Story Task dependencies) | `scripts/task_deps_contract.py` |\n"
 const ownedBaselineContract = "---\nname: architecture-baseline\ndescription: The one set of criteria that the solutions architect works to and the reviewers review against, with the level of each.\n---\n\n# Architecture criteria\n\nRead [the review standard](review-standard.md) before designing, writing, reviewing or\nruling on architecture, a TRD or a spec. It is the common basis: the solutions architect\ndevelops the architecture and the TRD to exactly these criteria, the spec authors develop the\nspecs to them, and reviewers apply exactly these and no others. `review-criteria.json` beside\nit holds the same criteria as data: each criterion's id, level, home document and text, the\nagents responsible for each level with its review point, and for each reviewer group its\nreviewer, the criteria it covers and the rule that selects it. The standard is written from\nthat file by `artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in\n`review-criteria.json` and nowhere else.\n\nEvery criterion has a level: architecture (arc42), technical requirement (the TRD) or\nimplementation (the specs and Tasks). A criterion is satisfied by the document that is its\nhome. Nobody asks a document for detail below its level.\n\nAn effective document is approved design. It is not evidence that anything is built, and it\nis not a permanent constraint on a later PRD.\n\nThe matrix records what is approved and what code is trusted. Read it through `atw-matrix`.\n\n## The files the team hands on\n\nEach file an agent of the architecture team writes has one schema, in\n`${CLAUDE_PLUGIN_ROOT}/skills/artifact-handoff/schemas/`. A definition names its files by\nschema file name, for example `architecture-result.schema.json`; read the schema there before\nwriting the file. Every shape is defined once, in `architecture-result.schema.json`, and the\nother schema files refer to it.\n"
-const ownedAgentContracts = {"acceptance-criteria-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:acceptance-criteria-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"acceptance-criteria-writer":{"artifactCapable":true,"agentType":"acceptance-criteria-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:artifact-handoff"]},"accessibility-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:accessibility-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-frontend"]},"advantage-evaluator":{"artifactCapable":false,"agentType":"agent-teams-workforce:advantage-evaluator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"adversarial-critique-adjudicator":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-critique-adjudicator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security"]},"adversarial-review-loop-supervisor":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-review-loop-supervisor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ambiguity-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:ambiguity-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"android-compose-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:android-compose-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"api-contract-designer":{"artifactCapable":true,"agentType":"api-contract-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:architecture-baseline"]},"api-documentation-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:api-documentation-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"api-gateway-cdk-implementer":{"artifactCapable":true,"agentType":"api-gateway-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-gateway","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"api-specification-author":{"artifactCapable":true,"agentType":"api-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:artifact-handoff","agent-teams-workforce:skillspoke-standard-event","agent-teams-workforce:architecture-baseline"]},"appsync-cdk-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"appsync-client-subscription-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-client-subscription-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"architecture-boundary-guardian":{"artifactCapable":true,"agentType":"architecture-boundary-guardian","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"architecture-conformance-reviewer":{"artifactCapable":true,"agentType":"architecture-conformance-reviewer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:arc42","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:architecture-baseline"]},"architecture-decider":{"artifactCapable":true,"agentType":"architecture-decider","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect"]},"architecture-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:architecture-baseline"]},"architecture-fitness-function-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-fitness-function-author","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"architecture-impact-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:architecture-impact-analyst","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-maintainer":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-maintainer","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:arc42-maintain","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming"]},"architecture-pattern-challenger":{"artifactCapable":true,"agentType":"architecture-pattern-challenger","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:architecture-baseline"]},"architecture-team-lead":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-team-lead","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract"]},"architecture-tradeoff-skeptic":{"artifactCapable":true,"agentType":"architecture-tradeoff-skeptic","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"athena-redshift-analytics-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:athena-redshift-analytics-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"auth-bypass-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:auth-bypass-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:cognito"]},"aws-integration-test-runner":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:cumulative-regression"]},"aws-integration-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:cumulative-regression"]},"aws-solutions-architect":{"artifactCapable":true,"agentType":"aws-solutions-architect","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:senior-security","agent-teams-workforce:graphrag-lookup"]},"beads-format-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:beads-format-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract"]},"bedrock-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:bedrock-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:bedrock","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"behavioral-signals-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:behavioral-signals-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:product-analytics","agent-teams-workforce:graphrag-lookup"]},"bounded-context-mapper":{"artifactCapable":true,"agentType":"bounded-context-mapper","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"brd-traceability-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:brd-traceability-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"built-architecture-comparer":{"artifactCapable":true,"agentType":"agent-teams-workforce:built-architecture-comparer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-baseline"]},"c4-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:c4-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:architecture-baseline"]},"cdk-infrastructure-designer":{"artifactCapable":true,"agentType":"cdk-infrastructure-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:resource-naming","agent-teams-workforce:architecture-baseline"]},"cdk-infrastructure-drift-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:cdk-infrastructure-drift-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation"]},"cdk-stack-author":{"artifactCapable":true,"agentType":"cdk-stack-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation","agent-teams-workforce:resource-naming"]},"cds-finding-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:cds-finding-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","cds:apply-design-system","cds:audit-against-system"]},"cds-ui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cds-ui-implementer","skills":["agent-teams-workforce:subagent-contract","cds:apply-design-system","cds:audit-against-system","cds:compose-page","agent-teams-workforce:graphrag-lookup"]},"changelog-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:changelog-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:changelog-generator"]},"chassis-extension-implementer":{"artifactCapable":true,"agentType":"chassis-extension-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"code-correctness-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-correctness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"code-quality-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:code-quality-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"code-refactoring-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-refactoring-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer","agent-teams-workforce:graphrag-lookup"]},"code-style-and-linting-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-style-and-linting-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"cognito-lambda-trigger-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cognito-lambda-trigger-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cognito","agent-teams-workforce:lambda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"completeness-checker":{"artifactCapable":false,"agentType":"agent-teams-workforce:completeness-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"complexity-analyzer":{"artifactCapable":false,"agentType":"agent-teams-workforce:complexity-analyzer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:tech-debt-tracker"]},"constitutional-agent":{"artifactCapable":false,"agentType":"agent-teams-workforce:constitutional-agent","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"constraint-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:constraint-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"consumer-driven-contract-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:consumer-driven-contract-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder","agent-teams-workforce:cumulative-regression"]},"context-curator":{"artifactCapable":false,"agentType":"agent-teams-workforce:context-curator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"contract-violation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:contract-violation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"cost-architecture-reviewer":{"artifactCapable":true,"agentType":"cost-architecture-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:architecture-baseline"]},"cost-impact-reviewer":{"artifactCapable":true,"agentType":"cost-impact-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:architecture-baseline"]},"cross-repo-integration-test-coordinator":{"artifactCapable":false,"agentType":"agent-teams-workforce:cross-repo-integration-test-coordinator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"cross-service-contract-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:cross-service-contract-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"data-consistency-checker":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-consistency-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"data-exposure-scanner":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-exposure-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"data-model-specification-author":{"artifactCapable":true,"agentType":"data-model-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"data-pipeline-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-pipeline-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:cumulative-regression"]},"definition-of-done-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:definition-of-done-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"dependency-change-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-change-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-cve-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-cve-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-graph-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-graph-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"deployment-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"deployment-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:cove-prompt-design"]},"documentation-accuracy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-accuracy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-currency-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-currency-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:documentation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"domain-boundary-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:domain-boundary-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"domain-event-modeler":{"artifactCapable":true,"agentType":"domain-event-modeler","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:architecture-baseline","agent-teams-workforce:skillspoke-standard-event"]},"dos-resilience-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:dos-resilience-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"dynamodb-access-layer-implementer":{"artifactCapable":true,"agentType":"dynamodb-access-layer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"dynamodb-cost-optimizer":{"artifactCapable":true,"agentType":"dynamodb-cost-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:aws-cost-operations"]},"dynamodb-schema-access-pattern-reviewer":{"artifactCapable":true,"agentType":"dynamodb-schema-access-pattern-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"dynamodb-streams-cdc-implementer":{"artifactCapable":true,"agentType":"dynamodb-streams-cdc-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup"]},"email-notification-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:email-notification-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:email-template-builder","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:skillspoke-standard-event"]},"epic-sequencer":{"artifactCapable":true,"agentType":"agent-teams-workforce:epic-sequencer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:epic-sequencing"]},"espresso-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:espresso-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"event-api-client-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-api-client-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming","agent-teams-workforce:skillspoke-standard-event"]},"event-driven-consumer-implementer":{"artifactCapable":true,"agentType":"event-driven-consumer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:sqs","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming","agent-teams-workforce:skillspoke-standard-event"]},"event-flow-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-flow-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda"]},"event-schema-designer":{"artifactCapable":true,"agentType":"event-schema-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:eventbridge","agent-teams-workforce:architecture-baseline","agent-teams-workforce:skillspoke-standard-event"]},"event-schema-reviewer":{"artifactCapable":true,"agentType":"event-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:skillspoke-standard-event"]},"failure-mode-analyst":{"artifactCapable":true,"agentType":"failure-mode-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:observability-designer","agent-teams-workforce:architecture-baseline"]},"filing-clerk":{"artifactCapable":true,"agentType":"filing-clerk","skills":["agent-teams-workforce:subagent-contract","obsidian:obsidian-cli","obsidian:obsidian-markdown","agent-teams-workforce:arc42","notebooklm","document-classification"]},"finops-analyst":{"artifactCapable":false,"agentType":"finops-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations"]},"flaky-test-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:flaky-test-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:find-cause"]},"frontend-performance-optimizer":{"artifactCapable":true,"agentType":"agent-teams-workforce:frontend-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend"]},"github-actions-pipeline-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:github-actions-pipeline-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"glue-etl-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:glue-etl-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"graphql-schema-designer":{"artifactCapable":true,"agentType":"graphql-schema-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:architecture-baseline"]},"graphql-schema-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:graphql-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"implementation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:implementation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:graphrag-lookup"]},"incident-response-runbook-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:incident-response-runbook-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:observability-designer"]},"infrastructure-security-scanner":{"artifactCapable":true,"agentType":"infrastructure-security-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:aws-cdk-development"]},"injection-attack-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:injection-attack-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"integration-pattern-architect":{"artifactCapable":true,"agentType":"integration-pattern-architect","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:architecture-baseline"]},"integration-testing-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:integration-testing-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ios-swiftui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ios-swiftui-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"kinesis-stream-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:kinesis-stream-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"lambda-performance-optimizer":{"artifactCapable":true,"agentType":"lambda-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda"]},"llm-observability-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:llm-observability-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:observability-designer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"matching-algorithm-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:matching-algorithm-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"mcp-server-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mcp-server-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:mcp-server-builder","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:aws-mcp-setup","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"ml-evaluation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:ml-evaluation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:cumulative-regression"]},"mobile-e2e-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mobile-e2e-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"nextjs-component-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:nextjs-component-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-fullstack","agent-teams-workforce:graphrag-lookup"]},"nfr-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:nfr-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"okr-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:okr-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:product-analytics"]},"openapi-contract-reviewer":{"artifactCapable":false,"agentType":"openapi-contract-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:skillspoke-standard-event","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"operational-readiness-reviewer":{"artifactCapable":true,"agentType":"operational-readiness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:observability-designer","agent-teams-workforce:architecture-baseline"]},"payments-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:payments-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:stripe-integration-expert","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:skillspoke-standard-event"]},"performance-benchmark-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:performance-benchmark-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"permission-escalation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:permission-escalation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:iam"]},"persistence-architecture-specialist":{"artifactCapable":true,"agentType":"persistence-architecture-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer","agent-teams-workforce:architecture-baseline"]},"persona-profile-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:persona-profile-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:product-analytics"]},"phase-gate-enforcer":{"artifactCapable":false,"agentType":"agent-teams-workforce:phase-gate-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cumulative-regression"]},"playwright-e2e-web-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:playwright-e2e-web-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:a11y-audit","agent-teams-workforce:cumulative-regression"]},"polyrepo-steward":{"artifactCapable":true,"agentType":"agent-teams-workforce:polyrepo-steward","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:graphrag-lookup","polyrepo-repo","polyrepo-info","polyrepo-governance","polyrepo-beads"]},"power-tools-configuration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:power-tools-configuration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"prd-alignment-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-alignment-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-creation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-creation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"prd-reality-reconciler":{"artifactCapable":true,"agentType":"prd-reality-reconciler","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"prd-trd-traceability-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-trd-traceability-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-analyst":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-validation-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-validation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"production-readiness-review-facilitator":{"artifactCapable":false,"agentType":"agent-teams-workforce:production-readiness-review-facilitator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"race-condition-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:race-condition-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"react-native-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:react-native-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"readme-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:readme-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"recommendation-engine-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:recommendation-engine-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"regression-coverage-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-coverage-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"regression-impact-assessor":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-impact-assessor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"requirements-clarifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:requirements-clarifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"requirements-conflict-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:requirements-conflict-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"root-cause-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:root-cause-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:find-cause","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:artifact-handoff"]},"run-ledger-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:run-ledger-writer","skills":["agent-teams-workforce:subagent-contract"]},"s3-data-lake-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:s3-data-lake-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:s3","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"sdlc-pipeline-orchestrator":{"artifactCapable":false,"agentType":"agent-teams-workforce:sdlc-pipeline-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract"]},"security-architecture-designer":{"artifactCapable":true,"agentType":"security-architecture-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-security","agent-teams-workforce:iam","agent-teams-workforce:secrets-manager","agent-teams-workforce:architecture-baseline"]},"security-test-case-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:security-test-case-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security","agent-teams-workforce:cumulative-regression"]},"shared-capability-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:shared-capability-reviewer","skills":[]},"slo-error-budget-designer":{"artifactCapable":false,"agentType":"slo-error-budget-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:observability-designer","agent-teams-workforce:cloudwatch"]},"smoke-test-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:smoke-test-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"spec-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"spec-currency-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:spec-currency-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"spec-decider":{"artifactCapable":false,"agentType":"spec-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:cove-prompt-design","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"spec-freshness-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-freshness-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"stakeholder-request-intake-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:stakeholder-request-intake-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"task-decomposer":{"artifactCapable":true,"agentType":"task-decomposer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:artifact-handoff","agent-teams-workforce:wsjf"]},"task-decomposition-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-decomposition-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup"]},"task-dependency-mapper":{"artifactCapable":true,"agentType":"task-dependency-mapper","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract","agent-teams-workforce:artifact-handoff"]},"task-readiness-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-readiness-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract"]},"tdd-unit-test-generator":{"artifactCapable":true,"agentType":"agent-teams-workforce:tdd-unit-test-generator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"test-command-resolver":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-command-resolver","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-coverage-gap-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-coverage-gap-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-design-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-design-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"test-environment-orchestrator":{"artifactCapable":true,"agentType":"test-environment-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:aws-mcp-setup"]},"test-failure-parser":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-failure-parser","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-isolation-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-isolation-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:test-failure-mindset"]},"test-plan-strategy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-plan-strategy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cove-prompt-design"]},"trd-author":{"artifactCapable":true,"agentType":"trd-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-baseline"]},"trd-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"trd-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"trd-validator":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:architecture-baseline"]},"ubiquitous-language-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ubiquitous-language-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"uml-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:uml-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:architecture-baseline"]},"user-guide-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-guide-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:roadmap-communicator"]},"user-story-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:beads-contract"]},"user-story-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"vector-search-embeddings-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:vector-search-embeddings-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:rag-architect","agent-teams-workforce:graphrag-lookup"]},"webauthn-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:webauthn-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:cognito","agent-teams-workforce:graphrag-lookup"]},"workflow-command-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:workflow-command-runner","skills":["artifact-handoff"]},"worktree-independent-verifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:worktree-independent-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"wsjf-scorer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scorer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf","agent-teams-workforce:beads-contract"]},"wsjf-scoring-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scoring-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf"]},"xcuitest-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:xcuitest-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]}}
+const ownedAgentContracts = {"acceptance-criteria-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:acceptance-criteria-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"acceptance-criteria-writer":{"artifactCapable":true,"agentType":"acceptance-criteria-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:artifact-handoff"]},"accessibility-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:accessibility-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-frontend"]},"advantage-evaluator":{"artifactCapable":false,"agentType":"agent-teams-workforce:advantage-evaluator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"adversarial-critique-adjudicator":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-critique-adjudicator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security"]},"adversarial-review-loop-supervisor":{"artifactCapable":false,"agentType":"agent-teams-workforce:adversarial-review-loop-supervisor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ambiguity-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:ambiguity-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"android-compose-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:android-compose-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"api-contract-designer":{"artifactCapable":true,"agentType":"api-contract-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:architecture-baseline"]},"api-documentation-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:api-documentation-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"api-gateway-cdk-implementer":{"artifactCapable":true,"agentType":"api-gateway-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-gateway","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"api-specification-author":{"artifactCapable":true,"agentType":"api-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:artifact-handoff","agent-teams-workforce:skillspoke-standard-event","agent-teams-workforce:architecture-baseline"]},"appsync-cdk-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-cdk-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"appsync-client-subscription-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:appsync-client-subscription-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"architecture-boundary-guardian":{"artifactCapable":true,"agentType":"architecture-boundary-guardian","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"architecture-conformance-reviewer":{"artifactCapable":true,"agentType":"architecture-conformance-reviewer","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:arc42","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:architecture-baseline"]},"architecture-decider":{"artifactCapable":true,"agentType":"architecture-decider","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect"]},"architecture-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:architecture-baseline"]},"architecture-fitness-function-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-fitness-function-author","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"architecture-impact-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:architecture-impact-analyst","skills":["agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:graphrag-lookup"]},"architecture-maintainer":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-maintainer","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:arc42-maintain","agent-teams-workforce:c4-diagramming","agent-teams-workforce:uml-diagramming"]},"architecture-pattern-challenger":{"artifactCapable":true,"agentType":"architecture-pattern-challenger","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:architecture-baseline"]},"architecture-team-lead":{"artifactCapable":true,"agentType":"agent-teams-workforce:architecture-team-lead","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract"]},"architecture-tradeoff-skeptic":{"artifactCapable":true,"agentType":"architecture-tradeoff-skeptic","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"athena-redshift-analytics-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:athena-redshift-analytics-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"auth-bypass-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:auth-bypass-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:cognito"]},"aws-integration-test-runner":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:cumulative-regression"]},"aws-integration-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:aws-integration-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:cumulative-regression"]},"aws-solutions-architect":{"artifactCapable":true,"agentType":"aws-solutions-architect","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-solution-architect","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:senior-security","agent-teams-workforce:graphrag-lookup"]},"beads-format-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:beads-format-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract"]},"bedrock-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:bedrock-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:bedrock","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"behavioral-signals-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:behavioral-signals-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:product-analytics","agent-teams-workforce:graphrag-lookup"]},"bounded-context-mapper":{"artifactCapable":true,"agentType":"bounded-context-mapper","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:architecture-baseline"]},"brd-traceability-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:brd-traceability-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"built-architecture-comparer":{"artifactCapable":true,"agentType":"agent-teams-workforce:built-architecture-comparer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-baseline"]},"c4-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:c4-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:c4-diagramming","agent-teams-workforce:architecture-baseline"]},"cdk-infrastructure-designer":{"artifactCapable":true,"agentType":"cdk-infrastructure-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:resource-naming","agent-teams-workforce:architecture-baseline"]},"cdk-infrastructure-drift-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:cdk-infrastructure-drift-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation"]},"cdk-stack-author":{"artifactCapable":true,"agentType":"cdk-stack-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-cdk-development","agent-teams-workforce:cloudformation","agent-teams-workforce:resource-naming"]},"cds-finding-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:cds-finding-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","cds:apply-design-system","cds:audit-against-system"]},"cds-ui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cds-ui-implementer","skills":["agent-teams-workforce:subagent-contract","cds:apply-design-system","cds:audit-against-system","cds:compose-page","agent-teams-workforce:graphrag-lookup"]},"changelog-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:changelog-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:changelog-generator"]},"chassis-extension-implementer":{"artifactCapable":true,"agentType":"chassis-extension-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"code-correctness-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-correctness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"code-quality-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:code-quality-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"code-refactoring-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-refactoring-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer","agent-teams-workforce:graphrag-lookup"]},"code-style-and-linting-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:code-style-and-linting-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:code-reviewer"]},"cognito-lambda-trigger-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:cognito-lambda-trigger-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cognito","agent-teams-workforce:lambda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"completeness-checker":{"artifactCapable":false,"agentType":"agent-teams-workforce:completeness-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"complexity-analyzer":{"artifactCapable":false,"agentType":"agent-teams-workforce:complexity-analyzer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:tech-debt-tracker"]},"constitutional-agent":{"artifactCapable":false,"agentType":"agent-teams-workforce:constitutional-agent","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"constraint-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:constraint-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"consumer-driven-contract-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:consumer-driven-contract-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder","agent-teams-workforce:cumulative-regression"]},"context-curator":{"artifactCapable":false,"agentType":"agent-teams-workforce:context-curator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"contract-violation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:contract-violation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"cost-architecture-reviewer":{"artifactCapable":true,"agentType":"cost-architecture-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:architecture-baseline"]},"cost-impact-reviewer":{"artifactCapable":true,"agentType":"cost-impact-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations","agent-teams-workforce:architecture-baseline"]},"cross-repo-integration-test-coordinator":{"artifactCapable":false,"agentType":"agent-teams-workforce:cross-repo-integration-test-coordinator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"cross-service-contract-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:cross-service-contract-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-test-suite-builder"]},"data-consistency-checker":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-consistency-checker","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"data-exposure-scanner":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-exposure-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"data-model-specification-author":{"artifactCapable":true,"agentType":"data-model-specification-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"data-pipeline-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:data-pipeline-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:cumulative-regression"]},"definition-of-done-enforcer":{"artifactCapable":true,"agentType":"agent-teams-workforce:definition-of-done-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"dependency-change-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-change-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-cve-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-cve-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dependency-auditor"]},"dependency-graph-extractor":{"artifactCapable":true,"agentType":"agent-teams-workforce:dependency-graph-extractor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"deployment-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"deployment-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:deployment-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:cove-prompt-design"]},"documentation-accuracy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-accuracy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-currency-auditor":{"artifactCapable":true,"agentType":"agent-teams-workforce:documentation-currency-auditor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"documentation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:documentation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"domain-boundary-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:domain-boundary-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"domain-event-modeler":{"artifactCapable":true,"agentType":"domain-event-modeler","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:architecture-baseline","agent-teams-workforce:skillspoke-standard-event"]},"dos-resilience-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:dos-resilience-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"dynamodb-access-layer-implementer":{"artifactCapable":true,"agentType":"dynamodb-access-layer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"dynamodb-cost-optimizer":{"artifactCapable":true,"agentType":"dynamodb-cost-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb","agent-teams-workforce:aws-cost-operations"]},"dynamodb-schema-access-pattern-reviewer":{"artifactCapable":true,"agentType":"dynamodb-schema-access-pattern-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:dynamodb"]},"dynamodb-streams-cdc-implementer":{"artifactCapable":true,"agentType":"dynamodb-streams-cdc-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:dynamodb","agent-teams-workforce:graphrag-lookup"]},"email-notification-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:email-notification-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:email-template-builder","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:skillspoke-standard-event"]},"epic-sequencer":{"artifactCapable":true,"agentType":"agent-teams-workforce:epic-sequencer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:epic-sequencing"]},"espresso-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:espresso-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"event-api-client-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-api-client-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming","agent-teams-workforce:skillspoke-standard-event"]},"event-driven-consumer-implementer":{"artifactCapable":true,"agentType":"event-driven-consumer-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:sqs","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:sns","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming","agent-teams-workforce:skillspoke-standard-event"]},"event-flow-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:event-flow-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda"]},"event-schema-designer":{"artifactCapable":true,"agentType":"event-schema-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:eventbridge","agent-teams-workforce:architecture-baseline","agent-teams-workforce:skillspoke-standard-event"]},"event-schema-reviewer":{"artifactCapable":true,"agentType":"event-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:skillspoke-standard-event"]},"failure-mode-analyst":{"artifactCapable":true,"agentType":"failure-mode-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:observability-designer","agent-teams-workforce:architecture-baseline"]},"filing-clerk":{"artifactCapable":true,"agentType":"filing-clerk","skills":["agent-teams-workforce:subagent-contract","obsidian:obsidian-cli","obsidian:obsidian-markdown","agent-teams-workforce:arc42","notebooklm","document-classification"]},"finops-analyst":{"artifactCapable":false,"agentType":"finops-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:aws-cost-operations"]},"flaky-test-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:flaky-test-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:find-cause"]},"frontend-performance-optimizer":{"artifactCapable":true,"agentType":"agent-teams-workforce:frontend-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend"]},"github-actions-pipeline-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:github-actions-pipeline-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"glue-etl-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:glue-etl-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:graphrag-lookup"]},"graphql-schema-designer":{"artifactCapable":true,"agentType":"graphql-schema-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:architecture-baseline"]},"graphql-schema-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:graphql-schema-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer"]},"implementation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:implementation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:graphrag-lookup"]},"incident-response-runbook-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:incident-response-runbook-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:observability-designer"]},"infrastructure-security-scanner":{"artifactCapable":true,"agentType":"infrastructure-security-scanner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:aws-cdk-development"]},"injection-attack-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:injection-attack-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"integration-pattern-architect":{"artifactCapable":true,"agentType":"integration-pattern-architect","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-architect","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:architecture-baseline"]},"integration-testing-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:integration-testing-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"ios-swiftui-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ios-swiftui-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"kinesis-stream-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:kinesis-stream-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:aws-serverless-eda","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"lambda-performance-optimizer":{"artifactCapable":true,"agentType":"lambda-performance-optimizer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda"]},"llm-observability-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:llm-observability-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:observability-designer","agent-teams-workforce:senior-prompt-engineer","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:graphrag-lookup"]},"matching-algorithm-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:matching-algorithm-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"mcp-server-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mcp-server-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:mcp-server-builder","agent-teams-workforce:aws-agentic-ai","agent-teams-workforce:aws-mcp-setup","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"ml-evaluation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:ml-evaluation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:senior-data-scientist","agent-teams-workforce:cumulative-regression"]},"mobile-e2e-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:mobile-e2e-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"nextjs-component-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:nextjs-component-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:a11y-audit","agent-teams-workforce:senior-fullstack","agent-teams-workforce:graphrag-lookup"]},"nfr-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:nfr-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"okr-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:okr-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:product-analytics"]},"openapi-contract-reviewer":{"artifactCapable":false,"agentType":"openapi-contract-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:api-design-reviewer","agent-teams-workforce:skillspoke-standard-event","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"operational-readiness-reviewer":{"artifactCapable":true,"agentType":"operational-readiness-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:observability-designer","agent-teams-workforce:architecture-baseline"]},"payments-integration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:payments-integration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:stripe-integration-expert","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:skillspoke-standard-event"]},"performance-benchmark-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:performance-benchmark-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"permission-escalation-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:permission-escalation-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops","agent-teams-workforce:iam"]},"persistence-architecture-specialist":{"artifactCapable":true,"agentType":"persistence-architecture-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:dynamodb","agent-teams-workforce:database-schema-designer","agent-teams-workforce:architecture-baseline"]},"persona-profile-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:persona-profile-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:product-analytics"]},"phase-gate-enforcer":{"artifactCapable":false,"agentType":"agent-teams-workforce:phase-gate-enforcer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:cumulative-regression"]},"playwright-e2e-web-test-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:playwright-e2e-web-test-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:a11y-audit","agent-teams-workforce:cumulative-regression"]},"polyrepo-steward":{"artifactCapable":true,"agentType":"agent-teams-workforce:polyrepo-steward","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:graphrag-lookup","polyrepo-repo","polyrepo-info","polyrepo-governance","polyrepo-beads"]},"power-tools-configuration-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:power-tools-configuration-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:lambda","agent-teams-workforce:secrets-manager","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"prd-alignment-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-alignment-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-creation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-creation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"prd-reality-reconciler":{"artifactCapable":true,"agentType":"prd-reality-reconciler","skills":["agent-teams-workforce:architecture-baseline","agent-teams-workforce:artifact-handoff","agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:graphrag-lookup"]},"prd-trd-traceability-verifier":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-trd-traceability-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-analyst":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-validation-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"prd-validation-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:prd-validation-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"prd-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:prd-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:prd-writer"]},"production-readiness-review-facilitator":{"artifactCapable":false,"agentType":"agent-teams-workforce:production-readiness-review-facilitator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"race-condition-tester":{"artifactCapable":true,"agentType":"agent-teams-workforce:race-condition-tester","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-secops"]},"react-native-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:react-native-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:graphrag-lookup"]},"readme-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:readme-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"recommendation-engine-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:recommendation-engine-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-ml-engineer","agent-teams-workforce:graphrag-lookup"]},"regression-coverage-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-coverage-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"regression-impact-assessor":{"artifactCapable":true,"agentType":"agent-teams-workforce:regression-impact-assessor","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:artifact-handoff","agent-teams-workforce:cumulative-regression"]},"requirements-clarifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:requirements-clarifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:product-discovery"]},"requirements-conflict-detector":{"artifactCapable":true,"agentType":"agent-teams-workforce:requirements-conflict-detector","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"root-cause-analyst":{"artifactCapable":false,"agentType":"agent-teams-workforce:root-cause-analyst","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:find-cause","agent-teams-workforce:test-failure-mindset","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:artifact-handoff"]},"s3-data-lake-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:s3-data-lake-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-data-engineer","agent-teams-workforce:s3","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:resource-naming"]},"sdlc-pipeline-orchestrator":{"artifactCapable":false,"agentType":"agent-teams-workforce:sdlc-pipeline-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract"]},"security-architecture-designer":{"artifactCapable":true,"agentType":"security-architecture-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:senior-security","agent-teams-workforce:iam","agent-teams-workforce:secrets-manager","agent-teams-workforce:architecture-baseline"]},"security-test-case-designer":{"artifactCapable":true,"agentType":"agent-teams-workforce:security-test-case-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-security","agent-teams-workforce:cumulative-regression"]},"shared-capability-reviewer":{"artifactCapable":false,"agentType":"agent-teams-workforce:shared-capability-reviewer","skills":[]},"slo-error-budget-designer":{"artifactCapable":false,"agentType":"slo-error-budget-designer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:observability-designer","agent-teams-workforce:cloudwatch"]},"smoke-test-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:smoke-test-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa"]},"spec-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"spec-currency-validator":{"artifactCapable":true,"agentType":"agent-teams-workforce:spec-currency-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"spec-decider":{"artifactCapable":false,"agentType":"spec-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect","agent-teams-workforce:cove-prompt-design","agent-teams-workforce:artifact-handoff","agent-teams-workforce:architecture-baseline"]},"spec-freshness-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:spec-freshness-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"stakeholder-request-intake-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:stakeholder-request-intake-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery"]},"task-decomposer":{"artifactCapable":true,"agentType":"task-decomposer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup","agent-teams-workforce:artifact-handoff","agent-teams-workforce:wsjf"]},"task-decomposition-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-decomposition-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration","agent-teams-workforce:beads-contract","agent-teams-workforce:graphrag-lookup"]},"task-dependency-mapper":{"artifactCapable":true,"agentType":"task-dependency-mapper","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:beads-contract","agent-teams-workforce:artifact-handoff"]},"task-readiness-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:task-readiness-runner","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:beads-contract"]},"tdd-unit-test-generator":{"artifactCapable":true,"agentType":"agent-teams-workforce:tdd-unit-test-generator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]},"test-command-resolver":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-command-resolver","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-coverage-gap-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-coverage-gap-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-design-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-design-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"test-environment-orchestrator":{"artifactCapable":true,"agentType":"test-environment-orchestrator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-devops","agent-teams-workforce:aws-mcp-setup"]},"test-failure-parser":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-failure-parser","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:test-failure-mindset"]},"test-isolation-specialist":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-isolation-specialist","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:tdd-guide","agent-teams-workforce:test-failure-mindset"]},"test-plan-strategy-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:test-plan-strategy-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cumulative-regression"]},"test-strategy-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:test-strategy-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:cove-prompt-design"]},"trd-author":{"artifactCapable":true,"agentType":"trd-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-baseline"]},"trd-authoring-lead":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-authoring-lead","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:agent-orchestration"]},"trd-decider":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-decider","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"trd-validator":{"artifactCapable":false,"agentType":"agent-teams-workforce:trd-validator","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:architecture-baseline"]},"ubiquitous-language-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:ubiquitous-language-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-architect"]},"uml-diagram-author":{"artifactCapable":true,"agentType":"agent-teams-workforce:uml-diagram-author","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:architecture-diagramming","agent-teams-workforce:uml-diagramming","agent-teams-workforce:architecture-baseline"]},"user-guide-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-guide-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:roadmap-communicator"]},"user-story-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-discovery","agent-teams-workforce:beads-contract"]},"user-story-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:user-story-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"vector-search-embeddings-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:vector-search-embeddings-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:rag-architect","agent-teams-workforce:graphrag-lookup"]},"webauthn-implementer":{"artifactCapable":true,"agentType":"agent-teams-workforce:webauthn-implementer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-frontend","agent-teams-workforce:cognito","agent-teams-workforce:graphrag-lookup"]},"workflow-command-runner":{"artifactCapable":false,"agentType":"agent-teams-workforce:workflow-command-runner","skills":["artifact-handoff"]},"worktree-independent-verifier":{"artifactCapable":false,"agentType":"agent-teams-workforce:worktree-independent-verifier","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol"]},"wsjf-scorer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scorer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf","agent-teams-workforce:beads-contract"]},"wsjf-scoring-reviewer":{"artifactCapable":true,"agentType":"agent-teams-workforce:wsjf-scoring-reviewer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:product-strategist","agent-teams-workforce:wsjf"]},"xcuitest-writer":{"artifactCapable":true,"agentType":"agent-teams-workforce:xcuitest-writer","skills":["agent-teams-workforce:subagent-contract","agent-teams-workforce:validation-protocol","agent-teams-workforce:senior-qa","agent-teams-workforce:tdd-guide","agent-teams-workforce:cumulative-regression"]}}
 // skills/pipeline-contracts/schemas/driver-surface.schema.json, inlined by shared-blocks.mjs. DRIVER_SURFACE maps
 // each x-constant of $defs.DriverEnvironment to its environment variable name and each x-values entry of
 // $defs.RateLimitInfo to its wire value, so no workflow names a driver environment variable or a rate-limit value itself.
@@ -37,17 +36,16 @@ const DRIVER_SURFACE = (() => {
 })()
 const driverSurfaceRe = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const FABLE_EXHAUSTED = new RegExp(`out of (?:usage )?credits|${driverSurfaceRe(DRIVER_SURFACE.MODEL_OVERAGE_TYPE)}|${driverSurfaceRe(DRIVER_SURFACE.OUT_OF_CREDITS_REASON)}|fable.{0,40}(?:limit|allowance)`, 'i')
-// Runtime replay identifies calls by their unchanged prompt/options and start order.
-// Recovery metadata stays in workflow arguments and never enters those options.
+// The model allowance: the driver names the agent types that run on the allowance-limited model
+// (fableAgentTypes). When that model refused a call of an earlier dispatch, the driver passes
+// fableFallback true and every such agent runs on the fallback model for this dispatch.
 const fableInput = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const fableTypes = new Set((Array.isArray(fableInput.fableAgentTypes) ? fableInput.fableAgentTypes : []).map((name) => String(name).replace(/^agent-teams-workforce:/, '')))
 const fablePath = fableInput.fableInvocationPath || 'root'
-const fableRecovery = fableInput.fableRecovery && typeof fableInput.fableRecovery === 'object' ? fableInput.fableRecovery : null
-let fableAgentOrdinal = 0
+const fableFallback = fableInput.fableFallback === true
 let fableChildOrdinal = 0
-function fableEvent(event, identity, error = null) {
-  log(`FABLE-CALL ${JSON.stringify({ event, ...identity, ...(error === null ? {} : { error }) })}`)
-}
+// The last call the model allowance refused in this script: { agentType, label, message }, or null.
+let fableRefusal = null
 async function fableAgent(prompt, options) {
   const suppliedType = String((options && options.agentType) || '')
   const key = suppliedType.replace(/^agent-teams-workforce:/, '')
@@ -61,21 +59,17 @@ async function fableAgent(prompt, options) {
   const contracts = outputMode === 'machine' ? '' : ownedCoreContracts + (outputMode === 'artifact' ? '\n\n' + ownedArtifactContract : '')
   const baselineContract = outputMode !== 'machine' && (architectureBaseline === true || domainSkills.includes('agent-teams-workforce:architecture-baseline')) ? ownedBaselineContract + '\n\n' : ''
   const skillData = outputMode !== 'machine' && domainSkills.length ? `Declared domain skills: ${domainSkills.join(', ')}\n\n` : ''
-  const identity = { invocationPath: fablePath, ordinal: fableAgentOrdinal++, agentType: (options && options.agentType) || null, label: (options && options.label) || null }
-  const isFable = fableTypes.has(String(identity.agentType || '').replace(/^agent-teams-workforce:/, ''))
-  const cutoffs = (fableRecovery && fableRecovery.cutoffs) || {}
-  const cutoff = Number.isInteger(cutoffs[fablePath]) && cutoffs[fablePath] >= 0 ? cutoffs[fablePath] : 0
-  const call = isFable && fableRecovery && identity.ordinal >= cutoff ? { ...options, model: 'opus' } : options
-  fableEvent('start', identity)
+  const agentType = (options && options.agentType) || null
+  const isFable = fableTypes.has(String(agentType || '').replace(/^agent-teams-workforce:/, ''))
+  const call = isFable && fableFallback ? { ...options, model: 'opus' } : options
   try {
-    const result = await agent(`OUTPUT_MODE: ${outputMode}\n\n${contracts}\n\n${baselineContract}${skillData}${prompt}`, call)
-    if (!result) fableEvent('failed', identity)
-    return result
+    return await agent(`OUTPUT_MODE: ${outputMode}\n\n${contracts}\n\n${baselineContract}${skillData}${prompt}`, call)
   } catch (error) {
     const message = String((error && error.message) || error)
-    fableEvent('failed', identity, message)
-    if (isFable && FABLE_EXHAUSTED.test(message)) return null
-    throw error
+    if (!isFable || !FABLE_EXHAUSTED.test(message)) throw error
+    fableRefusal = { agentType, label: (options && options.label) || null, message }
+    log(`${fableRefusal.label || agentType}: the model allowance refused this call: ${message.slice(0, 300)}`)
+    return null
   }
 }
 async function fableWorkflow(name, input) {
@@ -87,7 +81,7 @@ async function fableWorkflow(name, input) {
     ...(fableInput.relayExecutionId ? { relayExecutionId: fableInput.relayExecutionId } : {}),
     ...(fableInput.relayRequestDir ? { relayRequestDir: fableInput.relayRequestDir } : {}),
     ...(fableInput.relayCaptureScript ? { relayCaptureScript: fableInput.relayCaptureScript } : {}),
-    ...(fableRecovery ? { fableRecovery } : {}),
+    ...(fableFallback ? { fableFallback } : {}),
   })
 }
 // ===== SHARED BLOCK fable — END =====
@@ -375,8 +369,6 @@ ${command}
 It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
   const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const CAPTURE_SCHEMA = { type: 'object', additionalProperties: false, required: ['exitCode', 'stdout', 'receipt'], properties: { ...SCHEMA.properties, receipt: RECEIPT_SCHEMA } }
-  const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
   const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
@@ -414,19 +406,6 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     }
     return { captureError: 'registered command could not hand back its result after three bounded machine attempts' }
   }
-  async function captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal) {
-    const argv = shellWords(command)
-    const commandSha256 = sha256Json(argv)
-    const request = sha256Json({ execution: fableInput.relayExecutionId, invocation: fablePath, ordinal, commandSha256 })
-    const runner = readRunner.replace(/[^/]+$/, 'relaycapture.py')
-    const common = ['--directory', `${file}.captures`, '--request', request, '--command-sha256', commandSha256]
-    const out = await dispatch(capturePrompt(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)])), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: CAPTURE_SCHEMA })
-    if (!out && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-    const receipt = out && out.receipt
-    let exact = false
-    try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.exitCode) && out.exitCode === receipt.exitCode && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
-    return exact ? out : { captureError: 'the capture copy failed byte or invocation validation' }
-  }
   /** The `--argv-sha256` value a checked command line carries, or ''. */
   function argvShaOf(command) {
     try {
@@ -449,9 +428,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
     const out = registered
       ? await registeredCommand(dispatch, { label, phase, command }, ordinal)
-      : fableRecovery && file && readRunner && fableInput.relayExecutionId
-        ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
-        : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
+      : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
     let got = out.captureError ? { why: out.captureError } : parse(out.stdout, file)
     if (got.why) {
@@ -687,12 +664,293 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
   return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
+// ===== SHARED BLOCK step-journal — BEGIN (canonical: scripts/shared-blocks/step-journal.js; filled from skills/pipeline-contracts/schemas/{step-journal.schema,pipeline-steps}.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ── STEP JOURNAL: the steps of the bead this workflow works on, and the changes it reports ──
+//
+// A build or deploy workflow runs the steps the bead's step journal lists. It reads the journal
+// once, at its start, through the checked relay (bin/atw-step-journal read), keeps a copy in
+// memory, and begins at the first step that is not done. It cannot write a file, so it reports
+// each change (step started, step done with its artifacts and the steps its result adds, step
+// failed with its cause, child steps planned) as one log line the driver applies to the journal
+// file with orchestrator/core/journal_lines.py. The copy here changes exactly as the file does:
+// it follows step_journal.next_step, start_step and journal_changes.apply_completion.
+//
+// The line format and the artifact that hands a planned step its parameters are defined in
+// skills/pipeline-contracts/schemas/step-journal.schema.json; the step kinds, what each records
+// and adds, and the up-front plans in skills/pipeline-contracts/schemas/pipeline-steps.json. Both
+// are inlined below by scripts/shared-blocks.mjs. Never restate any part of them in a workflow.
+const stepJournal = (() => {
+  const WIRE = {"changePrefix":"STEP-JOURNAL ","changePartPrefix":"STEP-JOURNAL-PART ","changeChunk":4000,"plannedForPrefix":"for "}
+  const PIPELINES = ({"$schema":"./pipeline-steps.schema.json","pipelines":{"build":{"plan":["build:workspace","build:regression-assess","build:regression-review","build:regression-validate","build:baseline","build:select-implementers","build:refactor","build:refactor-check","build:docs-audit","build:final-suite","build:regression-map","build:regression-map-review","build:regression-verify","build:commit"],"inner":{},"kinds":{"build:workspace":{"description":"Establish the Story's worktree and branch","purpose":"Every step that reads or changes the Task's code works in one tree on the Story's branch","runBy":"task-to-deploy","reads":[],"records":[{"name":"worktree","kind":"directory","holds":"the Story's worktree"},{"name":"branch","kind":"value","holds":"the branch checked out in the worktree, a string"},{"name":"defaultBranch","kind":"value","holds":"the repository's default branch, a string or null"}],"adds":[{"kinds":["build:design-source"],"when":"the Task's surfaces include web-ui and its design source is bundle or cds"},{"kinds":["build:infra-intent"],"when":"the Task's type or a label is in the infrastructure vocabulary"}]},"build:design-source":{"description":"Select the design source the Task's web UI is built from","purpose":"A cds bundle the owner supplied for the Task's artifact is the design the build uses and is audited against","runBy":"task-to-deploy","reads":[],"records":[{"name":"design","kind":"value","holds":"{ designSource, bundle, buildSpecs }: the design source used, the bundle directory or null, and the build spec paths"}],"adds":[]},"build:infra-intent":{"description":"Author the provisioning intent of the infrastructure Task","purpose":"The tests and the code of an infrastructure Task are written to concrete resources, stacks and cross-stack references","runBy":"task-to-deploy","reads":["worktree"],"records":[{"name":"provisioning","kind":"value","holds":"{ provisioningIntent, affectedStacks }"}],"adds":[]},"build:regression-assess":{"description":"Map the Task's change to the current and earlier requirements it can affect","purpose":"Earlier requirements stay covered: the tests are written and run against the cumulative scope, not only this Task","runBy":"task-to-deploy","reads":["worktree","design","provisioning"],"records":[{"name":"regressionPrevious","kind":"file","holds":"the requirements and mappings recorded before this Task"},{"name":"regressionPlan","kind":"file","holds":"the impact scope the regression-impact-assessor wrote"}],"adds":[]},"build:regression-review":{"description":"Review the regression scope against the requirement sources","purpose":"The scope is approved by a reviewer that did not write it","runBy":"task-to-deploy","reads":["worktree","regressionPrevious","regressionPlan"],"records":[{"name":"regressionPlanReview","kind":"file","holds":"the regression-coverage-reviewer's review of the scope"}],"adds":[]},"build:regression-validate":{"description":"Validate the reviewed regression scope","purpose":"The scope is complete and approved before any test is written, and its requirement sources are bound","runBy":"task-to-deploy","reads":["worktree","regressionPlan","regressionPlanReview"],"records":[{"name":"regressionScope","kind":"value","holds":"{ requiredKinds }: the test layers the scope requires"}],"adds":[]},"build:baseline":{"description":"Resolve the repository's suite command and run the suite before any change","purpose":"The command the build is judged by is the one the repository declares, and the tests failing before the Task are known","runBy":"task-to-deploy","reads":["worktree","regressionScope"],"records":[{"name":"suiteCommand","kind":"value","holds":"the command that runs the whole suite, a string"},{"name":"baseline","kind":"value","holds":"{ exitCode, summary, failing, tail, relayFile }: the suite run before any change"}],"adds":[{"kinds":["build:red-write","build:red-check"],"when":"always: one build:red-write per test agent the contract's surfaces call for, then the run that judges them"}]},"build:red-write":{"description":"Write failing tests with {testAgent}","purpose":"The Task's acceptance criteria are encoded as tests that fail before the code exists","runBy":"task-to-deploy","params":["testAgent","testAgents","feedback"],"reads":["worktree","suiteCommand","regressionPlan","testFiles","design","provisioning"],"records":[{"name":"testFiles","kind":"value","holds":"the test files the agent created or changed, a list of paths"},{"name":"redConfirmed","kind":"value","holds":"whether the agent saw its tests fail as intended, a boolean"}],"adds":[]},"build:red-check":{"description":"Run the suite and judge whether the new tests fail cleanly","purpose":"Red holds only when a new test fails, no test file fails to load and no other test regressed","runBy":"task-to-deploy","reads":["worktree","suiteCommand","baseline","testFiles","redRun"],"records":[{"name":"redRun","kind":"value","holds":"{ exitCode, summary, failing, tail, relayFile, reasons }: the suite run and why Red does not hold, when it does not"},{"name":"testPrint","kind":"value","holds":"{ files, treeDigest }: the git blob hash of each test file and the digest of the work tree"}],"adds":[{"kinds":["build:red-write","build:red-check"],"when":"Red does not hold: each test agent is given the suite result, and the suite is judged again"}],"limit":"It fails with red-unsatisfied when four checks have not shown Red, and with no-progress when the suite fails exactly as it did at the check before"},"build:select-implementers":{"description":"Select the implementers whose specialties cover the Task","purpose":"The code is written by the fewest agents whose specialties cover the change, in build order","runBy":"task-to-deploy","reads":["worktree","suiteCommand","baseline","redRun","testFiles","design","provisioning"],"records":[{"name":"implementers","kind":"value","holds":"the implementer agent names, in the order they work"}],"adds":[{"kinds":["build:implement","build:green-check"],"when":"always: one build:implement per selected implementer, then the run that judges them"}]},"build:implement":{"description":"Write the code with {implementer}","purpose":"The failing tests pass with the minimum production change","runBy":"task-to-deploy","params":["implementer","implementers","brief"],"reads":["worktree","suiteCommand","baseline","redRun","greenRun","cdsAudit","testFiles","testDecisions","design","provisioning"],"records":[{"name":"changedFiles","kind":"value","holds":"the files the implementer changed, a list of paths"},{"name":"testIssues","kind":"value","holds":"the tests the implementer names as standing between the code and the contract, a list of { testId, kind, reason, contractRef }"},{"name":"upstreamMissing","kind":"value","holds":"what must exist outside the Task before the suite can pass, a list of { what, evidence }"}],"adds":[]},"build:green-check":{"description":"Run the suite and judge whether it is green","purpose":"The Task is built only when the repository's whole suite exits 0 and the implementers left the tests as they were written","runBy":"task-to-deploy","reads":["worktree","suiteCommand","testFiles","testPrint","implementers","testIssues","upstreamMissing","greenRun"],"records":[{"name":"greenRun","kind":"value","holds":"{ exitCode, summary, failing, tail, relayFile }: the suite run"},{"name":"testPrint","kind":"value","holds":"{ files, treeDigest }: the git blob hash of each test file and the digest of the work tree"}],"adds":[{"kinds":["build:test-ruling","build:green-check"],"when":"the suite is not green and an implementer named tests that stand between the code and the contract"},{"kinds":["build:implement","build:green-check"],"when":"the suite is not green and no named test awaits a ruling: each implementer is given the suite result"}],"limit":"It fails with green-modified-tests when an implementer changed a test file, with blocked-upstream when an implementer named something outside the Task, with no-progress when no file changed and the suite fails exactly as at the check before, and with green when eight checks since the implementers were selected have not shown a green suite"},"build:test-ruling":{"description":"Rule on the tests the implementers named, with tdd-unit-test-generator","purpose":"A test that contradicts the contract is changed by the agent that owns the tests, never by an implementer","runBy":"task-to-deploy","params":["issues"],"reads":["worktree","suiteCommand","greenRun","testFiles","regressionPlan"],"records":[{"name":"testDecisions","kind":"value","holds":"one ruling per named test, a list of { testId, action, reason }"},{"name":"testFiles","kind":"value","holds":"the test files the agent changed, a list of paths"}],"adds":[]},"build:refactor":{"description":"Refactor the code the implementers changed","purpose":"The change is left clear and free of duplication without changing behavior","runBy":"task-to-deploy","reads":["worktree","suiteCommand","changedFiles"],"records":[{"name":"refactorSnapshot","kind":"value","holds":"the git tree id of the work tree before the refactor, a string"},{"name":"refactorChangedFiles","kind":"value","holds":"the files the refactor changed, read from git against the snapshot"},{"name":"refactorReverted","kind":"value","holds":"whether the refactor gave up and the tree was put back at the snapshot, a boolean"}],"adds":[]},"build:refactor-check":{"description":"Run the suite after the refactor","purpose":"A refactor that turns the suite red is undone","runBy":"task-to-deploy","reads":["worktree","suiteCommand","refactorSnapshot","refactorRestored","design"],"records":[{"name":"refactorRun","kind":"value","holds":"{ exitCode, summary, failing, tail, relayFile }: the suite run"}],"adds":[{"kinds":["build:refactor-restore","build:refactor-check"],"when":"the suite is red after the refactor and the tree has not been restored"},{"kinds":["build:cds-audit"],"when":"the suite is green and the Task's web UI has design source bundle or cds"}],"limit":"It fails when the suite is still red after the tree was restored to the snapshot"},"build:refactor-restore":{"description":"Restore the work tree to the snapshot taken before the refactor","purpose":"The suite went red after the refactor","runBy":"task-to-deploy","reads":["worktree","refactorSnapshot"],"records":[{"name":"refactorRestored","kind":"value","holds":"{ restored, evidence }"}],"adds":[]},"build:cds-audit":{"description":"Audit the changed web UI against its design source","purpose":"The UI styles nothing outside the design system the Task was built from","runBy":"task-to-deploy","reads":["worktree","design","implementers","cdsAudit"],"records":[{"name":"cdsAudit","kind":"value","holds":"{ verdict, findings, scriptVersion, violations, gaps }: the audit verdict, the count of violations and gaps, and each as text"}],"adds":[{"kinds":["build:implement","build:green-check","build:cds-audit"],"when":"the first audit finds violations: each implementer is given them, the suite is judged, and the audit runs again"}],"limit":"It fails with cds-audit when violations remain at the audit that follows the correction, and with blocked-upstream when the design system lacks something the UI needs"},"build:docs-audit":{"description":"Audit which documents the change leaves stale","purpose":"Documentation is brought up to date in the same commit as the code","runBy":"task-to-deploy","reads":["worktree","changedFiles","refactorChangedFiles"],"records":[{"name":"staleDocs","kind":"value","holds":"the stale documents, a list of paths"},{"name":"docAssignments","kind":"value","holds":"the stale documents by the documentation agent that owns their kind, a list of { agent, docs }"}],"adds":[{"kinds":["build:docs-write"],"when":"documents are stale: one build:docs-write per documentation agent assigned"}]},"build:docs-write":{"description":"Update the stale documents with {docAgent}","purpose":"The audit named documents the change leaves stale","runBy":"task-to-deploy","params":["docAgent","docs"],"reads":["worktree","changedFiles"],"records":[{"name":"updatedDocs","kind":"value","holds":"the documents the agent updated, a list of paths"}],"adds":[],"together":true},"build:final-suite":{"description":"Run the suite a final time","purpose":"Nothing is committed unless the whole suite exits 0 on the tree as it will be committed","runBy":"task-to-deploy","reads":["worktree","suiteCommand"],"records":[{"name":"finalRun","kind":"value","holds":"{ exitCode, summary, failing, tail, relayFile }: the suite run"}],"adds":[]},"build:regression-map":{"description":"Map each requirement in scope to the tests and commands that prove it","purpose":"Every required test layer of the approved scope names concrete tests and a command that runs them","runBy":"task-to-deploy","reads":["worktree","regressionPlan","regressionPrevious"],"records":[{"name":"regressionMapped","kind":"file","holds":"the final mapping the regression-impact-assessor wrote"}],"adds":[]},"build:regression-map-review":{"description":"Review the regression mapping against the tests as written","purpose":"The mapping is approved by a reviewer that did not write it","runBy":"task-to-deploy","reads":["worktree","regressionMapped","regressionPrevious"],"records":[{"name":"regressionMappedReview","kind":"file","holds":"the regression-coverage-reviewer's review of the mapping"}],"adds":[]},"build:regression-verify":{"description":"Run the mapped regression tests and record their evidence","purpose":"The commit carries fresh per-test evidence for every requirement the change can affect","runBy":"task-to-deploy","reads":["worktree","regressionPlan","regressionMapped","regressionMappedReview"],"records":[{"name":"regressionEvidence","kind":"file","holds":"the verification result and the evidence of each mapped run"}],"adds":[]},"build:commit":{"description":"Commit the Task to the Story's branch","purpose":"The built Task lands on the branch its Story deploys from","runBy":"task-to-deploy","reads":["worktree","branch","defaultBranch","suiteCommand","finalRun"],"records":[{"name":"commit","kind":"value","holds":"the head of the Story's branch after the commit, a string"}],"adds":[]}}},"deploy":{"plan":["deploy:mechanism","deploy:workspace","deploy:commits-ahead","deploy:close"],"inner":{"deploy:fix":["deploy:fix-author","deploy:fix-verify","deploy:fix-commit"],"deploy:built-version":["deploy:built-snapshot","deploy:built-compare"]},"kinds":{"deploy:mechanism":{"description":"Ask what the Story's repository publishes and deploys","purpose":"A repository publishes a package, deploys with CDK, both or neither, and the deploy runs only what applies","runBy":"driver","reads":[],"records":[{"name":"mechanism","kind":"value","holds":"{ repository, publishes, publishCommand, deploys, reason }"}],"adds":[]},"deploy:workspace":{"description":"Open the Story's worktree","purpose":"The deploy runs from the tree that holds the Story's built Tasks","runBy":"driver","reads":["mechanism"],"records":[{"name":"worktree","kind":"directory","holds":"the Story's worktree"},{"name":"branch","kind":"value","holds":"the Story's branch, a string"}],"adds":[{"kinds":["deploy:publish"],"when":"the repository publishes a package"},{"kinds":["deploy:synth"],"when":"the repository deploys with CDK and publishes no package"}]},"deploy:publish":{"description":"Publish the repository's package","purpose":"The repository publishes a package other repositories install","runBy":"driver","reads":["mechanism","worktree"],"records":[{"name":"publishedHead","kind":"value","holds":"the commit the package was published from, a string"},{"name":"deployFailure","kind":"value","holds":"{ step, output, stacks }, recorded only when the publish failed"}],"adds":[{"kinds":["deploy:synth"],"when":"the publish succeeded and the repository deploys with CDK"},{"kinds":["deploy:fix","deploy:publish"],"when":"the publish failed"}],"limit":"It fails when three fixes of this Story's deploy have already run"},"deploy:synth":{"description":"Synthesize the CDK app","purpose":"The cloud assembly names the stacks and the SSM parameters the deploy needs","runBy":"driver","reads":["worktree"],"records":[{"name":"assembly","kind":"directory","holds":"the CDK cloud assembly"},{"name":"deployFailure","kind":"value","holds":"{ step, output, stacks }, recorded only when the synth failed"}],"adds":[{"kinds":["deploy:ssm-check"],"when":"the synth succeeded"},{"kinds":["deploy:fix","deploy:publish","deploy:synth"],"when":"the synth failed: after the fix the package is published again when the repository publishes one, then the app is synthesized again"}],"limit":"It fails when three fixes of this Story's deploy have already run"},"deploy:ssm-check":{"description":"Check that the SSM parameters the stacks read exist","purpose":"A stack that reads a parameter another Story's deploy writes cannot deploy before that parameter exists","runBy":"driver","reads":["assembly"],"records":[{"name":"ssmParameters","kind":"value","holds":"the parameter names the stacks read, all present, a list of strings"}],"adds":[{"kinds":["deploy:deploy"],"when":"every parameter exists"}],"waits":"a parameter the stacks read does not exist yet"},"deploy:deploy":{"description":"Deploy the stacks to AWS dev","purpose":"The Story's Tasks are built and its stacks can be deployed","runBy":"driver","reads":["worktree","assembly"],"records":[{"name":"deployOutput","kind":"value","holds":"{ exitCode, tail }: the exit status of the deploy and the last part of its output"}],"adds":[{"kinds":["deploy:verify"],"when":"always"}]},"deploy:verify":{"description":"Verify that every stack reached a completed status and the worktree is clean","purpose":"The deploy counts only when CloudFormation reports every stack created or updated","runBy":"driver","reads":["worktree","assembly","deployOutput"],"records":[{"name":"stacks","kind":"value","holds":"the status of each stack, a list of { name, status, reason }"},{"name":"deployFailure","kind":"value","holds":"{ step, output, stacks }, recorded only when the deploy or its verification failed"}],"adds":[{"kinds":["deploy:fix","deploy:publish","deploy:synth"],"when":"the deploy or its verification failed: after the fix the package is published again when the repository publishes one, then the app is synthesized again"}],"limit":"It fails when three fixes of this Story's deploy have already run"},"deploy:fix":{"description":"Fix the failed deploy on the Story's branch","purpose":"A publish, synth, deploy or verification of the Story failed","runBy":"driver","params":["failure"],"reads":["worktree","branch","deployFailure"],"records":[{"name":"fix","kind":"value","holds":"{ cause, changedFiles, testsPassed, commit }: what the story-deploy-fix workflow returned"}],"adds":[]},"deploy:fix-author":{"description":"Diagnose the failure and fix it in the worktree, with cdk-stack-author","purpose":"The cause of the failed deploy is found in its output and corrected in the Story's code","runBy":"story-deploy-fix","within":"deploy:fix","reads":[],"records":[{"name":"fixCause","kind":"value","holds":"the cause the agent found, a string"},{"name":"fixTestCommand","kind":"value","holds":"the command that runs the synth assertion tests, a string that may be empty"}],"adds":[]},"deploy:fix-verify":{"description":"Read what the fix changed from git and run the synth assertion tests","purpose":"What the fix changed and whether its tests pass are measured, not taken from the agent's report","runBy":"story-deploy-fix","within":"deploy:fix","reads":["fixCause","fixTestCommand"],"records":[{"name":"fixChangedFiles","kind":"value","holds":"the files the fix changed, read from git status, a list of paths"},{"name":"fixTestsPassed","kind":"value","holds":"whether the synth assertion tests exited 0, a boolean"}],"adds":[],"limit":"It fails with no-change when the fix changed no file"},"deploy:fix-commit":{"description":"Commit the fix to the Story's branch","purpose":"The redeploy runs from a committed tree","runBy":"story-deploy-fix","within":"deploy:fix","reads":["fixCause"],"records":[{"name":"fixCommit","kind":"value","holds":"the head of the Story's branch after the commit, a string"}],"adds":[]},"deploy:commits-ahead":{"description":"Count the commits the Story's branch has that the default branch lacks","purpose":"A Story whose branch holds no commit has nothing to compare, review or merge","runBy":"driver","reads":["worktree","stacks"],"records":[{"name":"commitsAhead","kind":"value","holds":"the number of commits ahead of the default branch, an integer"}],"adds":[{"kinds":["deploy:built-version","deploy:pull-request","deploy:merge-wait"],"when":"the branch holds commits: deploy:built-version only when the Story's delta items are recorded"}]},"deploy:built-version":{"description":"Record what the Story built against the effective architecture","purpose":"The effective architecture describes what is deployed before the Story's pull request opens","runBy":"driver","reads":["worktree","branch"],"records":[{"name":"built","kind":"value","holds":"{ stage, differences, builtFiles }: what the built-version workflow returned, with counts in place of lists"}],"adds":[]},"deploy:built-snapshot":{"description":"Fingerprint the architecture and keep a copy of section 2","purpose":"What each agent writes in the architecture is measured, and the owner's constraints are put back if they change","runBy":"built-version","within":"deploy:built-version","reads":[],"records":[{"name":"constraintsBefore","kind":"value","holds":"{ exists, digest, gitStatus, kept }: the fingerprint of section 2 and where its copy is kept"},{"name":"treeStart","kind":"file","holds":"the fingerprint of every architecture file before the comparison"}],"adds":[]},"deploy:built-compare":{"description":"Compare the code on the Story's branch with the effective architecture","purpose":"Each difference between what was built and what the architecture shows is recorded as a built view","runBy":"built-version","within":"deploy:built-version","reads":["constraintsBefore","treeStart"],"records":[{"name":"differences","kind":"value","holds":"the differences found, a list of { element, itemId, effectiveViews, built, citations, file }"},{"name":"builtFiles","kind":"value","holds":"the built views written, a list of absolute paths"},{"name":"treeCompared","kind":"file","holds":"the fingerprint of every architecture file after the comparison"}],"adds":[{"kinds":["deploy:built-correct","deploy:built-review"],"when":"the comparison recorded differences"}]},"deploy:built-correct":{"description":"Correct the effective architecture to match what was built, with architecture-maintainer","purpose":"The effective architecture differs from what the Story built, or a review found the correction wanting","runBy":"built-version","within":"deploy:built-version","params":["findings"],"reads":["constraintsBefore","builtFiles","treeCompared","treeLast","architectureUpdate"],"records":[{"name":"architectureUpdate","kind":"value","holds":"{ changedFiles, createdFiles, deletedFiles, matched, constraintIssues, contradictions, summary }: every pass together, with the files measured from the tree"},{"name":"changedSinceLast","kind":"value","holds":"the files this pass changed since the pass before, a list of paths"},{"name":"treeLast","kind":"file","holds":"the fingerprint of every architecture file after this pass"}],"adds":[],"limit":"It fails when it wrote in section 2 or outside the effective architecture, and when a pass that answers findings changed no file"},"deploy:built-review":{"description":"Review the correction of the effective architecture, with architecture-conformance-reviewer","purpose":"The correction is checked by a reviewer that did not write it","runBy":"built-version","within":"deploy:built-version","reads":["constraintsBefore","builtFiles","architectureUpdate","changedSinceLast","conformance"],"records":[{"name":"conformance","kind":"value","holds":"{ conforms, findings, reviewedFiles, matchedBuiltViews }"}],"adds":[{"kinds":["deploy:built-correct","deploy:built-review"],"when":"the review has findings"},{"kinds":["deploy:built-approve","deploy:built-remove"],"when":"the correction conforms"}],"limit":"It fails when the correction does not conform after two corrections that answered findings"},"deploy:built-approve":{"description":"Set the corrected architecture files to effective","purpose":"A reviewed correction becomes the effective architecture","runBy":"built-version","within":"deploy:built-version","reads":["constraintsBefore","architectureUpdate","conformance"],"records":[{"name":"approval","kind":"value","holds":"{ promoted, unchanged }: how many files were set to effective and how many already were"}],"adds":[]},"deploy:built-remove":{"description":"Remove the built views the effective architecture now matches","purpose":"A built view exists only while the effective architecture differs from what was built","runBy":"built-version","within":"deploy:built-version","reads":["builtFiles","architectureUpdate","conformance"],"records":[{"name":"removedBuiltViews","kind":"value","holds":"the built views removed, a list of absolute paths"}],"adds":[],"limit":"It fails when a built view remains that the effective architecture does not match"},"deploy:pull-request":{"description":"Push the Story's branch and open its pull request","purpose":"The Story's deploy is verified and its branch holds commits","runBy":"driver","reads":["worktree","branch","stacks","publishedHead"],"records":[{"name":"pullRequest","kind":"value","holds":"the pull request URL, a string"}],"adds":[]},"deploy:merge-wait":{"description":"Wait for the Story's pull request to merge","purpose":"The Story closes only when its code is on the default branch","runBy":"driver","reads":["pullRequest"],"records":[{"name":"pullRequestState","kind":"value","holds":"the state GitHub reports for the pull request, the string MERGED"}],"adds":[],"waits":"the pull request is open and not merged"},"deploy:close":{"description":"Close the Story and remove its worktree and local branch","purpose":"A Story with nothing left to deploy or merge is done","runBy":"driver","reads":["worktree","branch"],"records":[{"name":"closed","kind":"value","holds":"true"}],"adds":[]}}}}}).pipelines || {}
+  if (!WIRE.changePrefix || !WIRE.changePartPrefix || !WIRE.changeChunk || !WIRE.plannedForPrefix || !PIPELINES.build || !PIPELINES.deploy) {
+    throw new Error('shared block step-journal: the step journal contract was not inlined (run node scripts/shared-blocks.mjs --write)')
+  }
+  const STEP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+  const FAILURE_EVIDENCE_CHARS = 4000
+
+  /** An artifact that is a file a step produced. */
+  const file = (name, path) => ({ name, kind: 'file', path: String(path) })
+  /** An artifact that is a directory a step produced. */
+  const directory = (name, path) => ({ name, kind: 'directory', path: String(path) })
+  /** An artifact that is a value a step produced; an undefined value is recorded as null. */
+  const value = (name, held) => ({ name, kind: 'value', value: held === undefined ? null : held })
+
+  /** Every step of `steps` in walk order: each step before its child steps, siblings in order. */
+  const walk = (steps, out = []) => {
+    for (const step of steps) {
+      out.push(step)
+      walk(step.steps, out)
+    }
+    return out
+  }
+
+  /** The copy of one journal step: `key` is its id, or the ref of a step this run added. */
+  const copyStep = (raw, params) => {
+    const id = String(raw.id || '')
+    return {
+      key: id,
+      id,
+      kind: String(raw.script || ''),
+      description: String(raw.description || ''),
+      purpose: String(raw.purpose || ''),
+      status: String(raw.status || 'planned'),
+      artifacts: Array.isArray(raw.artifacts) ? raw.artifacts.map((held) => ({ ...held })) : [],
+      params: params.get(id) || {},
+      steps: (Array.isArray(raw.steps) ? raw.steps : []).map((child) => copyStep(child, params)),
+    }
+  }
+
+  /** `text` with each {name} replaced by the text parameter of that name. */
+  const filled = (text, params, kind) =>
+    String(text).replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_match, name) => {
+      const held = params ? params[name] : undefined
+      if (typeof held !== 'string' || !held) throw new Error(`a step of kind ${kind} needs the text parameter ${name} for its description`)
+      return held
+    })
+
+  /**
+   * Opens the journal a workflow was handed. `journal` is the document atw-step-journal read
+   * printed, `run` the name the driver gave this run, `runner` the name of this workflow script as
+   * pipeline-steps.json names it, and `under` the id of the step whose child steps this workflow
+   * runs (absent for a workflow that runs the bead's outermost steps).
+   */
+  function open({ journal, run, runner, under = null }) {
+    if (!journal || typeof journal !== 'object' || !Array.isArray(journal.steps)) throw new Error('stepJournal.open: no journal was read')
+    if (typeof run !== 'string' || !run) throw new Error('stepJournal.open: no run name was supplied')
+    const pipeline = PIPELINES[journal.pipeline]
+    if (!pipeline) throw new Error(`stepJournal.open: the journal lists ${journal.pipeline} steps, which pipeline-steps.json does not define`)
+    const params = new Map()
+    for (const raw of walk(journal.steps)) {
+      for (const held of Array.isArray(raw.artifacts) ? raw.artifacts : []) {
+        const name = String(held.name || '')
+        const planned = name.startsWith(WIRE.plannedForPrefix) ? name.slice(WIRE.plannedForPrefix.length) : ''
+        if (held.kind === 'value' && STEP_ID.test(planned) && held.value && typeof held.value === 'object') params.set(planned, held.value)
+      }
+    }
+    const roots = journal.steps.map((raw) => copyStep(raw, params))
+    const parent = under ? walk(roots).find((step) => step.id === under) || null : null
+    if (under && !parent) throw new Error(`stepJournal.open: the journal of ${journal.bead} holds no step ${under}`)
+    let changes = 0
+
+    /** Writes one change on the log, as one line or as part lines when it is longer than the chunk. */
+    function report(change) {
+      changes += 1
+      const body = JSON.stringify({ run, n: changes, ...change })
+      if (body.length <= WIRE.changeChunk) {
+        log(`${WIRE.changePrefix}${body}`)
+        return
+      }
+      const parts = []
+      for (let at = 0; at < body.length; ) {
+        let end = Math.min(at + WIRE.changeChunk, body.length)
+        const last = body.charCodeAt(end - 1)
+        if (end < body.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+        parts.push(body.slice(at, end))
+        at = end
+      }
+      parts.forEach((part, index) => log(`${WIRE.changePartPrefix}${changes} ${index + 1}/${parts.length} ${part}`))
+    }
+
+    const everyStep = () => walk(roots)
+    const scope = () => (parent ? parent.steps : roots)
+    const kindOf = (key) => {
+      const kind = pipeline.kinds[key]
+      if (!kind) throw new Error(`pipeline-steps.json defines no ${journal.pipeline} step kind ${key}`)
+      return kind
+    }
+    /** The steps of this workflow's scope before `step` in walk order; every step of the scope when `step` is not one of them. */
+    const before = (step) => {
+      const all = walk(scope())
+      const at = all.indexOf(step)
+      return at < 0 ? all : all.slice(0, at)
+    }
+    /** The step that directly contains `step`, or null for an outermost step. */
+    const containerOf = (step) => everyStep().find((candidate) => candidate.steps.includes(step)) || null
+    const siblingsOf = (step) => {
+      const container = containerOf(step)
+      return container ? container.steps : roots
+    }
+    const heldBy = (step, name) => step.artifacts.filter((held) => held.name === name).map((held) => (held.kind === 'value' ? held.value : held.path))
+
+    /** What a planned step is in the copy, and the plan the driver adds to the journal file. */
+    const planned = (adder, entry, ordinal) => {
+      const kind = kindOf(entry.kind)
+      const handed = entry.params && typeof entry.params === 'object' ? entry.params : null
+      const ref = `${adder.key}.${ordinal}`
+      const description = filled(kind.description, handed, entry.kind)
+      const purpose = typeof entry.purpose === 'string' && entry.purpose.trim() ? entry.purpose.trim() : kind.purpose
+      return {
+        step: { key: ref, id: '', kind: entry.kind, description, purpose, status: 'planned', artifacts: [], params: handed || {}, steps: [] },
+        wire: { plan: { ref, description, purpose, script: entry.kind }, ...(handed ? { params: handed } : {}) },
+      }
+    }
+
+    return {
+      bead: String(journal.bead || ''),
+      pipeline: String(journal.pipeline || ''),
+      kinds: pipeline.kinds,
+      /** The kinds of the child steps pipeline-steps.json plans under a step of `kind` when it first runs. */
+      innerPlan: (kind) => (pipeline.inner[kind] || []).map((key) => ({ kind: key })),
+      /** The step this workflow runs child steps under, or null. */
+      parent: () => parent,
+      /** Every step of the journal in walk order. */
+      steps: everyStep,
+      /** The step this workflow does next: the first step of its scope that has no child steps and is not done. */
+      next: () => walk(scope()).find((step) => !step.steps.length && step.status !== 'done') || null,
+      /** `step` and the planned steps of its kind that follow it directly, when the kind's steps run together. */
+      together(step) {
+        if (kindOf(step.kind).together !== true) return [step]
+        const siblings = siblingsOf(step)
+        const group = [step]
+        for (const sibling of siblings.slice(siblings.indexOf(step) + 1)) {
+          if (sibling.kind !== step.kind || sibling.steps.length || sibling.status === 'done') break
+          group.push(sibling)
+        }
+        return group
+      },
+      // The three lookups below read the steps of this workflow's scope: the bead's steps, or the child
+      // steps of the step it was handed. A null `step` reads every step of the scope.
+      /** The newest artifact named `name` a done step before `step` holds: its value or its path; `fallback` when none holds one. */
+      latest(name, step, fallback = null) {
+        const earlier = before(step).filter((candidate) => candidate.status === 'done')
+        for (let at = earlier.length - 1; at >= 0; at -= 1) {
+          const found = heldBy(earlier[at], name)
+          if (found.length) return found[found.length - 1]
+        }
+        return fallback
+      },
+      /** Every artifact named `name` the done steps before `step` hold, oldest first; with `since`, only those of steps after it. */
+      every(name, step, since = null) {
+        const earlier = before(step)
+        const from = since ? earlier.indexOf(since) + 1 : 0
+        return earlier.slice(from).filter((candidate) => candidate.status === 'done').flatMap((candidate) => heldBy(candidate, name))
+      },
+      /** The done steps before `step` whose kind is one of `kinds`, oldest first; with `since`, only those after it. */
+      earlier(kinds, step, since = null) {
+        const all = before(step)
+        const from = since ? all.indexOf(since) + 1 : 0
+        return all.slice(from).filter((candidate) => candidate.status === 'done' && kinds.includes(candidate.kind))
+      },
+      /** A directory name for the files of `step`, unique in the journal. */
+      folder: (step) => step.key.replace(/^([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/, '$1').replace(/[^A-Za-z0-9._-]+/g, '-'),
+      /** Marks a step running: it starts from its beginning, so the artifacts of an unfinished run of it are dropped. */
+      start(step) {
+        step.status = 'running'
+        step.artifacts = []
+        report({ op: 'start', step: step.key })
+      },
+      /** Records a step's artifacts, adds the steps its result calls for right after it, and marks it done. */
+      done(step, artifacts = [], add = []) {
+        const added = add.map((entry, index) => planned(step, entry, index + 1))
+        const siblings = siblingsOf(step)
+        siblings.splice(siblings.indexOf(step) + 1, 0, ...added.map((entry) => entry.step))
+        step.artifacts = [...artifacts]
+        step.status = 'done'
+        report({ op: 'done', step: step.key, ...(artifacts.length ? { artifacts } : {}), ...(added.length ? { add: added.map((entry) => entry.wire) } : {}) })
+        return added.map((entry) => entry.step)
+      },
+      /** Marks a step failed with its cause: { stage, message, evidence? }. */
+      fail(step, cause) {
+        const stage = String((cause && cause.stage) || step.kind)
+        const message = String((cause && cause.message) || 'the step failed').slice(0, FAILURE_EVIDENCE_CHARS)
+        const evidence = cause && cause.evidence ? String(cause.evidence).slice(0, FAILURE_EVIDENCE_CHARS) : ''
+        step.status = 'failed'
+        report({ op: 'fail', step: step.key, failure: JSON.stringify({ stage, message, ...(evidence ? { evidence } : {}) }) })
+      },
+      /** Plans child steps under the running step this workflow was handed, in the order they run. */
+      planUnder(add) {
+        if (!parent) throw new Error('stepJournal: this workflow was handed no step to plan child steps under')
+        const added = add.map((entry, index) => planned(parent, entry, parent.steps.length + index + 1))
+        parent.steps.push(...added.map((entry) => entry.step))
+        report({ op: 'add', step: parent.key, add: added.map((entry) => entry.wire) })
+        return added.map((entry) => entry.step)
+      },
+      /**
+       * Runs the steps of this workflow's scope from the next one until none is left or one fails.
+       * `table` maps a step kind to the function that runs a step of it: `async (step) => ({ artifacts, add })`
+       * when the step is done (`add` lists { kind, params?, purpose? } for the steps its result calls for), or
+       * `{ fail: { stage, message, evidence?, ...more } }` when it failed. `interrupted()` returns the
+       * interruption of this run's dispatches, or null. Returns { ok: true }, or
+       * { ok: false, step, fail } for the step that failed.
+       */
+      async run(table, interrupted = () => null) {
+        const mine = Object.keys(pipeline.kinds).filter((key) => pipeline.kinds[key].runBy === runner && (pipeline.kinds[key].within || null) === (parent ? parent.kind : null))
+        const missing = mine.filter((key) => typeof table[key] !== 'function')
+        if (missing.length) throw new Error(`${runner} has no function for the step kinds ${missing.join(', ')}`)
+        const attempt = async (step) => {
+          let out = null
+          try {
+            const perform = table[step.kind]
+            out = typeof perform === 'function' ? await perform(step) : { fail: { stage: step.kind, message: `${runner} runs no step of kind ${step.kind || '(none)'}` } }
+          } catch (err) {
+            out = { fail: { stage: step.kind, message: `the step threw: ${String((err && err.message) || err).slice(0, 400)}` } }
+          }
+          const stop = interrupted()
+          if (stop) return { fail: { stage: stop.stage, message: stop.message, interrupted: true } }
+          return out && typeof out === 'object' ? out : { fail: { stage: step.kind, message: 'the step returned nothing' } }
+        }
+        for (;;) {
+          const first = this.next()
+          if (!first) return { ok: true }
+          const group = this.together(first)
+          for (const step of group) this.start(step)
+          const outcomes = group.length === 1 ? [await attempt(group[0])] : await parallel(group.map((step) => () => attempt(step)))
+          let failed = null
+          group.forEach((step, index) => {
+            const out = outcomes[index] || { fail: { stage: step.kind, message: 'the step returned nothing' } }
+            if (out.fail) {
+              this.fail(step, out.fail)
+              failed = failed || { ok: false, step, fail: out.fail }
+            } else {
+              this.done(step, Array.isArray(out.artifacts) ? out.artifacts : [], Array.isArray(out.add) ? out.add : [])
+            }
+          })
+          if (failed) return failed
+        }
+      },
+    }
+  }
+
+  /**
+   * Reads the journal file through the checked relay: one command, bin/atw-step-journal read.
+   * Returns { journal } or { error, noResult }.
+   */
+  async function read(dispatch, { runner, pluginRoot, path, relayFile, phase }) {
+    const result = await relayKit.run(dispatch, { label: 'journal:read', phase, runner, argv: [`${pluginRoot}/bin/atw-step-journal`, 'read', '--journal', path], file: relayFile })
+    if (!result.ok) return { error: result.error, noResult: !!result.noResult }
+    if (result.exitCode !== 0 || !result.json || !result.json.journal) return { error: `atw-step-journal read exited ${result.exitCode}; its output is in ${relayFile}` }
+    return { journal: result.json.journal }
+  }
+
+  return { file, directory, value, open, read, pipelines: PIPELINES }
+})()
+// ===== SHARED BLOCK step-journal — END =====
 // ===== SHARED BLOCK composite-phases — BEGIN (canonical: skills/pipeline-contracts/schemas/composites.json; edit there, then: python3 skills/pipeline-contracts/scripts/generate_composites.py and node scripts/shared-blocks.mjs --write) =====
 // GENERATED by skills/pipeline-contracts/scripts/generate_composites.py from
 // skills/pipeline-contracts/schemas/composites.json, the one definition of composite ids, their phases,
 // phase titles and role sets. Never restate any part of it in a workflow: change composites.json and
 // regenerate. check_composites_contract.py fails when this file is stale.
-const COMPOSITE_CONTRACT = Object.freeze({"wire":{"phaseSentinel":"PHASE","progressPrefix":"\u25b8 "},"fallbackPhases":[{"id":"start","title":"Start"},{"id":"work","title":"Work"},{"id":"finish","title":"Finish"}],"composites":{"prd-to-spec":{"runner":"orchestrator","openingKind":"epic","sets":["orchestrated","elaboration"],"phases":[{"id":"epic-lifecycle","title":"Epic Lifecycle"},{"id":"prd","title":"PRD"},{"id":"epic","title":"Epic"},{"id":"architecture","title":"Architecture","event":true},{"id":"trd-authoring","title":"TRD Authoring","event":true},{"id":"repo-scoping","title":"Repo Scoping","event":true},{"id":"spec-authoring","title":"Spec Authoring","event":true},{"id":"task-decomposition","title":"Task Decomposition","event":true},{"id":"task-edges","title":"Task Edges","event":true},{"id":"finish","title":"Finish","event":true},{"id":"run-ledger","title":"Run Ledger"}]},"task-to-deploy":{"runner":"workflow","openingKind":"task","sets":["target-repo","code-build","repo-required","design-aware"],"phases":[{"id":"workspace","title":"Workspace"},{"id":"infra-intent","title":"Infra Intent"},{"id":"regression-scope","title":"Regression Scope"},{"id":"baseline","title":"Baseline"},{"id":"red","title":"Red"},{"id":"green","title":"Green"},{"id":"refactor","title":"Refactor"},{"id":"cds-audit","title":"CDS Audit"},{"id":"documentation","title":"Documentation"},{"id":"commit","title":"Commit"},{"id":"run-ledger","title":"Run Ledger"}]},"bug-fix":{"runner":"workflow","openingKind":"task","sets":["target-repo","code-build","bug"],"phases":[{"id":"workspace","title":"Workspace"},{"id":"triage","title":"Triage"},{"id":"red","title":"Red"},{"id":"green","title":"Green"},{"id":"refactor","title":"Refactor"},{"id":"integration","title":"Integration"},{"id":"adversarial","title":"Adversarial"},{"id":"deploy-to-dev","title":"Deploy-to-dev"},{"id":"settle","title":"Settle"},{"id":"run-ledger","title":"Run Ledger"}]},"story-deploy":{"runner":"driver","sets":["story"],"phases":[{"id":"mechanism","title":"Mechanism"},{"id":"workspace","title":"Workspace"},{"id":"publish","title":"Publish"},{"id":"ssm-check","title":"SSM Check"},{"id":"deploy","title":"Deploy"},{"id":"verify","title":"Verify"},{"id":"fix","title":"Fix"},{"id":"built","title":"Built"},{"id":"pull-request","title":"Pull Request"},{"id":"merge-wait","title":"Merge Wait"},{"id":"close","title":"Close"}]},"story-deploy-fix":{"runner":"workflow","sets":["story"],"phases":[{"id":"fix","title":"Fix"},{"id":"commit","title":"Commit"}]},"deploy-mechanism":{"runner":"workflow","sets":["story"],"phases":[{"id":"ask","title":"Ask"}]},"built-version":{"runner":"workflow","sets":["story"],"phases":[{"id":"compare","title":"Compare"},{"id":"correct","title":"Correct"},{"id":"remove","title":"Remove"}]},"probe":{"runner":"probe","sets":["attaching"],"phases":[]}},"retired":{"repair":{"sets":["attaching"]},"incident":{"sets":["attaching"]},"dependency-assessment":{"sets":["former-trigger"]},"task-dependency-assessment":{"sets":["former-trigger"]},"wsjf-scoring":{"sets":["former-trigger"]}}})
+const COMPOSITE_CONTRACT = Object.freeze({"wire":{"phaseSentinel":"PHASE","progressPrefix":"\u25b8 "},"fallbackPhases":[{"id":"start","title":"Start"},{"id":"work","title":"Work"},{"id":"finish","title":"Finish"}],"composites":{"prd-to-spec":{"runner":"orchestrator","openingKind":"epic","sets":["orchestrated","elaboration"],"phases":[{"id":"epic-lifecycle","title":"Epic Lifecycle"},{"id":"prd","title":"PRD"},{"id":"epic","title":"Epic"},{"id":"architecture","title":"Architecture","event":true},{"id":"trd-authoring","title":"TRD Authoring","event":true},{"id":"repo-scoping","title":"Repo Scoping","event":true},{"id":"spec-authoring","title":"Spec Authoring","event":true},{"id":"task-decomposition","title":"Task Decomposition","event":true},{"id":"task-edges","title":"Task Edges","event":true},{"id":"finish","title":"Finish","event":true},{"id":"run-ledger","title":"Run Ledger"}]},"task-to-deploy":{"runner":"workflow","openingKind":"task","sets":["target-repo","code-build","repo-required","design-aware"],"phases":[{"id":"workspace","title":"Workspace"},{"id":"infra-intent","title":"Infra Intent"},{"id":"regression-scope","title":"Regression Scope"},{"id":"baseline","title":"Baseline"},{"id":"red","title":"Red"},{"id":"green","title":"Green"},{"id":"refactor","title":"Refactor"},{"id":"cds-audit","title":"CDS Audit"},{"id":"documentation","title":"Documentation"},{"id":"commit","title":"Commit"}]},"bug-fix":{"runner":"workflow","openingKind":"task","sets":["target-repo","code-build","bug"],"phases":[{"id":"workspace","title":"Workspace"},{"id":"triage","title":"Triage"},{"id":"red","title":"Red"},{"id":"green","title":"Green"},{"id":"refactor","title":"Refactor"},{"id":"integration","title":"Integration"},{"id":"adversarial","title":"Adversarial"},{"id":"deploy-to-dev","title":"Deploy-to-dev"},{"id":"settle","title":"Settle"},{"id":"run-ledger","title":"Run Ledger"}]},"story-deploy":{"runner":"driver","sets":["story"],"phases":[{"id":"mechanism","title":"Mechanism"},{"id":"workspace","title":"Workspace"},{"id":"publish","title":"Publish"},{"id":"ssm-check","title":"SSM Check"},{"id":"deploy","title":"Deploy"},{"id":"verify","title":"Verify"},{"id":"fix","title":"Fix"},{"id":"built","title":"Built"},{"id":"pull-request","title":"Pull Request"},{"id":"merge-wait","title":"Merge Wait"},{"id":"close","title":"Close"}]},"story-deploy-fix":{"runner":"workflow","sets":["story"],"phases":[{"id":"fix","title":"Fix"},{"id":"commit","title":"Commit"}]},"deploy-mechanism":{"runner":"workflow","sets":["story"],"phases":[{"id":"ask","title":"Ask"}]},"built-version":{"runner":"workflow","sets":["story"],"phases":[{"id":"compare","title":"Compare"},{"id":"correct","title":"Correct"},{"id":"remove","title":"Remove"}]},"probe":{"runner":"probe","sets":["attaching"],"phases":[]}},"retired":{"repair":{"sets":["attaching"]},"incident":{"sets":["attaching"]},"dependency-assessment":{"sets":["former-trigger"]},"task-dependency-assessment":{"sets":["former-trigger"]},"wsjf-scoring":{"sets":["former-trigger"]}}})
 const compositePhases = (composite) => {
   const spec = COMPOSITE_CONTRACT.composites[composite]
   if (spec && spec.phases.length) return spec.phases
@@ -775,24 +1033,26 @@ const reconFieldList = () => {
 //   bead: { id, repoPath, story: { id, title? }, type?, labels?, title?, description?, specPath?, specPaths?, specSections?,
 //           requirementIds?, definitionOfDone?, decisionIds?, acceptanceCriteria?, surfaces?, apiSpec?, eventContracts?, testStrategy?,
 //           cdsDesignSource?: one of DESIGN_SOURCES (recon-contract block), cdsArtifact?, cdsBundlePath?, cdsBuildSpecs? },
-//   designSystem?: { packagesDir? } (the folder of single-artifact cds bundles the owner supplied; read at build time),
-//   pluginRoot?: string (the agent-teams-workforce install; else the install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
+//   journal: { path, run } (the Task's step journal file, and the name of this run: every change this run reports carries it),
+//   relay: { dir, runner? } (dir: the Task's own directory for relay files and regression artifacts, the same on every
+//           dispatch of the Task; runner: relayrun.py, else pluginRoot's),
+//   pluginRoot: string (the agent-teams-workforce install),
 //   infraVocabulary: the object skills/artifact-handoff/scripts/infra_vocabulary.py prints,
+//   designSystem?: { packagesDir? } (the folder of single-artifact cds bundles the owner supplied; read at build time),
 //   spec?: object (defaults to bead), implementer?: string,
-//   cdsRoot?: string (the cds plugin install; else the cds install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records),
-//   maxRedRounds?: number (default 4), maxGreenRounds?: number (default 8),
-//   relay?: { runner?, dir? } (relayrun.py and a directory for this run's relay files; the runner defaults to pluginRoot's,
-//           else the registry's, and the directory to mkdtemp)
+//   cdsRoot?: string (the cds plugin install; else the cds install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records)
 // }
 const COMPOSITE = 'task-to-deploy'
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
 const spec = a.spec || bead
 const story = bead.story && typeof bead.story === 'object' ? bead.story : {}
-const MAX_RED_ROUNDS = a.maxRedRounds || 4
-const MAX_GREEN_ROUNDS = a.maxGreenRounds || 8
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
 const TAIL_CHARS = 4000
+// A red check declines to add another round of test agents once this many checks have run, and a green
+// check once this many have run since the implementers were selected or an audit sent violations back.
+const MAX_RED_CHECKS = 4
+const MAX_GREEN_CHECKS = 8
 
 // An infrastructure Task, by the same type and label test route-build applies.
 const norm = (v) => String(v || '').trim().toLowerCase()
@@ -805,94 +1065,72 @@ const isInfra = INFRA_TYPES.includes(norm(bead.type)) || beadLabels.some((l) => 
 // A Task whose surfaces include web-ui takes one design source: bundle (built from the cds bundle the owner
 // supplied and audited against it), cds (designed with the CDS design system and audited against the live
 // design system) or none (no design impact: no cds design step and no cds audit). A contract that records
-// no design source takes bundle when it names a bundle, else cds. Before the build, the bundles supplied now
-// decide the source actually used: a mockup can arrive any time before its Task is built.
+// no design source takes bundle when it names a bundle, else cds. The design-source step then selects the
+// source the build uses from the bundles supplied now: a mockup can arrive any time before its Task is built.
 const UI_SURFACE = 'web-ui'
 const isUiTask = (Array.isArray(bead.surfaces) ? bead.surfaces : []).map(norm).includes(UI_SURFACE)
-let designSource = !isUiTask
+const recordedDesignSource = !isUiTask
   ? null
   : DESIGN_SOURCES.includes(norm(bead.cdsDesignSource))
     ? norm(bead.cdsDesignSource)
     : String(bead.cdsBundlePath || '').trim()
       ? DESIGN_SOURCE.BUNDLE
       : DESIGN_SOURCE.CDS
+const selectsDesign = recordedDesignSource === DESIGN_SOURCE.BUNDLE || recordedDesignSource === DESIGN_SOURCE.CDS
 
-if (!bead.id) return dispatchOutcome({ ok: false, stage: 'input', error: 'no bead.id supplied' })
+const inputFailure = (headline) => ({ ok: false, stage: 'input', beadId: bead.id || null, storyId: story.id || null, headline, detailPath: null })
+if (!bead.id) return dispatchOutcome(inputFailure('no bead.id supplied'))
 if (!INFRA_TYPES.length || !INFRA_LABELS.length) {
-  return dispatchOutcome({ ok: false, stage: 'input', error: 'no infraVocabulary supplied: pass the object skills/artifact-handoff/scripts/infra_vocabulary.py prints' })
+  return dispatchOutcome(inputFailure('no infraVocabulary supplied: pass the object skills/artifact-handoff/scripts/infra_vocabulary.py prints'))
 }
 
-const runLedger = []
-let runDetail = null
-let workspaceOut = null
-// The cds audit verdict, { verdict: pass | fail | blocked | error, findings, scriptVersion }, once the audit ran.
-let cdsVerdict = null
-// The bundle the build uses, once the design source is selected.
-let usedBundle = null
-
-// Logs the journal payload as `RUN-JOURNAL {json}`, or as `RUN-JOURNAL-PART i/n <chunk>` lines when
-// it exceeds JOURNAL_CHUNK characters; the host concatenates the parts and writes the journal file.
-const JOURNAL_CHUNK = 4000
-function emitRunJournal(payload) {
-  const body = JSON.stringify(payload)
-  if (body.length <= JOURNAL_CHUNK) {
-    log(`RUN-JOURNAL ${body}`)
-    return
-  }
-  const parts = []
-  for (let i = 0; i < body.length; ) {
-    let end = Math.min(i + JOURNAL_CHUNK, body.length)
-    const last = body.charCodeAt(end - 1)
-    if (end < body.length && last >= 0xd800 && last <= 0xdbff) end -= 1
-    parts.push(body.slice(i, end))
-    i = end
-  }
-  parts.forEach((part, i) => log(`RUN-JOURNAL-PART ${i + 1}/${parts.length} ${part}`))
+// ── Relay: relayrun.py (the plugin's scripts/portfolio/) runs every deterministic step, and each result is
+// saved in the directory of the step that ran it, under the Task's own directory ──
+const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
+const pluginRoot = String(a.pluginRoot || '').trim().replace(/\/+$/, '')
+const givenRelay = a.relay && typeof a.relay === 'object' ? a.relay : {}
+const relayRunner = String(givenRelay.runner || (pluginRoot ? `${pluginRoot}${RUNNER_TAIL}` : '')).trim()
+const scripts = relayRunner.slice(0, -'relayrun.py'.length)
+const RELAY = {
+  runner: relayRunner,
+  dir: String(givenRelay.dir || '').trim().replace(/\/+$/, ''),
+  gitfacts: `${scripts}gitfacts.py`,
+  depscore: `${scripts}depscore.py`,
+  regression: `${scripts}regression.py`,
+  artifactcontract: `${scripts}artifactcontract.py`,
 }
-function persistRun(outcome) {
-  if (!runLedger.length && !runDetail) return null
-  try {
-    emitRunJournal({ composite: COMPOSITE, bead: null, subject: bead.id || null, outcome, runLedger, detail: runDetail })
-  } catch (e) {
-    log(`run journal could not be serialized: ${e && e.message ? e.message : e}`)
-  }
-  return null
+const journalArg = a.journal && typeof a.journal === 'object' ? a.journal : {}
+const journalPath = String(journalArg.path || '').trim()
+const runName = String(journalArg.run || '').trim()
+if (!pluginRoot.startsWith('/') || !RELAY.runner.startsWith('/') || !RELAY.runner.endsWith(RUNNER_TAIL) || !RELAY.dir.startsWith('/')) {
+  return dispatchOutcome(inputFailure('pluginRoot and relay.dir are required absolute paths: the plugin install, and the directory this Task keeps its relay files and regression artifacts in'))
+}
+if (!journalPath.startsWith('/') || !runName) {
+  return dispatchOutcome(inputFailure(`no journal supplied: ${bead.id} is built from its step journal, so pass journal: { path, run }`))
 }
 
+// The journal of the Task, once it is read; the step now running; and the phase it is shown under.
+let J = null
+let current = null
 let currentPhase = null
 const phaseTitle = (id) => compositePhaseTitle(COMPOSITE, id)
 function enterPhase(id) {
   currentPhase = phaseTitle(id)
   phase(currentPhase)
 }
+/** The directory the running step keeps its relay files in. */
+const stepDir = () => `${RELAY.dir}/${J.folder(current)}`
+/** The relay file named `label` in `dir`. */
+const relayFileIn = (dir, label) => `${dir}/${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
+/** The relay arg a workflow script the running step calls gets: this run's runner and the step's directory. */
+const stepRelay = () => ({ runner: RELAY.runner, dir: stepDir() })
 
-// Returns the caller-facing result; `detail` goes to the run journal only.
-function handback(ok, stage, headline, detail) {
-  runDetail = detail === undefined ? null : detail
-  return {
-    ok,
-    stage,
-    beadId: bead.id || null,
-    storyId: story.id || null,
-    headline: String(headline || ''),
-    branch: (workspaceOut && workspaceOut.branch) || null,
-    worktree: (workspaceOut && workspaceOut.repoPath) || null,
-    ...(designSource ? { designSource } : {}),
-    ...(cdsVerdict ? { cdsAudit: { ...cdsVerdict, designSource, bundle: usedBundle } } : {}),
-  }
-}
-
-// Returns the stage for a failed phase result: dispatch failure, or `stage`.
+// Returns the stage for a failed step result: dispatch failure, or `stage`.
 const stageOf = (stage, r) => (!r || r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
-
-function implementersOf(artifact) {
-  const l = artifact && artifact.ledger
-  return l && (l.mode === 'selected' || l.mode === 'reused') && Array.isArray(l.chosen) && l.chosen.length ? l.chosen : undefined
-}
 
 const list = (v) => (Array.isArray(v) ? v.filter(Boolean) : [])
 
-// Consumed by greenLoop: a Red update must disposition every requested test before Green retries.
+// A test ruling must disposition every named test before the implementers work again.
 function checkTestDecisions(issues, decisions) {
   const requested = [...new Set((Array.isArray(issues) ? issues : []).map((x) => String((x && x.testId) || '').trim()).filter(Boolean))]
   const returned = Array.isArray(decisions) ? decisions : []
@@ -933,7 +1171,7 @@ const sameFile = (p, f) => {
   return !!x && !!y && (x === y || x.endsWith(`/${y}`) || y.endsWith(`/${x}`))
 }
 
-// The runner's report as feedback text for the next session.
+// A suite run as feedback text for the next session.
 const runText = (run) =>
   [
     `The suite runner ran \`${(run && run.command) || '(no command)'}\` and it exited ${run ? run.exitCode : 'with no result'}.`,
@@ -945,84 +1183,20 @@ const runText = (run) =>
     .join('\n')
 
 const validRun = (r) => !!r && !r.dispatchFailed && Number.isInteger(r.exitCode) && r.exitCode >= 0
+/** A suite run as the journal holds it: what the later steps read of it. */
+const runValue = (run) => ({
+  command: String(run.command || ''),
+  exitCode: run.exitCode,
+  summary: String(run.summary || ''),
+  failing: list(run.failing),
+  tail: String(run.tail || '').slice(-TAIL_CHARS),
+  relayFile: run.relayFile || null,
+})
 
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
-// ── Relay setup: relayrun.py (the plugin's scripts/portfolio/) runs every deterministic step, and
-// each result is saved as NNN-<label>.json in a directory of this run's own. A caller passes
-// relay: { runner, dir }; whatever it leaves out is resolved once, by a self-checking inline step:
-// the runner from the agent-teams-workforce install $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json
-// records (the install for $ATW_CONTROL_REPO first, else the user-scope one), the directory from mkdtemp.
-const RELAY_RESOLVE_PY = `import json, os, tempfile
-from pathlib import Path
-root, base, name = ARGS
-marker = ("scripts", "portfolio", "relayrun.py")
-problem = ""
-if root and not Path(root, *marker).is_file():
-    problem = f"{root} has no scripts/portfolio/relayrun.py"
-if not root:
-    config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
-    reg = Path(config) / "plugins" / "installed_plugins.json"
-    control = os.environ.get("ATW_CONTROL_REPO", "").strip()
-    control = os.path.normpath(control) if control else ""
-    try:
-        plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
-    except (OSError, ValueError) as exc:
-        plugins, problem = {}, f"{reg} is unreadable: {exc}"
-    ranked = []
-    for key, entries in plugins.items():
-        if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
-            continue
-        for e in entries:
-            path = str(e.get("installPath") or "") if isinstance(e, dict) else ""
-            if not path or not Path(path, *marker).is_file():
-                continue
-            if control and e.get("scope") in ("local", "project") and os.path.normpath(str(e.get("projectPath") or "")) == control:
-                ranked.append((0, path))
-            elif e.get("scope") == "user":
-                ranked.append((1, path))
-    if ranked:
-        root = sorted(ranked)[0][1]
-    elif not problem:
-        problem = f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/relayrun.py"
-if problem:
-    emit({"error": problem}, 2)
-if base:
-    Path(base).mkdir(parents=True, exist_ok=True)
-    folder = os.path.realpath(base)
-else:
-    folder = os.path.realpath(tempfile.mkdtemp(prefix=f"{name}-relay-"))
-emit({"runner": os.path.join(os.path.normpath(root), *marker), "dir": folder})`
-const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
-let relaySeq = 0
-/** Returns { runner, dir, gitfacts } for this run, or { error }. */
-async function relaySetup(name, given, phaseTitle) {
-  const g = given && typeof given === 'object' ? given : {}
-  const runner = String(g.runner || '').trim()
-  const dir = String(g.dir || '').trim().replace(/\/+$/, '')
-  const usable = runner.startsWith('/') && runner.endsWith(RUNNER_TAIL)
-  let found = { runner, dir }
-  if (!usable || !dir.startsWith('/')) {
-    const r = await relayKit.inline(guardedAgent, {
-      label: `${name}:relay-setup`,
-      phase: phaseTitle,
-      code: RELAY_RESOLVE_PY,
-      args: [usable ? runner.slice(0, -RUNNER_TAIL.length) : '', dir.startsWith('/') ? dir : '', name],
-    })
-    if (!r.ok) return { error: `the relay runner could not be resolved: ${r.error}`, noResult: !!r.noResult }
-    found = { runner: String(r.view.runner || ''), dir: String(r.view.dir || '').replace(/\/+$/, '') }
-  }
-  if (!found.runner.startsWith('/') || !found.dir.startsWith('/')) return { error: 'the relay runner or its directory is not an absolute path' }
-  return { ...found, gitfacts: `${found.runner.slice(0, -'relayrun.py'.length)}gitfacts.py` }
-}
-/** The next relay file in `dir`, numbered by this run's counter. */
-const relayFileIn = (dir, label) => `${dir}/${String(++relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
-// Set once the relay runner is resolved, before the first deterministic step.
-let RELAY = null
-/** The relay arg a child workflow gets: this run's runner and a numbered directory of its own. */
-const childRelay = (name) => ({ runner: RELAY.runner, dir: `${RELAY.dir}/${String(++relaySeq).padStart(3, '0')}-${name}` })
 /** Runs one gitfacts.py command through relayrun.py; returns { facts } or { error }. */
 async function gitfacts(label, argv) {
-  const r = await relayKit.run(guardedAgent, { label, phase: currentPhase || phaseTitle('green'), runner: RELAY.runner, argv: ['python3', RELAY.gitfacts, ...argv], file: relayFileIn(RELAY.dir, label) })
+  const r = await relayKit.run(guardedAgent, { label, phase: currentPhase || phaseTitle('green'), runner: RELAY.runner, argv: ['python3', RELAY.gitfacts, ...argv], file: relayFileIn(stepDir(), label) })
   if (!r.ok) return { error: r.error }
   if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitfacts.py ${argv[0]} exited ${r.exitCode}`) }
   return { facts: r.json }
@@ -1044,54 +1218,128 @@ async function fingerprint(tree, files, label) {
   return missing.length ? { error: `the fingerprint names no hash for ${missing.join(', ')}` } : { files: got, treeDigest: String(r.facts.treeDigest || '') }
 }
 
+// ── What a step is handed: every value below is read from the artifacts the steps before it recorded ──
+/** The Story's worktree. */
+const treeAt = (step) => String(J.latest('worktree', step, '') || '')
+/** The design source the build uses: what the design-source step selected, else what the contract records. */
+function designAt(step) {
+  const selected = J.latest('design', step)
+  if (selected && typeof selected === 'object') return selected
+  return {
+    designSource: recordedDesignSource,
+    bundle: recordedDesignSource === DESIGN_SOURCE.BUNDLE ? String(bead.cdsBundlePath || '').trim() || null : null,
+    buildSpecs: list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean),
+  }
+}
+/** The test files the test agents have written or changed so far. */
+const testFilesAt = (step) => [...new Set(J.every('testFiles', step).flatMap((files) => list(files).map(String)))]
+/** The files the implementers have changed so far. */
+const changedFilesAt = (step) => [...new Set(J.every('changedFiles', step).flatMap((files) => list(files).map(String)))]
+/** The Task's build contract as it stands at a step. */
+function contractAt(step) {
+  const tree = treeAt(step)
+  const design = designAt(step)
+  const declaredSurfaces = Array.isArray(bead.surfaces) ? bead.surfaces : null
+  const structuralSurfaces = [
+    bead.apiSpec ? 'api-contract' : null,
+    Array.isArray(bead.eventContracts) && bead.eventContracts.length ? 'event-chain' : null,
+  ].filter(Boolean)
+  const contractSurfaces = declaredSurfaces
+    ? [...new Set([...declaredSurfaces, ...structuralSurfaces])]
+    : structuralSurfaces.length
+      ? structuralSurfaces
+      : null
+  const contract = {
+    spec,
+    bead: { id: bead.id, title: bead.title || null, description: bead.description || null, repoPath: tree },
+    repoPath: tree,
+    acceptanceCriteria: Array.isArray(bead.acceptanceCriteria) ? bead.acceptanceCriteria : [],
+    decisionIds: [
+      ...new Set(
+        [...(Array.isArray(spec && spec.decisionIds) ? spec.decisionIds : []), ...(Array.isArray(bead.decisionIds) ? bead.decisionIds : [])]
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+      ),
+    ],
+    surfaces: contractSurfaces,
+    testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
+    cdsDesignSource: design.designSource,
+    cdsBundlePath: design.designSource === DESIGN_SOURCE.BUNDLE ? design.bundle : null,
+    cdsBuildSpecs: design.designSource === DESIGN_SOURCE.BUNDLE ? list(design.buildSpecs) : [],
+  }
+  const provisioning = J.latest('provisioning', step)
+  if (provisioning && typeof provisioning === 'object') {
+    const stacks = Array.isArray(provisioning.affectedStacks) ? provisioning.affectedStacks : []
+    contract.affectedStacks = stacks
+    contract.provisioningIntent = provisioning.provisioningIntent
+    contract.acceptanceCriteria = [
+      ...contract.acceptanceCriteria.filter(Boolean),
+      {
+        given: `the provisioning intent for ${bead.title || 'this infrastructure change'} on stacks ${stacks.join(', ') || '(affected stacks)'}`,
+        when: 'cdk synth runs against the changed stacks',
+        then: 'the synthesized template asserts the intended resources and their properties, the cross-stack references the stacks write and read, and the IAM permissions the intent names',
+      },
+    ]
+  }
+  const scope = J.latest('regressionScope', step)
+  if (scope && typeof scope === 'object') {
+    const kinds = list(scope.requiredKinds)
+    contract.regressionPlanPath = J.latest('regressionPlan', step)
+    contract.surfaces = [...new Set([...(contract.surfaces || []), ...(kinds.includes('contract') ? ['api-contract'] : []), ...(kinds.includes('integration') ? ['event-chain'] : [])])]
+  }
+  const suiteCommand = String(J.latest('suiteCommand', step, '') || '').trim()
+  if (suiteCommand) {
+    contract.suiteCommand = suiteCommand
+    // Read by the implementer selection and implementation briefs: explicit authority to repair the baseline.
+    contract.baselineRepairScope = 'affected-repository'
+  }
+  return contract
+}
+/** Runs the repository's suite once through the suite-run workflow script; resolves the command when none is given. */
+async function suite(step, label) {
+  const command = String(J.latest('suiteCommand', step, '') || '').trim()
+  const r = await settleWorkflow('agent-teams-workforce:suite-run', { repoPath: treeAt(step), ...(command ? { command } : {}), label, relay: stepRelay() })
+  return r || null
+}
 
 const REGRESSION_SCHEMA = {"type":"object","additionalProperties":false,"required":["components","discovery","requirements","mappings","runs","sourceFiles","replacements"],"properties":{"replacements":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["requirementId","kind","oldTestId","newTestIds","reason"],"properties":{"requirementId":{"type":"string"},"kind":{"type":"string"},"oldTestId":{"type":"string"},"newTestIds":{"type":"array","minItems":1,"items":{"type":"string"}},"reason":{"type":"string","minLength":1}}}},"sourceFiles":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},"components":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","files"],"properties":{"id":{"type":"string","minLength":1},"files":{"type":"array","items":{"type":"string","minLength":1}}}}},"discovery":{"type":"object","additionalProperties":false,"required":["sourceRefs","priorRequirementsSearched","greenfield","evidence"],"properties":{"sourceRefs":{"type":"array","items":{"type":"string","minLength":1}},"priorRequirementsSearched":{"type":"boolean"},"greenfield":{"type":"boolean"},"evidence":{"type":"string","minLength":1}}},"requirements":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","sourceRef","componentIds","repoPath","impacted","impactReason","applicability","supersedes"],"properties":{"id":{"type":"string","minLength":1},"sourceRef":{"type":"string","minLength":1},"componentIds":{"type":"array","items":{"type":"string","minLength":1}},"repoPath":{"type":"string","minLength":1},"impacted":{"type":"boolean"},"impactReason":{"type":"string","minLength":1},"applicability":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["kind","required","reason","sourceRefs"],"properties":{"kind":{"type":"string","enum":["unit","contract","integration","nonfunctional"]},"required":{"type":"boolean"},"reason":{"type":"string","minLength":1},"sourceRefs":{"type":"array","items":{"type":"string","minLength":1}}}}},"supersedes":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","sourceRef","reason"],"properties":{"id":{"type":"string","minLength":1},"sourceRef":{"type":"string","minLength":1},"reason":{"type":"string","minLength":1}}}}}}},"mappings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["requirementId","kind","runId","testIds"],"properties":{"requirementId":{"type":"string","minLength":1},"kind":{"type":"string","enum":["unit","contract","integration","nonfunctional"]},"runId":{"type":"string","minLength":1},"testIds":{"type":"array","items":{"type":"string","minLength":1}}}}},"runs":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","repoPath","command","reportPath","format"],"properties":{"id":{"type":"string","minLength":1},"repoPath":{"type":"string","minLength":1},"command":{"type":"string","minLength":1},"reportPath":{"type":"string","minLength":1},"format":{"type":"string","enum":["junit"]}}}}}}
 const REGRESSION_REVIEW_SCHEMA = {"type":"object","additionalProperties":false,"required":["approved","findings","evidence"],"properties":{"approved":{"type":"boolean"},"findings":{"type":"array","items":{"type":"string","minLength":1}},"evidence":{"type":"array","items":{"type":"string","minLength":1}}}}
-/** Source assessment stays separate from deterministic coverage/execution validation. */
-async function regressionStep(contract, final = false) {
-  const folder = `${RELAY.dir}/regression`
-  const ledger = `${contract.repoPath}/.agent-workforce/regression.json`
-  const previous = `${folder}/previous.json`
-  const plan = `${folder}/${final ? 'mapped' : 'plan'}.json`
-  const review = `${folder}/${final ? 'mapped' : 'plan'}-review.json`
-  const helper = `${RELAY.runner.slice(0, -'relayrun.py'.length)}regression.py`
-  const invoke = async (mode, extra = []) => {
-    const result = await relayKit.run(guardedAgent, { label: `regression:${mode}`, phase: currentPhase, runner: RELAY.runner,
-      argv: ['python3', helper, mode, '--plan', plan, '--ledger', ledger, '--output', mode === 'prepare' ? previous : `${folder}/${mode}.json`, ...extra],
-      file: relayFileIn(RELAY.dir, `regression-${mode}`), timeout: 540 })
-    if (!result.ok || result.exitCode !== 0 || !result.json || result.json.ok !== true) return { ok: false, reason: result.error || JSON.stringify(result.json || {}) }
-    return result.json
-  }
-  const knownSources = [...new Set([contract.spec && contract.spec.specPath, ...((contract.spec && contract.spec.specPaths) || [])].filter(x => typeof x === 'string' && x.startsWith('/')).map(x => x.split('#')[0]))]
-  const prepared = await invoke('prepare', [...knownSources.flatMap(x => ['--source', x]), ...(final ? ['--approved-plan', contract.regressionPlanPath] : [])])
-  if (!prepared.ok) return prepared
-  const tree = await fingerprint(contract.repoPath, [], 'regression:tree')
-  if (tree.error) return { ok: false, reason: tree.error }
-  const binding = await relayKit.artifactRevision(guardedAgent, { label: 'regression:inputs', phase: currentPhase,
-    runner: RELAY.runner, files: [previous, ...(final ? [contract.regressionPlanPath] : [])],
-    context: { contract, final, treeDigest: tree.treeDigest, sourceRevision: prepared.sourceRevision }, relayFile: relayFileIn(RELAY.dir, 'regression-inputs') })
-  if (!binding.ok) return { ok: false, reason: binding.error }
-  const author = async (file, schema, agentType, prompt, inputs) => {
-    const candidate = `${file}.candidate.json`
-    const revision = await relayKit.artifactRevision(guardedAgent, { label: 'regression:artifact-inputs', phase: currentPhase,
-      runner: RELAY.runner, files: inputs, context: { revision: binding.revision, prompt }, relayFile: relayFileIn(RELAY.dir, 'regression-artifact-inputs') })
-    if (!revision.ok) return { ok: false, error: revision.error }
-    return await relayKit.authorArtifact(guardedAgent, { label: `regression:${agentType}`, phase: currentPhase,
-      runner: RELAY.runner, revision: revision.revision, candidate, file, schema, relayFile: relayFileIn(RELAY.dir, 'regression-artifact') },
-      () => guardedAgent(prompt + relayKit.artifactBrief(candidate, schema, revision.revision, RELAY.runner.replace(/[^/]+$/, 'artifactcontract.py')), { agentType, phase: currentPhase, schema: relayKit.ARTIFACT_SCHEMA }), () => !!dispatchInterruption)
-  }
-  const brief = `Task contract (source references are authoritative): ${JSON.stringify(contract)}
+
+// ── Regression scope: the assessment and its review are written by agents as saved artifacts; regression.py
+// prepares, validates and verifies them. Source assessment stays separate from deterministic validation. ──
+const REGRESSION_DIR = `${RELAY.dir}/regression`
+const REGRESSION_FILES = {
+  previous: `${REGRESSION_DIR}/previous.json`,
+  plan: `${REGRESSION_DIR}/plan.json`,
+  planReview: `${REGRESSION_DIR}/plan-review.json`,
+  mapped: `${REGRESSION_DIR}/mapped.json`,
+  mappedReview: `${REGRESSION_DIR}/mapped-review.json`,
+}
+/** Runs one regression.py mode on a plan file; returns what it printed, or { ok: false, reason }. */
+async function regressionInvoke(step, mode, plan, output, extra = []) {
+  const ledger = `${treeAt(step)}/.agent-workforce/regression.json`
+  const result = await relayKit.run(guardedAgent, { label: `regression:${mode}`, phase: currentPhase, runner: RELAY.runner,
+    argv: ['python3', RELAY.regression, mode, '--plan', plan, '--ledger', ledger, '--output', output, ...extra],
+    file: relayFileIn(stepDir(), `regression-${mode}`), timeout: 540 })
+  if (!result.ok || result.exitCode !== 0 || !result.json || result.json.ok !== true) return { ok: false, reason: result.error || JSON.stringify(result.json || {}) }
+  return result.json
+}
+/** The requirement source files the contract names. */
+const regressionSources = (contract) => [...new Set([contract.spec && contract.spec.specPath, ...((contract.spec && contract.spec.specPaths) || [])].filter(x => typeof x === 'string' && x.startsWith('/')).map(x => x.split('#')[0]))]
+/** Has one agent write a regression artifact as a saved candidate, then validates and accepts it as `file`. */
+async function author(file, schema, agentType, prompt) {
+  const candidate = `${file}.candidate.json`
+  const revision = J.folder(current)
+  const returned = await guardedAgent(prompt + relayKit.artifactBrief(candidate, schema, revision, RELAY.artifactcontract), { agentType, phase: currentPhase, schema: relayKit.ARTIFACT_SCHEMA })
+  if (dispatchInterruption) return { ok: false, noResult: true, error: 'the artifact dispatch was interrupted; the saved work is retained' }
+  return relayKit.acceptArtifact(guardedAgent, { label: `regression:${agentType}`, phase: currentPhase, runner: RELAY.runner, revision, candidate, file, schema,
+    relayFile: relayFileIn(stepDir(), 'regression-artifact'), returned })
+}
+const regressionBrief = (contract, previous, final) => `Task contract (source references are authoritative): ${JSON.stringify(contract)}
 Previous cumulative requirements/mappings: ${previous}. Repository: ${contract.repoPath}.
 Read current product requirement sources and connected component/consumer contracts, including prior PRDs. Discover affected requirements from actual sources; prior ledger is a starting point, not completeness proof. Cite searched sources and concrete component bindings. List the absolute physical source files actually read in sourceFiles (including vault note backing files), separately from section references; the helper fingerprints their bytes. Missing or unreadable sources block. Explicitly assess unit, contract, integration and nonfunctional layers. Mark impacted only for requirements this change can affect, with impactReason evidence; retain unrelated prior requirements/mappings with impacted=false, not an unnecessary fleet rerun. Include previously retained requirements; never drop or weaken prior mappings without accepted source supersession. Greenfield means positively evidenced no prior obligations, not a missing ledger. Cross-repository tests use their actual repository paths; do not create or reinterpret Epic dependency edges. Missing source or report capability is a blocker.
 ${final ? `Read approved scope ${contract.regressionPlanPath}; keep components/discovery/requirements/sourceFiles exactly unchanged. Finalize only mappings/runs from actual saved test files. Stable test IDs use JUnit classname::name. A legitimate rename/consolidation uses replacements with requirementId,kind,oldTestId,newTestIds,reason; retain equivalent assertion coverage, never invent requirement supersession for a test rename. Every required layer needs concrete tests and an executable command producing a fresh JUnit XML report under its repo/.agent-workforce/reports/. Do not run tests yourself. Do not change any tests/source.` : 'Produce the impact scope before Red. Mappings/runs may be empty for tests still to be authored. Preserve known existing test identities. Do not edit product files or tests.'}`
-  const saved = await author(plan, REGRESSION_SCHEMA, 'agent-teams-workforce:regression-impact-assessor', brief, [previous, ...(final ? [contract.regressionPlanPath] : [])])
-  if (!saved.ok) return { ok: false, reason: saved.error }
-  const checked = await author(review, REGRESSION_REVIEW_SCHEMA, 'agent-teams-workforce:regression-coverage-reviewer',
-    `Independently review ${plan} against actual current product sources, code/tests and previous ${previous}. Verify discovery includes affected existing PRDs and cross-repository contracts. Check every layer applicability, no unapproved supersession or test weakening/removal. ${final ? 'Independently verify every test replacement preserves the old requirement/assertion semantics. Check concrete tests actually assert the obligations and commands collect the mapped tests; a green subset is insufficient.' : 'Check planned regression boundaries are complete before test authoring.'} Never approve based only on assessor prose. Return findings for missing evidence. Read source references directly; write only review candidate/checkpoint.`, [plan, previous])
-  if (!checked.ok) return { ok: false, reason: checked.error }
-  const validated = await invoke(final ? 'verify' : 'validate', ['--review', review, ...(final ? ['--approved-plan', contract.regressionPlanPath] : [])])
-  return { ...validated, planPath: plan }
-}
+const regressionReviewBrief = (plan, previous, final) => `Independently review ${plan} against actual current product sources, code/tests and previous ${previous}. Verify discovery includes affected existing PRDs and cross-repository contracts. Check every layer applicability, no unapproved supersession or test weakening/removal. ${final ? 'Independently verify every test replacement preserves the old requirement/assertion semantics. Check concrete tests actually assert the obligations and commands collect the mapped tests; a green subset is insufficient.' : 'Check planned regression boundaries are complete before test authoring.'} Never approve based only on assessor prose. Return findings for missing evidence. Read source references directly; write only review candidate/checkpoint.`
 
 // ── cds audit: the cds plugin's tools/audit-app.py over the files the Task changed (uncommitted
 // against HEAD, untracked included: the Task commits only at the end), then a judgment session on
@@ -1201,7 +1449,7 @@ async function auditCds(tree, bundle, label) {
       phase: currentPhase || phaseTitle('cds-audit'),
       runner: RELAY.runner,
       argv: ['python3', '-c', RUN_CDS_AUDIT_PY, tree, bundle, String(a.cdsRoot || '').trim(), String(CDS_AUDIT_MAX_FINDINGS)],
-      file: relayFileIn(RELAY.dir, label),
+      file: relayFileIn(stepDir(), label),
     })
     if (!r.ok) return { error: String(r.error).slice(0, 500) }
     out = { exitCode: r.exitCode, output: r.json || { error: `the cds audit printed no JSON (exit ${r.exitCode}); its output is in ${r.relayFile}` } }
@@ -1278,7 +1526,7 @@ async function selectDesign() {
   if (!packagesDir && !recorded) return { selection: null }
   const argv = [
     '--packages-dir', packagesDir,
-    '--design-source', designSource,
+    '--design-source', recordedDesignSource,
     '--kind', String(art.kind || '').trim(),
     '--slug', String(art.slug || '').trim(),
     '--recorded-bundle', recorded,
@@ -1291,7 +1539,7 @@ async function selectDesign() {
       script: RELAY.depscore,
       repo: null,
       tail: ['cds-bundles', ...argv].map(relayKit.quote).join(' '),
-      file: relayFileIn(RELAY.dir, 'cds-select'),
+      file: relayFileIn(stepDir(), 'cds-select'),
     })
   } catch (err) {
     return { error: String((err && err.message) || err).slice(0, 300) }
@@ -1361,495 +1609,593 @@ Return \`audited\` true with the files you audited and the findings (an empty li
   }
 }
 
+// ── The steps: one function per step kind of the build pipeline (pipeline-steps.json). Each takes the step,
+// reads what it needs from the artifacts of earlier steps, and returns { artifacts, add } when the step is
+// done (add: the steps its result calls for, placed right after it) or { fail } with the cause. ──
+const { file: fileArtifact, directory: directoryArtifact, value: valueArtifact } = stepJournal
+const failed = (stage, message, more) => ({ fail: { stage, message, ...(more || {}) } })
+/** The newest done step before `step` that opened the present sequence of implementers: their selection, or an audit that sent violations back. */
+const greenBoundary = (step) => J.earlier(['build:select-implementers', 'build:cds-audit'], step).pop() || null
+/** What the implementers are told when the suite already failed before the Task: repairing it is assigned to them. */
+const baselineNoteAt = (step) => {
+  const baseline = J.latest('baseline', step)
+  if (!baseline || baseline.exitCode === 0) return ''
+  const ids = failingIds(baseline)
+  return `\nBASELINE REPAIR IS ASSIGNED: fix ALL pre-existing suite failures in ${treeAt(step)}, including failures outside the Task's feature. ${ids.size ? [...failures(baseline).values()].map(describe).join('; ') : 'No individual failing test IDs were parsed; diagnose the baseline output.'} Green still requires the whole suite to exit 0.\nBaseline evidence:\n${runText(baseline)}`
+}
+/** What the implementers and their selection are told: the suite result that calls for the work, and the rulings accepted so far. */
+function greenFeedbackAt(step) {
+  const boundary = greenBoundary(step)
+  const lastCheck = J.earlier(['build:green-check'], step, boundary).pop() || null
+  const note = baselineNoteAt(step)
+  let feedback
+  if (lastCheck) {
+    const all = J.steps()
+    const ruled = (all[all.indexOf(lastCheck) - 1] || {}).kind === 'build:test-ruling'
+    feedback = `The suite is not green yet.${ruled ? ' The test author ruled on the named tests; the exact accepted decisions are attached below.' : ''}\n${runText(J.latest('greenRun', step))}${note}`
+  } else if (boundary && boundary.kind === 'build:cds-audit') {
+    const design = designAt(step)
+    const bundle = design.designSource === DESIGN_SOURCE.BUNDLE ? design.bundle : null
+    const standard = bundle
+      ? `The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships`
+      : 'No mockup was supplied: the live CDS design system (the project\'s design system config and the stylesheets, tokens and components it defines) is the only source of visual design: replace each finding with the cds classes and custom properties'
+    const audit = J.latest('cdsAudit', step) || {}
+    feedback = `The cds audit found UI code that styles outside the cds design system. ${standard}, and add no stylesheet, inline style, color or length of your own. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs that need not specify every detail. Preserve their established intent and any explicit precision requirements; use judgment with the Task requirements and configured cds for unspecified interactions, states and responsive behavior; when this Task instead owns UI design without a mock, use configured cds and the approved application standards. Resolve findings through supported configuration/composition or generated-artifact correction where applicable. If an input or capability outside this Task remains necessary, name it with evidence in upstreamMissing; do not assume a cds plugin extension is required merely because the current bundle lacks the output. The whole suite has to stay green.
+Findings (file:line rule value):
+${list(audit.violations).join('\n')}${note}`
+  } else {
+    feedback = `${runText(J.latest('redRun', step))}${note}`
+  }
+  const accepted = new Map()
+  for (const decision of J.every('testDecisions', step).flatMap((decisions) => list(decisions))) accepted.set(decision.testId, decision)
+  return `${feedback}${accepted.size ? `\n\nAccepted test-author rulings (retain these unless new evidence warrants reopening):\n${JSON.stringify([...accepted.values()])}` : ''}`
+}
+/** What the Green workflow script is handed of Red: the test files and the suite result that shows them failing. */
+const redFor = (step) => ({ testFiles: testFilesAt(step), evidence: runText(J.latest('redRun', step)) })
+
+async function stepWorkspace(step) {
+  enterPhase('workspace')
+  if (!String(bead.repoPath || '').trim()) {
+    return failed('input', `${bead.id} carries no repoPath, so its build contract is incomplete. The repository is ruled during elaboration: re-elaborate the Task's Story, or record the repository on the Task as its repoPath.`, {
+      incompleteContract: ['repoPath'],
+      requiredHumanActions: [`re-elaborate the Story of ${bead.id}, or record the ruled repository on it as its repoPath`],
+    })
+  }
+  if (!String(story.id || '').trim()) {
+    return failed('input', `${bead.id} names no Story. A Task is built on its Story's branch and deploys with its Story, so it needs one: parent it to the Story of its repository.`, {
+      incompleteContract: ['story'],
+      requiredHumanActions: [`parent ${bead.id} to the Story of its repository`],
+    })
+  }
+  const workspace = await settleWorkflow('agent-teams-workforce:workspace', {
+    repoPath: bead.repoPath,
+    beadId: story.id,
+    branchPrefix: 'story',
+    purpose: story.title || `Story ${story.id}`,
+    relay: stepRelay(),
+  })
+  if (!workspace || workspace.ok !== true || !workspace.repoPath) {
+    const why = (workspace && Array.isArray(workspace.blocked) && workspace.blocked[0]) || 'the workspace step returned nothing'
+    return failed(stageOf('workspace', workspace), `no worktree was established: ${why}`)
+  }
+  return {
+    artifacts: [directoryArtifact('worktree', workspace.repoPath), valueArtifact('branch', workspace.branch || null), valueArtifact('defaultBranch', workspace.defaultBranch || null)],
+    add: [...(selectsDesign ? [{ kind: 'build:design-source' }] : []), ...(isInfra ? [{ kind: 'build:infra-intent' }] : [])],
+  }
+}
+
+async function stepDesignSource(step) {
+  enterPhase('workspace')
+  let designSource = recordedDesignSource
+  let buildSpecs = list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean)
+  let usedBundle = designSource === DESIGN_SOURCE.BUNDLE ? String(bead.cdsBundlePath || '').trim() || null : null
+  const blockedVerdict = { verdict: 'blocked', findings: 0, scriptVersion: null }
+  const picked = await selectDesign()
+  if (picked.error) return failed('cds-select', `cds-select: the design source of ${bead.id} could not be selected: ${picked.error}`)
+  if (picked.selection) {
+    const sel = picked.selection
+    if (sel.blocked) {
+      const upstream = [{ what: `cds bundle: ${sel.blocked}` }]
+      return failed('blocked-upstream', `blocked-upstream: ${bead.id} builds from a supplied cds bundle and ${sel.blocked}`, { upstreamMissing: upstream, cdsAudit: blockedVerdict })
+    }
+    if (sel.designSource === DESIGN_SOURCE.BUNDLE && sel.bundle) {
+      const sameBundle = usedBundle && sel.bundle.replace(/\/+$/, '') === usedBundle.replace(/\/+$/, '')
+      if (!sameBundle) buildSpecs = [sel.buildSpec]
+      if (designSource !== DESIGN_SOURCE.BUNDLE || !sameBundle) log(`Design source: ${designSource} -> bundle ${sel.bundle}`)
+      designSource = DESIGN_SOURCE.BUNDLE
+      usedBundle = sel.bundle
+    }
+  }
+  if (designSource === DESIGN_SOURCE.BUNDLE && !usedBundle) {
+    const upstream = [{ what: `cds bundle: ${bead.id} records design source bundle but names neither a bundle nor a packages directory holding one` }]
+    return failed('blocked-upstream', `blocked-upstream: ${upstream[0].what}`, { upstreamMissing: upstream, cdsAudit: blockedVerdict })
+  }
+  return { artifacts: [valueArtifact('design', { designSource, bundle: usedBundle, buildSpecs })] }
+}
+
+async function stepInfraIntent(step) {
+  enterPhase('infra-intent')
+  const intent = await settleWorkflow('agent-teams-workforce:infra-intent', {
+    change: { id: bead.id, title: bead.title, description: bead.description, repoPath: treeAt(step) },
+  })
+  if (!intent || !intent.provisioningIntent) {
+    return failed(stageOf('infra-intent', intent), `infra-intent: ${(intent && intent.reason) || 'no provisioning intent was produced'}`)
+  }
+  return { artifacts: [valueArtifact('provisioning', { provisioningIntent: intent.provisioningIntent, affectedStacks: Array.isArray(intent.affectedStacks) ? intent.affectedStacks : [] })] }
+}
+
+/** Prepares the earlier requirements and has the regression-impact-assessor write the scope, or the final mapping of an approved scope. */
+async function regressionAssess(step, final) {
+  if (final) enterPhase('commit')
+  else enterPhase('regression-scope')
+  const contract = contractAt(step)
+  const plan = final ? REGRESSION_FILES.mapped : REGRESSION_FILES.plan
+  const stage = final ? 'regression-coverage' : 'regression-plan'
+  const what = final ? 'Required regression evidence failed' : 'Regression scope unresolved'
+  const prepared = await regressionInvoke(step, 'prepare', plan, REGRESSION_FILES.previous, [...regressionSources(contract).flatMap(x => ['--source', x]), ...(final ? ['--approved-plan', contract.regressionPlanPath] : [])])
+  if (!prepared.ok) return failed(stage, `${what}: ${prepared.reason}`)
+  const saved = await author(plan, REGRESSION_SCHEMA, 'agent-teams-workforce:regression-impact-assessor', regressionBrief(contract, REGRESSION_FILES.previous, final))
+  if (!saved.ok) return failed(saved.noResult ? DISPATCH_FAILED_STAGE : stage, `${what}: ${saved.error}`)
+  return { artifacts: [fileArtifact('regressionPrevious', REGRESSION_FILES.previous), fileArtifact(final ? 'regressionMapped' : 'regressionPlan', plan)] }
+}
+/** Has the regression-coverage-reviewer review the scope, or the final mapping. */
+async function regressionReview(step, final) {
+  if (final) enterPhase('commit')
+  else enterPhase('regression-scope')
+  const plan = J.latest(final ? 'regressionMapped' : 'regressionPlan', step)
+  const previous = J.latest('regressionPrevious', step)
+  const review = final ? REGRESSION_FILES.mappedReview : REGRESSION_FILES.planReview
+  const stage = final ? 'regression-coverage' : 'regression-plan'
+  const what = final ? 'Required regression evidence failed' : 'Regression scope unresolved'
+  if (!plan || !previous) return failed(stage, `${what}: the journal names no ${final ? 'regression mapping' : 'regression scope'} to review`)
+  const checked = await author(review, REGRESSION_REVIEW_SCHEMA, 'agent-teams-workforce:regression-coverage-reviewer', regressionReviewBrief(plan, previous, final))
+  if (!checked.ok) return failed(checked.noResult ? DISPATCH_FAILED_STAGE : stage, `${what}: ${checked.error}`)
+  return { artifacts: [fileArtifact(final ? 'regressionMappedReview' : 'regressionPlanReview', review)] }
+}
+async function stepRegressionValidate(step) {
+  enterPhase('regression-scope')
+  const plan = J.latest('regressionPlan', step)
+  const review = J.latest('regressionPlanReview', step)
+  if (!plan || !review) return failed('regression-plan', 'Regression scope unresolved: the journal names no reviewed regression scope to validate')
+  const validated = await regressionInvoke(step, 'validate', plan, `${REGRESSION_DIR}/validate.json`, ['--review', review])
+  if (!validated.ok) return failed('regression-plan', `Regression scope unresolved: ${validated.reason || JSON.stringify(validated.errors)}`)
+  return { artifacts: [valueArtifact('regressionScope', { requiredKinds: list(validated.requiredKinds) })] }
+}
+async function stepRegressionVerify(step) {
+  enterPhase('commit')
+  const approved = J.latest('regressionPlan', step)
+  const mapped = J.latest('regressionMapped', step)
+  const review = J.latest('regressionMappedReview', step)
+  if (!approved || !mapped || !review) return failed('regression-coverage', 'Required regression evidence failed: the journal names no reviewed regression mapping to verify')
+  const output = `${REGRESSION_DIR}/verify.json`
+  const verified = await regressionInvoke(step, 'verify', mapped, output, ['--review', review, '--approved-plan', approved])
+  if (!verified.ok) return failed('regression-coverage', `Required regression evidence failed: ${verified.reason || JSON.stringify(verified.errors)}`)
+  return { artifacts: [fileArtifact('regressionEvidence', output)] }
+}
+
+async function stepBaseline(step) {
+  enterPhase('baseline')
+  const baseline = await suite(step, 'baseline')
+  if (baseline && baseline.resolveError) {
+    return failed('baseline', `baseline: ${treeAt(step)} declares no test command (${baseline.resolveError}). A Task is committed only when the repository's whole suite passes, so the repository must say how its suite runs.`, {
+      requiredHumanActions: [`declare the command that runs the whole test suite in the AGENTS.md or CLAUDE.md of the repository at ${bead.repoPath}, or as the \`test\` task in its Taskfile`],
+    })
+  }
+  if (!validRun(baseline) || !String(baseline.command || '').trim()) {
+    return failed(stageOf('baseline', baseline), `baseline: the suite runner returned no exit code: ${(baseline && baseline.reason) || 'no result'}`)
+  }
+  const planned = await settleWorkflow('agent-teams-workforce:tdd-red', { contract: contractAt(step), plan: true })
+  const testAgents = list(planned && planned.testAgents).map(String)
+  if (!testAgents.length) return failed(stageOf('red', planned), 'red: the Red workflow script named no test agent for this contract')
+  log(`Baseline: \`${baseline.command}\` exited ${baseline.exitCode}; ${failingIds(baseline).size} failing before any change`)
+  return {
+    artifacts: [valueArtifact('suiteCommand', String(baseline.command).trim()), valueArtifact('baseline', runValue(baseline))],
+    add: [...testAgents.map((testAgent) => ({ kind: 'build:red-write', params: { testAgent, testAgents } })), { kind: 'build:red-check' }],
+  }
+}
+
+async function stepRedWrite(step) {
+  enterPhase('red')
+  const lastCheck = J.latest('redRun', step)
+  const prior = testFilesAt(step)
+  const red = await settleWorkflow('agent-teams-workforce:tdd-red', {
+    contract: contractAt(step),
+    testAgent: step.params.testAgent,
+    feedback: lastCheck ? `The suite does not show Red yet: ${list(lastCheck.reasons).join('; ')}.\n${runText(lastCheck)}` : '',
+    ...(prior.length ? { red: { testFiles: prior } } : {}),
+  })
+  if (!red || red.dispatchFailed) return failed(stageOf('red', red), `red: ${(red && red.reason) || 'the test agent returned nothing'}`)
+  return { artifacts: [valueArtifact('testFiles', list(red.testFiles).map(String)), valueArtifact('redConfirmed', red.redConfirmed === true)] }
+}
+
+async function stepRedCheck(step) {
+  enterPhase('red')
+  const tree = treeAt(step)
+  const redFiles = testFilesAt(step)
+  const baselineIds = failingIds(J.latest('baseline', step))
+  const run = await suite(step, 'red')
+  if (!validRun(run)) return failed(stageOf('red', run), `red: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`)
+  const inRedFile = (e) => redFiles.some((f) => sameFile(e.file, f))
+  const fresh = [...failures(run).entries()].filter(([id]) => !baselineIds.has(id)).map(([, e]) => e)
+  const collection = fresh.filter((e) => e.kind === 'load').map(describe)
+  const redFails = fresh.filter((e) => e.kind === 'test' && inRedFile(e)).map(describe)
+  const regressions = fresh.filter((e) => e.kind === 'test' && !inRedFile(e)).map(describe)
+  const reasons = [
+    redFails.length ? '' : 'no test in a file Red wrote or edited fails',
+    collection.length ? `test files that no longer load: ${collection.join('; ')}` : '',
+    regressions.length ? `tests outside Red's files that did not fail at baseline now fail: ${regressions.join('; ')}` : '',
+  ].filter(Boolean)
+  const held = { ...runValue(run), reasons }
+  if (run.exitCode !== 0 && !reasons.length) {
+    const print = await fingerprint(tree, redFiles, 'tests')
+    if (print.error) return failed('red', `red: Red's test files could not be fingerprinted: ${print.error}`)
+    log(`Red: satisfied — ${redFails.length} new failing test(s) in Red's files`)
+    return { artifacts: [valueArtifact('redRun', held), valueArtifact('testPrint', { files: print.files, treeDigest: print.treeDigest })] }
+  }
+  const why = reasons.join('; ') || 'the suite exits 0, so no new test fails'
+  log(`Red: not satisfied — ${why}`)
+  const checks = J.earlier(['build:red-check'], step).length + 1
+  if (checks >= MAX_RED_CHECKS) {
+    return failed('red-unsatisfied', `red-unsatisfied: after ${checks} Red check(s) the suite does not show the Task's new tests failing cleanly: ${why}`, { evidence: runText(run).slice(0, TAIL_CHARS) })
+  }
+  // A check whose suite fails exactly as at the check before gives the test agents the same input again.
+  const before = J.latest('redRun', step)
+  const keyOf = (r) => JSON.stringify([r.exitCode, ...[...failingIds(r)].sort(), ...list(r.reasons)])
+  if (before && keyOf(before) === keyOf(held)) {
+    return failed('no-progress', `no-progress: the test agents left the suite exactly as it was at the check before: ${why}`, { evidence: runText(run).slice(0, TAIL_CHARS) })
+  }
+  const lastWrite = J.earlier(['build:red-write'], step).pop()
+  const testAgents = list(lastWrite && lastWrite.params.testAgents).map(String)
+  if (!testAgents.length) return failed('red', 'red: the journal names no test agent to give the suite result to')
+  const purpose = `Red does not hold: ${why}`.slice(0, 600)
+  return {
+    artifacts: [valueArtifact('redRun', held)],
+    add: [...testAgents.map((testAgent) => ({ kind: 'build:red-write', params: { testAgent, testAgents }, purpose })), { kind: 'build:red-check', purpose }],
+  }
+}
+
+/** The steps that give each implementer its work and then judge the suite. */
+const implementerSteps = (implementers, brief, purpose) => [
+  ...implementers.map((implementer) => ({ kind: 'build:implement', params: { implementer, implementers, brief }, ...(purpose ? { purpose } : {}) })),
+  { kind: 'build:green-check', ...(purpose ? { purpose } : {}) },
+]
+
+async function stepSelectImplementers(step) {
+  enterPhase('green')
+  const selection = await settleWorkflow('agent-teams-workforce:tdd-green', {
+    contract: contractAt(step),
+    red: redFor(step),
+    implementer: a.implementer || (isInfra ? 'cdk-stack-author' : undefined),
+    select: true,
+    feedback: greenFeedbackAt(step),
+  })
+  const implementers = list(selection && selection.implementers).map(String)
+  if (!selection || selection.dispatchFailed || !implementers.length) {
+    return failed(stageOf('green', selection), `green: ${(selection && selection.reason) || 'the implementer selection returned nothing'}`)
+  }
+  return { artifacts: [valueArtifact('implementers', implementers)], add: implementerSteps(implementers, 'green', '') }
+}
+
+async function stepImplement(step) {
+  enterPhase('green')
+  const what = step.params.brief === 'cds' ? 'green (cds audit)' : 'green'
+  const g = await settleWorkflow('agent-teams-workforce:tdd-green', {
+    contract: contractAt(step),
+    red: redFor(step),
+    implementers: list(step.params.implementers),
+    only: step.params.implementer,
+    feedback: greenFeedbackAt(step),
+  })
+  if (!g || g.dispatchFailed) return failed(stageOf('green', g), `${what}: ${(g && g.reason) || 'the implementer returned nothing'}`)
+  return { artifacts: [valueArtifact('changedFiles', list(g.changedFiles).map(String)), valueArtifact('testIssues', list(g.testIssues)), valueArtifact('upstreamMissing', list(g.upstreamMissing))] }
+}
+
+async function stepGreenCheck(step) {
+  enterPhase('green')
+  const tree = treeAt(step)
+  const boundary = greenBoundary(step)
+  const afterAudit = !!boundary && boundary.kind === 'build:cds-audit'
+  const what = afterAudit ? 'green (cds audit)' : 'green'
+  const previous = J.earlier(['build:green-check'], step, boundary).pop() || null
+  const since = previous || boundary
+  const implemented = J.earlier(['build:implement'], step, since)
+  const ruled = J.earlier(['build:test-ruling'], step, since).length > 0
+  const print = J.latest('testPrint', step)
+  const redFiles = testFilesAt(step)
+  const after = await fingerprint(tree, redFiles, 'tests')
+  if (after.error) return failed('green', `${what}: Red's test files could not be fingerprinted: ${after.error}`)
+  // An implementer leaves the tests to the test agents: a test file whose content changed while implementers worked stops the build.
+  if (implemented.length && !ruled && print && print.files) {
+    const touchedTests = Object.keys(print.files).filter((f) => f in after.files && print.files[f] !== after.files[f])
+    if (touchedTests.length) {
+      return failed('green-modified-tests', `green-modified-tests: ${what} changed test files Red wrote, which the implementers leave to the test agents (a test an implementer believes is wrong goes in testIssues): ${touchedTests.join(', ')}`)
+    }
+  }
+  const run = await suite(step, 'green')
+  if (!validRun(run)) return failed(stageOf('green', run), `${what}: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`)
+  const held = runValue(run)
+  const artifacts = [valueArtifact('greenRun', held), valueArtifact('testPrint', { files: after.files, treeDigest: after.treeDigest })]
+  const upstream = J.every('upstreamMissing', step, since).flatMap((entries) => list(entries))
+  if (run.exitCode === 0) {
+    if (afterAudit && upstream.length) {
+      return failed('blocked-upstream', `blocked-upstream: the cds audit violations cannot be fixed until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { upstreamMissing: upstream })
+    }
+    return { artifacts }
+  }
+  if (upstream.length) {
+    return failed('blocked-upstream', `blocked-upstream: the suite cannot pass until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { upstreamMissing: upstream, evidence: runText(held).slice(0, TAIL_CHARS) })
+  }
+  const issues = J.every('testIssues', step, since).flatMap((entries) => list(entries))
+  if (issues.length) {
+    const purpose = `The suite is not green and the implementers named ${issues.length} test(s) that stand between the code and the contract`
+    return { artifacts, add: [{ kind: 'build:test-ruling', params: { issues }, purpose }, { kind: 'build:green-check', purpose: 'The test agent ruled on the tests the implementers named' }] }
+  }
+  // Whether the implementers changed any file is read from the work tree (its digest before and after), not from their reports.
+  const keyOf = (r) => JSON.stringify([r.exitCode, ...[...failingIds(r)].sort()])
+  const changedNothing = !!print && !!print.treeDigest && print.treeDigest === after.treeDigest && !ruled
+  const before = previous ? J.latest('greenRun', step) : null
+  if (changedNothing && before && keyOf(before) === keyOf(held)) {
+    return failed('no-progress', `no-progress: ${what} changed no file and the suite fails exactly as it did at the check before`, { evidence: runText(held).slice(0, TAIL_CHARS) })
+  }
+  const checks = J.earlier(['build:green-check'], step, boundary).length + 1
+  if (checks >= MAX_GREEN_CHECKS) {
+    return failed('green', `${what}: the suite is not green after ${checks} check(s): ${held.summary || `exit ${held.exitCode}`}`, { evidence: runText(held).slice(0, TAIL_CHARS) })
+  }
+  const implementers = list(J.latest('implementers', step)).map(String)
+  if (!implementers.length) return failed('green', `${what}: the journal names no implementer to give the suite result to`)
+  return { artifacts, add: implementerSteps(implementers, afterAudit ? 'cds' : 'green', `The suite is not green: ${held.summary || `exit ${held.exitCode}`}`.slice(0, 600)) }
+}
+
+async function stepTestRuling(step) {
+  enterPhase('red')
+  const issues = list(step.params.issues)
+  const updated = await settleWorkflow('agent-teams-workforce:tdd-red', {
+    contract: contractAt(step),
+    testIssues: issues,
+    red: { testFiles: testFilesAt(step) },
+    feedback: runText(J.latest('greenRun', step)),
+  })
+  if (!updated || updated.dispatchFailed) return failed(stageOf('red', updated), `red (update): ${(updated && updated.reason) || 'the test ruling returned nothing'}`)
+  const rulingCheck = checkTestDecisions(issues, updated.decisions)
+  if (rulingCheck.problems.length) {
+    return failed('red-decisions-incomplete', `red (update): ${rulingCheck.problems.join('; ')}; return one justified disposition for each requested test ID before the implementers continue`)
+  }
+  return { artifacts: [valueArtifact('testDecisions', rulingCheck.decisions), valueArtifact('testFiles', list(updated.testFiles).map(String))] }
+}
+
+async function stepRefactor(step) {
+  enterPhase('refactor')
+  const refactor = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract: contractAt(step), green: { changedFiles: changedFilesAt(step) }, relay: stepRelay() })
+  if (!refactor || refactor.dispatchFailed) return failed(stageOf('refactor', refactor), `refactor: ${(refactor && refactor.reason) || 'the refactor returned nothing'}`)
+  return {
+    artifacts: [
+      valueArtifact('refactorSnapshot', String(refactor.snapshotTree || '').trim() || null),
+      valueArtifact('refactorChangedFiles', list(refactor.changedFiles).map(String)),
+      valueArtifact('refactorReverted', refactor.restored === true),
+    ],
+  }
+}
+
+async function stepRefactorCheck(step) {
+  enterPhase('refactor')
+  const run = await suite(step, 'refactor')
+  if (!validRun(run)) return failed(stageOf('refactor', run), `refactor: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`)
+  const held = runValue(run)
+  if (run.exitCode !== 0) {
+    const snapshot = String(J.latest('refactorSnapshot', step, '') || '').trim()
+    if (J.latest('refactorRestored', step)) {
+      return failed('refactor', `refactor: the suite is red after restoring the pre-refactor snapshot ${snapshot}: ${held.summary || `exit ${held.exitCode}`}`, { evidence: runText(held).slice(0, TAIL_CHARS) })
+    }
+    if (!snapshot) {
+      return failed('refactor', `refactor: the suite is red after the refactor and the refactor recorded no snapshot to restore: ${held.summary || `exit ${held.exitCode}`}`)
+    }
+    const purpose = `The suite is red after the refactor: ${held.summary || `exit ${held.exitCode}`}`.slice(0, 600)
+    return { artifacts: [valueArtifact('refactorRun', held)], add: [{ kind: 'build:refactor-restore', purpose }, { kind: 'build:refactor-check', purpose: 'The work tree was restored to the snapshot taken before the refactor' }] }
+  }
+  const audits = isUiTask && designAt(step).designSource !== DESIGN_SOURCE.NONE
+  return { artifacts: [valueArtifact('refactorRun', held)], add: audits ? [{ kind: 'build:cds-audit' }] : [] }
+}
+
+async function stepRefactorRestore(step) {
+  enterPhase('refactor')
+  const snapshot = String(J.latest('refactorSnapshot', step, '') || '').trim()
+  const restored = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract: contractAt(step), restoreTo: snapshot, relay: stepRelay() })
+  if (!restored || restored.dispatchFailed || restored.restored !== true) {
+    return failed(stageOf('refactor', restored), `refactor: the suite is red after the refactor and the tree could not be restored to ${snapshot}`)
+  }
+  log(`Refactor: the suite went red, so the tree was restored to ${snapshot}`)
+  return { artifacts: [valueArtifact('refactorRestored', { restored: true, evidence: String(restored.evidence || '') })] }
+}
+
+async function stepCdsAudit(step) {
+  enterPhase('cds-audit')
+  const tree = treeAt(step)
+  const design = designAt(step)
+  const bundle = design.designSource === DESIGN_SOURCE.BUNDLE ? design.bundle : null
+  const first = !J.earlier(['build:cds-audit'], step).length
+  const audit = bundle ? await auditCds(tree, bundle, 'cds-audit') : await auditCdsLive(tree, 'cds-audit')
+  if (audit.error) {
+    return failed('cds-audit', `cds-audit: the cds audit ${first ? 'after Refactor' : 'after the implementers answered it'} could not rule: ${audit.error}`, { cdsAudit: { verdict: 'error', findings: 0, scriptVersion: audit.scriptVersion || null } })
+  }
+  log(`CDS Audit: ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
+  const verdict = {
+    verdict: audit.violations.length ? 'fail' : audit.gaps.length ? 'blocked' : 'pass',
+    findings: audit.violations.length + audit.gaps.length,
+    scriptVersion: audit.scriptVersion,
+  }
+  const held = { ...verdict, violations: audit.violations.map(findingText), gaps: audit.gaps.map(findingText) }
+  if (audit.violations.length) {
+    if (!first) {
+      return failed('cds-audit', `cds-audit: ${audit.violations.length} cds violation(s) remain after the implementers answered the audit: ${audit.violations.slice(0, 5).map(findingText).join('; ')}`, {
+        cdsAudit: verdict,
+        evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
+      })
+    }
+    const implementers = list(J.latest('implementers', step)).map(String)
+    if (!implementers.length) return failed('cds-audit', 'cds-audit: the journal names no implementer to give the violations to', { cdsAudit: verdict })
+    const purpose = `The cds audit found ${audit.violations.length} violation(s)`
+    return { artifacts: [valueArtifact('cdsAudit', held)], add: [...implementerSteps(implementers, 'cds', purpose), { kind: 'build:cds-audit', purpose: 'The implementers answered the violations the audit found' }] }
+  }
+  if (audit.gaps.length) {
+    const upstream = audit.gaps.map((f) => ({ what: `cds: ${f.reason || f.value} (${f.file}:${f.line})` }))
+    return failed('blocked-upstream', `blocked-upstream: required cds configuration, design artifacts or capabilities remain unresolved: ${audit.gaps.map(findingText).join('; ')}`, {
+      upstreamMissing: upstream,
+      cdsAudit: verdict,
+      evidence: audit.gaps.map(findingText).join('\n').slice(0, TAIL_CHARS),
+    })
+  }
+  return { artifacts: [valueArtifact('cdsAudit', held)] }
+}
+
+/** Every file the Task changed so far: the implementers' and the refactor's. */
+const allChangedAt = (step) => [...new Set([...changedFilesAt(step), ...list(J.latest('refactorChangedFiles', step)).map(String)])]
+
+async function stepDocsAudit(step) {
+  enterPhase('documentation')
+  const docs = await settleWorkflow('agent-teams-workforce:documentation', { contract: contractAt(step), green: { changedFiles: allChangedAt(step) }, auditOnly: true })
+  if (!docs || docs.dispatchFailed) return failed(DISPATCH_FAILED_STAGE, `documentation: ${(docs && docs.reason) || 'the documentation audit returned nothing'}`)
+  const assignments = list(docs.assignments).filter((x) => x && x.agent && list(x.docs).length)
+  return {
+    artifacts: [valueArtifact('staleDocs', list(docs.staleDocs).map(String)), valueArtifact('docAssignments', assignments)],
+    add: assignments.map((x) => ({ kind: 'build:docs-write', params: { docAgent: String(x.agent), docs: list(x.docs).map(String) }, purpose: `The audit named ${list(x.docs).length} stale document(s) this agent owns` })),
+  }
+}
+
+async function stepDocsWrite(step) {
+  enterPhase('documentation')
+  const out = await settleWorkflow('agent-teams-workforce:documentation', {
+    contract: contractAt(step),
+    green: { changedFiles: allChangedAt(step) },
+    assignment: { agent: step.params.docAgent, docs: list(step.params.docs) },
+  })
+  if (!out || out.dispatchFailed) return failed(DISPATCH_FAILED_STAGE, `documentation: ${(out && out.reason) || `${step.params.docAgent} returned nothing`}`)
+  return { artifacts: [valueArtifact('updatedDocs', list(out.updatedDocs).map(String))] }
+}
+
+async function stepFinalSuite(step) {
+  enterPhase('commit')
+  const run = await suite(step, 'final')
+  if (!validRun(run) || run.exitCode !== 0) {
+    return failed(stageOf('commit', run), `commit: the final suite run did not exit 0 (${(run && (run.summary || `exit ${run.exitCode}`)) || 'no result'}), so nothing was committed`, validRun(run) ? { evidence: runText(runValue(run)).slice(0, TAIL_CHARS) } : {})
+  }
+  return { artifacts: [valueArtifact('finalRun', runValue(run))] }
+}
+
+async function stepCommit(step) {
+  enterPhase('commit')
+  const committed = await settleWorkflow('agent-teams-workforce:settle', {
+    repoPath: treeAt(step),
+    commitOnly: true,
+    branch: J.latest('branch', step) || null,
+    defaultBranch: J.latest('defaultBranch', step) || null,
+    message: `${bead.id} ${bead.title || ''}`.trim(),
+    relay: stepRelay(),
+  })
+  if (!committed || committed.status !== 'reported' || (Array.isArray(committed.blocked) && committed.blocked.length)) {
+    const why =
+      (committed && (committed.error || committed.reason || (Array.isArray(committed.blocked) && committed.blocked.join('; ')))) ||
+      'the commit step returned nothing'
+    return failed(!committed || committed.status === 'error' ? DISPATCH_FAILED_STAGE : 'commit', `commit: ${why}`)
+  }
+  return { artifacts: [valueArtifact('commit', committed.commit || null)] }
+}
+
+// The function that runs a step of each kind. A later kind is one entry here, its function, and its entry
+// in pipeline-steps.json.
+const STEPS = {
+  'build:workspace': stepWorkspace,
+  'build:design-source': stepDesignSource,
+  'build:infra-intent': stepInfraIntent,
+  'build:regression-assess': (step) => regressionAssess(step, false),
+  'build:regression-review': (step) => regressionReview(step, false),
+  'build:regression-validate': stepRegressionValidate,
+  'build:baseline': stepBaseline,
+  'build:red-write': stepRedWrite,
+  'build:red-check': stepRedCheck,
+  'build:select-implementers': stepSelectImplementers,
+  'build:implement': stepImplement,
+  'build:green-check': stepGreenCheck,
+  'build:test-ruling': stepTestRuling,
+  'build:refactor': stepRefactor,
+  'build:refactor-check': stepRefactorCheck,
+  'build:refactor-restore': stepRefactorRestore,
+  'build:cds-audit': stepCdsAudit,
+  'build:docs-audit': stepDocsAudit,
+  'build:docs-write': stepDocsWrite,
+  'build:final-suite': stepFinalSuite,
+  'build:regression-map': (step) => regressionAssess(step, true),
+  'build:regression-map-review': (step) => regressionReview(step, true),
+  'build:regression-verify': stepRegressionVerify,
+  'build:commit': stepCommit,
+}
+const stepTable = Object.fromEntries(
+  Object.entries(STEPS).map(([kind, perform]) => [
+    kind,
+    async (step) => {
+      current = step
+      return perform(step)
+    },
+  ])
+)
+
+/** The caller-facing result, read from the journal as the run left it. */
+function handback(ok, stage, headline, more) {
+  const design = isUiTask ? designAt(null) : null
+  const audit = J.latest('cdsAudit', null)
+  const cdsAudit = (more && more.cdsAudit) || (audit ? { verdict: audit.verdict, findings: audit.findings, scriptVersion: audit.scriptVersion } : null)
+  return {
+    ok,
+    stage,
+    beadId: bead.id || null,
+    storyId: story.id || null,
+    headline: String(headline || ''),
+    detailPath: null,
+    branch: J.latest('branch', null) || null,
+    worktree: J.latest('worktree', null) || null,
+    ...(design && design.designSource ? { designSource: design.designSource } : {}),
+    ...(more || {}),
+    ...(cdsAudit ? { cdsAudit: { ...cdsAudit, designSource: design ? design.designSource : null, bundle: design ? design.bundle : null } } : {}),
+  }
+}
+
 let result
 try {
-  result = await (async () => {
-    if (!String(bead.repoPath || '').trim()) {
-      return {
-        ...handback(false, 'input', `${bead.id} carries no repoPath, so its build contract is incomplete. The repository is ruled during elaboration: re-elaborate the Task's Story, or record the repository on the Task as its repoPath.`),
-        incompleteContract: ['repoPath'],
-        requiredHumanActions: [`re-elaborate the Story of ${bead.id}, or record the ruled repository on it as its repoPath`],
-      }
-    }
-    if (!String(story.id || '').trim()) {
-      return {
-        ...handback(false, 'input', `${bead.id} names no Story. A Task is built on its Story's branch and deploys with its Story, so it needs one: parent it to the Story of its repository.`),
-        incompleteContract: ['story'],
-        requiredHumanActions: [`parent ${bead.id} to the Story of its repository`],
-      }
-    }
-    // ── Relay: every deterministic step below runs through relayrun.py and reaches this script checked ──
-    const pluginRoot = String(a.pluginRoot || '').trim().replace(/\/+$/, '')
-    const givenRelay = a.relay && typeof a.relay === 'object' ? a.relay : {}
-    const setup = await relaySetup(COMPOSITE, { runner: givenRelay.runner || (pluginRoot ? `${pluginRoot}${RUNNER_TAIL}` : ''), dir: givenRelay.dir }, phaseTitle('workspace'))
-    if (setup.error) return handback(false, setup.noResult ? DISPATCH_FAILED_STAGE : 'relay-setup', `relay-setup: ${setup.error}`)
-    RELAY = { ...setup, depscore: `${setup.runner.slice(0, -'relayrun.py'.length)}depscore.py` }
-    log(`Relay: ${RELAY.runner}; relay files in ${RELAY.dir}`)
-
-    // ── Design source: the bundles supplied now decide what a bundle or cds Task builds from ──
-    let buildSpecs = list(bead.cdsBuildSpecs).map((x) => String(x).trim()).filter(Boolean)
-    usedBundle = designSource === DESIGN_SOURCE.BUNDLE ? String(bead.cdsBundlePath || '').trim() || null : null
-    if (designSource === DESIGN_SOURCE.BUNDLE || designSource === DESIGN_SOURCE.CDS) {
-      const picked = await selectDesign()
-      if (picked.error) {
-        return handback(false, 'cds-select', `cds-select: the design source of ${bead.id} could not be selected: ${picked.error}`)
-      }
-      if (picked.selection) {
-        const sel = picked.selection
-        if (sel.blocked) {
-          cdsVerdict = { verdict: 'blocked', findings: 0, scriptVersion: null }
-          const upstream = [{ what: `cds bundle: ${sel.blocked}` }]
-          return {
-            ...handback(false, 'blocked-upstream', `blocked-upstream: ${bead.id} builds from a supplied cds bundle and ${sel.blocked}`, { selection: sel, upstreamMissing: upstream }),
-            upstreamMissing: upstream,
-          }
-        }
-        if (sel.designSource === DESIGN_SOURCE.BUNDLE && sel.bundle) {
-          const sameBundle = usedBundle && sel.bundle.replace(/\/+$/, '') === usedBundle.replace(/\/+$/, '')
-          if (!sameBundle) buildSpecs = [sel.buildSpec]
-          if (designSource !== DESIGN_SOURCE.BUNDLE || !sameBundle) log(`Design source: ${designSource} -> bundle ${sel.bundle}`)
-          designSource = DESIGN_SOURCE.BUNDLE
-          usedBundle = sel.bundle
-        }
-      }
-      if (designSource === DESIGN_SOURCE.BUNDLE && !usedBundle) {
-        cdsVerdict = { verdict: 'blocked', findings: 0, scriptVersion: null }
-        const upstream = [{ what: `cds bundle: ${bead.id} records design source bundle but names neither a bundle nor a packages directory holding one` }]
-        return { ...handback(false, 'blocked-upstream', `blocked-upstream: ${upstream[0].what}`, { upstreamMissing: upstream }), upstreamMissing: upstream }
-      }
-    }
-
-    enterPhase('workspace')
-    const workspace = await settleWorkflow('agent-teams-workforce:workspace', {
-      repoPath: bead.repoPath,
-      beadId: story.id,
-      branchPrefix: 'story',
-      purpose: story.title || `Story ${story.id}`,
-      stashUncommitted: true,
-      stashLabel: bead.id,
-      relay: childRelay('workspace'),
-    })
-    if (!workspace || workspace.ok !== true || !workspace.repoPath) {
-      const why = (workspace && Array.isArray(workspace.blocked) && workspace.blocked[0]) || 'the workspace step returned nothing'
-      return handback(false, stageOf('workspace', workspace), `no worktree was established: ${why}`, { workspace: workspace || null })
-    }
-    workspaceOut = workspace
-    const workRepoPath = workspace.repoPath
-    if (workspace.ledger) runLedger.push(workspace.ledger)
-
-    const declaredSurfaces = Array.isArray(bead.surfaces) ? bead.surfaces : null
-    const structuralSurfaces = [
-      bead.apiSpec ? 'api-contract' : null,
-      Array.isArray(bead.eventContracts) && bead.eventContracts.length ? 'event-chain' : null,
-    ].filter(Boolean)
-    const contractSurfaces = declaredSurfaces
-      ? [...new Set([...declaredSurfaces, ...structuralSurfaces])]
-      : structuralSurfaces.length
-        ? structuralSurfaces
-        : null
-    const contract = {
-      spec,
-      bead: { id: bead.id, title: bead.title || null, description: bead.description || null, repoPath: workRepoPath },
-      repoPath: workRepoPath,
-      acceptanceCriteria: Array.isArray(bead.acceptanceCriteria) ? bead.acceptanceCriteria : [],
-      decisionIds: [
-        ...new Set(
-          [...(Array.isArray(spec && spec.decisionIds) ? spec.decisionIds : []), ...(Array.isArray(bead.decisionIds) ? bead.decisionIds : [])]
-            .map((x) => String(x || '').trim())
-            .filter(Boolean)
-        ),
-      ],
-      surfaces: contractSurfaces,
-      testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
-      cdsDesignSource: designSource,
-      cdsBundlePath: designSource === DESIGN_SOURCE.BUNDLE ? usedBundle : null,
-      cdsBuildSpecs: designSource === DESIGN_SOURCE.BUNDLE ? buildSpecs : [],
-    }
-
-    let intent = null
-    if (isInfra) {
-      enterPhase('infra-intent')
-      intent = await settleWorkflow('agent-teams-workforce:infra-intent', {
-        change: { id: bead.id, title: bead.title, description: bead.description, repoPath: workRepoPath },
+  const read = await stepJournal.read(guardedAgent, { runner: RELAY.runner, pluginRoot, path: journalPath, relayFile: relayFileIn(`${RELAY.dir}/journal`, `read-${runName}`), phase: phaseTitle('workspace') })
+  if (read.error) {
+    result = { ...inputFailure(`the step journal ${journalPath} could not be read: ${read.error}`), stage: read.noResult ? DISPATCH_FAILED_STAGE : 'journal' }
+  } else {
+    J = stepJournal.open({ journal: read.journal, run: runName, runner: COMPOSITE })
+    log(`Journal: ${J.steps().filter((s) => s.status === 'done').length} of ${J.steps().length} step(s) done; ${J.next() ? `beginning at "${J.next().description}"` : 'no step is left to run'}`)
+    const ran = await J.run(stepTable, () => dispatchInterruption)
+    if (!ran.ok) {
+      const { stage, message, interrupted: _interrupted, ...more } = ran.fail
+      // A failure while implementers answer an audit leaves the audit's verdict as it stands: failed, or blocked upstream.
+      const answering = ['build:implement', 'build:green-check', 'build:test-ruling'].includes(ran.step.kind)
+      const boundary = answering ? greenBoundary(ran.step) : null
+      const audit = boundary && boundary.kind === 'build:cds-audit' && !more.cdsAudit ? J.latest('cdsAudit', ran.step) : null
+      result = handback(false, stage, message, {
+        ...more,
+        ...(audit ? { cdsAudit: { verdict: stage === 'blocked-upstream' ? 'blocked' : 'fail', findings: list(audit.violations).length, scriptVersion: audit.scriptVersion } } : {}),
+        step: ran.step.key,
       })
-      if (!intent || !intent.provisioningIntent) {
-        return handback(false, stageOf('infra-intent', intent), `infra-intent: ${(intent && intent.reason) || 'no provisioning intent was produced'}`, { intent: intent || null })
-      }
-      const stacks = Array.isArray(intent.affectedStacks) ? intent.affectedStacks : []
-      contract.affectedStacks = stacks
-      contract.provisioningIntent = intent.provisioningIntent
-      contract.acceptanceCriteria = [
-        ...contract.acceptanceCriteria.filter(Boolean),
-        {
-          given: `the provisioning intent for ${bead.title || 'this infrastructure change'} on stacks ${stacks.join(', ') || '(affected stacks)'}`,
-          when: 'cdk synth runs against the changed stacks',
-          then: 'the synthesized template asserts the intended resources and their properties, the cross-stack references the stacks write and read, and the IAM permissions the intent names',
-        },
-      ]
-    }
-    enterPhase('regression-scope')
-    const regressionPlan = await regressionStep(contract)
-    if (!regressionPlan.ok) return handback(false, 'regression-plan', `Regression scope unresolved: ${regressionPlan.reason}`, { regressionPlan })
-    contract.regressionPlanPath = regressionPlan.planPath
-    contract.surfaces = [...new Set([...(contract.surfaces || []), ...((regressionPlan.requiredKinds || []).includes('contract') ? ['api-contract'] : []), ...((regressionPlan.requiredKinds || []).includes('integration') ? ['event-chain'] : [])])]
-    const implementer = a.implementer || (isInfra ? 'cdk-stack-author' : undefined)
-
-    // ── Baseline: the suite command the repository declares, resolved once and reused ──
-    enterPhase('baseline')
-    const baseline = await settleWorkflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, label: 'baseline', relay: childRelay('suite-baseline') })
-    if (baseline && baseline.resolveError) {
-      return {
-        ...handback(false, 'baseline', `baseline: ${workRepoPath} declares no test command (${baseline.resolveError}). A Task is committed only when the repository's whole suite passes, so the repository must say how its suite runs.`, { baseline }),
-        requiredHumanActions: [`declare the command that runs the whole test suite in the AGENTS.md or CLAUDE.md of the repository at ${bead.repoPath}, or as the \`test\` task in its Taskfile`],
+    } else {
+      const finalRun = J.latest('finalRun', null) || {}
+      const suiteCommand = String(J.latest('suiteCommand', null, '') || '')
+      const commit = J.latest('commit', null) || null
+      result = {
+        ...handback(true, 'committed', `${bead.id} built on ${J.latest('branch', null)}: \`${suiteCommand}\` exits 0${finalRun.summary ? ` (${finalRun.summary})` : ''} and the work is committed to the branch of Story ${story.id} (${commit || 'no new commit'}).`),
+        commit,
+        suite: { command: suiteCommand, summary: finalRun.summary || '' },
       }
     }
-    if (!validRun(baseline) || !String(baseline.command || '').trim()) {
-      return handback(false, stageOf('baseline', baseline), `baseline: the suite runner returned no exit code: ${(baseline && baseline.reason) || 'no result'}`, { baseline: baseline || null })
-    }
-    const suiteCommand = String(baseline.command).trim()
-    contract.suiteCommand = suiteCommand
-    // Consumed by tdd-green selection and implementation briefs: explicit runtime repair authority.
-    contract.baselineRepairScope = 'affected-repository'
-    const baselineIds = failingIds(baseline)
-    const runSuite = async (label) => {
-      const r = await settleWorkflow('agent-teams-workforce:suite-run', { repoPath: workRepoPath, command: suiteCommand, label, relay: childRelay(`suite-${label}`) })
-      return r || null
-    }
-    log(`Baseline: \`${suiteCommand}\` exited ${baseline.exitCode}; ${baselineIds.size} failing before any change`)
-
-    // ── Red: loops until a new test fails, with no new collection error and no regression ──
-    const redFiles = []
-    const addRedFiles = (r) => {
-      for (const f of list(r && r.testFiles).map(String)) if (!redFiles.includes(f)) redFiles.push(f)
-    }
-    const judgeRed = (run) => {
-      const inRedFile = (e) => redFiles.some((f) => sameFile(e.file, f))
-      const fresh = [...failures(run).entries()].filter(([id]) => !baselineIds.has(id)).map(([, e]) => e)
-      const collection = fresh.filter((e) => e.kind === 'load').map(describe)
-      const redFails = fresh.filter((e) => e.kind === 'test' && inRedFile(e)).map(describe)
-      const regressions = fresh.filter((e) => e.kind === 'test' && !inRedFile(e)).map(describe)
-      const reasons = [
-        redFails.length ? '' : 'no test in a file Red wrote or edited fails',
-        collection.length ? `test files that no longer load: ${collection.join('; ')}` : '',
-        regressions.length ? `tests outside Red's files that did not fail at baseline now fail: ${regressions.join('; ')}` : '',
-      ].filter(Boolean)
-      return { ok: run.exitCode !== 0 && !reasons.length, reasons, redFails, collection, regressions }
-    }
-
-    let red = null
-    let redRun = null
-    let redFeedback = ''
-    let previousRedKey = null
-    for (let round = 1; ; round++) {
-      enterPhase('red')
-      red = await settleWorkflow('agent-teams-workforce:tdd-red', {
-        contract,
-        feedback: redFeedback,
-        ...(redFiles.length ? { red: { testFiles: [...redFiles] } } : {}),
-      })
-      if (red && red.ledger) runLedger.push(red.ledger)
-      if (!red || red.dispatchFailed) {
-        return handback(false, stageOf('red', red), `red: ${(red && red.reason) || 'the Red phase returned nothing'}`, { red })
-      }
-      addRedFiles(red)
-      redRun = await runSuite(`red-${round}`)
-      if (!validRun(redRun)) {
-        return handback(false, stageOf('red', redRun), `red: the suite runner returned no exit code: ${(redRun && redRun.reason) || 'no result'}`, { red, run: redRun })
-      }
-      const verdict = judgeRed(redRun)
-      if (verdict.ok) {
-        log(`Red: round ${round} satisfied — ${verdict.redFails.length} new failing test(s) in Red's files`)
-        break
-      }
-      log(`Red: round ${round} not satisfied — ${verdict.reasons.join('; ')}`)
-      if (round >= MAX_RED_ROUNDS) {
-        return {
-          ...handback(
-            false,
-            'red-unsatisfied',
-            `red-unsatisfied: after ${round} Red round(s) the suite does not show the Task's new tests failing cleanly: ${verdict.reasons.join('; ')}`,
-            { red, run: redRun, verdict, baseline }
-          ),
-          evidence: runText(redRun).slice(0, TAIL_CHARS),
-        }
-      }
-      // A round whose suite fails exactly as the round before gives Red the same input again.
-      const redKey = JSON.stringify([redRun.exitCode, ...[...failingIds(redRun)].sort(), ...verdict.reasons])
-      if (redKey === previousRedKey) {
-        return {
-          ...handback(false, 'no-progress', `no-progress: Red round ${round} left the suite exactly as the round before: ${verdict.reasons.join('; ')}`, { red, run: redRun, verdict }),
-          evidence: runText(redRun).slice(0, TAIL_CHARS),
-        }
-      }
-      previousRedKey = redKey
-      redFeedback = `The suite does not show Red yet: ${verdict.reasons.join('; ')}.\n${runText(redRun)}`
-      runLedger.push({ phase: 'retry:red', round: round + 1, whatChanged: `Red round ${round + 1} is given round ${round}'s suite result: ${verdict.reasons.join('; ')}` })
-    }
-
-    // ── Green: loops until the whole suite exits 0. The CDS Audit sends its violations back through
-    // this same loop, with tag 'cds-green' and the findings as the first round's feedback. ──
-    const baselineNote = baseline.exitCode !== 0
-      ? `\nBASELINE REPAIR IS ASSIGNED: fix ALL pre-existing suite failures in ${workRepoPath}, including failures outside the Task's feature. ${baselineIds.size ? [...failures(baseline).values()].map(describe).join('; ') : 'No individual failing test IDs were parsed; diagnose the baseline output.'} Green still requires the whole suite to exit 0.\nBaseline evidence:\n${runText(baseline)}`
-      : ''
-    let green = null
-    let finalRun = null
-    const acceptedTestDecisions = new Map()
-    /** Runs Green rounds until the suite exits 0; returns { run } when green, or { stop } (a handback) when the loop ends without it. */
-    const greenLoop = async (firstFeedback, tag, what) => {
-      let greenFeedback = firstFeedback
-      let previousKey = null
-      for (let round = 1; ; round++) {
-        enterPhase('green')
-        const testPrint = await fingerprint(workRepoPath, [...redFiles], `${tag}-${round}:tests-before`)
-        if (testPrint.error) return { stop: handback(false, 'green', `${what}: Red's test files could not be fingerprinted before Green round ${round}: ${testPrint.error}`, {}) }
-        const g = await settleWorkflow('agent-teams-workforce:tdd-green', {
-          contract,
-          red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
-          implementer,
-          implementers: implementersOf(green),
-          feedback: `${greenFeedback}${acceptedTestDecisions.size ? `\n\nAccepted test-author rulings (retain these unless new evidence warrants reopening):\n${JSON.stringify([...acceptedTestDecisions.values()])}` : ''}`,
-        })
-        if (g && g.ledger) runLedger.push(g.ledger)
-        if (!g || g.dispatchFailed) {
-          return { stop: handback(false, stageOf('green', g), `${what}: ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g }) }
-        }
-        green = g
-        const testsAfter = await fingerprint(workRepoPath, Object.keys(testPrint.files), `${tag}-${round}:tests-after`)
-        if (testsAfter.error) return { stop: handback(false, 'green', `${what}: Red's test files could not be fingerprinted after Green round ${round}: ${testsAfter.error}`, { green: g }) }
-        const touchedTests = Object.keys(testPrint.files).filter((f) => testPrint.files[f] !== testsAfter.files[f])
-        if (touchedTests.length) {
-          return {
-            stop: handback(
-              false,
-              'green-modified-tests',
-              `green-modified-tests: ${what} round ${round} changed test files Red wrote, which Green leaves to Red (a test Green believes is wrong goes in testIssues): ${touchedTests.join(', ')}`,
-              { green: g, touchedTests }
-            ),
-          }
-        }
-        let run = await runSuite(`${tag}-${round}`)
-        if (!validRun(run)) {
-          return { stop: handback(false, stageOf('green', run), `${what}: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { green: g, run }) }
-        }
-        if (run.exitCode === 0) return { run }
-
-        const upstream = list(g.upstreamMissing)
-        if (upstream.length) {
-          return {
-            stop: {
-              ...handback(
-                false,
-                'blocked-upstream',
-                `blocked-upstream: the suite cannot pass until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`,
-                { green: g, run, upstreamMissing: upstream }
-              ),
-              upstreamMissing: upstream,
-              evidence: runText(run).slice(0, TAIL_CHARS),
-            },
-          }
-        }
-
-        let redUpdated = false
-        const issues = list(g.testIssues)
-        if (issues.length) {
-          enterPhase('red')
-          const updated = await settleWorkflow('agent-teams-workforce:tdd-red', {
-            contract,
-            testIssues: issues,
-            red: { testFiles: [...redFiles] },
-            feedback: runText(run),
-          })
-          if (updated && updated.ledger) runLedger.push(updated.ledger)
-          if (!updated || updated.dispatchFailed) {
-            return { stop: handback(false, stageOf('red', updated), `red (update): ${(updated && updated.reason) || 'the Red update returned nothing'}`, { green: g, red: updated, issues }) }
-          }
-          const rulingCheck = checkTestDecisions(issues, updated.decisions)
-          if (rulingCheck.problems.length) {
-            return { stop: handback(false, 'red-decisions-incomplete', `red (update): ${rulingCheck.problems.join('; ')}; return one justified disposition for each requested test ID before Green continues`, { green: g, red: updated, issues, acceptedTestDecisions: [...acceptedTestDecisions.values()] }) }
-          }
-          for (const decision of rulingCheck.decisions) acceptedTestDecisions.set(decision.testId, decision)
-          runLedger.push({ phase: 'red:test-rulings', round: `${tag}-${round}`, decisions: rulingCheck.decisions })
-          addRedFiles(updated)
-          redUpdated = true
-          run = await runSuite(`${tag === 'green' ? '' : `${tag}-`}red-update-${round}`)
-          if (!validRun(run)) {
-            return { stop: handback(false, stageOf('red', run), `red (update): the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { red: updated, run }) }
-          }
-          if (run.exitCode === 0) return { run }
-        }
-
-        const key = JSON.stringify([run.exitCode, ...[...failingIds(run)].sort()])
-        // Whether Green changed any file is read from the work tree (its digest before and after Green), not from Green's report.
-        const changedNothing = !!testPrint.treeDigest && testPrint.treeDigest === testsAfter.treeDigest && !redUpdated
-        if (changedNothing && key === previousKey) {
-          return {
-            stop: {
-              ...handback(false, 'no-progress', `no-progress: ${what} round ${round} changed no file and the suite fails exactly as it did the round before`, { green: g, run }),
-              evidence: runText(run).slice(0, TAIL_CHARS),
-            },
-          }
-        }
-        previousKey = key
-        if (round >= MAX_GREEN_ROUNDS) {
-          return { stop: handback(false, 'green', `${what}: the suite is not green after ${round} Green round(s): ${run.summary || `exit ${run.exitCode}`}`, { green: g, run }) }
-        }
-        greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author ruled on the named tests; the exact accepted decisions are attached below.' : ''}\n${runText(run)}${baselineNote}`
-        runLedger.push({
-          phase: 'retry:green',
-          round: `${tag}-${round + 1}`,
-          whatChanged: `Green round ${round + 1} is given round ${round}'s suite result${list(g.changedFiles).length ? ` after round ${round} changed ${list(g.changedFiles).join(', ')}` : ''}${redUpdated ? ', and the tests the test author updated' : ''}`,
-        })
-      }
-    }
-    const built = await greenLoop(`${runText(redRun)}${baselineNote}`, 'green', 'green')
-    if (built.stop) return built.stop
-    finalRun = built.run
-
-    // ── Refactor: ends green, refactored or restored to its snapshot ──
-    enterPhase('refactor')
-    const refactor = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract, green, relay: childRelay('refactor') })
-    if (refactor && refactor.ledger) runLedger.push(refactor.ledger)
-    if (!refactor || refactor.dispatchFailed) {
-      return handback(false, stageOf('refactor', refactor), `refactor: ${(refactor && refactor.reason) || 'the Refactor phase returned nothing'}`, { refactor })
-    }
-    let refactorRun = await runSuite('refactor')
-    if (!validRun(refactorRun)) {
-      return handback(false, stageOf('refactor', refactorRun), `refactor: the suite runner returned no exit code: ${(refactorRun && refactorRun.reason) || 'no result'}`, { refactor, run: refactorRun })
-    }
-    let restored = null
-    if (refactorRun.exitCode !== 0) {
-      const snapshot = String(refactor.snapshotTree || '').trim()
-      if (!snapshot) {
-        return handback(false, 'refactor', `refactor: the suite is red after the refactor and the refactor recorded no snapshot to restore: ${refactorRun.summary || `exit ${refactorRun.exitCode}`}`, { refactor, run: refactorRun })
-      }
-      restored = await settleWorkflow('agent-teams-workforce:tdd-refactor', { contract, restoreTo: snapshot, relay: childRelay('refactor-restore') })
-      if (!restored || restored.dispatchFailed || restored.restored !== true) {
-        return handback(false, stageOf('refactor', restored), `refactor: the suite is red after the refactor and the tree could not be restored to ${snapshot}`, { refactor, restored, run: refactorRun })
-      }
-      refactorRun = await runSuite('refactor-restored')
-      if (!validRun(refactorRun) || refactorRun.exitCode !== 0) {
-        return handback(false, stageOf('refactor', refactorRun), `refactor: the suite is red after restoring the pre-refactor snapshot ${snapshot}: ${(refactorRun && refactorRun.summary) || 'no result'}`, { refactor, restored, run: refactorRun })
-      }
-      log(`Refactor: the suite went red, so the tree was restored to ${snapshot}`)
-    }
-
-    // ── CDS Audit: a web-ui Task's changes against its supplied cds bundle (bundle) or the live CDS design
-    // system (cds); a change with no design impact (none) is not audited. Violations go back through the Green loop once ──
-    if (isUiTask && designSource !== DESIGN_SOURCE.NONE) {
-      enterPhase('cds-audit')
-      const bundle = designSource === DESIGN_SOURCE.BUNDLE ? contract.cdsBundlePath : null
-      const runAudit = (label) => (bundle ? auditCds(workRepoPath, bundle, label) : auditCdsLive(workRepoPath, label))
-      const standard = bundle
-        ? `The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships`
-        : 'No mockup was supplied: the live CDS design system (the project\'s design system config and the stylesheets, tokens and components it defines) is the only source of visual design: replace each finding with the cds classes and custom properties'
-      const verdictOf = (audit) => ({
-        verdict: audit.violations.length ? 'fail' : audit.gaps.length ? 'blocked' : 'pass',
-        findings: audit.violations.length + audit.gaps.length,
-        scriptVersion: audit.scriptVersion,
-      })
-      const auditFailed = (audit, when) => {
-        cdsVerdict = { verdict: 'error', findings: 0, scriptVersion: audit.scriptVersion || null }
-        return handback(false, 'cds-audit', `cds-audit: the cds audit ${when} could not rule: ${audit.error}`, { cdsAudit: audit })
-      }
-      let audit = await runAudit('cds-audit-1')
-      if (audit.error) return auditFailed(audit, 'after Refactor')
-      log(`CDS Audit: ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
-      if (audit.violations.length) {
-        const brief = `The cds audit found UI code that styles outside the cds design system. ${standard}, and add no stylesheet, inline style, color or length of your own. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs that need not specify every detail. Preserve their established intent and any explicit precision requirements; use judgment with the Task requirements and configured cds for unspecified interactions, states and responsive behavior; when this Task instead owns UI design without a mock, use configured cds and the approved application standards. Resolve findings through supported configuration/composition or generated-artifact correction where applicable. If an input or capability outside this Task remains necessary, name it with evidence in upstreamMissing; do not assume a cds plugin extension is required merely because the current bundle lacks the output. The whole suite has to stay green.
-Findings (file:line rule value):
-${audit.violations.map(findingText).join('\n')}${baselineNote}`
-        runLedger.push({ phase: 'retry:green', round: 'cds-audit', whatChanged: `Green is given the ${audit.violations.length} cds audit violation(s) as its brief` })
-        const fixed = await greenLoop(brief, 'cds-green', 'green (cds audit)')
-        if (fixed.stop) {
-          cdsVerdict = { verdict: fixed.stop.stage === 'blocked-upstream' ? 'blocked' : 'fail', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
-          return { ...fixed.stop, cdsAudit: cdsVerdict }
-        }
-        const upstream = list(green && green.upstreamMissing)
-        if (upstream.length) {
-          cdsVerdict = { verdict: 'blocked', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
-          return {
-            ...handback(false, 'blocked-upstream', `blocked-upstream: the cds audit violations cannot be fixed until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { green, cdsAudit: audit, upstreamMissing: upstream }),
-            upstreamMissing: upstream,
-            evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
-          }
-        }
-        enterPhase('cds-audit')
-        audit = await runAudit('cds-audit-2')
-        if (audit.error) return auditFailed(audit, 'after the Green round')
-        log(`CDS Audit (after Green): ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
-      }
-      cdsVerdict = verdictOf(audit)
-      if (audit.violations.length) {
-        return {
-          ...handback(false, 'cds-audit', `cds-audit: ${audit.violations.length} cds violation(s) remain after one Green round: ${audit.violations.slice(0, 5).map(findingText).join('; ')}`, { cdsAudit: audit }),
-          evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
-        }
-      }
-      if (audit.gaps.length) {
-        const upstream = audit.gaps.map((f) => ({ what: `cds: ${f.reason || f.value} (${f.file}:${f.line})` }))
-        return {
-          ...handback(false, 'blocked-upstream', `blocked-upstream: required cds configuration, design artifacts or capabilities remain unresolved: ${audit.gaps.map(findingText).join('; ')}`, { cdsAudit: audit, upstreamMissing: upstream }),
-          upstreamMissing: upstream,
-          evidence: audit.gaps.map(findingText).join('\n').slice(0, TAIL_CHARS),
-        }
-      }
-    }
-
-    enterPhase('documentation')
-    const docs = await settleWorkflow('agent-teams-workforce:documentation', { contract, green })
-    if (docs && docs.ledger) runLedger.push(docs.ledger)
-
-    enterPhase('commit')
-    finalRun = await runSuite('final')
-    if (!validRun(finalRun) || finalRun.exitCode !== 0) {
-      return handback(false, stageOf('commit', finalRun), `commit: the final suite run did not exit 0 (${(finalRun && (finalRun.summary || `exit ${finalRun.exitCode}`)) || 'no result'}), so nothing was committed`, { run: finalRun })
-    }
-    const regression = await regressionStep(contract, true)
-    if (!regression.ok) return handback(false, 'regression-coverage', `Required regression evidence failed: ${regression.reason || JSON.stringify(regression.errors)}`, { regression })
-    const committed = await settleWorkflow('agent-teams-workforce:settle', {
-      repoPath: workRepoPath,
-      commitOnly: true,
-      branch: workspace.branch || null,
-      defaultBranch: workspace.defaultBranch || null,
-      message: `${bead.id} ${bead.title || ''}`.trim(),
-      relay: childRelay('settle'),
-    })
-    if (!committed || committed.status !== 'reported' || (Array.isArray(committed.blocked) && committed.blocked.length)) {
-      const why =
-        (committed && (committed.error || committed.reason || (Array.isArray(committed.blocked) && committed.blocked.join('; ')))) ||
-        'the commit step returned nothing'
-      return handback(false, !committed || committed.status === 'error' ? DISPATCH_FAILED_STAGE : 'commit', `commit: ${why}`, { commit: committed || null })
-    }
-
-    return {
-      ...handback(
-        true,
-        'committed',
-        `${bead.id} built on ${workspace.branch}: \`${suiteCommand}\` exits 0${finalRun.summary ? ` (${finalRun.summary})` : ''} and the work is committed to the branch of Story ${story.id} (${committed.commit || 'no new commit'}).`,
-        {
-          contract,
-          stashed: workspace.stashed || null,
-          results: { intent, baseline, red, green, refactor, restored, documentation: docs, final: finalRun, commit: committed },
-        }
-      ),
-      commit: committed.commit || null,
-      suite: { command: suiteCommand, summary: finalRun.summary || '' },
-    }
-  })()
+  }
 } catch (err) {
   const message = String((err && err.message) || err)
   const environmental = /overload|rate[ _-]?limit|too many requests|quota|capacity|session limit|usage limit|spend limit|credit balance|out of credits|timed? ?out|network/i.test(message)
   const where = currentPhase || 'unknown'
   const slug = String(where).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'
   log(`RUN ABORTED in ${where}: ${message.slice(0, 300)}`)
-  result = handback(false, environmental ? DISPATCH_FAILED_STAGE : slug, `${where}: the run threw — ${message.slice(0, 300)}`, {
-    reason: message.slice(0, 400),
-    dispatchFailed: environmental,
-  })
-} finally {
-  enterPhase('run-ledger')
-  const detailPath = persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
-  if (result) result.detailPath = detailPath || null
+  result = { ...inputFailure(`${where}: the run threw — ${message.slice(0, 300)}`), stage: environmental ? DISPATCH_FAILED_STAGE : slug, dispatchFailed: environmental }
 }
 return dispatchOutcome(result)
 

@@ -42,8 +42,7 @@
         {"id": "refactor", "title": "Refactor"},
         {"id": "cds-audit", "title": "CDS Audit"},
         {"id": "documentation", "title": "Documentation"},
-        {"id": "commit", "title": "Commit"},
-        {"id": "run-ledger", "title": "Run Ledger"}
+        {"id": "commit", "title": "Commit"}
       ]
     },
     "bug-fix": {

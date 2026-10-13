@@ -110,7 +110,6 @@ function deny(what, detail) {
       '  - architecture decisions   -> architecture-decider (architecture workflow)',
       '  - spec content             -> spec-authoring workflow',
       '  - task breakdown / scores  -> task-decomposition workflow',
-      '  - run outcomes             -> run-ledger-writer',
       '',
       'Unaffected: reads (bd list/show/ready/stats, mcp__beads__ read tools) and',
       `tracker admin (${BD_ADMIN_SUBCOMMANDS.join(', ')}, bd update --status).`,

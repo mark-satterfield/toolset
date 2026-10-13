@@ -222,8 +222,6 @@ ${command}
 It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
   const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const CAPTURE_SCHEMA = { type: 'object', additionalProperties: false, required: ['exitCode', 'stdout', 'receipt'], properties: { ...SCHEMA.properties, receipt: RECEIPT_SCHEMA } }
-  const capturePrompt = command => `Execute this exact checksum-guarded command once in the foreground with Bash timeout 600000. Return its JSON stdout object through the required response schema unchanged. The exitCode inside that object belongs to the captured original command, not the capture helper. Do not execute another command, reconstruct missing output, or replace receipt fields. If the tool fails, report the actual failure; never invent a receipt.\n\n${command}`
   const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
@@ -261,19 +259,6 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     }
     return { captureError: 'registered command could not hand back its result after three bounded machine attempts' }
   }
-  async function captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal) {
-    const argv = shellWords(command)
-    const commandSha256 = sha256Json(argv)
-    const request = sha256Json({ execution: fableInput.relayExecutionId, invocation: fablePath, ordinal, commandSha256 })
-    const runner = readRunner.replace(/[^/]+$/, 'relaycapture.py')
-    const common = ['--directory', `${file}.captures`, '--request', request, '--command-sha256', commandSha256]
-    const out = await dispatch(capturePrompt(pythonLine(runner, ['capture', ...common, '--argv-json', canonicalJson(argv)])), { label, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: CAPTURE_SCHEMA })
-    if (!out && typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
-    const receipt = out && out.receipt
-    let exact = false
-    try { exact = receipt && receipt.request === request && receipt.commandSha256 === commandSha256 && HEX.test(String(receipt.sha256)) && Number.isInteger(receipt.exitCode) && out.exitCode === receipt.exitCode && typeof out.stdout === 'string' && out.stdout.length === receipt.bytes && sha256Ascii(out.stdout) === receipt.sha256 } catch (_) { exact = false }
-    return exact ? out : { captureError: 'the capture copy failed byte or invocation validation' }
-  }
   /** The `--argv-sha256` value a checked command line carries, or ''. */
   function argvShaOf(command) {
     try {
@@ -296,9 +281,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
     const out = registered
       ? await registeredCommand(dispatch, { label, phase, command }, ordinal)
-      : fableRecovery && file && readRunner && fableInput.relayExecutionId
-        ? await captureCommand(dispatch, { label, phase, command, file, readRunner }, ordinal)
-        : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
+      : await dispatch(prompt(command), { label, phase, ...runner, schema: SCHEMA })
     if (!out) return { ok: false, noResult: true, error: `the ${label} runner returned no result` }
     let got = out.captureError ? { why: out.captureError } : parse(out.stdout, file)
     if (got.why) {

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "19cfc4b591475d421d127c3c9b39c59a9b27ea95c18c3cdd9fef963b34a892cf"
+SOURCE_SHA256: Final[str] = "a5d297f1c70a974cf9f13ce809899be6493b2379ef6150400575234dd37c6a97"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -173,7 +173,6 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "cds-audit", "title": "CDS Audit"},
             {"id": "documentation", "title": "Documentation"},
             {"id": "commit", "title": "Commit"},
-            {"id": "run-ledger", "title": "Run Ledger"},
         ),
         "sets": frozenset({"target-repo", "code-build", "repo-required", "design-aware"}),
         "openingKind": "task",

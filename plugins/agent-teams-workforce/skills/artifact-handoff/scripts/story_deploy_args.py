@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict
 
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "story-deploy-args.schema.json"
-SCHEMA_SHA256: Final = "e11270c5eff7426431f17385e5089afad2fca41a298237891de8c4b656e5c7f6"
+SCHEMA_SHA256: Final = "b7d77c0b06337e435b850e757c21f06bf41968301cc355da71d529117a3cfb47"
 
 type Composite = Literal["story-deploy", "built-version", "story-deploy-fix", "deploy-mechanism"]
 COMPOSITE_STORY_DEPLOY: Final[Composite] = "story-deploy"
@@ -57,6 +57,7 @@ KEY_PUBLISHED_HEAD: Final = "publishedHead"
 KEY_BUILT_VERSION_ERROR: Final = "builtVersionError"
 KEY_TASKS: Final = "tasks"
 KEY_BEAD_ID: Final = "beadId"
+KEY_JOURNAL: Final = "journal"
 KEY_REPO_NAME: Final = "repoName"
 KEY_BRANCH: Final = "branch"
 KEY_ARCH_PATH: Final = "archPath"
@@ -79,6 +80,7 @@ ARG_KEYS: Final[tuple[str, ...]] = (
     "builtVersionError",
     "tasks",
     "beadId",
+    "journal",
     "repoName",
     "branch",
     "archPath",
@@ -120,6 +122,10 @@ RELAY_REF_KEYS: Final[tuple[str, ...]] = ("runner", "dir")
 _RELAY_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("runner", "dir")
 RELAY_REF_REQUIRED: Final[frozenset[str]] = frozenset(_RELAY_REF_REQUIRED_ORDER)
 RELAY_REF_CLOSED: Final = True
+JOURNAL_REF_KEYS: Final[tuple[str, ...]] = ("path", "run", "step")
+_JOURNAL_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("path", "run", "step")
+JOURNAL_REF_REQUIRED: Final[frozenset[str]] = frozenset(_JOURNAL_REF_REQUIRED_ORDER)
+JOURNAL_REF_CLOSED: Final = True
 STORY_DEPLOY_INPUT_KEYS: Final[tuple[str, ...]] = (
     "story",
     "repoPath",
@@ -148,6 +154,7 @@ STORY_DEPLOY_INPUT_REQUIRED: Final[frozenset[str]] = frozenset(_STORY_DEPLOY_INP
 STORY_DEPLOY_INPUT_CLOSED: Final = False
 BUILT_VERSION_ARGS_KEYS: Final[tuple[str, ...]] = (
     "beadId",
+    "journal",
     "story",
     "repoPath",
     "repoName",
@@ -158,6 +165,7 @@ BUILT_VERSION_ARGS_KEYS: Final[tuple[str, ...]] = (
     "depscore",
 )
 _BUILT_VERSION_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = (
+    "journal",
     "story",
     "repoPath",
     "archPath",
@@ -169,16 +177,23 @@ BUILT_VERSION_ARGS_REQUIRED: Final[frozenset[str]] = frozenset(_BUILT_VERSION_AR
 BUILT_VERSION_ARGS_CLOSED: Final = False
 STORY_DEPLOY_FIX_ARGS_KEYS: Final[tuple[str, ...]] = (
     "beadId",
+    "journal",
     "story",
     "repoPath",
     "branch",
     "defaultBranch",
-    "attempt",
     "failure",
     "pluginRoot",
     "relay",
 )
-_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = ("story", "repoPath", "attempt", "failure")
+_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = (
+    "journal",
+    "story",
+    "repoPath",
+    "failure",
+    "pluginRoot",
+    "relay",
+)
 STORY_DEPLOY_FIX_ARGS_REQUIRED: Final[frozenset[str]] = frozenset(_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER)
 STORY_DEPLOY_FIX_ARGS_CLOSED: Final = True
 DEPLOY_MECHANISM_ARGS_KEYS: Final[tuple[str, ...]] = ("beadId", "story", "repoPath")
@@ -245,6 +260,14 @@ class RelayRef(TypedDict):
     dir: str
 
 
+class JournalRef(TypedDict):
+    """The Story's step journal, the run the driver names, and the step whose child steps the workflow runs."""
+
+    path: str
+    run: str
+    step: str
+
+
 class StoryDeployInput(TypedDict):
     """The driver's own story-deploy input for one Story."""
 
@@ -264,6 +287,7 @@ class BuiltVersionArgs(TypedDict):
     """The arguments of the built-version workflow."""
 
     beadId: NotRequired[str]
+    journal: JournalRef
     story: StoryRef
     repoPath: str
     repoName: NotRequired[str]
@@ -278,14 +302,14 @@ class StoryDeployFixArgs(TypedDict):
     """The arguments of the story-deploy-fix workflow."""
 
     beadId: NotRequired[str]
+    journal: JournalRef
     story: StoryRef
     repoPath: str
     branch: NotRequired[str]
     defaultBranch: NotRequired[str]
-    attempt: int
     failure: DeployFailure
-    pluginRoot: NotRequired[str]
-    relay: NotRequired[RelayRef]
+    pluginRoot: str
+    relay: RelayRef
 
 
 class DeployMechanismArgs(TypedDict):
