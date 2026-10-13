@@ -1,7 +1,7 @@
 # Spec authoring: one repository's specification documents and its Story
 
 Code: `orchestrator/flows/spec_authoring.py`, `spec_review.py`, `spec_authoring_ui.py`,
-`elaboration_files.py` (names and readers). Check: `orchestrator/checks/check_elaboration_restart.py`.
+`elaboration_files.py` (names and readers).
 
 Under the outermost step "Specs and Stories" the span step plans one container per repository of
 the span, named for the repository, with its first step. That first step plans the repository's

@@ -1,7 +1,7 @@
 # Task decomposition: one repository's Tasks
 
 Code: `orchestrator/flows/task_decomposition.py`, `scripts/portfolio/beadwrite.py`,
-`scripts/portfolio/hierarchy.py`. Check: `orchestrator/checks/check_elaboration_restart.py`.
+`scripts/portfolio/hierarchy.py`.
 
 Under the outermost step "Tasks" each Story bead write plans one container for its repository,
 named for the repository, with its first step. Every step below is one step of the Epic's journal.

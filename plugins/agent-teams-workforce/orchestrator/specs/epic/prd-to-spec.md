@@ -2,8 +2,7 @@
 
 Code: `orchestrator/flows/prd_to_spec.py` (the dispatch and the open-run step),
 `orchestrator/core/journal_run.py` (the loop), and the flow modules that register the code of each
-step. Checks: `orchestrator/checks/check_elaboration_dispatch.py`,
-`check_elaboration_restart.py`, `check_architecture_flow.py`, `check_journal_run.py`.
+step.
 
 ## What one dispatch does
 

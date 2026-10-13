@@ -2,7 +2,7 @@
 
 This document states how the matrix meets `blueprint/requirements/matrix.md`: what it holds,
 how each lookup is answered, how it is seeded, which pipeline steps read and maintain it,
-which discovery mechanisms it replaces, the check that keeps them replaced, and the slices
+which discovery mechanisms it replaces, and the slices
 that move today's matrix to this design.
 
 Paths are relative to the root of the `agent-teams-workforce` plugin unless they begin with
@@ -232,7 +232,7 @@ relationship is unverified.
 | `package` (`origin: project`), `distributedAs` | `[project].name` of each library repository's `pyproject.toml`. | `atw-matrix seed-packages` |
 | `layer`, `contains`, `package` (`origin: third-party`), `usesLayer` | The synthesized cloud assembly: each `AWS::Lambda::LayerVersion`, the layer's requirements file, and the `Layers` property of each `AWS::Lambda::Function`. | `atw-matrix record-assembly --tree <repository>` |
 | `infrastructure`, `component` for Lambda functions, their `homeIn`, `reads`, `routes` | The same assembly: resources of the controlled resource types by physical name, SSM parameter reads matched to the `AWS::SSM::Parameter` that stores each, and each `AWS::Events::Rule` pattern and target. A resource that matches no entry by name or alias is added and returned under `unmatched` for the `polyrepo-steward` to merge with a designed entry by alias. | `record-assembly` |
-| `service`, `component`, `infrastructure` the documents describe | Today's entries, converted (section 7, slice 11), and the `shows` list of each effective arc42 document. | the conversion script; `atw-matrix sync-documents` |
+| `service`, `component`, `infrastructure` the documents describe | Today's entries, converted (section 6, slice 10), and the `shows` list of each effective arc42 document. | the conversion script; `atw-matrix sync-documents` |
 | `homeIn`, `partOf` | Today's `stack` and `repository` fields and `contains` links: an entry with a stack takes it; an entry with only a repository takes that repository's stack when it has exactly one, and is otherwise left without a home and listed. | the conversion script |
 | `document`, `describedBy` | Every arc42 document in the vault that is effective, in review or draft: front matter, headings, and one `describedBy` per name in `shows` and `subject` that resolves to an entry. | `atw-matrix sync-documents` |
 | `epic`, `requirement`, `hasRequirement` | Every open Epic in beads with its PRD file; the `####` headings under `## Requirements`. | `atw-matrix sync-epics` |
@@ -240,7 +240,7 @@ relationship is unverified.
 | `constraint`, `statedIn`, selectors | arc42 section 2 and the rules in section 8. The `aws-solutions-architect` records one constraint per rule with its heading and selector. | the agent, with `put` and `link` |
 | `event`, `publishes`, `consumes`, `imports`, `calls`, `runsIn` | Today's `dependsOn` links, converted to `imports` where the target is held by a stack with `executionUse: imported` and to `calls` where it is a service; the rest are listed for the `aws-solutions-architect`, who records each under its kind. Elaboration and build record the others as they are designed and found. | the conversion script; the agent |
 | `servedBy`, `covers`, `appliesTo`, `drives`, `restsOn` | None at seeding. | elaboration and assessment |
-| `story`, `task`, `placedIn`, `builds` | Open Story and Task beads: the `repoPath` and `matrix_elements` metadata keys, resolved to a stack through `stacks --repository`. | the second-records script (section 7, slice 33) |
+| `story`, `task`, `placedIn`, `builds` | Open Story and Task beads: the `repoPath` and `matrix_elements` metadata keys, resolved to a stack through `stacks --repository`. | the second-records script (section 6, slice 32) |
 | `disagreement`, `disputes` | Today's disagreement entries whose status is open or settled and not applied. | the conversion script |
 
 ## 4. Where the matrix is read and maintained
@@ -383,77 +383,62 @@ holds what they find: `agents/epic-sequencer.md` steps 4 and 5 (R17), `storyedge
 `repository_of` (R2), `task_decomposition.py` `context()` (R18) and `suite-run.js`
 `resolvePrompt` (R26).
 
-## 6. The check
-
-`orchestrator/checks/check_matrix_discovery.py` is a deterministic check that
-`orchestrator/checks/run_all.py` runs. Its rules are data in
-`orchestrator/checks/matrix_discovery.json`. It takes `--driver <path>` (default: the
-control repository named by `ATW_CONTROL_REPO` or `SKILLSPOKE_CC`, joined with
-`ops/sdlc-automation`) and `--rule <id>` to run one rule. It exits non-zero and prints one
-line per finding: rule id, file, line, the matched text.
-
-| Rule group | Inspects | Fails when |
-|---|---|---|
-| Sites | For each row R1 to R26: the files the row names. Each row lists `absent` patterns: a function or constant name for code, a phrase for instruction text, a key for data. | A pattern is present. A deleted file passes. |
-| Scanning instructions | `agents/*.md`, `skills/**/*.md`, `commands/*.md`, the prompt text in `workflows/*.js`, `ops/sdlc-automation/prompts.py`. Two word lists in the data: discovery verbs (search, grep, scan, sweep, glob, "read every", "across every repository", "catalog front matter") and matrix subjects (which repository, where it lives, owns, depends on, `shows`, `subject`, every view, the PRD folder, `prd:` label, `repoPath`). | A sentence contains a verb and a subject and its file and heading are absent from the data's `kept` list. |
-| Search grants | Front matter of `agents/*.md`; the roster embedded in `workflows/*.js`; `ops/sdlc-automation/mcpconfig.py`. | `mcp__mcp-graphrag-server` or the `graphrag-lookup` skill is granted. |
-| Scanning code | Python under `scripts/portfolio/`, `orchestrator/flows/`, `orchestrator/core/` and the driver, by syntax tree: calls to `glob`, `rglob`, `walk`, `scandir`, and subprocess argument lists that start with `rg`, `grep` or `git grep`. | A call is outside the modules that keep the matrix (`matrixsync.py`, `matrixseed.py`, `matrixassembly.py`) and its file and function are absent from `kept`. |
-| Matrix vocabulary | Every file in the plugin and the driver. | Any of these is present: `mark-built`, `mark-deployed`, `mark-merged`, `story-built`, `carry-over`, `CODE_BUILT`, `CODE_DEPLOYED`, a code state of `legacy`, `none`, `built` or `deployed`, `matrix_elements`, `repoPath`, a `repository:` or `term:` entry id, an entry id whose rest begins with a repository name from `stacks`. |
-| Direct reads | Every file in the plugin and the driver outside `scripts/portfolio/matrix*.py`. | The matrix file is opened or parsed other than through `atw-matrix` or the `matrixstore` functions. |
-
-`kept` in the data file holds the sites that stay (section 5), each with its file, function
-or heading, and reason. A new exemption is a new line there with its reason.
-
-## 7. Moving from today's matrix to this design
+## 6. Moving from today's matrix to this design
 
 Today's file is version 3 with 1,766 entries, ids that embed repository names, an approval
 record and a four-state code marker on each row, and no requirement, constraint, event,
 package, Story or Task. Each slice below is one file group for one agent. Slices with the
-same letter run in parallel once the slices before the letter are done. Python slices prove
-themselves with `ruff check`, `ruff format --check` and `mypy --strict` on their files plus
-the command shown.
+same letter run in parallel once the slices before the letter are done.
+
+The agent that changes pipeline tooling sanity-checks its own change once before committing:
+it imports the module and calls the changed function or entry point once with a realistic
+input, as a throwaway probe scoped to what changed, plus lint and strict type checking on
+the changed files and the generators' `--check` when a schema or shared block changed. No
+test or check suite exists for the pipeline tooling and none is written; a sanity check is
+not kept, committed, wired into a hook or run again by a later step. The owner's pipeline
+run is the test.
+The Proof column names the command of a slice's sanity check where one fits.
 
 | # | Slice | Files | Proof | Parallel |
 |---|---|---|---|---|
 | 1 | Kinds registry and schema | `skills/artifact-handoff/schemas/matrix-kinds.json`, `matrix.schema.json`, `skills/artifact-handoff/scripts/generate_matrix_contract.py`, `matrix_contract.py` | `python3 skills/artifact-handoff/scripts/generate_matrix_contract.py --check` | |
-| 2 | The check and its rule data, with every rule of section 6 | `orchestrator/checks/check_matrix_discovery.py`, `matrix_discovery.json`, `run_all.py` | The check runs and lists findings for every row R1 to R26. | with 1 |
-| 3 | Store: generic entries and relationships, both-end index, registry validation, `rename`, `remove` | `scripts/portfolio/matrixstore.py` | `python3 orchestrator/checks/check_matrix.py` | |
-| 4 | Reads: `epic`, `find`, `node`, `deps`, `stacks`, `layers`, `work`, `impact`, `related`, `story-scope`, `uses`, `summary` | `scripts/portfolio/matrixquery.py`, new `matrixtraverse.py` | `check_matrix.py` on a fixture with one of each kind | A |
-| 5 | Changes: `put`, `link`, `unlink`, `claim`, `release`, `settle`, `place`, `unplace`, `move-repository`, `commit` | `scripts/portfolio/matrixwrite.py` | `check_matrix.py` | A |
-| 6 | `verify`; the three older marks and `story-built` leave | `scripts/portfolio/matrixcode.py` | `check_matrix_discovery.py --rule vocabulary` on the file | A |
-| 7 | `sync-epics` with requirements; `sync-documents` with `describedBy`, removal and `--paths` | `scripts/portfolio/matrixsync.py` | `atw-matrix sync-documents` on a scratch matrix, then `check` | A |
-| 8 | `record-assembly`, `seed-stacks`, `seed-packages`, `purpose-input`; `matrixcarry.py` leaves | new `scripts/portfolio/matrixassembly.py`, `matrixseed.py`; `matrixcarry.py` | `check_matrix.py` | A |
-| 9 | `review-scope` from claims, `check-reuse`, `expertise` | `scripts/portfolio/matrixreview.py`, `matrixreuse.py`, `matrixexpertise.py` | `check_matrix.py` | A |
-| 10 | Command table and roles | `scripts/portfolio/matrixcli.py`, `matrix.py`, `matrixcall.py`, `bin/atw-matrix` | `bin/atw-matrix --help` lists the commands of sections 1 to 4 and none of the removed ones | |
-| 11 | Convert the data, one script over the whole file: ids without repository names; `repository` rows become the `repository` attribute; `library` rows become stacks with `executionUse: imported` and packages; `prd` rows become `epic`; links become relationships of the new kinds; `legacy`, `none`, approval, status and change fields dropped; retired, deprecated, deferred, `term` and applied `disagreement` rows dropped. Then `seed-stacks`, `seed-packages`, `sync-epics`, `sync-documents`, and `record-assembly` for each repository with a CDK app. | new `scripts/portfolio/matrixconvert.py`; `ops/sdlc-automation/matrix.json` | `atw-matrix check`; `atw-matrix summary` shows no `term` or `repository` kind and no id that contains a repository name | |
-| 12 | Stack purposes, in batches of ten stacks; constraints from arc42 sections 2 and 8; the listed `dependsOn` leftovers | `ops/sdlc-automation/matrix.json` through `atw-matrix` | `atw-matrix check`; every stack has a `purpose` | B, one agent per batch |
-| 13 | Elaboration: architect, helpers and context (R3; E2 to E5) | `orchestrator/flows/architecture.py`, `architecture_files.py` | `check_matrix_discovery.py --rule R3`; `orchestrator/checks/check_architecture_flow.py` | B |
-| 14 | Elaboration: check, review, promotion (E7 to E9) | `orchestrator/flows/architecture_check.py`, `architecture_review.py`, `architecture_promotion.py` | `check_architecture_flow.py` | B |
-| 15 | Elaboration: scoping (R4, R5; E10, E11) | `orchestrator/flows/repo_scoping.py`, `repo_placement.py` | `check_matrix_discovery.py --rule R4 --rule R5` | B |
-| 16 | Elaboration: Story, Spec and TRD (R3, R6; E6, E12) | `orchestrator/flows/spec_authoring.py`, `trd_authoring.py` | `check_matrix_discovery.py --rule R6`; `orchestrator/checks/check_repo_trd.py` | B |
-| 17 | Elaboration: Tasks, edges, expertise (R18; E13 to E15) | `orchestrator/flows/task_decomposition.py`, `task_edges.py`, `orchestrator/core/skills.py` | `check_matrix_discovery.py --rule R18` | B |
-| 18 | Portfolio architecture scripts (R15, R16) | `scripts/portfolio/archmatrix.py`, `archstate.py`, `archbaseline.py`, `archcoverage.py`, `resumefacts.py` | `check_matrix_discovery.py --rule R15 --rule R16` | B |
-| 19 | Portfolio assessment scripts (R1, R2, R17, R18) | `scripts/portfolio/prds.py`, `assesscontext.py`, `storyedges.py`, `hierarchy.py`, `beadwrite.py`, `scoring.py` | `check_matrix_discovery.py --rule R1 --rule R2 --rule R17` | B |
-| 20 | `depscore.py` command wiring for slices 18 and 19 | `scripts/portfolio/depscore.py` | `python3 scripts/portfolio/depscore.py --help`; `orchestrator/checks/check_portfolio_boundaries.py` | |
-| 21 | Instruction text, one script over all agent, skill and workflow files: the search grants and the `graphrag-lookup` skill leave every list; the one-mark paragraph replaces the four-state paragraph from one shared block; `matrix-lookup` enters the skill lists | new `scripts/matrix-instructions.mjs`; `agents/*.md`, `scripts/shared-blocks`, workflow preambles | `check_matrix_discovery.py --rule grants --rule vocabulary`; `node scripts/check-agent-types.mjs` | B |
-| 22 | The `matrix-lookup` skill: Q1 to Q25 with their commands; `graphrag-lookup` leaves (R7, R8) | new `skills/matrix-lookup/SKILL.md`; `skills/graphrag-lookup/` | `check_matrix_discovery.py --rule R7 --rule R8` | B |
-| 23 | Architecture instructions (R9, R14; E2 to E5, D6, D7) | `agents/aws-solutions-architect.md`, `trd-author.md`, `architecture-maintainer.md`, `built-architecture-comparer.md`, `architecture-decider.md`, `skills/arc42-author`, `arc42-maintain`, `arc42-verify`, `arc42/references/finding-views.md`, `c4-diagramming` | `check_matrix_discovery.py --rule R9 --rule R14 --rule instructions` on these files | C, after 21 |
-| 24 | Steward instructions (R10, R11, R12; S4 to S8) | `agents/polyrepo-steward.md`, `skills/polyrepo-repo`, `polyrepo-info`, `polyrepo-router`, `polyrepo-tribal-knowledge`, `polyrepo-doctor` SKILL.md files, `search-recipes.md`, `commands/polyrepo-steward.md` | `check_matrix_discovery.py --rule R10 --rule R11` | C, after 21 |
-| 25 | The `polyrepo` tool (R12; S1 to S3, S6); the plugin version rises in `plugin.json` and `marketplace.json` in this change | `skills/polyrepo-repo/scripts/polyrepo.py` | `check_matrix_discovery.py --rule R12`; `polyrepo doctor` | C |
-| 26 | Sequencing, readiness and regression instructions (R1, R2, R13, R17, R19 to R22) | `agents/epic-sequencer.md`, `architecture-impact-analyst.md`, `dependency-graph-extractor.md`, `user-story-writer.md`, `task-decomposer.md`, `root-cause-analyst.md`, `regression-impact-assessor.md`, `prd-writer.md`, `skills/epic-sequencing`, `epic-ready`, `task-ready`, `cumulative-regression` | `check_matrix_discovery.py --rule R13 --rule R19 --rule R20 --rule R21 --rule R22` | C, after 21 |
-| 27 | Build workflows (R20, R23, R26; B1 to B7) | `workflows/task-to-deploy.js`, `tdd-green.js`, `infra-intent.js`, `suite-run.js` | `node scripts/check-workflow-syntax.mjs`; `check_matrix_discovery.py --rule R26` | C, after 21 |
-| 28 | Deploy workflows (R14, R23, R24; D1, D4 to D7) | `workflows/deploy-mechanism.js`, `deploy.js`, `story-deploy-fix.js`, `built-version.js` | `node scripts/check-workflow-syntax.mjs`; `check_matrix_discovery.py --rule R23 --rule R24` | C, after 21 |
-| 29 | Assessment workflows and commands (R13, R17, R18; A1 to A4) | `workflows/dependency-assessment.js`, `task-dependency-assessment.js`, `prd-validation.js`, `prd-creation.js`, `commands/dependency-assessment.md` | `node scripts/check-workflow-schemas.mjs` | C, after 21 |
-| 30 | Driver: verify and Story deploy (R2, R24, R25; B7, D1 to D3, D8, D9) | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py`; `check_matrix_discovery.py --rule R24 --rule R25` | B |
-| 31 | Driver: work items (R1, R2; D10) | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `selection.py`, `storyview.py`, `startup.py` | `python3 ops/sdlc-automation/check_entry.py <plugin root>` | B |
-| 32 | Driver: environment, MCP configuration, decisions (R3, R7, R16) | `ops/sdlc-automation/atw.py`, `mcpconfig.py`, `decisions.py`, `CLAUDE.md` | `check_matrix_discovery.py --rule R3 --rule R7 --rule R16` | B |
-| 33 | Second records, one script: open Story and Task beads placed from `repoPath` and `matrix_elements`, then those keys, the `prd:` labels, the `**Epic:**` lines, the manifest's `owns`, `purpose`, `purpose_head` and `role`, the where-it-lives pointers in `knowledge.yaml` and the component map in each `regression.json` removed | new `scripts/portfolio/matrixrecords.py`; beads, vault PRDs, `.polyrepo/manifest.yaml`, `.polyrepo/knowledge.yaml` | `check_matrix_discovery.py --rule vocabulary`; `atw-matrix work --stack` lists every open Task | after 19, 25, 26, 31 |
-| 34 | Close: `matrixconvert.py`, `matrixrecords.py` and `matrix-instructions.mjs` leave; the plugin version rises; the whole check passes | `scripts/portfolio/`, `scripts/`, `plugin.json`, `marketplace.json` | `python3 orchestrator/checks/run_all.py` | |
+| 2 | Store: generic entries and relationships, both-end index, registry validation, `rename`, `remove` | `scripts/portfolio/matrixstore.py` | The sanity check, lint and strict type checking on the changed files | |
+| 3 | Reads: `epic`, `find`, `node`, `deps`, `stacks`, `layers`, `work`, `impact`, `related`, `story-scope`, `uses`, `summary` | `scripts/portfolio/matrixquery.py`, new `matrixtraverse.py` | The sanity check, lint and strict type checking on the changed files | A |
+| 4 | Changes: `put`, `link`, `unlink`, `claim`, `release`, `settle`, `place`, `unplace`, `move-repository`, `commit` | `scripts/portfolio/matrixwrite.py` | The sanity check, lint and strict type checking on the changed files | A |
+| 5 | `verify`; the three older marks and `story-built` leave | `scripts/portfolio/matrixcode.py` | The sanity check, lint and strict type checking on the changed files | A |
+| 6 | `sync-epics` with requirements; `sync-documents` with `describedBy`, removal and `--paths` | `scripts/portfolio/matrixsync.py` | `atw-matrix check` | A |
+| 7 | `record-assembly`, `seed-stacks`, `seed-packages`, `purpose-input`; `matrixcarry.py` leaves | new `scripts/portfolio/matrixassembly.py`, `matrixseed.py`; `matrixcarry.py` | The sanity check, lint and strict type checking on the changed files | A |
+| 8 | `review-scope` from claims, `check-reuse`, `expertise` | `scripts/portfolio/matrixreview.py`, `matrixreuse.py`, `matrixexpertise.py` | The sanity check, lint and strict type checking on the changed files | A |
+| 9 | Command table and roles | `scripts/portfolio/matrixcli.py`, `matrix.py`, `matrixcall.py`, `bin/atw-matrix` | `bin/atw-matrix --help` lists the commands of sections 1 to 4 and none of the removed ones | |
+| 10 | Convert the data, one script over the whole file: ids without repository names; `repository` rows become the `repository` attribute; `library` rows become stacks with `executionUse: imported` and packages; `prd` rows become `epic`; links become relationships of the new kinds; `legacy`, `none`, approval, status and change fields dropped; retired, deprecated, deferred, `term` and applied `disagreement` rows dropped. Then `seed-stacks`, `seed-packages`, `sync-epics`, `sync-documents`, and `record-assembly` for each repository with a CDK app. | new `scripts/portfolio/matrixconvert.py`; `ops/sdlc-automation/matrix.json` | `atw-matrix check`; `atw-matrix summary` shows no `term` or `repository` kind and no id that contains a repository name | |
+| 11 | Stack purposes, in batches of ten stacks; constraints from arc42 sections 2 and 8; the listed `dependsOn` leftovers | `ops/sdlc-automation/matrix.json` through `atw-matrix` | `atw-matrix check`; every stack has a `purpose` | B, one agent per batch |
+| 12 | Elaboration: architect, helpers and context (R3; E2 to E5) | `orchestrator/flows/architecture.py`, `architecture_files.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 13 | Elaboration: check, review, promotion (E7 to E9) | `orchestrator/flows/architecture_check.py`, `architecture_review.py`, `architecture_promotion.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 14 | Elaboration: scoping (R4, R5; E10, E11) | `orchestrator/flows/repo_scoping.py`, `repo_placement.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 15 | Elaboration: Story, Spec and TRD (R3, R6; E6, E12) | `orchestrator/flows/spec_authoring.py`, `trd_authoring.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 16 | Elaboration: Tasks, edges, expertise (R18; E13 to E15) | `orchestrator/flows/task_decomposition.py`, `task_edges.py`, `orchestrator/core/skills.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 17 | Portfolio architecture scripts (R15, R16) | `scripts/portfolio/archmatrix.py`, `archstate.py`, `archbaseline.py`, `archcoverage.py`, `resumefacts.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 18 | Portfolio assessment scripts (R1, R2, R17, R18) | `scripts/portfolio/prds.py`, `assesscontext.py`, `storyedges.py`, `hierarchy.py`, `beadwrite.py`, `scoring.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 19 | `depscore.py` command wiring for slices 17 and 18 | `scripts/portfolio/depscore.py` | `python3 scripts/portfolio/depscore.py --help` | |
+| 20 | Instruction text, one script over all agent, skill and workflow files: the search grants and the `graphrag-lookup` skill leave every list; the one-mark paragraph replaces the four-state paragraph from one shared block; `matrix-lookup` enters the skill lists | new `scripts/matrix-instructions.mjs`; `agents/*.md`, `scripts/shared-blocks`, workflow preambles | `node scripts/check-agent-types.mjs` | B |
+| 21 | The `matrix-lookup` skill: Q1 to Q25 with their commands; `graphrag-lookup` leaves (R7, R8) | new `skills/matrix-lookup/SKILL.md`; `skills/graphrag-lookup/` | The sanity check, lint and strict type checking on the changed files | B |
+| 22 | Architecture instructions (R9, R14; E2 to E5, D6, D7) | `agents/aws-solutions-architect.md`, `trd-author.md`, `architecture-maintainer.md`, `built-architecture-comparer.md`, `architecture-decider.md`, `skills/arc42-author`, `arc42-maintain`, `arc42-verify`, `arc42/references/finding-views.md`, `c4-diagramming` | The sanity check, lint and strict type checking on the changed files | C, after 20 |
+| 23 | Steward instructions (R10, R11, R12; S4 to S8) | `agents/polyrepo-steward.md`, `skills/polyrepo-repo`, `polyrepo-info`, `polyrepo-router`, `polyrepo-tribal-knowledge`, `polyrepo-doctor` SKILL.md files, `search-recipes.md`, `commands/polyrepo-steward.md` | The sanity check, lint and strict type checking on the changed files | C, after 20 |
+| 24 | The `polyrepo` tool (R12; S1 to S3, S6); the plugin version rises in `plugin.json` and `marketplace.json` in this change | `skills/polyrepo-repo/scripts/polyrepo.py` | `polyrepo doctor` | C |
+| 25 | Sequencing, readiness and regression instructions (R1, R2, R13, R17, R19 to R22) | `agents/epic-sequencer.md`, `architecture-impact-analyst.md`, `dependency-graph-extractor.md`, `user-story-writer.md`, `task-decomposer.md`, `root-cause-analyst.md`, `regression-impact-assessor.md`, `prd-writer.md`, `skills/epic-sequencing`, `epic-ready`, `task-ready`, `cumulative-regression` | The sanity check, lint and strict type checking on the changed files | C, after 20 |
+| 26 | Build workflows (R20, R23, R26; B1 to B7) | `workflows/task-to-deploy.js`, `tdd-green.js`, `infra-intent.js`, `suite-run.js` | `node scripts/check-workflow-syntax.mjs` | C, after 20 |
+| 27 | Deploy workflows (R14, R23, R24; D1, D4 to D7) | `workflows/deploy-mechanism.js`, `deploy.js`, `story-deploy-fix.js`, `built-version.js` | `node scripts/check-workflow-syntax.mjs` | C, after 20 |
+| 28 | Assessment workflows and commands (R13, R17, R18; A1 to A4) | `workflows/dependency-assessment.js`, `task-dependency-assessment.js`, `prd-validation.js`, `prd-creation.js`, `commands/dependency-assessment.md` | `node scripts/check-workflow-schemas.mjs` | C, after 20 |
+| 29 | Driver: verify and Story deploy (R2, R24, R25; B7, D1 to D3, D8, D9) | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py` | B |
+| 30 | Driver: work items (R1, R2; D10) | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `selection.py`, `storyview.py`, `startup.py` | The sanity check, lint and strict type checking on the changed files | B |
+| 31 | Driver: environment, MCP configuration, decisions (R3, R7, R16) | `ops/sdlc-automation/atw.py`, `mcpconfig.py`, `decisions.py`, `CLAUDE.md` | The sanity check, lint and strict type checking on the changed files | B |
+| 32 | Second records, one script: open Story and Task beads placed from `repoPath` and `matrix_elements`, then those keys, the `prd:` labels, the `**Epic:**` lines, the manifest's `owns`, `purpose`, `purpose_head` and `role`, the where-it-lives pointers in `knowledge.yaml` and the component map in each `regression.json` removed | new `scripts/portfolio/matrixrecords.py`; beads, vault PRDs, `.polyrepo/manifest.yaml`, `.polyrepo/knowledge.yaml` | `atw-matrix work --stack` lists every open Task | after 18, 24, 25, 30 |
+| 33 | Close: `matrixconvert.py`, `matrixrecords.py` and `matrix-instructions.mjs` leave; the plugin version rises | `scripts/portfolio/`, `scripts/`, `plugin.json`, `marketplace.json` | The sanity check, lint and strict type checking on the changed files | |
 
 The installed plugin is updated and running sessions, the pipeline included, are restarted
-after slice 34 for the change to take effect.
+after slice 33 for the change to take effect.
 
-## 8. Decisions
+## 7. Decisions
 
 1. **Storage.** One JSON file with a generic `entries` map and `relationships` list, and the
    kinds in a registry file. Readers are agents and scripts on one machine; a registry makes

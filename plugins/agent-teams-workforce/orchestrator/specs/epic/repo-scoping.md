@@ -1,8 +1,6 @@
 # The repository span
 
-Code: `orchestrator/flows/repo_scoping.py`, `repo_placement.py`. Checks:
-`orchestrator/checks/check_elaboration_dispatch.py` (the items read from the matrix),
-`check_repo_trd.py`.
+Code: `orchestrator/flows/repo_scoping.py`, `repo_placement.py`.
 
 The span is read from the matrix. No session is started. It is the first step of the outermost
 step "Specs and Stories": script `atw-matrix prd --closure`.

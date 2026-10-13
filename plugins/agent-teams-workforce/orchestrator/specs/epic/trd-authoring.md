@@ -1,7 +1,7 @@
 # The TRD
 
 Code: `orchestrator/flows/architecture.py` (the TRD author's session), `trd_authoring.py` (the
-confirm step). Checks: `orchestrator/checks/check_architecture_flow.py`, `check_repo_trd.py`.
+confirm step).
 
 ## Who writes it
 

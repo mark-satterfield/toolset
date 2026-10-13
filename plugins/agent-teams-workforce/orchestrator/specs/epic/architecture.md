@@ -2,9 +2,7 @@
 
 Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`,
 `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`,
-`architecture_earlier.py`, `architecture_files.py` (names, the context file and readers). Checks:
-`orchestrator/checks/check_architecture_flow.py`, `check_architecture_work.py`,
-`check_architecture_artifacts.py`.
+`architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, establishes the architecture a PRD needs until it is ready
 for review. The script starts sessions, records steps and carries results. It decides nothing

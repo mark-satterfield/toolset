@@ -83,24 +83,16 @@ Layout:
 | `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `skills.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
 | `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
 | `<orch>/port_journal.py` | builds the step journal of a bead that has saved run data and no journal; the driver's `journalport.py` calls it |
-| `<orch>/checks/brief_check.py` | the brief and contract-skill check (section 2.3) |
-| `<orch>/checks/run_all.py` | the one command that runs every check in `<orch>/checks/` |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
 
 There is no brief template folder: a brief is built in code from facts only (section 2.3).
 
-**Running the checks.** One command runs every check script in `<orch>/checks/` (each Python file
-there with a `__main__` entry point, found by listing the directory), supplies `--control-repo`
-to the checks that declare it, prints one line per check and the full output of each failure,
-and exits non-zero unless every check passed:
-
-```sh
-"$SKILLSPOKE_CC/.venv/bin/python" "$ATW_PLUGIN_ROOT/orchestrator/checks/run_all.py"
-```
-
-The control repository comes from `ATW_CONTROL_REPO`, then `SKILLSPOKE_CC`, or `--control-repo`.
-A check whose declared argument cannot be supplied is reported `SKIPPED` and the command exits
-non-zero. No hook runs this command.
+**Verification.** The agent that changes pipeline tooling sanity-checks its own change once before
+committing: it imports the module and calls the changed function or entry point once with a
+realistic input, as a throwaway probe scoped to what changed, plus lint and strict type checking on
+the changed files and the generators' `--check` when a schema or shared block changed. No test or
+check suite exists for the pipeline tooling and none is written; a sanity check is not kept,
+committed, wired into a hook or run again by a later step. The owner's pipeline run is the test.
 
 The flow registry holds one flow, `prd-to-spec`. Its work is the steps of the Epic's journal
 (section 2.1), not separate flows: the only entry into the Epic pipeline is the driver
@@ -239,13 +231,6 @@ else an agent needs is in its definition (`<plugin>/agents/<name>.md`) and in th
 front matter names, whose text the launcher puts in the agent's context (section 5.1). The
 validation errors of a corrective retry are written by Python to a file and listed as one more
 input.
-
-`<orch>/checks/brief_check.py` exits non-zero, naming each finding, when a flow module's brief
-construction holds JSON schema text or prose beyond the fact fields, or when the register
-(`specs/epic/agent-contracts.md`), the index (`specs/epic/INDEX.md`), the agent front matter and
-the shared contract rules disagree: every agent of an agent-facing contract loads a contract skill
-(`artifact-handoff` or `architecture-baseline`), every contract has its rules section in
-`skills/artifact-handoff/epic-contracts.md`, and every named schema exists.
 
 ### 2.4 One set of criteria for the architecture team
 
