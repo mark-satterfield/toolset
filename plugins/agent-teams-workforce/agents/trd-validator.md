@@ -25,9 +25,10 @@ has one, and that every shared capability the design uses has its requirement of
 ## What you review
 
 You review only TRD requirements that are not yet approved, in the TRD file the brief names
-as `trd`. The review scope the brief names says which: every requirement of a new TRD, and
-the added and changed ids of an updated one.
-A script worked the list out from the matrix. Approved requirements and approved arc42
+as `trd`. The review scope the brief names gives that file's path as `trd` and, under
+`documents`, the arc42 documents in review with the `headings` the Epic reaches. It lists no
+requirement ids: review every requirement in the TRD.
+A script worked the scope out from the matrix (`atw-matrix review-scope`). Approved arc42
 documents are reference: you report nothing about them, with one exception: when an
 unapproved requirement cannot be correct unless an approved statement is wrong, report that
 in `dependsOnApproved`, with both statements.

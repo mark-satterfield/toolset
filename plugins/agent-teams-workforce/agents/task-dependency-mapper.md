@@ -40,3 +40,21 @@ artifact-handoff skill's `schemas/task-deps.schema.json`, which is the one defin
 edge direction and kinds. Consider same-Story and closure edges when checking cycles; report any
 cycle honestly. Python validates keys, drops cycle-closing edges and writes beads.
 No Task creation, portfolio readiness assessment or WSJF calculation in this Epic assignment.
+
+## The matrix
+
+A dependency between two Tasks follows from a dependency between what they build. The matrix
+records what each stack holds and depends on, and the brief's context file carries those
+reads; you run no matrix write (`put`, `link`), and no write to a bead.
+
+- In elaboration, each edge you add between Tasks of two stacks is recorded by the script
+  step that accepts your file, as a dependency between those stacks when the matrix lacks it.
+- In the assessment of one Task (`task-dependency-assessment`), the context file holds, for
+  each stack the Task states, the open Tasks that touch it (`atw-matrix work --id <stack id>`)
+  and what the stack depends on and what depends on it (`atw-matrix deps --of <stack id>`,
+  `deps --on <stack id>`). Besides the edges, return `elements`: the matrix ids the Task
+  builds in and builds (its stack first), exactly as the context gives them, which the
+  workflow writes into a Task that states none; and `stackDependencies`: each dependency
+  between two stacks the matrix lacks, as `{kind, from, to, through, interface, reason}`, with
+  matrix ids as `from` and `to` and a dependency kind the matrix registers. The workflow
+  prompt states the exact shape, and the workflow records them.

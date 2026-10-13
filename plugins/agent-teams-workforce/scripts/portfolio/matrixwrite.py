@@ -1,863 +1,672 @@
-"""The changes a session makes to the matrix while it designs: rows, links, claims, settlements.
+"""The changes a session or a script makes to the matrix: entries, relationships, rulings, the commit.
 
-Each function edits a loaded matrix in place and is run by ``matrix.py`` inside one locked
-read-modify-write, so several sessions can record at once and none loses another's change.
+:func:`put`, :func:`link`, :func:`unlink`, :func:`settle` and :func:`move_repository` each edit a
+loaded matrix in place. ``atw-matrix`` runs each inside one locked read-modify-write
+(``matrixstore.update_matrix``), which checks the result against the kinds registry before it
+writes, so several sessions can record at once and none loses another's change.
 
-- :func:`put` adds or changes one row. The schema's tables say which kinds a role may put and
-  which fields a caller may state for each kind; everything else of a row is set here.
-- :func:`link` adds or removes one link, stored once on the row it starts from.
-- :func:`claim` marks a fact or a document heading as being changed by an Epic, so a second Epic
-  that reaches for it is told who holds it and builds on that Epic's design.
-- :func:`settle` records a disagreement between statements and how it was settled. A statement
-  in approved text always stands over one that is not; the command decides that itself.
-- :func:`note_sendback` records that a review sent a criterion back, on the Epic's PRD row.
-- :func:`add_resource_type` extends the controlled list of resource types.
+- :func:`put` adds one entry of any registered kind, or changes the stated members of one.
+- :func:`link` adds one relationship of any registered kind, or changes its attributes;
+  :func:`unlink` removes one.
+- :func:`put`, :func:`link` and :func:`unlink` each take the side the fact came from: the
+  architecture side, which is the authority, or the repository side, which is a hint. The two
+  sides are kept apart: a relationship is held once for each side that states it, and what is
+  read from a repository never takes the place of what the architecture states.
+- :func:`settle` records which statement of a disagreement stands and the rule it was ruled by.
+- :func:`move_repository` gives every stack of one repository another repository's name.
+- :func:`commit` commits the matrix file alone in the repository that holds it, and pushes it.
 
-A row or link that is new or changed is not approved: its marker becomes unverified and names the
-Epic that changed it, which is how that Epic's review (``matrixreview``) finds exactly what it
-must be handed.
+Nothing here sets or clears the verified mark: an entry or a relationship that is added carries
+none, and one that is changed keeps the mark it has.
 """
 
-import json
+import shutil
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
+from typing import Final, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
-    APPROVAL_APPROVED,
-    APPROVAL_UNVERIFIED,
-    CODE_NONE,
-    CODED_KINDS,
-    COVERAGE_IN_PROGRESS,
-    COVERAGE_NOT_ASSESSED,
-    DISAGREEMENT_OPEN,
-    DISAGREEMENT_SETTLED,
-    ELEMENT_KINDS,
-    FEATURE_PRD,
-    FEATURE_SUPPORTING,
+    AUTHORITY_SIDE,
+    ENTRY_RULES,
     KIND_DISAGREEMENT,
     KIND_DOCUMENT,
-    KIND_FACT,
-    KIND_FEATURE,
-    KIND_PRD,
+    KIND_EPIC,
+    KIND_EVENT,
+    KIND_PACKAGE,
+    KIND_REQUIREMENT,
     KIND_STACK,
-    KIND_TERM,
-    LIFECYCLE_EFFECTIVE,
-    LIFECYCLES,
-    LINK_RULES,
-    PLACED_KINDS,
-    PUT_FIELDS,
-    PUT_KINDS,
-    RESOURCE_TYPE_PATTERN,
-    SETTLE_RULES,
-    Claim,
-    DisagreementRule,
-    DisputedStatement,
-    HeadingHash,
+    REL_DISPUTES,
+    Entry,
+    EntryId,
+    EntryKind,
     JsonValue,
-    Kind,
-    Link,
-    Matrix,
-    Node,
-    NodeId,
-    Role,
-    is_statements,
-    json_value,
-    validate_node,
+    MatrixError,
+    Relationship,
+    RelationshipKind,
+    Side,
+    entry_json,
+    relationship_json,
 )
-from matrixstore import MatrixRefusedError, Stamp, make_id, owner_of, unapprove
+from matrixstore import (
+    DEFAULT_LOCK_WAIT,
+    ID_SEPARATOR,
+    Matrix,
+    MatrixRefusedError,
+    RelationshipId,
+    as_entry_id,
+    id_stack,
+    kind_of,
+    make_id,
+    matrix_lock,
+    relationship_id,
+    repository_side_id,
+    slug,
+)
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
+"""The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
+STATED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT, KIND_DOCUMENT})
+"""The kinds whose id is built from something other than the name, so a new entry states its id."""
+ITEM_ID: Final = "id"
+"""The member that identifies one object of a list attribute, such as one thing a feature provides."""
+ATTR_REPOSITORY: Final = "repository"
+ATTR_HEADING: Final = "heading"
+ATTR_STANDS: Final = "stands"
+ATTR_RULE: Final = "rule"
+ATTR_REASON: Final = "reason"
+STANDS_DOCUMENT: Final = "document"
+MEMBER_NAME: Final = "name"
+MEMBER_ALIASES: Final = "aliases"
+MEMBER_PURPOSE: Final = "purpose"
+MEMBER_SIDE: Final = "side"
+GIT: Final = "git"
+GIT_TIMEOUT: Final = 300.0
+"""Seconds one git command may take; a push runs the repository's hooks."""
+COMMIT_MESSAGE: Final = "chore(matrix): record the matrix"
+UPSTREAM_RANGE: Final = "@{upstream}..HEAD"
+"""The commits the branch has that the branch it pushes to does not."""
 
-REPOSITORY_LEVEL: Final = "@repository"
-"""The id part that stands for the stack of an element that lives in no stack, as carried rows have it."""
-NAME_FIELD: Final = "name"
-ENTRY_ID: Final = "id"
-"""The key that identifies one entry of a list of objects, such as one thing a capability provides."""
-MIN_STATEMENTS: Final = 2
-SHOWN: Final = 3
-"""The most ids a refusal names."""
-
-
-@dataclass(frozen=True, slots=True)
-class Actor:
-    """Who makes a change: the role that runs the command, and the Epic and journal step it works for."""
-
-    role: Role
-    bead: str
-    """The Epic the change is made for; empty for a change no Epic makes."""
-    step: str
-    """The journal step id of the session; empty when it has none."""
-    at: str
-    """The date-time of the change."""
-
-    def __post_init__(self) -> None:
-        """Refuse an actor with no moment.
-
-        Raises:
-            ValueError: ``at`` is empty.
-
-        """
-        if not self.at:
-            message: str = "a change needs the moment it is made"
-            raise ValueError(message)
-
-    def stamp(self) -> Stamp:
-        """Name the change for a row's ``changed`` record.
-
-        Returns:
-            The moment, and the Epic and step that make the change; the role when no Epic does.
-
-        """
-        return Stamp(self.at, " ".join(part for part in (self.bead, self.step) if part) or self.role)
-
-    def claim(self) -> Claim:
-        """Build the claim this actor's Epic places.
-
-        Returns:
-            The claim.
-
-        Raises:
-            MatrixRefusedError: The actor works for no Epic.
-
-        """
-        if not self.bead:
-            message: str = "a claim needs the Epic that makes it: give --bead"
-            raise MatrixRefusedError(message)
-        return {"bead": self.bead, "step": self.step or self.role, "at": self.at}
-
-
-@dataclass(frozen=True, slots=True)
-class Put:
-    """One row to add or change."""
-
-    kind: Kind
-    row: NodeId | None
-    """The row's id; None derives it from the kind, the placement and the name."""
-    stated: Mapping[str, JsonValue]
-    """The row fields the caller states, by their name in the schema."""
-
-
-@dataclass(frozen=True, slots=True)
-class Settlement:
-    """A disagreement and, unless it is recorded as open, how it is settled."""
-
-    name: str
-    row: NodeId | None
-    """The id of the disagreement; None derives it from the name."""
-    statements: Sequence[Mapping[str, JsonValue]]
-    """The statements that disagree; empty when an existing disagreement is being settled."""
-    rule: DisagreementRule | None
-    """The rule that settles it; None records it as open."""
-    stands: int | None
-    """The number, from 1, of the statement that stands; None when the rule computes it."""
-    reason: str
-    evidence: Sequence[str]
-    fact: NodeId | None
-    """The fact that states what stands."""
-    reopens: NodeId | None
-    """The earlier disagreement a new requirement reopens."""
+type View = dict[str, JsonValue]
+"""One entry or one relationship as the command prints it."""
 
 
 class PutResult(TypedDict):
     """What :func:`put` did."""
 
-    id: NodeId
+    id: EntryId
     created: bool
     changed: list[str]
-    """The fields whose value the call changed; empty when the row was already as stated."""
-    node: Node
+    """The members and attributes whose value the call changed; empty when the entry was as stated."""
+    entry: View
 
 
 class LinkResult(TypedDict):
     """What :func:`link` did."""
 
-    source: NodeId
-    link: Link
+    relationship: View
+    """The relationship as the matrix now holds it."""
     added: bool
+    changed: bool
+    """True when the relationship was added or its attributes changed."""
+
+
+class UnlinkResult(TypedDict):
+    """What :func:`unlink` did."""
+
+    relationship: View
+    """The relationship removed, or the one asked about when the matrix held none."""
     removed: bool
-
-
-class ClaimResult(TypedDict):
-    """What :func:`claim` did."""
-
-    id: NodeId
-    heading: NotRequired[str]
-    granted: bool
-    """False when another Epic holds the claim; the claim returned is then that Epic's."""
-    released: bool
-    claim: NotRequired[Claim]
-    standing: list[NodeId]
-    """The unapproved rows of the Epic that holds the claim, which stand as the design to build on."""
 
 
 class SettleResult(TypedDict):
     """What :func:`settle` did."""
 
-    id: NodeId
-    created: bool
-    node: Node
-    approved: list[bool]
-    """For each statement, whether it is in approved text."""
+    id: EntryId
+    stands: View
+    """The document and heading of the statement that stands."""
+    rule: str
+    entry: View
 
 
-class SendBackResult(TypedDict):
-    """What :func:`note_sendback` did."""
+class MoveResult(TypedDict):
+    """What :func:`move_repository` did."""
 
-    id: NodeId
-    criterion: str
-    sendBacks: int
-
-
-class ResourceTypeResult(TypedDict):
-    """What :func:`add_resource_type` did."""
-
-    resourceType: str
-    added: bool
+    old: str
+    new: str
+    stacks: list[EntryId]
+    """The stacks whose repository changed, in id order."""
 
 
-def _copy(node: Node) -> dict[str, JsonValue]:
-    """Copy a row as plain JSON, so stated fields can be laid over it and the result validated.
+class CommitResult(TypedDict):
+    """What :func:`commit` did."""
 
-    Returns:
-        The copy.
-
-    Raises:
-        TypeError: The row does not serialize to a JSON object.
-
-    """
-    copied: JsonValue = json_value(json.loads(json.dumps(node)))
-    if not isinstance(copied, dict):
-        message: str = "a row must be a JSON object"
-        raise TypeError(message)
-    return copied
-
-
-def _row(matrix: Matrix, key: NodeId) -> Node:
-    """Read a row a request names.
-
-    Returns:
-        The row.
-
-    Raises:
-        MatrixRefusedError: The matrix has no such row.
-
-    """
-    if key not in matrix["nodes"]:
-        message: str = f"there is no row {key}"
-        raise MatrixRefusedError(message)
-    return matrix["nodes"][key]
-
-
-def _text(stated: Mapping[str, JsonValue], field: str) -> str:
-    """Read a stated field that must be nonempty text.
-
-    Returns:
-        The text; empty when the field was not stated or is not text.
-
-    """
-    value: JsonValue = stated.get(field)
-    return value.strip() if isinstance(value, str) else ""
-
-
-def _derived_id(request: Put) -> NodeId:
-    """Build the id of a row from its kind, where it lives and its name.
-
-    Returns:
-        ``<kind>:<name>``; ``<kind>:<repository>/<name>`` for a stack; and
-        ``<kind>:<repository>/<stack>/<name>`` for an element, with the repository level in
-        place of the stack of an element that lives in none.
-
-    Raises:
-        MatrixRefusedError: The name, or the repository of a row that lives in one, is not stated.
-
-    """
-    name: str = _text(request.stated, NAME_FIELD)
-    repository: str = _text(request.stated, "repository")
+    committed: bool
+    """False when the matrix file was already as the last commit holds it."""
+    pushed: bool
+    """False when the branch it pushes to already held every commit of the matrix file."""
+    head: str
+    """The commit the repository is at afterwards."""
     message: str
-    if not name:
-        message = f"a {request.kind} row needs --name, or --id for a row that exists"
-        raise MatrixRefusedError(message)
-    if request.kind not in PLACED_KINDS:
-        return make_id(request.kind, name)
-    if not repository:
-        message = f"a {request.kind} row lives in a repository: give --repository"
-        raise MatrixRefusedError(message)
-    if request.kind == KIND_STACK:
-        return make_id(request.kind, repository, name)
-    return make_id(request.kind, repository, _text(request.stated, "stack") or REPOSITORY_LEVEL, name)
-
-
-def _new_row(key: NodeId, kind: Kind, stated: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    """Build what a new row of one kind holds before the caller's fields are laid over it.
-
-    Returns:
-        The row's id and kind, no links, and the markers and empty lists its kind carries: every
-        design row is unverified, a row that can hold code holds none, an element is not shared
-        until stated, and a supporting feature is shared and provides nothing yet.
-
-    """
-    row: dict[str, JsonValue] = {"id": key, "kind": kind, "links": []}
-    if kind != KIND_TERM:
-        row["approval"] = {"state": APPROVAL_UNVERIFIED}
-    if kind in CODED_KINDS:
-        row["code"] = {"state": CODE_NONE}
-    if kind in ELEMENT_KINDS:
-        row.update({"resourceType": None, "shared": False})
-    if kind == KIND_FACT:
-        row["linkedFrom"] = []
-    if kind == KIND_FEATURE and stated.get("featureType") == FEATURE_SUPPORTING:
-        row.update({"shared": True, "provides": []})
-    if kind == KIND_FEATURE and stated.get("featureType") == FEATURE_PRD:
-        row["requirements"] = []
-    return row
 
 
 def _joined(current: JsonValue, stated: JsonValue) -> JsonValue:
-    """Lay one stated value over the value a row holds.
+    """Lay one stated value over the value held.
 
     Returns:
-        The stated value; for a list, the held entries followed by the stated ones the row does
-        not hold, where a stated object replaces the held object with the same ``id``.
+        The stated value; for an object over an object, the held members with the stated ones
+        laid over them; for a list over a list, the held items followed by the stated ones not
+        held, where a stated object replaces the held object with the same ``id``.
 
     """
+    if isinstance(stated, dict) and isinstance(current, dict):
+        return {**current, **stated}
     if not isinstance(stated, list) or not isinstance(current, list):
         return stated
     joined: list[JsonValue] = list(current)
-    entry: JsonValue
-    for entry in stated:
-        identity: JsonValue = entry.get(ENTRY_ID) if isinstance(entry, dict) else None
+    item: JsonValue
+    for item in stated:
+        identity: JsonValue = item.get(ITEM_ID) if isinstance(item, dict) else None
         at: int | None = next(
             (
                 index
-                for index, held in enumerate(joined)
-                if (isinstance(held, dict) and identity is not None and held.get(ENTRY_ID) == identity) or held == entry
+                for index, kept in enumerate(joined)
+                if kept == item or (identity is not None and isinstance(kept, dict) and kept.get(ITEM_ID) == identity)
             ),
             None,
         )
         if at is None:
-            joined.append(entry)
+            joined.append(item)
         else:
-            joined[at] = entry
+            joined[at] = item
     return joined
 
 
-def _require_put(request: Put, actor: Actor) -> None:
-    """Refuse a put the schema's tables do not allow.
-
-    Raises:
-        MatrixRefusedError: The role may not put a row of that kind, or the caller states a field
-            a row of that kind does not take.
-
-    """
-    allowed: frozenset[Kind] = PUT_KINDS.get(actor.role, frozenset())
-    message: str
-    if request.kind not in allowed:
-        owners: list[str] = sorted(role for role, kinds in PUT_KINDS.items() if request.kind in kinds)
-        message = f"the role {actor.role} may not put a {request.kind} row; " + (
-            f"it is for {', '.join(owners)}" if owners else "no put writes that kind"
-        )
-        raise MatrixRefusedError(message)
-    stray: list[str] = sorted(set(request.stated) - PUT_FIELDS[request.kind])
-    if stray:
-        message = f"a {request.kind} row does not take {', '.join(stray)}"
-        raise MatrixRefusedError(message)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def put(matrix: Matrix, request: Put, actor: Actor) -> PutResult:
-    """Add one row, or change the stated fields of a row that exists.
-
-    A list field is added to, never replaced: stated aliases, requirements, linking documents
-    and ``provides`` entries join the ones held, and a ``provides`` entry with the id of a held
-    one replaces it. A row that is created or changed is unverified and names the actor's Epic.
-    A call that states what the row already holds changes nothing.
-
-    Args:
-        matrix: The matrix, changed in place.
-        request: The kind, the id when known, and the fields stated.
-        actor: Who makes the change.
+def _laid(current: Mapping[str, JsonValue], stated: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """Lay stated attributes over the attributes held.
 
     Returns:
-        The row's id, whether it was created, the fields changed and the row.
-
-    Raises:
-        MatrixRefusedError: The role may not put the kind, a field does not belong to it, the id
-            names a row of another kind, or the stated fields do not make a row of that kind.
+        The held attributes with each stated one joined in; an attribute stated as null is left out.
 
     """
-    _require_put(request, actor)
-    key: NodeId = request.row or _derived_id(request)
-    existing: Node | None = matrix["nodes"].get(key)
-    message: str
-    if existing is not None and existing["kind"] != request.kind:
-        message = f"{key} is a {existing['kind']} row, not a {request.kind} row"
-        raise MatrixRefusedError(message)
-    row: dict[str, JsonValue] = _new_row(key, request.kind, request.stated) if existing is None else _copy(existing)
-    changed: list[str] = []
-    field: str
+    laid: dict[str, JsonValue] = dict(current)
+    name: str
     value: JsonValue
-    for field, value in request.stated.items():
-        merged: JsonValue = _joined(row.get(field), value)
-        if field not in row or merged != row[field]:
-            row[field] = merged
-            changed.append(field)
-    if existing is not None and not changed:
-        return {"id": key, "created": False, "changed": [], "node": existing}
-    row["changed"] = {"at": actor.at, "by": actor.stamp().by}
-    node: Node = validate_node(row, f"the {request.kind} row {key}")
-    unapprove(node, actor.bead, actor.stamp())
-    matrix["nodes"][key] = node
-    return {"id": key, "created": existing is None, "changed": sorted(changed), "node": node}
+    for name, value in stated.items():
+        if value is None:
+            laid.pop(name, None)
+        else:
+            laid[name] = _joined(laid.get(name), value)
+    return laid
 
 
-def _same_link(held: Link, wanted: Link) -> bool:
-    """Tell whether two links are the same relationship.
+def _derived_id(kind: EntryKind, side: Side, name: str | None, stack: EntryId | None) -> EntryId:
+    """Build the id of an entry from its kind, its side and its name.
+
+    An id that does not have the form the kind's ids have raises ``MatrixError`` from ``make_id``
+    or ``repository_side_id``.
 
     Returns:
-        True when they have the same type, target and heading.
-
-    """
-    return (
-        held["type"] == wanted["type"]
-        and held["to"] == wanted["to"]
-        and held.get("heading", "") == wanted.get("heading", "")
-    )
-
-
-def _merged_link(held: Link, wanted: Link) -> Link:
-    """Join a link a row holds with the same link stated again.
-
-    Returns:
-        The held link with the stated ``provides`` entries added and the stated ambiguity.
-
-    """
-    merged: Link = {"type": held["type"], "to": held["to"]}
-    if "heading" in held:
-        merged["heading"] = held["heading"]
-    relied: list[str] = list(dict.fromkeys([*held.get("provides", []), *wanted.get("provides", [])]))
-    if relied:
-        merged["provides"] = relied
-    if wanted.get("ambiguous", held.get("ambiguous", False)):
-        merged["ambiguous"] = True
-    return merged
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def link(matrix: Matrix, source: NodeId, wanted: Link, actor: Actor, *, remove: bool = False) -> LinkResult:
-    """Add one link to the row it starts from, or remove it.
-
-    A link is the same link when its type, target and heading are the same; stating it again
-    adds to the ``provides`` entries it relies on. A row whose links change is unverified again
-    and names the actor's Epic; a PRD row that gains a link is in progress.
-
-    Args:
-        matrix: The matrix, changed in place.
-        source: The row the link starts from.
-        wanted: The link.
-        actor: Who makes the change.
-        remove: Whether to remove the link instead of adding it.
-
-    Returns:
-        The source, the link as the row now holds it, and whether it was added or removed.
+        The kind, a colon and the slug of the name; the name as written for a kind whose id is
+        its name; and for a repository-side entry of a kind with a second id form, the kind, a
+        colon, the name of the stack that holds it, a slash and the slug of the name.
 
     Raises:
-        MatrixRefusedError: A row is missing, or the link type may not join the two kinds.
+        MatrixRefusedError: No name is stated, the kind's ids are not built from the name, or a
+            repository-side entry whose id names its stack states no stack.
 
     """
-    node: Node = _row(matrix, source)
-    target: Node = _row(matrix, wanted["to"])
-    if (
-        node["kind"] not in LINK_RULES[wanted["type"]].sources
-        or target["kind"] not in LINK_RULES[wanted["type"]].targets
-    ):
-        message: str = f"a {wanted['type']} link may not join a {node['kind']} row to a {target['kind']} row"
-        raise MatrixRefusedError(message)
-    at: int | None = next((index for index, held in enumerate(node["links"]) if _same_link(held, wanted)), None)
-    stored: Link = wanted if at is None else _merged_link(node["links"][at], wanted)
-    result: LinkResult = {"source": source, "link": stored, "added": False, "removed": False}
-    if remove and at is not None:
-        del node["links"][at]
-        result["removed"] = True
-    elif not remove and at is None:
-        node["links"].append(wanted)
-        result["added"] = True
-    elif not remove and at is not None and stored != node["links"][at]:
-        node["links"][at] = stored
-        result["added"] = True
-    if result["added"] or result["removed"]:
-        unapprove(node, actor.bead, actor.stamp())
-        if node["kind"] == KIND_PRD and node.get("coverage") == COVERAGE_NOT_ASSESSED:
-            node["coverage"] = COVERAGE_IN_PROGRESS
-    return result
-
-
-def _held_rows(matrix: Matrix, bead: str, document: str, heading: str) -> list[NodeId]:
-    """List the unapproved rows one Epic has recorded at one heading.
-
-    Returns:
-        The ids of that Epic's unapproved rows whose home is the heading, in id order.
-
-    """
-    return sorted(
-        node["id"]
-        for node in matrix["nodes"].values()
-        if owner_of(node) == bead
-        and "home" in node
-        and node["home"]["document"] == document
-        and node["home"]["heading"] == heading
-    )
-
-
-def _claim_heading(matrix: Matrix, node: Node, heading: str, actor: Actor, *, release: bool) -> ClaimResult:
-    """Claim or release one heading of a document row.
-
-    Returns:
-        What the claim did.
-
-    """
-    headings: dict[str, HeadingHash] = node.setdefault("headings", {})
-    entry: HeadingHash = headings.setdefault(heading, {"hash": "", "approvedHash": None})
-    wanted: Claim = actor.claim()
-    held: Claim | None = entry.get("claim")
-    result: ClaimResult = {"id": node["id"], "heading": heading, "granted": True, "released": False, "standing": []}
-    if held is not None and held["bead"] != wanted["bead"]:
-        result.update({"granted": False, "claim": held})
-        result["standing"] = _held_rows(matrix, held["bead"], node.get("path", ""), heading)
-        return result
-    if release:
-        entry.pop("claim", None)
-        if not entry["hash"] and entry["approvedHash"] is None:
-            del headings[heading]
-        result["released"] = held is not None
-        return result
-    result["claim"] = held or wanted
-    if held is None:
-        entry["claim"] = wanted
-        node["changed"] = actor.stamp().change()
-    return result
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def claim(
-    matrix: Matrix,
-    target: NodeId,
-    heading: str | None,
-    actor: Actor,
-    *,
-    release: bool = False,
-) -> ClaimResult:
-    """Mark a fact, a feature or a document heading as being changed by the actor's Epic.
-
-    A claim another Epic holds is not taken: the call reports that Epic's claim and the
-    unapproved rows it has recorded there, which stand as the design to build on. A claim on a
-    heading that is still to be written is kept until the heading is approved. ``approve``
-    releases an Epic's claims; ``release`` gives one up without an approval.
-
-    Args:
-        matrix: The matrix, changed in place.
-        target: The fact or feature row, or the document row whose heading is claimed.
-        heading: The heading of a document row; None for a fact or a feature.
-        actor: Who claims; it must work for an Epic.
-        release: Whether to give the actor's own claim up.
-
-    Returns:
-        Whether the claim is the actor's, the claim that stands, and the holder's unapproved rows.
-
-    Raises:
-        MatrixRefusedError: The row is missing, cannot be claimed, or a document row is given
-            without a heading or another row with one.
-
-    """
-    node: Node = _row(matrix, target)
     message: str
-    if node["kind"] == KIND_DOCUMENT:
-        if not heading:
-            message = "a claim on a document names the heading: give --heading"
+    if kind in STATED_ID_KINDS:
+        message = f"the id of a {kind} is not built from its name: state the id"
+        raise MatrixRefusedError(message)
+    if name is None or not name.strip():
+        message = f"a {kind} needs its name, or the id of an entry that exists"
+        raise MatrixRefusedError(message)
+    if side != AUTHORITY_SIDE and ENTRY_RULES[kind].repository_id_pattern is not None:
+        if stack is None:
+            message = f"the id of a {kind} on the {side} side names the stack that holds it: state the stack, or the id"
             raise MatrixRefusedError(message)
-        return _claim_heading(matrix, node, heading, actor, release=release)
-    if heading or node["kind"] not in {KIND_FACT, KIND_FEATURE}:
-        message = f"a claim is placed on a fact, a feature or a document heading, not on {target}"
-        raise MatrixRefusedError(message)
-    wanted: Claim = actor.claim()
-    held: Claim | None = node.get("claim")
-    result: ClaimResult = {"id": target, "granted": True, "released": False, "standing": []}
-    if held is not None and held["bead"] != wanted["bead"]:
-        result.update({"granted": False, "claim": held})
-        result["standing"] = [target] if owner_of(node) == held["bead"] else []
-        return result
-    if release:
-        node.pop("claim", None)
-        result["released"] = held is not None
-        return result
-    result["claim"] = held or wanted
-    if held is None:
-        node["claim"] = wanted
-        node["changed"] = actor.stamp().change()
-    return result
+        return repository_side_id(kind, stack, name)
+    return make_id(kind, name.strip() if kind in NAMED_ID_KINDS else slug(name))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def statement_approved(matrix: Matrix, statement: DisputedStatement) -> bool:
-    """Tell whether a statement is in approved text.
-
-    A statement in a document the matrix holds is approved when the document is effective and
-    the heading it is under is as it was approved; when the heading named is not one the
-    document row records, the document must be effective and approved as a whole. A statement
-    in a document the matrix does not hold is approved when it is stated to be effective.
-
-    Args:
-        matrix: The matrix.
-        statement: The statement.
+def _changed(before: Entry | None, after: Entry) -> list[str]:
+    """Name what differs between an entry and the entry that replaces it.
 
     Returns:
-        True when the statement is approved.
+        The common members and the attributes whose value differs, in name order; every stated
+        member of an entry that is new.
 
     """
-    document: Node | None = matrix["nodes"].get(make_id(KIND_DOCUMENT, statement["document"]))
-    if document is None:
-        return statement["lifecycle"] == LIFECYCLE_EFFECTIVE
-    if document.get("lifecycle") != LIFECYCLE_EFFECTIVE:
-        return False
-    entry: HeadingHash | None = document.get("headings", {}).get(statement["heading"])
-    if entry is None:
-        return "approval" in document and document["approval"]["state"] == APPROVAL_APPROVED
-    return bool(entry["hash"]) and entry["hash"] == entry["approvedHash"]
+    held: Mapping[str, JsonValue] = {} if before is None else before.attributes
+    changed: set[str] = {name for name in {*held, *after.attributes} if held.get(name) != after.attributes.get(name)}
+    if before is None or before.name != after.name:
+        changed.add(MEMBER_NAME)
+    if (before is None and after.aliases) or (before is not None and before.aliases != after.aliases):
+        changed.add(MEMBER_ALIASES)
+    if (before is None and after.purpose) or (before is not None and before.purpose != after.purpose):
+        changed.add(MEMBER_PURPOSE)
+    if before is None or before.side != after.side:
+        changed.add(MEMBER_SIDE)
+    return sorted(changed)
 
 
-def _statements(matrix: Matrix, stated: Sequence[Mapping[str, JsonValue]]) -> list[DisputedStatement]:
-    """Read the statements of a disagreement as the caller gives them.
+def _new_entry(matrix: Matrix, key: EntryId, side: Side, name: str | None) -> Entry:
+    """Start an entry the matrix does not hold yet.
 
     Returns:
-        The statements, each with the lifecycle of its document as the matrix holds it, and with
-        no ruling on which stands.
+        The entry with its id, kind, name and side and nothing else.
 
     Raises:
-        MatrixRefusedError: A statement lacks a field, or names a document the matrix does not
-            hold without stating that document's lifecycle.
+        MatrixRefusedError: No name is stated, or another entry of the kind answers to the name
+            on the same side and, for an entry whose id names its stack, in the same stack.
 
     """
-    read: list[dict[str, JsonValue]] = []
-    index: int
-    given: Mapping[str, JsonValue]
+    kind: EntryKind = kind_of(key)
     message: str
-    for index, given in enumerate(stated, start=1):
-        entry: dict[str, JsonValue] = {key: value for key, value in given.items() if key != "stands"}
-        path: JsonValue = entry.get("document")
-        document: Node | None = matrix["nodes"].get(make_id(KIND_DOCUMENT, path)) if isinstance(path, str) else None
-        if document is not None and "lifecycle" in document:
-            entry["lifecycle"] = document["lifecycle"]
-        if entry.get("lifecycle") not in LIFECYCLES:
-            message = f"statement {index} is in a document the matrix does not hold: state its lifecycle"
-            raise MatrixRefusedError(message)
-        read.append(entry)
-    if not is_statements(read):
-        message = "each statement needs its document, its heading and its text, and may give its line"
+    if name is None or not name.strip():
+        message = f"{key} is new: a new {kind} needs its name"
         raise MatrixRefusedError(message)
-    return read
-
-
-def _standing(settlement: Settlement, approved: Sequence[bool], actor: Actor) -> int:
-    """Decide which statement stands under the rule a settlement names.
-
-    Returns:
-        The index, from 0, of the statement that stands.
-
-    Raises:
-        MatrixRefusedError: No rule is named, the role may not settle by the rule, the rule that
-            computes its outcome does not have exactly one approved statement to choose, or a
-            statement that is not approved is put over one that is.
-
-    """
-    message: str
-    if settlement.rule is None:
-        message = "a settlement names its rule"
-        raise MatrixRefusedError(message)
-    rule: DisagreementRule = settlement.rule
-    if actor.role not in SETTLE_RULES[rule].roles:
-        message = f"the role {actor.role} may not settle by {rule}; it is for " + ", ".join(
-            sorted(SETTLE_RULES[rule].roles),
+    started: Entry = Entry(id=key, kind=kind, name=name.strip(), side=side)
+    others: list[EntryId] = [
+        other.id for other in matrix.named(name, (kind,)) if other.side == side and id_stack(other) == id_stack(started)
+    ]
+    if others:
+        message = (
+            f"the {kind} {others[0]} already answers to the name {name.strip()!r} on the {side} side: put that "
+            "entry, or qualify this name with the service or subject the new entry belongs to"
         )
         raise MatrixRefusedError(message)
-    winners: list[int] = [index for index, holds in enumerate(approved) if holds]
-    computed: str = next(name for name, entry in SETTLE_RULES.items() if entry.computed)
-    chosen: int | None = None if settlement.stands is None else settlement.stands - 1
-    if SETTLE_RULES[rule].computed:
-        if len(winners) != 1:
-            message = f"{rule} decides nothing here: {len(winners)} of {len(approved)} statements are approved"
-            raise MatrixRefusedError(message)
-        if chosen not in {None, winners[0]}:
-            message = f"statement {winners[0] + 1} is the approved one; it stands, whatever --stands says"
-            raise MatrixRefusedError(message)
-        return winners[0]
-    if chosen is None or not 0 <= chosen < len(approved):
-        message = f"give --stands with the number of the statement that stands, from 1 to {len(approved)}"
-        raise MatrixRefusedError(message)
-    if len(winners) == 1 and len(approved) > 1:
-        message = f"statement {winners[0] + 1} is approved and the others are not: it stands; settle with {computed}"
-        raise MatrixRefusedError(message)
-    if winners and chosen not in winners:
-        message = f"statement {chosen + 1} is not approved and cannot stand over an approved statement"
-        raise MatrixRefusedError(message)
-    return chosen
+    return started
 
 
-def _disagreement(matrix: Matrix, settlement: Settlement, actor: Actor) -> tuple[Node, bool]:
-    """Find the disagreement a settlement names, or make its row.
+def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str) -> Side:
+    """Decide the side an entry carries after a put.
+
+    An entry is on the architecture side once that side states it: a later put from the
+    repository side leaves it there, and may add to it but not restate what identifies it.
 
     Returns:
-        The row, with the statements the settlement gives when it gives any, and whether the
-        row is new. A new row is not in the matrix yet.
+        The stated side for a new entry and for one the architecture side now states; the
+        architecture side for an entry already on it.
 
     Raises:
-        MatrixRefusedError: The id names a row that is no disagreement, or a new disagreement
-            has fewer than two statements.
+        MatrixRefusedError: The put is from the repository side, the entry is on the
+            architecture side, and the put states another name or purpose for it.
 
     """
-    key: NodeId = settlement.row or make_id(KIND_DISAGREEMENT, settlement.name)
-    existing: Node | None = matrix["nodes"].get(key)
-    message: str
-    if existing is not None and existing["kind"] != KIND_DISAGREEMENT:
-        message = f"{key} is a {existing['kind']} row, not a disagreement"
+    if existing is None or existing.side != AUTHORITY_SIDE or side == AUTHORITY_SIDE:
+        return side
+    if name != existing.name or purpose != existing.purpose:
+        message: str = (
+            f"{existing.id} is on the {existing.side} side: a put from the {side} side does not change its name "
+            "or its purpose"
+        )
         raise MatrixRefusedError(message)
-    statements: list[DisputedStatement] = _statements(matrix, settlement.statements)
-    if existing is not None:
-        if statements:
-            existing["statements"] = statements
-        return existing, False
-    if len(statements) < MIN_STATEMENTS or not settlement.name.strip():
-        message = "a new disagreement needs its name and at least two statements"
-        raise MatrixRefusedError(message)
-    created: Node = {
-        "id": key,
-        "kind": KIND_DISAGREEMENT,
-        "name": settlement.name.strip(),
-        "links": [],
-        "changed": actor.stamp().change(),
-        "statements": statements,
-        "disagreementStatus": DISAGREEMENT_OPEN,
-    }
-    return created, True
+    return existing.side
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def settle(matrix: Matrix, settlement: Settlement, actor: Actor) -> SettleResult:
-    """Record a disagreement between statements and, unless it is recorded as open, its settlement.
+def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entry a caller may state.
+    matrix: Matrix,
+    kind: EntryKind,
+    side: Side,
+    *,
+    entry_id: EntryId | None = None,
+    name: str | None = None,
+    aliases: Sequence[str] = (),
+    purpose: str | None = None,
+    attributes: Mapping[str, JsonValue] | None = None,
+    stack: EntryId | None = None,
+) -> PutResult:
+    """Add one entry, or change the stated members of an entry that exists.
 
-    A statement in approved text stands over one that is not, without discussion: when exactly
-    one statement is approved, only the rule that computes its outcome is accepted, and it names
-    the approved statement itself. When the statements are all approved, or none is, that rule
-    decides nothing and is refused; the caller names the rule that decided and the statement
-    that stands. The row keeps each statement marked as standing or lost, the rule, the reason,
-    the evidence and the fact that now stands, so the question is not asked again.
+    The entry carries the side the fact came from. An entry the repository side recorded moves
+    to the architecture side when that side states it. An entry on the architecture side stays
+    there: a put from the repository side may add aliases and attributes to it, such as the
+    repository that holds a stack, and may not state another name or purpose for it. A thing the
+    architecture describes and the thing found in a repository are two entries, so for a
+    component, a piece of infrastructure and a layer a repository-side put has its own id, which
+    names the stack that holds it.
 
-    Args:
-        matrix: The matrix, changed in place.
-        settlement: The statements and the settlement.
-        actor: Who settles.
-
-    Returns:
-        The row's id, whether it was created, the row, and whether each statement is approved.
-
-    Raises:
-        MatrixRefusedError: The settlement is refused by :func:`_standing`, or names a fact or an
-            earlier disagreement that is not a row of that kind.
-
-    """
-    node: Node
-    created: bool
-    node, created = _disagreement(matrix, settlement, actor)
-    statements: list[DisputedStatement] = node.get("statements", [])
-    approved: list[bool] = [statement_approved(matrix, statement) for statement in statements]
-    named: NodeId | None
-    kind: Kind
-    for named, kind in ((settlement.fact, KIND_FACT), (settlement.reopens, KIND_DISAGREEMENT)):
-        if named is not None and _row(matrix, named)["kind"] != kind:
-            message: str = f"{named} is not a {kind} row"
-            raise MatrixRefusedError(message)
-    if settlement.rule is not None:
-        winner: int = _standing(settlement, approved, actor)
-        index: int
-        statement: DisputedStatement
-        for index, statement in enumerate(statements):
-            statement["stands"] = index == winner
-        node["rule"] = settlement.rule
-        node["disagreementStatus"] = DISAGREEMENT_SETTLED
-        node["settledBy"] = actor.stamp().by
-    if settlement.reason:
-        node["reason"] = settlement.reason
-    if settlement.evidence:
-        node["evidence"] = list(dict.fromkeys([*node.get("evidence", []), *settlement.evidence]))
-    if settlement.fact is not None:
-        node["standingFact"] = settlement.fact
-    if settlement.reopens is not None:
-        node["reopens"] = settlement.reopens
-    node["approval"] = {"state": APPROVAL_UNVERIFIED}
-    unapprove(node, actor.bead, actor.stamp())
-    matrix["nodes"][node["id"]] = node
-    return {"id": node["id"], "created": created, "node": node, "approved": approved}
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def note_sendback(matrix: Matrix, criterion: str, actor: Actor) -> SendBackResult:
-    """Record on an Epic's PRD row that a review sent a criterion back.
+    Only what is stated changes. A stated name or purpose replaces the one held. Stated aliases
+    join the ones held. A stated attribute replaces the one held, except that the members of an
+    object are laid over the held object's and the items of a list join the held list, where an
+    object with the ``id`` of a held one replaces it; an attribute stated as null is removed.
+    The verified mark is left as it is. A call that states what the entry already holds changes
+    nothing. An entry that then breaks its kind raises ``MatrixError`` from ``Matrix.put`` and
+    changes nothing.
 
     Args:
         matrix: The matrix, changed in place.
-        criterion: The id of the criterion.
-        actor: The lead that records it; it must work for an Epic.
+        kind: The entry's kind.
+        side: The side the fact came from: ``architecture`` when beads, a PRD or an arc42
+            document states it or the architect designed it; ``repository`` when it was read
+            from what is in a repository today.
+        entry_id: The entry's id; None builds it from the kind and the name (the slug of the
+            name; the name as written for a stack, a package and an event; the stack's name, a
+            slash and the slug of the name for a repository-side component, piece of
+            infrastructure or layer). An Epic, a requirement and a document state their id.
+        name: The entry's name; needed for an entry that is new.
+        aliases: Other names the entry is known by.
+        purpose: One or two sentences that identify the entry.
+        attributes: The attributes the kind declares, by name.
+        stack: The id of the stack that holds the entry; needed only to build the id of a
+            repository-side component, piece of infrastructure or layer. It records no home.
 
     Returns:
-        The PRD row's id, the criterion and how many send-backs the row now holds.
+        The entry's id, whether it was created, what changed and the entry.
 
     Raises:
-        MatrixRefusedError: The criterion is empty, or the Epic has no PRD row.
+        MatrixRefusedError: An attribute is not one the kind declares, the id is of another kind,
+            a new entry has no name or a name another entry of the kind answers to on its side,
+            the id cannot be built from what is stated, or a put from the repository side states
+            another name or purpose for an entry on the architecture side.
 
     """
+    stated: dict[str, JsonValue] = dict(attributes or {})
     message: str
-    if not criterion.strip() or not actor.bead:
-        message = "a send-back names its criterion and its Epic: give --criterion and --bead"
+    stray: list[str] = sorted(set(stated) - ENTRY_RULES[kind].attributes)
+    if stray:
+        message = f"a {kind} does not take {', '.join(stray)}; it takes " + (
+            ", ".join(sorted(ENTRY_RULES[kind].attributes)) or "no attributes"
+        )
         raise MatrixRefusedError(message)
-    key: NodeId = make_id(KIND_PRD, actor.bead)
-    if key not in matrix["nodes"]:
-        message = f"the matrix has no PRD row for {actor.bead}; sync-prds writes it"
+    key: EntryId = _derived_id(kind, side, name, stack) if entry_id is None else as_entry_id(entry_id)
+    if kind_of(key) != kind:
+        message = f"{key} is not the id of a {kind}"
         raise MatrixRefusedError(message)
-    node: Node = matrix["nodes"][key]
-    step: str = actor.step or actor.role
-    held: bool = any(
-        entry["criterion"] == criterion.strip() and entry["step"] == step for entry in node.get("sendBacks", [])
+    existing: Entry | None = matrix.find(key)
+    base: Entry = _new_entry(matrix, key, side, name) if existing is None else existing
+    named: str = name.strip() if name is not None and name.strip() else base.name
+    described: str = base.purpose if purpose is None else purpose.strip()
+    entry: Entry = replace(
+        base,
+        name=named,
+        side=_side_kept(existing, side, named, described),
+        aliases=tuple(
+            dict.fromkeys(alias.strip() for alias in (*base.aliases, *aliases) if alias.strip() and alias != named),
+        ),
+        purpose=described,
+        attributes=_laid(base.attributes, stated),
     )
-    if not held:
-        node.setdefault("sendBacks", []).append({"criterion": criterion.strip(), "step": step, "at": actor.at})
-        node["changed"] = actor.stamp().change()
-    return {"id": key, "criterion": criterion.strip(), "sendBacks": len(node.get("sendBacks", []))}
+    changed: list[str] = _changed(existing, entry)
+    if existing is None or changed:
+        matrix.put(entry)
+    return {"id": key, "created": existing is None, "changed": changed, "entry": entry_json(entry)}
+
+
+def _held(matrix: Matrix, wanted: Relationship) -> Relationship | None:
+    """Find the relationship the matrix holds with the kind, ends, key attributes and side of another.
+
+    Returns:
+        The relationship, or None when the matrix holds none.
+
+    """
+    identity: RelationshipId = relationship_id(wanted)
+    return next(
+        (kept for kept in matrix.outgoing(wanted.start, (wanted.kind,)) if relationship_id(kept) == identity),
+        None,
+    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def add_resource_type(matrix: Matrix, name: str) -> ResourceTypeResult:
-    """Add one value to the controlled list of resource types.
+def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The parts of a relationship, as the command states them.
+    matrix: Matrix,
+    kind: RelationshipKind,
+    start: EntryId,
+    end: EntryId,
+    side: Side,
+    attributes: Mapping[str, JsonValue] | None = None,
+) -> LinkResult:
+    """Add one relationship, or change the attributes of the one that exists.
+
+    A relationship is the same relationship when its kind, both ends, its kind's key attributes
+    and its side are the same: each side that states a relationship holds its own, and stating
+    it for one side leaves the other side's as it is. Stating it again lays the stated attributes
+    over the ones held, as :func:`put` does, and leaves its verified mark as it is. A relationship that breaks its
+    kind, names an entry the matrix does not hold or joins kinds it may not join raises
+    ``MatrixError`` from ``Matrix.link`` and changes nothing; so does a second relationship, on one
+    side, of a kind an entry may start only one of (``MatrixRefusedError``: unlink the first).
 
     Args:
         matrix: The matrix, changed in place.
-        name: The resource type, in lower case with hyphens.
+        kind: The relationship's kind.
+        start: The entry the relationship starts from.
+        end: The entry it ends at.
+        side: The side that states the relationship.
+        attributes: The attributes the kind declares, by name.
 
     Returns:
-        The resource type and whether it was added; False when the list already holds it.
-
-    Raises:
-        MatrixRefusedError: The name does not have the form of a resource type.
+        The relationship as the matrix now holds it, whether it was added and whether it changed.
 
     """
-    if RESOURCE_TYPE_PATTERN.search(name) is None:
-        message: str = f"{name!r} is not a resource type: it must match {RESOURCE_TYPE_PATTERN.pattern}"
+    wanted: Relationship = Relationship(
+        kind=kind,
+        start=start,
+        end=end,
+        side=side,
+        attributes=_laid({}, attributes or {}),
+    )
+    kept: Relationship | None = _held(matrix, wanted)
+    stored: Relationship = (
+        wanted if kept is None else replace(kept, attributes=_laid(kept.attributes, wanted.attributes))
+    )
+    changed: bool = kept is None or stored != kept
+    if changed:
+        matrix.link(stored)
+    return {"relationship": relationship_json(stored), "added": kept is None, "changed": changed}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unlink(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The parts of a relationship, as the command states them.
+    matrix: Matrix,
+    kind: RelationshipKind,
+    start: EntryId,
+    end: EntryId,
+    side: Side,
+    attributes: Mapping[str, JsonValue] | None = None,
+) -> UnlinkResult:
+    """Remove one relationship as one side states it.
+
+    The same relationship as the other side states it stays.
+
+    Args:
+        matrix: The matrix, changed in place.
+        kind: The relationship's kind.
+        start: The entry the relationship starts from.
+        end: The entry it ends at.
+        side: The side whose relationship is removed.
+        attributes: The kind's key attributes, such as the heading of a ``describedBy``; the
+            other attributes are not compared.
+
+    Returns:
+        The relationship removed and True; or the relationship asked about and False when the
+        matrix held none with that kind, those ends, those key attributes and that side.
+
+    """
+    wanted: Relationship = Relationship(
+        kind=kind,
+        start=start,
+        end=end,
+        side=side,
+        attributes=_laid({}, attributes or {}),
+    )
+    kept: Relationship | None = _held(matrix, wanted)
+    if kept is None:
+        return {"relationship": relationship_json(wanted), "removed": False}
+    return {"relationship": relationship_json(kept), "removed": matrix.unlink(kept)}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The ruling's parts, as the command states them.
+    matrix: Matrix,
+    entry_id: EntryId,
+    document: str,
+    heading: str,
+    rule: str,
+    reason: str = "",
+) -> SettleResult:
+    """Record which statement of a disagreement stands, and the rule it was ruled by.
+
+    A disagreement the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix, changed in place.
+        entry_id: The disagreement's id.
+        document: The document that holds the statement that stands: its entry id, or its path
+            under the architecture root.
+        heading: The heading the statement is under.
+        rule: The rule the ruling was made by.
+        reason: Why, when the rule does not say it all.
+
+    Returns:
+        The disagreement's id, what stands, the rule and the entry.
+
+    Raises:
+        ValueError: ``heading`` or ``rule`` is empty.
+        MatrixRefusedError: The entry is not a disagreement, or no ``disputes`` relationship of
+            it names that document and heading.
+
+    """
+    message: str
+    if not heading.strip() or not rule.strip():
+        message = "a ruling names the heading of the statement that stands and the rule it was made by"
+        raise ValueError(message)
+    entry: Entry = matrix.entry(entry_id)
+    if entry.kind != KIND_DISAGREEMENT:
+        message = f"{entry_id} is a {entry.kind}, not a disagreement"
         raise MatrixRefusedError(message)
-    if name in matrix["resourceTypes"]:
-        return {"resourceType": name, "added": False}
-    matrix["resourceTypes"] = sorted([*matrix["resourceTypes"], name])
-    return {"resourceType": name, "added": True}
+    prefix: str = f"{KIND_DOCUMENT}{ID_SEPARATOR}"
+    standing: EntryId = as_entry_id(document) if document.startswith(prefix) else make_id(KIND_DOCUMENT, document)
+    disputed: list[Relationship] = matrix.outgoing(entry_id, (REL_DISPUTES,))
+    if not any(
+        statement.end == standing and statement.attributes.get(ATTR_HEADING) == heading.strip()
+        for statement in disputed
+    ):
+        stated: str = "; ".join(
+            f"{statement.end} under {statement.attributes.get(ATTR_HEADING)!r}" for statement in disputed
+        )
+        message = f"{entry_id} disputes no statement in {standing} under {heading.strip()!r}; it disputes " + (
+            stated or "nothing yet: link its disputes relationships first"
+        )
+        raise MatrixRefusedError(message)
+    stands: View = {STANDS_DOCUMENT: standing, ATTR_HEADING: heading.strip()}
+    attributes: dict[str, JsonValue] = {**entry.attributes, ATTR_STANDS: stands, ATTR_RULE: rule.strip()}
+    if reason.strip():
+        attributes[ATTR_REASON] = reason.strip()
+    settled: Entry = replace(entry, attributes=attributes)
+    matrix.put(settled)
+    return {"id": entry_id, "stands": stands, "rule": rule.strip(), "entry": entry_json(settled)}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def move_repository(matrix: Matrix, old: str, new: str) -> MoveResult:
+    """Give every stack of one repository another repository's name.
+
+    No id changes: the repository is an attribute of a stack. Each stack keeps its side.
+
+    Args:
+        matrix: The matrix, changed in place.
+        old: The repository's name as the stacks hold it now.
+        new: The name they are to hold.
+
+    Returns:
+        Both names and the stacks whose repository changed; none when no stack named ``old``.
+
+    Raises:
+        ValueError: A name is empty, or the two are the same.
+
+    """
+    if not old.strip() or not new.strip() or old.strip() == new.strip():
+        message: str = "move-repository needs the repository's name now and a different name to give it"
+        raise ValueError(message)
+    moved: list[EntryId] = []
+    stack: Entry
+    for stack in matrix.entries((KIND_STACK,)):
+        if stack.attributes.get(ATTR_REPOSITORY) == old.strip():
+            matrix.put(replace(stack, attributes={**stack.attributes, ATTR_REPOSITORY: new.strip()}))
+            moved.append(stack.id)
+    return {"old": old.strip(), "new": new.strip(), "stacks": moved}
+
+
+def _git(root: Path, *arguments: str) -> str:
+    """Run one git command in a directory.
+
+    Returns:
+        What the command printed, without the white space around it.
+
+    Raises:
+        MatrixError: git is not installed, did not run, ran out of time or exited with a failure.
+
+    """
+    command: str = f"git {' '.join(arguments)} in {root}"
+    message: str
+    executable: str | None = shutil.which(GIT)
+    if executable is None:
+        message = f"cannot run {command}: git is not on the PATH"
+        raise MatrixError(message)
+    try:
+        result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved Git executable and separate argv.
+            [executable, "-C", str(root), *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        message = f"cannot run {command}: {error}"
+        raise MatrixError(message) from error
+    if result.returncode != 0:
+        message = f"{command} failed with exit status {result.returncode}: {(result.stderr or result.stdout).strip()}"
+        raise MatrixError(message)
+    return result.stdout.strip()
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def commit(path: Path, bead: str = "", *, wait: float = DEFAULT_LOCK_WAIT) -> CommitResult:
+    """Commit the matrix file alone in the repository that holds it, and push it.
+
+    Whatever else the repository has staged or changed is left as it is. The commit is made
+    under the matrix's lock, so it holds the file as one change left it; the push follows. The
+    repository's own commit and push hooks run. A matrix file that is as the last commit holds
+    it is not committed again, and is pushed only when the branch it pushes to lacks a commit of
+    it. A git command that fails raises ``MatrixError`` naming the command and what git printed;
+    a commit already made stays, and the next call pushes it.
+
+    Args:
+        path: The matrix file.
+        bead: The beads id of the Epic or Story the recorded changes belong to; the commit
+            message names it. Empty for a change no bead owns.
+        wait: Seconds to wait for the matrix's lock.
+
+    Returns:
+        Whether a commit was made, whether it was pushed, the commit the repository is at and
+        the commit message.
+
+    Raises:
+        MatrixError: There is no matrix at ``path``.
+
+    """
+    if not path.is_file():
+        message: str = f"there is no matrix at {path}"
+        raise MatrixError(message)
+    file: Path = path.resolve()
+    root: Path = Path(_git(file.parent, "rev-parse", "--show-toplevel"))
+    subject: str = f"{COMMIT_MESSAGE} for {bead.strip()}" if bead.strip() else COMMIT_MESSAGE
+    with matrix_lock(path, wait):
+        committed: bool = bool(_git(root, "status", "--porcelain", "--", str(file)))
+        if committed:
+            _git(root, "add", "--", str(file))
+            _git(root, "commit", "-m", subject, "--", str(file))
+    pushed: bool = bool(_git(root, "log", "--format=%H", UPSTREAM_RANGE, "--", str(file)))
+    if pushed:
+        _git(root, "push")
+    return {"committed": committed, "pushed": pushed, "head": _git(root, "rev-parse", "HEAD"), "message": subject}

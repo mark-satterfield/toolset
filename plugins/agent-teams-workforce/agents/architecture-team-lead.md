@@ -89,7 +89,7 @@ steps for it under "Finish" by the same five choices, ending with a new "Finish"
 
 The architecture choices and the design are the architect's, and the reviewing is the
 reviewers'. A rule selects the first reviewers. A second send-back of the same item goes to
-the decider and never to the architect again. Record each send-back with
-`atw-matrix note-sendback --bead <bead> --criterion <id>`, so that the criteria the architect
-keeps missing become visible. A reviewer sending work back is expected to be rare: reject
+the decider and never to the architect again. A send-back is recorded in the step journal
+only, by the steps you add for it; nothing is written in the matrix. A reviewer sending work
+back is expected to be rare: reject
 what is not a defect against a criterion at the item's own level.

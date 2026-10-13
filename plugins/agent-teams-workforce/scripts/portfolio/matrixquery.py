@@ -1,16 +1,27 @@
 """The questions the matrix answers without anyone reading a document.
 
-Every function here reads a matrix that is already loaded and changes nothing: which rows match
-some words (:func:`find`), one row with the links that point at it (:func:`node_view`), what a
-PRD involves and whether it is approved (:func:`prd_view`), which shared capabilities some
-elements must use (:func:`uses_view`), which disagreements touch a document
-(:func:`disagreements_for`), and the counts by kind and marker (:func:`summarize`). A link is
-stored once, on the row it starts from; the reverse direction is computed here and never stored.
+Every function here reads a matrix that is already loaded and changes nothing. Each is one
+``atw-matrix`` read and returns the one JSON object the command prints:
+
+- :func:`epic_view` (``epic``): an Epic's PRD, its requirements with the features that serve them
+  and the documents that cover them, and on request its constraints, its closure and its links
+  with nothing recorded at the other end.
+- :func:`find` (``find``): the entries that share words with some text, ranked.
+- :func:`node_view` (``node``): one entry with its relationships from both ends.
+- :func:`deps_view` (``deps``): what an entry depends on, or what depends on it, to any depth.
+- :func:`stacks_view` (``stacks``), :func:`layers_view` (``layers``).
+- :func:`impact_view` (``impact``): what a change to an entry reaches.
+- :func:`related_view` (``related``): the Epics that reach what an Epic reaches.
+- :func:`uses_view` (``uses``), :func:`story_scope` (``story-scope``).
+- :func:`summarize` (``summary``): the counts by kind and by side.
+
+A read follows the relationships of both sides, so a result shows what the architecture states and
+what is in a repository today. Each entry and relationship returned carries its kind, the side it
+came from and, where set, its verified mark. The walks are in ``matrixtraverse``.
 """
 
-import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Final, NotRequired, TypedDict
 
@@ -19,101 +30,247 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
-    APPROVAL_APPROVED,
-    CODED_KINDS,
-    COVERAGE_APPROVED,
-    FEATURE_SUPPORTING,
-    KIND_DISAGREEMENT,
+    ENTRY_KINDS,
     KIND_DOCUMENT,
-    KIND_FACT,
+    KIND_EPIC,
     KIND_FEATURE,
-    KIND_PRD,
-    KIND_REPOSITORY,
-    KIND_SERVICE,
+    KIND_LAYER,
     KIND_STACK,
-    KINDS,
-    LINK_CONTAINS,
-    LINK_DEPENDS_ON,
-    LINK_DESCRIBED_BY,
-    LINK_NEEDS,
-    LINK_PROVIDED_BY,
-    LINK_REALIZED_BY,
-    LINK_RULES,
-    LINK_USES,
-    PLACED_KINDS,
-    Anchor,
-    ApprovalState,
-    CodeState,
-    Coverage,
-    DocumentsSyncedAt,
-    FeatureType,
-    Kind,
-    Lifecycle,
-    Link,
-    LinkType,
-    Matrix,
-    Node,
-    NodeId,
-    Provides,
+    REL_CONTAINS,
+    REL_COVERS,
+    REL_DESCRIBED_BY,
+    REL_HAS_REQUIREMENT,
+    REL_REALIZED_BY,
+    REL_SERVED_BY,
+    REL_USES_LAYER,
+    RELATIONSHIP_RULES,
+    RESOURCE_TYPES,
+    Entry,
+    EntryId,
+    EntryKind,
+    JsonValue,
+    MatrixError,
+    Relationship,
+    Side,
+    entry_json,
+    relationship_json,
 )
-from matrixstore import MatrixRefusedError, make_id, name_index, name_key, owner_of
+from matrixstore import Matrix, name_key
+from matrixtraverse import (
+    ATTR_APP,
+    ATTR_EXECUTION_USE,
+    ATTR_HEADING,
+    ATTR_PROVIDES,
+    ATTR_REPOSITORY,
+    ATTR_RESOURCE_TYPE,
+    CapabilityReach,
+    ConstraintReach,
+    Dependency,
+    EpicReach,
+    Impact,
+    Touch,
+    Way,
+    capabilities,
+    constraints_for,
+    dependencies,
+    epic_id,
+    epic_reach,
+    epic_touches,
+    held,
+    holding,
+    impact,
+    stack_type,
+    words,
+)
 
 DEFAULT_LIMIT: Final = 50
-"""The most rows :func:`find` returns unless the caller asks for another number; 0 asks for all."""
-MIN_TOKEN: Final = 2
-CLOSURE_LINKS: Final[frozenset[LinkType]] = frozenset({
-    LINK_NEEDS,
-    LINK_USES,
-    LINK_REALIZED_BY,
-    LINK_PROVIDED_BY,
-    LINK_DEPENDS_ON,
-    LINK_DESCRIBED_BY,
-})
-"""The link types a PRD's closure follows from every row; ``contains`` is followed from a service only."""
-_CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-_WORD: Final[re.Pattern[str]] = re.compile(r"[a-z0-9]+")
+"""The most entries :func:`find` returns unless the caller asks for another number; 0 asks for all."""
+ATTR_LIFECYCLE: Final = "lifecycle"
+ATTR_PRD: Final = "prd"
+ATTR_PRD_PATH: Final = "path"
+ATTR_VIA: Final = "via"
+BRIEF_ATTRIBUTES: Final[tuple[str, ...]] = (
+    ATTR_LIFECYCLE,
+    ATTR_REPOSITORY,
+    ATTR_APP,
+    ATTR_EXECUTION_USE,
+    ATTR_RESOURCE_TYPE,
+)
+"""The attributes an entry keeps when it is returned as the end of a relationship."""
+SEARCHED_ATTRIBUTES: Final[tuple[str, ...]] = ("statement", "subject", "group", "headings")
+"""The attributes whose text :func:`find` matches beside the name, the aliases and the purpose."""
+PROVIDES_SEARCHED: Final = "behaviour"
+"""The member of each ``provides`` item whose text :func:`find` matches."""
+DIRECTION_OF: Final = "of"
+DIRECTION_ON: Final = "on"
+
+type View = dict[str, JsonValue]
+"""One entry or one relationship as the command prints it, with its kind and its side."""
 
 
-class RowSummary(TypedDict):
-    """One row reduced to what identifies it, where it lives and its markers."""
+class Related(TypedDict):
+    """One relationship, with the entry at its other end."""
 
-    id: NodeId
-    kind: Kind
-    name: str
-    purpose: NotRequired[str]
-    approval: NotRequired[ApprovalState]
-    code: NotRequired[CodeState]
-    repository: NotRequired[str]
-    stack: NotRequired[str]
-    resourceType: NotRequired[str]
-    shared: NotRequired[bool]
-    featureType: NotRequired[FeatureType]
-    path: NotRequired[str]
-    lifecycle: NotRequired[Lifecycle]
-    coverage: NotRequired[Coverage]
-    bead: NotRequired[str]
-    home: NotRequired[Anchor]
+    relationship: View
+    entry: View
 
 
-class Capability(TypedDict):
-    """One supporting feature with what it provides and the rows that provide it."""
+class Covered(TypedDict):
+    """One document heading that covers a requirement."""
 
-    feature: RowSummary
-    provides: list[Provides]
-    reliedOn: list[str]
-    """The ids of the ``provides`` entries the asking rows' links name; empty when they name none."""
-    providedBy: list[RowSummary]
+    document: EntryId
+    heading: str
+    via: str
+    """The id of the feature that connects the document and the requirement."""
+    lifecycle: str
+    side: Side
+
+
+class RequirementView(TypedDict):
+    """One requirement of an Epic."""
+
+    requirement: View
+    features: list[View]
+    """The features that serve it."""
+    coveredBy: list[Covered]
+
+
+class Uncovered(TypedDict):
+    """A requirement and a feature that serves it, which no document covers together."""
+
+    requirement: EntryId
+    feature: EntryId
+
+
+class Described(TypedDict):
+    """One document heading that describes an entry, or that a constraint is stated in."""
+
+    document: EntryId
+    heading: str
+    """Empty when the relationship names the document as a whole."""
+    lifecycle: str
+    side: Side
+
+
+class Applied(TypedDict):
+    """One entry a constraint names with a relationship."""
+
+    entry: EntryId
+    side: Side
+    """The side that states the constraint applies."""
+
+
+class ConstraintView(TypedDict):
+    """One constraint that binds some entries."""
+
+    constraint: View
+    statedIn: list[Described]
+    appliesTo: list[Applied]
+    """The entries asked about that the constraint names with a relationship."""
+    selected: list[EntryId]
+    """The entries asked about that the constraint's selector names."""
+
+
+class DependencyView(TypedDict):
+    """One dependency relationship."""
+
+    relationship: View
+    depth: int
+    entry: View
+    """The far end: what is depended on, or what depends."""
+    stack: EntryId | None
+    """The stack that holds the far end."""
+
+
+class FeatureReach(TypedDict):
+    """One feature an Epic reaches."""
+
+    feature: View
+    supporting: bool
+    """True when the feature is reached only because another feature is supported by it."""
+    describedBy: list[Described]
+
+
+class ReachedBy(TypedDict):
+    """One way an Epic reaches an entry from one of its features."""
+
+    feature: EntryId
+    through: str
+    """``realizedBy``, or ``describedBy`` when a document that describes the feature describes the entry."""
+    document: EntryId | None
+    """The document that describes both; None for an entry that realizes the feature."""
+    side: Side
+    """The side that states the relationship to the entry."""
+
+
+class EntryReach(TypedDict):
+    """One entry an Epic reaches from its features."""
+
+    entry: View
+    reachedBy: list[ReachedBy]
+    correspondsTo: list[Related]
+    """What is in a repository today for the entry; empty when nothing is recorded."""
+
+
+class StackReach(TypedDict):
+    """One stack an Epic reaches."""
+
+    stack: View
+    features: list[EntryId]
+    """The features that lead to the stack."""
+    dependencyOf: list[EntryId]
+    """The stacks and entries of the Epic that depend on it; empty when no dependency reaches it."""
+
+
+class RepositoryReach(TypedDict):
+    """One repository an Epic reaches, with its stacks."""
+
+    repository: str
+    """The repository's name; empty for the stacks that name none."""
+    stacks: list[StackReach]
+
+
+class ClosureView(TypedDict):
+    """Everything an Epic reaches."""
+
+    features: list[FeatureReach]
+    entries: list[EntryReach]
+    repositories: list[RepositoryReach]
+    dependencies: list[DependencyView]
+
+
+class EpicView(TypedDict):
+    """What ``epic`` prints."""
+
+    epic: View
+    prd: str
+    """The PRD's path in the vault."""
+    requirements: list[RequirementView]
+    noFeature: list[EntryId]
+    """The requirements no feature serves."""
+    noDocument: list[Uncovered]
+    constraints: NotRequired[list[ConstraintView]]
+    noSource: NotRequired[list[EntryId]]
+    """The constraints that name no document they are stated in."""
+    closure: NotRequired[ClosureView]
+    noStack: NotRequired[list[EntryId]]
+    """The architecture-side entries reached that have no home in code."""
+    noRepository: NotRequired[list[EntryId]]
+    """The stacks reached that name no repository."""
+    noCounterpart: NotRequired[list[EntryId]]
+    """The architecture-side entries reached that nothing in a repository is recorded as corresponding to."""
 
 
 class Match(TypedDict):
-    """One row :func:`find` returns."""
+    """One entry :func:`find` returns."""
 
-    row: RowSummary
+    entry: View
     exact: bool
-    """True when the whole query is the row's name or one of its aliases."""
+    """True when the whole text is the entry's name or one of its aliases, or its PRD is the one asked for."""
     matched: list[str]
-    """The query words found in the row."""
-    capability: NotRequired[Capability]
+    """The words of the text found in the entry."""
+    epics: NotRequired[list[EntryId]]
+    """For a feature: the Epics whose requirements it serves."""
 
 
 class FindResult(TypedDict):
@@ -121,604 +278,958 @@ class FindResult(TypedDict):
 
     query: list[str]
     total: int
-    """How many rows matched before the limit was applied."""
+    """How many entries matched before the limit was applied."""
     matches: list[Match]
 
 
 class NodeView(TypedDict):
-    """What ``node`` prints: one row, and the links that point at it by their reverse names."""
+    """What ``node`` prints."""
 
-    node: Node
-    reverse: dict[str, list[NodeId]]
-
-
-class Closure(TypedDict):
-    """Everything a PRD reaches through its links."""
-
-    features: list[RowSummary]
-    supportingFeatures: list[RowSummary]
-    elements: list[RowSummary]
-    services: list[RowSummary]
-    stacks: list[RowSummary]
-    repositories: list[RowSummary]
-    documents: list[RowSummary]
-    facts: list[RowSummary]
+    entry: View
+    relationships: dict[str, list[Related]]
+    """The relationships that start at the entry by kind, and those that end at it by reverse name."""
 
 
-class PrdView(TypedDict):
-    """What ``prd`` prints."""
+class DepsView(TypedDict):
+    """What ``deps`` prints."""
 
-    prd: Node
-    coverage: Coverage
-    features: list[RowSummary]
-    """The features the PRD needs, each with its approval state."""
-    fullyApproved: bool
-    """True when the PRD's coverage is approved, and every row it reaches or its Epic recorded is approved."""
-    notApproved: list[NodeId]
-    closure: NotRequired[Closure]
+    id: EntryId
+    direction: str
+    """``of``: what the entry depends on. ``on``: what depends on the entry."""
+    dependencies: list[DependencyView]
+    stacks: list[EntryId]
+    """The stacks that hold the far ends, in id order."""
+
+
+class StackView(TypedDict):
+    """One stack with what it holds."""
+
+    stack: View
+    holds: list[Related]
+    """Each home relationship that ends at the stack, with the entry it starts from."""
+    matching: NotRequired[list[EntryId]]
+    """With a resource type asked for: the entries the stack holds that have it."""
+
+
+class StacksView(TypedDict):
+    """What ``stacks`` prints."""
+
+    stacks: list[StackView]
+
+
+class LayerView(TypedDict):
+    """One layer with what it carries and what attaches it."""
+
+    layer: View
+    packages: list[Related]
+    usedBy: list[Related]
+
+
+class LayersView(TypedDict):
+    """What ``layers`` prints."""
+
+    layers: list[LayerView]
+
+
+class RequirementReach(TypedDict):
+    """One requirement a change reaches."""
+
+    requirement: View
+    feature: EntryId
+    epic: EntryId
+    prd: str
+
+
+class ImpactView(TypedDict):
+    """What ``impact`` prints."""
+
+    id: EntryId
+    holds: list[Related]
+    """For a stack: the entries it holds, which the change is also followed from."""
+    describes: list[Related]
+    """For a document: the entries it describes."""
+    realizes: list[Related]
+    """The features the entry, an entry it holds or an entry it describes realizes."""
+    supports: list[Related]
+    """The features that rely on a feature reached, to any depth."""
+    features: list[EntryId]
+    """Every feature reached."""
+    constrainedBy: list[Related]
+    supportsEpic: list[Related]
+    """The Epics that rest on what the change reaches."""
+    dependents: list[DependencyView]
+    requirements: list[RequirementReach]
+    epics: list[EntryId]
+    ids: list[EntryId]
+    """The id of every entry above, without repeats."""
+
+
+class TouchView(TypedDict):
+    """One way an Epic reaches an entry."""
+
+    through: str
+    heading: str
+
+
+class Shared(TypedDict):
+    """One entry two Epics both reach."""
+
+    entry: View
+    this: list[TouchView]
+    other: list[TouchView]
+
+
+class RelatedEpic(TypedDict):
+    """One Epic that reaches what the Epic asked about reaches."""
+
+    epic: View
+    shared: list[Shared]
+
+
+class RelatedView(TypedDict):
+    """What ``related`` prints."""
+
+    epic: EntryId
+    related: list[RelatedEpic]
+
+
+class Provider(TypedDict):
+    """One entry that provides a shared capability."""
+
+    relationship: View
+    entry: View
+    stack: View | None
+
+
+class Capability(TypedDict):
+    """One shared capability."""
+
+    feature: View
+    relies: list[str]
+    """The ids of the ``provides`` items relied on; empty when the relationships name none."""
+    providers: list[Provider]
 
 
 class UsesResult(TypedDict):
     """What ``uses`` prints."""
 
-    elements: list[NodeId]
+    ids: list[EntryId]
+    capabilities: list[Capability]
+
+
+class ScopedEntry(TypedDict):
+    """One entry a Story builds, with the documents that describe it."""
+
+    entry: View
+    documents: list[Described]
+
+
+class StoryScope(TypedDict):
+    """What ``story-scope`` prints."""
+
+    stack: View
+    repository: str
+    documents: list[Described]
+    """The documents that describe the stack."""
+    entries: list[ScopedEntry]
+    constraints: list[ConstraintView]
+    noSource: list[EntryId]
     capabilities: list[Capability]
 
 
 class MatrixSummary(TypedDict):
-    """What ``summary`` prints: the counts by kind and by marker."""
+    """What ``summary`` prints."""
 
-    rows: int
+    entries: int
+    relationships: int
     byKind: dict[str, int]
-    approvalByKind: dict[str, dict[str, int]]
-    codeByKind: dict[str, dict[str, int]]
-    coverage: dict[str, int]
-    resourceTypes: int
-    documentsSyncedAt: DocumentsSyncedAt
+    bySide: dict[str, int]
+    relationshipsByKind: dict[str, int]
+    relationshipsBySide: dict[str, int]
+    verifiedByKind: dict[str, int]
+    verifiedRelationshipsByKind: dict[str, int]
+    documentsByLifecycle: dict[str, int]
+    stacksByApp: dict[str, int]
+    repositories: list[str]
+    """The repositories the stacks name, in name order."""
 
 
-def _add_placement(node: Node, row: RowSummary) -> None:
-    """Copy where a row lives, and what it is made of, into its summary."""
-    repository: str | None = node.get("repository")
-    stack: str | None = node.get("stack")
-    resource_type: str | None = node.get("resourceType")
-    if repository is not None:
-        row["repository"] = repository
-    if stack is not None:
-        row["stack"] = stack
-    if resource_type is not None:
-        row["resourceType"] = resource_type
-    if "shared" in node:
-        row["shared"] = node["shared"]
-    if "path" in node:
-        row["path"] = node["path"]
-
-
-def _add_markers(node: Node, row: RowSummary) -> None:
-    """Copy a row's approval, code, lifecycle and coverage markers into its summary."""
-    if "approval" in node:
-        row["approval"] = node["approval"]["state"]
-    if "code" in node:
-        row["code"] = node["code"]["state"]
-    if "lifecycle" in node:
-        row["lifecycle"] = node["lifecycle"]
-    if "coverage" in node:
-        row["coverage"] = node["coverage"]
-
-
-def _summary(node: Node) -> RowSummary:
-    """Reduce a row to its summary.
+def _text(value: JsonValue) -> str:
+    """Narrow an attribute to text.
 
     Returns:
-        The row's identity, placement and markers; a field the row lacks is left out.
+        The value when it is a string, otherwise the empty string.
 
     """
-    row: RowSummary = {"id": node["id"], "kind": node["kind"], "name": node["name"]}
-    _add_markers(node, row)
-    _add_placement(node, row)
-    if "purpose" in node:
-        row["purpose"] = node["purpose"]
-    if "featureType" in node:
-        row["featureType"] = node["featureType"]
-    if "bead" in node:
-        row["bead"] = node["bead"]
-    if "home" in node:
-        row["home"] = node["home"]
-    return row
+    return value if isinstance(value, str) else ""
+
+
+def _strings(value: JsonValue) -> list[str]:
+    """Narrow an attribute to the strings it holds.
+
+    Returns:
+        The value when it is a string, its string items when it is a list, otherwise nothing.
+
+    """
+    if isinstance(value, str):
+        return [value]
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _prd_path(entry: Entry) -> str:
+    """Read the path of an Epic's PRD.
+
+    Returns:
+        The path in the vault; empty for an entry that states no PRD.
+
+    """
+    prd: JsonValue = entry.attributes.get(ATTR_PRD)
+    return _text(prd.get(ATTR_PRD_PATH)) if isinstance(prd, dict) else ""
+
+
+def _entry_view(entry: Entry) -> View:
+    """Render one entry in full.
+
+    Returns:
+        The entry as the matrix file holds it, with its side; a stack also carries ``type``, the
+        last token of its name.
+
+    """
+    view: View = entry_json(entry)
+    if entry.kind == KIND_STACK:
+        view["type"] = stack_type(entry.name)
+    return view
+
+
+def _brief(matrix: Matrix, entry_id: EntryId) -> View:
+    """Render one entry as the end of a relationship.
+
+    Returns:
+        The entry's id, kind, name and side, its purpose and verified mark where set, the
+        attributes that say where and what it is, a stack's type, and ``stack``: the id of its
+        home.
+
+    """
+    entry: Entry = matrix.entry(entry_id)
+    view: View = {"id": entry.id, "kind": entry.kind, "name": entry.name, "side": entry.side}
+    if entry.purpose:
+        view["purpose"] = entry.purpose
+    view.update({name: entry.attributes[name] for name in BRIEF_ATTRIBUTES if name in entry.attributes})
+    if entry.kind == KIND_STACK:
+        view["type"] = stack_type(entry.name)
+    home: EntryId | None = matrix.home(entry_id)
+    if home is not None:
+        view["stack"] = home
+    if entry.verified is not None:
+        view["verified"] = {"commit": entry.verified.commit}
+    return view
+
+
+def _related(matrix: Matrix, relationship: Relationship, far: EntryId) -> Related:
+    """Render one relationship with the entry at one of its ends.
+
+    Returns:
+        The relationship as the matrix file holds it, with its side, and the entry.
+
+    """
+    return {"relationship": relationship_json(relationship), "entry": _brief(matrix, far)}
+
+
+def _described(matrix: Matrix, relationship: Relationship) -> Described:
+    """Render a relationship that ends at a document.
+
+    Returns:
+        The document, the heading the relationship names, the document's lifecycle and the side
+        that states the relationship.
+
+    """
+    return {
+        "document": relationship.end,
+        "heading": _text(relationship.attributes.get(ATTR_HEADING)),
+        "lifecycle": _text(matrix.entry(relationship.end).attributes.get(ATTR_LIFECYCLE)),
+        "side": relationship.side,
+    }
+
+
+def _dependency(matrix: Matrix, dependency: Dependency) -> DependencyView:
+    """Render one dependency a walk found.
+
+    Returns:
+        The relationship with its attributes and side, its depth, the far end and the stack that
+        holds it.
+
+    """
+    return {
+        "relationship": relationship_json(dependency.relationship),
+        "depth": dependency.depth,
+        "entry": _brief(matrix, dependency.far),
+        "stack": dependency.stack,
+    }
+
+
+def _constraint(matrix: Matrix, reach: ConstraintReach) -> ConstraintView:
+    """Render one constraint that binds some entries.
+
+    Returns:
+        The constraint, the documents and headings it is stated in, and the entries it reached.
+
+    """
+    return {
+        "constraint": _entry_view(matrix.entry(reach.constraint)),
+        "statedIn": [_described(matrix, source) for source in reach.sources],
+        "appliesTo": [{"entry": applying.end, "side": applying.side} for applying in reach.applied],
+        "selected": list(reach.selected),
+    }
+
+
+def _capability(matrix: Matrix, reach: CapabilityReach) -> Capability:
+    """Render one shared capability.
+
+    Returns:
+        The feature with what it provides, the items relied on, and each provider with its stack.
+
+    """
+    return {
+        "feature": _entry_view(matrix.entry(reach.feature)),
+        "relies": list(reach.relies),
+        "providers": [
+            {
+                "relationship": relationship_json(realizing),
+                "entry": _brief(matrix, realizing.end),
+                "stack": None if stack is None else _brief(matrix, stack),
+            }
+            for realizing, stack in reach.providers
+        ],
+    }
+
+
+def _requirement(matrix: Matrix, requirement: EntryId, features: Sequence[EntryId]) -> RequirementView:
+    """Render one requirement of an Epic.
+
+    Returns:
+        The requirement, the features that serve it and the document headings that cover it.
+
+    """
+    covered: list[Covered] = [
+        {
+            "document": covering.start,
+            "heading": _text(covering.attributes.get(ATTR_HEADING)),
+            "via": _text(covering.attributes.get(ATTR_VIA)),
+            "lifecycle": _text(matrix.entry(covering.start).attributes.get(ATTR_LIFECYCLE)),
+            "side": covering.side,
+        }
+        for covering in matrix.incoming(requirement, (REL_COVERS,))
+    ]
+    return {
+        "requirement": _entry_view(matrix.entry(requirement)),
+        "features": [_brief(matrix, feature) for feature in features],
+        "coveredBy": covered,
+    }
+
+
+def _reached_by(way: Way) -> ReachedBy:
+    """Render one way an Epic reaches an entry.
+
+    Returns:
+        The feature, the kind of the relationship, the document for an entry reached through
+        one, and the side that states the relationship.
+
+    """
+    return {
+        "feature": way.feature,
+        "through": way.relationship.kind,
+        "document": way.document,
+        "side": way.relationship.side,
+    }
+
+
+def _closure(matrix: Matrix, reach: EpicReach) -> ClosureView:
+    """Render everything an Epic reaches.
+
+    Returns:
+        The features with the documents that describe each, the entries reached from them with
+        what is in a repository for each, the stacks grouped by repository with the features that
+        lead to each, and the dependencies of those stacks.
+
+    """
+    by_repository: dict[str, list[StackReach]] = {}
+    stack: EntryId
+    for stack in sorted(reach.stacks):
+        entry: Entry = matrix.entry(stack)
+        by_repository.setdefault(_text(entry.attributes.get(ATTR_REPOSITORY)), []).append({
+            "stack": _entry_view(entry),
+            "features": sorted(reach.stacks[stack]),
+            "dependencyOf": sorted(reach.dependents.get(stack, frozenset())),
+        })
+    return {
+        "features": [
+            {
+                "feature": _brief(matrix, feature),
+                "supporting": feature in reach.supporting,
+                "describedBy": [_described(matrix, describing) for describing in reach.documents[feature]],
+            }
+            for feature in reach.features
+        ],
+        "entries": [
+            {
+                "entry": _brief(matrix, reached),
+                "reachedBy": [_reached_by(way) for way in ways],
+                "correspondsTo": [
+                    _related(matrix, corresponding, corresponding.end)
+                    for corresponding in reach.counterparts.get(reached, ())
+                ],
+            }
+            for reached, ways in reach.ways.items()
+        ],
+        "repositories": [
+            {"repository": repository, "stacks": by_repository[repository]} for repository in sorted(by_repository)
+        ],
+        "dependencies": [_dependency(matrix, dependency) for dependency in reach.dependencies],
+    }
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def words(text: str) -> list[str]:
-    """Split text into the words rows are matched by.
+def epic_view(
+    matrix: Matrix,
+    bead: str,
+    *,
+    closure: bool = False,
+    constraints: bool = False,
+    unlinked: bool = False,
+) -> EpicView:
+    """Return what the matrix holds for one Epic.
+
+    An Epic the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
 
     Args:
-        text: Any text: a query, a name, a sentence.
+        matrix: The matrix.
+        bead: The Epic's beads id.
+        closure: Whether to include everything the Epic reaches: its features with the documents
+            that describe each, the entries reached from them with what is in a repository for
+            each, the stacks grouped by repository and their dependencies.
+        constraints: Whether to include the constraints that bind the Epic, its features and
+            everything it reaches; and ``noSource``.
+        unlinked: Whether to include every list of links of the Epic with nothing recorded at the
+            other end: ``noSource``, ``noStack``, ``noRepository`` and ``noCounterpart`` beside
+            ``noFeature`` and ``noDocument``, which are always returned.
 
     Returns:
-        The lower-case runs of letters and digits at least two characters long, with a camelCase
-        name split at each capital, in order and without repeats.
+        The Epic with its PRD path, each requirement with the features that serve it and the
+        document headings that cover it, and the links with nothing recorded at the other end.
+        ``noStack``, ``noRepository`` and ``noCounterpart`` are also returned with the closure.
 
     """
-    spaced: str = _CAMEL.sub(" ", text)
-    return list(dict.fromkeys(word for word in _WORD.findall(spaced.lower()) if len(word) >= MIN_TOKEN))
-
-
-def _provides_text(node: Node) -> list[str]:
-    """Collect the text of what a row provides.
-
-    Returns:
-        The behaviour, the consumer rule and the interface name of each ``provides`` entry.
-
-    """
-    texts: list[str] = []
-    entry: Provides
-    for entry in node.get("provides", []):
-        texts.extend([entry["behaviour"], entry["consumersMust"], entry["interface"]["name"]])
-    return texts
-
-
-def _searched_text(node: Node, *, capability_only: bool) -> list[str]:
-    """Collect the text of a row that a query is matched against.
-
-    Returns:
-        The row's name, aliases, purpose and ``provides`` text; and, unless only capabilities are
-        asked about, its subject, its statement, its requirements and its heading titles.
-
-    """
-    texts: list[str] = [node["name"], *node.get("aliases", []), node.get("purpose", ""), *_provides_text(node)]
-    if not capability_only:
-        texts.extend([node.get("subject") or "", node.get("statement", ""), *node.get("requirements", [])])
-        texts.extend(node.get("headings", {}))
-    return texts
-
-
-def _capability(matrix: Matrix, node: Node, relied_on: Sequence[str]) -> Capability:
-    """Describe one supporting feature for a consumer.
-
-    Returns:
-        The feature, what it provides, the entries relied on and the rows that provide it.
-
-    """
-    providers: list[RowSummary] = [
-        _summary(matrix["nodes"][link["to"]])
-        for link in node["links"]
-        if link["type"] == LINK_PROVIDED_BY and link["to"] in matrix["nodes"]
-    ]
-    return {
-        "feature": _summary(node),
-        "provides": list(node.get("provides", [])),
-        "reliedOn": sorted(set(relied_on)),
-        "providedBy": providers,
+    epic: EntryId = epic_id(bead)
+    reach: EpicReach = epic_reach(matrix, epic)
+    entry: Entry = matrix.entry(epic)
+    view: EpicView = {
+        "epic": _entry_view(entry),
+        "prd": _prd_path(entry),
+        "requirements": [_requirement(matrix, requirement, serving) for requirement, serving in reach.served.items()],
+        "noFeature": [requirement for requirement, serving in reach.served.items() if not serving],
+        "noDocument": [
+            {"requirement": requirement, "feature": feature}
+            for requirement, serving in reach.served.items()
+            for feature in serving
+            if feature
+            not in {covering.attributes.get(ATTR_VIA) for covering in matrix.incoming(requirement, (REL_COVERS,))}
+        ],
     }
+    if constraints or unlinked:
+        binding: list[ConstraintReach] = constraints_for(matrix, [epic, *reach.entries()])
+        if constraints:
+            view["constraints"] = [_constraint(matrix, found) for found in binding]
+        view["noSource"] = [found.constraint for found in binding if not found.sources]
+    if closure:
+        view["closure"] = _closure(matrix, reach)
+    if closure or unlinked:
+        view["noStack"] = list(reach.no_stack)
+        view["noRepository"] = list(reach.no_repository)
+        view["noCounterpart"] = list(reach.no_counterpart)
+    return view
+
+
+def _searched(matrix: Matrix, entry: Entry) -> list[str]:
+    """Collect the text of an entry that a query is matched against.
+
+    Returns:
+        The entry's name, aliases and purpose; its statement, subject, group and heading texts
+        where it has them; the behaviour of each thing a feature provides; and for a stack the
+        names and purposes of the entries it holds and of the features those and it realize.
+
+    """
+    texts: list[str] = [entry.name, *entry.aliases, entry.purpose]
+    name: str
+    for name in SEARCHED_ATTRIBUTES:
+        texts.extend(_strings(entry.attributes.get(name)))
+    provided: JsonValue = entry.attributes.get(ATTR_PROVIDES)
+    texts.extend(
+        _text(item.get(PROVIDES_SEARCHED))
+        for item in (provided if isinstance(provided, list) else [])
+        if isinstance(item, dict)
+    )
+    if entry.kind == KIND_STACK:
+        inside: list[EntryId] = held(matrix, entry.id)
+        related: dict[EntryId, None] = dict.fromkeys(inside)
+        related.update(
+            dict.fromkeys(
+                realizing.start
+                for realized in (entry.id, *inside)
+                for realizing in matrix.incoming(realized, (REL_REALIZED_BY,))
+            ),
+        )
+        other: EntryId
+        for other in related:
+            texts.extend([matrix.entry(other).name, matrix.entry(other).purpose])
+    return texts
+
+
+def _serving_epics(matrix: Matrix, feature: EntryId) -> list[EntryId]:
+    """Name the Epics whose requirements a feature serves.
+
+    Returns:
+        The ids of those Epics, in id order.
+
+    """
+    return sorted({
+        stating.start
+        for served in matrix.incoming(feature, (REL_SERVED_BY,))
+        for stating in matrix.incoming(served.start, (REL_HAS_REQUIREMENT,))
+    })
+
+
+def _match(matrix: Matrix, entry: Entry, query: Sequence[str], whole: str, prd: str | None) -> Match | None:
+    """Match one entry against a query.
+
+    Returns:
+        The match, or None when the entry is neither named by the whole text, nor the Epic of the
+        PRD asked for, nor holds a word of the query.
+
+    """
+    if prd is not None and _prd_path(entry) != prd:
+        return None
+    holds: set[str] = set(words(" ".join(_searched(matrix, entry)))) if query else set()
+    exact: bool = prd is not None or (
+        bool(whole) and whole in {name_key(entry.name), *(name_key(alias) for alias in entry.aliases)}
+    )
+    matched: list[str] = [word for word in query if word in holds]
+    if not exact and not matched:
+        return None
+    match: Match = {"entry": _entry_view(entry), "exact": exact, "matched": matched}
+    if entry.kind == KIND_FEATURE:
+        match["epics"] = _serving_epics(matrix, entry.id)
+    return match
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def find(
     matrix: Matrix,
-    text: str,
+    text: str = "",
     *,
-    provides: str = "",
-    kinds: Sequence[Kind] = KINDS,
+    kinds: Collection[EntryKind] = ENTRY_KINDS,
+    prd: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> FindResult:
-    """Find the rows that match some words, by exact and by word match.
+    """Find the entries that share words with some text, ranked.
 
-    A row matches exactly when the whole query is its name or one of its aliases. Otherwise it
-    matches when it holds at least one word of the query in its name, aliases, purpose, subject,
-    statement, requirements, heading titles or ``provides`` text. With ``provides``, only
-    supporting features are searched, by their name, aliases, purpose and ``provides`` text, and
-    each comes back with what it provides and the rows that provide it.
+    An entry matches exactly when the whole text is its name or one of its aliases. Otherwise it
+    matches when it holds at least one word of the text: in its name, aliases and purpose; in its
+    statement, subject, group or headings; for a feature, in the behaviour of each thing it
+    provides; for a stack, in the names and purposes of the entries it holds and of the features
+    those realize. Entries of both sides are searched, and each is returned with its side. A
+    matching feature is returned with the Epics whose requirements it serves. With ``prd``, only
+    the Epic whose PRD has that path matches. The ranking uses nothing but the matrix, so the
+    same text returns the same order; an empty result means no such entry exists.
 
     Args:
         matrix: The matrix.
-        text: The words to look for; may be empty when ``provides`` is given.
-        provides: A behaviour to look for among the shared capabilities.
-        kinds: The kinds of row to search.
-        limit: The most rows to return; 0 returns all.
+        text: The words to look for; may be empty when ``prd`` is given.
+        kinds: The kinds of entry to search.
+        prd: A PRD's path in the vault.
+        limit: The most entries to return; 0 returns all.
 
     Returns:
-        The matching rows: exact matches first, then by the number of query words found, then by id.
+        The matching entries: exact matches first, then by the number of words found, then by id.
 
     Raises:
-        ValueError: Neither ``text`` nor ``provides`` holds a word, or ``limit`` is negative.
+        ValueError: Neither ``text`` holds a word nor ``prd`` is given, or ``limit`` is negative.
 
     """
     message: str
     if limit < 0:
         message = "the limit of a find must not be negative"
         raise ValueError(message)
-    capability_only: bool = bool(provides.strip())
-    query: list[str] = words(f"{text} {provides}")
-    if not query:
-        message = "a find needs at least one word to look for"
+    query: list[str] = words(text)
+    if not query and prd is None:
+        message = "a find needs at least one word to look for, or the path of a PRD"
         raise ValueError(message)
-    whole: str = name_key(provides if capability_only else text)
-    matches: list[Match] = []
-    node: Node
-    for node in matrix["nodes"].values():
-        if node["kind"] not in kinds:
-            continue
-        if capability_only and (node["kind"] != KIND_FEATURE or node.get("featureType") != FEATURE_SUPPORTING):
-            continue
-        held: set[str] = set(words(" ".join(_searched_text(node, capability_only=capability_only))))
-        exact: bool = whole in {name_key(node["name"]), *(name_key(alias) for alias in node.get("aliases", []))}
-        matched: list[str] = [word for word in query if word in held]
-        if not exact and not matched:
-            continue
-        match: Match = {"row": _summary(node), "exact": exact, "matched": matched}
-        if capability_only:
-            match["capability"] = _capability(matrix, node, [])
-        matches.append(match)
-    matches.sort(key=lambda found: (not found["exact"], -len(found["matched"]), found["row"]["id"]))
+    whole: str = name_key(text)
+    searched: list[EntryKind] = [KIND_EPIC] if prd is not None else list(kinds)
+    matches: list[Match] = [
+        match for entry in matrix.entries(searched) if (match := _match(matrix, entry, query, whole, prd)) is not None
+    ]
+    matches.sort(key=lambda found: (not found["exact"], -len(found["matched"]), _text(found["entry"].get("id"))))
     return {"query": query, "total": len(matches), "matches": matches[:limit] if limit else matches}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def resolve(matrix: Matrix, reference: str) -> NodeId:
-    """Find the one row a caller means by an id, a former id or a name.
+def node_view(matrix: Matrix, entry_id: EntryId) -> NodeView:
+    """Return one entry with its relationships from both ends.
+
+    An entry the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
 
     Args:
         matrix: The matrix.
-        reference: A row id; or a name or alias, which includes the id a carried row had in the
-            element matrix.
+        entry_id: The entry's id.
 
     Returns:
-        The row's id.
-
-    Raises:
-        MatrixRefusedError: No row answers to the reference, or more than one does.
+        The entry (a stack with its ``type``), the relationships that start at it under each
+        kind's name and those that end at it under each kind's reverse name, once for each side
+        that states one. The entry at the other end of each carries its side, its home
+        (``stack``) and, for a document, its lifecycle.
 
     """
-    key: NodeId
-    for key in matrix["nodes"]:
-        if key == reference:
-            return key
-    candidates: list[NodeId] = name_index(matrix, KINDS).get(name_key(reference), [])
-    message: str
-    if not candidates:
-        message = f"no row has the id, name or alias {reference!r}"
-        raise MatrixRefusedError(message)
-    if len(candidates) > 1:
-        message = f"{reference!r} names more than one row: {', '.join(candidates)}"
-        raise MatrixRefusedError(message)
-    return candidates[0]
+    entry: Entry = matrix.entry(entry_id)
+    relationships: dict[str, list[Related]] = {}
+    relationship: Relationship
+    for relationship in matrix.outgoing(entry_id):
+        relationships.setdefault(relationship.kind, []).append(_related(matrix, relationship, relationship.end))
+    for relationship in matrix.incoming(entry_id):
+        relationships.setdefault(RELATIONSHIP_RULES[relationship.kind].reverse, []).append(
+            _related(matrix, relationship, relationship.start),
+        )
+    return {"entry": _entry_view(entry), "relationships": relationships}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def node_view(matrix: Matrix, node_id: NodeId) -> NodeView:
-    """Return one row with the links that point at it.
+def deps_view(matrix: Matrix, entry_id: EntryId, *, inward: bool = False) -> DepsView:
+    """Return what an entry depends on, or what depends on it, to any depth.
+
+    A stack stands for itself and every entry it holds. The dependencies of both sides are
+    followed, and each is returned with its side. An entry the matrix does not hold raises
+    ``MatrixError`` from ``Matrix.entry``.
 
     Args:
         matrix: The matrix.
-        node_id: The row's id.
+        entry_id: The entry's id.
+        inward: False (``deps --of``) follows the dependency family outward; True (``deps --on``)
+            follows it inward.
 
     Returns:
-        The row, and for each link type that points at it the ids of the rows the links start
-        from, under the link type's reverse name (``usedBy`` for ``uses``, and so on).
-
-    Raises:
-        MatrixRefusedError: The matrix has no such row.
+        Each dependency relationship with its kind and attributes, the entry at its far end and
+        the stack that holds that entry, nearest first; and the stacks reached.
 
     """
-    if node_id not in matrix["nodes"]:
-        message: str = f"there is no row {node_id}"
-        raise MatrixRefusedError(message)
-    reverse: dict[str, list[NodeId]] = {}
-    key: NodeId
-    for key in sorted(matrix["nodes"]):
-        link: Link
-        for link in matrix["nodes"][key]["links"]:
-            if link["to"] == node_id:
-                reverse.setdefault(LINK_RULES[link["type"]].reverse, []).append(key)
-    return {"node": matrix["nodes"][node_id], "reverse": reverse}
-
-
-def _owners(matrix: Matrix, node: Node) -> list[NodeId]:
-    """Name the repository and stack rows a placed row lives in.
-
-    Returns:
-        The ids of the row's repository and stack, where the matrix has them.
-
-    """
-    repository: str | None = node.get("repository")
-    if node["kind"] not in PLACED_KINDS or repository is None:
-        return []
-    owners: list[NodeId] = [make_id(KIND_REPOSITORY, repository)]
-    stack: str | None = node.get("stack")
-    if stack is not None and node["kind"] != KIND_STACK:
-        owners.append(make_id(KIND_STACK, repository, stack))
-    return [owner for owner in owners if owner in matrix["nodes"]]
-
-
-def _reached(matrix: Matrix, start: Sequence[NodeId]) -> list[NodeId]:
-    """Walk from some rows to everything they reach.
-
-    Returns:
-        The ids reached, in the order found: through the closure link types from any row, through
-        ``contains`` from a service, and from a placed row to its repository and stack.
-
-    """
-    seen: dict[NodeId, None] = dict.fromkeys(key for key in start if key in matrix["nodes"])
-    queue: list[NodeId] = list(seen)
-    while queue:
-        node: Node = matrix["nodes"][queue.pop(0)]
-        followed: list[NodeId] = [
-            link["to"]
-            for link in node["links"]
-            if link["type"] in CLOSURE_LINKS or (link["type"] == LINK_CONTAINS and node["kind"] == KIND_SERVICE)
-        ]
-        target: NodeId
-        for target in [*followed, *_owners(matrix, node)]:
-            if target in matrix["nodes"] and target not in seen:
-                seen[target] = None
-                queue.append(target)
-    return list(seen)
-
-
-def _facts_at(matrix: Matrix, reached: Sequence[NodeId]) -> list[NodeId]:
-    """Find the facts whose home is a heading a reached row is described by.
-
-    Returns:
-        The ids of those facts, in id order.
-
-    """
-    anchors: set[tuple[str, str]] = {
-        (link["to"], link.get("heading", ""))
-        for key in reached
-        for link in matrix["nodes"][key]["links"]
-        if link["type"] == LINK_DESCRIBED_BY
+    matrix.entry(entry_id)
+    found: list[Dependency] = dependencies(matrix, [entry_id], inward=inward)
+    return {
+        "id": entry_id,
+        "direction": DIRECTION_ON if inward else DIRECTION_OF,
+        "dependencies": [_dependency(matrix, dependency) for dependency in found],
+        "stacks": sorted({dependency.stack for dependency in found if dependency.stack is not None}),
     }
-    return sorted(
-        node["id"]
-        for node in matrix["nodes"].values()
-        if node["kind"] == KIND_FACT
-        and "home" in node
-        and (make_id(KIND_DOCUMENT, node["home"]["document"]), node["home"]["heading"]) in anchors
-    )
-
-
-def _closure(matrix: Matrix, reached: Sequence[NodeId]) -> Closure:
-    """Sort the rows a PRD reaches by what they are.
-
-    Returns:
-        The reached rows as summaries, grouped by kind.
-
-    """
-    closure: Closure = {
-        "features": [],
-        "supportingFeatures": [],
-        "elements": [],
-        "services": [],
-        "stacks": [],
-        "repositories": [],
-        "documents": [],
-        "facts": [],
-    }
-    key: NodeId
-    for key in reached:
-        node: Node = matrix["nodes"][key]
-        if node["kind"] == KIND_FEATURE:
-            supporting: bool = node.get("featureType") == FEATURE_SUPPORTING
-            closure["supportingFeatures" if supporting else "features"].append(_summary(node))
-        elif node["kind"] == KIND_SERVICE:
-            closure["services"].append(_summary(node))
-        elif node["kind"] == KIND_STACK:
-            closure["stacks"].append(_summary(node))
-        elif node["kind"] == KIND_REPOSITORY:
-            closure["repositories"].append(_summary(node))
-        elif node["kind"] == KIND_DOCUMENT:
-            closure["documents"].append(_summary(node))
-        elif node["kind"] == KIND_FACT:
-            closure["facts"].append(_summary(node))
-        elif node["kind"] in CODED_KINDS:
-            closure["elements"].append(_summary(node))
-    return closure
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def reached_from(matrix: Matrix, start: NodeId) -> list[NodeId]:
-    """List everything one row reaches through its links.
+def stacks_view(
+    matrix: Matrix,
+    *,
+    app: str | None = None,
+    repository: str | None = None,
+    resource_type: str | None = None,
+) -> StacksView:
+    """List the stacks, or those of one app, of one repository, or that hold one resource type.
 
     Args:
         matrix: The matrix.
-        start: The row to start from; a PRD row gives what its Epic involves.
+        app: Keep the stacks whose ``app`` equals this.
+        repository: Keep the stacks whose ``repository`` equals this.
+        resource_type: Keep the stacks that hold an entry with this resource type; each then
+            carries ``matching``, the ids of those entries.
 
     Returns:
-        The ids reached, without the row itself: features, the capabilities they use to any
-        depth, the elements that realize and provide them with their stacks and repositories,
-        the documents that describe them, and the facts whose home is a heading that describes
-        one of them. Empty when the matrix has no such row.
-
-    """
-    reached: list[NodeId] = [found for found in _reached(matrix, [start]) if found != start]
-    known: list[NodeId] = [key for key in (start, *reached) if key in matrix["nodes"]]
-    reached.extend(fact for fact in _facts_at(matrix, known) if fact not in reached)
-    return reached
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def prd_view(matrix: Matrix, bead: str, *, closure: bool = False) -> PrdView:
-    """Return what the matrix holds for one Epic's PRD.
-
-    Args:
-        matrix: The matrix.
-        bead: The Epic id.
-        closure: Whether to include every feature, supporting feature, element, service, stack,
-            repository, document and fact the PRD reaches, each with its markers.
-
-    Returns:
-        The PRD row, its coverage, the features it needs, and whether everything it reaches is
-        approved, with the ids of the rows that are not.
+        The stacks that pass every filter given, in id order, each with its ``type`` and what it
+        holds on each side.
 
     Raises:
-        MatrixRefusedError: The matrix has no PRD row for the Epic.
+        MatrixError: ``resource_type`` is not in the controlled list of resource types.
 
     """
-    key: NodeId = make_id(KIND_PRD, bead)
-    if key not in matrix["nodes"]:
-        message: str = f"the matrix has no PRD row for {bead}; sync-prds writes it"
-        raise MatrixRefusedError(message)
-    prd: Node = matrix["nodes"][key]
-    needed: list[NodeId] = [link["to"] for link in prd["links"] if link["type"] == LINK_NEEDS]
-    reached: list[NodeId] = reached_from(matrix, key)
-    pending: list[NodeId] = [
-        found
-        for found in reached
-        if "approval" in matrix["nodes"][found] and matrix["nodes"][found]["approval"]["state"] != APPROVAL_APPROVED
-    ]
-    pending.extend(
-        found for found in sorted(matrix["nodes"]) if found not in pending and owner_of(matrix["nodes"][found]) == bead
-    )
-    coverage: Coverage = prd.get("coverage", COVERAGE_APPROVED)
-    view: PrdView = {
-        "prd": prd,
-        "coverage": coverage,
-        "features": [_summary(matrix["nodes"][found]) for found in needed if found in matrix["nodes"]],
-        "fullyApproved": coverage == COVERAGE_APPROVED and bool(needed) and not pending,
-        "notApproved": pending,
-    }
-    if closure:
-        view["closure"] = _closure(matrix, reached)
-    return view
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def elements_of_repository(matrix: Matrix, repository: str) -> list[NodeId]:
-    """List the rows that live in one repository.
-
-    Args:
-        matrix: The matrix.
-        repository: The repository's name.
-
-    Returns:
-        The ids of the repository's stack, component, library, layer and infrastructure rows, in
-        id order.
-
-    Raises:
-        MatrixRefusedError: The matrix has no such repository.
-
-    """
-    if make_id(KIND_REPOSITORY, repository) not in matrix["nodes"]:
-        message: str = f"the matrix has no repository {repository!r}"
-        raise MatrixRefusedError(message)
-    wanted: str = name_key(repository)
-    return sorted(
-        node["id"]
-        for node in matrix["nodes"].values()
-        if node["kind"] in PLACED_KINDS and name_key(node.get("repository") or "") == wanted
-    )
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def uses_view(matrix: Matrix, elements: Sequence[NodeId]) -> UsesResult:
-    """Return the shared capabilities some elements must use.
-
-    A capability applies to an element when the element has a ``uses`` link to it, or when a
-    feature the element realizes uses it, directly or through other features.
-
-    Args:
-        matrix: The matrix.
-        elements: The ids of the elements asked about.
-
-    Returns:
-        Each supporting feature that applies, with what it provides, the ``provides`` entries the
-        links name, and the rows that provide it with their repository, stack and code marker.
-
-    Raises:
-        MatrixRefusedError: An id names no row.
-
-    """
-    unknown: list[NodeId] = [key for key in elements if key not in matrix["nodes"]]
-    if unknown:
-        message: str = f"no row has the id {', '.join(unknown)}"
-        raise MatrixRefusedError(message)
-    asked: set[NodeId] = set(elements)
-    queue: list[NodeId] = [
-        *elements,
-        *(
-            node["id"]
-            for node in matrix["nodes"].values()
-            if node["kind"] == KIND_FEATURE
-            and any(link["type"] == LINK_REALIZED_BY and link["to"] in asked for link in node["links"])
-        ),
-    ]
-    relied: dict[NodeId, list[str]] = {}
-    walked: set[NodeId] = set()
-    while queue:
-        key: NodeId = queue.pop(0)
-        if key in walked:
+    if resource_type is not None and resource_type not in RESOURCE_TYPES:
+        message: str = f"{resource_type!r} is not a resource type; the types are {', '.join(RESOURCE_TYPES)}"
+        raise MatrixError(message)
+    stacks: list[StackView] = []
+    stack: Entry
+    for stack in matrix.entries((KIND_STACK,)):
+        if app is not None and stack.attributes.get(ATTR_APP) != app:
             continue
-        walked.add(key)
-        link: Link
-        for link in matrix["nodes"][key]["links"]:
-            if link["type"] == LINK_USES and link["to"] in matrix["nodes"]:
-                relied.setdefault(link["to"], []).extend(link.get("provides", []))
-                queue.append(link["to"])
-    capabilities: list[Capability] = [
-        _capability(matrix, matrix["nodes"][key], relied[key])
-        for key in sorted(relied)
-        if matrix["nodes"][key].get("featureType") == FEATURE_SUPPORTING
-    ]
-    return {"elements": list(elements), "capabilities": capabilities}
+        if repository is not None and stack.attributes.get(ATTR_REPOSITORY) != repository:
+            continue
+        view: StackView = {
+            "stack": _entry_view(stack),
+            "holds": [_related(matrix, homed, homed.start) for homed in holding(matrix, stack.id)],
+        }
+        if resource_type is not None:
+            matching: list[EntryId] = [
+                inside
+                for inside in held(matrix, stack.id)
+                if matrix.entry(inside).attributes.get(ATTR_RESOURCE_TYPE) == resource_type
+            ]
+            if not matching:
+                continue
+            view["matching"] = matching
+        stacks.append(view)
+    return {"stacks": stacks}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def disagreements_for(matrix: Matrix, document: str) -> list[Node]:
-    """Return the recorded disagreements that quote a document, with their settlements.
+def layers_view(matrix: Matrix) -> LayersView:
+    """List every layer with the packages it carries and the components that attach it.
 
     Args:
         matrix: The matrix.
-        document: The document's path relative to the vault root.
 
     Returns:
-        The disagreement rows with a statement in that document, in id order.
-
-    Raises:
-        ValueError: ``document`` is empty.
+        The layers of both sides in id order, each relationship with the side that states it.
 
     """
-    if not document.strip():
-        message: str = "a document path is needed to look up its disagreements"
+    return {
+        "layers": [
+            {
+                "layer": _brief(matrix, layer.id),
+                "packages": [
+                    _related(matrix, carried, carried.end) for carried in matrix.outgoing(layer.id, (REL_CONTAINS,))
+                ],
+                "usedBy": [
+                    _related(matrix, using, using.start) for using in matrix.incoming(layer.id, (REL_USES_LAYER,))
+                ],
+            }
+            for layer in matrix.entries((KIND_LAYER,))
+        ],
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def impact_view(matrix: Matrix, entry_id: EntryId) -> ImpactView:
+    """Return what a change to an entry reaches.
+
+    From the entry, and for a stack from every entry it holds: the entries a document describes;
+    the features those and the entry realize, and the features that rely on one of them, to any
+    depth; the constraints that apply to any of those; the Epics that rest on any of those; what
+    depends on the entry, to any depth; then from every feature reached, the requirements it
+    serves and their Epics, each requirement with its PRD. An entry the matrix does not hold
+    raises ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry's id.
+
+    Returns:
+        What the change reaches, each relationship with its side, and ``ids``: the id of every
+        entry reached.
+
+    """
+    reached: Impact = impact(matrix, entry_id)
+    return {
+        "id": entry_id,
+        "holds": (
+            [_related(matrix, homed, homed.start) for homed in holding(matrix, entry_id)]
+            if matrix.entry(entry_id).kind == KIND_STACK
+            else []
+        ),
+        "describes": [_related(matrix, describing, describing.start) for describing in reached.described],
+        "realizes": [_related(matrix, realizing, realizing.start) for realizing in reached.realizing],
+        "supports": [_related(matrix, supporting, supporting.start) for supporting in reached.supporting],
+        "features": list(reached.features),
+        "constrainedBy": [_related(matrix, applying, applying.start) for applying in reached.constraining],
+        "supportsEpic": [_related(matrix, resting, resting.start) for resting in reached.resting],
+        "dependents": [_dependency(matrix, dependency) for dependency in reached.dependents],
+        "requirements": [
+            {
+                "requirement": _brief(matrix, served.requirement),
+                "feature": served.feature,
+                "epic": served.epic,
+                "prd": _prd_path(matrix.entry(served.epic)),
+            }
+            for served in reached.serving
+        ],
+        "epics": reached.epics(),
+        "ids": reached.ids(),
+    }
+
+
+def _touches(ways: Sequence[Touch]) -> list[TouchView]:
+    """Render the ways an Epic reaches an entry.
+
+    Returns:
+        Each relationship kind with the heading it names.
+
+    """
+    return [{"through": way.through, "heading": way.heading} for way in ways]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def related_view(matrix: Matrix, bead: str) -> RelatedView:
+    """Return the Epics that reach what one Epic reaches.
+
+    Two Epics are related when both reach the same feature, document, stack, service, component
+    or infrastructure entry: through their closure, through a document that covers one of their
+    requirements, or through what they drive and rest on. An Epic the matrix does not hold raises
+    ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+
+    Returns:
+        Each related Epic in id order, with every shared entry and the relationship kinds, and
+        document headings, through which each of the two Epics reaches it.
+
+    """
+    epic: EntryId = epic_id(bead)
+    mine: dict[EntryId, list[Touch]] = epic_touches(matrix, epic)
+    related: list[RelatedEpic] = []
+    other: Entry
+    for other in matrix.entries((KIND_EPIC,)):
+        if other.id == epic:
+            continue
+        theirs: dict[EntryId, list[Touch]] = epic_touches(matrix, other.id)
+        shared: list[Shared] = [
+            {"entry": _brief(matrix, touched), "this": _touches(mine[touched]), "other": _touches(theirs[touched])}
+            for touched in sorted(mine)
+            if touched in theirs
+        ]
+        if shared:
+            related.append({"epic": _brief(matrix, other.id), "shared": shared})
+    return {"epic": epic, "related": related}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def uses_view(matrix: Matrix, entry_ids: Sequence[EntryId]) -> UsesResult:
+    """Return the shared capabilities the work that builds some entries must use.
+
+    The walk is entries → the features they realize → the features those are supported by, to any
+    depth → the ones that state what they provide. A shared capability that is itself among the
+    ids is returned too. An id the matrix does not hold raises ``MatrixError`` from
+    ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        entry_ids: The ids of the entries the work builds and of the shared capabilities it states.
+
+    Returns:
+        Each capability with what it provides, the ``provides`` items relied on, and each entry
+        that realizes it with that entry's stack.
+
+    Raises:
+        ValueError: No id is given.
+
+    """
+    if not entry_ids:
+        message: str = "uses needs the id of at least one entry"
         raise ValueError(message)
-    return [
-        matrix["nodes"][key]
-        for key in sorted(matrix["nodes"])
-        if matrix["nodes"][key]["kind"] == KIND_DISAGREEMENT
-        and any(statement["document"] == document for statement in matrix["nodes"][key].get("statements", []))
-    ]
+    return {
+        "ids": list(dict.fromkeys(entry_ids)),
+        "capabilities": [_capability(matrix, reach) for reach in capabilities(matrix, entry_ids)],
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def story_scope(matrix: Matrix, stack: EntryId, entry_ids: Sequence[EntryId]) -> StoryScope:
+    """Return in one object what a Story that builds some entries of a stack must be handed.
+
+    An id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        stack: The id of the stack the Story builds in.
+        entry_ids: The ids of the entries the Story builds.
+
+    Returns:
+        The stack and its repository, the documents and headings that describe the stack and
+        each entry, the constraints that bind the stack or an entry, and the shared capabilities
+        the entries must use.
+
+    Raises:
+        MatrixError: ``stack`` is not a stack.
+
+    """
+    home: Entry = matrix.entry(stack)
+    if home.kind != KIND_STACK:
+        message: str = f"{stack} is not a stack"
+        raise MatrixError(message)
+    built: list[EntryId] = list(dict.fromkeys(entry_ids))
+    binding: list[ConstraintReach] = constraints_for(matrix, [stack, *(found for found in built if found != stack)])
+    return {
+        "stack": _entry_view(home),
+        "repository": _text(home.attributes.get(ATTR_REPOSITORY)),
+        "documents": [_described(matrix, describing) for describing in matrix.outgoing(stack, (REL_DESCRIBED_BY,))],
+        "entries": [
+            {
+                "entry": _entry_view(matrix.entry(found)),
+                "documents": [
+                    _described(matrix, describing) for describing in matrix.outgoing(found, (REL_DESCRIBED_BY,))
+                ],
+            }
+            for found in built
+        ],
+        "constraints": [_constraint(matrix, found) for found in binding],
+        "noSource": [found.constraint for found in binding if not found.sources],
+        "capabilities": [_capability(matrix, reach) for reach in capabilities(matrix, built)] if built else [],
+    }
+
+
+def _count(counts: dict[str, int], key: str) -> None:
+    """Add one to the count kept under a key."""
+    counts[key] = counts.get(key, 0) + 1
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def summarize(matrix: Matrix) -> MatrixSummary:
-    """Count the rows of the matrix by kind and by marker.
+    """Count what the matrix holds.
 
     Args:
         matrix: The matrix.
 
     Returns:
-        The number of rows of each kind; for each kind the number in each approval state and each
-        code state; and the number of PRDs at each coverage.
+        The number of entries and relationships, of each kind, of each side and of each kind that
+        is verified; the documents by lifecycle; the stacks by app; and the repositories the
+        stacks name.
 
     """
     summary: MatrixSummary = {
-        "rows": len(matrix["nodes"]),
+        "entries": 0,
+        "relationships": 0,
         "byKind": {},
-        "approvalByKind": {},
-        "codeByKind": {},
-        "coverage": {},
-        "resourceTypes": len(matrix["resourceTypes"]),
-        "documentsSyncedAt": matrix["documentsSyncedAt"],
+        "bySide": {},
+        "relationshipsByKind": {},
+        "relationshipsBySide": {},
+        "verifiedByKind": {},
+        "verifiedRelationshipsByKind": {},
+        "documentsByLifecycle": {},
+        "stacksByApp": {},
+        "repositories": [],
     }
-    node: Node
-    for node in matrix["nodes"].values():
-        kind: str = node["kind"]
-        summary["byKind"][kind] = summary["byKind"].get(kind, 0) + 1
-        if "approval" in node:
-            states: dict[str, int] = summary["approvalByKind"].setdefault(kind, {})
-            states[node["approval"]["state"]] = states.get(node["approval"]["state"], 0) + 1
-        if "code" in node:
-            codes: dict[str, int] = summary["codeByKind"].setdefault(kind, {})
-            codes[node["code"]["state"]] = codes.get(node["code"]["state"], 0) + 1
-        if "coverage" in node:
-            summary["coverage"][node["coverage"]] = summary["coverage"].get(node["coverage"], 0) + 1
+    entries: list[Entry] = matrix.entries()
+    summary["entries"] = len(entries)
+    summary["repositories"] = sorted({
+        _text(stack.attributes.get(ATTR_REPOSITORY)) for stack in entries if stack.attributes.get(ATTR_REPOSITORY)
+    })
+    entry: Entry
+    for entry in entries:
+        _count(summary["byKind"], entry.kind)
+        _count(summary["bySide"], entry.side)
+        if entry.verified is not None:
+            _count(summary["verifiedByKind"], entry.kind)
+        if entry.kind == KIND_DOCUMENT:
+            _count(summary["documentsByLifecycle"], _text(entry.attributes.get(ATTR_LIFECYCLE)))
+        if entry.kind == KIND_STACK:
+            _count(summary["stacksByApp"], _text(entry.attributes.get(ATTR_APP)))
+    relationship: Relationship
+    for relationship in matrix.relationships():
+        summary["relationships"] += 1
+        _count(summary["relationshipsByKind"], relationship.kind)
+        _count(summary["relationshipsBySide"], relationship.side)
+        if relationship.verified is not None:
+            _count(summary["verifiedRelationshipsByKind"], relationship.kind)
     return summary

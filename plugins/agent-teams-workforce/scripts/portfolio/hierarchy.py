@@ -12,8 +12,10 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from operator import itemgetter
 from pathlib import Path
@@ -80,6 +82,11 @@ from bead_metadata import (
     CdsDesignSource,
     artifact_key,
 )
+
+# isort: split
+from matrix_contract import KIND_STACK, Entry, EntryId
+from matrixstore import Matrix, matrix_path, read_matrix
+from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
 _ARGUMENT_ERROR: str = "Arguments violate the hierarchy input contract"
@@ -992,6 +999,43 @@ class ReadTaskOptions:
         check_type(self.packages_dir, str | None)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def stated_ids(matrix: Matrix, built: Sequence[str]) -> list[str]:
+    """Return the matrix ids a Task states for what it builds: its stack, the entries, the capabilities.
+
+    A Task states in full what it builds in the matrix's ids. The stack is a built id that is a
+    stack, or the stack that holds a built entry. The shared capabilities are the features the
+    work that builds those entries must use (`matrixtraverse.capabilities`). An id the matrix
+    holds no entry for is kept as stated and adds no stack and no capability.
+
+    Args:
+        matrix: The matrix.
+        built: The ids of the entries the Task builds.
+
+    Returns:
+        The stack ids, then the built ids, then the capability ids, each once, in that order.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not isinstance(matrix, Matrix) or isinstance(built, (str, bytes)):
+        raise TypeError(_ARGUMENT_ERROR)
+    stacks: list[str] = []
+    known: list[EntryId] = []
+    stated: str
+    for stated in built:
+        entry: Entry | None = matrix.find(EntryId(stated))
+        if entry is None:
+            continue
+        known.append(entry.id)
+        home: EntryId | None = entry.id if entry.kind == KIND_STACK else matrix.home(entry.id)
+        if home is not None:
+            stacks.append(home)
+    shared: list[str] = [reach.feature for reach in capabilities(matrix, known)]
+    return list(dict.fromkeys([*stacks, *built, *shared]))
+
+
 @dataclass(frozen=True)
 class _TaskSources:
     options: ReadTaskOptions
@@ -1001,6 +1045,8 @@ class _TaskSources:
     scores: dict[str, JsonObject]
     designs: dict[str, UiDesign]
     elements: dict[str, str]
+    matrix: Matrix | None
+    """The matrix, read when a Task builds an entry of it; None when no placed item names one."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1050,6 +1096,11 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
     if order is None:
         message: str = "Task edges remain cyclic after normalization"
         raise HierarchyError(message)
+    elements: dict[str, str] = {
+        key: item["matrixId"]
+        for key, item in placed_items(files.scope).items()
+        if "matrixId" in item and item["slug"] == slug
+    }
     sources: _TaskSources = _TaskSources(
         options,
         _spec_refs(files, root),
@@ -1059,11 +1110,8 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         ui_authority(files.detailing, options.packages_dir)
         if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
-        {
-            key: item["matrixId"]
-            for key, item in placed_items(files.scope).items()
-            if "matrixId" in item and item["slug"] == slug
-        },
+        elements,
+        read_matrix(matrix_path(None, os.environ)) if elements else None,
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}
     return [_read_task(key, _task_document(by_key[key]), sources) for key in order]
@@ -1155,6 +1203,9 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
     source, bundles, build_specs, artifacts = (
         task_design(list(t.requirement_ids), sources.designs) if ui else (None, [], [], [])
     )
+    built: list[str] = list(
+        dict.fromkeys(sources.elements[item] for item in t.requirement_ids if item in sources.elements),
+    )
     return Task(
         key=key,
         repo_path=sources.options.repo,
@@ -1165,9 +1216,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         spec_paths=list(dict.fromkeys(cited)) or list(sources.refs),
         spec_sections=list(t.spec_sections),
         requirement_ids=list(t.requirement_ids),
-        matrix_elements=list(
-            dict.fromkeys(sources.elements[item] for item in t.requirement_ids if item in sources.elements),
-        ),
+        matrix_elements=stated_ids(sources.matrix, built) if sources.matrix is not None else built,
         decision_ids=list(t.decision_ids) or list(sources.options.story_decision_ids),
         surfaces=surfaces,
         test_strategy=sources.strategy,

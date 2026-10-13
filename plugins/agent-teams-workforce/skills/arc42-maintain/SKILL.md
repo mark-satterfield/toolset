@@ -42,8 +42,9 @@ The design is the solutions architect's. A fact that is not in the request is no
 1. **Take each fact of the request in turn.** Write it in its home, under the heading named, in
    the form its section requires (the section model lists the forms).
 2. **Replace restatements with links.** In every other document the request names, and in every
-   document the matrix lists as describing the same element (`atw-matrix node <id>`), a
-   restatement of the fact becomes a link to the home heading. A fact is stated in one place.
+   document the matrix lists as describing the same entry (`atw-matrix node <entry id>` names
+   each under `describedBy`, with its heading and `lifecycle`), a restatement of the fact becomes
+   a link to the home heading. A fact is stated in one place.
 3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
    replaced by a link to it.
 4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
@@ -58,7 +59,10 @@ The design is the solutions architect's. A fact that is not in the request is no
    every document you touched and every document that links to them.
 8. **Report**: each heading changed or created, each link added, each restatement removed, the
    entries below architecture level, and what could not be applied with the reason. The files you
-   changed stay `in-review`; a script moves them to `effective` after review.
+   changed stay `in-review`; a script moves them to `effective` after review. You record nothing
+   in the matrix: a script step runs `atw-matrix sync-documents --paths` on the files you report,
+   which mirrors each document, its headings and what its `shows` names. A correction from built
+   is mirrored by the next run's sync.
 
 ## Section 2 is the owner's
 
@@ -73,8 +77,8 @@ correction, so the owner can change the build or the constraint.
   superseded content kept for reference.
 - No open item is written into any document. What is still open goes in the report.
 - A rule is written in section 8 as a design fact with its reason. There are no decision records.
-- A document names stacks, services and components and never repositories; the polyrepo-steward
-  and the matrix are the record of which repository holds each.
+- A document names stacks, services and components and never repositories; the matrix is the
+  record of which repository holds each stack (`atw-matrix node stack:<id>`).
 
 ## References
 

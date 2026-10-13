@@ -41,8 +41,9 @@ the building block view in section 5 starts at C4 Level 2 (container).
 
 ## Every view carries catalog frontmatter
 
-Each view file declares what it describes, so the catalog can answer "which views show this
-element?" without reading every file:
+Each view file declares what it describes. The matrix reads this front matter
+(`atw-matrix sync-documents`) and answers "which views show this element?" with
+`atw-matrix node <entry id>`, so no reader opens every file:
 
 ```yaml
 view_type: container diagram       # a type from diagram-and-model-types.md
@@ -55,7 +56,8 @@ lifecycle_state: in-review         # in-review | effective
 ```
 
 Keep `shows` true to the diagram: every person, system, container and component it draws is
-listed. Before drawing, search the catalog for the subject and its elements, so an existing view is
+listed, by the name the matrix holds for its entry. Before drawing, run `atw-matrix node <entry id>`
+for the subject and its elements: `describedBy` names each existing view, so an existing view is
 updated rather than a second one added beside it. Adding an element usually changes views at more
 than one scope: a new service changes the system container and integration views and adds its own
 component views.
@@ -63,7 +65,8 @@ component views.
 ## Versions
 
 The documents are in `arc42/`. A document whose `lifecycle_state` is `effective` was reviewed and
-approved; one that is `in-review` awaits review, and the matrix records which content is approved.
+approved; one that is `in-review` awaits review, and the matrix mirrors each document's state as
+its `lifecycle`.
 A difference the build delivered is drawn in `built/<element>/`. Files
 and folders are named for their subject, never for a PRD, an Epic, a bead id, a date or a pipeline
 gate.

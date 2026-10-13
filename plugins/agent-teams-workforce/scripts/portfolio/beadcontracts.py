@@ -68,16 +68,6 @@ class BuildSelection(TypedDict):
     blocked: str | None
 
 
-class OtherTask(TypedDict):
-    """Describe the other task wire record."""
-
-    id: str
-    title: str
-    description: str
-    status: str
-    epic: str | None
-
-
 class PlannedTask(TypedDict):
     """Describe the planned task wire record."""
 
@@ -165,7 +155,6 @@ class StoryWrite(TypedDict):
     epic: str
     story: WrittenStory
     existingTasks: list[ExistingTask]
-    otherEpicTasks: list[OtherTask]
     dryRun: bool
     planned: list[PlannedWrite]
     summary: StoryWriteSummary

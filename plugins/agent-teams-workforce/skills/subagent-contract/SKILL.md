@@ -27,10 +27,17 @@ loading every repository's instruction tree.
 
 Missing inputs are named dependencies, not permission to invent facts. Distinguish observed
 facts, assumptions and unresolved questions in the artifact's supported fields. Do not mark your
-own work approved. Code that no pipeline built is a hint of how something
-was once solved and may be stale. A difference between such code and arc42 is never a discrepancy
-and never a finding. The matrix marks each element's code `none`, `legacy`, `built` or `deployed`;
-only `built` and `deployed` code is trusted and is expected to match the architecture.
+own work approved.
+
+The matrix has one code mark, `verified`, recorded with the commit on a stack, on the entries
+in it and on the relationships the code makes real. The build driver sets it when a Story's
+code has been built and tested and has passed, including its CI/CD and its CDK. No agent sets
+it. No deployed mark and no merged mark exists, and absent means not verified. Verified means
+real: the entry or relationship exists, and its code is trusted and is expected to match the
+architecture. Not verified means it still has to be made real: use it like any other, and
+assume it may still have to be built. Existing code for it is a hint of how something was once
+solved and may be stale, and a difference between that code and arc42 is never a discrepancy
+and never a finding.
 
 ## Helpers and the journal
 

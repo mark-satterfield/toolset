@@ -1,0 +1,499 @@
+{
+  "title": "SkillSpoke matrix kinds registry",
+  "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow) or #/$defs/resourceType (a member of resourceTypes). In an entry kind's required list, purpose means the common purpose member must not be empty. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. matrix_contract.py is generated from this file and matrix.schema.json.",
+  "operatorRole": "operator",
+  "roles": ["operator", "script", "hooks", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
+  "homeRelationship": "homeIn",
+  "stackKind": "stack",
+  "$defs": {
+    "executionUse": {
+      "description": "executable: a service, a Lambda, anything run or called. imported: code other code imports.",
+      "enum": ["executable", "imported"]
+    },
+    "app": {"enum": ["employer", "marketing", "personal-agent", "shared"]},
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "heading"],
+      "properties": {
+        "document": {"type": "string", "minLength": 1},
+        "heading": {"type": "string", "minLength": 1}
+      }
+    },
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {"enum": ["package", "layer", "service-operation", "construct", "event-api", "infrastructure"]},
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "behaviour", "consumersMust", "interface"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "behaviour": {"description": "What a consumer obtains, in one sentence.", "type": "string"},
+        "consumersMust": {"description": "What a consumer must not implement itself.", "type": "string"},
+        "interface": {"$ref": "#/$defs/interface"},
+        "useSignals": {"description": "Text patterns that show a consumer uses this capability.", "type": "array", "items": {"type": "string"}},
+        "duplicateSignals": {"description": "Text patterns that show a consumer is doing this itself.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "selector": {
+      "description": "A set of attribute values that names every entry having those values.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "app": {"$ref": "#/$defs/app"},
+        "stackType": {"type": "string", "minLength": 1},
+        "resourceType": {"$ref": "#/$defs/resourceType"},
+        "executionUse": {"$ref": "#/$defs/executionUse"}
+      }
+    }
+  },
+  "entryKinds": {
+    "epic": {
+      "idPattern": "^epic:[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "side": "architecture",
+      "verifiable": false,
+      "required": [],
+      "attributes": {
+        "prd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash"],
+          "properties": {
+            "path": {"description": "The PRD's path in the vault.", "type": "string", "minLength": 1},
+            "hash": {"type": "string"}
+          }
+        },
+        "expertise": {"description": "Skill names.", "type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "requirement": {
+      "idPattern": "^requirement:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "side": "architecture",
+      "verifiable": false,
+      "required": ["hash"],
+      "attributes": {
+        "group": {"description": "The ### heading above the requirement.", "type": "string"},
+        "hash": {"description": "The hash of the requirement's own text.", "type": "string"}
+      }
+    },
+    "feature": {
+      "idPattern": "^feature:[a-z0-9]+(-[a-z0-9]+)*$",
+      "side": "architecture",
+      "verifiable": false,
+      "required": [],
+      "attributes": {
+        "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}}
+      }
+    },
+    "constraint": {
+      "idPattern": "^constraint:[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": false,
+      "required": ["statement"],
+      "attributes": {
+        "statement": {"type": "string", "minLength": 1},
+        "selector": {"$ref": "#/$defs/selector"}
+      }
+    },
+    "document": {
+      "idPattern": "^document:[^/\\s].*$",
+      "verifiable": false,
+      "required": ["lifecycle", "headings", "hash"],
+      "attributes": {
+        "lifecycle": {"description": "Mirrors the document's arc42 front matter.", "enum": ["effective", "in-review", "draft"]},
+        "section": {"type": "integer", "minimum": 1, "maximum": 12},
+        "viewType": {"type": "string"},
+        "scope": {"type": "string"},
+        "subject": {"type": "string"},
+        "headings": {"description": "The heading texts.", "type": "array", "items": {"type": "string"}},
+        "hash": {"type": "string"}
+      }
+    },
+    "service": {
+      "idPattern": "^service:[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": true,
+      "required": [],
+      "attributes": {
+        "executionUse": {"$ref": "#/$defs/executionUse"}
+      }
+    },
+    "component": {
+      "idPattern": "^component:[a-z0-9]+(-[a-z0-9]+)*$",
+      "repositoryIdPattern": "^component:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": true,
+      "required": [],
+      "attributes": {
+        "resourceType": {"$ref": "#/$defs/resourceType"},
+        "executionUse": {"$ref": "#/$defs/executionUse"}
+      }
+    },
+    "infrastructure": {
+      "idPattern": "^infrastructure:[a-z0-9]+(-[a-z0-9]+)*$",
+      "repositoryIdPattern": "^infrastructure:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": true,
+      "required": [],
+      "attributes": {
+        "resourceType": {"$ref": "#/$defs/resourceType"}
+      }
+    },
+    "event": {
+      "idPattern": "^event:\\S.*$",
+      "verifiable": true,
+      "required": [],
+      "attributes": {}
+    },
+    "stack": {
+      "idPattern": "^stack:[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "verifiable": true,
+      "required": ["purpose"],
+      "attributes": {
+        "repository": {"description": "The repository that holds the stack; absent while none does.", "type": "string", "minLength": 1},
+        "app": {"$ref": "#/$defs/app"},
+        "executionUse": {"$ref": "#/$defs/executionUse"},
+        "commands": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "test": {"type": "string", "minLength": 1},
+            "publish": {"type": "string", "minLength": 1},
+            "deploy": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "package": {
+      "idPattern": "^package:[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$",
+      "verifiable": true,
+      "required": ["origin"],
+      "attributes": {
+        "origin": {"enum": ["project", "third-party"]}
+      }
+    },
+    "layer": {
+      "idPattern": "^layer:[a-z0-9]+(-[a-z0-9]+)*$",
+      "repositoryIdPattern": "^layer:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": true,
+      "required": [],
+      "attributes": {}
+    },
+    "disagreement": {
+      "idPattern": "^disagreement:[a-z0-9]+(-[a-z0-9]+)*$",
+      "verifiable": false,
+      "required": [],
+      "attributes": {
+        "stands": {"description": "The statement that stands, once ruled.", "$ref": "#/$defs/anchor"},
+        "rule": {"description": "The rule the ruling was made by.", "type": "string", "minLength": 1},
+        "reason": {"type": "string"}
+      }
+    }
+  },
+  "relationshipKinds": {
+    "hasRequirement": {
+      "reverse": "requirementOf",
+      "side": "architecture",
+      "from": ["epic"],
+      "to": ["requirement"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "servedBy": {
+      "reverse": "serves",
+      "side": "architecture",
+      "from": ["requirement"],
+      "to": ["feature"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "supportedBy": {
+      "reverse": "supports",
+      "side": "architecture",
+      "from": ["feature"],
+      "to": ["feature"],
+      "attributes": {
+        "relies": {"description": "The ids of the provides items relied on.", "type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "realizedBy": {
+      "reverse": "realizes",
+      "from": ["feature"],
+      "to": ["service", "component", "infrastructure", "event", "stack"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "describedBy": {
+      "reverse": "describes",
+      "from": ["feature", "constraint", "service", "component", "infrastructure", "event", "stack", "package", "layer"],
+      "to": ["document"],
+      "attributes": {
+        "heading": {"type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": ["heading"],
+      "provedByBuild": false
+    },
+    "covers": {
+      "reverse": "coveredBy",
+      "from": ["document"],
+      "to": ["requirement"],
+      "attributes": {
+        "heading": {"type": "string", "minLength": 1},
+        "via": {"description": "The feature that connects the document and the requirement.", "$ref": "#/$defs/entryId"}
+      },
+      "required": ["heading", "via"],
+      "key": ["heading", "via"],
+      "provedByBuild": false
+    },
+    "statedIn": {
+      "reverse": "states",
+      "from": ["constraint"],
+      "to": ["document"],
+      "attributes": {
+        "heading": {"type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": ["heading"],
+      "provedByBuild": false
+    },
+    "appliesTo": {
+      "reverse": "constrainedBy",
+      "from": ["constraint"],
+      "to": ["epic", "feature", "stack", "service", "component", "infrastructure", "event"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "homeIn": {
+      "reverse": "holds",
+      "from": ["service", "component", "infrastructure", "event", "layer", "package"],
+      "to": ["stack"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "atMostOnePerStart": true,
+      "provedByBuild": true
+    },
+    "partOf": {
+      "reverse": "hasPart",
+      "from": ["component", "infrastructure"],
+      "to": ["service"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": true
+    },
+    "correspondsTo": {
+      "reverse": "correspondedBy",
+      "side": "repository",
+      "from": ["service", "component", "infrastructure", "event", "layer"],
+      "to": ["component", "infrastructure", "layer", "stack"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": false
+    },
+    "distributedAs": {
+      "reverse": "distributes",
+      "from": ["stack"],
+      "to": ["package"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": true
+    },
+    "contains": {
+      "reverse": "containedIn",
+      "from": ["layer"],
+      "to": ["package"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "provedByBuild": true
+    },
+    "imports": {
+      "reverse": "importedBy",
+      "from": ["stack", "service", "component"],
+      "to": ["stack"],
+      "attributes": {
+        "through": {"description": "The package or layer that brings the library.", "$ref": "#/$defs/entryId"}
+      },
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "usesLayer": {
+      "reverse": "layerUsedBy",
+      "from": ["component"],
+      "to": ["layer"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "calls": {
+      "reverse": "calledBy",
+      "from": ["stack", "service", "component"],
+      "to": ["service"],
+      "attributes": {
+        "interface": {"description": "The operation or API.", "type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "publishes": {
+      "reverse": "publishedBy",
+      "from": ["service", "component"],
+      "to": ["event"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "consumes": {
+      "reverse": "consumedBy",
+      "from": ["service", "component"],
+      "to": ["event"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "routes": {
+      "reverse": "routedBy",
+      "from": ["infrastructure"],
+      "to": ["event"],
+      "attributes": {
+        "target": {"description": "The entry the rule routes the event to.", "$ref": "#/$defs/entryId"}
+      },
+      "required": [],
+      "key": ["target"],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "reads": {
+      "reverse": "readBy",
+      "from": ["stack", "service", "component"],
+      "to": ["infrastructure"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "runsIn": {
+      "reverse": "hosts",
+      "from": ["stack", "service", "component"],
+      "to": ["infrastructure"],
+      "attributes": {},
+      "required": [],
+      "key": [],
+      "family": "dependency",
+      "provedByBuild": true
+    },
+    "drives": {
+      "reverse": "drivenBy",
+      "from": ["epic"],
+      "to": ["feature", "document"],
+      "attributes": {
+        "heading": {"description": "For a document: the heading that holds the decision.", "type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": ["heading"],
+      "provedByBuild": false
+    },
+    "restsOn": {
+      "reverse": "supportsEpic",
+      "from": ["epic"],
+      "to": ["feature", "document", "stack", "service", "component", "infrastructure"],
+      "attributes": {
+        "heading": {"description": "For a document: the heading that holds the decision.", "type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": ["heading"],
+      "provedByBuild": false
+    },
+    "disputes": {
+      "reverse": "disputedBy",
+      "from": ["disagreement"],
+      "to": ["document"],
+      "attributes": {
+        "heading": {"type": "string", "minLength": 1},
+        "text": {"description": "The disagreeing statement.", "type": "string"}
+      },
+      "required": ["heading"],
+      "key": ["heading"],
+      "provedByBuild": false
+    }
+  },
+  "resourceTypes": [
+    "acm-certificate", "agent", "api", "api-and-handlers", "asset-library", "cdk-construct",
+    "cloudfront-distribution", "cloudtrail-trail", "cloudwatch-alarms", "cloudwatch-log-group",
+    "cognito-user-pool", "component", "config-recorder", "data-component", "database", "dataset",
+    "dns-firewall", "dynamodb-export", "dynamodb-table", "elasticache-replication-group",
+    "eventbridge-archive", "eventbridge-bus", "eventbridge-rule", "eventbridge-schedule", "gateway",
+    "handler", "iam-role", "kms-key", "lambda-function", "lambda-layer", "network", "package",
+    "package-component", "rest-api", "rest-api-route", "s3-bucket", "secrets-manager-secret",
+    "security-groups", "sns-subscription", "sns-topic", "sqs-queue", "sqs-queue-and-alarm",
+    "sqs-queue-and-dlq", "ssm-parameter", "ssm-parameter-set", "subnets",
+    "verified-permissions-policy-store", "vpc", "vpc-endpoints", "waf"
+  ],
+  "commands": {
+    "epic": {"writes": false, "anyRole": true},
+    "find": {"writes": false, "anyRole": true},
+    "node": {"writes": false, "anyRole": true},
+    "deps": {"writes": false, "anyRole": true},
+    "stacks": {"writes": false, "anyRole": true},
+    "layers": {"writes": false, "anyRole": true},
+    "impact": {"writes": false, "anyRole": true},
+    "related": {"writes": false, "anyRole": true},
+    "uses": {"writes": false, "anyRole": true},
+    "story-scope": {"writes": false, "anyRole": true},
+    "review-scope": {"writes": false, "anyRole": true},
+    "summary": {"writes": false, "anyRole": true},
+    "built": {"writes": false, "anyRole": true},
+    "work": {"writes": false, "anyRole": true},
+    "affected": {"writes": false, "anyRole": true},
+    "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},
+    "check-reuse": {"writes": false, "roles": ["build-workflow"]},
+    "expertise": {"writes": true, "roles": ["script", "hooks", "operator"]},
+    "put": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
+    "link": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
+    "unlink": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
+    "settle": {"writes": true, "roles": ["solutions-architect", "decider"]},
+    "rename": {"writes": true, "roles": ["solutions-architect", "repository-steward", "operator"]},
+    "remove": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script", "operator"]},
+    "move-repository": {"writes": true, "roles": ["repository-steward", "operator"]},
+    "commit": {"writes": true, "roles": ["script", "repository-steward", "build-driver", "operator"]},
+    "verify": {"writes": true, "roles": ["build-driver"]},
+    "sync-epics": {"writes": true, "roles": ["script", "operator"]},
+    "sync-documents": {"writes": true, "roles": ["script", "solutions-architect", "operator", "build-driver"]},
+    "seed": {"writes": true, "roles": ["script", "operator"]},
+    "seed-stacks": {"writes": true, "roles": ["script", "operator"]},
+    "seed-packages": {"writes": true, "roles": ["script", "operator"]},
+    "seed-inputs": {"writes": false, "roles": ["script", "operator"]},
+    "seed-features": {"writes": false, "roles": ["script", "operator", "solutions-architect"]},
+    "seed-apply": {"writes": true, "roles": ["script", "operator"]}
+  }
+}

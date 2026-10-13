@@ -50,11 +50,13 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 A PRD document and its Epic bead are the same entity in two places, one Epic to one PRD. Neither contains the other; they hold the same content, and a change to either obliges a change to the other.
 
-The pair is recorded on BOTH sides, so it never has to be inferred: the PRD carries a `**Epic:** <prefix>-xxxx` line under its title, and the Epic carries the label `prd:<slug>` — the PRD's filename without `.md`, never a local filesystem path. Write both when you form the pair. A pointer written as prose points one way only and a rewrite deletes it.
+The pair is recorded in one place, the matrix, so it never has to be inferred: the `epic` entry holds the PRD's path, relative to the vault root, as `prd.path`, with one `requirement` entry per `####` heading under `## Requirements`. `atw-matrix epic <beads id>` returns the PRD of an Epic, and `atw-matrix find --kinds epic --prd <path>` returns the Epic of a PRD; a read needs no role. The PRD carries no `**Epic:**` line and the Epic carries no `prd:` label: write neither, and treat one found in an old file or on an old bead as no record.
 
-**When the two pointers disagree, report the conflict and write nothing.** Matching an Epic to a PRD by title resemblance mis-paired three Epics and overwrote them with another PRD's content. Recorded evidence pairs them, never similarity.
+The pair is written by `atw-matrix sync-epics --bead <beads id> --prd <path>`, once the Epic bead exists. The calling workflow runs it; you do not. State in your handoff the PRD's path relative to the vault root and, when the Epic bead exists, its id, so the workflow records exactly that pair. When you revise a PRD, the same command records its changed requirement headings, so name the revision in the handoff too.
 
-The file shape carries the content mapping: the PRD's first and only `# ` heading is the Epic title, everything after it (minus the `**Epic:**` pointer) is the Epic description. No YAML frontmatter, no second `# ` heading.
+**When the matrix names a different PRD for the Epic, or a different Epic for the PRD, than the one you were handed, report the conflict and write nothing.** Matching an Epic to a PRD by title resemblance mis-paired three Epics and overwrote them with another PRD's content. The matrix pairs them, never similarity.
+
+The file shape carries the content mapping: the PRD's first and only `# ` heading is the Epic title, everything after it is the Epic description. No YAML frontmatter, no second `# ` heading.
 
 A PRD you write or revise is not delivered until its Epic matches. Run the project's PRD-to-Epic sync script with `--only <slug> --apply` and state in your handoff that you did. The script's environment variable is defined only by the `agent-teams-workforce:pipeline-contracts` skill (`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`, the variable whose `x-constant` is `PRD_EPIC_SYNC_ENV`, today `ATW_PRD_EPIC_SYNC`); the schema is authoritative, so confirm the name there. If it is unset, report that and the exact slug needing sync rather than leaving the halves divergent. The `agent-teams-workforce:prd-writer` skill holds the full contract.
 

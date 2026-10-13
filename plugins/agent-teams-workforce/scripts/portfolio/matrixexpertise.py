@@ -1,13 +1,15 @@
-"""The skills an Epic's domains need, kept on the Epic's PRD row.
+"""The skills an Epic's domains need, kept on the Epic's entry.
 
 A skill declares what it is expertise for in its own front matter: resource types an Epic's
 architecture records, and terms of a PRD. No table of skills exists anywhere else; this module
-asks the skills (``orchestrator.core.skills``) and records the answer for an Epic:
+asks the skills (``orchestrator.core.skills``) and records the answer in the ``expertise``
+attribute of the Epic's entry:
 
-- at the start of a run, the skills whose terms occur in the PRD, and the skills for the
-  resource types of every element the PRD already reaches (:func:`refresh`);
-- during a run, the skills for the resource type of each element the architect records
-  (:func:`add_for_types`), so the knowledge is in front of the architect when the need appears.
+- :func:`expertise_of` reads the skills recorded for an Epic and changes nothing;
+- at the start of a run, :func:`refresh` adds the skills whose terms occur in the PRD and the
+  skills for the resource types of every entry the Epic already reaches;
+- during a run, :func:`add_for_types` adds the skills for the resource type of each entry the
+  architect records, so the knowledge is in front of the architect when the need appears.
 
 :func:`skill_text` gives the text of skills in the form a session is handed, and
 :func:`hook_output` wraps it as what a Claude Code hook prints to add context to a session.
@@ -15,6 +17,7 @@ asks the skills (``orchestrator.core.skills``) and records the answer for an Epi
 
 import sys
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Final, NotRequired, TypedDict
 
@@ -25,9 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from driver_surface_types import CONTROL_REPO_ENV
-from matrix_contract import ELEMENT_KINDS, KIND_PRD, Matrix, MatrixError, Node, NodeId
-from matrixquery import reached_from
-from matrixstore import MatrixRefusedError, Stamp, make_id
+from matrix_contract import KIND_EPIC, Entry, EntryId, JsonValue, MatrixError
+from matrixstore import Matrix, MatrixRefusedError
+from matrixtraverse import epic_id, epic_reach
 from orchestrator.core.frontmatter import split_front_matter, string_list
 from orchestrator.core.skills import SkillRoots, load_skills, matching_skills, skills_text
 
@@ -41,12 +44,16 @@ CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"
 DEFAULT_CONFIG: Final[tuple[str, ...]] = (".claude",)
 SUBAGENT_START: Final = "SubagentStart"
 """The Claude Code hook event whose output adds context to a session an agent starts."""
+ATTR_EXPERTISE: Final = "expertise"
+ATTR_RESOURCE_TYPE: Final = "resourceType"
+ATTR_PRD: Final = "prd"
+ATTR_PRD_PATH: Final = "path"
 
 
 class Expertise(TypedDict):
     """What ``expertise`` prints."""
 
-    bead: str
+    epic: EntryId
     expertise: list[str]
     """The skills recorded for the Epic."""
     added: list[str]
@@ -69,44 +76,124 @@ class HookOutput(TypedDict):
     hookSpecificOutput: HookSpecific
 
 
-def _prd(matrix: Matrix, bead: str) -> Node:
-    """Read the PRD row of an Epic.
+def _epic(matrix: Matrix, bead: str) -> Entry:
+    """Read the entry of an Epic.
+
+    An empty beads id raises ``ValueError`` from ``epic_id``.
 
     Returns:
-        The row.
+        The entry.
 
     Raises:
-        MatrixRefusedError: The matrix has no PRD row for the Epic.
+        MatrixRefusedError: The matrix has no entry for the Epic, or the entry is not an Epic.
 
     """
-    key: NodeId = make_id(KIND_PRD, bead) if bead.strip() else NodeId("")
-    if key not in matrix["nodes"]:
-        message: str = f"the matrix has no PRD row for {bead!r}; sync-prds writes it"
+    entry: Entry | None = matrix.find(epic_id(bead))
+    if entry is None or entry.kind != KIND_EPIC:
+        message: str = f"the matrix has no epic entry for {bead!r}; sync-epics writes it"
         raise MatrixRefusedError(message)
-    return matrix["nodes"][key]
+    return entry
+
+
+def _recorded(entry: Entry) -> list[str]:
+    """Read the skills an Epic's entry records.
+
+    Returns:
+        The skill names of the entry's ``expertise`` attribute, in the order held.
+
+    """
+    held: JsonValue = entry.attributes.get(ATTR_EXPERTISE)
+    return [name for name in held if isinstance(name, str)] if isinstance(held, list) else []
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def expertise_of(matrix: Matrix, bead: str) -> Expertise:
+    """Read the skills recorded for an Epic, and change nothing.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id, or the id of its entry.
+
+    Returns:
+        The Epic's skills, with nothing added.
+
+    Raises:
+        TypeError: ``bead`` is not a string.
+
+    """
+    if not isinstance(bead, str):
+        message: str = "an Epic is named by its beads id, a string"
+        raise TypeError(message)
+    entry: Entry = _epic(matrix, bead)
+    recorded: list[str] = _recorded(entry)
+    return {"epic": entry.id, "expertise": recorded, "added": [], "skills": list(recorded)}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_resource_types(matrix: Matrix, bead: str) -> list[str]:
-    """List the resource types of every element an Epic's PRD reaches.
+    """List the resource types of every entry an Epic reaches.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``.
 
     Args:
         matrix: The matrix.
-        bead: The Epic.
+        bead: The Epic's beads id, or the id of its entry.
 
     Returns:
-        The resource types of the elements that realize the PRD's features and provide the
-        shared capabilities those features use, sorted.
+        The resource types stated by the entries the Epic's features reach, on either side, and
+        by what those depend on (``matrixtraverse.epic_reach``), sorted.
+
+    Raises:
+        TypeError: ``bead`` is not a string.
 
     """
+    if not isinstance(bead, str):
+        message: str = "an Epic is named by its beads id, a string"
+        raise TypeError(message)
     types: set[str] = set()
-    key: NodeId
-    for key in reached_from(matrix, _prd(matrix, bead)["id"]):
-        node: Node = matrix["nodes"][key]
-        resource_type: str | None = node.get("resourceType")
-        if node["kind"] in ELEMENT_KINDS and resource_type:
+    entry_id: EntryId
+    for entry_id in epic_reach(matrix, _epic(matrix, bead).id).entries():
+        resource_type: JsonValue = matrix.entry(entry_id).attributes.get(ATTR_RESOURCE_TYPE)
+        if isinstance(resource_type, str) and resource_type:
             types.add(resource_type)
     return sorted(types)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def prd_text(matrix: Matrix, bead: str, vault: Path) -> str:
+    """Read the text of the PRD an Epic's entry names.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id, or the id of its entry.
+        vault: The vault root the entry's PRD path is relative to.
+
+    Returns:
+        The PRD file's text; empty when the entry names no PRD.
+
+    Raises:
+        TypeError: ``vault`` is not a path.
+        MatrixError: The PRD file cannot be read.
+
+    """
+    message: str
+    if not isinstance(vault, Path):
+        message = "the vault root must be a path"
+        raise TypeError(message)
+    prd: JsonValue = _epic(matrix, bead).attributes.get(ATTR_PRD)
+    relative: JsonValue = prd.get(ATTR_PRD_PATH) if isinstance(prd, dict) else None
+    if not isinstance(relative, str) or not relative:
+        return ""
+    file: Path = vault / relative
+    try:
+        return file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        message = f"cannot read the PRD {file}: {error}"
+        raise MatrixError(message) from error
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -134,63 +221,75 @@ def skills_for(resource_types: Sequence[str], text: str = "") -> list[str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def add_skills(matrix: Matrix, bead: str, names: Sequence[str], stamp: Stamp) -> list[str]:
-    """Record skills an Epic's domains need on its PRD row.
+def add_skills(matrix: Matrix, bead: str, names: Sequence[str]) -> list[str]:
+    """Record skills an Epic's domains need on its entry.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``. The entry keeps its
+    side and everything else it holds.
 
     Args:
         matrix: The matrix, changed in place.
-        bead: The Epic.
+        bead: The Epic's beads id, or the id of its entry.
         names: The skills.
-        stamp: The moment and the maker to record when the row changes.
 
     Returns:
-        The skills the row did not hold before, sorted.
+        The skills the entry did not hold before, sorted.
+
+    Raises:
+        ValueError: A skill name is empty.
 
     """
-    node: Node = _prd(matrix, bead)
-    held: list[str] = node.get("expertise", [])
+    if not all(name.strip() for name in names):
+        message: str = "a skill is recorded by its name, and a name given is empty"
+        raise ValueError(message)
+    entry: Entry = _epic(matrix, bead)
+    held: list[str] = _recorded(entry)
     added: list[str] = sorted(set(names) - set(held))
     if added:
-        node["expertise"] = sorted({*held, *added})
-        node["changed"] = stamp.change()
+        listed: list[JsonValue] = [*sorted({*held, *added})]
+        matrix.put(replace(entry, attributes={**entry.attributes, ATTR_EXPERTISE: listed}))
     return added
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def add_for_types(matrix: Matrix, bead: str, resource_types: Sequence[str], stamp: Stamp) -> list[str]:
+def add_for_types(matrix: Matrix, bead: str, resource_types: Sequence[str]) -> list[str]:
     """Record the skills for resource types an Epic's architect has just recorded.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``.
 
     Args:
         matrix: The matrix, changed in place.
-        bead: The Epic.
-        resource_types: The resource types of the elements recorded.
-        stamp: The moment and the maker to record when the row changes.
+        bead: The Epic's beads id, or the id of its entry.
+        resource_types: The resource types of the entries recorded.
 
     Returns:
         The skills the Epic did not have before, sorted.
 
     """
-    return add_skills(matrix, bead, skills_for(resource_types), stamp)
+    return add_skills(matrix, bead, skills_for(resource_types))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def refresh(matrix: Matrix, bead: str, prd_text: str, stamp: Stamp) -> Expertise:
+def refresh(matrix: Matrix, bead: str, text: str = "") -> Expertise:
     """Bring an Epic's expertise list up to date and return it.
+
+    An Epic the matrix holds no entry for raises ``MatrixRefusedError``.
 
     Args:
         matrix: The matrix, changed in place.
-        bead: The Epic.
-        prd_text: The text of the PRD to search for the skills' terms; empty searches no text.
-        stamp: The moment and the maker to record when the row changes.
+        bead: The Epic's beads id, or the id of its entry.
+        text: The text of the PRD to search for the skills' terms (:func:`prd_text`); empty
+            searches no text.
 
     Returns:
         The Epic's skills after adding those for the PRD's terms and for the resource types of
-        every element the PRD reaches. Skills recorded earlier are kept.
+        every entry the Epic reaches. Skills recorded earlier are kept.
 
     """
-    added: list[str] = add_skills(matrix, bead, skills_for(epic_resource_types(matrix, bead), prd_text), stamp)
-    recorded: list[str] = list(_prd(matrix, bead).get("expertise", []))
-    return {"bead": bead, "expertise": recorded, "added": added, "skills": recorded}
+    added: list[str] = add_skills(matrix, bead, skills_for(epic_resource_types(matrix, bead), text))
+    entry: Entry = _epic(matrix, bead)
+    recorded: list[str] = _recorded(entry)
+    return {"epic": entry.id, "expertise": recorded, "added": added, "skills": list(recorded)}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

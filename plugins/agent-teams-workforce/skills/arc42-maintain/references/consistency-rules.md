@@ -30,7 +30,7 @@ its sequence view shows an event; a data model's key differs from the key a sequ
 view names a component `auth-svc` and another `AuthService` with no glossary entry joining them.
 
 **Repair.** Bring every view that shows the element in line with the decided fact or the built
-version, at every scope the matrix lists.
+version, at every scope the matrix lists (`atw-matrix node <entry id>`, under `describedBy`).
 
 ## 3. No view contradicts the owner's constraints
 

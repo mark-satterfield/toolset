@@ -134,8 +134,8 @@ its code:
 - **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`). The
   keys are defined in `flows/architecture_files.py`, `flows/repo_scoping.py` and
   `flows/elaboration_files.py`: `prd_to_spec.open_run`, `architecture.earlier_work`,
-  `atw-matrix check; atw-matrix unapproved`, `atw-matrix approve`, `trd.confirm`,
-  `atw-matrix prd --closure`, `spec_authoring.context`, `cdsbundles.list_bundles`,
+  `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents; atw-matrix commit`, `trd.confirm`,
+  `atw-matrix epic --closure`, `spec_authoring.context`, `cdsbundles.list_bundles`,
   `spec_authoring.normalize_ui`, `specui.spec_ui_append`, `spec_authoring.story_document`,
   `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
   `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `task_decomposition.record`,
@@ -785,10 +785,10 @@ made while sessions run is restored but kept as a copy and named in the failure'
 ### 7.4 Two Epics changing arc42 at the same time
 
 Every change of the matrix is made under the matrix's lock (`matrixstore.update_matrix`). Before
-deciding a fact whose home is an existing heading, the architect claims it (`atw-matrix claim`); a
-heading another Epic in progress holds is that Epic's to have reviewed, and the review scope lists
-it under `heldByOthers`. The promotion step approves only what is in review for its own Epic and
-commits only the documents its own review names.
+it designs a change to something that exists, the architect asks the matrix what rests on it
+(`atw-matrix impact --id`) and which other Epics share it (`atw-matrix related --epic`). The
+review scope of an Epic is the documents that Epic reaches that are not effective. The promotion
+step sets effective and commits only the documents of its own review scope.
 
 ## 8. Owner holds and questions (S02 item 8)
 
@@ -846,26 +846,32 @@ does not mark done; no other file, state or argument makes it begin anywhere els
 
 ## 10. The matrix
 
-One JSON file, `<driver>/matrix.json`, tracked in git in the control repository, holds how
-repositories, stacks, elements, PRDs, features, design facts, disagreements and architecture
-documents relate, with each row's approval and the code state of each element. Its shape is
-`<plugin>/skills/artifact-handoff/schemas/matrix.schema.json`; the modules
+One JSON file, `<driver>/matrix.json`, tracked in git in the control repository, holds three
+members: `version`, `entries` and `relationships`. The entries are Epics and their requirements,
+features, constraints, disagreements, arc42 documents, services, components, infrastructure,
+events, stacks, packages and layers; each entry and each relationship states the side it came
+from, `architecture` or `repository`. Its generic shape is
+`<plugin>/skills/artifact-handoff/schemas/matrix.schema.json` and its kinds are data, in
+`schemas/matrix-kinds.json`; the modules
 `<plugin>/scripts/portfolio/matrix*.py` implement it and `<plugin>/bin/atw-matrix` is the one
-command. Agents use the command; the orchestrator calls the modules in-process.
+command. Agents use the command; the orchestrator calls the modules in-process. The
+specification is `<plugin>/blueprint/design/matrix.md`.
 
-- **Approval.** A row or a heading is approved or not. The check step lists what is not approved for
-  an Epic and marks it in review; the promotion step marks what the reviews covered approved,
-  sets the reviewed documents to `lifecycle_state: effective`, and commits and pushes them in the
-  vault. Reviewers see only unapproved content.
-- **Code state.** An element's code is `none`, `legacy`, `built` or `deployed`. Only the build
-  pipeline sets `built` and `deployed`; only that code is trusted. The repository span of an Epic
-  is the elements its features are realized by, and everything those depend on, whose code is
-  neither `built` nor `deployed`.
-- **One home per fact.** A design fact is registered with its one home (document and heading); the
-  command refuses a second home.
+- **Lifecycle.** A document entry mirrors the `lifecycle_state` of its arc42 file. The check step
+  reads the documents an Epic reaches that are not effective (`review-scope`) and records nothing;
+  the promotion step sets the reviewed documents to `lifecycle_state: effective`, mirrors that in
+  the matrix (`sync-documents --paths`), and commits and pushes them in the vault. Reviewers see
+  only the documents in review.
+- **The verified mark.** The matrix has one code mark, `verified`, with the merge commit, on a
+  stack, the entries in it and the relationships the code makes real. The driver sets it when a
+  Story's pull request has merged (`verify --story --commit`); no agent and no elaboration step
+  sets it. The repository span of an Epic is every stack its closure reaches and the
+  architecture-side entries with a home that are not verified.
+- **One home per entry.** An entry has at most one `homeIn` on each side; the command refuses a
+  second.
 - **Roles.** The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run.
-- **Opening a run.** The open-run step brings the Epic's PRD row, the document rows and the Epic's
-  expertise list up to date in one change.
+- **Opening a run.** The open-run step brings the Epic's entry with its requirements, the document
+  entries and the Epic's expertise list up to date in one change.
 
 ## 11. Flow-level decisions
 
@@ -878,7 +884,8 @@ promotion step, with the lead's step between them when a review raised something
 - **The check step** (`flows/architecture_check.py`) judges nothing; every branch is a rule over
   the matrix, the criteria file and the architect's result. It writes `check-<n>.json`. A problem
   plans one correction by the architect and a new check, at most 3 times; after that the step
-  fails. With no problem it lists what is not approved, writes `review-scope.json`, and, when the
+  fails. With no problem it reads what is in review, writes `review-scope.json` and `unlinked.json`,
+  records nothing in the matrix, and, when the
   result's conclusion is `unsettled` and no lead has run, plans the lead and a new check. Otherwise
   it selects the reviewers by the `appliesWhen` rules, writes each its own narrowed scope, and
   plans one step per reviewer and the promotion after them. A rule that selects no reviewer fails
@@ -889,38 +896,39 @@ promotion step, with the lead's step between them when a review raised something
 - **The lead** writes its routing and adds the steps it calls for under its own step: a correction
   by the architect with a re-check by the reviewer that raised the finding, a specialist's opinion,
   a competing design, or the decider. A routing that rejects every item adds no step.
-- **The decider** is handed one question file and writes one ruling, which it also records in the
-  matrix. A ruling that raises an owner concern fails the step at stage `requires-human-action`.
+- **The decider** is handed one question file and writes one ruling, and settles each disagreement
+  the question cites in the matrix (`atw-matrix settle`); the step that accepts the ruling reads
+  each back and fails when `stands` is unset. A ruling that raises an owner concern fails the step
+  at stage `requires-human-action`.
 - **The promotion step** (`flows/architecture_promotion.py`) refuses while a review raised
-  something and no lead records that every item is resolved. It approves in the matrix, sets the
-  documents to effective, commits and pushes them in the vault, and commits the matrix. An item it
-  cannot approve fails the step, naming each with the reason.
+  something and no lead records that every item is resolved. It sets the documents of the review
+  scope to effective, mirrors that in the matrix, removes each settled disagreement whose losing
+  statement was corrected, commits and pushes the documents in the vault, and commits and pushes
+  the matrix. A document it cannot set effective fails the step, naming each with the reason.
 
 ### 11.2 Repository span
 
-The step `atw-matrix prd --closure` (`flows/repo_scoping.py`) reads the span from the matrix; no
-agent places anything. An element with no repository in the matrix, a repository that may hold no
-product element (the control repository, the architecture folder, a marketing repository), and a
-missing repository whose name matches no template each fail the step. It writes
+The step `atw-matrix epic --closure` (`flows/repo_scoping.py`) reads the span from the matrix; no
+agent places anything. An entry with no stack, a stack that names no repository, a repository
+that may hold no product entry (the control repository, the architecture folder, a marketing
+repository), and a missing repository whose stacks have more than one type or more than one app
+each fail the step. It writes
 `span-elements.json` and `repo-scoping.json` and plans one container per repository, each with its
-first step `spec_authoring.context`. An Epic whose features reach no element to build fails the
+first step `spec_authoring.context`. An Epic whose closure reaches nothing to build fails the
 step.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 
-A repository the matrix names and the inventory (`polyrepo.py inventory`) lacks is created by the
-span step with `polyrepo.py create`, which requires `--space`, `--template` and `--purpose`.
+A repository the matrix names and the inventory (`polyrepo.py inventory --name <name>`) lacks is
+created by the span step with `polyrepo.py create`, which requires `--space` and `--template`.
+The tool records the stack the new repository holds in the matrix.
 
-- **The template** is the kind in `templates.kinds` of `<control>/.polyrepo/config.yaml` whose
-  `name_regex` matches the repository's name. The same match decides whether a repository is a
-  frontend repository.
-- **The purpose** is the one the repository's matrix row states, or a sentence naming the Epic
-  when the row states none.
-- **The app space** is derived from the name (`flows/repo_placement.py` `app_space`): the `space`
-  of the first `repositories.patterns` entry in the same file whose `regex` matches the name. A
-  name whose first matching pattern is not of kind `application`, or is in the `marketing` space,
-  and a name no pattern matches, fail the step. The folder inside the space comes from the
-  config's `templates.placement`, which `polyrepo.py create` applies.
+- **The template** is the type of the repository's stacks, the last token of a stack's name
+  (`service`, `infra`, `lib`, `web` and so on). A repository is a frontend repository when that
+  type is `web`.
+- **The app space** is the `app` of the repository's stacks. Stacks of more than one type or more
+  than one app, stacks that name no app, and the `marketing` app fail the step. The folder inside
+  the space comes from the config's `templates.placement`, which `polyrepo.py create` applies.
 
 **Owner facts.** Recognised before the first `polyrepo.py create` runs, by a preflight whose
 results are exit statuses and command output:

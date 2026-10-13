@@ -21,12 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipelin
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import elaboration
 import elaborationcontracts
-from driver_surface_types import ARCH_PATH_ENV, PRD_DIR_ENV
+from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
 from elaborationcontracts import Finished, Refused, Released, Started
-from matrix_contract import KIND_PRD, Matrix
 from matrixexpertise import refresh
-from matrixstore import CHANGED_BY_SYNC, Stamp, make_id, matrix_path, timestamp, update_matrix
-from matrixsync import Epic, parse_epics, sync_documents, sync_prds
+from matrixstore import Matrix, matrix_path, update_matrix
+from matrixsync import EpicBead, program_output, read_epics, sync_documents, sync_epics, vault_root
+from matrixtraverse import epic_id
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
@@ -102,7 +102,7 @@ from step_journal_contract import (
 )
 
 _ARGUMENT_ERROR: str = "Arguments violate the prd_to_spec input contract"
-MATRIX_PRD_ROW: Final = "matrix prd row"
+MATRIX_EPIC: Final = "matrix epic entry"
 LIFECYCLE_STAGE: Final = "epic-lifecycle"
 REGISTERED: Final = (
     architecture_earlier,
@@ -151,8 +151,8 @@ def outermost_steps() -> list[StepPlan]:
             "ref": "open",
             "description": "Open the run",
             "purpose": (
-                "Bring the PRD row, the document rows and the expertise list in the matrix up to date, "
-                "and plan the architecture steps"
+                "Bring the Epic's entry, its requirements, the document entries and the expertise list in the "
+                "matrix up to date, and plan the architecture steps"
             ),
             "script": OPEN_RUN,
         },
@@ -219,34 +219,37 @@ def outermost_steps() -> list[StepPlan]:
     ]
 
 
-def _sync_matrix(bead: str, epics: list[Epic], prd: Path, arch: Path) -> str:
-    """Bring the Epic's PRD row, the document rows and its expertise list up to date in one matrix change.
+def _sync_matrix(bead: str, epics: list[EpicBead], prd: Path, arch: Path) -> str:
+    """Bring the Epic's entry, its requirements, the document entries and its expertise list up to date.
+
+    One matrix change does what ``atw-matrix sync-epics --bead``, ``sync-documents`` and
+    ``expertise --epic`` do: the Epic with its PRD path and hash and one requirement per heading;
+    every arc42 document with its lifecycle and headings; the skills the Epic's domains need.
 
     Returns:
-        The vault commit the matrix's document rows are now synced to.
+        The vault commit the documents were read at.
 
     """
-    at: str = timestamp()
+    commit: str = program_output("git", ["rev-parse", "HEAD"], vault_root(arch)).strip()
 
-    def change(matrix: Matrix) -> str:
-        sync_prds(matrix, epics, env_path(PRD_DIR_ENV), Stamp(at, CHANGED_BY_SYNC))
-        sync_documents(matrix, arch, Stamp(at, CHANGED_BY_SYNC))
-        refresh(matrix, bead, prd.read_text(encoding="utf-8"), Stamp(at, bead))
-        return matrix["documentsSyncedAt"]["vaultCommit"]
+    def change(matrix: Matrix) -> None:
+        sync_epics(matrix, epics, env_path(PRD_DIR_ENV), prd=str(prd))
+        sync_documents(matrix, arch)
+        refresh(matrix, bead, prd.read_text(encoding="utf-8"))
 
-    return update_matrix(matrix_path(None, os.environ), change)
+    update_matrix(matrix_path(None, os.environ), change)
+    return commit
 
 
 @script_step(OPEN_RUN)
 def open_run(run: StepRun) -> Completion:
     """Open the run: the matrix work, the context file, and the first architecture steps.
 
-    Returns:
-        The PRD, the PRD's matrix row and the context file as artifacts, with the architect's
-        step and the check after it planned under the Architecture container.
+    Beads that does not hold the bead as an Epic fails the step.
 
-    Raises:
-        StepError: Beads does not hold the bead as an Epic.
+    Returns:
+        The PRD, the id of the Epic's matrix entry and the context file as artifacts, with the
+        architect's step and the check after it planned under the Architecture container.
 
     """
     enter_phase(run.context, run.agents.emit, ARCHITECTURE_PHASE, OPEN_RUN)
@@ -254,9 +257,12 @@ def open_run(run: StepRun) -> Completion:
     args: JsonObject = run.context.args
     prd: Path = Path(check_type(json_object(args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     arch: Path = Path(check_type(args[dispatch.KEY_ARCH_PATH], str)).resolve()
-    epics: list[Epic] = parse_epics(run.tools.bd(["show", run.bead, "--json"], stage=OPEN_RUN))
-    if [epic.bead for epic in epics] != [run.bead]:
-        raise StepError(OPEN_RUN, OTHER_CAUSE, (f"{run.bead} is not an Epic in beads",))
+    control: Path = env_path(CONTROL_REPO_ENV)
+
+    def read() -> list[EpicBead]:
+        return run.tools.portfolio(OPEN_RUN, read_epics, control, run.bead)
+
+    epics: list[EpicBead] = run.tools.operation(OPEN_RUN, read)
     commit: str = run.tools.portfolio(OPEN_RUN, _sync_matrix, run.bead, epics, prd, arch)
     path: Path = context_path(run.context.work)
     write_json(path, new_context(run.bead, prd, arch, run.context.work, commit))
@@ -264,7 +270,7 @@ def open_run(run: StepRun) -> Completion:
     return Completion(
         artifacts=(
             file_artifact(LABEL_PRD, prd),
-            value_artifact(MATRIX_PRD_ROW, make_id(KIND_PRD, run.bead)),
+            value_artifact(MATRIX_EPIC, epic_id(run.bead)),
             file_artifact(LABEL_CONTEXT, path),
         ),
         add=(first_steps(run.step["id"], run.step_named(ARCHITECTURE)["id"], architect),),

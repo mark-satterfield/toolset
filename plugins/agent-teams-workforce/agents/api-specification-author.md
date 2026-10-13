@@ -55,7 +55,15 @@ outputs use distinct fact-only assignments; never infer an unassigned writable c
 Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
 architecture and the TRD do not hold these details; you settle them here. Start from
 `notesForSpecs` in your context file, which holds the details the solutions architect already
-knew. The context file's `sharedCapabilities` lists what this repository's elements obtain from
+knew. The context file also holds what the matrix returns for this Story, and you run no
+matrix command yourself: `stacks`, the matrix ids of the stacks the Story builds in; `scopes`,
+for each of those stacks what `atw-matrix story-scope` returns (the documents and headings
+that describe the stack and each entry the Story builds, the constraints that bind them and
+the shared capabilities they must use); `documents`, each of those documents with its id,
+its path and the headings to read; and `otherStacks`, the Epic's stacks outside this Story.
+Read the documents and headings `documents` names, and only those; cite a document by the
+path and heading given there.
+The context file's `sharedCapabilities` lists what this repository's elements obtain from
 shared capabilities: state under "Shared capabilities used" which contract uses which, and
 specify no behaviour that a listed capability provides.
 

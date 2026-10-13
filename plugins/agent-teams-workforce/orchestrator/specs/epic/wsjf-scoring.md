@@ -15,7 +15,7 @@ Source: `<plugin>/workflows/wsjf-scoring.js` (`meta.description`), the plugin co
 `<plugin>/commands/wsjf-scoring.md`, the agent `<plugin>/agents/wsjf-scorer.md` and its skills
 (`skills/wsjf`, `skills/beads-contract`), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts
 only, `<plugin>/scripts/portfolio/depscore.py` (`score-plan`, `judge-input`, `record`, `score`),
-`scoring.py`, `prds.py`, `beadgraph.py` and `elaboration.py` (`finish`). Environment variables
+`scoring.py`, `assesscontext.py` (`prd_paths`), `beadgraph.py` and `elaboration.py` (`finish`). Environment variables
 are named only in `<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`
 (`$defs.DriverEnvironment`; read `<plugin>/skills/pipeline-contracts/SKILL.md`); this spec writes
 `$<CONSTANT>` for the value of the variable that schema constant names. `<driver>` is
@@ -100,7 +100,10 @@ After a successful run:
   roll-up), loaded by `scoring._load_wsjf`.
 - Agent context: the architecture under `archPath` and code under `projectRoot`, read by the
   judging sessions as evidence of what is already decided or built.
-- An Epic's PRD is its bead `description` (`prds.write_prds` writes `# <title>\n\n<description>`).
+- An Epic's PRD is the file the matrix names for it (`atw-matrix epic <id>`, read by
+  `assesscontext.prd_paths`); `judge-input` needs the matrix (`ATW_MATRIX` or the control
+  repository variable) and the PRD folder variable (`PRD_DIR_ENV`) at the epic level, and gives
+  each Epic to judge its `prdPath`, or null when the matrix names no PRD.
 
 ## 4. Outputs
 
@@ -114,7 +117,6 @@ Files (under `<workDir>`; JSON unless stated):
   description, epic: {id, title} | null}`), `referenceJobs` (`{id, title, estimate, low, high,
   refinedSize, tasks}` per Epic whose elaboration is done and whose Tasks are all sized),
   `summary: {items, toJudge, referenceJobs, ids (epic) | groups: [{key, epic, tasks}] (task)}`.
-- `prd/<epic-id>.md`: the PRD of each Epic to judge.
 - `judgments/<level>/candidates/<key>.json` (written by the agent): the judgment, in the shape of
   the next two entries. Beside it the agent writes its progress file
   `candidates/<key>.json.progress.json`, and `artifactcontract.py` writes the checkpoint
@@ -169,8 +171,9 @@ session returns nothing is logged, and the next plan reads its effect from the t
 1. `deterministic` **Plan**: `depscore.py score-plan [--all] [--rejudge] [--only ids] --out
    score-plan.json -C <repo>` (`scoring.plan`). Writes `score-plan.json`.
 2. `deterministic` **Judge input**: for each level with items to judge, `depscore.py judge-input
-   --plan score-plan.json --level epic|task [--prd-dir prd] --out judge-input-<level>.json`
-   (`scoring.judge_input`). The epic level writes `prd/<id>.md` for each Epic to judge. Skipped
+   --plan score-plan.json --level epic|task --out judge-input-<level>.json`
+   (`scoring.judge_input`). At the epic level each item carries `prdPath`, the PRD file the matrix
+   names for the Epic; no copy of a PRD is written. Skipped
    for a level with nothing to judge.
 
 Steps 3 to 6 run once for each planned session (one per Epic id; one per Task group), all
@@ -178,7 +181,7 @@ sessions in parallel: every session reads only its own items, and no session's r
 another's input.
 
 3. `deterministic` **Input revision**: `jsonartifact.py --source score-plan.json --source
-   judge-input-<level>.json`, with `--source prd` at the epic level, fingerprints the inputs (a
+   judge-input-<level>.json` fingerprints the inputs (a
    file by its SHA-256 and size; a directory by the relative path, SHA-256 and size of every file
    in it). The input revision is the SHA-256 of those receipts together with the level and the
    ids the session covers. When the fingerprint command fails, the revision is made from the
@@ -198,7 +201,7 @@ another's input.
 5. `agent` **Judge**: `wsjf-scorer`, effort `medium` (the JS sets it), model `sonnet` (agent
    frontmatter). The brief ends with the artifact contract data: the candidate path, the
    progress file path, the input revision and the `artifactcontract.py` commands bound to them.
-   - **Epic** (one session per Epic id): reads `prd/<id>.md` and its entry and the
+   - **Epic** (one session per Epic id): reads the PRD file its entry names as `prdPath`, its entry and the
      `referenceJobs` in `judge-input-epic.json`, with `archPath` and `projectRoot` as evidence of
      what is decided or built. It judges user-business value, time criticality and their
      confidence, and the size only when `sizedFromTasks` is false; it reads no other Epic's PRD
@@ -285,7 +288,7 @@ Agents the workflow dispatches:
   session).
 - Step 5 judgments: saved as `judgments/<level>/<key>.json`, each with its `.receipt`. A rerun in
   the same `workDir` starts no session whose input revision is unchanged, that is when
-  `score-plan.json`, `judge-input-<level>.json` and, for an Epic, every file under `prd/` have
+  `score-plan.json` and `judge-input-<level>.json` have
   the same bytes. A session that was interrupted leaves its candidate with the progress file and
   checkpoint; a rerun with the same input revision accepts a checkpoint marked `complete`
   without a session, and otherwise starts a session that continues those files.

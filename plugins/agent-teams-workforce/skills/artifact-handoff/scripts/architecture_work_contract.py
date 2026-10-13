@@ -148,7 +148,6 @@ class ArchitectureContext(TypedDict):
     bead: str
     prdPath: str
     architectureRoot: str
-    constraintsFolder: str
     vaultCommit: str
     matrixCommand: str
     statePath: str
@@ -196,6 +195,13 @@ class FeatureEntry(TypedDict):
     prdRequirements: list[str]
     elements: list[str]
     sharedCapabilities: list[str]
+
+
+class NoFeature(TypedDict):
+    """Typed form of #/$defs/NoFeature in architecture-result.schema.json."""
+
+    requirement: str
+    reason: str
 
 
 class SharedUse(TypedDict):
@@ -285,6 +291,7 @@ class ArchitectureResult(TypedDict):
     bead: str
     conclusion: Conclusion
     features: list[FeatureEntry]
+    noFeature: list[NoFeature]
     newElements: list[str]
     sharedCapabilities: list[SharedUse]
     facts: list[FactEntry]
@@ -386,11 +393,22 @@ class NoSource(TypedDict):
     why: str
 
 
+class TrdRequirement(TypedDict):
+    """Typed form of #/$defs/TrdRequirement in architecture-result.schema.json."""
+
+    id: str
+    kind: RequirementKind
+    statement: str
+    source: Citation
+    appliesTo: str
+
+
 class TrdAnswer(TypedDict):
     """Typed form of #/$defs/TrdAnswer in architecture-result.schema.json."""
 
     mode: TrdMode
     requirementIds: list[str]
+    requirements: list[TrdRequirement]
     noSource: list[NoSource]
     summary: str
 

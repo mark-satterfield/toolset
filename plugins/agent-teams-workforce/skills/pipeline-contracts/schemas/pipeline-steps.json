@@ -134,7 +134,7 @@
           "reads": ["worktree", "suiteCommand", "baseline", "redRun", "testFiles", "design", "provisioning"],
           "records": [
             {"name": "implementers", "kind": "value", "holds": "the implementer agent names, in the order they work"},
-            {"name": "sharedCapabilities", "kind": "value", "holds": "the shared capabilities the Task must use, read with atw-matrix uses --task: a list of { id, name, provides: [{ id, behaviour, consumersMust, interface }], providedBy: [{ name, kind, repository }] }"}
+            {"name": "sharedCapabilities", "kind": "value", "holds": "the shared capabilities the Task must use, read with atw-matrix uses --ids for the matrix ids the Task states: a list of { id, name, provides: [{ id, behaviour, consumersMust, interface }], providedBy: [{ name, kind, repository }] }"}
           ],
           "adds": [
             {"kinds": ["build:implement", "build:green-check"], "when": "always: one build:implement per selected implementer, then the run that judges them"}
@@ -498,7 +498,7 @@
           "runBy": "driver",
           "reads": ["worktree", "branch"],
           "records": [
-            {"name": "built", "kind": "value", "holds": "{ stage, differences, builtFiles }: what the built-version workflow returned, with counts in place of lists; when the workflow corrected the effective architecture, the driver first approves the corrected documents in the matrix with the built-correction basis"}
+            {"name": "built", "kind": "value", "holds": "{ stage, differences, builtFiles }: what the built-version workflow returned, with counts in place of lists; nothing is recorded in the matrix for it"}
           ],
           "adds": []
         },

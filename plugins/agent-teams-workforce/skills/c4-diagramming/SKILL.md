@@ -42,7 +42,8 @@ this body.
   config change) in Docusaurus.
 - A placement: the arc42 section and subject folder the view belongs in, by its scope, and the
   catalog frontmatter of the view (`view_type`, `scope`, `subject`, `shows`,
-  `lifecycle_state`), so every view can be found by the elements it shows.
+  `lifecycle_state`), which the matrix reads, so every view can be found from the elements it
+  shows (`atw-matrix node <entry id>`).
 
 ## Project coverage and validation
 
@@ -97,8 +98,11 @@ current view evidence before approval; self-checks do not replace their independ
    - Deployment views (system or service scope) → arc42 **section 7, Deployment View**.
    - The structure of a pattern used across many services → arc42 **section 8,
      Crosscutting Concepts**.
-   Search the catalog for the subject and its elements first, so an existing view is updated
-   rather than duplicated, and write the view's catalog frontmatter.
+   Ask the matrix first which views show the subject and its elements, so an existing view is
+   updated rather than duplicated: `atw-matrix find --text "<name>"` returns the entry's id,
+   and `atw-matrix node <entry id>` names under `describedBy` each document and heading that
+   describes it, with the document's `lifecycle`. An entry with no `describedBy` has no view.
+   Then write the view's catalog frontmatter.
 
 6. **Verify the rendered image.** Render each diagram to PNG, look at it, and fix until nothing
    overlaps, as `architecture-diagramming` (`references/readability.md`) requires. The Mermaid

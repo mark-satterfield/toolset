@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from matrix_contract import JsonValue, MatrixError, json_value
-from matrixstore import DEFAULT_LOCK_WAIT, MatrixRefusedError, matrix_path
+from matrix_contract import EntryId, JsonValue, Side, as_side, json_value
+from matrixstore import DEFAULT_LOCK_WAIT, MatrixRefusedError, as_entry_id, matrix_path
 
 if TYPE_CHECKING:
     import argparse
@@ -85,6 +85,41 @@ class Call:
         """
         value: object = getattr(self.args, name, None)
         return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+    def entry(self, name: str) -> EntryId:
+        """Read an option that names one entry by its id.
+
+        An option that was not given raises ``MatrixRefusedError`` from :meth:`required`, and a
+        value that is not the id of a registered kind raises ``MatrixError`` from ``as_entry_id``.
+
+        Returns:
+            The entry id.
+
+        """
+        return as_entry_id(self.required(name))
+
+    def entries(self, name: str) -> list[EntryId]:
+        """Read an option that names several entries by their ids.
+
+        A value that is not the id of a registered kind raises ``MatrixError`` from ``as_entry_id``.
+
+        Returns:
+            The entry ids given, in the order given; none when the option was not given.
+
+        """
+        return [as_entry_id(stated) for stated in self.texts(name)]
+
+    def side(self) -> Side:
+        """Read ``--side``: which side a fact came from.
+
+        An option that was not given raises ``MatrixRefusedError`` from :meth:`required`, and a
+        value that is not a side raises ``MatrixError`` from ``as_side``.
+
+        Returns:
+            The side.
+
+        """
+        return as_side(self.required("side"))
 
     def number(self, name: str) -> int | None:
         """Read an option that takes a whole number.
@@ -168,20 +203,3 @@ class Call:
             message: str = f"give --{option.replace('_', '-')}, or set {' or '.join(variables)}"
             raise MatrixRefusedError(message)
         return folder
-
-
-def decoded_file(path: Path, what: str) -> JsonValue:
-    """Read a JSON file the caller named.
-
-    Returns:
-        The decoded file.
-
-    Raises:
-        MatrixError: The file is missing, unreadable or not JSON.
-
-    """
-    try:
-        return json_value(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, TypeError) as error:
-        message: str = f"cannot read {what} {path}: {error}"
-        raise MatrixError(message) from error

@@ -21,10 +21,12 @@ caller's request to it, and relay its reply.
 The polyrepo-steward is the one place for anything about a repository, other than work
 inside a repository's contents:
 
-- **Answers** from live facts it checks against the repositories and GitHub: which repos
-  exist, which repo owns a function, uncommitted files in a repo, when a repo was last
-  updated, whether a repo is up to date with GitHub `main`, what depends on what (answered from the
-  effective arc42 architecture at the level of services and components, then placed in repos).
+- **Answers** from live facts it checks against the repositories and GitHub, and from the
+  matrix's stacks: which repos exist, which stack and repo own a function, what a repo holds
+  and what it is for, uncommitted files in a repo, when a repo was last updated, whether a
+  repo is up to date with GitHub `main`, what depends on what (answered by the matrix at the
+  level of services, components and infrastructure, each placed in the stack and repo that
+  hold it).
 - **Acts**: creates a repo from a template (locally and on GitHub), renames, deprecates and
   archives repos, rebases repos on `origin/main`, searches across repos, and propagates
   shared `AGENTS.md` content.
@@ -45,13 +47,13 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command
 | Which repos exist, how many | `list` |
 | A repo's uncommitted files, last commit, whether `main` is up to date with GitHub | `status <repo>` |
 | Repos with an attribute | `search attr=value` (dotted keys, e.g. `main.behind=0`, `github.archived=false`) |
-| Every repo's full record (path, purpose, owns, groups, live state) | `inventory` |
+| Every repo's full record (path, groups, live state, and the matrix's stacks with their purposes) | `inventory` |
 | Text across every repo | `grep <pattern>` |
 
 Invoke the tool by that path; a bare `polyrepo` on `PATH` may be an unrelated program.
-Everything else — which repo owns a piece of functionality, any action on a repository
-(create, rename, deprecate, rebase, sync `AGENTS.md`), and anything the commands
-above do not answer — goes to the steward.
+Everything else — which repo owns a piece of functionality (the matrix's answer, not
+`grep` or `inventory`), any action on a repository (create, rename, deprecate, rebase,
+sync `AGENTS.md`), and anything the commands above do not answer — goes to the steward.
 
 ## What you receive
 

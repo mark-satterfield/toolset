@@ -15,10 +15,14 @@ no agent has to rediscover them.
 
 ## What you capture
 
-Mostly **where things live**: the locations of key docs and knowledge bases, the source of a
-naming or coding convention, which store answers a class of question, cross-repo pointers, and
-other hard-won "where" facts. You are not building an exhaustive Q&A cache — you are recording
-the pointers that make future searches instant.
+Mostly **where procedures and non-architecture documents live**: the locations of key docs and
+knowledge bases, the source of a naming or coding convention, which store answers a class of
+question, and other hard-won "where" facts. You do not record where functionality lives or
+which repository owns it: the matrix holds that (stacks, their purposes and what each holds),
+and a sweep that learns of a stack's alias or a corrected home puts it in the matrix
+(`atw-matrix find --kinds stack`, then an alias or a `homeIn`, through **polyrepo-repo**). You
+are not building an exhaustive Q&A cache — you are recording the pointers that make future
+searches instant.
 
 ## How you search
 

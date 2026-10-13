@@ -14,7 +14,7 @@ Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the 
 skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (bead metadata),
 `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
 `<plugin>/scripts/portfolio/depscore.py` (`assess-plan`, `assess-context`, `validate`,
-`apply-edges`), `edgeset.py`, `assesscontext.py`, `prds.py`. `<driver>` is the driver directory
+`apply-edges`), `edgeset.py`, `assesscontext.py`, and `<plugin>/bin/atw-matrix`. `<driver>` is the driver directory
 the `pipeline-contracts` skill defines (`DRIVER_DIR_PARTS` under the control repository its
 `CONTROL_REPO_ENV` variable names). It calls the flow in
 `<orch>/specs/epic/wsjf-scoring.md`.
@@ -84,14 +84,16 @@ After a successful run (with `apply` true):
   (default true); the control repository, architecture root and project root come from the
   `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
   skill. Optional, passed by no current caller: `priorFailure` (text put at the head of the
-  brief), `contextDir` (default `<workDir>/context`), `corpusReady` (passes `--corpus-ready` to
-  `assess-context`), `score` (false skips the scoring step).
+  brief), `score` (false skips the scoring step). `assess-context` reads the matrix the
+  environment names and needs the PRD folder variable (`PRD_DIR_ENV`).
 - beads, read with descriptions: every open Epic (title, description = PRD,
   `KEY_ELABORATION_STATE`), every `tracks`/`blocks` edge among Epics, the `SEQUENCING_KEYS` on each
   Epic, the judging
   fingerprint (`beads-contract.py content_hash --scope judging`).
-- The architecture under `archPath`: arc42 views and their frontmatter (`subject`, `shows`,
-  `lifecycle_state`). Only `lifecycle_state: effective` settles a decision.
+- The matrix, through `atw-matrix`: the Epic's PRD path (`epic <id>`), the other Epics that reach
+  what it reaches (`related --epic`), and, for what settles a decision, `find --kinds
+  document,constraint,feature` then `node`. Only a document whose `lifecycle` is `effective`
+  settles a decision. The related PRDs the matrix names are then read in full.
 
 ## 4. Outputs
 
@@ -99,12 +101,12 @@ Files (under `<workDir>`):
 - `assess-plan.json`: `depscore.assess_plan` result: `{level: "epic", scope, since, unassessed:
   [ids], fingerprints: {id: sha} for every open Epic, summary: {level, scope, openEpics,
   unassessed, unassessedIds}}`.
-- `context/prd/<id>.md` (one per open Epic: `# <title>\n\n<description>`), `context/index.md`
-  (`- <id> | <title> | elaboration: <state> | PRD: <path> | sections: <headings, max 40>`).
-- `context.json`: `assesscontext.assess_context` result: `{epic: {id, title, fingerprint,
-  elaborationState, prdPath}, standing: [{from, to, type, owned, reason, confidence, setBy,
-  setAt}], withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath,
-  summary: {epic, openEpics, standing, withdrawn, owned, handMade}}`.
+- `context.json`: `assesscontext.assess_context` result: `epic` (with `prdPath`, the Epic's PRD
+  file as the matrix names it, absolute, or null), `related` (the Epics `atw-matrix related
+  --epic` returns, each with what is shared), `similar` (for an Epic no feature serves yet, other
+  Epics' requirements and features that share its words), `standing: [{from, to, type, owned,
+  reason, confidence, setBy, setAt}]`, `withdrawn: [{from, to, reason, withdrawnBy,
+  withdrawnAt}]` and `summary`. No copy of a PRD and no index is written.
 - `candidates/edges.json` (written by the agent): the proposal, `{edges: [{from, to, reason,
   confidence: high|medium|low, archCheck, answers?}], withdrawn: [{from, to, reason}]}`. Beside
   it the agent writes its progress file `candidates/edges.json.progress.json`, and
@@ -158,15 +160,14 @@ command printed.
 1. `deterministic` **Plan**: `depscore.py assess-plan --epic <id> --out assess-plan.json -C
    <repo>` (`depscore.assess_plan`). Its `fingerprints` are what `apply-edges` records as
    `KEY_SEQ_CONTENT_HASH`.
-2. `deterministic` **Context**: `depscore.py assess-context --epic <id> --dir <contextDir> --out
-   context.json` (`assesscontext.assess_context`). Writes the corpus, the index and
+2. `deterministic` **Context**: `depscore.py assess-context --epic <id> --out
+   context.json` (`assesscontext.assess_context`). Writes
    `context.json`. When step 1 or 2 fails, no session starts and the result's `edges.reason`
    says the context could not be written.
-3. `deterministic` **Input revision**: `jsonartifact.py --source context.json --source
-   <contextDir>` fingerprints the two inputs (a file by its SHA-256 and size; a directory by the
-   relative path, SHA-256 and size of every file in it). The input revision is the SHA-256 of
-   those receipts together with the Epic id and scope. When the fingerprint command fails, the
-   revision is made from the two paths alone.
+3. `deterministic` **Input revision**: `jsonartifact.py --source context.json`
+   fingerprints the input (the file by its SHA-256 and size). The input revision is the SHA-256 of
+   that receipt together with the Epic id and scope. When the fingerprint command fails, the
+   revision is made from the path alone.
 4. `deterministic` **Reuse**: `jsonartifact.py --candidate candidates/edges.json --final
    edges.json --schema-json <proposal schema> --revision <input revision> --probe --recover`.
    - `edges.json` is reused, and no session starts, when its bytes match `edges.json.receipt`
@@ -178,8 +179,9 @@ command printed.
    - When that checkpoint's status is `blocked`, the run stops with the checkpoint's reason and
      its remaining items (`ARTIFACT_BLOCKED`).
    - In every other case step 5 runs.
-5. `agent` **Assess**: `epic-sequencer`. The brief names `context/prd/<epic>.md`, `context/prd/`,
-   `context/index.md`, `context.json` and `archPath`, carries the `priorFailure` text when given,
+5. `agent` **Assess**: `epic-sequencer`. The brief names `context.json` (the Epic's `prdPath`, the
+   `related` and `similar` Epics, the standing and withdrawn edges) and the `atw-matrix` reads the
+   session makes, carries the `priorFailure` text when given,
    and states THE TEST and the nine foundation layers (network and egress; identity and
    authorization; data stores and data residency; event platform; API shape; chassis and
    runtime; configuration and secrets; observability; environments), the eight-step order, the
@@ -203,7 +205,10 @@ command printed.
 8. `deterministic` **Apply**: when step 7 is ok, `depscore.py apply-edges --edges edges.json
    --plan assess-plan.json --epic <id> [--dry-run] --out apply-edges.json`
    (`edgeset.apply_edges`). It validates again against the graph as read now and writes nothing
-   if that fails.
+   if that fails. The proposal's `decisions` (`{decision, relationship, entry, heading}`) are then
+   recorded in the matrix, one `atw-matrix link drives|restsOn` from the Epic to the feature or
+   document heading for each, as role `script`; the result's `matrix` holds `{decisions, recorded,
+   failures}`. The Epic-to-Epic edge stays a beads `tracks` edge.
 9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
    is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
    <workDir>/scoring` and the same `repoPath`, `pluginRoot`, `archPath` and `projectRoot`.
@@ -236,7 +241,7 @@ Agents the workflow dispatches:
 - The candidate is valid against the proposal schema before it becomes `edges.json`.
 - `edges.json` is read as accepted only when its bytes match `edges.json.receipt`.
 - An accepted `edges.json` is reused only for the same proposal schema digest and the same input
-  revision, so a change to `context.json` or to any file under the context directory starts a
+  revision, so a change to `context.json` starts a
   new session.
 
 **Checks the intent requires that the code does not enforce** (recorded, not settled: outside this rewrite, CONTEXT 7.17)
@@ -270,8 +275,8 @@ Agents the workflow dispatches:
 
 - Steps 1 to 3: recomputed every run (no `epic-sequencer` session).
 - Step 5: saved as `edges.json` with `edges.json.receipt`. A rerun in the same `workDir` starts
-  no session when the input revision is unchanged, that is when `context.json` and every file
-  under the context directory have the same bytes (the Epic's and every open Epic's PRD, the
+  no session when the input revision is unchanged, that is when `context.json` has
+  the same bytes (the Epic's PRD path, the related and similar Epics, the
   index, the standing and withdrawn edges). A session that was interrupted leaves
   `candidates/edges.json` with its progress file and checkpoint; a rerun with the same input
   revision accepts a checkpoint marked `complete` without a session, and otherwise starts a
@@ -295,7 +300,7 @@ Agents the workflow dispatches:
 - 7.4 Retries: the session checks its own candidate with `validate` and revises it before it
   returns; the workflow starts no second session on unchanged input.
 - 7.9 Who gets asked: only a cycle through the owner's hand-made edge reaches the owner.
-- 7.11 Deterministic over agentic: corpus, index, fingerprints, validation and the diff are code;
+- 7.11 Deterministic over agentic: the matrix reads, fingerprints, validation and the diff are code;
   only the edge judgment is agent work.
 - 7.14 Briefs: the brief states THE TEST and the files; it names no expected edge.
 - 7.2: `apply: false` (`--propose`) is the owner's option; no session uses it as a rehearsal.

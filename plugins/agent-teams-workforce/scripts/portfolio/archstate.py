@@ -52,12 +52,12 @@ from contracts import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-# The matrix and target report contracts are generated into the artifact-handoff skill, their
-# one definition; the path is declared here rather than inherited from another import.
+# The target report contract is generated into the artifact-handoff skill, its one definition;
+# the path is declared here rather than inherited from another import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 
 # isort: split
-from matrix_contract import LIFECYCLE_EFFECTIVE
+from matrixsync import LIFECYCLE_EFFECTIVE
 from target_contract import (
     KEY_LIFECYCLE_STATE,
     TARGET_FOLDER,

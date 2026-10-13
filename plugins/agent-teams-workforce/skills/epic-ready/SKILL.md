@@ -20,15 +20,11 @@ So this skill demands exactly two things, and adds nothing to them.
 
 ## The two conditions
 
-1. **The PRD resolves.** Exactly one PRD document pairs with this Epic. The pairing is
-   carried by two canonical pointers, both authoritative:
-   - the Epic's own `prd:<stem>` label, and
-   - the PRD's own `**Epic:** <bead-id>` line.
-
-   When both are present they must name the same document. **A disagreement resolves to
-   nothing** — it is a conflict to report, never to settle by preferring a side — so it
-   reports `Ready: FALSE` naming both candidates. No PRD at all, or two PRDs naming this
-   Epic with no label saying which, is the same answer for the same reason.
+1. **The PRD resolves.** The matrix holds the pairing of an Epic and its PRD, in one
+   place: the `epic` entry's `prd.path`. `atw-matrix epic <id>` returns it as `prd`. The
+   PRD resolves when that command returns a `prd` path. An Epic the matrix holds no entry
+   for, or an entry with no `prd`, is unresolved and reports `Ready: FALSE`. No label on
+   the bead, no line in a PRD file and no resemblance of titles pairs an Epic with a PRD.
 
 2. **The elaboration state is `ELABORATION_READY` or `ELABORATION_IN_PROGRESS`.** The key,
    its values and the owner-token key are defined once, in the `LANE_KEYS` group of the
@@ -66,7 +62,7 @@ caller supplies a response schema, the schema carries them. When it does not, re
 ```
 Ready: [TRUE / FALSE]
 Epic: [id or title]
-PRD: [path / "unresolved" / "conflict: <a> vs <b>"]
+PRD: [path / "unresolved"]
 Elaboration state: [<the stored ElaborationState value> / authoring (absent)]
 Reason: [one line — why, whichever way it went]
 ```
@@ -75,11 +71,12 @@ Reason: [one line — why, whichever way it went]
   one that failed (the PRD first, if both did).
 - No such Epic in the tracker, or the bead is not an Epic → `Ready: FALSE`, `Reason` says
   which. A Task or a Story sent here is a caller defect: say so and rule nothing.
-- A `bd` call that errors → `Ready: FALSE` with the error in `Reason`.
+- A `bd` call that errors, or an `atw-matrix` call that fails for any reason other than
+  holding no entry for the Epic → `Ready: FALSE` with the error in `Reason`.
 
 ## This gate writes nothing
 
-No metadata, no comments, no labels. It reads and it rules. The elaboration state is written
+No metadata, no comments, no labels, and nothing in the matrix. It reads and it rules. The elaboration state is written
 by `prd-to-spec` — `ELABORATION_IN_PROGRESS` at its start, `ELABORATION_DONE` when its Tasks
 are written — and by a person: `ELABORATION_READY` when a new PRD is finished,
 `ELABORATION_IN_PROGRESS` to hand back an Epic that was already started, so it resumes from
@@ -102,17 +99,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" 
   | jq '.lane'
 ```
 
-**The Epic's `prd:` label:**
+**The Epic's PRD** — the path, relative to the vault root, or empty:
 ```
-atw-bd show <id> --json --readonly \
-  | jq -r 'if type=="array" then .[0] else (.issue // .) end
-           | (.labels//[])[] | select(startswith("prd:"))'
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" epic <id> | jq -r '.prd // ""'
 ```
 
-**PRDs naming this Epic** — the other pointer, read from the documents:
-```
-grep -rlE '^\*\*Epic:\*\*[[:space:]]*<id>\b' <prd-dir>
-```
-
-Both empty → unresolved. Both present and disagreeing → conflict. One present → that is
-the PRD.
+A path → that is the PRD. Empty, or the command exits with `the matrix holds no entry
+epic:<id>` → unresolved. A read needs no role.

@@ -6,10 +6,15 @@ bundle listing, the UI sources session and its normalization; the contracts sess
 data-model session, which run together; the UI section; the acceptance-criteria session; the
 review; the Story document; and the Story bead write. Each step takes the files it reads from the
 artifacts of the steps its inputs name, and records what it writes right after writing it.
+
+What a repository's Story is handed about the architecture is read from the matrix: the context
+step writes what ``atw-matrix story-scope`` returns for each stack the Story builds in, and an
+author is handed the documents and headings it names and no directory of the architecture.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -21,6 +26,11 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
+from matrix_contract import AUTHORITY_SIDE, REL_DESCRIBED_BY, EntryId
+from matrixquery import Described, EpicView, RepositoryReach, StoryScope, epic_view, story_scope
+from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
+from matrixtraverse import ATTR_HEADING
+from matrixwrite import link
 from recon_contract import KEY_MOCKS_DIR
 from target_contract import KEY_ELEMENT, KEY_ID
 from typeguard import check_type
@@ -85,15 +95,17 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import shared_capabilities
+from orchestrator.flows.repo_scoping import item_stacks, shared_capabilities
 from orchestrator.flows.spec_authoring_ui import normalize_ui
-from orchestrator.flows.trd_authoring import document
+from orchestrator.flows.trd_authoring import cited, document
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
 from step_journal_contract import BEAD_TYPE_STORY, BeadId
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from step_journal_contract import Artifact, Step, StepPlan
 
     from orchestrator.core.models import OutputValidator
@@ -102,6 +114,9 @@ WORK_UI: Final = "ui-sources"
 WORK_DOCUMENT: Final = "document"
 """What a step of an author agent, planned by the repository context step, does."""
 DECISION_IDS: Final = "decision ids"
+CITATIONS_RECORDED: Final = "citations recorded in the matrix"
+KEY_STACKS: Final = "stacks"
+"""The member of the repository context that lists the ids of the stacks the Story builds in."""
 STORY_SUMMARY: Final = "story write"
 DOCUMENT_OF: Final[dict[str, str]] = {
     AUTHOR_CONTRACTS: SPEC,
@@ -164,12 +179,14 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     """Give the check a spec document must pass each time its author has written it.
 
     Returns:
-        The check: resolving architecture citations for the contracts and the data model, a
-        nonempty document for the criteria.
+        The check: every architecture citation of the contracts and of the data model names a
+        document and heading the matrix holds; the criteria are a nonempty document.
 
     """
-    arch: Path = architecture_root(run)
-    return nonempty if name == CRITERIA else lambda path: document(path, arch)
+    if name == CRITERIA:
+        return nonempty
+    matrix: Matrix = run.tools.portfolio(name, read_matrix, matrix_path(None, os.environ))
+    return lambda path: document(path, matrix)
 
 
 def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
@@ -178,7 +195,7 @@ def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
     Returns:
         The TRD, the span, the elements and the PRD; the UI sources for the contracts of a
         frontend repository; the contracts and the data model for the criteria; then the
-        repository context.
+        repository context, which names the architecture documents and headings to read.
 
     """
     files: list[tuple[str, Path]] = [(label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN)]
@@ -195,10 +212,11 @@ def author_dirs(run: StepRun, held: Repository) -> tuple[Path, ...]:
     """Name the directories an author session may read.
 
     Returns:
-        The Epic's work directory, the architecture root, the PRD's folder and the repository.
+        The Epic's work directory, where the session writes, and the repository the Story builds
+        in. The architecture documents and the PRD are handed as named files.
 
     """
-    return (run.context.work, architecture_root(run), run.inputs.file(PRD).parent, Path(held.path))
+    return (run.context.work, Path(held.path))
 
 
 def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
@@ -325,17 +343,74 @@ def _repository_steps(run: StepRun, held: Repository) -> StepGroup:
     return StepGroup(tuple(steps))
 
 
+def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue]:
+    """List the architecture documents some story scopes name, each with the headings to read.
+
+    Returns:
+        One row per document, in id order: its entry id, its file under the architecture root,
+        and the headings the scopes name in it (none when a scope names the document as a whole).
+
+    """
+    headings: dict[EntryId, dict[str, None]] = {}
+    scope: StoryScope
+    for scope in scopes:
+        described: list[Described] = [
+            *scope["documents"],
+            *(found for built in scope["entries"] for found in built["documents"]),
+            *(found for binding in scope["constraints"] for found in binding["statedIn"]),
+        ]
+        for found in described:
+            named: dict[str, None] = headings.setdefault(found["document"], {})
+            if found["heading"]:
+                named[found["heading"]] = None
+    rows: list[JsonValue] = []
+    for identifier in sorted(headings):
+        listed: list[JsonValue] = list(headings[identifier])
+        rows.append({
+            "document": identifier,
+            "path": str(arch / identifier.partition(":")[2]),
+            "headings": listed,
+        })
+    return rows
+
+
+def _other_stacks(view: EpicView, stacks: Sequence[EntryId]) -> list[RepositoryReach]:
+    """Keep the stacks of an Epic's closure that a Story does not build in.
+
+    Returns:
+        The closure's repositories, each with the stacks outside the Story; a repository left
+        with none is dropped.
+
+    """
+    outside: list[RepositoryReach] = []
+    reached: RepositoryReach
+    for reached in view.get("closure", {}).get("repositories", []):
+        kept: RepositoryReach = {
+            "repository": reached["repository"],
+            "stacks": [found for found in reached["stacks"] if found["stack"].get("id") not in stacks],
+        }
+        if kept["stacks"]:
+            outside.append(kept)
+    return outside
+
+
 @script_step(SPEC_CONTEXT)
 def context(run: StepRun) -> Completion:
     """Gather what one repository builds, and plan the steps that specify it.
+
+    What the Story is handed about the architecture comes from the matrix: for each stack the
+    Story builds in, what ``atw-matrix story-scope`` returns (the documents and headings that
+    describe the stack and each entry, the constraints that bind them and the shared
+    capabilities they must use); and from ``atw-matrix epic --closure``, the Epic's stacks
+    outside the Story.
 
     Returns:
         The repository, its context file and the PRD as artifacts, with the repository's other
         steps planned after this one.
 
     Raises:
-        StepError: The span places no item in the repository, the matrix cannot answer what its
-            elements use, or the solutions architect's result cannot be read.
+        StepError: The span places no item in the repository, the matrix cannot answer for its
+            entries, or the solutions architect's result cannot be read.
 
     """
     held: Repository = repository_of(dict(run.params()), SPEC_CONTEXT)
@@ -347,6 +422,12 @@ def context(run: StepRun) -> Completion:
     items: list[JsonValue] = [item for item in placed.values() if json_object(item)["slug"] == held.slug]
     if not items:
         raise StepError(SPEC_CONTEXT, OTHER_CAUSE, (f"the span places no item in {held.path}",))
+    matrix: Matrix = run.tools.portfolio(SPEC_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(SPEC_CONTEXT, item_stacks, matrix, items)
+    scopes: list[StoryScope] = [
+        run.tools.portfolio(SPEC_CONTEXT, story_scope, matrix, stack, built) for stack, built in stacks.items()
+    ]
+    closure: EpicView = run.tools.portfolio(SPEC_CONTEXT, epic_view, matrix, run.bead, closure=True)
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     path: Path = run.context.work / f"spec-{held.slug}.context.json"
     write_json(
@@ -356,6 +437,10 @@ def context(run: StepRun) -> Completion:
             "slug": held.slug,
             "frontend": held.frontend,
             "items": items,
+            KEY_STACKS: list(stacks),
+            "scopes": scopes,
+            "documents": _scope_documents(architecture_root(run), scopes),
+            "otherStacks": _other_stacks(closure, list(stacks)),
             "sharedCapabilities": shared_capabilities(run, SPEC_CONTEXT, items),
             "notesForSpecs": read_result(run, read_context(run))["notesForSpecs"],
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
@@ -436,8 +521,50 @@ def normalize(run: StepRun) -> Completion:
     return Completion(artifacts=(file_artifact(UI_SOURCES, path), value_artifact(WARNINGS, normalized["warnings"])))
 
 
+def record_citations(output: Path, stacks: Sequence[EntryId]) -> list[JsonValue]:
+    """Record, on each stack a Story builds in, the document headings its spec document cites.
+
+    A spec document cites its headings for the Story as a whole, so each is recorded as a
+    ``describedBy`` relationship from the stack, on the architecture side, where no side states
+    it already. A citation that names no heading records nothing. A matrix that cannot be read or
+    written raises ``MatrixError``, and a document whose citations do not resolve raises
+    ``DocumentValidationError``.
+
+    Args:
+        output: The spec document, whose ``decisionIds`` are the citations.
+        stacks: The ids of the stacks the Story builds in.
+
+    Returns:
+        One row per relationship added: the stack, the document and the heading.
+
+    """
+
+    def change(matrix: Matrix) -> list[JsonValue]:
+        added: list[JsonValue] = []
+        citation: str
+        for citation in document(output, matrix)[0]:
+            found: tuple[EntryId, str] | None = cited(matrix, citation)
+            if found is None or not found[1]:
+                continue
+            stack: EntryId
+            for stack in stacks:
+                stated: bool = any(
+                    describing.end == found[0] and describing.attributes.get(ATTR_HEADING) == found[1]
+                    for describing in matrix.outgoing(stack, (REL_DESCRIBED_BY,))
+                )
+                if not stated:
+                    link(matrix, REL_DESCRIBED_BY, stack, found[0], AUTHORITY_SIDE, {ATTR_HEADING: found[1]})
+                    added.append({"stack": stack, "document": found[0], "heading": found[1]})
+        return added
+
+    return update_matrix(matrix_path(None, os.environ), change)
+
+
 def spec_document(run: StepRun) -> AgentLaunch:
     """Build the session that writes one spec document of a repository.
+
+    Accepting the contracts or the data model records in the matrix each document heading the
+    document cites, and the step is done only when the matrix has confirmed the writes.
 
     Returns:
         The launch: the document at its file in the work directory, with its own check.
@@ -447,8 +574,14 @@ def spec_document(run: StepRun) -> AgentLaunch:
     name: str = DOCUMENT_OF[run.step.get("agent", "")]
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, name, held.path)
 
-    def accept(_accepted: StepRun, output: Path) -> Completion:
-        return Completion(artifacts=(file_artifact(name, output),))
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        if name == CRITERIA:
+            return Completion(artifacts=(file_artifact(name, output),))
+        stacks: list[EntryId] = [
+            as_entry_id(stack) for stack in strings(strict_json(accepted.inputs.file(CONTEXT))[KEY_STACKS])
+        ]
+        recorded: list[JsonValue] = accepted.tools.portfolio(name, record_citations, output, stacks)
+        return Completion(artifacts=(file_artifact(name, output), value_artifact(CITATIONS_RECORDED, recorded)))
 
     return AgentLaunch(
         output=document_file(run, held, name),
@@ -484,10 +617,10 @@ def story_document(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     dispatch: DispatchArguments = dispatch_arguments()
-    arch: Path = architecture_root(run)
+    matrix: Matrix = run.tools.portfolio(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
-    cited: list[str] = list(
-        dict.fromkeys(value.strip() for path in documents[:2] for value in document(path, arch)[0] if value.strip()),
+    citations: list[str] = list(
+        dict.fromkeys(value.strip() for path in documents[:2] for value in document(path, matrix)[0] if value.strip()),
     )
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
     items: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(CONTEXT))["items"])
@@ -500,7 +633,7 @@ def story_document(run: StepRun) -> Completion:
         "Specifications:",
         *(f"- {path}" for path in documents),
     ]
-    decisions: list[JsonValue] = list(cited)
+    decisions: list[JsonValue] = list(citations)
     path: Path = run.context.work / f"story-{held.slug}.json"
     write_json(
         path,
@@ -585,12 +718,12 @@ def story_bead(run: StepRun) -> Completion:
     }
     handed: list[Artifact] = handed_on(run.inputs)
     create_child_journal(run.journal_path.parent, BeadId(identifier), BEAD_TYPE_STORY, [creating(run)], handed)
-    cited: list[JsonValue] = list(strings(bead["decisionIds"]))
+    carried: list[JsonValue] = list(strings(bead["decisionIds"]))
     return Completion(
         artifacts=(
             value_artifact(STORY, story),
             value_artifact(STORY_SUMMARY, written["summary"]),
-            value_artifact(DECISION_IDS, cited),
+            value_artifact(DECISION_IDS, carried),
         ),
         add=(_task_steps(run, held),),
     )

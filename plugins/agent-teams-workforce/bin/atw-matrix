@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# atw-matrix <sub-command> ... — reads and changes the matrix: the index of how repositories,
-# stacks, services, components, libraries, layers, infrastructure, PRDs, features, architecture
-# documents, design facts and disagreements relate, with the approval marker and the code-trust
-# marker.
-#   reads:   prd, find, node, uses, disagreements, summary, check, check-reuse, story-built
-#   syncs:   sync-prds, sync-documents
-#   design:  put, link, claim, settle, note-sendback, add-resource-type, expertise
-#   review:  unapproved, approve
-#   code:    mark-built, mark-deployed, mark-merged
+# atw-matrix <sub-command> ... — reads and changes the matrix: one JSON file of entries (Epics,
+# requirements, features, constraints, arc42 documents, services, components, infrastructure,
+# events, stacks, packages, layers, disagreements) and the relationships between them, each with
+# the side it came from (architecture or repository) and, where set, the verified mark.
+#   reads:   epic, find, node, deps, stacks, layers, impact, related, uses, story-scope,
+#            review-scope, summary, check, check-reuse
+#   tasks:   built, work, affected
+#   changes: put, link, unlink, settle, rename, remove, move-repository, expertise, commit
+#   syncs:   sync-epics, sync-documents
+#   seeding: seed, seed-stacks, seed-packages, seed-inputs, seed-features, seed-apply
+#   code:    verify
 # `atw-matrix <sub-command> --help` lists a sub-command's options. scripts/portfolio/matrix.py is
-# the command; the matrix's shape, and which role may run which sub-command, is
-# skills/artifact-handoff/schemas/matrix.schema.json. The role is the value of ATW_MATRIX_ROLE.
+# the command; the file's shape is skills/artifact-handoff/schemas/matrix.schema.json, and the
+# kinds, and which role may run which sub-command, are
+# skills/artifact-handoff/schemas/matrix-kinds.json. The role is the value of ATW_MATRIX_ROLE.
 # Give the matrix file with --matrix, or set ATW_MATRIX, or set ATW_CONTROL_REPO and the file is
 # ops/sdlc-automation/matrix.json under it. Prints one JSON object on stdout. The command needs
 # typeguard, jsonschema and PyYAML (scripts/requirements.txt), which the python3 on PATH does not

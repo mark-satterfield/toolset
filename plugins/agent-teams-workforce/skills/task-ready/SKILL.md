@@ -1,6 +1,6 @@
 ---
 name: task-ready
-description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run before a Task is worked. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores the verdict as the readiness gate keys the beads-contract metadata schema defines, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
+description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run before a Task is worked. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing stack as a note on the verdict rather than as a refusal, stores the verdict as the readiness gate keys the beads-contract metadata schema defines, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
 ---
 
 # Task Ready — Content Completeness Gate
@@ -191,23 +191,28 @@ different length, never hash a different field set.
    failure this whole attribute exists to prevent: the run then has nothing to store, the
    next run again finds no hash, and every sweep pays for a full review forever. If you
    took that shortcut, you have broken the skill.
-4. **Read the lineage and the repo — as CONTEXT, never as a refusal.** Read the issue's own
-   type, walk its parents, and read the `repoPath:` marker off each (Hierarchy recipe).
-   Record what you found and carry it into the review as a note. Then continue to step 5 no
-   matter what it said.
+4. **Read the lineage and the stack — as CONTEXT, never as a refusal.** Read the issue's
+   own type and its parents (Hierarchy recipe), and the stack the Task states (Stack
+   recipe). Record what you found and carry it into the review as a note. Then continue to
+   step 5 no matter what it said.
 
-   **A Story never gates a Task, and a repository is never a dispatch precondition.** This
-   step refuses no Task for lacking a parent Story, no Story for lacking an Epic, and no
-   Task whose chain names no `repoPath`. A Story is a **roll-up parent for reporting and
-   tracking**; it never decides whether a Task can be worked. A recorded repo on a bead is
-   at most a **hint** — the repository a piece of work belongs in is ruled when the work is
-   dispatched, from the work itself, not read off a field somebody may or may not have
-   filled in. Refusing on either of them made this gate unable to clear anything.
+   **The repository comes from the stack the Task states, through the matrix.** A Task
+   states what it builds with the matrix's ids, in its `matrix_elements` key: its stack,
+   its components and its shared capabilities. The repository is the `repository` of that
+   stack, which `atw-matrix node stack:<id>` returns. It is not read from the wording of
+   the Task's title, description or notes, and not taken from the parent Story or Epic.
 
-   So: missing lineage and a missing repository are **notes on the verdict**, never the
-   verdict. Append them to whatever `Review` reports, e.g.
-   `<review status> (note: no parent Story)` or
-   `<review status> — 2 dimensions need attention (note: no repoPath on the task or its Story)`.
+   **A Story never gates a Task, and a stack is not this gate's precondition.** This step
+   refuses no Task for lacking a parent Story, no Story for lacking an Epic, and no Task
+   that states no stack. A Story is a **roll-up parent for reporting and tracking**; it
+   never decides whether a Task can be worked. Whether a Task with no stack can be built
+   is ruled where the build opens its workspace. Refusing on either of them here made this
+   gate unable to clear anything.
+
+   So: missing lineage, a Task that states no stack, and a stack id the matrix holds no
+   entry for are **notes on the verdict**, never the verdict. Append them to whatever
+   `Review` reports, e.g. `<review status> (note: no parent Story)` or
+   `<review status> — 2 dimensions need attention (note: the Task states no stack)`.
    They never set `Pipeline result` and never skip the review.
 
    **Provenance is settled upstream, not re-adjudicated here.** A Task with no parent Epic
@@ -266,13 +271,13 @@ different length, never hash a different field set.
   ```
   ## Lineage Note — [ISO 8601 timestamp]
 
-  [what the walk found: no parent Story, a parent Story with no Epic, or no repoPath
-  anywhere in the chain]
+  [what was found: no parent Story, a parent Story with no Epic, a Task that states no
+  stack, or a stack id the matrix holds no entry for]
 
   Recorded as context, not as a refusal. A Story is a roll-up parent for reporting and
-  tracking and never gates whether this can be worked; a recorded repository is a hint,
-  and the repository this work lands in is ruled at dispatch from the work itself. The
-  review below ran as normal.
+  tracking and never gates whether this can be worked; the repository this work lands in
+  is the repository of the stack the Task states, as the matrix returns it. The review
+  below ran as normal.
   ```
 
   ```
@@ -335,21 +340,19 @@ atw-bd show <parent> --json --readonly \
 # and for a task, one more read of <grandparent> for grandparent_type.
 ```
 
-The `repoPath:` marker, read from the same records — notes first, then description. It is a
-LINE-ANCHORED marker, so read the line, not the whole field:
+**Stack and repository (Beads)** — the ids the Task states, then the stack's repository
+from the matrix. `matrix_elements` is a `CONTRACT_KEYS` key of the beads-contract metadata
+schema, and `contract <id>` returns the contract the Task carries:
 ```
-atw-bd show <id> --json --readonly \
-  | jq -r 'if type=="array" then .[0] else (.issue // .) end
-           | ((.notes // "") + "\n" + (.description // ""))' \
-  | grep -iE '^[[:space:]]*[-*>[:space:]]*`?(repoPath|repo|repository)`?[[:space:]]*[:=]' \
-  | head -1
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" contract <id>
+# then, for the id among them that begins with stack: —
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" node stack:<id> | jq -r '.entry.repository // ""'
 ```
-Absent on the task, read the Story's. **Absent on both, the gate does NOT fail** — it records
-"no repoPath on the task or its Story" as a note on the verdict and carries on to the review,
-exactly as step 4 says. A recorded repository is a hint; the repository a piece of work lands
-in is ruled at dispatch, from the work itself. There is no path in this skill on which a
-missing repo sets `Pipeline result`. `repo:` and `repository:` are accepted spellings of the
-same marker.
+A matrix read needs no role. **A Task that states no stack, or a stack id the matrix holds
+no entry for, does NOT fail the gate** — it is recorded as a note on the verdict and the
+review runs, exactly as step 4 says. There is no path in this skill on which a missing
+stack sets `Pipeline result`. Nothing here reads a repository out of the Task's text or off
+its parent Story or Epic.
 
 **Status / closed check (Beads):**
 ```

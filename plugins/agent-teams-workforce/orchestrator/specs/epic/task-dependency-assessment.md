@@ -97,15 +97,16 @@ Files (under `<workDir>`):
 - `assess-plan.json`: `depscore.assess_plan(level="task")`: `{level: "task", scope, since,
   unassessed, fingerprints: {id: sha} for every open Task without `KEY_ELAB_KEY`, summary: {level,
   scope, openTasks, candidates, unassessed, unassessedIds}}`.
-- `context/task/<id>.md` (one per open Task: `# <id> — <title>\n\n<description>`),
-  `context/index.md` (`- <id> | <title> | Epic: <id or none> | repo: <KEY_REPO_PATH value or unset> |
-  status: <status> | file: <path>`).
-- `context.json`: `assesscontext.task_context` result: `{task: {id, title, fingerprint, epic,
-  repoPath, path}, standing: [{from, to, type, owned, reason, confidence, setBy, setAt}],
-  withdrawn: [{from, to, reason, withdrawnBy, withdrawnAt}], corpusDir, indexPath, summary: {task,
-  openTasks, standing, owned, handMade, withdrawn}}`.
+- `context.json`: `assesscontext.task_context` result: `task` (with `elements`, the matrix ids
+  the Task states, its `stacks`, and `unmatched`, the ids the matrix does not hold), `stacks`
+  (for each stack the Task states: `work`, the open Tasks that touch it as `atw-matrix work --id`
+  returns them, `dependsOn` and `dependents`, as `atw-matrix deps --of` and `deps --on` return
+  them), `standing: [{from, to, type, owned, reason, confidence, setBy, setAt}]`, `withdrawn:
+  [{from, to, reason, withdrawnBy, withdrawnAt}]` and `summary`. No copy of a Task and no index
+  is written.
 - `candidates/edges.json` (agent): the proposal, `{edges: [{from, to, reason, confidence,
-  answers?}], withdrawn: [{from, to, reason}]}`. No `archCheck` at Task level. Beside it the
+  answers?}], withdrawn: [{from, to, reason}], elements: [matrix ids], stackDependencies:
+  [{kind, from, to, through, interface, reason}]}`. No `archCheck` at Task level. Beside it the
   agent's progress file `candidates/edges.json.progress.json` and the checkpoint
   `candidates/edges.json.checkpoint` that `artifactcontract.py` writes from it, as in the Epic
   spec.
@@ -128,7 +129,11 @@ Files (under `<workDir>`):
 Bead writes: `edgeset.apply_edges` (order as in the Epic spec, edge type `blocks`), then
 `storyedges.story_edges` (Story edges and `KEY_STORY_OWNED_BLOCKERS`,
 `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`), then the `wsjf-scoring`
-writes. No vault writes, no commits, no ledger events.
+writes. The proposal's `elements` are written into the Task's `matrix_elements` key
+(`beads-contract.py metadata set`) only when the Task states none. Matrix writes: one
+`atw-matrix link` for each of the proposal's `stackDependencies` the matrix lacks, as role
+`script`; the result's `matrix` holds what was recorded and each refused call. No vault writes,
+no commits, no ledger events.
 
 Result: as the Epic spec's, with `task` in place of `epic`, and the headline carrying the Story
 edge outcome.
@@ -140,10 +145,11 @@ Each step is what `workflows/task-dependency-assessment.js` does. Every `depscor
 
 1. `deterministic` **Plan**: `depscore.py assess-plan --level task --task <id> --out
    assess-plan.json -C <repo>` (`depscore.assess_plan`).
-2. `deterministic` **Context**: `depscore.py assess-context --task <id> --dir context --out
-   context.json` (`assesscontext.task_context`). When step 1 or 2 fails, no session starts.
-3. `deterministic` **Input revision**: `jsonartifact.py --source context.json --source context`
-   fingerprints the two inputs; the input revision is the SHA-256 of those receipts together
+2. `deterministic` **Context**: `depscore.py assess-context --task <id> --out
+   context.json` (`assesscontext.task_context`), which reads the matrix the environment names.
+   When step 1 or 2 fails, no session starts.
+3. `deterministic` **Input revision**: `jsonartifact.py --source context.json`
+   fingerprints the input; the input revision is the SHA-256 of that receipt together
    with the Task id and scope, as in the Epic spec.
 4. `deterministic` **Reuse**: `jsonartifact.py --candidate candidates/edges.json --final
    edges.json --schema-json <proposal schema> --revision <input revision> --probe --recover`,
@@ -152,8 +158,9 @@ Each step is what `workflows/task-dependency-assessment.js` does. Every `depscor
    checkpoint is `complete` under the same binding is accepted with no session; a `blocked`
    checkpoint stops the run; otherwise step 5 runs.
 5. `agent` **Assess**: `task-dependency-mapper` (assignment: one Task created outside
-   elaboration). The brief names `context/task/<task>.md`, `context/task/`, `context/index.md`
-   and `context.json`, carries `priorFailure` when given, and states THE TEST (consumes or
+   elaboration). The brief names `context.json` (the Task's stated ids and, for each of its
+   stacks, the open Tasks that touch it and what it depends on and what depends on it), carries
+   `priorFailure` when given, and states THE TEST (consumes or
    provides; both ends are Tasks; when in doubt leave it out), the seven-step order, the proposal
    format and that the session runs no command that writes to beads. It ends with the artifact
    contract data, as in the Epic spec. The session writes `candidates/edges.json` and

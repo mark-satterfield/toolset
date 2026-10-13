@@ -11,6 +11,7 @@ record. A Task bead write is its own step, so the journal says which Task beads 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -20,7 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-c
 import beadgraph
 import beadwrite
 import hierarchy
+import matrixtasks
 from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
+from matrixstore import Matrix, matrix_path, read_matrix
 from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core.driver_contracts import dispatch_arguments
@@ -78,7 +81,7 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import shared_capabilities
+from orchestrator.flows.repo_scoping import item_stacks, shared_capabilities
 from orchestrator.flows.spec_authoring import design_system
 
 # isort: split
@@ -87,6 +90,7 @@ from step_journal_contract import BEAD_TYPE_TASK, BeadId
 
 if TYPE_CHECKING:
     from beadcontracts import TaskPlan
+    from matrix_contract import EntryId
     from step_journal_contract import Artifact, Step, StepPlan
 
 WORK_DECOMPOSE: Final = "decompose"
@@ -133,12 +137,46 @@ def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
     }
 
 
+def _other_epic_work(
+    run: StepRun,
+    control: Path,
+    built: list[JsonValue],
+) -> tuple[list[EntryId], list[matrixtasks.TasksRead]]:
+    """Read the stacks a Story builds in and the open work of other Epics that touches each.
+
+    Args:
+        run: The step that asks.
+        control: The control repository, whose beads database holds the Tasks.
+        built: The items placed in the Story's repository.
+
+    Returns:
+        The ids of the stacks that hold the items' entries; and, for each stack, what
+        ``atw-matrix work --id <stack> --not-epic <epic>`` returns: the open Tasks of other Epics
+        that name the stack or an entry it holds, each with its Story and its Epic.
+
+    """
+    matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(TASK_CONTEXT, item_stacks, matrix, built)
+
+    def read() -> list[matrixtasks.TaskBead]:
+        return run.tools.portfolio(TASK_CONTEXT, matrixtasks.read_tasks, control)
+
+    tasks: list[matrixtasks.TaskBead] = run.tools.operation(TASK_CONTEXT, read)
+    return list(stacks), [
+        run.tools.portfolio(TASK_CONTEXT, matrixtasks.work, matrix, tasks, stack, run.bead) for stack in stacks
+    ]
+
+
 @script_step(TASK_CONTEXT)
 def context(run: StepRun) -> Completion:
     """Gather what one repository's Tasks are decomposed from, and plan the decomposition.
 
     The Tasks that exist under the Story and that are started, or that elaboration did not
-    write, are handed to the decomposer so it reuses them.
+    write, are handed to the decomposer so it reuses them. The matrix gives the rest: the stacks
+    the Story builds in; for each, the open Tasks of other Epics that name the stack or an entry
+    it holds (``atw-matrix work --id <stack> --not-epic <epic>``); and the shared capabilities the
+    entries the Tasks build must use (``atw-matrix uses --ids``). The decomposer writes those
+    matrix ids into each Task. Nothing is recorded in the matrix.
 
     Returns:
         The repository, the task context file and the placed items file as artifacts, with the
@@ -161,23 +199,20 @@ def context(run: StepRun) -> Completion:
         and bead.kind == "task"
         and (beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:"))
     ]
-    others: JsonValue = check_type(
-        run.tools.portfolio(TASK_CONTEXT, beadwrite.other_epic_tasks, graph, run.bead, held.path),
-        JsonValue,
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    )
     placed: dict[str, JsonValue] = json_object(
         run.tools.portfolio(TASK_CONTEXT, hierarchy.placed_items, span_files(run.inputs)),
     )
     built: list[JsonValue] = [item for item in placed.values() if json_object(item)["slug"] == held.slug]
+    stacks, others = _other_epic_work(run, control, built)
     facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
     write_json(
         facts,
         {
             "existingTasks": existing,
-            "otherEpicTasks": others,
+            "stackWork": others,
             "repoPath": held.path,
             "slug": held.slug,
+            "stacks": stacks,
             "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
         },
     )

@@ -58,8 +58,11 @@ a design is right.
 1. **Name the subject.** The service, component or concept the documents describe, as the glossary
    and the stack names name it. It names the subject folder and appears in every document's
    `subject`. It is never a PRD, an Epic, a bead id or a date.
-2. **Confirm the subject has no documents.** Ask the matrix (`atw-matrix find --text "<subject>"`).
-   When it names documents for the subject, the work is `arc42-maintain`.
+2. **Confirm the subject has no documents.** Ask the matrix:
+   `atw-matrix find --kinds document --text "<subject>"` returns the documents whose subject,
+   name or headings match, and `atw-matrix node <id>` for the subject's own entry (found with
+   `atw-matrix find --text "<subject>"`) names under `describedBy` each document and heading that
+   describes it. When the matrix names documents for the subject, the work is `arc42-maintain`.
 3. **Choose the documents the subject needs.** The MODEL's table of documents by scope is where to
    start, and the MENU says which type answers which reader question. Write only the documents the
    design supports.
@@ -76,12 +79,17 @@ a design is right.
    name, a metric or alarm name and a schema belong to the TRD or the specs, not to an arc42
    document.
 7. **Add the catalog front matter** to every document: `view_type` (a type from the MENU), `scope`,
-   `subject`, `shows` (every element in the document, by its glossary name or its stack name) and
-   `lifecycle_state: in-review`. Keep any classification fields the project uses beside them.
+   `subject`, `shows` (every element in the document, by the name the matrix holds for its
+   entry, which is its glossary name or its stack name) and `lifecycle_state: in-review`. Keep
+   any classification fields the project uses beside them. `atw-matrix sync-documents` reads
+   this front matter and the headings, and records the document as describing each entry that
+   `shows` and `subject` name, so a name the matrix does not hold joins the document to nothing.
 8. **Link the documents in.** Each new document links its parent and its neighbours, and the
    section entry point gives a route to it, as the MODEL's navigation rules say.
-9. **Report** the documents written, the checks made on each diagram (it renders, it is readable,
-   it shows what its type promises) and anything the design did not let you write.
+9. **Report** the documents written, by path, so that the caller's script step runs
+   `atw-matrix sync-documents --paths` on them; the checks made on each diagram (it renders, it
+   is readable, it shows what its type promises); each name in a `shows` that the matrix holds
+   no entry for; and anything the design did not let you write.
 
 ## What a document contains
 
@@ -89,8 +97,8 @@ a design is right.
 - Reasons where a reader needs them, in the prose around the diagram.
 - Claims about AWS that a reviewer can check against the AWS documentation.
 
-A document names stacks, services and components and never repositories; the polyrepo-steward and
-the matrix are the record of which repository holds each. A deployed element is named by its stack
+A document names stacks, services and components and never repositories; the matrix is the record
+of which repository holds each stack (`atw-matrix node stack:<id>`). A deployed element is named by its stack
 name from the project's naming standard (`atw-naming name stack ...`).
 
 A document holds no requirements, history, decision records, rules ("services MUST …") or open

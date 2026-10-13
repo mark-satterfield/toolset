@@ -5,7 +5,7 @@ A score has two kinds of input.
 
 * JUDGED inputs come from a model applying the `agent-teams-workforce:wsjf` rubric: an
   Epic's User-Business Value, Time Criticality, confidence and — while it has no Tasks —
-  its Job Size estimate, all judged from its PRD, which is the Epic's own description; and
+  its Job Size estimate, all judged from its PRD, the file the matrix names for the Epic; and
   a Task's Job Size estimate, judged from the Task's own content. Every size estimate
   carries a plausible range and a confidence. Each judged value is stored with the
   content fingerprint of the bead it was judged from, under `KEY_WSJF_CONTENT_HASH`. A value
@@ -29,7 +29,7 @@ rubric's `wsjf.py`, which this module calls. Only values that changed are writte
 from __future__ import annotations
 
 import math
-from pathlib import Path
+from collections.abc import Mapping
 from typing import Final, TypedDict
 
 import beadgraph
@@ -53,7 +53,6 @@ from bead_metadata import (
 )
 from beadgraph import Bead, Graph, Writer, fingerprints
 from contracts import JsonObject, JsonValue
-from prds import write_prds
 from scoringcontracts import (
     Applied,
     Group,
@@ -455,7 +454,7 @@ def judge_input(
     graph: Graph,
     the_plan: Plan,
     level: str,
-    prd_dir: Path | None = None,
+    prd_paths: Mapping[str, str] | None = None,
 ) -> JudgeInput:
     """Return the material the judging sessions at one level read: the items to judge, and no other.
 
@@ -472,7 +471,9 @@ def judge_input(
         graph: The tracker graph, read with descriptions.
         the_plan: The run's plan, from `plan`.
         level: `epic` or `task`.
-        prd_dir: Where to write the PRD of each Epic to judge, or None.
+        prd_paths: Epic id -> its PRD file in the vault, as the matrix names it
+            (`assesscontext.prd_paths`), or None at the Task level. An Epic it leaves out is
+            judged with `prdPath` null.
 
     Returns:
         The items to judge, each with its reason; the reference jobs; and a summary naming
@@ -489,12 +490,12 @@ def judge_input(
         not (isinstance(graph, Graph))
         or not (isinstance(the_plan, dict))
         or not (isinstance(level, str))
-        or not (isinstance(prd_dir, Path) or prd_dir is None)
+        or not (isinstance(prd_paths, Mapping) or prd_paths is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
     wanted: dict[str, str] = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
     beads: list[beadgraph.Bead] = [b for b in _open(graph, level) if b.id in wanted]
-    paths: dict[str, str] = write_prds(beads, prd_dir) if level == "epic" and prd_dir else {}
+    paths: Mapping[str, str] = prd_paths if level == "epic" and prd_paths is not None else {}
     items: list[JudgeItem] = []
     groups: dict[str, Group] = {}
     for bead in beads:

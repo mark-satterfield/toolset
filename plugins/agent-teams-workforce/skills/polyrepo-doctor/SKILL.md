@@ -6,7 +6,7 @@ description: >-
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
   deprecated repo has an open pull request; check that every governance entry and
   knowledge-store pointer still resolves; check the repository-naming document against the
-  naming patterns. Reports findings, and with `--fix` repairs every finding it can. Use for
+  naming patterns; check the matrix's stacks against the repositories. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
 ---
 
@@ -31,6 +31,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
 | `naming-doc` | the config's `naming.document` (the vault's `repository-naming.md`) against `naming.patterns` | every pattern has a section, every example matches its section's pattern, deprecation examples and the archive delay agree with the tool |
+| `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name ending in a stack type, outside `apps/marketing/`) is the `repository` of a stack, every stack's `repository` is an active repository, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-renamed`, `stack-repository-inactive`, `stack-repository-missing`, `matrix-invalid`, and `error` when the matrix cannot be read |
 
 The output is one findings list: each finding with its `check`, `subject` (repo or entry),
 `kind` and `detail`, plus the count per check and, under `--fix`, what each repair did.
@@ -40,7 +41,11 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 ## `--fix`
 
 `doctor --fix` runs `reconcile --fix`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix` and then
-`deprecated-prs --fix` before the checks; each commits and pushes what it changed.
+`deprecated-prs --fix` before the checks; each commits and pushes what it changed. It then
+repairs the matrix's stacks and commits the matrix: `stack-missing` records the stack
+(repository side, purpose not stated), `stack-repository-renamed` names the new repository,
+and `stack-repository-inactive` removes a hint stack that holds nothing or else unsets its
+repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
 every open pull request in a deprecated repo with the comment "Closed: this repository is
@@ -48,6 +53,11 @@ deprecated." and keeps its branch. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.
+- A `stack-repository-missing` finding: the stack names a repository that exists on neither disk
+  nor GitHub. If elaboration has yet to create it, leave it; otherwise correct the stack's
+  `repository` (`put stack --id stack:<name> --repository <repo>`) or unset it. A
+  `matrix-invalid` finding names the problems `atw-matrix check` reports; fix the entry it
+  names, or send it to the agent that owns it.
 - A beads anomaly: repair the repo with the **polyrepo-beads** skill (`converge-repo.sh`,
   its troubleshooting runbook).
 - A governance entry or knowledge pointer that no longer resolves: find where the thing now

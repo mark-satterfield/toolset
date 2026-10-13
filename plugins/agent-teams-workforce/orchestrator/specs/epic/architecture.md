@@ -17,12 +17,13 @@ their definitions state (`solutions-architect`, `design-specialist`, `diagram-au
 ## Open the run
 
 Script `prd_to_spec.open_run`, the first outermost step. It fails when beads does not hold the
-bead as an Epic. In one matrix change it brings the Epic's PRD row, the document rows and the
-Epic's expertise list up to date. It writes the context file `<arch-work>/context.json`, which
-names every path of the Epic's architecture work: the PRD, the architecture root, the constraints
-folder, the architect's state and result files, the TRD, and the folder for requests to helpers;
-with the vault commit the document rows are synced to and the name of the matrix command. It
-records the file `prd`, the value `matrix prd row` and the file `context`, and plans, under the
+bead as an Epic. In one matrix change it brings the Epic's entry with its requirements
+(`sync-epics --bead`), the document entries (`sync-documents`) and the Epic's expertise list up to
+date. It writes the context file `<arch-work>/context.json`, which
+names every path of the Epic's architecture work: the PRD, the architecture root, the
+architect's state and result files, the TRD, and the folder for requests to helpers;
+with the vault commit the document entries are synced to and the name of the matrix command. It
+records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
 Architecture container, the architect's step and the check that follows it.
 
 Every later step of the container is handed the context file through the journal and derives no
@@ -30,12 +31,24 @@ path of its own.
 
 ## The architect and the agents it starts
 
-Agent `aws-solutions-architect`, request "Establish the state of the architecture for this PRD."
+Agent `aws-solutions-architect`, step "Decide what the architecture should be for this PRD".
 Its brief names exactly the files its definition names: `prd`, `criteria` (the criteria file),
-`context`, `state` (its state file), each file of earlier work on the PRD (below), and, in a later
+`context`, `state` (its state file), `current architecture`, each file of earlier work on the PRD
+(below), and, in a later
 step, the `findings` (reviews and check results), `answer` and `ruling` files that step is handed.
-Its output is the architecture result at the path the context file names. When the result is
-accepted the step records the file `architecture result` and the value `conclusion`.
+`current architecture` is `<arch-work>/current-architecture.json`, which the step writes from the
+matrix when the session starts: `epic`, what `atw-matrix epic <id> --closure --constraints
+--unlinked` returns, and `impact`, what `atw-matrix impact --id` returns for each feature, entry
+and stack in it. The session is granted the work folder and no folder of the architecture or of
+the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
+before it writes its result.
+Its output is the architecture result at the path the context file names. The step that accepts
+the result records in the matrix what the result states of the Epic's features (`servedBy`,
+`realizedBy`, `supportedBy`, and `covers` from each document heading that describes a feature) and
+fails when the result names an entry the matrix does not hold, when the matrix does not then show a
+requirement as served by the feature the result names, or when a requirement is neither served by a
+feature nor listed under the result's `noFeature`. It records the file `architecture result` and
+the values `conclusion` and `requirements with no feature`.
 
 The same launch builder serves every step the architect performs: the first, its "Finish", a
 correction after the mechanical check or after findings, and a competing design the lead plans. A
@@ -55,9 +68,9 @@ adds a last child step "Finish". When its session ends, the runner reads the jou
 
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
-| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer` |
-| `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source` |
-| `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written` |
+| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`) |
+| `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the request's `changes` state or a drafted TRD's answer lists under `requirements`, with `statedIn` and `appliesTo`, and one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
+| `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step runs `sync-documents --paths` on the documents written |
 
 The TRD is drafted early by `trd-author` at the architect's request and updated in place.
 
@@ -73,10 +86,10 @@ after the owner asks for a start at or before it.
 
 ## The check
 
-Script `atw-matrix check; atw-matrix unapproved`. It follows the architect's first step, each
+Script `atw-matrix check; atw-matrix review-scope`. It follows the architect's first step, each
 correction of a mechanical defect, and the lead's step for a matter the architect could not
-settle. It checks what code can check: the matrix file, the documents the matrix indexes, a PRD
-row for the Epic, and an answer in the architect's result for every architecture and
+settle. It records nothing in the matrix. It checks what code can check: the matrix file, the
+Epic's entry, and an answer in the architect's result for every architecture and
 technical-requirement criterion. It writes `<arch-work>/check-<n>.json` (`<n>` is the number of
 corrections before it) and records it as the file `check result`. It then plans what follows by
 rule over the matrix, the criteria file and the architect's result:
@@ -87,10 +100,14 @@ rule over the matrix, the criteria file and the architect's result:
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead` and a new check |
 | otherwise | one step for each reviewer the criteria file selects, and the promotion step after them |
 
-With no defect it lists what is not approved for the Epic, marks it in review in the matrix, and
-writes `<arch-work>/review-scope.json` (file `review scope`). The reviewers are selected by the
-`appliesWhen` rule of each reviewer group in the criteria file: the kinds of unapproved content
-(a heading, a scenario fact, a TRD requirement; the TRD of an elaboration always counts) and the
+With no defect it reads what is in review for the Epic, the documents the Epic reaches that are
+not effective with the headings reached (`atw-matrix review-scope --epic`), and
+writes `<arch-work>/review-scope.json` (file `review scope`) and `<arch-work>/unlinked.json` (file
+`links with nothing recorded at the other end`, from `atw-matrix epic <id> --unlinked`). The
+reviewers are selected by the
+`appliesWhen` rule of each reviewer group in the criteria file: the kinds of content in review
+(a heading, a scenario fact, which is a document in review of arc42 section 6, a TRD requirement;
+the TRD of an elaboration always counts) and the
 review signals the architect's result lists. Each selected reviewer gets its own narrowed scope,
 `<arch-work>/review-scope.<reviewer>.json`. The step records the value
 `reviewers selected by rule`. A rule that selects no reviewer fails the step.
@@ -99,7 +116,9 @@ It judges nothing.
 
 ## Review
 
-Each reviewer is handed only the unapproved items its criteria apply to. Its brief names `prd`,
+Each reviewer is handed only the documents in review its criteria apply to: its scope file holds
+`bead`, `epic`, `reviewer`, `groups`, `criteria`, `documents` (each with `id`, `name`, `lifecycle`,
+`headings` and `reachedBy`), `trd` and `signals`. Its brief names `prd`,
 `review scope` (its own narrowed scope), `architecture result`, `criteria`, and `trd` when its
 group covers the TRD's requirements. The reviewers' steps are consecutive agent steps whose inputs
 are done, so their sessions run together. Each writes `<arch-work>/reviews/<reviewer>.json` and
@@ -119,19 +138,25 @@ that rejects every item adds no step. When nothing remains, the lead records the
 `every item is resolved`.
 
 `architecture-decider` rules only where the lead sends a matter to it. It is handed one question
-file and writes one ruling (`<arch-work>/ruling-<step>.json`, file `ruling`, value `stands`). A
+file and writes one ruling (`<arch-work>/ruling-<step>.json`, file `ruling`, value `stands`), and
+settles each disagreement the question's evidence cites with `atw-matrix settle`. The step that
+accepts the ruling reads each of those disagreements back and fails when `stands` is unset; it
+records the value `disagreements settled`. A review send-back is in the step journal only. A
 ruling that raises an owner concern fails the step at stage `requires-human-action`, with the
 concerns as its evidence.
 
 ## Promotion
 
-Script `atw-matrix approve`. It runs when no review returned a finding or asked for alternatives,
+Script `atw-matrix sync-documents; atw-matrix commit`. It runs when no review returned a finding
+or asked for alternatives,
 or the lead recorded that every item is resolved; anything else fails the step with a structured
-cause. It marks approved what is in review for the Epic in the matrix, sets the reviewed documents
-effective in the vault, commits and pushes those documents in the vault, and commits the matrix
-file in its repository. It writes `<arch-work>/approved.json` and records it as the file
-`approved items`, with the values `vault commit` and `matrix commit` when a commit was made. An
-item in review that could not be approved fails the step, naming each with the reason.
+cause. It sets the documents of the review scope effective in their front matter, mirrors their
+lifecycle in the matrix (`sync-documents --paths`), removes each disagreement settled in this run
+whose losing statement a maintainer step corrected, commits and pushes those documents in the
+vault, and commits and pushes the matrix file (`atw-matrix commit --bead`). It writes
+`<arch-work>/promoted.json` and records it as the file
+`promoted documents`, with the values `vault commit` and `matrix commit` when a commit was made. A
+document that could not be set effective fails the step, naming each with the reason.
 
 ## After the container
 

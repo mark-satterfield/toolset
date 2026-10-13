@@ -1,5 +1,11 @@
 # Search Recipes — order of precedence
 
+This ladder is for procedures, non-architecture documents and text no index covers. It is not
+how to find where functionality lives or which repository owns it: that is the matrix
+(`atw-matrix find --kinds stack --text "<words>"`, then `node stack:<id>` for the repository;
+`stacks --resource-type <type>` for a resource type). Use the ladder below for what the matrix
+does not record.
+
 Searching a polyrepo is not "run ripgrep." It is a decision about **which tool, in a
 deliberate order**. Many projects keep a "second brain" — Obsidian, a RAG/GraphRAG index,
 NotebookLM, a vector DB — and provide tools to search it that are faster and more
@@ -23,7 +29,7 @@ Match the question to the store that owns that kind of knowledge:
 | Looking for… | Reach for… |
 |---|---|
 | Product / architecture / decisions / docs / notes | Obsidian CLI over the project's vault (`obsidian-cli vault="<vault>" search query="…"`) |
-| "Which repo owns / implements X", cross-repo code semantics | GraphRAG (`mcp__mcp-graphrag-server__search`) |
+| What code does today, in a repository the matrix named for the question | GraphRAG (`mcp__mcp-graphrag-server__search`) |
 | Call graph, impact, "what breaks if I change X", symbols/flows | GitNexus (`gitnexus_query` / `gitnexus_context` / `gitnexus_impact`) |
 | Synthesised Q&A over a curated corpus | NotebookLM notebooks, where the project provides them |
 | Semantic similarity over embedded content | the project's vector DB, where provided |
@@ -41,9 +47,9 @@ you toward.
 ## Capture what you learn
 
 When a non-obvious search turns out to be the right way to find something — **especially where a
-kind of information lives** — record it, so the next search is faster: as a recipe here, or as a
-"where to find it" entry in the knowledge store (`.polyrepo/knowledge.yaml`, via
-**polyrepo-info**). A large share of tribal knowledge is exactly this: *where things are.*
+procedure or a non-architecture document lives** — record it, so the next search is faster: as a
+recipe here, or as a "where to find it" entry in the knowledge store (`.polyrepo/knowledge.yaml`,
+via **polyrepo-info**). Where functionality lives is never recorded there: the matrix holds it.
 
 ## Recipe shape
 
@@ -54,8 +60,9 @@ kind of information lives** — record it, so the next search is faster: as a re
 
 ## When search is the wrong tool
 
-If the answer is **structural** — which repos exist, their state against GitHub, purposes,
-owners, groups — it comes from the `polyrepo` tool (`status`, `list`, `search`,
-`inventory`; see **polyrepo-repo**), not from search. Deployment order is in
-`$SKILLSPOKE_CC/deployment/waves*.yaml`. Search is for what neither holds; for text across
+If the answer is **structural** — which repos exist, their state against GitHub, groups — it
+comes from the `polyrepo` tool (`status`, `list`, `search`, `inventory`; see **polyrepo-repo**),
+not from search. What a repository holds, what it is for and which one owns a piece of
+functionality come from the matrix. Deployment order is in
+`$SKILLSPOKE_CC/deployment/waves*.yaml`. Search is for what none of them holds; for text across
 every repo, the tool's `grep` runs `rg` over all of them at once.

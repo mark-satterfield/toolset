@@ -61,7 +61,7 @@ Each question below is answered from the matrix alone, without reading documents
 | Q10 | Where is this stack's source? | One repository. |
 | Q11 | What type of stack is this? | One type, from the stack's name. |
 | Q12 | Which repositories are relevant to this Epic? | The set of repositories, each with the stacks that make it relevant and the features that lead to them. |
-| Q13 | What is missing for this Epic? | Requirements with no feature, features with no covering document, and described services, components and infrastructure with no stack. |
+| Q13 | Which links of this Epic have nothing recorded at the other end? | Requirements with no feature, features with no covering document, described services, components and infrastructure with no stack, stacks with no repository, and things arc42 describes with no corresponding thing in a repository. |
 | Q14 | Which of this is proved by a build? | For each piece of information, verified or not verified. |
 | Q15 | Which of the project's own stacks, libraries, layers, services and infrastructure depend on this stack, service, component, library, layer or piece of infrastructure, and how? | A list of the things that depend on it, each with the stack that holds it and the kind of the relationship, followed to any depth. |
 | Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
@@ -171,7 +171,7 @@ contains packages and is used by Lambdas.
 
 **Architecture.** An arc42 document that is effective is approved and can be trusted as of
 the moment it is read. That says nothing about whether it covers the PRD in hand: the same
-document may need additions as the next feature is designed.
+document may need additions or changes as the next feature is designed.
 
 **Implementation.** The matrix has one code mark: verified. It is set when a Story's code
 has been built and tested and has passed, including its CI/CD and its CDK. It is recorded on
@@ -199,10 +199,72 @@ the pipeline assumes, and it never blocks a step:
 
 | Point | What happens | Who records |
 |---|---|---|
-| Seeded | The matrix starts with what is known today: every existing stack and the repository that holds it; the purpose of each stack; every Epic and its PRD; the services, components and infrastructure the architecture documents describe, mapped to the stacks and repositories that are their home in code. | The seeding work, once, from the repositories, beads and the effective arc42 documents. |
+| Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that come from it; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
 | Filled in and corrected | As elaboration runs: the features derived from PRD requirements; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
 | Confirmed | A stack and its components are marked verified, with the commit, once a Story's code has been built and tested and has passed, including its CI/CD and its CDK. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
+
+### 4.1 Seeding
+
+**What seeding puts in the matrix.**
+
+1. Every open Epic in beads, each with its PRD.
+2. The features of each of those PRDs. Every requirement in a PRD is recorded, with the
+   feature or features that come from it. A feature is recorded once and linked to every PRD
+   requirement it serves, across PRDs.
+3. Every effective arc42 document. From each one: every service, component and piece of
+   infrastructure it describes, and the stack the document says each is in.
+4. Every known repository, the stacks each repository contains, and what is in each stack
+   today: the code, packages, layers and CDK-defined infrastructure that are there now.
+
+**The mapping.** Seeding establishes every link between those four that can be established
+now:
+
+- an Epic to its PRD;
+- a PRD requirement to the features that come from it;
+- a feature to the arc42 documents that cover it;
+- an arc42 document to the services, components and infrastructure it describes;
+- each of those to its stack, and each stack to its repository;
+- each stack to what it depends on;
+- a thing arc42 describes to the thing in a repository that corresponds to it, where one
+  exists.
+
+Seeding goes as far as what is known today makes possible. A link that cannot be established
+from what exists today is left out, and it then shows up as having nothing at the other end
+for that Epic (Q13). Nothing is invented to fill it.
+
+**Two sides, kept apart.**
+
+- The architecture side is what arc42 states. It is how the product is to be built, and it
+  is the authority. Architecture and design are how you build, not a record of what was
+  built. A document is effective when it is approved. Many documents are effective today.
+- The repository side is what is in the stacks and repositories today. It was built by hand
+  a long time ago, not by the pipeline. It is recorded as what is there, marked not
+  verified, and treated as a hint. It never overrides arc42, and a difference between the
+  two sides is not a finding.
+- Both sides are needed and both are recorded. Every fact in the matrix shows which side it
+  came from.
+
+**Verified.** Verified means all tests pass, including the CDK tests and any CI/CD (section
+3.5). No build is verified today, so nothing is seeded as verified.
+
+**When.** All of this is in the matrix before the first pipeline run uses it.
+
+**Why it must be there before the first run.**
+
+- For each Epic the pipeline asks the matrix what exists. If the matrix has not been seeded,
+  a run cannot tell "this does not exist" from "this was never recorded", so it designs
+  architecture that is already effective and plans code that is already in a repository.
+- SkillSpoke shares almost everything: one service, component or library supports many
+  features and many PRDs. A first run that cannot see the shared pieces invents its own, and
+  every Epic after it builds on the duplicate or invents another.
+- A run that cannot look something up scans, which is slow and costly and gives a different
+  answer each run.
+- A pipeline run is long and expensive and must make real progress.
+- The mapping matters as much as the entries. One absent link in the chain from Epic to PRD
+  requirement to feature to arc42 document to service or component to stack to repository
+  breaks the answer to "which repositories are relevant to this Epic" (Q12), even when both
+  ends are recorded.
 
 ## 5. Requirements
 
@@ -214,8 +276,12 @@ the pipeline assumes, and it never blocks a step:
   it changes, so that two runs of one Epic start from the same facts.
 - **R3.** The matrix is the one location for these relationships. No second record of them
   is kept anywhere, because two records drift apart and a run cannot tell which is right.
-- **R4.** The matrix states what is missing for an Epic as exactly as what exists (Q13), so
-  that the architect designs only what is missing and extends what exists.
+- **R4.** The matrix hands the architect the current architecture that touches the Epic,
+  complete, with what rests on each piece (Q12, Q19), and states which links of the Epic
+  have nothing recorded at the other end as exactly as it states what exists (Q13). The
+  architect's question is then plain: here is the current architecture, here are the new
+  requirements; what should the architecture be so that it does everything the current
+  architecture does and also meets these requirements? (R52 to R55.)
 - **R5.** The matrix finds a stack from a description of functionality (Q8), so that an
   agent that needs a behaviour finds its existing home before it designs or codes one.
 
@@ -320,14 +386,22 @@ the pipeline assumes, and it never blocks a step:
 
 ### Keeping
 
-- **R27.** The seeding work records everything section 4 lists under "Seeded" before the
-  first pipeline run uses the matrix, so that the first run already looks up and does not
-  scan.
+- **R27.** The seeding work records everything section 4 lists under "Seeded" and section
+  4.1 states (R47 to R51) before the first pipeline run uses the matrix, so that the first
+  run already looks up and does not scan. Section 4.1 gives the reasons: an unseeded matrix
+  cannot tell "this does not exist" from "this was never recorded"; a first run that cannot
+  see the shared pieces invents its own; a run that cannot look something up scans; a
+  pipeline run is long and expensive and must make real progress; and one absent link in the
+  chain breaks the answer to which repositories are relevant to an Epic.
 - **R28.** The elaboration pipeline records, during the run that produces them: the features
   it derives from PRD requirements, what the architect designs, and each new or changed
   architecture document mapped to the feature it supports. The next Epic then finds them.
-- **R29.** A pipeline run that finds the matrix wrong corrects it in that run, so that the
-  same error is not met again.
+  Seeding derives the features of the Epics that are open at seeding (R47); elaboration
+  derives the features of every Epic created after seeding, and adds to or corrects the
+  features of an Epic it runs.
+- **R29.** An elaboration run that finds the matrix wrong corrects it in that run, so that
+  the same error is not met again. A build or deploy run reports what it finds wrong and
+  changes nothing but the verified mark (R46).
 - **R30.** A pipeline step looks up what exists. A step that rediscovers what exists by
   scanning is the failure the matrix exists to remove.
 - **R31.** What the matrix records is decided by what the pipeline looks up to answer the
@@ -359,9 +433,10 @@ the pipeline assumes, and it never blocks a step:
   the matrix, and a change that introduces a matrix lookup removes the mechanism it replaces
   in the same change, so that the old way of finding out never runs beside the new one.
 - **R39.** The matrix is read and maintained at every pipeline step where something it holds
-  is needed or becomes known: in elaboration, in build, in deploy and in repository work. A
-  fact that becomes known at a step and is recorded only later, or elsewhere, is found again
-  by scanning.
+  is needed or becomes known: in elaboration, in build, in deploy and in repository work. In
+  build and in deploy the one thing maintained is the verified mark (R46). A fact that
+  becomes known at a step and is recorded only later, or elsewhere, is found again by
+  scanning.
 
 ### Stories and Tasks
 
@@ -373,3 +448,68 @@ the pipeline assumes, and it never blocks a step:
   their ids against the matrix, not by entries in the matrix: which entries a Story built
   (for the verified mark); which open work from other Epics touches an entry; which open
   Tasks a change affects.
+
+### Sources
+
+- **R43.** The matrix records two sides and keeps them apart (section 4.1). The architecture
+  side is what arc42 states about implementation structure: the stacks and what is in each
+  stack; which Lambdas use which layers; which infrastructure of each resource type a stack
+  holds; every dependency that crosses a stack boundary. arc42 is the authority for all of
+  it. It states how the product is to be built, and architecture and design are how you
+  build, not a record of what was built.
+- **R44.** No pipeline build has happened. Everything now in the repositories was built by
+  hand a long time ago, not by the pipeline. Most repositories have little or nothing in
+  their CDK, and few have a layer.
+- **R45.** The repository side is what is in the stacks and repositories today: the code,
+  packages, layers and CDK-defined infrastructure that are there now. The packages recorded
+  are the project's own packages and the layers; the third-party packages a repository
+  installs stay out (R17). It is always recorded,
+  for every stack, and not only where arc42 lacks information. It is recorded as what is
+  there today, marked not verified, and treated as a hint. CDK code in a repository, or a
+  synthesized CDK assembly, is never the authority for anything: the repository side never
+  overrides arc42, and a difference between the two sides is not a finding. What is there is
+  counted on as real only when the entry reaches the verified state (section 3.5, R24 to
+  R26).
+- **R46.** A stack's facts do not arrive later, when its Story deploys. Seeding records both
+  sides before the first pipeline run (R27), and elaboration records what the architect
+  designs or reads. A deploy adds no new facts to the matrix. The build pipeline sets the
+  verified mark and nothing else.
+
+### Seeding
+
+- **R47.** Seeding records four things, each in full as section 4.1 lists them: every open
+  Epic in beads with its PRD; every requirement of each of those PRDs with the feature or
+  features that come from it, each feature recorded once and linked to every PRD requirement
+  it serves, across PRDs; every effective arc42 document with every service, component and
+  piece of infrastructure it describes and the stack the document says each is in; and every
+  known repository with the stacks it contains and what is in each stack today, which is
+  the code, packages, layers and CDK-defined infrastructure that are there now.
+- **R48.** Seeding establishes every link between those four that can be established now:
+  an Epic to its PRD; a PRD requirement to the features that come from it; a feature to the
+  arc42 documents that cover it; an arc42 document to the services, components and
+  infrastructure it describes; each of those to its stack, and each stack to its repository;
+  each stack to what it depends on; and a thing arc42 describes to the thing in a repository
+  that corresponds to it, where one exists.
+- **R49.** A link that cannot be established from what exists today is left out. It then
+  shows up as having nothing at the other end for that Epic (Q13). Nothing is invented to
+  fill it.
+- **R50.** Seeding records both sides, because both are needed. Every fact in the matrix
+  shows which side it came from, the architecture side or the repository side, and a lookup
+  returns the side with the fact.
+- **R51.** Nothing is seeded as verified. Verified means all tests pass, including the CDK
+  tests and any CI/CD, and no build is verified today.
+
+### The architect and the matrix
+
+- **R52.** The answer to the architect's question (R4) is a design judgment by the
+  architect. The matrix does not compute it. What comes out is whatever the answer requires:
+  for a given requirement that can be nothing (what exists already meets it), something new,
+  or a change to something that exists.
+- **R53.** A change to something that exists reaches every feature, PRD and Epic that shares
+  it. The architect looks up what rests on it (Q19) and which other Epics share it (Q20)
+  before designing the change.
+- **R54.** Instructions to the architect do not use steering words such as "missing",
+  "extends" or "delta" to describe the design task. Such a word tells the architect how to
+  approach the problem before it has looked at it.
+- **R55.** The lookup of links with nothing recorded at the other end (Q13) stays, under
+  plain wording. It is one input to the architect's judgment and is not the design task.

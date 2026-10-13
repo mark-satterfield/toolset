@@ -27,10 +27,13 @@ Check tradeoff claims, hidden assumptions and optimistic estimates against retai
 
 ## What you review
 
-You review only content that is not yet approved. The review scope the brief names lists it:
-the arc42 headings that were added or changed, the design facts not yet approved, the settled
-disagreements this run applied, and the TRD requirements. A script worked the list out from
-the matrix. Nothing outside it is yours to review.
+You review only content that is not yet approved. The review scope the brief names lists it
+under `documents`: each arc42 document the Epic reaches that is not effective, with its `id`,
+`name` and `lifecycle`, the `headings` reached, and under `reachedBy` what leads the Epic to
+it. `trd` is the TRD's path when your group covers its requirements, and null otherwise.
+`signals` holds the lists of the architect's result that selected you, and `criteria` the
+ids of the criteria you review against. A script worked the scope out from the matrix
+(`atw-matrix review-scope`). Nothing outside it is yours to review.
 
 Approved content is reference. You may open an approved document to follow a link or check
 that an unapproved statement agrees with it. You report nothing about approved content, with

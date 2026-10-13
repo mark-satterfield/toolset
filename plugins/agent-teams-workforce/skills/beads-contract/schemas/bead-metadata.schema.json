@@ -560,7 +560,7 @@
         "argument": "matrix_elements",
         "kind": "list"
       },
-      "description": "JSON array of the matrix ids of the elements the Task builds; `atw-matrix uses --task` and `atw-matrix check-reuse --task` read the shared capabilities those elements must use from it."
+      "description": "JSON array of the matrix ids the Task states: its stack, the entries it builds and the shared capabilities it uses. The build passes them to `atw-matrix uses --ids` and `atw-matrix check-reuse --ids`."
     },
     "decision_ids": {
       "$ref": "#/$defs/JsonList",

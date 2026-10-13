@@ -13,8 +13,8 @@ invariants, report.
    (the form its section requires)                    the request names
                  |
                  v
-   find the other documents that describe the         atw-matrix node <id>
-   same element; replace a restatement with a link
+   find the other documents that describe the         atw-matrix node <entry id>
+   same entry; replace a restatement with a link      (its describedBy relationships)
                  |
                  v
    place or update diagrams; keep the catalog true
@@ -42,8 +42,9 @@ also list restatements to replace with links, settled disagreements to apply and
    - Section 7: where it runs and which stack holds each resource.
    - Section 8: the rule as a design fact with its reason.
 2. **Replace restatements with links.** In every other document the request names, and in every
-   document the matrix lists as describing the same element (`atw-matrix node <id>`), a
-   restatement of the fact becomes a link to the home heading.
+   document the matrix lists as describing the same entry (`atw-matrix node <entry id>` names
+   each under `describedBy`, with its heading), a restatement of the fact becomes a link to the
+   home heading.
 3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
    replaced by a link to it.
 4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
@@ -57,6 +58,8 @@ also list restatements to replace with links, settled disagreements to apply and
    unwritten.
 
 The files changed stay `in-review`; a script sets them to `effective` and commits after review.
+A script step runs `atw-matrix sync-documents --paths` on the files changed, so that the matrix
+holds each document, its headings and what its `shows` names.
 
 ## Correction from built
 
@@ -64,7 +67,8 @@ Input: the documents in `built/<element>/`, each recording a difference between 
 built and the effective documents, citing the code; and the effective documents the matrix names
 for the elements they differ on.
 
-1. **List the elements the built documents differ on.**
+1. **List the elements the built documents differ on**, and run `atw-matrix node <entry id>` for
+   each: `describedBy` names every effective document and heading that describes it.
 2. **Take each difference as a fact to correct in its home.** The home is the heading that states
    the fact today.
 3. **Correct the home**, then replace any restatement in the other documents that describe the
@@ -74,7 +78,8 @@ for the elements they differ on.
    up to date with.
 
 A correction from built is made even when it conflicts with a constraint, so that the documents
-describe the system as it is. Report the conflict with the correction.
+describe the system as it is. Report the conflict with the correction. The correction records
+nothing in the matrix; the next run's `atw-matrix sync-documents` mirrors the corrected documents.
 
 ## Worked example A — writing the decisions for a new service
 
@@ -90,7 +95,8 @@ container document as one that must link to the new service.
 2. The event fact is written under "Preference changed" in the system event flow. The settings
    service's document gains the consumer under "Interfaces".
 3. The system container document shows the new service in its diagram and links to its document.
-   `atw-matrix node` for the settings service names its sequence document for saving settings; it
+   `atw-matrix node service:settings-service` names, under `describedBy`, the settings service's
+   sequence document for saving settings; it
    described the old interaction in its own words, and that sentence becomes a link to "Preference
    changed".
 4. Invariants: every `shows` list names the new service where the diagram shows it; each fact is

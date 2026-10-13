@@ -3,7 +3,9 @@
 
     assess-plan          fingerprints of the open Epics (or Tasks with no `elab_key`) and
                          those not assessed as they stand, or not since `--since`
-    assess-context       one Epic's or Task's corpus, index and standing edges
+    assess-context       one Epic's related Epics with their PRD files, or one Task's stacks with
+                         their open Tasks and dependencies, read from the matrix, and the
+                         item's standing edges
     snapshot             the tracker as a graph
     validate             check one Epic's or Task's edge proposal
     withdraw-edge        withdraw one owned edge, recording the reason
@@ -17,8 +19,10 @@
     elaboration-release  clear a run's owner token from an Epic
     arch-approve         set `lifecycle_state: effective` on the architecture files an
                          integration changed or created that its conformance review covered;
-                         a file the review does not name stays as it is; no `bd` call
-    arch-state           read the `lifecycle_state` of the architecture files a step relies on;
+                         a file the review does not name stays as it is; then brings the
+                         matrix's entries of those files up to date (`documentsSynced`, as
+                         `atw-matrix sync-documents --paths`); no `bd` call
+    arch-state          read the `lifecycle_state` of the architecture files a step relies on;
                          no `bd` call
     arch-constraints     fingerprint section 2 (the owner's constraints): each file's hash and
                          the folder's git status; `--keep` also copies it aside and names the
@@ -32,7 +36,9 @@
                          created, changed and deleted since that saved fingerprint; with either,
                          the per-file hashes stay on disk and are not printed; no `bd` call
     arch-built-remove    delete the `built/<element>/` files the effective version now matches
-                         and commit the removal in the repository holding them; no `bd` call
+                         and commit the removal in the repository holding them; then brings
+                         the matrix's entries of those files up to date (`documentsSynced`);
+                         no `bd` call
     spec-ui-append       write the `ui` items' design sources (bundle build spec and Section
                          IDs, cds, or none) as the `## UI design sources` section of a saved
                          spec document; no `bd` call
@@ -78,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -101,7 +108,7 @@ from archstate import (
     tree_diff,
 )
 from archstate import states as arch_states
-from assesscontext import assess_context, task_context
+from assesscontext import assess_context, prd_paths, task_context
 from bead_metadata import (
     ELABORATION_DONE,
     KEY_ELAB_KEY,
@@ -136,6 +143,9 @@ from edgeset import (
 )
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError, SpanFiles, SpanStories, StoryFiles, repo_slugs
+from matrixstore import Matrix, matrix_path, read_matrix, update_matrix
+from matrixsync import DocumentsSynced, sync_documents, vault_root
+from matrixtasks import read_tasks
 from reconfacts import ReconError, recon_facts
 from scoring import ScoringError, judge_input, plan, record, score
 from scoringcontracts import Plan
@@ -143,8 +153,77 @@ from specui import SpecUiError, spec_ui_append
 from storyedges import story_edges
 from typeguard import CollectionCheckStrategy, check_type
 
+# The driver's environment variable names are generated into the pipeline-contracts skill, their
+# one definition.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+
+# isort: split
+from driver_surface_types import PRD_DIR_ENV
+
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+def _matrix() -> Matrix:
+    """Read the matrix the environment names.
+
+    A matrix the environment does not name, or a file that is missing or unreadable, raises
+    `MatrixError`, a `ValueError`, from `matrix_path` and `read_matrix`.
+
+    Returns:
+        The matrix.
+
+    """
+    return read_matrix(matrix_path(None, os.environ))
+
+
+def _vault() -> Path:
+    """Find the vault root every PRD path the matrix records is relative to.
+
+    A folder that is in no git repository raises `MatrixError`, a `ValueError`, from `vault_root`.
+
+    Returns:
+        The root of the repository the PRD folder is in.
+
+    Raises:
+        ValueError: The environment does not name the PRD folder.
+
+    """
+    stated: str = os.environ.get(PRD_DIR_ENV, "").strip()
+    if not stated:
+        message: str = f"locating the vault: set {PRD_DIR_ENV} to the folder of the vault the PRD files are under"
+        raise ValueError(message)
+    return vault_root(Path(stated).expanduser())
+
+
+def _sync_documents(arch_root: str | None, files: list[str]) -> JsonObject | None:
+    """Bring the matrix's entries of the named architecture files up to date.
+
+    This is what ``atw-matrix sync-documents --paths`` does, run by each command that changes or
+    removes files under the architecture root. A matrix the environment does not name, or a file
+    that is missing or unreadable, raises `MatrixError`, a `ValueError`.
+
+    Args:
+        arch_root: The architecture directory or a file in it, or None.
+        files: The files the command changed or removed; one outside the architecture root is
+            left out, as the command itself refuses it.
+
+    Returns:
+        What the read did; None when no architecture root was given.
+
+    """
+    if not arch_root:
+        return None
+    stated: Path = Path(arch_root).resolve()
+    root: Path = stated.parent if stated.is_file() else stated
+    inside: list[str] = [
+        str(located) for located in (Path(name).resolve() for name in files) if located.is_relative_to(root)
+    ]
+
+    def change(matrix: Matrix) -> DocumentsSynced:
+        return sync_documents(matrix, root, paths=inside)
+
+    return json_object(update_matrix(matrix_path(None, os.environ), change))
 
 
 def snapshot(
@@ -443,7 +522,7 @@ def _configure_command_4(sub: _Subcommands, common: argparse.ArgumentParser) -> 
     """Register one command family and its arguments."""
     acx: argparse.ArgumentParser = sub.add_parser(
         "assess-context",
-        help="one Epic's or one Task's assessment material: corpus, index, standing edges",
+        help="one Epic's or one Task's assessment material, read from the matrix, and its standing edges",
         parents=[common],
     )
     acx.add_argument("--epic", default=None, help="the Epic to be assessed")
@@ -451,18 +530,6 @@ def _configure_command_4(sub: _Subcommands, common: argparse.ArgumentParser) -> 
         "--task",
         default=None,
         help="the Task, created outside elaboration, to assess",
-    )
-    acx.add_argument(
-        "--dir",
-        type=Path,
-        required=True,
-        help="write `prd/<id>.md` per open Epic (or `task/<id>.md` per open Task) and `index.md` here",
-    )
-    acx.add_argument(
-        "--corpus-ready",
-        action="store_true",
-        help="`--epic` only: the PRD corpus and index in `--dir` were already written "
-        "by this seeding; read them rather than writing them again",
     )
 
 
@@ -587,12 +654,6 @@ def _configure_command_10(sub: _Subcommands, common: argparse.ArgumentParser) ->
     )
     jin.add_argument("--plan", type=Path, required=True, help="the `score-plan` output")
     jin.add_argument("--level", choices=("epic", "task"), required=True)
-    jin.add_argument(
-        "--prd-dir",
-        type=Path,
-        default=None,
-        help="write each Epic to judge's PRD here",
-    )
 
 
 def _configure_command_11(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
@@ -1182,7 +1243,6 @@ class _CommandOptions:
     task: str | None
     since: str | None
     dir: Path | None
-    corpus_ready: bool
     kinds: str | None
     with_description: bool
     include_closed: bool
@@ -1198,7 +1258,6 @@ class _CommandOptions:
     all: bool
     rejudge: bool
     only: str | None
-    prd_dir: Path | None
     epics_dir: Path | None
     tasks_dir: Path | None
     owner: str | None
@@ -1292,11 +1351,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             Path | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        corpus_ready=check_type(
-            getattr(namespace, "corpus_ready", False),
-            bool,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         kinds=check_type(
             getattr(namespace, "kinds", None),
             str | None,
@@ -1370,11 +1424,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
         only=check_type(
             getattr(namespace, "only", None),
             str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        prd_dir=check_type(
-            getattr(namespace, "prd_dir", None),
-            Path | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
         epics_dir=check_type(
@@ -1658,7 +1707,7 @@ def _dispatch_arch_approve(args: _CommandOptions, head: JsonObject) -> JsonObjec
             "wouldApprove": files,
             "summary": {"dryRun": True, "files": len(files)},
         })
-    return json_object({
+    approved: JsonObject = json_object({
         **head,
         **approve_arch(
             files,
@@ -1668,6 +1717,7 @@ def _dispatch_arch_approve(args: _CommandOptions, head: JsonObject) -> JsonObjec
             else split_ids(_required_text(args.reviewed_files)),
         ),
     })
+    return json_object({**approved, "documentsSynced": _sync_documents(args.arch_root, files)})
 
 
 def _dispatch_arch_constraints(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -1746,14 +1796,12 @@ def _dispatch_arch_built_remove(args: _CommandOptions, head: JsonObject) -> Json
         The selected command result.
 
     """
-    return json_object({
+    files: list[str] = split_ids(_required_text(args.files))
+    removed: JsonObject = json_object({
         **head,
-        **remove_built(
-            _required_text(args.arch_root),
-            split_ids(_required_text(args.files)),
-            message=_required_text(args.message),
-        ),
+        **remove_built(_required_text(args.arch_root), files, message=_required_text(args.message)),
     })
+    return json_object({**removed, "documentsSynced": _sync_documents(args.arch_root, files)})
 
 
 def _dispatch_spec_ui_append(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -1970,17 +2018,10 @@ def _dispatch_assess_context(context: _GraphCommand) -> JsonObject:
     args = context.args
     head = context.head
     graph = context.graph
+    matrix: Matrix = _matrix()
     if args.task is not None:
-        return json_object({**head, **task_context(graph, args.task, _required_path(args.dir))})
-    return json_object({
-        **head,
-        **assess_context(
-            graph,
-            _required_text(args.epic),
-            _required_path(args.dir),
-            corpus_ready=args.corpus_ready,
-        ),
-    })
+        return json_object({**head, **task_context(graph, matrix, read_tasks(args.directory), args.task)})
+    return json_object({**head, **assess_context(graph, matrix, _required_text(args.epic), _vault())})
 
 
 def _dispatch_score_plan(context: _GraphCommand) -> JsonObject:
@@ -2014,19 +2055,16 @@ def _dispatch_judge_input(context: _GraphCommand) -> JsonObject:
     args = context.args
     head = context.head
     graph = context.graph
-    return json_object({
-        **head,
-        **judge_input(
-            graph,
-            check_type(
-                _read_json(_required_path(args.plan)),
-                Plan,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            ),
-            _required_text(args.level),
-            prd_dir=args.prd_dir,
-        ),
-    })
+    level: str = _required_text(args.level)
+    the_plan: Plan = check_type(
+        _read_json(_required_path(args.plan)),
+        Plan,
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+    paths: dict[str, str] | None = (
+        prd_paths(_matrix(), _vault(), [item["id"] for item in the_plan["judge"]["epics"]]) if level == "epic" else None
+    )
+    return json_object({**head, **judge_input(graph, the_plan, level, paths)})
 
 
 def _dispatch_snapshot(context: _GraphCommand) -> JsonObject:

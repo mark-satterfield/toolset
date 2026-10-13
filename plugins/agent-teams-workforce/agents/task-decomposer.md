@@ -41,9 +41,19 @@ size them using the wsjf skill's agent-pipeline reference jobs. Tasks are how to
 requirements or test-only activities. Every placed item, including prerequisites and overlaps
 with another Epic, gets a Task. An existing started or closed Task in context is reused, not
 rewritten; another Epic's Task that plans the same work is recorded as an external blocker and
-never replaces this Epic's Task. The task context's `sharedCapabilities` lists what this
-repository's elements obtain from shared capabilities: a Task consumes a listed behaviour from
-the capability that provides it, and no Task builds that behaviour in this repository.
+never replaces this Epic's Task. The task context names the stacks the Story builds in as
+`stacks` (matrix stack ids) and holds two matrix reads, and you run neither
+and search for neither: as `stackWork`, one result for each stack, the open Tasks of other
+Epics that touch this Story's stack
+(`atw-matrix work --id <stack id> --not-epic <epic id>`), which are the only source of an
+overlap with another Epic, and the shared capabilities of the entries each Task builds
+(`atw-matrix uses --ids <entry ids>`), as `sharedCapabilities`: a Task consumes a listed
+behaviour from the capability that provides it, and no Task builds that behaviour in this
+stack. A Task states in full what it builds with the matrix's ids, exactly as the task context
+gives them: its stack, the components it builds and the shared capabilities it uses. Python
+writes those ids into the Task's text and its `matrix_elements` key. A Task names no id the
+context does not give, and every Task carries its stack id: the build fails at its first step
+on a Task that states no stack. Nothing is written in the matrix for a Task.
 Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
 `tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
 the surface set and what an empty list and null each mean, and the score rules (jobSize on the

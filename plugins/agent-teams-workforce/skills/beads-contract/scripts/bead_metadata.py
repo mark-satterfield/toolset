@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "3375a14bc2567edc6f4366b5494d2f6c3f6fa950bdeda9477fe7e2595355e4c3"
+SCHEMA_SHA256: Final[str] = "3c6ed2162982f4e0b2abccd6191cf16c725af1e3c1214aaeb94d92523e2b6d92"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -136,8 +136,8 @@ KEY_ACCEPTANCE_CRITERIA: Final[str] = "acceptance_criteria"
 KEY_DEFINITION_OF_DONE: Final[str] = "definition_of_done"
 #: JSON array of requirement and delta-item ids, for traceability.
 KEY_REQUIREMENT_IDS: Final[str] = "requirement_ids"
-#: JSON array of the matrix ids of the elements the Task builds; `atw-matrix uses --task` and `atw-matrix check-
-#: reuse --task` read the shared capabilities those elements must use from it.
+#: JSON array of the matrix ids the Task states: its stack, the entries it builds and the shared capabilities it
+#: uses. The build passes them to `atw-matrix uses --ids` and `atw-matrix check-reuse --ids`.
 KEY_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
 #: JSON array of architecture view paths (relative to the arc42 folder, #<heading> for part of a view) the item
 #: was designed against.

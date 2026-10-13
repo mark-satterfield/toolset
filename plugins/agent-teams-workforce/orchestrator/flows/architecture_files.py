@@ -1,13 +1,17 @@
 """The files and names the steps of the Architecture container share.
 
 The open-run step writes one context file and records it in the journal. It names every path the
-script chose for the architecture work of the Epic: the architect's state and result files, the
-TRD, and the folders the sessions may read. Every later step is handed that file through the
-journal, so no step derives a path of its own.
+script chose for the architecture work of the Epic: the architect's state and result files and
+the TRD. Every later step is handed that file through the journal, so no step derives a path of
+its own.
+
+What a session reads of the architecture comes from the matrix: a script step writes the result
+of a matrix read to a file, and the brief names that file.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -23,6 +27,8 @@ from architecture_work_contract import (
     validate_architecture_context,
     validate_architecture_result,
 )
+from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
+from matrixstore import ID_SEPARATOR, make_id, matrix_path
 from review_criteria import CRITERIA_PATH
 
 from orchestrator.core import step_journal
@@ -40,8 +46,8 @@ if TYPE_CHECKING:
     from orchestrator.core.journal_steps import StepInputs, StepRun
 
 OPEN_RUN: Final = "prd_to_spec.open_run"
-CHECK: Final = "atw-matrix check; atw-matrix unapproved"
-APPROVE: Final = "atw-matrix approve"
+CHECK: Final = "atw-matrix check; atw-matrix review-scope"
+PROMOTE: Final = "atw-matrix sync-documents; atw-matrix commit"
 CONFIRM_TRD: Final = "trd.confirm"
 EARLIER_WORK: Final = "architecture.earlier_work"
 """The script keys of the steps of an elaboration's architecture part, as the journal shows them."""
@@ -52,8 +58,10 @@ EARLIER_PREFIX: Final = "earlier work: "
 """What the name of an artifact begins with when an earlier form of the pipeline produced the file."""
 
 ARCHITECTURE_FOLDER: Final = "architecture"
-CONSTRAINTS_FOLDER: Final = "arc42/02-architecture-constraints"
 MATRIX_COMMAND: Final = "atw-matrix"
+MARKDOWN_SUFFIX: Final = ".md"
+URL_MARK: Final = "://"
+"""What a citation's source holds when it is a URL and no path."""
 FINISH: Final = "Finish"
 """What the description of the last child step of an agent that started helpers begins with."""
 
@@ -70,11 +78,18 @@ LABEL_QUESTION: Final = "question"
 LABEL_REQUEST: Final = "request"
 LABEL_ANSWER: Final = "answer"
 LABEL_RULING: Final = "ruling"
+LABEL_CURRENT: Final = "current architecture"
 """The input labels the definitions of the architecture team name.
 
 ``request``, ``question``, ``answer`` and ``ruling`` are also the names of the artifacts that
-record those files in the journal.
+record those files in the journal. ``current architecture`` is the file that holds what the
+matrix returns for the Epic: everything it reaches, the constraints that bind it, the links with
+nothing recorded at the other end, and what rests on each entry.
 """
+
+WRITE_REQUEST: Final = "write request"
+WRITTEN: Final = "what was written"
+"""The artifacts a document maintainer's step holds: what it was asked to write, and its result."""
 
 ARTIFACT_CONCLUSION: Final = "conclusion"
 ARTIFACT_REVIEW: Final = "review"
@@ -110,7 +125,6 @@ def new_context(bead: str, prd: Path, arch: Path, work: Path, vault_commit: str)
         "bead": bead,
         "prdPath": str(prd),
         "architectureRoot": str(arch),
-        "constraintsFolder": str(arch / CONSTRAINTS_FOLDER),
         "vaultCommit": vault_commit,
         "matrixCommand": MATRIX_COMMAND,
         "statePath": str(folder / "state.json"),
@@ -129,6 +143,70 @@ def context_path(work: Path) -> Path:
 
     """
     return work / ARCHITECTURE_FOLDER / "context.json"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def current_architecture_path(work: Path) -> Path:
+    """Name the file that holds what the matrix returns for the Epic.
+
+    Returns:
+        The file inside the Epic's architecture work folder.
+
+    """
+    return work / ARCHITECTURE_FOLDER / "current-architecture.json"
+
+
+def matrix_file() -> Path:
+    """Name the matrix file the run reads and changes.
+
+    Returns:
+        The file ``ATW_MATRIX`` names, or the one inside the control repository.
+
+    """
+    return matrix_path(None, os.environ)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def cited_document(arch: Path, source: str) -> EntryId | None:
+    """Name the document entry a citation's source is.
+
+    Args:
+        arch: The architecture root.
+        source: A citation's source: an arc42 path relative to the architecture root or absolute,
+            or the id of a document entry; or anything else a citation may name.
+
+    Returns:
+        The id a document at that path has in the matrix; None when the source is not the path
+        of a Markdown file under the architecture root. The matrix may hold no entry with the id.
+
+    """
+    prefix: str = f"{KIND_DOCUMENT}{ID_SEPARATOR}"
+    stated: str = source.strip().removeprefix(prefix)
+    if not stated.endswith(MARKDOWN_SUFFIX) or URL_MARK in stated:
+        return None
+    root: Path = arch.resolve()
+    given: Path = Path(stated)
+    located: Path = (given if given.is_absolute() else root / given).resolve()
+    if not located.is_relative_to(root) or located == root:
+        return None
+    try:
+        return make_id(KIND_DOCUMENT, located.relative_to(root).as_posix())
+    except MatrixError:
+        return None
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def document_path(document: str) -> str:
+    """Name a document by its path under the architecture root.
+
+    Args:
+        document: The id of a document entry.
+
+    Returns:
+        What follows the kind and the colon in the id.
+
+    """
+    return document.partition(ID_SEPARATOR)[2]
 
 
 class ArchitectureStepError(StepError):

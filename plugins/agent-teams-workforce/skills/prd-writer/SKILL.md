@@ -41,29 +41,30 @@ records only because PRDs were written before the tracker was in use.
 
 Three consequences bind every PRD author and reviewer:
 
-1. **The pair is recorded on BOTH sides, and neither side is a container for the other.**
+1. **The pair is recorded in one place, the matrix, and neither side is a container for the other.**
 
-   | Direction | Where it lives | What it holds |
+   | Question | Lookup | What it returns |
    |---|---|---|
-   | PRD → Epic | a `**Epic:** <prefix>-xxxx` line under the title | the Epic's bead id |
-   | Epic → PRD | the label `prd:<slug>` | the PRD's filename without `.md` |
+   | The PRD of an Epic | `atw-matrix epic <bead id>` | `prd.path`, the PRD's path relative to the vault root |
+   | The Epic of a PRD | `atw-matrix find --kinds epic --prd <path>` | the `epic` entry |
 
-   Write both when you form the pair. Never a local filesystem path — the filename or the title, so
-   the pointer survives the vault moving. A pointer written as prose points one way only and a
-   rewrite deletes it silently; a label and an `**Epic:**` line both survive a rewrite.
+   The `epic` entry holds the PRD's path and one `requirement` entry for each `####` heading under
+   `## Requirements`. A read needs no role. You write no pointer on either side: the PRD carries
+   no `**Epic:**` line and the Epic carries no `prd:` label, and one found in an older file or on
+   an older bead is not a record. When a new pair is formed, report the Epic id and the PRD path;
+   the workflow records the pair with `atw-matrix sync-epics --bead <id> --prd <path>`.
 
-   **When the two pointers disagree, that is a conflict to report, never a tie to break.** Guessing
-   which side is right — matching Epics to PRDs by title resemblance — mis-paired three Epics and
-   overwrote them with another PRD's content. One Epic, one PRD, on recorded evidence only.
+   **When the matrix names no PRD for an Epic, or no Epic for a PRD, that is a fact to report, never
+   a gap to fill by guessing.** Matching Epics to PRDs by title resemblance mis-paired three Epics
+   and overwrote them with another PRD's content. One Epic, one PRD, on recorded evidence only.
 2. **Keep the file shape the mapping depends on.** The mapping is exact and two-way:
 
    ```
-   PRD file  ==  "# " + epic.title + "\n\n" + epic.description   (plus the **Epic:** pointer line)
+   PRD file  ==  "# " + epic.title + "\n\n" + epic.description
    ```
 
-   So the PRD's **first and only** `# ` heading is the Epic title, and everything after it — minus
-   the `**Epic:**` pointer, which the Epic does not need to store about itself — is the Epic
-   description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
+   So the PRD's **first and only** `# ` heading is the Epic title, and everything after it is the
+   Epic description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
    the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
 3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
    Epic into sync, and say in your reply that you did. The project supplies two scripts through

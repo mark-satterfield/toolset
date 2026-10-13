@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Architecture work",
-  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, a reviewer's result for the unapproved content, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of a row as atw-matrix prints it. The review scope a reviewer is handed is defined by matrix.schema.json ($defs/ReviewScope).",
+  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, a reviewer's result for the unapproved content, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of an entry as atw-matrix prints it. The review scope a reviewer is handed is what atw-matrix review-scope prints for the Epic, narrowed to the reviewer's criteria.",
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
-      "description": "`approved`: the architecture for the need exists and the matrix marks it approved. `disagreement`: it exists and is approved, and two statements disagree. `missing`: no approved statement meets the need.",
+      "description": "`approved`: the architecture for the need exists and its documents are effective. `disagreement`: it exists and is approved, and two statements disagree. `missing`: no approved statement meets the need.",
       "type": "string",
       "enum": ["approved", "disagreement", "missing"]
     },
@@ -93,12 +93,11 @@
       "description": "The context file of one Epic's architecture work. The open-run step of the elaboration writes it; every step of the architecture part is handed it, and the solutions architect's brief names it as `context`. It names every path the script chose, so that no agent and no step derives one.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "prdPath", "architectureRoot", "constraintsFolder", "vaultCommit", "matrixCommand", "statePath", "resultPath", "trdPath", "helpersFolder"],
+      "required": ["bead", "prdPath", "architectureRoot", "vaultCommit", "matrixCommand", "statePath", "resultPath", "trdPath", "helpersFolder"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "prdPath": {"description": "The PRD file.", "type": "string", "minLength": 1},
         "architectureRoot": {"description": "The architecture folder of the vault, which holds `arc42/`, `built/` and `reference/`.", "type": "string", "minLength": 1},
-        "constraintsFolder": {"description": "The folder of arc42 section 2, the owner's constraints.", "type": "string", "minLength": 1},
         "vaultCommit": {"description": "The vault commit the matrix's document rows are synced to.", "type": "string"},
         "matrixCommand": {"description": "The command that reads and writes the matrix.", "type": "string", "minLength": 1},
         "statePath": {"description": "Where the solutions architect writes its state file.", "type": "string", "minLength": 1},
@@ -138,7 +137,7 @@
       }
     },
     "ArchitectureState": {
-      "description": "The solutions architect's answer to the request `Establish the state of the architecture for this PRD`, written before it does anything else.",
+      "description": "The solutions architect's judgment of the state of the architecture for this PRD, written before it does anything else.",
       "type": "object",
       "additionalProperties": false,
       "required": ["bead", "needs", "conclusion", "summary"],
@@ -155,11 +154,21 @@
       "additionalProperties": false,
       "required": ["id", "name", "prdRequirements", "elements", "sharedCapabilities"],
       "properties": {
-        "id": {"description": "The matrix id of the feature row.", "type": "string", "minLength": 1},
+        "id": {"description": "The matrix id of the feature entry.", "type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
         "prdRequirements": {"description": "The PRD requirement headings the feature serves.", "type": "array", "items": {"type": "string"}},
         "elements": {"description": "The matrix ids of the elements that realize it.", "type": "array", "items": {"type": "string"}},
         "sharedCapabilities": {"description": "The matrix ids of the supporting features it uses.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "NoFeature": {
+      "description": "One PRD requirement the architect judges no feature serves, with the reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "reason"],
+      "properties": {
+        "requirement": {"description": "The matrix id of the requirement, or its PRD requirement heading.", "type": "string", "minLength": 1},
+        "reason": {"description": "Why no feature serves it: for example, it states no behaviour of the system.", "type": "string", "minLength": 1}
       }
     },
     "SharedUse": {
@@ -179,7 +188,7 @@
       "additionalProperties": false,
       "required": ["id", "statement", "reason", "home", "linkedFrom"],
       "properties": {
-        "id": {"description": "The matrix id of the fact row.", "type": "string", "minLength": 1},
+        "id": {"description": "The id of the fact, unique in the file.", "type": "string", "minLength": 1},
         "statement": {"description": "The fact, at architecture level, in the form its arc42 section requires.", "type": "string", "minLength": 1},
         "reason": {"description": "Why the design is so.", "type": "string", "minLength": 1},
         "home": {"description": "The one arc42 document and heading that states the fact.", "$ref": "#/$defs/Citation"},
@@ -274,11 +283,12 @@
       "description": "The solutions architect's result for one Epic. The script reads `conclusion`, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "newElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "notesForSpecs", "unsettled", "reviewSignals", "costEvidence", "summary"],
+      "required": ["bead", "conclusion", "features", "noFeature", "newElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "notesForSpecs", "unsettled", "reviewSignals", "costEvidence", "summary"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
         "features": {"type": "array", "items": {"$ref": "#/$defs/FeatureEntry"}},
+        "noFeature": {"description": "Every requirement of the Epic that no feature serves. The step that accepts the result fails on a requirement that is neither served by a feature nor listed here.", "type": "array", "items": {"$ref": "#/$defs/NoFeature"}},
         "newElements": {"description": "The matrix ids of the elements this run recorded.", "type": "array", "items": {"type": "string"}},
         "sharedCapabilities": {"type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
         "facts": {"description": "The design facts this run decided.", "type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
@@ -301,7 +311,7 @@
         "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
         "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
         "concerns": {"description": "The PRD sections and arc42 headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "trustedCode": {"description": "The matrix ids of elements whose code the matrix marks built or deployed. Code of any other element is a hint only.", "type": "array", "items": {"type": "string"}},
+        "trustedCode": {"description": "The matrix ids of the entries the matrix marks verified. Code of any other entry is a hint only.", "type": "array", "items": {"type": "string"}},
         "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
       }
     },
@@ -406,14 +416,28 @@
         "why": {"description": "What the architecture would have to state for the obligation to have a source.", "type": "string", "minLength": 1}
       }
     },
+    "TrdRequirement": {
+      "description": "One technical requirement a drafted TRD states, as the script records it in the matrix: one constraint with where it is stated and what it applies to.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "statement", "source", "appliesTo"],
+      "properties": {
+        "id": {"description": "The requirement id, as the TRD gives it.", "type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/RequirementKind"},
+        "statement": {"description": "What must be true, with its checkable value.", "type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/Citation"},
+        "appliesTo": {"description": "The matrix id of the entry the requirement applies to; an empty string when it applies to the Epic as a whole.", "type": "string"}
+      }
+    },
     "TrdAnswer": {
       "description": "trd-author's answer to one request. The TRD itself is the file at the request's `trdPath`.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "requirementIds", "noSource", "summary"],
+      "required": ["mode", "requirementIds", "requirements", "noSource", "summary"],
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
         "requirementIds": {"description": "For `draft`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
+        "requirements": {"description": "For `draft`, every requirement the TRD states, one entry for each id in `requirementIds`; empty for `update`, where the request's `changes` state them.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
         "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
         "summary": {"type": "string", "minLength": 1}
       }
@@ -424,7 +448,7 @@
       "additionalProperties": false,
       "required": ["fact", "at"],
       "properties": {
-        "fact": {"description": "The id of the fact in this request, or the matrix id of an approved fact.", "type": "string", "minLength": 1},
+        "fact": {"description": "The id of the fact in this request, or a short name for a fact an effective document states.", "type": "string", "minLength": 1},
         "at": {"$ref": "#/$defs/Citation"}
       }
     },
@@ -434,7 +458,7 @@
       "additionalProperties": false,
       "required": ["disagreement", "stands", "corrections"],
       "properties": {
-        "disagreement": {"description": "The matrix id of the disagreement row.", "type": "string", "minLength": 1},
+        "disagreement": {"description": "The matrix id of the disagreement entry.", "type": "string", "minLength": 1},
         "stands": {"description": "The statement that stands.", "$ref": "#/$defs/Citation"},
         "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/Citation"}}
       }
@@ -485,7 +509,7 @@
       "properties": {
         "id": {"description": "F1, F2 and so on, unique in the review.", "type": "string", "pattern": "^F[1-9][0-9]*$"},
         "criterion": {"description": "The id of the criterion the item does not meet.", "type": "string", "minLength": 1},
-        "item": {"description": "The item of the review scope: a matrix row id, a document path and heading joined by `#`, or a TRD requirement id.", "type": "string", "minLength": 1},
+        "item": {"description": "The item of the review scope: a document's matrix id or path, a document path and heading joined by `#`, or a TRD requirement id.", "type": "string", "minLength": 1},
         "observation": {"description": "What the item says or lacks, stated as a fact a reader can check.", "type": "string", "minLength": 1},
         "location": {"$ref": "#/$defs/Citation"},
         "correction": {"description": "The bounded change that removes the defect.", "type": "string", "minLength": 1},

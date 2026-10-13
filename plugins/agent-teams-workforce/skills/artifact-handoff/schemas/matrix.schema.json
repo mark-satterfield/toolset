@@ -2,484 +2,79 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "matrix.schema.json",
   "title": "SkillSpoke matrix",
-  "description": "The one definition of the matrix: the index of how repositories, stacks, services, components, libraries, layers, infrastructure, PRDs, features, architecture documents, design facts and disagreements relate, with the approval marker and the code-trust marker. matrix_contract.py is generated from this file; scripts/portfolio/matrix.py is the only reader and writer of a matrix file.",
+  "description": "The generic shape of the matrix file: entries by id, and relationships, each stored once for each side that states it. Every entry and every relationship carries side, which shows which of the two sides the fact came from. What kinds of entry and relationship exist, and the attributes each kind carries beside the members stated here, is declared in matrix-kinds.json. matrix_contract.py is generated from both files; scripts/portfolio/matrixstore.py is the only reader and writer of a matrix file.",
   "x-matrixEnv": "ATW_MATRIX",
   "x-roleEnv": "ATW_MATRIX_ROLE",
   "x-defaultMatrixPath": ["ops", "sdlc-automation", "matrix.json"],
   "x-lockDirectory": "state",
   "x-lockSuffix": ".lock",
-  "x-operatorRole": "operator",
   "x-taskElementsKey": "matrix_elements",
-  "x-putKinds": {
-    "solutions-architect": ["service", "component", "library", "layer", "infrastructure", "feature", "fact", "term"],
-    "repository-steward": ["repository", "stack"]
-  },
-  "x-putFields": {
-    "repository": ["name", "aliases", "purpose", "status"],
-    "stack": ["name", "aliases", "purpose", "repository", "status"],
-    "service": ["name", "aliases", "purpose", "status"],
-    "component": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
-    "library": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
-    "layer": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
-    "infrastructure": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
-    "feature": ["name", "aliases", "purpose", "featureType", "requirements", "provides", "home"],
-    "fact": ["name", "aliases", "purpose", "statement", "factKind", "subject", "home", "linkedFrom"],
-    "term": ["name", "aliases", "purpose"]
-  },
-  "x-disagreementRules": {
-    "effective-over-non-effective": {"computed": true, "roles": ["solutions-architect", "decider"]},
-    "home-document": {"computed": false, "roles": ["solutions-architect"]},
-    "security-practice": {"computed": false, "roles": ["solutions-architect"]},
-    "aws-evidence": {"computed": false, "roles": ["solutions-architect"]},
-    "best-practice": {"computed": false, "roles": ["solutions-architect"]},
-    "reuse": {"computed": false, "roles": ["solutions-architect"]},
-    "section-2": {"computed": false, "roles": ["solutions-architect", "decider"]},
-    "decider": {"computed": false, "roles": ["decider"]}
-  },
-  "x-documentRoots": {
-    "arc42": "arc42"
-  },
-  "x-factHomeSections": {
-    "context": 3,
-    "strategy": 4,
-    "structure": 5,
-    "provides": 5,
-    "scenario": 6,
-    "deployment": 7,
-    "rule": 8
-  },
-  "x-linkTypes": {
-    "contains": {
-      "reverse": "containedIn",
-      "from": ["repository", "stack", "service"],
-      "to": ["repository", "stack", "component", "library", "layer", "infrastructure"]
-    },
-    "needs": {"reverse": "neededBy", "from": ["prd"], "to": ["feature"]},
-    "uses": {
-      "reverse": "usedBy",
-      "from": ["feature", "service", "component", "library", "layer", "infrastructure"],
-      "to": ["feature"]
-    },
-    "realizedBy": {
-      "reverse": "realizes",
-      "from": ["feature"],
-      "to": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"]
-    },
-    "providedBy": {
-      "reverse": "providerOf",
-      "from": ["feature"],
-      "to": ["service", "component", "library", "layer", "infrastructure"]
-    },
-    "dependsOn": {
-      "reverse": "requiredBy",
-      "from": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"],
-      "to": ["repository", "stack", "service", "component", "library", "layer", "infrastructure"]
-    },
-    "describedBy": {
-      "reverse": "describes",
-      "from": ["repository", "stack", "service", "component", "library", "layer", "infrastructure", "feature", "fact"],
-      "to": ["document"]
-    },
-    "sharedVersionOf": {
-      "reverse": "localVersions",
-      "from": ["service", "component", "library", "layer", "infrastructure"],
-      "to": ["service", "component", "library", "layer", "infrastructure"]
-    },
-    "shownIn": {"reverse": "shows", "from": ["term"], "to": ["document"]}
-  },
-  "x-commands": {
-    "prd": {"writes": false, "anyRole": true},
-    "find": {"writes": false, "anyRole": true},
-    "node": {"writes": false, "anyRole": true},
-    "uses": {"writes": false, "anyRole": true},
-    "disagreements": {"writes": false, "anyRole": true},
-    "summary": {"writes": false, "anyRole": true},
-    "check": {"writes": false, "roles": ["script", "operator"]},
-    "expertise": {"writes": true, "roles": ["script", "hooks"]},
-    "unapproved": {"writes": true, "roles": ["script"]},
-    "put": {"writes": true, "roles": ["solutions-architect", "repository-steward"]},
-    "link": {"writes": true, "roles": ["solutions-architect"]},
-    "claim": {"writes": true, "roles": ["solutions-architect"]},
-    "settle": {"writes": true, "roles": ["solutions-architect", "decider"]},
-    "note-sendback": {"writes": true, "roles": ["architecture-lead"]},
-    "sync-prds": {"writes": true, "roles": ["script", "operator"]},
-    "sync-documents": {"writes": true, "roles": ["script", "solutions-architect", "operator", "build-driver"]},
-    "approve": {"writes": true, "roles": ["script", "build-driver"]},
-    "mark-built": {"writes": true, "roles": ["build-driver"]},
-    "mark-deployed": {"writes": true, "roles": ["build-driver"]},
-    "mark-merged": {"writes": true, "roles": ["build-driver"]},
-    "check-reuse": {"writes": false, "roles": ["build-workflow"]},
-    "story-built": {"writes": false, "anyRole": true},
-    "add-resource-type": {"writes": true, "roles": ["solutions-architect"]}
-  },
+  "x-authoritySide": "architecture",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "documentsSyncedAt", "resourceTypes", "nodes"],
+  "required": ["version", "entries", "relationships"],
   "properties": {
-    "version": {"const": 3},
-    "documentsSyncedAt": {"$ref": "#/$defs/DocumentsSyncedAt"},
-    "resourceTypes": {
-      "description": "The controlled list of resource types. Skills map to these in their expertiseFor front matter. A new value is added with atw-matrix add-resource-type.",
-      "type": "array",
-      "items": {"$ref": "#/$defs/resourceTypeName"},
-      "uniqueItems": true
-    },
-    "nodes": {
+    "version": {"const": 4},
+    "entries": {
+      "description": "Each entry under its id.",
       "type": "object",
-      "propertyNames": {"$ref": "#/$defs/nodeId"},
-      "additionalProperties": {"$ref": "#/$defs/Node"}
+      "propertyNames": {"$ref": "#/$defs/entryId"},
+      "additionalProperties": {"$ref": "#/$defs/Entry"}
+    },
+    "relationships": {
+      "description": "Each relationship once for each side that states it, sorted by from, kind, to, the values of the kind's key attributes, and side.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Relationship"}
     }
   },
   "$defs": {
-    "nodeId": {
-      "description": "A row id: the row's kind, a colon, and the rest of the id.",
+    "entryId": {
+      "description": "An entry id: the entry's kind, a colon, and the rest of the id.",
       "type": "string",
-      "pattern": "^(repository|stack|service|component|library|layer|infrastructure|prd|feature|document|fact|disagreement|term):.+$"
+      "pattern": "^[a-z][A-Za-z]*:\\S.*$"
     },
-    "resourceTypeName": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
-    "moment": {"type": "string", "format": "date-time"},
-    "kind": {
-      "description": "What one row is.",
-      "enum": ["repository", "stack", "service", "component", "library", "layer", "infrastructure", "prd", "feature", "document", "fact", "disagreement", "term"]
+    "kindName": {
+      "description": "The name of an entry kind or a relationship kind; matrix-kinds.json declares which exist.",
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z]*$"
     },
-    "ownerKind": {
-      "description": "The kinds that own code without being placed inside another row.",
-      "enum": ["repository", "service"]
+    "side": {
+      "description": "Which side a fact came from. architecture: beads, a PRD or an arc42 document states it, or the architect designed it; this side is the authority. repository: it was read from what is in a repository today; it is a hint.",
+      "enum": ["architecture", "repository"]
     },
-    "elementKind": {
-      "description": "The kinds of thing that live in a repository and carry a resource type.",
-      "enum": ["component", "library", "layer", "infrastructure"]
-    },
-    "linkType": {
-      "description": "The relationship a link holds. Each is stored once, on the row it starts from; x-linkTypes names its reverse and the kinds it may join.",
-      "enum": ["contains", "needs", "uses", "realizedBy", "providedBy", "dependsOn", "describedBy", "sharedVersionOf", "shownIn"]
-    },
-    "approvalState": {
-      "description": "The design marker.",
-      "enum": ["unverified", "in-review", "approved", "changed-since-approval"]
-    },
-    "approvalBasis": {"enum": ["reviewed", "carried-from-effective-arc42", "built-correction"]},
-    "codeState": {
-      "description": "The code-trust marker. Only built and deployed code is trusted.",
-      "enum": ["none", "legacy", "built", "deployed"]
-    },
-    "status": {"enum": ["expected", "deferred", "retired", "deprecated", "no-stack", "not-deployed", "unregistered"]},
-    "coverage": {"enum": ["not-assessed", "in-progress", "designed", "approved"]},
-    "featureType": {"enum": ["prd", "supporting"]},
-    "documentClass": {"enum": ["arc42", "reference", "trd", "spec", "other"]},
-    "lifecycle": {"enum": ["effective", "in-review", "draft", "retired"]},
-    "factKind": {"enum": ["context", "strategy", "structure", "provides", "scenario", "deployment", "rule"]},
-    "disagreementRule": {
-      "enum": ["effective-over-non-effective", "home-document", "security-practice", "aws-evidence", "best-practice", "reuse", "section-2", "decider"]
-    },
-    "disagreementStatus": {"enum": ["open", "settled", "applied"]},
-    "interfaceKind": {"enum": ["package", "layer", "service-operation", "construct", "event-api", "infrastructure"]},
-    "headingChange": {
-      "description": "How a heading in a review scope differs from what was approved.",
-      "enum": ["new", "changed", "removed"]
-    },
-    "reuseFinding": {
-      "description": "What the reuse check found: a listed capability that is not used, a shared behaviour done locally, or a definition a reviewer must rule on.",
-      "enum": ["unused", "duplicate", "judgment"]
-    },
-    "role": {
-      "description": "Who is running the command: the value of the x-roleEnv variable, or x-operatorRole when it is not set.",
-      "enum": ["operator", "script", "hooks", "solutions-architect", "repository-steward", "decider", "architecture-lead", "build-driver", "build-workflow"]
-    },
-    "DocumentsSyncedAt": {
+    "Verified": {
+      "description": "The one code mark. Absent means not verified.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["vaultCommit", "at", "dirtyPaths"],
+      "required": ["commit"],
       "properties": {
-        "vaultCommit": {"description": "The vault commit the document rows were last read at; empty before the first read.", "type": "string"},
-        "at": {"$ref": "#/$defs/moment"},
-        "dirtyPaths": {
-          "description": "The documents that differed from that commit when they were read, so the next read takes them again.",
-          "type": "array",
-          "items": {"type": "string"},
-          "uniqueItems": true
-        }
+        "commit": {"description": "The merge commit of the Story that verified it.", "type": "string", "minLength": 1}
       }
     },
-    "HeadingHash": {
+    "Entry": {
+      "description": "One entry. Every other member is an attribute its kind declares.",
       "type": "object",
-      "additionalProperties": false,
-      "required": ["hash", "approvedHash"],
+      "required": ["id", "kind", "name", "side", "aliases", "purpose"],
       "properties": {
-        "hash": {"description": "The hash of the heading's own text; empty when an approved or claimed heading is not in the document.", "type": "string"},
-        "approvedHash": {"type": ["string", "null"]},
-        "claim": {"$ref": "#/$defs/Claim"}
-      }
-    },
-    "ScopeRow": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "kind", "name", "was"],
-      "properties": {
-        "id": {"$ref": "#/$defs/nodeId"},
-        "kind": {"$ref": "#/$defs/kind"},
-        "name": {"type": "string"},
-        "was": {"$ref": "#/$defs/approvalState"},
-        "home": {"$ref": "#/$defs/Anchor"}
-      }
-    },
-    "ScopeHeading": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["document", "heading", "change"],
-      "properties": {
-        "document": {"type": "string"},
-        "heading": {"type": "string"},
-        "change": {"$ref": "#/$defs/headingChange"}
-      }
-    },
-    "HeldHeading": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["document", "heading", "bead"],
-      "properties": {
-        "document": {"type": "string"},
-        "heading": {"type": "string"},
-        "bead": {"type": "string"}
-      }
-    },
-    "ReviewScope": {
-      "description": "What atw-matrix unapproved prints and writes: exactly what the reviewers of one Epic are handed.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bead", "at", "prd", "rows", "headings", "heldByOthers"],
-      "properties": {
-        "bead": {"type": "string"},
-        "at": {"$ref": "#/$defs/moment"},
-        "prd": {"$ref": "#/$defs/nodeId"},
-        "rows": {"description": "The rows that are not approved: features, elements, facts and the disagreements the Epic settled.", "type": "array", "items": {"$ref": "#/$defs/ScopeRow"}},
-        "headings": {"description": "The headings that are new, changed or removed against what was approved.", "type": "array", "items": {"$ref": "#/$defs/ScopeHeading"}},
-        "heldByOthers": {"description": "The differing headings another Epic claims, which are that Epic's to have reviewed.", "type": "array", "items": {"$ref": "#/$defs/HeldHeading"}}
-      }
-    },
-    "ReviewerScope": {
-      "description": "The review scope one reviewer is handed: the part of a ReviewScope that the criteria of the reviewer's groups apply to. The check step of the architecture flow writes one file for each reviewer the criteria file selects.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bead", "at", "prd", "reviewer", "groups", "criteria", "rows", "headings", "heldByOthers", "trd", "signals"],
-      "properties": {
-        "bead": {"type": "string"},
-        "at": {"$ref": "#/$defs/moment"},
-        "prd": {"$ref": "#/$defs/nodeId"},
-        "reviewer": {"description": "The agent that performs the review.", "type": "string"},
-        "groups": {"description": "The ids of the reviewer groups of architecture-baseline/review-criteria.json that selected this reviewer.", "type": "array", "items": {"type": "string"}},
-        "criteria": {"description": "The ids of the criteria those groups cover.", "type": "array", "items": {"type": "string"}},
-        "rows": {"description": "The unapproved rows; empty when no group of the reviewer covers documents.", "type": "array", "items": {"$ref": "#/$defs/ScopeRow"}},
-        "headings": {"description": "The unapproved headings; empty when no group of the reviewer covers documents.", "type": "array", "items": {"$ref": "#/$defs/ScopeHeading"}},
-        "heldByOthers": {"type": "array", "items": {"$ref": "#/$defs/HeldHeading"}},
-        "trd": {"description": "The path of the TRD when a group of the reviewer covers its requirements; otherwise null.", "type": ["string", "null"]},
-        "signals": {"description": "The non-empty reviewSignals lists of the architecture result that selected the reviewer, by name, each as architecture-result.schema.json holds it.", "type": "object", "additionalProperties": {"type": "array", "items": {}}}
-      }
-    },
-    "Node": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "kind", "name", "links", "changed"],
-      "properties": {
-        "id": {"$ref": "#/$defs/nodeId"},
-        "kind": {"$ref": "#/$defs/kind"},
+        "id": {"$ref": "#/$defs/entryId"},
+        "kind": {"$ref": "#/$defs/kindName"},
         "name": {"type": "string", "minLength": 1},
-        "aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "purpose": {"type": "string"},
-        "links": {"type": "array", "items": {"$ref": "#/$defs/Link"}},
-        "approval": {"$ref": "#/$defs/Approval"},
-        "changed": {"$ref": "#/$defs/Change"},
-        "claim": {"$ref": "#/$defs/Claim"},
-
-        "repository": {"type": ["string", "null"]},
-        "stack": {"type": ["string", "null"]},
-        "resourceType": {"type": ["string", "null"]},
-        "shared": {"type": "boolean"},
-        "status": {"$ref": "#/$defs/status"},
-        "code": {"$ref": "#/$defs/Code"},
-
-        "bead": {"type": "string"},
-        "path": {"type": "string"},
-        "hash": {"type": "string"},
-        "coverage": {"$ref": "#/$defs/coverage"},
-        "expertise": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "sendBacks": {"type": "array", "items": {"$ref": "#/$defs/SendBack"}},
-
-        "featureType": {"$ref": "#/$defs/featureType"},
-        "requirements": {"type": "array", "items": {"type": "string"}},
-        "provides": {"type": "array", "items": {"$ref": "#/$defs/Provides"}},
-        "home": {"$ref": "#/$defs/Anchor"},
-
-        "documentClass": {"$ref": "#/$defs/documentClass"},
-        "section": {"type": ["integer", "null"], "minimum": 1, "maximum": 12},
-        "viewType": {"type": ["string", "null"]},
-        "scope": {"type": ["string", "null"]},
-        "subject": {"type": ["string", "null"]},
-        "lifecycle": {"$ref": "#/$defs/lifecycle"},
-        "headings": {"type": "object", "additionalProperties": {"$ref": "#/$defs/HeadingHash"}},
-
-        "statement": {"type": "string"},
-        "factKind": {"$ref": "#/$defs/factKind"},
-        "linkedFrom": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-
-        "statements": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/DisputedStatement"}},
-        "rule": {"$ref": "#/$defs/disagreementRule"},
-        "standingFact": {"description": "The fact that states what stands after the settlement, when one is recorded.", "$ref": "#/$defs/nodeId"},
-        "reopens": {"description": "The earlier disagreement this one reopens.", "$ref": "#/$defs/nodeId"},
-        "settledBy": {"type": ["string", "null"]},
-        "reason": {"type": "string"},
-        "evidence": {"type": "array", "items": {"type": "string"}},
-        "disagreementStatus": {"$ref": "#/$defs/disagreementStatus"}
-      },
-      "allOf": [
-        {"if": {"properties": {"kind": {"anyOf": [{"const": "stack"}, {"$ref": "#/$defs/elementKind"}]}}},
-         "then": {"required": ["repository", "code", "approval"]}},
-        {"if": {"properties": {"kind": {"$ref": "#/$defs/ownerKind"}}},
-         "then": {"required": ["code", "approval"]}},
-        {"if": {"properties": {"kind": {"$ref": "#/$defs/elementKind"}}},
-         "then": {"required": ["resourceType", "shared"]}},
-        {"if": {"properties": {"kind": {"const": "prd"}}},
-         "then": {"required": ["bead", "path", "hash", "coverage", "expertise"]}},
-        {"if": {"properties": {"kind": {"const": "feature"}}},
-         "then": {"required": ["featureType", "approval"]}},
-        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "prd"}}, "required": ["featureType"]},
-         "then": {"required": ["requirements"]}},
-        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "supporting"}}, "required": ["featureType"]},
-         "then": {"required": ["provides", "shared"], "properties": {"shared": {"const": true}}}},
-        {"if": {"properties": {"kind": {"const": "feature"}, "featureType": {"const": "supporting"}, "provides": {"minItems": 1}}, "required": ["featureType", "provides"]},
-         "then": {"required": ["home"]}},
-        {"if": {"properties": {"kind": {"const": "document"}}},
-         "then": {"required": ["path", "documentClass", "lifecycle", "headings", "approval"]}},
-        {"if": {"properties": {"kind": {"const": "fact"}}},
-         "then": {"required": ["statement", "factKind", "home", "linkedFrom", "approval"]}},
-        {"if": {"properties": {"kind": {"const": "disagreement"}}},
-         "then": {"required": ["statements", "disagreementStatus"]}}
-      ]
-    },
-    "Link": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "to"],
-      "properties": {
-        "type": {"$ref": "#/$defs/linkType"},
-        "to": {"$ref": "#/$defs/nodeId"},
-        "heading": {"type": "string"},
-        "provides": {"description": "For a uses link: the ids of the provides entries relied on.", "type": "array", "items": {"type": "string"}},
-        "ambiguous": {"type": "boolean"}
+        "side": {"$ref": "#/$defs/side"},
+        "aliases": {"description": "Other names the entry is known by.", "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "purpose": {"description": "One or two sentences that identify the entry.", "type": "string"},
+        "verified": {"$ref": "#/$defs/Verified"}
       }
     },
-    "Anchor": {
+    "Relationship": {
+      "description": "One relationship as one side states it. Every other member is an attribute its kind declares.",
       "type": "object",
-      "additionalProperties": false,
-      "required": ["document", "heading"],
+      "required": ["kind", "from", "to", "side"],
       "properties": {
-        "document": {"type": "string"},
-        "heading": {"type": "string"}
-      }
-    },
-    "Approval": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["state"],
-      "properties": {
-        "state": {"$ref": "#/$defs/approvalState"},
-        "basis": {"$ref": "#/$defs/approvalBasis"},
-        "bead": {"description": "The Epic that recorded or changed the row, while it is not approved; the Epic whose review approved it afterwards.", "type": "string"},
-        "steps": {"description": "The journal step ids of the reviews that approved it.", "type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "at": {"$ref": "#/$defs/moment"}
-      }
-    },
-    "Code": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["state"],
-      "properties": {
-        "state": {"$ref": "#/$defs/codeState"},
-        "ref": {"description": "Where the trusted code is: a Story branch until merge, then the default branch.", "type": "string"},
-        "commit": {"type": "string"},
-        "task": {"type": "string"},
-        "story": {"type": "string"},
-        "pr": {"type": "string"},
-        "deployedCommit": {"type": "string"},
-        "stacks": {"type": "array", "items": {"type": "string"}},
-        "at": {"$ref": "#/$defs/moment"}
-      }
-    },
-    "Interface": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "name"],
-      "properties": {
-        "kind": {"$ref": "#/$defs/interfaceKind"},
-        "name": {"type": "string"}
-      }
-    },
-    "Provides": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "behaviour", "consumersMust", "interface"],
-      "properties": {
-        "id": {"type": "string"},
-        "behaviour": {"description": "What a consumer obtains, in one sentence.", "type": "string"},
-        "consumersMust": {"description": "What a consumer must not implement itself.", "type": "string"},
-        "interface": {"$ref": "#/$defs/Interface"},
-        "useSignals": {"description": "Text patterns that show a consumer uses this capability (an import, a client call, a layer reference).", "type": "array", "items": {"type": "string"}},
-        "duplicateSignals": {"description": "Text patterns that show a consumer is doing this itself (a direct SDK call the capability exists to replace).", "type": "array", "items": {"type": "string"}}
-      }
-    },
-    "DisputedStatement": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["document", "heading", "text", "lifecycle"],
-      "properties": {
-        "document": {"type": "string"},
-        "heading": {"type": "string"},
-        "line": {"type": "integer"},
-        "text": {"type": "string"},
-        "lifecycle": {"$ref": "#/$defs/lifecycle"},
-        "stands": {"description": "True on the one statement that stands after the settlement and false on each statement that lost; absent while the disagreement is open, and on a carried note that names no loser.", "type": "boolean"}
-      }
-    },
-    "ReuseItem": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["finding", "feature", "provides", "detail"],
-      "properties": {
-        "finding": {"$ref": "#/$defs/reuseFinding"},
-        "feature": {"$ref": "#/$defs/nodeId"},
-        "provides": {"description": "The id of the provides entry concerned.", "type": "string"},
-        "file": {"type": "string"},
-        "line": {"type": "integer"},
-        "detail": {"type": "string"}
-      }
-    },
-    "Claim": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bead", "step", "at"],
-      "properties": {
-        "bead": {"type": "string"},
-        "step": {"type": "string"},
-        "at": {"$ref": "#/$defs/moment"}
-      }
-    },
-    "Change": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["at", "by"],
-      "properties": {
-        "at": {"$ref": "#/$defs/moment"},
-        "by": {"description": "A bead id and journal step id, or 'carry-over', or 'sync'. Never a person's name.", "type": "string"}
-      }
-    },
-    "SendBack": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["criterion", "step", "at"],
-      "properties": {
-        "criterion": {"type": "string"},
-        "step": {"type": "string"},
-        "at": {"$ref": "#/$defs/moment"}
+        "kind": {"$ref": "#/$defs/kindName"},
+        "from": {"$ref": "#/$defs/entryId"},
+        "to": {"$ref": "#/$defs/entryId"},
+        "side": {"$ref": "#/$defs/side"},
+        "verified": {"$ref": "#/$defs/Verified"}
       }
     }
   }

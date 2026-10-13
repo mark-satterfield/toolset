@@ -1,16 +1,19 @@
-"""Generate matrix_contract.py from schemas/matrix.schema.json, or check that it is current.
+"""Generate matrix_contract.py from the matrix schema and the kinds registry, or check that it is current.
 
-The schema is the one definition of the matrix: its document, the row kinds, the link types with
-the kinds each may join, the approval and code-trust markers, the roles and the commands each
-role may run. This script derives the Python types, the wire constants and the validating
-readers from it, and refuses a schema whose parts disagree with each other. With --check it
-writes nothing and exits 1 when the generated module differs from what it would write.
+schemas/matrix.schema.json states the generic shape of the matrix file. schemas/matrix-kinds.json
+(the kinds registry) declares what kinds of entry and relationship exist, the attributes of each,
+the controlled list of resource types, and each atw-matrix command with the roles that run it.
+This script derives the Python vocabulary and the wire constants from both, appends the types and
+the validating readers, and refuses a schema or a registry whose parts disagree with each other.
+With --check it writes nothing and exits 1 when the generated module differs from what it would
+write.
 """
 
 import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -21,72 +24,34 @@ type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValu
 
 SCRIPTS_DIR: Final[Path] = Path(__file__).resolve().parent
 SCHEMA_PATH: Final[Path] = SCRIPTS_DIR.parent / "schemas" / "matrix.schema.json"
+REGISTRY_PATH: Final[Path] = SCRIPTS_DIR.parent / "schemas" / "matrix-kinds.json"
 OUTPUT_PATH: Final[Path] = SCRIPTS_DIR / "matrix_contract.py"
 # The toolset ruff line length; a longer generated line is wrapped the way ruff format wraps it.
 MAX_LINE: Final[int] = 120
 
 DEFINITIONS: Final[str] = "$defs"
+REF_KEY: Final[str] = "$ref"
 REF_PREFIX: Final[str] = "#/$defs/"
-ROOT: Final[str] = "#"
-KIND_ENTRY: Final[str] = "kind"
-NODE_ID_ENTRY: Final[str] = "nodeId"
-FIRST_SECTION: Final[int] = 1
-LAST_SECTION: Final[int] = 12
-
-# (alias name, constant prefix, collection constant, $defs entry) for every string vocabulary.
-VOCABULARIES: Final[tuple[tuple[str, str, str, str], ...]] = (
-    ("Kind", "KIND", "KINDS", "kind"),
-    ("OwnerKind", "KIND", "OWNER_KINDS", "ownerKind"),
-    ("ElementKind", "KIND", "ELEMENT_KINDS", "elementKind"),
-    ("LinkType", "LINK", "LINK_TYPES", "linkType"),
-    ("ApprovalState", "APPROVAL", "APPROVAL_STATES", "approvalState"),
-    ("ApprovalBasis", "BASIS", "APPROVAL_BASES", "approvalBasis"),
-    ("CodeState", "CODE", "CODE_STATES", "codeState"),
-    ("Status", "STATUS", "STATUSES", "status"),
-    ("Coverage", "COVERAGE", "COVERAGES", "coverage"),
-    ("FeatureType", "FEATURE", "FEATURE_TYPES", "featureType"),
-    ("DocumentClass", "CLASS", "DOCUMENT_CLASSES", "documentClass"),
-    ("Lifecycle", "LIFECYCLE", "LIFECYCLES", "lifecycle"),
-    ("FactKind", "FACT", "FACT_KINDS", "factKind"),
-    ("DisagreementRule", "RULE", "DISAGREEMENT_RULES", "disagreementRule"),
-    ("DisagreementStatus", "DISAGREEMENT", "DISAGREEMENT_STATUSES", "disagreementStatus"),
-    ("InterfaceKind", "INTERFACE", "INTERFACE_KINDS", "interfaceKind"),
-    ("HeadingChange", "HEADING", "HEADING_CHANGES", "headingChange"),
-    ("ReuseFinding", "REUSE", "REUSE_FINDINGS", "reuseFinding"),
-    ("Role", "ROLE", "ROLES", "role"),
+ENTRY_ID_ENTRY: Final[str] = "entryId"
+RESOURCE_TYPE_ENTRY: Final[str] = "resourceType"
+# The $defs entries the generated readers add to the registry's own when they validate attributes.
+BUILT_IN_DEFINITIONS: Final[frozenset[str]] = frozenset({ENTRY_ID_ENTRY, RESOURCE_TYPE_ENTRY})
+PURPOSE_MEMBER: Final[str] = "purpose"
+# The members the generated dataclasses read from each closed part of the matrix file: ($defs entry, members, required).
+SHAPES: Final[tuple[tuple[str, frozenset[str], frozenset[str]], ...]] = (
+    (
+        "Entry",
+        frozenset({"id", "kind", "name", "side", "aliases", "purpose", "verified"}),
+        frozenset({"id", "kind", "name", "side", "aliases", "purpose"}),
+    ),
+    (
+        "Relationship",
+        frozenset({"kind", "from", "to", "side", "verified"}),
+        frozenset({"kind", "from", "to", "side"}),
+    ),
+    ("Verified", frozenset({"commit"}), frozenset({"commit"})),
 )
-# Every vocabulary whose values must all be row kinds.
-KIND_SUBSETS: Final[tuple[str, ...]] = ("ownerKind", "elementKind")
-# (NewType name, pattern constant, $defs entry) for every identifier string with a pattern.
-IDENTIFIERS: Final[tuple[tuple[str, str, str], ...]] = (("NodeId", "NODE_ID_PATTERN", "nodeId"),)
-# (pattern constant, $defs entry) for every plain string the contract gives a pattern.
-PATTERNS: Final[tuple[tuple[str, str], ...]] = (("RESOURCE_TYPE_PATTERN", "resourceTypeName"),)
-# Every $defs entry that is a plain string in Python.
-STRINGS: Final[tuple[str, ...]] = ("moment", "resourceTypeName")
-# (TypedDict name, $defs entry) for every closed object the module types.
-RECORDS: Final[tuple[tuple[str, str], ...]] = (
-    ("DocumentsSyncedAt", "DocumentsSyncedAt"),
-    ("Claim", "Claim"),
-    ("HeadingHash", "HeadingHash"),
-    ("Link", "Link"),
-    ("Anchor", "Anchor"),
-    ("Approval", "Approval"),
-    ("Code", "Code"),
-    ("Interface", "Interface"),
-    ("Provides", "Provides"),
-    ("DisputedStatement", "DisputedStatement"),
-    ("Change", "Change"),
-    ("SendBack", "SendBack"),
-    ("ScopeRow", "ScopeRow"),
-    ("ScopeHeading", "ScopeHeading"),
-    ("HeldHeading", "HeldHeading"),
-    ("ReviewScope", "ReviewScope"),
-    ("ReviewerScope", "ReviewerScope"),
-    ("ReuseItem", "ReuseItem"),
-    ("Node", "Node"),
-)
-# The TypedDict of the schema root.
-ROOT_RECORD: Final[str] = "Matrix"
+ROOT_MEMBERS: Final[frozenset[str]] = frozenset({"version", "entries", "relationships"})
 # (constant name, schema key) for every string the contract fixes at the schema root.
 ROOT_STRINGS: Final[tuple[tuple[str, str], ...]] = (
     ("MATRIX_ENV", "x-matrixEnv"),
@@ -96,31 +61,28 @@ ROOT_STRINGS: Final[tuple[tuple[str, str], ...]] = (
     ("TASK_ELEMENTS_KEY", "x-taskElementsKey"),
 )
 DEFAULT_PATH_KEY: Final[str] = "x-defaultMatrixPath"
-OPERATOR_KEY: Final[str] = "x-operatorRole"
-LINK_TYPES_KEY: Final[str] = "x-linkTypes"
-COMMANDS_KEY: Final[str] = "x-commands"
-FACT_SECTIONS_KEY: Final[str] = "x-factHomeSections"
-DOCUMENT_ROOTS_KEY: Final[str] = "x-documentRoots"
-PUT_KINDS_KEY: Final[str] = "x-putKinds"
-PUT_FIELDS_KEY: Final[str] = "x-putFields"
-SETTLE_RULES_KEY: Final[str] = "x-disagreementRules"
-# Every $defs entry the generated readers validate against by name.
-VALIDATED: Final[tuple[str, ...]] = (
-    "Node",
-    "Link",
-    "Provides",
-    "DisputedStatement",
-    "ReviewScope",
-    "ReviewerScope",
-)
-# The keys of a schema node that say nothing about the value's type.
-ANNOTATIONS: Final[frozenset[str]] = frozenset({"description"})
+ENTRY_KINDS_KEY: Final[str] = "entryKinds"
+RELATIONSHIP_KINDS_KEY: Final[str] = "relationshipKinds"
+RESOURCE_TYPES_KEY: Final[str] = "resourceTypes"
+COMMANDS_KEY: Final[str] = "commands"
+ROLES_KEY: Final[str] = "roles"
+OPERATOR_KEY: Final[str] = "operatorRole"
+HOME_KEY: Final[str] = "homeRelationship"
+STACK_KEY: Final[str] = "stackKind"
+# The $defs entry of the schema that lists the sides, and the root key that names the side that is the authority.
+SIDE_ENTRY: Final[str] = "side"
+AUTHORITY_KEY: Final[str] = "x-authoritySide"
+# The member of a kind's declaration that names the one side the kind is always recorded with.
+KIND_SIDE_KEY: Final[str] = "side"
+ID_PATTERN_KEY: Final[str] = "idPattern"
+REPOSITORY_ID_PATTERN_KEY: Final[str] = "repositoryIdPattern"
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
-_SCALARS: Final[dict[str, str]] = {"string": "str", "integer": "int", "boolean": "bool", "null": "None"}
+_KIND_NAME: Final[re.Pattern[str]] = re.compile(r"[a-z][A-Za-z]*")
+_RESOURCE_TYPE: Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9-]*")
 
 
 class SchemaShapeError(ValueError):
-    """The schema is missing a part of the contract, contradicts itself or uses an untyped construct."""
+    """The schema or the registry is missing a part of the contract or contradicts itself."""
 
 
 def _json_value(value: object) -> JsonValue:
@@ -143,11 +105,11 @@ def _json_value(value: object) -> JsonValue:
         item: object
         for key, item in value.items():
             if not isinstance(key, str):
-                message: str = "matrix schema holds a non-string object key"
+                message: str = "matrix contract source holds a non-string object key"
                 raise SchemaShapeError(message)
             result[key] = _json_value(item)
         return result
-    message = f"matrix schema holds a non-JSON value of type {type(value).__name__}"
+    message = f"matrix contract source holds a non-JSON value of type {type(value).__name__}"
     raise SchemaShapeError(message)
 
 
@@ -162,29 +124,29 @@ def _node(value: JsonValue, where: str) -> dict[str, JsonValue]:
 
     """
     if not isinstance(value, dict):
-        message: str = f"matrix schema: {where} is not an object"
+        message: str = f"matrix contract: {where} is not an object"
         raise SchemaShapeError(message)
     return value
 
 
 def _strings(value: JsonValue, where: str) -> list[str]:
-    """Narrow a JSON value to a list of nonempty strings.
+    """Narrow a JSON value to a list of distinct nonempty strings.
 
     Returns:
-        The strings in their schema order.
+        The strings in their source order.
 
     Raises:
-        SchemaShapeError: The value is not a list of nonempty strings.
+        SchemaShapeError: The value is not a list of distinct nonempty strings.
 
     """
     if not isinstance(value, list):
-        message: str = f"matrix schema: {where} is not a list"
+        message: str = f"matrix contract: {where} is not a list"
         raise SchemaShapeError(message)
     result: list[str] = []
     item: JsonValue
     for item in value:
-        if not isinstance(item, str) or not item:
-            message = f"matrix schema: {where} holds a value that is not a nonempty string"
+        if not isinstance(item, str) or not item or item in result:
+            message = f"matrix contract: {where} holds a value that is not a distinct nonempty string"
             raise SchemaShapeError(message)
         result.append(item)
     return result
@@ -201,7 +163,23 @@ def _text(value: JsonValue, where: str) -> str:
 
     """
     if not isinstance(value, str) or not value:
-        message: str = f"matrix schema: {where} is not a nonempty string"
+        message: str = f"matrix contract: {where} is not a nonempty string"
+        raise SchemaShapeError(message)
+    return value
+
+
+def _flag(value: JsonValue, where: str) -> bool:
+    """Narrow a JSON value to a boolean.
+
+    Returns:
+        The boolean.
+
+    Raises:
+        SchemaShapeError: The value is not a boolean.
+
+    """
+    if not isinstance(value, bool):
+        message: str = f"matrix contract: {where} is not a boolean"
         raise SchemaShapeError(message)
     return value
 
@@ -228,118 +206,9 @@ def _upper_snake(name: str) -> str:
     """
     result: str = _CAMEL.sub(r"_\1", name).replace("-", "_").upper()
     if not result.isidentifier():
-        message: str = f"matrix schema: wire value {name!r} cannot name a constant"
+        message: str = f"matrix contract: wire value {name!r} cannot name a constant"
         raise SchemaShapeError(message)
     return result
-
-
-def _ref_name(node: Mapping[str, JsonValue], where: str) -> str | None:
-    """Name the $defs entry a node references.
-
-    Returns:
-        The $defs entry name, or None when the node has no $ref.
-
-    Raises:
-        SchemaShapeError: The $ref is not a local $defs reference.
-
-    """
-    if "$ref" not in node:
-        return None
-    pointer: str = _text(node["$ref"], where + "/$ref")
-    if not pointer.startswith(REF_PREFIX) or "/" in pointer.removeprefix(REF_PREFIX):
-        message: str = f"matrix schema: {where} references {pointer}, not a $defs entry"
-        raise SchemaShapeError(message)
-    return pointer.removeprefix(REF_PREFIX)
-
-
-def _scalar_type(kind: JsonValue, where: str) -> str | None:
-    """Render a ``type`` that names one scalar or a list of scalars.
-
-    Returns:
-        Python source for the type, or None when ``type`` names an array or an object.
-
-    Raises:
-        SchemaShapeError: ``type`` is neither a string nor a list of scalar names.
-
-    """
-    names: list[str] = [kind] if isinstance(kind, str) else _strings(kind, where + "/type")
-    if names in (["array"], ["object"]):
-        return None
-    unknown: list[str] = [name for name in names if name not in _SCALARS]
-    if unknown:
-        message: str = f"matrix schema: {where} has type {unknown}, which the generator does not type"
-        raise SchemaShapeError(message)
-    return " | ".join(_SCALARS[name] for name in names)
-
-
-def _field_type(node: Mapping[str, JsonValue], where: str, known: Mapping[str, str]) -> str:
-    """Render the Python type of one property.
-
-    Returns:
-        Python source for the property's type.
-
-    Raises:
-        SchemaShapeError: The property uses a construct the generator does not type.
-
-    """
-    referenced: str | None = _ref_name(node, where)
-    message: str
-    if referenced is not None:
-        if referenced not in known:
-            message = f"matrix schema: {where} references {referenced}, which the generator does not type"
-            raise SchemaShapeError(message)
-        return known[referenced]
-    if "const" in node:
-        return f"Literal[{json.dumps(node['const'])}]"
-    if not set(node) - ANNOTATIONS:
-        return "JsonValue"
-    if "type" not in node:
-        message = f"matrix schema: {where} declares neither a reference, a const nor a type"
-        raise SchemaShapeError(message)
-    scalar: str | None = _scalar_type(node["type"], where)
-    if scalar is not None:
-        return scalar
-    if node["type"] == "array":
-        items: dict[str, JsonValue] = _node(node.get("items"), where + "/items")
-        return f"list[{_field_type(items, where + '/items', known)}]"
-    values: dict[str, JsonValue] = _node(node.get("additionalProperties"), where + "/additionalProperties")
-    keys: str = "str"
-    if "propertyNames" in node:
-        keys = _field_type(_node(node["propertyNames"], where + "/propertyNames"), where + "/propertyNames", known)
-    return f"dict[{keys}, {_field_type(values, where + '/additionalProperties', known)}]"
-
-
-def _record(node: Mapping[str, JsonValue], name: str, pointer: str, known: Mapping[str, str]) -> list[str]:
-    """Render one closed schema object as a TypedDict.
-
-    Returns:
-        The class source lines.
-
-    Raises:
-        SchemaShapeError: The object is open or requires a property it does not declare.
-
-    """
-    if node.get("additionalProperties") is not False:
-        message: str = f"matrix schema: {pointer} must be a closed object"
-        raise SchemaShapeError(message)
-    properties: dict[str, JsonValue] = _node(node.get("properties"), pointer + "/properties")
-    required: list[str] = _strings(node.get("required", []), pointer + "/required")
-    missing: set[str] = set(required) - set(properties)
-    if missing:
-        message = f"matrix schema: {pointer} requires undeclared properties {sorted(missing)}"
-        raise SchemaShapeError(message)
-    lines: list[str] = [
-        f"class {name}(TypedDict):",
-        f'    """Typed form of {pointer} in matrix.schema.json."""',
-        "",
-    ]
-    key: str
-    spec: JsonValue
-    for key, spec in properties.items():
-        where: str = pointer + "/properties/" + key
-        rendered: str = _field_type(_node(spec, where), where, known)
-        lines.append(f"    {key}: {rendered if key in required else f'NotRequired[{rendered}]'}")
-    return lines
 
 
 def _wrapped(head: str, opening: str, members: Sequence[str], closing: str) -> str:
@@ -356,106 +225,27 @@ def _wrapped(head: str, opening: str, members: Sequence[str], closing: str) -> s
     return f"{head}{opening}\n{exploded}{closing}"
 
 
-def _enum(definitions: Mapping[str, JsonValue], entry: str) -> list[str]:
-    """Read the values of one string vocabulary.
-
-    Returns:
-        The values in schema order.
-
-    Raises:
-        SchemaShapeError: The vocabulary repeats a value.
-
-    """
-    where: str = REF_PREFIX + entry
-    values: list[str] = _strings(_node(definitions.get(entry), where).get("enum"), where + "/enum")
-    if len(set(values)) != len(values):
-        message: str = f"matrix schema: {where}/enum repeats a value"
-        raise SchemaShapeError(message)
-    return values
-
-
-def _vocabularies(definitions: Mapping[str, JsonValue], known: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Render every string vocabulary as a type alias, one constant per value and a tuple.
-
-    Records each alias in ``known`` so properties that reference it are typed by it.
-
-    Returns:
-        The alias lines, and the constant lines: value constants, then collections.
-
-    Raises:
-        SchemaShapeError: Two vocabularies give one constant name two different values.
-
-    """
-    alias_lines: list[str] = []
-    value_lines: list[str] = []
-    collection_lines: list[str] = []
-    constants: dict[str, str] = {}
-    alias: str
-    prefix: str
-    collection: str
-    entry: str
-    for alias, prefix, collection, entry in VOCABULARIES:
-        values: list[str] = _enum(definitions, entry)
-        known[entry] = alias
-        alias_lines.append(_wrapped(f"type {alias} = Literal", "[", [json.dumps(value) for value in values], "]"))
-        names: list[str] = [f"{prefix}_{_upper_snake(value)}" for value in values]
-        name: str
-        value: str
-        for name, value in zip(names, values, strict=True):
-            if name not in constants:
-                value_lines.append(f"{name}: Final[{_literal([value])}] = {json.dumps(value)}")
-            if constants.setdefault(name, value) != value:
-                message: str = f"matrix schema: the constant {name} would carry two values"
-                raise SchemaShapeError(message)
-        trailing: list[str] = [*names[:-1], names[-1] + ("," if len(names) == 1 else "")]
-        collection_lines.append(_wrapped(f"{collection}: Final[tuple[{alias}, ...]] = ", "(", trailing, ")"))
-    return alias_lines, [*value_lines, "", *collection_lines]
-
-
-def _raw_pattern(definitions: Mapping[str, JsonValue], entry: str) -> str:
-    """Read the pattern of one $defs entry, as text that can sit inside a raw string literal.
+def _raw_pattern(value: JsonValue, where: str) -> str:
+    """Read a pattern as text that compiles and can sit inside a raw string literal.
 
     Returns:
         The pattern.
 
     Raises:
-        SchemaShapeError: The pattern cannot be written as a raw string literal.
+        SchemaShapeError: The pattern does not compile or cannot be written as a raw string literal.
 
     """
-    where: str = REF_PREFIX + entry
-    pattern: str = _text(_node(definitions.get(entry), where).get("pattern"), where + "/pattern")
+    pattern: str = _text(value, where)
+    message: str
     if '"' in pattern or pattern.endswith("\\") or not pattern.isprintable():
-        message: str = f"matrix schema: {where}/pattern cannot be written as a raw string literal"
+        message = f"matrix contract: {where} cannot be written as a raw string literal"
         raise SchemaShapeError(message)
+    try:
+        re.compile(pattern)
+    except re.error as error:
+        message = f"matrix contract: {where} is not a regular expression: {error}"
+        raise SchemaShapeError(message) from error
     return pattern
-
-
-def _patterns(definitions: Mapping[str, JsonValue], known: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Render every identifier string as a NewType, and every pattern as a compiled constant.
-
-    Records each NewType in ``known`` so properties that reference it are typed by it.
-
-    Returns:
-        The NewType lines and the pattern lines.
-
-    """
-    type_lines: list[str] = []
-    named: list[tuple[str, str]] = []
-    name: str
-    constant: str
-    entry: str
-    for name, constant, entry in IDENTIFIERS:
-        known[entry] = name
-        type_lines.append(f'{name} = NewType("{name}", str)')
-        named.append((constant, entry))
-    pattern_lines: list[str] = []
-    for constant, entry in (*named, *PATTERNS):
-        pattern: str = _raw_pattern(definitions, entry)
-        line: str = f'{constant}: Final[re.Pattern[str]] = re.compile(r"{pattern}")'
-        if len(line) > MAX_LINE:
-            line = f'{constant}: Final[re.Pattern[str]] = re.compile(\n    r"{pattern}",\n)'
-        pattern_lines.append(line)
-    return type_lines, pattern_lines
 
 
 def _subset(values: Sequence[str], allowed: Sequence[str], where: str, what: str) -> None:
@@ -467,265 +257,484 @@ def _subset(values: Sequence[str], allowed: Sequence[str], where: str, what: str
     """
     stray: list[str] = [value for value in values if value not in allowed]
     if stray:
-        message: str = f"matrix schema: {where} names {stray}, which are not {what}"
+        message: str = f"matrix contract: {where} names {stray}, which are not {what}"
         raise SchemaShapeError(message)
 
 
-def _same(values: Sequence[str], expected: Sequence[str], where: str, what: str) -> None:
-    """Require a table to have exactly one entry per value of a vocabulary.
-
-    Raises:
-        SchemaShapeError: The table lacks a value or names one the vocabulary does not have.
-
-    """
-    if sorted(values) != sorted(expected):
-        message: str = f"matrix schema: {where} has the entries {sorted(values)}, but {what} are {sorted(expected)}"
-        raise SchemaShapeError(message)
-
-
-def _kind_constants(condition: Mapping[str, JsonValue], where: str) -> list[str]:
-    """Collect the row kinds one ``if`` names by value.
+def _references(node: JsonValue) -> list[str]:
+    """Collect every $ref a schema fragment holds, at any depth.
 
     Returns:
-        Every ``const`` under the condition's ``kind`` property, including those inside ``anyOf``.
+        The pointers, in source order.
 
     """
-    properties: JsonValue = condition.get("properties")
-    if not isinstance(properties, dict) or KIND_ENTRY not in properties:
-        return []
-    kind: dict[str, JsonValue] = _node(properties[KIND_ENTRY], where)
-    options: JsonValue = kind.get("anyOf", [])
-    choices: list[dict[str, JsonValue]] = [kind]
-    if isinstance(options, list):
-        choices.extend(_node(option, where + "/anyOf") for option in options)
-    return [_text(choice["const"], where + "/const") for choice in choices if "const" in choice]
+    found: list[str] = []
+    if isinstance(node, list):
+        item: JsonValue
+        for item in node:
+            found.extend(_references(item))
+    if isinstance(node, dict):
+        key: str
+        value: JsonValue
+        for key, value in node.items():
+            if key == REF_KEY and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_references(value))
+    return found
 
 
-def _check_kinds(definitions: Mapping[str, JsonValue]) -> None:
-    """Require every place the schema names row kinds to agree with the kind vocabulary.
+def _check_references(fragment: JsonValue, known: Sequence[str], where: str) -> None:
+    """Require every $ref of a fragment to name a definition the readers resolve.
 
     Raises:
-        SchemaShapeError: The row id pattern, a kind subset or a conditional names a kind the
-            vocabulary does not have, or the pattern lacks one it has.
+        SchemaShapeError: A $ref names something that is neither a registry definition nor built in.
 
     """
-    kinds: list[str] = _enum(definitions, KIND_ENTRY)
-    expected: str = "^(" + "|".join(kinds) + "):.+$"
-    if _raw_pattern(definitions, NODE_ID_ENTRY) != expected:
-        message: str = f"matrix schema: {REF_PREFIX}{NODE_ID_ENTRY}/pattern must be {expected}"
+    pointer: str
+    for pointer in _references(fragment):
+        if not pointer.startswith(REF_PREFIX) or pointer.removeprefix(REF_PREFIX) not in known:
+            message: str = f"matrix contract: {where} references {pointer}, which is not one of {sorted(known)}"
+            raise SchemaShapeError(message)
+
+
+def _attributes(rule: Mapping[str, JsonValue], members: frozenset[str], known: Sequence[str], where: str) -> list[str]:
+    """Check the attributes one kind declares and name them.
+
+    An attribute whose fragment is a reference to the entry id is an entry reference, which rename
+    and remove follow; a reference to the entry id anywhere deeper is refused, because they could
+    not follow it.
+
+    Returns:
+        The attribute names, in registry order.
+
+    Raises:
+        SchemaShapeError: An attribute takes the name of a common member, or holds an entry
+            reference below its top level.
+
+    """
+    declared: dict[str, JsonValue] = _node(rule.get("attributes"), where + "/attributes")
+    clash: list[str] = sorted(set(declared) & members)
+    message: str
+    if clash:
+        message = f"matrix contract: {where}/attributes declares {clash}, which are common members"
+        raise SchemaShapeError(message)
+    name: str
+    fragment: JsonValue
+    for name, fragment in declared.items():
+        spot: str = f"{where}/attributes/{name}"
+        spec: dict[str, JsonValue] = _node(fragment, spot)
+        _check_references(spec, known, spot)
+        nested: list[str] = [pointer for key, value in spec.items() if key != REF_KEY for pointer in _references(value)]
+        if REF_PREFIX + ENTRY_ID_ENTRY in nested:
+            message = f"matrix contract: {spot} holds an entry reference below its top level"
+            raise SchemaShapeError(message)
+    return list(declared)
+
+
+def _check_shapes(schema: Mapping[str, JsonValue]) -> None:
+    """Require the schema's closed parts to have exactly the members the generated dataclasses read.
+
+    Raises:
+        SchemaShapeError: The root or a $defs entry declares or requires other members.
+
+    """
+    definitions: dict[str, JsonValue] = _node(schema.get(DEFINITIONS), DEFINITIONS)
+    message: str
+    if set(_node(schema.get("properties"), "properties")) != ROOT_MEMBERS:
+        message = f"matrix schema: the root must declare exactly {sorted(ROOT_MEMBERS)}"
         raise SchemaShapeError(message)
     entry: str
-    for entry in KIND_SUBSETS:
-        _subset(_enum(definitions, entry), kinds, REF_PREFIX + entry, "row kinds")
-    node: dict[str, JsonValue] = _node(definitions.get("Node"), REF_PREFIX + "Node")
-    rules: JsonValue = node.get("allOf", [])
-    if not isinstance(rules, list):
-        message = f"matrix schema: {REF_PREFIX}Node/allOf is not a list"
-        raise SchemaShapeError(message)
-    index: int
-    rule: JsonValue
-    for index, rule in enumerate(rules):
-        where: str = f"{REF_PREFIX}Node/allOf/{index}/if"
-        condition: dict[str, JsonValue] = _node(_node(rule, where).get("if"), where)
-        _subset(_kind_constants(condition, where), kinds, where, "row kinds")
+    members: frozenset[str]
+    required: frozenset[str]
+    for entry, members, required in SHAPES:
+        where: str = REF_PREFIX + entry
+        shape: dict[str, JsonValue] = _node(definitions.get(entry), where)
+        if set(_node(shape.get("properties"), where + "/properties")) != members:
+            message = f"matrix schema: {where} must declare exactly {sorted(members)}"
+            raise SchemaShapeError(message)
+        if set(_strings(shape.get("required"), where + "/required")) != required:
+            message = f"matrix schema: {where} must require exactly {sorted(required)}"
+            raise SchemaShapeError(message)
 
 
-def _check_link_types(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
-    """Require the link table to cover the link vocabulary and name only row kinds.
+def _sides(schema: Mapping[str, JsonValue]) -> list[str]:
+    """Read the sides the schema lists and require the authority to be one of them.
+
+    Returns:
+        The sides, in schema order.
 
     Raises:
-        SchemaShapeError: The table and the vocabulary differ, a rule names an unknown kind, or
-            two link types share a reverse name.
+        SchemaShapeError: The schema lists no side, a side cannot name a constant, or the side
+            the schema names as the authority is not one it lists.
 
     """
-    kinds: list[str] = _enum(definitions, KIND_ENTRY)
-    table: dict[str, JsonValue] = _node(schema.get(LINK_TYPES_KEY), LINK_TYPES_KEY)
-    _same(list(table), _enum(definitions, "linkType"), LINK_TYPES_KEY, "the link types")
-    reverses: list[str] = []
-    name: str
+    where: str = REF_PREFIX + SIDE_ENTRY
+    definitions: dict[str, JsonValue] = _node(schema.get(DEFINITIONS), DEFINITIONS)
+    sides: list[str] = _strings(_node(definitions.get(SIDE_ENTRY), where).get("enum"), where + "/enum")
+    if not sides:
+        message: str = f"matrix schema: {where}/enum lists no side"
+        raise SchemaShapeError(message)
+    _subset([_text(schema.get(AUTHORITY_KEY), AUTHORITY_KEY)], sides, AUTHORITY_KEY, "sides")
+    return sides
+
+
+def _check_kind_side(rule: Mapping[str, JsonValue], sides: Sequence[str], where: str) -> None:
+    """Require the one side a kind declares, when it declares one, to be a side.
+
+    A kind that names something that is not a side raises ``SchemaShapeError`` from the check
+    that finds it.
+    """
+    if KIND_SIDE_KEY in rule:
+        spot: str = f"{where}/{KIND_SIDE_KEY}"
+        _subset([_text(rule[KIND_SIDE_KEY], spot)], sides, spot, "sides")
+
+
+def _check_id_patterns(kind: str, rule: Mapping[str, JsonValue], where: str) -> None:
+    """Require every id pattern of an entry kind to start with the kind.
+
+    Raises:
+        SchemaShapeError: A pattern does not start with the kind and a colon, or the kind
+            declares both the one side it is recorded with and a second id form.
+
+    """
+    message: str
+    key: str
+    for key in (ID_PATTERN_KEY, REPOSITORY_ID_PATTERN_KEY):
+        if key == REPOSITORY_ID_PATTERN_KEY and key not in rule:
+            continue
+        if not _raw_pattern(rule.get(key), f"{where}/{key}").startswith(f"^{kind}:"):
+            message = f"matrix contract: {where}/{key} must start with ^{kind}:"
+            raise SchemaShapeError(message)
+    if REPOSITORY_ID_PATTERN_KEY in rule and KIND_SIDE_KEY in rule:
+        message = f"matrix contract: {where} declares one side and an id form for the other"
+        raise SchemaShapeError(message)
+
+
+def _check_entry_kinds(registry: Mapping[str, JsonValue], known: Sequence[str], sides: Sequence[str]) -> list[str]:
+    """Check every entry kind the registry declares.
+
+    Returns:
+        The entry kinds, in registry order.
+
+    Raises:
+        SchemaShapeError: A kind's name is malformed, an id pattern does not start with the kind,
+            it names a side that is not one, it requires something it does not declare, or the
+            stack kind is not a kind.
+
+    """
+    table: dict[str, JsonValue] = _node(registry.get(ENTRY_KINDS_KEY), ENTRY_KINDS_KEY)
+    members: frozenset[str] = SHAPES[0][1]
+    message: str
+    kind: str
     spec: JsonValue
-    for name, spec in table.items():
-        where: str = f"{LINK_TYPES_KEY}/{name}"
+    for kind, spec in table.items():
+        where: str = f"{ENTRY_KINDS_KEY}/{kind}"
         rule: dict[str, JsonValue] = _node(spec, where)
-        reverses.append(_text(rule.get("reverse"), where + "/reverse"))
-        _subset(_strings(rule.get("from"), where + "/from"), kinds, where + "/from", "row kinds")
-        _subset(_strings(rule.get("to"), where + "/to"), kinds, where + "/to", "row kinds")
-    if len(set(reverses)) != len(reverses) or set(reverses) & set(table):
-        message: str = f"matrix schema: {LINK_TYPES_KEY} reverse names must differ from each other and from link types"
+        if _KIND_NAME.fullmatch(kind) is None:
+            message = f"matrix contract: {where} is not a kind name"
+            raise SchemaShapeError(message)
+        _check_id_patterns(kind, rule, where)
+        _check_kind_side(rule, sides, where)
+        _flag(rule.get("verifiable"), where + "/verifiable")
+        attributes: list[str] = _attributes(rule, members, known, where)
+        required: list[str] = _strings(rule.get("required"), where + "/required")
+        _subset(required, [*attributes, PURPOSE_MEMBER], where + "/required", "attributes of the kind")
+    if not table:
+        message = f"matrix contract: {ENTRY_KINDS_KEY} declares no kind"
         raise SchemaShapeError(message)
+    _subset([_text(registry.get(STACK_KEY), STACK_KEY)], list(table), STACK_KEY, "entry kinds")
+    return list(table)
 
 
-def _check_commands(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
-    """Require the command table to name only roles the role vocabulary has.
+def _check_relationship_kinds(
+    registry: Mapping[str, JsonValue],
+    entry_kinds: Sequence[str],
+    known: Sequence[str],
+    sides: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    """Check every relationship kind the registry declares.
+
+    Returns:
+        The relationship kinds and the families they name, each in registry order.
 
     Raises:
-        SchemaShapeError: A command names an unknown role, states no role, or has no ``writes``
-            flag; or the operator role is not a role.
+        SchemaShapeError: A name is malformed or used twice, a kind joins an undeclared entry
+            kind, names a side that is not one, a key or required attribute is undeclared, or the
+            home relationship is not a kind.
 
     """
-    roles: list[str] = _enum(definitions, "role")
-    _subset([_text(schema.get(OPERATOR_KEY), OPERATOR_KEY)], roles, OPERATOR_KEY, "roles")
+    table: dict[str, JsonValue] = _node(registry.get(RELATIONSHIP_KINDS_KEY), RELATIONSHIP_KINDS_KEY)
+    members: frozenset[str] = SHAPES[1][1]
+    names: list[str] = list(table)
+    families: list[str] = []
+    message: str
+    kind: str
+    spec: JsonValue
+    for kind, spec in table.items():
+        where: str = f"{RELATIONSHIP_KINDS_KEY}/{kind}"
+        rule: dict[str, JsonValue] = _node(spec, where)
+        reverse: str = _text(rule.get("reverse"), where + "/reverse")
+        if _KIND_NAME.fullmatch(kind) is None or _KIND_NAME.fullmatch(reverse) is None or reverse in names:
+            message = f"matrix contract: {where} and its reverse must be kind names no other relationship uses"
+            raise SchemaShapeError(message)
+        names.append(reverse)
+        _check_kind_side(rule, sides, where)
+        _subset(_strings(rule.get("from"), where + "/from"), entry_kinds, where + "/from", "entry kinds")
+        _subset(_strings(rule.get("to"), where + "/to"), entry_kinds, where + "/to", "entry kinds")
+        attributes: list[str] = _attributes(rule, members, known, where)
+        _subset(_strings(rule.get("required"), where + "/required"), attributes, where + "/required", "its attributes")
+        _subset(_strings(rule.get("key"), where + "/key"), attributes, where + "/key", "its attributes")
+        _flag(rule.get("provedByBuild"), where + "/provedByBuild")
+        _flag(rule.get("atMostOnePerStart", False), where + "/atMostOnePerStart")
+        if "family" in rule and _text(rule["family"], where + "/family") not in families:
+            families.append(_text(rule["family"], where + "/family"))
+    _subset([_text(registry.get(HOME_KEY), HOME_KEY)], list(table), HOME_KEY, "relationship kinds")
+    return list(table), families
+
+
+def _check_commands(registry: Mapping[str, JsonValue]) -> list[str]:
+    """Check the roles and the command table.
+
+    Returns:
+        The roles, in registry order.
+
+    Raises:
+        SchemaShapeError: A command states both every role and a list of roles.
+
+    """
+    roles: list[str] = _strings(registry.get(ROLES_KEY), ROLES_KEY)
+    _subset([_text(registry.get(OPERATOR_KEY), OPERATOR_KEY)], roles, OPERATOR_KEY, "roles")
     name: str
     spec: JsonValue
-    for name, spec in _node(schema.get(COMMANDS_KEY), COMMANDS_KEY).items():
+    for name, spec in _node(registry.get(COMMANDS_KEY), COMMANDS_KEY).items():
         where: str = f"{COMMANDS_KEY}/{name}"
         rule: dict[str, JsonValue] = _node(spec, where)
-        message: str
-        if not isinstance(rule.get("writes"), bool):
-            message = f"matrix schema: {where}/writes is not a boolean"
-            raise SchemaShapeError(message)
+        _flag(rule.get("writes"), where + "/writes")
         if rule.get("anyRole") is True and "roles" not in rule:
             continue
         if "anyRole" in rule:
-            message = f"matrix schema: {where} must state anyRole true or roles, not both"
+            message: str = f"matrix contract: {where} must state anyRole true or roles, not both"
             raise SchemaShapeError(message)
         _subset(_strings(rule.get("roles"), where + "/roles"), roles, where + "/roles", "roles")
+    return roles
 
 
-def _check_tables(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
-    """Require the fact home table and the document root table to agree with their vocabularies.
-
-    Raises:
-        SchemaShapeError: A table and its vocabulary differ, or a home section is not an arc42
-            section number.
-
-    """
-    homes: dict[str, JsonValue] = _node(schema.get(FACT_SECTIONS_KEY), FACT_SECTIONS_KEY)
-    _same(list(homes), _enum(definitions, "factKind"), FACT_SECTIONS_KEY, "the fact kinds")
-    section: JsonValue
-    for section in homes.values():
-        if isinstance(section, bool) or not isinstance(section, int) or not FIRST_SECTION <= section <= LAST_SECTION:
-            message: str = f"matrix schema: {FACT_SECTIONS_KEY} holds {section!r}, which is not an arc42 section"
-            raise SchemaShapeError(message)
-    roots: dict[str, JsonValue] = _node(schema.get(DOCUMENT_ROOTS_KEY), DOCUMENT_ROOTS_KEY)
-    _subset(list(roots), _enum(definitions, "documentClass"), DOCUMENT_ROOTS_KEY, "document classes")
-    _strings(list(roots.values()), DOCUMENT_ROOTS_KEY)
-
-
-def _check_put(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
-    """Require the tables of what a put may write to name only roles, row kinds and row fields.
-
-    A table that names a role, a kind or a field the schema does not have, or a role that may put
-    a kind whose fields no table lists, fails with the ``SchemaShapeError`` of the subset check.
-    """
-    kinds: list[str] = _enum(definitions, KIND_ENTRY)
-    fields: list[str] = list(_node(_node(definitions.get("Node"), "Node").get("properties"), "Node/properties"))
-    by_kind: dict[str, JsonValue] = _node(schema.get(PUT_FIELDS_KEY), PUT_FIELDS_KEY)
-    _subset(list(by_kind), kinds, PUT_FIELDS_KEY, "row kinds")
-    kind: str
-    listed: JsonValue
-    for kind, listed in by_kind.items():
-        where: str = f"{PUT_FIELDS_KEY}/{kind}"
-        _subset(_strings(listed, where), fields, where, "row fields")
-    by_role: dict[str, JsonValue] = _node(schema.get(PUT_KINDS_KEY), PUT_KINDS_KEY)
-    _subset(list(by_role), _enum(definitions, "role"), PUT_KINDS_KEY, "roles")
-    role: str
-    for role, listed in by_role.items():
-        where = f"{PUT_KINDS_KEY}/{role}"
-        _subset(_strings(listed, where), list(by_kind), where, f"kinds {PUT_FIELDS_KEY} lists")
-
-
-def _check_settle_rules(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
-    """Require the table of settlement rules to cover the rule vocabulary and name only roles.
+def _check_resource_types(registry: Mapping[str, JsonValue]) -> None:
+    """Require the controlled list of resource types to hold well-formed names.
 
     Raises:
-        SchemaShapeError: The table and the vocabulary differ, a rule names an unknown role, or a
-            rule does not say whether the command computes its outcome.
+        SchemaShapeError: A resource type is not lowercase words joined by hyphens.
 
     """
-    table: dict[str, JsonValue] = _node(schema.get(SETTLE_RULES_KEY), SETTLE_RULES_KEY)
-    _same(list(table), _enum(definitions, "disagreementRule"), SETTLE_RULES_KEY, "the disagreement rules")
-    roles: list[str] = _enum(definitions, "role")
     name: str
-    spec: JsonValue
-    for name, spec in table.items():
-        where: str = f"{SETTLE_RULES_KEY}/{name}"
-        rule: dict[str, JsonValue] = _node(spec, where)
-        if not isinstance(rule.get("computed"), bool):
-            message: str = f"matrix schema: {where}/computed is not a boolean"
+    for name in _strings(registry.get(RESOURCE_TYPES_KEY), RESOURCE_TYPES_KEY):
+        if _RESOURCE_TYPE.fullmatch(name) is None:
+            message: str = f"matrix contract: the resource type {name!r} is not lowercase words joined by hyphens"
             raise SchemaShapeError(message)
-        _subset(_strings(rule.get("roles"), where + "/roles"), roles, where + "/roles", "roles")
 
 
-def render(schema: Mapping[str, JsonValue]) -> str:
-    """Render the generated module for a matrix schema.
+@dataclass(frozen=True, slots=True)
+class Vocabulary:
+    """The names the registry declares, each list in registry order."""
+
+    entry_kinds: list[str]
+    relationship_kinds: list[str]
+    families: list[str]
+    roles: list[str]
+    sides: list[str]
+
+
+def _checked(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -> Vocabulary:
+    """Check the schema and the registry against each other and name what they declare.
+
+    A schema or a registry that is missing a part of the contract or contradicts itself raises
+    ``SchemaShapeError`` from the check that finds it.
+
+    Returns:
+        The entry kinds, relationship kinds, families, roles and sides.
+
+    Raises:
+        SchemaShapeError: The registry defines one of the built-in definitions.
+
+    """
+    _check_shapes(schema)
+    sides: list[str] = _sides(schema)
+    own: list[str] = list(_node(registry.get(DEFINITIONS), DEFINITIONS))
+    if BUILT_IN_DEFINITIONS & set(own):
+        message: str = f"matrix contract: the registry must not define {sorted(BUILT_IN_DEFINITIONS)}"
+        raise SchemaShapeError(message)
+    known: list[str] = [*own, *sorted(BUILT_IN_DEFINITIONS)]
+    _check_references(registry.get(DEFINITIONS), known, DEFINITIONS)
+    entry_kinds: list[str] = _check_entry_kinds(registry, known, sides)
+    relationship_kinds: list[str]
+    families: list[str]
+    relationship_kinds, families = _check_relationship_kinds(registry, entry_kinds, known, sides)
+    _check_resource_types(registry)
+    return Vocabulary(
+        entry_kinds=entry_kinds,
+        relationship_kinds=relationship_kinds,
+        families=families,
+        roles=_check_commands(registry),
+        sides=sides,
+    )
+
+
+def _tuple_line(head: str, names: Sequence[str]) -> str:
+    """Render names as a tuple constant.
+
+    Returns:
+        The source of the statement; a tuple of one name keeps its trailing comma.
+
+    """
+    members: list[str] = [names[0] + ","] if len(names) == 1 else list(names)
+    return _wrapped(head, "(", members, ")")
+
+
+def _strings_vocabulary(alias: str, prefix: str, collection: str, values: Sequence[str]) -> tuple[str, list[str]]:
+    """Render one string vocabulary as a type alias, one constant per value and a tuple.
+
+    Returns:
+        The alias line, and the constant lines with the collection last.
+
+    """
+    names: list[str] = [f"{prefix}_{_upper_snake(value)}" for value in values]
+    constants: list[str] = [
+        f"{name}: Final[{_literal([value])}] = {json.dumps(value)}" for name, value in zip(names, values, strict=True)
+    ]
+    return (
+        _wrapped(f"type {alias} = Literal", "[", [json.dumps(value) for value in values], "]"),
+        [*constants, _tuple_line(f"{collection}: Final[tuple[{alias}, ...]] = ", names)],
+    )
+
+
+def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
+    """Render every vocabulary the registry declares.
+
+    Returns:
+        The type alias lines and the constant lines.
+
+    """
+    aliases: list[str] = []
+    constants: list[str] = []
+    alias: str
+    prefix: str
+    collection: str
+    values: list[str]
+    for alias, prefix, collection, values in (
+        ("EntryKind", "KIND", "ENTRY_KINDS", vocabulary.entry_kinds),
+        ("RelationshipKind", "REL", "RELATIONSHIP_KINDS", vocabulary.relationship_kinds),
+        ("Role", "ROLE", "ROLES", vocabulary.roles),
+        ("Side", "SIDE", "SIDES", vocabulary.sides),
+    ):
+        alias_line: str
+        lines: list[str]
+        alias_line, lines = _strings_vocabulary(alias, prefix, collection, values)
+        aliases.append(alias_line)
+        constants.extend(lines)
+    names: list[str] = [f"FAMILY_{_upper_snake(family)}" for family in vocabulary.families]
+    constants.extend(
+        f"{name}: Final = {json.dumps(family)}" for name, family in zip(names, vocabulary.families, strict=True)
+    )
+    if names:
+        constants.append(_tuple_line("FAMILIES: Final[tuple[str, ...]] = ", names))
+    else:
+        constants.append("FAMILIES: Final[tuple[str, ...]] = ()")
+    return aliases, constants
+
+
+def _members_line(constant: str, members: frozenset[str]) -> str:
+    """Render a set of member names as a frozenset constant.
+
+    Returns:
+        The source of the statement.
+
+    """
+    names: str = ", ".join(json.dumps(name) for name in sorted(members))
+    return f"{constant}: Final[frozenset[str]] = frozenset({{{names}}})"
+
+
+def _fixed_lines(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -> list[str]:
+    """Render the values the schema and the registry fix outside the vocabularies.
+
+    Returns:
+        The constant lines.
+
+    Raises:
+        SchemaShapeError: The schema's version is not an integer.
+
+    """
+    definitions: dict[str, JsonValue] = _node(schema.get(DEFINITIONS), DEFINITIONS)
+    entry_id: dict[str, JsonValue] = _node(definitions.get(ENTRY_ID_ENTRY), REF_PREFIX + ENTRY_ID_ENTRY)
+    pattern: str = _raw_pattern(entry_id.get("pattern"), REF_PREFIX + ENTRY_ID_ENTRY + "/pattern")
+    version: JsonValue = _node(_node(schema.get("properties"), "properties").get("version"), "version").get("const")
+    if isinstance(version, bool) or not isinstance(version, int):
+        message: str = "matrix schema: properties/version/const is not an integer"
+        raise SchemaShapeError(message)
+    parts: list[str] = [json.dumps(part) for part in _strings(schema.get(DEFAULT_PATH_KEY), DEFAULT_PATH_KEY)]
+    return [
+        f"VERSION: Final[Literal[{version}]] = {version}",
+        f'ENTRY_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"{pattern}")',
+        *[f"{constant}: Final = {json.dumps(_text(schema.get(key), key))}" for constant, key in ROOT_STRINGS],
+        _wrapped("DEFAULT_MATRIX_PARTS: Final[tuple[str, ...]] = ", "(", parts, ")"),
+        f"OPERATOR_ROLE: Final[Role] = ROLE_{_upper_snake(_text(registry.get(OPERATOR_KEY), OPERATOR_KEY))}",
+        f"HOME_RELATIONSHIP: Final[RelationshipKind] = REL_{_upper_snake(_text(registry.get(HOME_KEY), HOME_KEY))}",
+        f"STACK_KIND: Final[EntryKind] = KIND_{_upper_snake(_text(registry.get(STACK_KEY), STACK_KEY))}",
+        f"AUTHORITY_SIDE: Final[Side] = SIDE_{_upper_snake(_text(schema.get(AUTHORITY_KEY), AUTHORITY_KEY))}",
+        _members_line("ENTRY_MEMBERS", SHAPES[0][1]),
+        _members_line("RELATIONSHIP_MEMBERS", SHAPES[1][1]),
+        f"PURPOSE_MEMBER: Final = {json.dumps(PURPOSE_MEMBER)}",
+        f"ENTRY_ID_REFERENCE: Final = {json.dumps(REF_PREFIX + ENTRY_ID_ENTRY)}",
+        'SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "matrix.schema.json"',
+        'REGISTRY_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "matrix-kinds.json"',
+    ]
+
+
+def render(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -> str:
+    """Render the generated module for a matrix schema and a kinds registry.
+
+    A schema or a registry that is missing a part of the contract or contradicts itself raises
+    ``SchemaShapeError`` from the check that finds it.
 
     Returns:
         The complete Python source of matrix_contract.py.
 
-    Raises:
-        SchemaShapeError: The schema is missing a part of the contract, contradicts itself or
-            uses an untyped construct.
-
     """
-    definitions: dict[str, JsonValue] = _node(schema.get(DEFINITIONS), DEFINITIONS)
-    absent: list[str] = [entry for entry in VALIDATED if entry not in definitions]
-    if absent:
-        message: str = f"matrix schema: $defs lacks {absent}, which the readers validate against"
-        raise SchemaShapeError(message)
-    _check_kinds(definitions)
-    _check_link_types(schema, definitions)
-    _check_commands(schema, definitions)
-    _check_tables(schema, definitions)
-    _check_put(schema, definitions)
-    _check_settle_rules(schema, definitions)
-    known: dict[str, str] = dict.fromkeys(STRINGS, "str")
-    known.update({entry: record for record, entry in RECORDS})
-    alias_lines: list[str]
-    constant_lines: list[str]
-    alias_lines, constant_lines = _vocabularies(definitions, known)
-    newtype_lines: list[str]
-    pattern_lines: list[str]
-    newtype_lines, pattern_lines = _patterns(definitions, known)
-    string_lines: list[str] = [
-        f"{constant}: Final = {json.dumps(_text(schema.get(key), key))}" for constant, key in ROOT_STRINGS
-    ]
-    parts: list[str] = [json.dumps(part) for part in _strings(schema.get(DEFAULT_PATH_KEY), DEFAULT_PATH_KEY)]
-    version: JsonValue = _node(_node(schema.get("properties"), "properties").get("version"), "version").get("const")
-    if isinstance(version, bool) or not isinstance(version, int):
-        message = "matrix schema: properties/version/const is not an integer"
-        raise SchemaShapeError(message)
-    record_lines: list[str] = []
-    record: str
-    entry: str
-    for record, entry in RECORDS:
-        pointer: str = REF_PREFIX + entry
-        record_lines.extend(["", "", *_record(_node(definitions.get(entry), pointer), record, pointer, known)])
-    record_lines.extend(["", "", *_record(schema, ROOT_RECORD, ROOT, known)])
-
+    aliases: list[str]
+    constants: list[str]
+    aliases, constants = _vocabulary_lines(_checked(schema, registry))
     lines: list[str] = [
-        '"""GENERATED by generate_matrix_contract.py from schemas/matrix.schema.json. Do not edit.',
+        '"""GENERATED by generate_matrix_contract.py from schemas/matrix.schema.json and schemas/matrix-kinds.json.',
         "",
-        "The matrix contract: the matrix document, its rows and links, every vocabulary (row kinds,",
-        "link types, the approval and code-trust markers, roles), and the tables the schema fixes",
-        "(which kinds a link type joins, which roles may run a command). Readers and writers import",
-        "every type and value from here and validate documents with the readers below. Regenerate",
-        "with `python generate_matrix_contract.py`; `--check` fails when this file is stale.",
+        "Do not edit. The matrix contract: the entry kinds, the relationship kinds and the roles the",
+        "kinds registry declares, the sides, the typed form of a matrix file, and the readers that validate a file",
+        "against the schema and each entry and relationship against its kind. Readers and writers import",
+        "every type and value from here. Regenerate with `python generate_matrix_contract.py`; `--check`",
+        "fails when this file is stale.",
         '"""',
         "",
         "import json",
         "import re",
-        "from dataclasses import dataclass",
-        "from functools import lru_cache",
+        "from dataclasses import dataclass, field",
+        "from functools import cache",
         "from pathlib import Path",
-        "from typing import Final, Literal, NewType, NotRequired, TypedDict, TypeIs",
+        "from typing import TYPE_CHECKING, Final, Literal, NewType",
         "",
         "from jsonschema import Draft202012Validator",
         "",
+        "if TYPE_CHECKING:",
+        "    from collections.abc import Mapping, Sequence",
+        "",
+        "    from jsonschema.exceptions import ValidationError",
+        "",
         "type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None",
-        *alias_lines,
+        *aliases,
         "",
-        *newtype_lines,
+        'EntryId = NewType("EntryId", str)',
         "",
-        *constant_lines,
+        *constants,
         "",
-        f"VERSION: Final[Literal[{version}]] = {version}",
-        *pattern_lines,
-        *string_lines,
-        _wrapped("DEFAULT_MATRIX_PARTS: Final[tuple[str, ...]] = ", "(", parts, ")"),
-        f"OPERATOR_ROLE: Final[Role] = ROLE_{_upper_snake(_text(schema.get(OPERATOR_KEY), OPERATOR_KEY))}",
-        'SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "matrix.schema.json"',
-        *record_lines,
+        *_fixed_lines(schema, registry),
         "",
         "",
         TAIL,
@@ -734,24 +743,60 @@ def render(schema: Mapping[str, JsonValue]) -> str:
 
 
 TAIL: Final[str] = '''class MatrixError(ValueError):
-    """A matrix document, row or link does not satisfy the contract, or the matrix refuses a request."""
+    """A matrix file, entry or relationship does not satisfy the contract, or the matrix refuses a request."""
 
 
 @dataclass(frozen=True, slots=True)
-class LinkRule:
-    """What the schema fixes for one link type."""
+class EntryRule:
+    """What the registry declares for one entry kind."""
+
+    id_pattern: re.Pattern[str]
+    """The form of an id of the kind; for a kind with two id forms, of an entry on the side that is the authority."""
+    repository_id_pattern: re.Pattern[str] | None
+    """The form of the id of an entry of the kind on the other side, when the kind has two id forms."""
+    side: Side | None
+    """The one side an entry of the kind is always recorded with; None when it may carry either."""
+    attributes: frozenset[str]
+    """The attributes an entry of the kind may carry beside the common members."""
+    required: frozenset[str]
+    """The attributes an entry of the kind must carry."""
+    purpose_required: bool
+    """Whether an entry of the kind must state its purpose."""
+    verifiable: bool
+    """Whether an entry of the kind carries the verified mark."""
+
+
+@dataclass(frozen=True, slots=True)
+class RelationshipRule:
+    """What the registry declares for one relationship kind."""
 
     reverse: str
-    """The name the reverse direction is reported under; it is computed, never stored."""
-    sources: frozenset[Kind]
-    """The kinds of row the link may start from."""
-    targets: frozenset[Kind]
-    """The kinds of row the link may point at."""
+    """The name the relationship is reported under from the entry it ends at; it is computed, never stored."""
+    side: Side | None
+    """The one side a relationship of the kind is always recorded with; None when it may carry either."""
+    sources: frozenset[EntryKind]
+    """The kinds of entry the relationship may start from."""
+    targets: frozenset[EntryKind]
+    """The kinds of entry the relationship may end at."""
+    attributes: frozenset[str]
+    """The attributes a relationship of the kind may carry."""
+    required: frozenset[str]
+    """The attributes a relationship of the kind must carry."""
+    key: tuple[str, ...]
+    """The attributes that tell two relationships of the kind between the same two entries apart."""
+    references: frozenset[str]
+    """The attributes whose value is the id of an entry."""
+    family: str | None
+    """The group of kinds a lookup follows together, when the kind is in one."""
+    proved_by_build: bool
+    """Whether a verified build proves the relationship, so it carries the verified mark."""
+    at_most_one_per_start: bool
+    """Whether an entry may start at most one relationship of the kind."""
 
 
 @dataclass(frozen=True, slots=True)
 class CommandRule:
-    """What the schema fixes for one sub-command of atw-matrix."""
+    """What the registry declares for one sub-command of atw-matrix."""
 
     writes: bool
     """Whether the command changes the matrix file."""
@@ -760,13 +805,56 @@ class CommandRule:
 
 
 @dataclass(frozen=True, slots=True)
-class SettleRule:
-    """What the schema fixes for one rule a disagreement is settled by."""
+class Verified:
+    """The one code mark: the code was built, tested and merged."""
 
-    computed: bool
-    """Whether the command works out which statement stands, so the caller names none."""
-    roles: frozenset[Role]
-    """The roles that may settle by it."""
+    commit: str
+    """The merge commit of the Story that verified it."""
+
+
+@dataclass(frozen=True, slots=True)
+class Entry:
+    """One entry of the matrix."""
+
+    id: EntryId
+    """The kind, a colon and the rest."""
+    kind: EntryKind
+    name: str
+    side: Side
+    """Which side the entry came from."""
+    aliases: tuple[str, ...] = ()
+    """Other names the entry is known by."""
+    purpose: str = ""
+    """One or two sentences that identify the entry."""
+    attributes: Mapping[str, JsonValue] = field(default_factory=dict)
+    """The attributes the entry's kind declares."""
+    verified: Verified | None = None
+    """The verified mark; None means not verified."""
+
+
+@dataclass(frozen=True, slots=True)
+class Relationship:
+    """One relationship of the matrix as one side states it, read from both ends."""
+
+    kind: RelationshipKind
+    start: EntryId
+    """The entry the relationship starts from: ``from`` in the file."""
+    end: EntryId
+    """The entry the relationship ends at: ``to`` in the file."""
+    side: Side
+    """Which side states the relationship."""
+    attributes: Mapping[str, JsonValue] = field(default_factory=dict)
+    """The attributes the relationship's kind declares."""
+    verified: Verified | None = None
+    """The verified mark; None means not verified."""
+
+
+@dataclass(frozen=True, slots=True)
+class MatrixDocument:
+    """A matrix file, typed."""
+
+    entries: tuple[Entry, ...] = ()
+    relationships: tuple[Relationship, ...] = ()
 
 
 def json_value(value: object) -> JsonValue:
@@ -797,41 +885,81 @@ def json_value(value: object) -> JsonValue:
     raise TypeError(message)
 
 
-@lru_cache(maxsize=1)
-def load_schema() -> dict[str, JsonValue]:
-    """Load the matrix JSON Schema, the one definition of this contract.
+def _load(path: Path) -> dict[str, JsonValue]:
+    """Read one of the two files this contract is defined by.
 
     A read failure (OSError) or a decode failure (json.JSONDecodeError) propagates unchanged.
 
     Returns:
-        The schema document.
+        The decoded file.
 
     Raises:
-        TypeError: The schema file is not a JSON object.
+        TypeError: The file is not a JSON object.
 
     """
-    schema: JsonValue = json_value(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
-    if not isinstance(schema, dict):
-        message: str = f"{SCHEMA_PATH} is not a JSON object"
+    decoded: JsonValue = json_value(json.loads(path.read_text(encoding="utf-8")))
+    if not isinstance(decoded, dict):
+        message: str = f"{path} is not a JSON object"
         raise TypeError(message)
-    return schema
+    return decoded
 
 
-def _table(key: str) -> dict[str, JsonValue]:
-    """Read one table the schema keeps at its root.
+@cache
+def load_schema() -> dict[str, JsonValue]:
+    """Load the matrix JSON Schema, the generic shape of a matrix file.
 
     Returns:
-        The table.
-
-    Raises:
-        TypeError: The schema has no such table.
+        The schema document.
 
     """
-    table: JsonValue = load_schema().get(key)
-    if not isinstance(table, dict):
-        message: str = f"matrix schema: {key} is not an object"
+    return _load(SCHEMA_PATH)
+
+
+@cache
+def load_registry() -> dict[str, JsonValue]:
+    """Load the kinds registry, the declaration of every entry kind and relationship kind.
+
+    Returns:
+        The registry document.
+
+    """
+    return _load(REGISTRY_PATH)
+
+
+def _object(value: JsonValue, where: str) -> dict[str, JsonValue]:
+    """Narrow a part of the registry or the schema to an object.
+
+    Returns:
+        The object.
+
+    Raises:
+        TypeError: The part is not an object.
+
+    """
+    if not isinstance(value, dict):
+        message: str = f"matrix contract: {where} is not an object"
         raise TypeError(message)
-    return table
+    return value
+
+
+def _names(value: JsonValue, where: str) -> list[str]:
+    """Narrow a part of the registry to a list of strings.
+
+    Returns:
+        The strings, in registry order.
+
+    Raises:
+        TypeError: The part is not a list of strings.
+
+    """
+    if not isinstance(value, list):
+        message: str = f"matrix contract: {where} is not a list"
+        raise TypeError(message)
+    names: list[str] = [name for name in value if isinstance(name, str)]
+    if len(names) != len(value):
+        message = f"matrix contract: {where} holds a value that is not a string"
+        raise TypeError(message)
+    return names
 
 
 def _members[T: str](value: JsonValue, choices: tuple[T, ...], where: str) -> frozenset[T]:
@@ -841,51 +969,130 @@ def _members[T: str](value: JsonValue, choices: tuple[T, ...], where: str) -> fr
         The members named.
 
     Raises:
-        TypeError: The value is not a list, or names something the vocabulary does not have.
+        TypeError: The value names something the vocabulary does not have.
 
     """
-    if not isinstance(value, list):
-        message: str = f"matrix schema: {where} is not a list"
-        raise TypeError(message)
-    found: frozenset[T] = frozenset(choice for choice in choices if choice in value)
-    if len(found) != len(value):
-        message = f"matrix schema: {where} names a value outside {choices}"
+    named: list[str] = _names(value, where)
+    found: frozenset[T] = frozenset(choice for choice in choices if choice in named)
+    if len(found) != len(set(named)):
+        message: str = f"matrix contract: {where} names a value outside {choices}"
         raise TypeError(message)
     return found
 
 
-def _link_rules() -> dict[LinkType, LinkRule]:
-    """Build the link rules from the schema's link table.
+def _declared_side(value: JsonValue, where: str) -> Side | None:
+    """Read the one side a kind declares.
 
     Returns:
-        One rule per link type.
+        The side, or None when the kind declares none.
 
     Raises:
-        TypeError: The table lacks a link type or a rule is malformed.
+        TypeError: The kind names something that is not a side.
 
     """
-    table: dict[str, JsonValue] = _table("x-linkTypes")
-    rules: dict[LinkType, LinkRule] = {}
-    link_type: LinkType
-    for link_type in LINK_TYPES:
-        rule: JsonValue = table.get(link_type)
-        reverse: JsonValue = rule.get("reverse") if isinstance(rule, dict) else None
-        if not isinstance(rule, dict) or not isinstance(reverse, str):
-            message: str = f"matrix schema: x-linkTypes/{link_type} is malformed"
+    if value is None:
+        return None
+    side: Side
+    for side in SIDES:
+        if side == value:
+            return side
+    message: str = f"matrix contract: {where}/side names a value outside {SIDES}"
+    raise TypeError(message)
+
+
+def _entry_rules() -> dict[EntryKind, EntryRule]:
+    """Build the entry rules from the registry.
+
+    Returns:
+        One rule per entry kind.
+
+    Raises:
+        TypeError: A declaration is malformed.
+
+    """
+    table: dict[str, JsonValue] = _object(load_registry().get("entryKinds"), "entryKinds")
+    rules: dict[EntryKind, EntryRule] = {}
+    kind: EntryKind
+    for kind in ENTRY_KINDS:
+        where: str = f"entryKinds/{kind}"
+        rule: dict[str, JsonValue] = _object(table.get(kind), where)
+        pattern: JsonValue = rule.get("idPattern")
+        other: JsonValue = rule.get("repositoryIdPattern")
+        verifiable: JsonValue = rule.get("verifiable")
+        if (
+            not isinstance(pattern, str)
+            or not isinstance(verifiable, bool)
+            or not (other is None or isinstance(other, str))
+        ):
+            message: str = f"matrix contract: {where} is malformed"
             raise TypeError(message)
-        rules[link_type] = LinkRule(
+        required: list[str] = _names(rule.get("required"), where + "/required")
+        rules[kind] = EntryRule(
+            id_pattern=re.compile(pattern),
+            repository_id_pattern=None if other is None else re.compile(other),
+            side=_declared_side(rule.get("side"), where),
+            attributes=frozenset(_object(rule.get("attributes"), where + "/attributes")),
+            required=frozenset(name for name in required if name != PURPOSE_MEMBER),
+            purpose_required=PURPOSE_MEMBER in required,
+            verifiable=verifiable,
+        )
+    return rules
+
+
+def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
+    """Build the relationship rules from the registry.
+
+    Returns:
+        One rule per relationship kind.
+
+    Raises:
+        TypeError: A declaration is malformed.
+
+    """
+    table: dict[str, JsonValue] = _object(load_registry().get("relationshipKinds"), "relationshipKinds")
+    rules: dict[RelationshipKind, RelationshipRule] = {}
+    kind: RelationshipKind
+    for kind in RELATIONSHIP_KINDS:
+        where: str = f"relationshipKinds/{kind}"
+        rule: dict[str, JsonValue] = _object(table.get(kind), where)
+        reverse: JsonValue = rule.get("reverse")
+        family: JsonValue = rule.get("family")
+        proved: JsonValue = rule.get("provedByBuild")
+        single: JsonValue = rule.get("atMostOnePerStart", False)
+        if (
+            not isinstance(reverse, str)
+            or not isinstance(proved, bool)
+            or not isinstance(single, bool)
+            or not (family is None or isinstance(family, str))
+        ):
+            message: str = f"matrix contract: {where} is malformed"
+            raise TypeError(message)
+        attributes: dict[str, JsonValue] = _object(rule.get("attributes"), where + "/attributes")
+        rules[kind] = RelationshipRule(
             reverse=reverse,
-            sources=_members(rule.get("from"), KINDS, f"x-linkTypes/{link_type}/from"),
-            targets=_members(rule.get("to"), KINDS, f"x-linkTypes/{link_type}/to"),
+            side=_declared_side(rule.get("side"), where),
+            sources=_members(rule.get("from"), ENTRY_KINDS, where + "/from"),
+            targets=_members(rule.get("to"), ENTRY_KINDS, where + "/to"),
+            attributes=frozenset(attributes),
+            required=frozenset(_names(rule.get("required"), where + "/required")),
+            key=tuple(_names(rule.get("key"), where + "/key")),
+            references=frozenset(
+                name
+                for name, fragment in attributes.items()
+                if isinstance(fragment, dict) and fragment.get("$ref") == ENTRY_ID_REFERENCE
+            ),
+            family=family,
+            proved_by_build=proved,
+            at_most_one_per_start=single,
         )
     return rules
 
 
 def _command_rules() -> dict[str, CommandRule]:
-    """Build the command rules from the schema's command table.
+    """Build the command rules from the registry's command table.
 
     Returns:
-        One rule per sub-command the design names, built or not.
+        One rule per sub-command of atw-matrix.
 
     Raises:
         TypeError: A rule is malformed.
@@ -894,10 +1101,10 @@ def _command_rules() -> dict[str, CommandRule]:
     rules: dict[str, CommandRule] = {}
     name: str
     rule: JsonValue
-    for name, rule in _table("x-commands").items():
+    for name, rule in _object(load_registry().get("commands"), "commands").items():
         writes: JsonValue = rule.get("writes") if isinstance(rule, dict) else None
         if not isinstance(rule, dict) or not isinstance(writes, bool):
-            message: str = f"matrix schema: x-commands/{name} is malformed"
+            message: str = f"matrix contract: commands/{name} is malformed"
             raise TypeError(message)
         everyone: bool = rule.get("anyRole") is True
         roles: frozenset[Role] = frozenset(ROLES) if everyone else _members(rule.get("roles"), ROLES, name)
@@ -905,130 +1112,161 @@ def _command_rules() -> dict[str, CommandRule]:
     return rules
 
 
-def _fact_home_sections() -> dict[FactKind, int]:
-    """Build the home section of each fact kind from the schema's table.
-
-    Returns:
-        The arc42 section number that is the home of each kind of fact.
-
-    Raises:
-        TypeError: The table lacks a fact kind or holds a value that is not an integer.
-
-    """
-    table: dict[str, JsonValue] = _table("x-factHomeSections")
-    sections: dict[FactKind, int] = {}
-    fact_kind: FactKind
-    for fact_kind in FACT_KINDS:
-        section: JsonValue = table.get(fact_kind)
-        if isinstance(section, bool) or not isinstance(section, int):
-            message: str = f"matrix schema: x-factHomeSections/{fact_kind} is not an integer"
-            raise TypeError(message)
-        sections[fact_kind] = section
-    return sections
-
-
-def _document_roots() -> dict[DocumentClass, str]:
-    """Build the folder of each synced document class from the schema's table.
-
-    Returns:
-        The folder, under the architecture root, that holds each class of document the vault read covers.
-
-    Raises:
-        TypeError: A folder is not a string.
-
-    """
-    table: dict[str, JsonValue] = _table("x-documentRoots")
-    roots: dict[DocumentClass, str] = {}
-    document_class: DocumentClass
-    for document_class in DOCUMENT_CLASSES:
-        if document_class not in table:
-            continue
-        folder: JsonValue = table[document_class]
-        if not isinstance(folder, str):
-            message: str = f"matrix schema: x-documentRoots/{document_class} is not a string"
-            raise TypeError(message)
-        roots[document_class] = folder
-    return roots
-
-
-def _put_kinds() -> dict[Role, frozenset[Kind]]:
-    """Build the kinds of row each role may put from the schema's table.
-
-    Returns:
-        The kinds each role that may put a row may put.
-
-    """
-    table: dict[str, JsonValue] = _table("x-putKinds")
-    return {role: _members(table[role], KINDS, f"x-putKinds/{role}") for role in ROLES if role in table}
-
-
-def _put_fields() -> dict[Kind, frozenset[str]]:
-    """Build the fields a put may state for each kind of row from the schema's table.
-
-    Returns:
-        The row fields a caller may state for each kind a put may write.
-
-    Raises:
-        TypeError: A kind's fields are not a list of strings.
-
-    """
-    table: dict[str, JsonValue] = _table("x-putFields")
-    fields: dict[Kind, frozenset[str]] = {}
-    kind: Kind
-    for kind in KINDS:
-        if kind not in table:
-            continue
-        listed: JsonValue = table[kind]
-        if not isinstance(listed, list):
-            message: str = f"matrix schema: x-putFields/{kind} is not a list"
-            raise TypeError(message)
-        fields[kind] = frozenset(name for name in listed if isinstance(name, str))
-    return fields
-
-
-def _settle_rules() -> dict[DisagreementRule, SettleRule]:
-    """Build the settlement rules from the schema's table.
-
-    Returns:
-        One rule per way a disagreement is settled.
-
-    Raises:
-        TypeError: The table lacks a rule or a rule is malformed.
-
-    """
-    table: dict[str, JsonValue] = _table("x-disagreementRules")
-    rules: dict[DisagreementRule, SettleRule] = {}
-    name: DisagreementRule
-    for name in DISAGREEMENT_RULES:
-        rule: JsonValue = table.get(name)
-        computed: JsonValue = rule.get("computed") if isinstance(rule, dict) else None
-        if not isinstance(rule, dict) or not isinstance(computed, bool):
-            message: str = f"matrix schema: x-disagreementRules/{name} is malformed"
-            raise TypeError(message)
-        rules[name] = SettleRule(computed=computed, roles=_members(rule.get("roles"), ROLES, name))
-    return rules
-
-
-LINK_RULES: Final[dict[LinkType, LinkRule]] = _link_rules()
+ENTRY_RULES: Final[dict[EntryKind, EntryRule]] = _entry_rules()
+RELATIONSHIP_RULES: Final[dict[RelationshipKind, RelationshipRule]] = _relationship_rules()
 COMMAND_RULES: Final[dict[str, CommandRule]] = _command_rules()
-PUT_KINDS: Final[dict[Role, frozenset[Kind]]] = _put_kinds()
-PUT_FIELDS: Final[dict[Kind, frozenset[str]]] = _put_fields()
-SETTLE_RULES: Final[dict[DisagreementRule, SettleRule]] = _settle_rules()
-FACT_HOME_SECTIONS: Final[dict[FactKind, int]] = _fact_home_sections()
-DOCUMENT_ROOTS: Final[dict[DocumentClass, str]] = _document_roots()
-PLACED_KINDS: Final[frozenset[Kind]] = frozenset({KIND_STACK, *ELEMENT_KINDS})
-"""The kinds of row that live in a repository."""
-CODED_KINDS: Final[frozenset[Kind]] = frozenset({*OWNER_KINDS, *PLACED_KINDS})
-"""The kinds of row that carry the code-trust marker."""
+RESOURCE_TYPES: Final[tuple[str, ...]] = tuple(_names(load_registry().get("resourceTypes"), "resourceTypes"))
+"""The controlled list of resource types."""
+REVERSE_NAMES: Final[dict[str, RelationshipKind]] = {rule.reverse: kind for kind, rule in RELATIONSHIP_RULES.items()}
+"""The relationship kind each reverse name reports."""
+VERIFIABLE_KINDS: Final[frozenset[EntryKind]] = frozenset(kind for kind, rule in ENTRY_RULES.items() if rule.verifiable)
+"""The entry kinds that carry the verified mark."""
+BUILD_PROVED_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
+    kind for kind, rule in RELATIONSHIP_RULES.items() if rule.proved_by_build
+)
+"""The relationship kinds that carry the verified mark."""
 MESSAGE_LIMIT: Final = 300
 """The most characters of one schema failure a problem line carries."""
 PROBLEMS_SHOWN: Final = 20
-"""The most schema failures an error message lists."""
+"""The most problems an error message lists."""
 
 
-@lru_cache(maxsize=8)
-def _validator(definition: str | None) -> Draft202012Validator:
-    """Build the validator of the matrix, or of one $defs entry of it.
+def entry_kind(text: str) -> EntryKind:
+    """Accept a string as an entry kind when the registry declares it.
+
+    Returns:
+        The kind.
+
+    Raises:
+        MatrixError: The registry declares no such entry kind.
+
+    """
+    kind: EntryKind
+    for kind in ENTRY_KINDS:
+        if kind == text:
+            return kind
+    message: str = f"{text!r} is not an entry kind; the kinds are {', '.join(ENTRY_KINDS)}"
+    raise MatrixError(message)
+
+
+def relationship_kind(text: str) -> RelationshipKind:
+    """Accept a string as a relationship kind when the registry declares it.
+
+    Returns:
+        The kind.
+
+    Raises:
+        MatrixError: The registry declares no such relationship kind.
+
+    """
+    kind: RelationshipKind
+    for kind in RELATIONSHIP_KINDS:
+        if kind == text:
+            return kind
+    message: str = f"{text!r} is not a relationship kind; the kinds are {', '.join(RELATIONSHIP_KINDS)}"
+    raise MatrixError(message)
+
+
+def as_side(text: str) -> Side:
+    """Accept a string as a side when the schema lists it.
+
+    Returns:
+        The side.
+
+    Raises:
+        MatrixError: The schema lists no such side.
+
+    """
+    side: Side
+    for side in SIDES:
+        if side == text:
+            return side
+    message: str = f"{text!r} is not a side; the sides are {', '.join(SIDES)}"
+    raise MatrixError(message)
+
+
+def id_pattern(kind: EntryKind, side: Side) -> re.Pattern[str]:
+    """Name the form the id of an entry has.
+
+    Returns:
+        The kind's id pattern; for a kind with two id forms and an entry that is not on the side
+        that is the authority, the kind's other pattern.
+
+    """
+    rule: EntryRule = ENTRY_RULES[kind]
+    if side != AUTHORITY_SIDE and rule.repository_id_pattern is not None:
+        return rule.repository_id_pattern
+    return rule.id_pattern
+
+
+def family_kinds(family: str) -> frozenset[RelationshipKind]:
+    """Name the relationship kinds of one family.
+
+    Returns:
+        Every kind the registry declares with that family; empty when it declares none.
+
+    """
+    return frozenset(kind for kind, rule in RELATIONSHIP_RULES.items() if rule.family == family)
+
+
+def _definitions() -> dict[str, JsonValue]:
+    """Assemble the definitions an attribute of a kind may reference.
+
+    Returns:
+        The registry's own definitions, the entry id and the controlled resource types.
+
+    """
+    return {
+        **_object(load_registry().get("$defs"), "$defs"),
+        "entryId": _object(load_schema().get("$defs"), "$defs").get("entryId"),
+        "resourceType": {"enum": list(RESOURCE_TYPES)},
+    }
+
+
+def _attribute_validator(table: str, kind: str, required: Sequence[str]) -> Draft202012Validator:
+    """Build the validator of the attributes one kind declares.
+
+    Returns:
+        A validator that accepts exactly the declared attributes, with the required ones present.
+
+    """
+    rule: dict[str, JsonValue] = _object(_object(load_registry().get(table), table).get(kind), f"{table}/{kind}")
+    return Draft202012Validator(
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": list(required),
+            "properties": _object(rule.get("attributes"), f"{table}/{kind}/attributes"),
+            "$defs": _definitions(),
+        },
+    )
+
+
+@cache
+def _entry_validator(kind: EntryKind) -> Draft202012Validator:
+    """Build the validator of the attributes of one entry kind.
+
+    Returns:
+        The validator.
+
+    """
+    return _attribute_validator("entryKinds", kind, sorted(ENTRY_RULES[kind].required))
+
+
+@cache
+def _relationship_validator(kind: RelationshipKind) -> Draft202012Validator:
+    """Build the validator of the attributes of one relationship kind.
+
+    Returns:
+        The validator.
+
+    """
+    return _attribute_validator("relationshipKinds", kind, sorted(RELATIONSHIP_RULES[kind].required))
+
+
+@cache
+def _shape_validator(definition: str | None) -> Draft202012Validator:
+    """Build the validator of a matrix file, or of one $defs entry of its schema.
 
     Returns:
         The validator.
@@ -1040,11 +1278,27 @@ def _validator(definition: str | None) -> Draft202012Validator:
     schema: dict[str, JsonValue] = load_schema()
     if definition is None:
         return Draft202012Validator(schema)
-    definitions: JsonValue = schema.get("$defs")
-    if not isinstance(definitions, dict) or definition not in definitions:
+    definitions: dict[str, JsonValue] = _object(schema.get("$defs"), "$defs")
+    if definition not in definitions:
         message: str = f"matrix schema defines no {definition!r}"
         raise ValueError(message)
     return Draft202012Validator({"$ref": "#/$defs/" + definition, "$defs": definitions})
+
+
+def _failures(validator: Draft202012Validator, value: object) -> list[str]:
+    """Describe every way a value fails a validator.
+
+    Returns:
+        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+
+    """
+    problems: list[tuple[list[str], str]] = []
+    error: ValidationError
+    for error in validator.iter_errors(value):
+        path: list[str] = [str(part) for part in error.absolute_path]
+        detail: str = error.message if len(error.message) <= MESSAGE_LIMIT else error.message[:MESSAGE_LIMIT] + "..."
+        problems.append((path, f"{'/'.join(path) or '<root>'}: {detail}"))
+    return [text for _, text in sorted(problems)]
 
 
 def schema_problems(value: object, definition: str | None = None) -> list[str]:
@@ -1052,160 +1306,376 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
 
     Args:
         value: The decoded document.
-        definition: The $defs entry to validate against; None validates a matrix.
+        definition: The $defs entry to validate against; None validates a matrix file.
 
     Returns:
         One "<path>: <message>" per failure, in document order; empty when the value conforms.
 
     """
-    problems: list[tuple[list[str], str]] = []
-    for error in _validator(definition).iter_errors(value):
-        path: list[str] = [str(part) for part in error.absolute_path]
-        detail: str = error.message if len(error.message) <= MESSAGE_LIMIT else error.message[:MESSAGE_LIMIT] + "..."
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {detail}"))
-    return [text for _, text in sorted(problems)]
+    return _failures(_shape_validator(definition), value)
 
 
-def is_matrix(value: object) -> TypeIs[Matrix]:
-    """Tell whether a value satisfies the matrix schema.
+def entry_problems(entry: Entry) -> list[str]:
+    """Check one entry against the kind the registry declares for it.
 
     Returns:
-        True when the schema accepts the value as a matrix.
+        One sentence per way the entry breaks its kind: an id of another form or another kind, or
+        of the form the kind's entries have on the other side; a side the kind is never recorded
+        with; an empty name, an empty or repeated alias, a missing purpose, an attribute the kind
+        does not declare or a value it does not allow, or a verified mark on a kind that carries
+        none. Empty when the entry conforms.
 
     """
-    return _validator(None).is_valid(value)
+    rule: EntryRule = ENTRY_RULES[entry.kind]
+    pattern: re.Pattern[str] = id_pattern(entry.kind, entry.side)
+    problems: list[str] = []
+    if pattern.search(entry.id) is None:
+        problems.append(f"{entry.id}: the id of a {entry.kind} on the {entry.side} side must match {pattern.pattern}")
+    if rule.side is not None and entry.side != rule.side:
+        problems.append(f"{entry.id}: a {entry.kind} is always on the {rule.side} side, not the {entry.side} side")
+    if not entry.name.strip():
+        problems.append(f"{entry.id}: the name is empty")
+    if len(set(entry.aliases)) != len(entry.aliases) or not all(alias.strip() for alias in entry.aliases):
+        problems.append(f"{entry.id}: an alias is empty or repeated")
+    if rule.purpose_required and not entry.purpose.strip():
+        problems.append(f"{entry.id}: a {entry.kind} must state its purpose")
+    if entry.verified is not None and not rule.verifiable:
+        problems.append(f"{entry.id}: a {entry.kind} carries no verified mark")
+    if entry.verified is not None and not entry.verified.commit:
+        problems.append(f"{entry.id}: the verified mark names no commit")
+    problems.extend(
+        f"{entry.id}: {failure}" for failure in _failures(_entry_validator(entry.kind), dict(entry.attributes))
+    )
+    return problems
 
 
-def is_node(value: object) -> TypeIs[Node]:
-    """Tell whether a value satisfies the Node definition.
+def relationship_key(relationship: Relationship) -> str:
+    """Render the values of the key attributes of one relationship.
 
     Returns:
-        True when the schema accepts the value as one row.
+        Text that is equal for two relationships of one kind exactly when their key attributes are.
 
     """
-    return _validator("Node").is_valid(value)
+    values: list[JsonValue] = [relationship.attributes.get(name) for name in RELATIONSHIP_RULES[relationship.kind].key]
+    return json.dumps(values, sort_keys=True, ensure_ascii=False)
 
 
-def validate_matrix(value: object, where: str = "matrix") -> Matrix:
-    """Validate a matrix document.
+def relationship_label(relationship: Relationship) -> str:
+    """Name one relationship in a message.
 
     Returns:
-        The value, typed.
+        The start, the kind, the end and the side that states it.
+
+    """
+    return f"{relationship.start} {relationship.kind} {relationship.end} ({relationship.side})"
+
+
+def relationship_problems(relationship: Relationship) -> list[str]:
+    """Check one relationship against the kind the registry declares for it.
+
+    Whether its ends exist, and are of kinds it may join, is the store's to check.
+
+    Returns:
+        One sentence per attribute the kind does not declare or value it does not allow, for a
+        side the kind is never recorded with, and for a verified mark on a kind no build proves.
+        Empty when the relationship conforms.
+
+    """
+    rule: RelationshipRule = RELATIONSHIP_RULES[relationship.kind]
+    label: str = relationship_label(relationship)
+    problems: list[str] = []
+    if rule.side is not None and relationship.side != rule.side:
+        problems.append(f"{label}: a {relationship.kind} relationship is always on the {rule.side} side")
+    if relationship.verified is not None and not rule.proved_by_build:
+        problems.append(f"{label}: a {relationship.kind} relationship carries no verified mark")
+    if relationship.verified is not None and not relationship.verified.commit:
+        problems.append(f"{label}: the verified mark names no commit")
+    problems.extend(
+        f"{label}: {failure}"
+        for failure in _failures(_relationship_validator(relationship.kind), dict(relationship.attributes))
+    )
+    return problems
+
+
+def _raise_unless_shaped(value: object, definition: str | None, where: str) -> dict[str, JsonValue]:
+    """Require a decoded value to have one of the schema's shapes, and type it.
+
+    Returns:
+        The value as a JSON object.
 
     Raises:
-        MatrixError: The value does not satisfy the matrix schema.
+        MatrixError: The value does not have the shape, or holds something JSON does not.
 
     """
-    if is_matrix(value):
-        return value
-    problems: list[str] = schema_problems(value)
-    shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
-    message: str = f"{where} does not satisfy the matrix schema ({len(problems)} problems): {shown}"
-    raise MatrixError(message)
+    problems: list[str] = schema_problems(value, definition)
+    message: str
+    if problems:
+        shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
+        message = f"{where} does not satisfy the matrix schema ({len(problems)} problems): {shown}"
+        raise MatrixError(message)
+    try:
+        typed: JsonValue = json_value(value)
+    except TypeError as error:
+        message = f"{where} is not JSON: {error}"
+        raise MatrixError(message) from error
+    if not isinstance(typed, dict):
+        message = f"{where} is not a JSON object"
+        raise MatrixError(message)
+    return typed
 
 
-def is_review_scope(value: object) -> TypeIs[ReviewScope]:
-    """Tell whether a value satisfies the ReviewScope definition.
+def _string(value: JsonValue, where: str) -> str:
+    """Narrow a member of a matrix file to a string.
 
     Returns:
-        True when the schema accepts the value as a review scope.
-
-    """
-    return _validator("ReviewScope").is_valid(value)
-
-
-def validate_review_scope(value: object, where: str = "review scope") -> ReviewScope:
-    """Validate a review scope.
-
-    Returns:
-        The value, typed.
+        The string.
 
     Raises:
-        MatrixError: The value does not satisfy the ReviewScope definition.
+        MatrixError: The member is not a string.
 
     """
-    if is_review_scope(value):
-        return value
-    shown: str = "; ".join(schema_problems(value, "ReviewScope")[:PROBLEMS_SHOWN])
-    message: str = f"{where} does not satisfy ReviewScope: {shown}"
-    raise MatrixError(message)
+    if not isinstance(value, str):
+        message: str = f"{where} is not a string"
+        raise MatrixError(message)
+    return value
 
 
-def is_reviewer_scope(value: object) -> TypeIs[ReviewerScope]:
-    """Tell whether a value satisfies the ReviewerScope definition.
-
-    Returns:
-        True when the schema accepts the value as one reviewer's scope.
-
-    """
-    return _validator("ReviewerScope").is_valid(value)
-
-
-def validate_reviewer_scope(value: object, where: str = "reviewer scope") -> ReviewerScope:
-    """Validate the review scope one reviewer is handed.
+def _string_tuple(value: JsonValue, where: str) -> tuple[str, ...]:
+    """Narrow a member of a matrix file to a list of strings.
 
     Returns:
-        The value, typed.
+        The strings, in file order.
 
     Raises:
-        MatrixError: The value does not satisfy the ReviewerScope definition.
+        MatrixError: The member is not a list.
 
     """
-    if is_reviewer_scope(value):
-        return value
-    shown: str = "; ".join(schema_problems(value, "ReviewerScope")[:PROBLEMS_SHOWN])
-    message: str = f"{where} does not satisfy ReviewerScope: {shown}"
-    raise MatrixError(message)
+    if not isinstance(value, list):
+        message: str = f"{where} is not a list"
+        raise MatrixError(message)
+    return tuple(_string(item, where) for item in value)
 
 
-def is_statements(value: object) -> TypeIs[list[DisputedStatement]]:
-    """Tell whether a value is a list of disputed statements.
-
-    Returns:
-        True when the value is a list and the schema accepts each entry as a disputed statement.
-
-    """
-    return isinstance(value, list) and all(_validator("DisputedStatement").is_valid(entry) for entry in value)
-
-
-def is_provides(value: object) -> TypeIs[list[Provides]]:
-    """Tell whether a value is a list of provides entries.
+def _verified(value: JsonValue, where: str) -> Verified | None:
+    """Read the verified mark of an entry or a relationship.
 
     Returns:
-        True when the value is a list and the schema accepts each entry as a provides entry.
-
-    """
-    return isinstance(value, list) and all(_validator("Provides").is_valid(entry) for entry in value)
-
-
-def validate_node(value: object, where: str = "row") -> Node:
-    """Validate one row.
-
-    Returns:
-        The value, typed.
+        The mark, or None when the member is absent.
 
     Raises:
-        MatrixError: The value does not satisfy the Node definition.
+        MatrixError: The member is present and is not an object.
 
     """
-    if is_node(value):
-        return value
-    message: str = f"{where} does not satisfy Node: " + "; ".join(schema_problems(value, "Node")[:PROBLEMS_SHOWN])
-    raise MatrixError(message)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        message: str = f"{where}: verified is not an object"
+        raise MatrixError(message)
+    return Verified(commit=_string(value.get("commit"), f"{where}: verified.commit"))
+
+
+def _typed_entry(raw: Mapping[str, JsonValue], where: str) -> Entry:
+    """Build an entry from a JSON object that has the schema's Entry shape.
+
+    Returns:
+        The entry.
+
+    """
+    return Entry(
+        id=EntryId(_string(raw.get("id"), f"{where}: id")),
+        kind=entry_kind(_string(raw.get("kind"), f"{where}: kind")),
+        name=_string(raw.get("name"), f"{where}: name"),
+        side=as_side(_string(raw.get("side"), f"{where}: side")),
+        aliases=_string_tuple(raw.get("aliases"), f"{where}: aliases"),
+        purpose=_string(raw.get("purpose"), f"{where}: purpose"),
+        attributes={name: value for name, value in raw.items() if name not in ENTRY_MEMBERS},
+        verified=_verified(raw.get("verified"), where),
+    )
+
+
+def _typed_relationship(raw: Mapping[str, JsonValue], where: str) -> Relationship:
+    """Build a relationship from a JSON object that has the schema's Relationship shape.
+
+    Returns:
+        The relationship.
+
+    """
+    return Relationship(
+        kind=relationship_kind(_string(raw.get("kind"), f"{where}: kind")),
+        start=EntryId(_string(raw.get("from"), f"{where}: from")),
+        end=EntryId(_string(raw.get("to"), f"{where}: to")),
+        side=as_side(_string(raw.get("side"), f"{where}: side")),
+        attributes={name: value for name, value in raw.items() if name not in RELATIONSHIP_MEMBERS},
+        verified=_verified(raw.get("verified"), where),
+    )
+
+
+def parse_entry(value: object, where: str = "entry") -> Entry:
+    """Read one entry from decoded JSON.
+
+    The entry has the generic shape and a kind the registry declares; whether it satisfies that
+    kind is for :func:`entry_problems` to say. A value of another shape, or of an undeclared
+    kind, raises ``MatrixError``.
+
+    Args:
+        value: The decoded entry, as a matrix file holds it.
+        where: What to call the entry in an error.
+
+    Returns:
+        The entry.
+
+    """
+    return _typed_entry(_raise_unless_shaped(value, "Entry", where), where)
+
+
+def parse_relationship(value: object, where: str = "relationship") -> Relationship:
+    """Read one relationship from decoded JSON.
+
+    The relationship has the generic shape and a kind the registry declares; whether it satisfies
+    that kind is for :func:`relationship_problems` to say. A value of another shape, or of an
+    undeclared kind, raises ``MatrixError``.
+
+    Args:
+        value: The decoded relationship, as a matrix file holds it.
+        where: What to call the relationship in an error.
+
+    Returns:
+        The relationship.
+
+    """
+    return _typed_relationship(_raise_unless_shaped(value, "Relationship", where), where)
+
+
+def parse_document(value: object, where: str = "matrix") -> MatrixDocument:
+    """Read a matrix file from decoded JSON.
+
+    The file has the generic shape and every entry and relationship is of a kind the registry
+    declares; a file of another shape or with an undeclared kind raises ``MatrixError`` from the
+    reader that finds it. Whether each entry and relationship satisfies its kind is for
+    :func:`entry_problems` and :func:`relationship_problems` to say.
+
+    Args:
+        value: The decoded file.
+        where: What to call the file in an error.
+
+    Returns:
+        The file, typed.
+
+    Raises:
+        MatrixError: An entry is filed under an id that is not its own.
+
+    """
+    raw: dict[str, JsonValue] = _raise_unless_shaped(value, None, where)
+    entries: list[Entry] = []
+    key: str
+    item: JsonValue
+    for key, item in _object(raw.get("entries"), "entries").items():
+        entry: Entry = _typed_entry(_object(item, key), f"{where}: the entry {key}")
+        if entry.id != key:
+            message: str = f"{where}: the entry filed under {key} says its id is {entry.id}"
+            raise MatrixError(message)
+        entries.append(entry)
+    listed: JsonValue = raw.get("relationships")
+    relationships: list[Relationship] = [
+        _typed_relationship(_object(item, "relationships"), f"{where}: relationship {index}")
+        for index, item in enumerate(listed if isinstance(listed, list) else [])
+    ]
+    return MatrixDocument(entries=tuple(entries), relationships=tuple(relationships))
+
+
+def _verified_json(verified: Verified) -> dict[str, JsonValue]:
+    """Render a verified mark as a matrix file holds it.
+
+    Returns:
+        The ``verified`` member.
+
+    """
+    return {"commit": verified.commit}
+
+
+def entry_json(entry: Entry) -> dict[str, JsonValue]:
+    """Render one entry as a matrix file holds it.
+
+    Returns:
+        The common members, the entry's attributes and, when set, the verified mark.
+
+    """
+    aliases: list[JsonValue] = list(entry.aliases)
+    rendered: dict[str, JsonValue] = {
+        **entry.attributes,
+        "id": entry.id,
+        "kind": entry.kind,
+        "name": entry.name,
+        "side": entry.side,
+        "aliases": aliases,
+        "purpose": entry.purpose,
+    }
+    if entry.verified is not None:
+        rendered["verified"] = _verified_json(entry.verified)
+    return rendered
+
+
+def relationship_json(relationship: Relationship) -> dict[str, JsonValue]:
+    """Render one relationship as a matrix file holds it.
+
+    Returns:
+        The kind, both ends, the side, the relationship's attributes and, when set, the verified mark.
+
+    """
+    rendered: dict[str, JsonValue] = {
+        **relationship.attributes,
+        "kind": relationship.kind,
+        "from": relationship.start,
+        "to": relationship.end,
+        "side": relationship.side,
+    }
+    if relationship.verified is not None:
+        rendered["verified"] = _verified_json(relationship.verified)
+    return rendered
+
+
+def relationship_order(relationship: Relationship) -> tuple[str, str, str, str, str]:
+    """Give the position of one relationship in a matrix file.
+
+    Returns:
+        The start, the kind, the end, the key and the side, which a file's relationships are sorted by.
+
+    """
+    return (
+        relationship.start,
+        relationship.kind,
+        relationship.end,
+        relationship_key(relationship),
+        relationship.side,
+    )
+
+
+def document_json(document: MatrixDocument) -> dict[str, JsonValue]:
+    """Render a matrix as its file holds it.
+
+    Returns:
+        The three members of the file, with the relationships in file order.
+
+    """
+    entries: dict[str, JsonValue] = {entry.id: entry_json(entry) for entry in document.entries}
+    relationships: list[JsonValue] = [
+        relationship_json(relationship) for relationship in sorted(document.relationships, key=relationship_order)
+    ]
+    return {"version": VERSION, "entries": entries, "relationships": relationships}
 '''
 
 
-def load_schema() -> dict[str, JsonValue]:
-    """Read the schema file.
+def _load(path: Path) -> dict[str, JsonValue]:
+    """Read one of the two source files.
 
     A read failure (OSError) or a decode failure (json.JSONDecodeError) propagates unchanged.
 
     Returns:
-        The schema document.
+        The decoded file.
 
     """
-    decoded: object = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    return _node(_json_value(decoded), ROOT)
+    decoded: object = json.loads(path.read_text(encoding="utf-8"))
+    return _node(_json_value(decoded), str(path))
 
 
 def main() -> int:
@@ -1225,11 +1695,11 @@ def main() -> int:
     if not isinstance(check, bool):
         message: str = "--check must be a flag"
         raise TypeError(message)
-    expected: str = render(load_schema())
+    expected: str = render(_load(SCHEMA_PATH), _load(REGISTRY_PATH))
     if check:
         current: str | None = OUTPUT_PATH.read_text(encoding="utf-8") if OUTPUT_PATH.is_file() else None
         if current != expected:
-            sys.stderr.write(f"{OUTPUT_PATH} is stale against {SCHEMA_PATH}; run {Path(__file__).name}\n")
+            sys.stderr.write(f"{OUTPUT_PATH} is stale against its sources; run {Path(__file__).name}\n")
             return 1
         return 0
     OUTPUT_PATH.write_text(expected, encoding="utf-8")

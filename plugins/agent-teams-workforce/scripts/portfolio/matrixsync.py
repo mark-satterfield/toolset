@@ -1,172 +1,236 @@
-"""Bring the matrix up to date with the vault's architecture documents and with the Epics' PRDs.
+"""Bring the matrix up to date with the vault's arc42 documents and with the Epics' PRDs.
 
 Two operations, both rules with no judgment in them:
 
-- :func:`sync_documents` reads the architecture documents that changed since the vault commit the
-  matrix last read, records each heading's hash and the document's lifecycle, and marks what an
-  edit made out of date: a heading whose text no longer matches the hash recorded at approval,
-  every fact and supporting feature whose home is that heading, and every settled disagreement
-  whose losing statement is gone.
-- :func:`sync_prds` gives every Epic one ``prd`` row holding its PRD file, the hash of that file
-  and the Epic id. A PRD whose hash changed is not assessed any more.
+- :func:`sync_documents` (``sync-documents``) mirrors the arc42 documents: one ``document`` entry
+  per document that is effective, in review or draft, holding its front matter, its heading texts
+  and its hash; one ``describedBy`` relationship per name in the document's ``shows`` and
+  ``subject`` that is the name or an alias of exactly one entry; and no entry for a document that
+  is gone. It reads every document, or exactly the files the caller names.
+- :func:`sync_epics` (``sync-epics``) gives every Epic one ``epic`` entry holding its PRD's path
+  and hash, and one ``requirement`` entry per ``####`` heading under the PRD's ``## Requirements``
+  heading, joined to the Epic by ``hasRequirement``. An Epic with no PRD file gets an entry that
+  records no PRD.
 
-Neither writes to beads, and the one thing either side of this module writes to the vault is the
-lifecycle line of a document's front matter (:func:`set_lifecycle`): in-review when an Epic's
-read finds a heading nobody has reviewed in an effective document (:func:`hold_for_review`), and
-effective again when the review approves it. Git and ``bd`` are the only programs run.
+Everything both record is on the architecture side: beads, a PRD or an arc42 document states it.
+
+Neither writes to beads. The one thing this module writes to the vault is the lifecycle line of a
+document's front matter (:func:`set_lifecycle`), for the step that promotes a document; a
+document entry's ``lifecycle`` only mirrors that line. Git is the only program run here; beads is
+read through ``beadgraph``.
 """
 
 import hashlib
-import json
 import re
 import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resolved git and bd executables with a separate argv and no shell.
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resolved git executable with a separate argv and no shell.
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import TYPE_CHECKING, Final, Literal, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+import beadgraph
 from matrix_contract import (
-    APPROVAL_APPROVED,
-    APPROVAL_CHANGED_SINCE_APPROVAL,
-    APPROVAL_UNVERIFIED,
-    COVERAGE_NOT_ASSESSED,
-    DISAGREEMENT_APPLIED,
-    DISAGREEMENT_SETTLED,
-    DOCUMENT_ROOTS,
-    KIND_DISAGREEMENT,
+    AUTHORITY_SIDE,
     KIND_DOCUMENT,
-    KIND_FACT,
-    KIND_PRD,
-    LIFECYCLE_DRAFT,
-    LIFECYCLE_EFFECTIVE,
-    LIFECYCLE_IN_REVIEW,
-    LIFECYCLE_RETIRED,
-    LIFECYCLES,
-    Anchor,
-    Approval,
-    ApprovalState,
-    Claim,
-    DisagreementStatus,
-    DisputedStatement,
-    DocumentClass,
-    DocumentsSyncedAt,
-    HeadingHash,
-    Lifecycle,
-    Matrix,
+    KIND_EPIC,
+    KIND_REQUIREMENT,
+    REL_DESCRIBED_BY,
+    REL_HAS_REQUIREMENT,
+    RELATIONSHIP_RULES,
+    SIDE_ARCHITECTURE,
+    Entry,
+    EntryId,
+    EntryKind,
+    JsonValue,
     MatrixError,
-    Node,
-    NodeId,
+    Relationship,
+    relationship_json,
 )
-from matrixstore import Stamp, heading_state, make_id
+from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, slug
 
+if TYPE_CHECKING:
+    from contracts import JsonObject
+    from contracts import JsonValue as BeadValue
+
+type Lifecycle = Literal["effective", "in-review", "draft"]
+
+LIFECYCLE_EFFECTIVE: Final[Lifecycle] = "effective"
+LIFECYCLE_IN_REVIEW: Final[Lifecycle] = "in-review"
+LIFECYCLE_DRAFT: Final[Lifecycle] = "draft"
+LIFECYCLES: Final[tuple[Lifecycle, ...]] = (LIFECYCLE_EFFECTIVE, LIFECYCLE_IN_REVIEW, LIFECYCLE_DRAFT)
+"""The lifecycles of a document the matrix holds an entry for."""
 FENCE: Final = "---"
 LIFECYCLE_KEY: Final = "lifecycle_state"
 """The front matter key that states a document's lifecycle."""
 CODE_FENCES: Final[tuple[str, ...]] = ("```", "~~~")
 MARKDOWN_SUFFIX: Final = ".md"
+ARC42_FOLDER: Final = "arc42"
+"""The folder of the architecture root that holds the arc42 documents."""
 PREAMBLE: Final = "(preamble)"
 """The key of the text a document holds before its first heading."""
-PRD_LABEL_PREFIX: Final = "prd:"
-"""An Epic names its PRD with a label of this prefix followed by the PRD file's stem."""
 EPIC_TYPE: Final = "epic"
+"""The beads issue type of an Epic."""
+PRD_LABEL_PREFIX: Final = "prd:"
+"""What opens the beads label that names an Epic's PRD file by its stem."""
+REQUIREMENTS_HEADING: Final = "requirements"
+"""The second-level heading of a PRD that holds its requirements, as names are compared."""
+SECTION_LEVEL: Final = 2
+GROUP_LEVEL: Final = 3
+REQUIREMENT_LEVEL: Final = 4
 FIRST_SECTION: Final = 1
 LAST_SECTION: Final = 12
-QUOTE_PAIR: Final = 2
-_HEADING: Final[re.Pattern[str]] = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
-_TITLE: Final[re.Pattern[str]] = re.compile(r"^#\s+(.*?)\s*#*\s*$")
+DESCRIBED_KINDS: Final[frozenset[EntryKind]] = RELATIONSHIP_RULES[REL_DESCRIBED_BY].sources
+"""The kinds of entry a document may describe."""
+_HEADING: Final[re.Pattern[str]] = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _SECTION: Final[re.Pattern[str]] = re.compile(r"^(\d{2})-")
-_RENAMED: Final = "RC"
-_SLUG_DROPPED: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9 -]")
-CONSTRAINTS_SECTION: Final = 2
-"""The arc42 section that holds the owner's constraints, which no pipeline step may change."""
+_DOUBLE_QUOTED: Final[re.Pattern[str]] = re.compile(r'^"((?:[^"\\]|\\.)*)"')
+_SINGLE_QUOTED: Final[re.Pattern[str]] = re.compile(r"^'((?:[^']|'')*)'")
+_ESCAPED: Final[re.Pattern[str]] = re.compile(r"\\(.)")
+_IDENTIFIER: Final[re.Pattern[str]] = re.compile(r"^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)(?![A-Za-z0-9-])")
+"""The identifier that opens a requirement heading: upper-case words and numbers joined by hyphens."""
 
 
 @dataclass(frozen=True, slots=True)
 class DocumentRead:
-    """One architecture document as the vault holds it now."""
+    """One arc42 document as the vault holds it now."""
 
     path: str
-    """The file, relative to the vault root, with forward slashes."""
-    document_class: DocumentClass
+    """The file, relative to the architecture root, with forward slashes."""
     title: str
-    lifecycle: Lifecycle
+    lifecycle: Lifecycle | None
+    """None when the front matter states a lifecycle the matrix holds no entry for."""
     lifecycle_stated: bool
-    """False when the front matter states no lifecycle the contract knows; the document is then a draft."""
+    """False when the front matter states no lifecycle; the document is then a draft."""
     section: int | None
     view_type: str | None
     scope: str | None
     subject: str | None
     shows: tuple[str, ...]
-    headings: Mapping[str, str]
-    """Each heading's key and the hash of its own text."""
-    text: str
-    """The document's body with runs of white space collapsed, for finding a quoted statement."""
+    headings: tuple[str, ...]
+    """The heading texts, in document order; a text that repeats is ``<text> (2)`` and so on."""
+    digest: str
+    """The hash of the whole file."""
 
 
 @dataclass(frozen=True, slots=True)
-class VaultChange:
-    """What changed in the vault's architecture documents since the matrix last read them."""
-
-    commit: str
-    paths: tuple[str, ...]
-    """Every document to read again, existing or deleted."""
-    dirty: tuple[str, ...]
-    """The documents that differ from ``commit`` in the working tree."""
-    full: bool
-    """True when every document is read because the last read cannot be compared with."""
-
-
-@dataclass(frozen=True, slots=True)
-class Epic:
-    """One Epic as beads holds it, reduced to what a PRD row needs."""
+class EpicBead:
+    """One Epic as beads holds it, reduced to what an epic entry needs."""
 
     bead: str
     title: str
-    stems: tuple[str, ...]
-    """The PRD file stems its labels name."""
+    prd_stems: tuple[str, ...] = ()
+    """The PRD file stems the Epic's ``prd:`` labels name, lower-cased, in order."""
+
+
+@dataclass(frozen=True, slots=True)
+class PrdSource:
+    """Where one read of the Epics finds a PRD file."""
+
+    vault: Path
+    """The vault root, which every recorded PRD path is relative to."""
+    given: str | None
+    """The PRD file the caller gave for the one Epic read; None when it gave none."""
+    files: Mapping[str, Sequence[str]]
+    """The PRD folder's files by stem, lower-cased, each relative to the vault root."""
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementRead:
+    """One requirement of a PRD: one ``####`` heading under ``## Requirements``."""
+
+    key: str
+    """The identifier that opens the heading, else the slug of the heading."""
+    name: str
+    """The heading text."""
+    group: str
+    """The ``###`` heading above it; empty when it has none."""
+    digest: str
+    """The hash of the requirement's own text."""
+
+
+class Described(TypedDict):
+    """One ``describedBy`` relationship a read added."""
+
+    entry: EntryId
+    document: EntryId
+
+
+class ShownName(TypedDict):
+    """A name a document's ``shows`` or ``subject`` states that is the name of no entry."""
+
+    document: str
+    name: str
+
+
+class AmbiguousName(TypedDict):
+    """A name a document states that more than one entry answers to, so none was joined to it."""
+
+    document: str
+    name: str
+    entries: list[EntryId]
 
 
 class DocumentsSynced(TypedDict):
     """What :func:`sync_documents` did: also what ``sync-documents`` prints."""
 
-    vaultCommit: str
-    skipped: bool
-    """True when the vault is at the commit last read and no document differs from it."""
-    full: bool
     read: int
+    """How many documents were read from the vault."""
     added: list[str]
     changed: list[str]
-    retired: list[str]
-    headingsChanged: list[Anchor]
-    """Every heading that no longer matches the hash recorded at its approval."""
-    rowsChanged: list[NodeId]
-    """Every fact, feature and disagreement whose marker the read changed."""
+    removed: list[str]
+    """The documents whose entry was removed: the file is gone, or is no longer one the matrix holds."""
+    described: list[Described]
+    unresolved: list[ShownName]
+    ambiguous: list[AmbiguousName]
     lifecycleNotStated: list[str]
-    inReview: list[str]
-    """Every effective document whose front matter this read set to in-review, for the Epic that changed it."""
+    leftOut: list[str]
+    """Files looked at that get no entry: outside the arc42 folder, or of a lifecycle the matrix does not hold."""
 
 
-class UnresolvedPrd(TypedDict):
-    """An Epic that could not be given a PRD row, and why."""
+class EpicWithoutPrd(TypedDict):
+    """An Epic whose entry records no PRD after the read, and why."""
 
     bead: str
     reason: str
 
 
-class PrdsSynced(TypedDict):
-    """What :func:`sync_prds` did: also what ``sync-prds`` prints."""
+class Carried(TypedDict):
+    """One requirement whose relationships carried over to the requirement that replaced it in its group."""
 
-    created: list[NodeId]
-    refreshed: list[NodeId]
-    """Rows whose PRD hash changed and whose coverage is not assessed any more."""
+    was: EntryId
+    now: EntryId
+
+
+class RemovedRequirement(TypedDict):
+    """One requirement the PRD no longer states, with the relationships removed with it."""
+
+    id: EntryId
+    name: str
+    relationships: list[dict[str, JsonValue]]
+    """Every relationship it had besides ``hasRequirement``, for the run that corrects them."""
+
+
+class EpicsSynced(TypedDict):
+    """What :func:`sync_epics` did: also what ``sync-epics`` prints."""
+
+    created: list[EntryId]
+    refreshed: list[EntryId]
+    """Epics whose title, PRD path or PRD hash changed."""
     unchanged: int
-    unresolved: list[UnresolvedPrd]
+    requirementsAdded: list[EntryId]
+    requirementsChanged: list[EntryId]
+    requirementsCarried: list[Carried]
+    requirementsRemoved: list[RemovedRequirement]
+    noPrd: list[EpicWithoutPrd]
+    """The Epics given whose PRD file is not known or cannot be read; each has an entry all the same."""
+    unnamedPrds: list[str]
+    """The Markdown files under the PRD folder that no epic entry names, relative to the vault root."""
 
 
 def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
@@ -203,7 +267,7 @@ def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def program_output(executable: str, arguments: Sequence[str], folder: Path) -> str:
-    """Run git or bd for another matrix module and return what it printed.
+    """Run git for another matrix module and return what it printed.
 
     A program that is not installed, cannot be started or exits non-zero raises ``MatrixError``.
 
@@ -242,35 +306,40 @@ def vault_root(folder: Path) -> Path:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def relative_path(path: Path, vault: Path) -> str:
-    """Name a file the way the matrix records it.
+def relative_path(path: Path, root: Path) -> str:
+    """Name a file by its path under a folder.
 
     Args:
         path: The file.
-        vault: The vault root.
+        root: The folder: the vault root for a PRD, the architecture root for a document.
 
     Returns:
-        The path relative to the vault root with forward slashes; the absolute path when the file
-        is outside the vault.
+        The path relative to the folder with forward slashes; the absolute path when the file is
+        outside it.
 
     """
     resolved: Path = path.resolve()
-    if resolved.is_relative_to(vault):
-        return resolved.relative_to(vault).as_posix()
+    if resolved.is_relative_to(root):
+        return resolved.relative_to(root).as_posix()
     return resolved.as_posix()
 
 
-def _unquote(value: str) -> str:
-    """Strip one pair of matching quotes from a front matter scalar.
+def _scalar(value: str) -> str:
+    """Read one front matter scalar.
 
     Returns:
-        The scalar without its quotes.
+        The text inside a pair of quotes, with its escapes resolved; otherwise the text before a
+        trailing comment.
 
     """
     stripped: str = value.strip()
-    if len(stripped) >= QUOTE_PAIR and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
-        return stripped[1:-1]
-    return stripped
+    double: re.Match[str] | None = _DOUBLE_QUOTED.match(stripped)
+    if double is not None:
+        return _ESCAPED.sub(r"\1", double.group(1))
+    single: re.Match[str] | None = _SINGLE_QUOTED.match(stripped)
+    if single is not None:
+        return single.group(1).replace("''", "'")
+    return stripped.partition(" #")[0].strip()
 
 
 def _front_matter(lines: Sequence[str]) -> tuple[dict[str, str], tuple[str, ...], int]:
@@ -293,7 +362,7 @@ def _front_matter(lines: Sequence[str]) -> tuple[dict[str, str], tuple[str, ...]
     line: str
     for line in lines[1:close]:
         if line.lstrip().startswith("- ") and current == "shows":
-            shows.append(_unquote(line.lstrip()[2:]))
+            shows.append(_scalar(line.lstrip()[2:]))
             continue
         if ":" not in line or line[:1].isspace():
             continue
@@ -301,9 +370,9 @@ def _front_matter(lines: Sequence[str]) -> tuple[dict[str, str], tuple[str, ...]
         rest: str
         key, _, rest = line.partition(":")
         current = key.strip()
-        scalars[current] = _unquote(rest)
+        scalars[current] = _scalar(rest)
         if current == "shows" and rest.strip().startswith("[") and rest.strip().endswith("]"):
-            shows.extend(_unquote(value) for value in rest.strip()[1:-1].split(",") if value.strip())
+            shows.extend(_scalar(value) for value in rest.strip()[1:-1].split(",") if value.strip())
     return scalars, tuple(name for name in dict.fromkeys(shows) if name), close + 1
 
 
@@ -311,10 +380,9 @@ def _front_matter(lines: Sequence[str]) -> tuple[dict[str, str], tuple[str, ...]
 def heading_texts(body: Sequence[str]) -> dict[str, str]:
     """Split a document body into its headings, each with its own text.
 
-    A heading's own text is its heading line and everything up to the next heading of any level,
-    so a change under a sub-heading changes that sub-heading only. A ``#`` line inside a fenced
-    code block is not a heading. A heading text that repeats within the document gets the key
-    ``<text> (2)``, ``<text> (3)`` and so on.
+    A heading's own text is its heading line and everything up to the next heading of any level.
+    A ``#`` line inside a fenced code block is not a heading. A heading text that repeats within
+    the document gets the key ``<text> (2)``, ``<text> (3)`` and so on.
 
     Args:
         body: The document's lines after its front matter.
@@ -334,7 +402,7 @@ def heading_texts(body: Sequence[str]) -> dict[str, str]:
             fenced = not fenced
         match: re.Match[str] | None = None if fenced else _HEADING.match(line)
         if match is not None:
-            title: str = match.group(1) or line.strip()
+            title: str = match.group(2) or line.strip()
             seen[title] = seen.get(title, 0) + 1
             key = title if seen[title] == 1 else f"{title} ({seen[title]})"
         texts.setdefault(key, []).append(line.rstrip())
@@ -358,17 +426,17 @@ def _section(relative: str) -> int | None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def parse_document(relative: str, document_class: DocumentClass, text: str) -> DocumentRead:
-    """Read what the matrix records of one architecture document from its text.
+def parse_document(relative: str, text: str) -> DocumentRead:
+    """Read what the matrix records of one arc42 document from its text.
 
     Args:
-        relative: The file, relative to the vault root.
-        document_class: The class of document the file's folder holds.
+        relative: The file, relative to the architecture root.
         text: The whole file.
 
     Returns:
-        The document's lifecycle, catalog keys, headings with the hash of each heading's own
-        text, and its body for finding quoted statements.
+        The document's lifecycle, catalog keys, heading texts and hash. A document whose front
+        matter states no lifecycle is a draft; one that states a lifecycle other than effective,
+        in-review or draft has none the matrix holds.
 
     Raises:
         ValueError: ``relative`` is empty.
@@ -382,59 +450,47 @@ def parse_document(relative: str, document_class: DocumentClass, text: str) -> D
     shows: tuple[str, ...]
     start: int
     scalars, shows, start = _front_matter(lines)
-    body: list[str] = lines[start:]
+    headings: dict[str, str] = heading_texts(lines[start:])
     stated: str = scalars.get(LIFECYCLE_KEY, "")
-    lifecycle: Lifecycle = next((choice for choice in LIFECYCLES if choice == stated), LIFECYCLE_DRAFT)
-    titles: list[str] = [match.group(1) for match in map(_TITLE.match, body) if match is not None]
+    lifecycle: Lifecycle | None = (
+        next((choice for choice in LIFECYCLES if choice == stated), None) if stated else LIFECYCLE_DRAFT
+    )
+    titles: list[str] = [key for key in headings if key != PREAMBLE and headings[key].startswith("# ")]
     subject: str | None = scalars.get("subject") or None
     return DocumentRead(
         path=relative,
-        document_class=document_class,
         title=(titles[0] if titles else "") or subject or Path(relative).stem,
         lifecycle=lifecycle,
-        lifecycle_stated=stated == lifecycle,
+        lifecycle_stated=bool(stated),
         section=_section(relative),
         view_type=scalars.get("view_type") or None,
         scope=scalars.get("scope") or None,
         subject=subject,
         shows=shows,
-        headings={key: hashlib.sha256(own.encode()).hexdigest() for key, own in heading_texts(body).items()},
-        text=" ".join("\n".join(body).split()),
+        headings=tuple(key for key in headings if key != PREAMBLE),
+        digest=hashlib.sha256(text.encode()).hexdigest(),
     )
 
 
-def _class_roots(vault: Path, arch: Path) -> dict[str, DocumentClass]:
-    """Name the folder of each class of document the read covers.
+def _is_document(relative: str) -> bool:
+    """Tell whether a path under the architecture root is an arc42 document.
 
     Returns:
-        Each folder, relative to the vault root, and the class of document it holds.
+        True for a Markdown file under the arc42 folder.
 
     """
-    return {relative_path(arch / folder, vault): document_class for document_class, folder in DOCUMENT_ROOTS.items()}
-
-
-def _class_of(relative: str, roots: Mapping[str, DocumentClass]) -> DocumentClass | None:
-    """Find the class of document a path belongs to.
-
-    Returns:
-        The class of the folder the Markdown file is under, or None when it is under none.
-
-    """
-    if not relative.endswith(MARKDOWN_SUFFIX):
-        return None
-    return next((kind for root, kind in roots.items() if relative.startswith(root + "/")), None)
+    return relative.endswith(MARKDOWN_SUFFIX) and relative.startswith(ARC42_FOLDER + "/")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_documents(vault: Path, arch: Path, paths: Sequence[str] | None = None) -> list[DocumentRead]:
-    """Read architecture documents from the vault.
+def read_documents(arch: Path, paths: Sequence[str] | None = None) -> list[DocumentRead]:
+    """Read arc42 documents from the vault.
 
     Args:
-        vault: The vault root.
         arch: The architecture root inside the vault.
-        paths: The documents to read, relative to the vault root; None reads every document. A
-            path that is not a Markdown file under a document folder, or no longer exists, is
-            left out.
+        paths: The documents to read, relative to the architecture root; None reads every
+            document. A path that is not a Markdown file under the arc42 folder, or no longer
+            exists, is left out.
 
     Returns:
         The documents read, in path order.
@@ -443,416 +499,232 @@ def read_documents(vault: Path, arch: Path, paths: Sequence[str] | None = None) 
         MatrixError: A document cannot be read.
 
     """
-    roots: dict[str, DocumentClass] = _class_roots(vault, arch)
+    root: Path = arch.expanduser().resolve()
     wanted: list[str] = (
-        sorted(relative_path(path, vault) for root in roots for path in (vault / root).rglob("*" + MARKDOWN_SUFFIX))
+        sorted(relative_path(path, root) for path in (root / ARC42_FOLDER).rglob("*" + MARKDOWN_SUFFIX))
         if paths is None
         else sorted(set(paths))
     )
     documents: list[DocumentRead] = []
     relative: str
     for relative in wanted:
-        document_class: DocumentClass | None = _class_of(relative, roots)
-        if document_class is None or not (vault / relative).is_file():
+        if not _is_document(relative) or not (root / relative).is_file():
             continue
         try:
-            text: str = (vault / relative).read_text(encoding="utf-8")
+            text: str = (root / relative).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
-            message: str = f"cannot read the document {vault / relative}: {error}"
+            message: str = f"cannot read the document {root / relative}: {error}"
             raise MatrixError(message) from error
-        documents.append(parse_document(relative, document_class, text))
+        documents.append(parse_document(relative, text))
     return documents
 
 
-def _dirty_paths(vault: Path, roots: Sequence[str]) -> list[str]:
-    """List the files under the document folders that differ from the vault's commit.
+def _document_entry(document: DocumentRead, lifecycle: Lifecycle, existing: Entry | None) -> Entry:
+    """Build the entry of a document from the document as it is now.
 
     Returns:
-        Every modified, added, deleted or untracked path, and both names of a renamed one.
+        The entry: the document's front matter, heading texts and hash, with the aliases and the
+        purpose the entry already has.
 
     """
-    printed: str = _run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *roots], vault)
-    entries: list[str] = [entry for entry in printed.split("\0") if entry]
-    paths: list[str] = []
-    index: int = 0
-    while index < len(entries):
-        entry: str = entries[index]
-        paths.append(entry[3:])
-        if set(entry[:2]) & set(_RENAMED) and index + 1 < len(entries):
-            index += 1
-            paths.append(entries[index])
-        index += 1
-    return paths
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def vault_change(vault: Path, arch: Path, synced: DocumentsSyncedAt, *, full: bool = False) -> VaultChange:
-    """Work out which architecture documents to read again.
-
-    The documents to read are those git reports changed between the commit last read and the
-    present commit, those that differ from the present commit in the working tree, and those
-    that differed when they were last read. Every document is read when the caller asks, when
-    nothing was read before, or when git no longer knows the commit last read.
-
-    Args:
-        vault: The vault root.
-        arch: The architecture root inside the vault.
-        synced: What the matrix recorded at its last read.
-        full: Whether to read every document whatever git reports.
-
-    Returns:
-        The vault's present commit and the documents to read.
-
-    """
-    roots: dict[str, DocumentClass] = _class_roots(vault, arch)
-    commit: str = _run("git", ["rev-parse", "HEAD"], vault).strip()
-    dirty: list[str] = sorted(path for path in _dirty_paths(vault, list(roots)) if _class_of(path, roots) is not None)
-    everything: bool = full or not synced["vaultCommit"]
-    committed: list[str] = []
-    if not everything and synced["vaultCommit"] != commit:
-        compare: list[str] = ["diff", "--name-only", "-z", synced["vaultCommit"], commit, "--", *roots]
-        try:
-            printed: str = _run("git", compare, vault)
-        except MatrixError:
-            everything = True
-        else:
-            committed = [path for path in printed.split("\0") if _class_of(path, roots) is not None]
-    if everything:
-        present: list[str] = [document.path for document in read_documents(vault, arch)]
-        return VaultChange(commit=commit, paths=tuple(sorted({*present, *dirty})), dirty=tuple(dirty), full=True)
-    paths: set[str] = {*committed, *dirty, *synced["dirtyPaths"]}
-    return VaultChange(commit=commit, paths=tuple(sorted(paths)), dirty=tuple(dirty), full=False)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def placeholder(entry: HeadingHash) -> bool:
-    """Tell whether a heading entry only holds a claim on a heading that is not written yet.
-
-    Args:
-        entry: One heading entry of a document row.
-
-    Returns:
-        True when the heading is not in the document and was never approved.
-
-    """
-    return not entry["hash"] and entry["approvedHash"] is None
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def headings_match(headings: Mapping[str, HeadingHash]) -> bool:
-    """Tell whether every heading of a document is as it was approved.
-
-    Args:
-        headings: The heading entries of a document row.
-
-    Returns:
-        True when each heading is present and its hash equals the hash recorded at approval. An
-        entry that only holds a claim on a heading still to be written is left out.
-
-    """
-    return all(
-        bool(entry["hash"]) and entry["hash"] == entry["approvedHash"]
-        for entry in headings.values()
-        if not placeholder(entry)
+    headings: list[JsonValue] = list(document.headings)
+    attributes: dict[str, JsonValue] = {"lifecycle": lifecycle, "headings": headings, "hash": document.digest}
+    if document.section is not None:
+        attributes["section"] = document.section
+    if document.view_type is not None:
+        attributes["viewType"] = document.view_type
+    if document.scope is not None:
+        attributes["scope"] = document.scope
+    if document.subject is not None:
+        attributes["subject"] = document.subject
+    return Entry(
+        id=make_id(KIND_DOCUMENT, document.path),
+        kind=KIND_DOCUMENT,
+        name=document.title,
+        side=SIDE_ARCHITECTURE,
+        aliases=() if existing is None else existing.aliases,
+        purpose="" if existing is None else existing.purpose,
+        attributes=attributes,
     )
 
 
-def _merged_headings(read: DocumentRead, existing: Mapping[str, HeadingHash]) -> dict[str, HeadingHash]:
-    """Join the headings a document has now with the hashes recorded when it was approved.
+def _name_index(matrix: Matrix) -> dict[str, list[EntryId]]:
+    """Index the entries a document may describe by every name they answer to.
+
+    A document describes what the architecture states. A name that entries on both sides answer
+    to is therefore indexed to the architecture-side entries only; a name only repository-side
+    entries answer to is indexed to those.
 
     Returns:
-        One entry per present heading, keeping its approved hash and its claim; and one entry
-        with an empty hash per heading the document does not have that was approved or is claimed.
+        Each name and alias, as names are compared, with the ids of the entries that have it.
 
     """
-    merged: dict[str, HeadingHash] = {}
-    key: str
-    value: str
-    for key, value in read.headings.items():
-        merged[key] = {"hash": value, "approvedHash": existing[key]["approvedHash"] if key in existing else None}
-    entry: HeadingHash
-    for key, entry in existing.items():
-        if key not in merged and (entry["approvedHash"] is not None or "claim" in entry):
-            merged[key] = {"hash": "", "approvedHash": entry["approvedHash"]}
-        if key in merged and "claim" in entry:
-            merged[key]["claim"] = entry["claim"]
-    return merged
+    sided: dict[str, list[Entry]] = {}
+    entry: Entry
+    for entry in matrix.entries(DESCRIBED_KINDS):
+        key: str
+        for key in sorted({name_key(entry.name), *(name_key(alias) for alias in entry.aliases)}):
+            sided.setdefault(key, []).append(entry)
+    index: dict[str, list[EntryId]] = {}
+    found: list[Entry]
+    for key, found in sided.items():
+        stated: list[Entry] = [held for held in found if held.side == AUTHORITY_SIDE] or found
+        index[key] = [held.id for held in stated]
+    return index
 
 
-def _new_document(read: DocumentRead, stamp: Stamp) -> Node:
-    """Build the row of a document the matrix does not hold yet.
-
-    Returns:
-        The row: unverified, with no approved hash.
-
-    """
-    approval: Approval = {"state": APPROVAL_UNVERIFIED}
-    return {
-        "id": make_id(KIND_DOCUMENT, read.path),
-        "kind": KIND_DOCUMENT,
-        "name": read.title,
-        "links": [],
-        "changed": stamp.change(),
-        "path": read.path,
-        "documentClass": read.document_class,
-        "section": read.section,
-        "viewType": read.view_type,
-        "scope": read.scope,
-        "subject": read.subject,
-        "lifecycle": read.lifecycle,
-        "headings": {key: {"hash": value, "approvedHash": None} for key, value in read.headings.items()},
-        "approval": approval,
-    }
-
-
-def _document_state(current: ApprovalState, headings: Mapping[str, HeadingHash]) -> ApprovalState:
-    """Work out a document's approval state from its headings.
-
-    Returns:
-        Changed since approval for an approved document with a heading that differs; approved
-        again for such a document whose headings all match; otherwise the state it has.
-
-    """
-    matches: bool = headings_match(headings)
-    if current == APPROVAL_APPROVED and not matches:
-        return APPROVAL_CHANGED_SINCE_APPROVAL
-    if current == APPROVAL_CHANGED_SINCE_APPROVAL and matches:
-        return APPROVAL_APPROVED
-    return current
-
-
-def _apply_document(node: Node, read: DocumentRead | None, stamp: Stamp) -> bool:
-    """Correct a document row from the document as it is now, or from its absence.
-
-    Returns:
-        True when the row changed.
-
-    """
-    before: str = json.dumps(node, sort_keys=True)
-    existing: dict[str, HeadingHash] = node.get("headings", {})
-    if read is None:
-        node["lifecycle"] = LIFECYCLE_RETIRED
-        node["headings"] = {
-            key: {"hash": "", "approvedHash": entry["approvedHash"]}
-            for key, entry in existing.items()
-            if entry["approvedHash"] is not None
-        }
-    else:
-        node["name"] = read.title
-        node["section"] = read.section
-        node["viewType"] = read.view_type
-        node["scope"] = read.scope
-        node["subject"] = read.subject
-        node["lifecycle"] = read.lifecycle
-        node["headings"] = _merged_headings(read, existing)
-    unverified: Approval = {"state": APPROVAL_UNVERIFIED}
-    approval: Approval = node.get("approval", unverified)
-    if read is not None:
-        approval["state"] = _document_state(approval["state"], node["headings"])
-    elif approval["state"] == APPROVAL_APPROVED:
-        approval["state"] = APPROVAL_CHANGED_SINCE_APPROVAL
-    node["approval"] = approval
-    if json.dumps(node, sort_keys=True) == before:
-        return False
-    node["changed"] = stamp.change()
-    return True
-
-
-def _refresh_homes(matrix: Matrix, touched: set[str], stamp: Stamp) -> list[NodeId]:
-    """Correct the marker of every row whose home is a heading of a document that was read again.
-
-    Returns:
-        The ids of the rows whose approval state changed.
-
-    """
-    changed: list[NodeId] = []
-    node: Node
-    for node in matrix["nodes"].values():
-        home: Anchor | None = node.get("home")
-        approval: Approval | None = node.get("approval")
-        if home is None or approval is None or home["document"] not in touched:
-            continue
-        document: Node | None = matrix["nodes"].get(make_id(KIND_DOCUMENT, home["document"]))
-        if document is None:
-            continue
-        state: ApprovalState = heading_state(document, home["heading"], approval["state"])
-        if state != approval["state"]:
-            approval["state"] = state
-            node["changed"] = stamp.change()
-            changed.append(node["id"])
-    return changed
-
-
-def _disagreement_status(node: Node, texts: Mapping[str, str]) -> DisagreementStatus | None:
-    """Work out whether a settled disagreement has been applied to the documents.
-
-    Returns:
-        None when no statement that can be looked for names a document the vault holds. For a
-        settlement that names the statements that lost: applied when none of them is in its
-        document any more, else settled. For a carried note that names no loser: applied when a
-        statement is no longer in its document, else settled.
-
-    """
-    stated: list[DisputedStatement] = [
-        statement for statement in node.get("statements", []) if statement["document"] in texts
-    ]
-    losers: list[DisputedStatement] = [statement for statement in stated if statement.get("stands") is False]
-    ruled: bool = any("stands" in statement for statement in node.get("statements", []))
-    watched: list[DisputedStatement] = losers if ruled else stated
-    found: list[bool] = [" ".join(entry["text"].split()) in texts[entry["document"]] for entry in watched]
-    if not found:
-        return None
-    if ruled:
-        return DISAGREEMENT_SETTLED if any(found) else DISAGREEMENT_APPLIED
-    return DISAGREEMENT_SETTLED if all(found) else DISAGREEMENT_APPLIED
-
-
-def _refresh_disagreements(matrix: Matrix, vault: Path, arch: Path, touched: set[str], stamp: Stamp) -> list[NodeId]:
-    """Correct the status of every settled disagreement that quotes a document that was read again.
-
-    Returns:
-        The ids of the disagreement rows whose status changed.
-
-    """
-    watched: list[Node] = [
-        node
-        for node in matrix["nodes"].values()
-        if node["kind"] == KIND_DISAGREEMENT
-        and node.get("disagreementStatus") in {DISAGREEMENT_SETTLED, DISAGREEMENT_APPLIED}
-        and any(statement["document"] in touched for statement in node.get("statements", []))
-    ]
-    quoted: set[str] = {statement["document"] for node in watched for statement in node.get("statements", [])}
-    texts: dict[str, str] = {document.path: document.text for document in read_documents(vault, arch, sorted(quoted))}
-    changed: list[NodeId] = []
-    node: Node
-    for node in watched:
-        status: DisagreementStatus | None = _disagreement_status(node, texts)
-        if status is not None and status != node.get("disagreementStatus"):
-            node["disagreementStatus"] = status
-            node["changed"] = stamp.change()
-            changed.append(node["id"])
-    return changed
-
-
-def _document_rows(matrix: Matrix) -> dict[str, Node]:
-    """Index the document rows of the classes the read covers by their path.
-
-    Returns:
-        Each such document's path and its row.
-
-    """
-    return {
-        node["path"]: node
-        for node in matrix["nodes"].values()
-        if node["kind"] == KIND_DOCUMENT and "path" in node and node.get("documentClass") in DOCUMENT_ROOTS
-    }
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def apply_documents(
+def _describe(
     matrix: Matrix,
-    documents: Sequence[DocumentRead],
-    paths: Sequence[str],
-    stamp: Stamp,
-) -> DocumentsSynced:
-    """Correct the document rows of the matrix from documents already read.
+    document: DocumentRead,
+    index: Mapping[str, Sequence[EntryId]],
+    result: DocumentsSynced,
+) -> None:
+    """Join a document to each entry its ``shows`` and ``subject`` name.
 
-    Args:
-        matrix: The matrix, changed in place.
-        documents: The documents read from the vault.
-        paths: Every path that was looked at; a path with no document among ``documents`` no
-            longer exists, and its row is retired.
-        stamp: The moment and the maker to record on each changed row.
+    A name that is the name or an alias of exactly one entry gets one ``describedBy`` from that
+    entry, unless the entry is already described by the document. A name no entry has, and a
+    name more than one entry has, is reported and joins nothing. The relationship is on the
+    architecture side and names no heading: the front matter states the document, not a heading.
+    """
+    target: EntryId = make_id(KIND_DOCUMENT, document.path)
+    names: list[str] = [*document.shows, *([] if document.subject is None else [document.subject])]
+    name: str
+    for name in dict.fromkeys(names):
+        found: Sequence[EntryId] = index.get(name_key(name), ())
+        if not found:
+            result["unresolved"].append({"document": document.path, "name": name})
+        elif len(found) > 1:
+            result["ambiguous"].append({"document": document.path, "name": name, "entries": sorted(found)})
+        elif all(held.end != target for held in matrix.outgoing(found[0], (REL_DESCRIBED_BY,))):
+            matrix.link(Relationship(kind=REL_DESCRIBED_BY, start=found[0], end=target, side=SIDE_ARCHITECTURE))
+            result["described"].append({"entry": found[0], "document": target})
+
+
+def _document_paths(matrix: Matrix) -> list[str]:
+    """List the documents the matrix holds an entry for.
 
     Returns:
-        What was added, changed and retired, and the headings that no longer match the hash
-        recorded at their approval. The commit, ``skipped``, ``full`` and ``rowsChanged`` are
-        left for the caller to fill.
+        Each document entry's path relative to the architecture root, in path order.
 
     """
-    rows: dict[str, Node] = _document_rows(matrix)
-    read: dict[str, DocumentRead] = {document.path: document for document in documents}
+    return sorted(entry.id.partition(":")[2] for entry in matrix.entries((KIND_DOCUMENT,)))
+
+
+def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> DocumentsSynced:
+    """Correct the document entries of the matrix for some paths.
+
+    Returns:
+        What was added, changed and removed, the relationships added and the names that joined
+        nothing.
+
+    """
+    read: dict[str, DocumentRead] = {document.path: document for document in read_documents(arch, wanted)}
+    index: dict[str, list[EntryId]] = _name_index(matrix)
     result: DocumentsSynced = {
-        "vaultCommit": "",
-        "skipped": False,
-        "full": False,
         "read": len(read),
         "added": [],
         "changed": [],
-        "retired": [],
-        "headingsChanged": [],
-        "rowsChanged": [],
+        "removed": [],
+        "described": [],
+        "unresolved": [],
+        "ambiguous": [],
         "lifecycleNotStated": sorted(path for path, document in read.items() if not document.lifecycle_stated),
-        "inReview": [],
+        "leftOut": [],
     }
     path: str
-    for path in sorted({*paths, *read}):
-        document: DocumentRead | None = read.get(path)
-        if path not in rows:
-            if document is not None:
-                matrix["nodes"][make_id(KIND_DOCUMENT, path)] = _new_document(document, stamp)
-                result["added"].append(path)
+    for path in sorted(set(wanted)):
+        if not _is_document(path):
+            result["leftOut"].append(path)
             continue
-        if _apply_document(rows[path], document, stamp):
-            result["retired" if document is None else "changed"].append(path)
-        result["headingsChanged"].extend(
-            {"document": path, "heading": key}
-            for key, entry in rows[path].get("headings", {}).items()
-            if entry["approvedHash"] is not None and entry["hash"] != entry["approvedHash"]
-        )
+        document: DocumentRead | None = read.get(path)
+        key: EntryId = make_id(KIND_DOCUMENT, path)
+        existing: Entry | None = matrix.find(key)
+        if document is None or document.lifecycle is None:
+            if document is not None:
+                result["leftOut"].append(path)
+            if existing is not None:
+                matrix.remove(key)
+                result["removed"].append(path)
+            continue
+        entry: Entry = _document_entry(document, document.lifecycle, existing)
+        if entry != existing:
+            matrix.put(entry)
+            result["added" if existing is None else "changed"].append(path)
+        _describe(matrix, document, index, result)
     return result
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def sync_documents(matrix: Matrix, arch: Path, stamp: Stamp, *, full: bool = False) -> DocumentsSynced:
-    """Bring the document rows and what depends on them up to date with the vault.
+def _named_paths(arch: Path, paths: Sequence[str]) -> list[str]:
+    """Name the files a caller gave the way the matrix does: relative to the architecture root.
 
-    When the vault is at the commit the matrix last read and no document differs from it, nothing
-    is read and nothing changes. Otherwise only the documents git reports changed are read
-    (:func:`vault_change`). A heading whose text no longer matches the hash recorded at its
-    approval makes its document, and every fact and supporting feature whose home it is, changed
-    since approval; a heading that matches again makes them approved again. A settled
-    disagreement whose quoted statement is gone becomes applied. Git failures raise
-    ``MatrixError``.
+    Returns:
+        Each file's path relative to the architecture root, once, in path order; a file given
+        relative is taken as relative to the architecture root.
+
+    Raises:
+        MatrixRefusedError: A file is outside the architecture root.
+
+    """
+    named: set[str] = set()
+    name: str
+    for name in paths:
+        given: Path = Path(name).expanduser()
+        located: Path = (given if given.is_absolute() else arch / given).resolve()
+        if not located.is_relative_to(arch):
+            message: str = f"the document {name} is outside the architecture root {arch}"
+            raise MatrixRefusedError(message)
+        named.add(located.relative_to(arch).as_posix())
+    return sorted(named)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = None) -> DocumentsSynced:
+    """Bring the document entries and their ``describedBy`` relationships up to date with the vault.
+
+    Each arc42 document that is effective, in review or draft has one entry on the architecture
+    side holding its front matter, its heading texts and its hash, and is joined by
+    ``describedBy`` to each entry its ``shows`` and ``subject`` name. The entry of a document
+    that is gone, or is no longer of one of those lifecycles, is removed with its relationships.
+
+    With ``paths``, exactly those files are looked at: one that is gone loses its entry, and no
+    other entry changes. Without, every document under the arc42 folder is read and every
+    document entry the matrix holds is looked at, so the entry of any document that is gone is
+    removed. An entry whose document is as the matrix records it is left as it is. A document
+    that cannot be read raises ``MatrixError``, and a path outside the architecture root raises
+    ``MatrixRefusedError``.
 
     Args:
         matrix: The matrix, changed in place.
         arch: The architecture root inside the vault.
-        stamp: The moment to record on each changed row, and its maker: a bead id, or ``sync``.
-        full: Whether to read every document whatever git reports.
+        paths: The files to read: absolute, or relative to the architecture root. None reads
+            every document.
 
     Returns:
         What the read did.
 
+    Raises:
+        MatrixError: The architecture root is not a directory.
+
     """
-    vault: Path = vault_root(arch)
-    change: VaultChange = vault_change(vault, arch, matrix["documentsSyncedAt"], full=full)
-    if not change.paths and change.commit == matrix["documentsSyncedAt"]["vaultCommit"]:
-        result: DocumentsSynced = apply_documents(matrix, [], [], stamp)
-        result["vaultCommit"] = change.commit
-        result["skipped"] = True
-        return result
-    wanted: set[str] = {*change.paths, *_document_rows(matrix)} if change.full else set(change.paths)
-    result = apply_documents(matrix, read_documents(vault, arch, sorted(wanted)), sorted(wanted), stamp)
-    result["vaultCommit"] = change.commit
-    result["full"] = change.full
-    touched: set[str] = {*result["added"], *result["changed"], *result["retired"]}
-    result["rowsChanged"] = [
-        *_refresh_homes(matrix, touched, stamp),
-        *_refresh_disagreements(matrix, vault, arch, touched, stamp),
+    root: Path = arch.expanduser().resolve()
+    if not root.is_dir():
+        message: str = f"the architecture root {arch} is not a directory"
+        raise MatrixError(message)
+    if paths is not None:
+        return _apply_documents(matrix, root, _named_paths(root, paths))
+    present: list[str] = [
+        relative_path(path, root) for path in (root / ARC42_FOLDER).rglob("*" + MARKDOWN_SUFFIX) if path.is_file()
     ]
-    recorded: DocumentsSyncedAt = matrix["documentsSyncedAt"]
-    if touched or recorded["vaultCommit"] != change.commit or recorded["dirtyPaths"] != list(change.dirty):
-        matrix["documentsSyncedAt"] = {"vaultCommit": change.commit, "at": stamp.at, "dirtyPaths": list(change.dirty)}
-    return result
+    return _apply_documents(matrix, root, sorted({*present, *_document_paths(matrix)}))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
     """Write a document's lifecycle into its front matter, the one place that states it.
 
-    This is the only write the matrix makes to the vault. It changes the one front matter line
-    and nothing of the document's body, so no heading hash changes.
+    This is the only write this module makes to the vault. It changes the one front matter line
+    and nothing of the document's body. The document's entry mirrors the line at the next
+    ``sync-documents``.
 
     Args:
         vault: The vault root.
@@ -883,7 +755,7 @@ def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
         raise MatrixError(message)
     stated: str = f"{LIFECYCLE_KEY}: {lifecycle}\n"
     at: int = next((index for index in range(1, close) if lines[index].partition(":")[0] == LIFECYCLE_KEY), 0)
-    if at and _unquote(lines[at].partition(":")[2]) == lifecycle:
+    if at and _scalar(lines[at].partition(":")[2]) == lifecycle:
         return False
     if at:
         lines[at] = stated
@@ -897,326 +769,401 @@ def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
     return True
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def hold_for_review(matrix: Matrix, arch: Path, paths: Sequence[str], claim: Claim) -> list[str]:
-    """Record that an Epic changed some documents, so its review finds exactly what it changed.
-
-    For each document that has a heading that is not as it was approved: every such heading no
-    other Epic claims is claimed for the Epic, the document's marker names the Epic, and a
-    document whose front matter still says effective is set to in-review in the vault, because
-    it now holds text nobody has reviewed. A vault that cannot be written raises ``MatrixError``.
-
-    Args:
-        matrix: The matrix, changed in place.
-        arch: The architecture root inside the vault.
-        paths: The documents the Epic's read found added or changed, relative to the vault root.
-        claim: The Epic, its journal step and the moment.
+def _prd_stems(record: JsonObject) -> tuple[str, ...]:
+    """Read the PRD file stems an Epic's ``prd:`` labels name.
 
     Returns:
-        The documents whose front matter was set to in-review.
+        What follows the prefix in each such label, lower-cased, once, in the order beads lists
+        the labels; empty for a record with no such label.
 
     """
-    vault: Path = vault_root(arch)
-    rows: dict[str, Node] = _document_rows(matrix)
-    held: list[str] = []
-    path: str
-    for path in sorted(set(paths) & set(rows)):
-        node: Node = rows[path]
-        differing: list[HeadingHash] = [
-            entry
-            for entry in node.get("headings", {}).values()
-            if not placeholder(entry) and entry["hash"] != entry["approvedHash"]
-        ]
-        if not differing or node.get("lifecycle") == LIFECYCLE_RETIRED:
-            continue
-        entry: HeadingHash
-        for entry in differing:
-            entry.setdefault("claim", claim)
-        if "approval" in node and node["approval"]["state"] != APPROVAL_APPROVED:
-            node["approval"]["bead"] = claim["bead"]
-        if node.get("lifecycle") == LIFECYCLE_EFFECTIVE:
-            set_lifecycle(vault, path, LIFECYCLE_IN_REVIEW)
-            node["lifecycle"] = LIFECYCLE_IN_REVIEW
-            held.append(path)
-    return held
-
-
-def _link_targets(document: str, heading: str) -> list[str]:
-    """List the forms a link to one heading of one document can take in Markdown.
-
-    Returns:
-        The document's file stem followed by the heading as written (a wikilink) and as a
-        lower-case, hyphenated anchor (a Markdown link), with and without the file suffix.
-
-    """
-    stem: str = Path(document).stem
-    slug: str = "-".join(_SLUG_DROPPED.sub("", heading.lower()).split())
-    return [
-        f"{stem}#{heading}",
-        f"{stem}#{slug}",
-        f"{stem}{MARKDOWN_SUFFIX}#{heading}",
-        f"{stem}{MARKDOWN_SUFFIX}#{slug}",
-    ]
-
-
-def _linked_from_problems(matrix: Matrix, vault: Path) -> list[str]:
-    """Check that every document a fact lists as linking to its home holds that link.
-
-    Returns:
-        One sentence per listed document that cannot be read or holds no link to the home heading.
-
-    """
-    problems: list[str] = []
-    texts: dict[str, str | None] = {}
-    node: Node
-    for node in matrix["nodes"].values():
-        home: Anchor | None = node.get("home")
-        if node["kind"] != KIND_FACT or home is None:
-            continue
-        targets: list[str] = _link_targets(home["document"], home["heading"])
-        linked: str
-        for linked in node.get("linkedFrom", []):
-            if linked not in texts:
-                file: Path = vault / linked
-                texts[linked] = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else None
-            text: str | None = texts[linked]
-            if text is None:
-                problems.append(f"{node['id']}: the linking document {linked} is not in the vault")
-            elif not any(target in text for target in targets):
-                problems.append(f"{node['id']}: {linked} holds no link to {home['document']}#{home['heading']}")
-    return problems
+    labels: BeadValue = record.get("labels")
+    stems: list[str] = []
+    if isinstance(labels, list):
+        label: BeadValue
+        for label in labels:
+            stated: str = label.strip().casefold() if isinstance(label, str) else ""
+            if stated.startswith(PRD_LABEL_PREFIX) and stated[len(PRD_LABEL_PREFIX) :]:
+                stems.append(stated[len(PRD_LABEL_PREFIX) :])
+    return tuple(dict.fromkeys(stems))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def vault_problems(matrix: Matrix, arch: Path) -> list[str]:
-    """Check the matrix against the vault for the two rules that need the documents themselves.
-
-    The owner's constraints (arc42 section 2) must be as the matrix last read them: a pipeline
-    step that changed them is a fault. And every document a fact lists in ``linkedFrom`` must
-    hold a link to the fact's home heading. Git failures raise ``MatrixError``.
+def read_epics(control: Path | None = None, bead: str | None = None) -> list[EpicBead]:
+    """Ask beads for the open Epics, or for one Epic.
 
     Args:
-        matrix: The matrix.
-        arch: The architecture root inside the vault.
+        control: The control repository, whose beads database holds the Epics; None reads the
+            one the driver's environment names.
+        bead: The one Epic to read, whatever its status; None reads every Epic that is not closed.
 
     Returns:
-        One sentence per constraints heading that differs from the hash the matrix holds, per
-        constraints document added or removed since the last read, and per missing link.
-
-    """
-    vault: Path = vault_root(arch)
-    recorded: dict[str, Node] = {
-        path: node for path, node in _document_rows(matrix).items() if node.get("section") == CONSTRAINTS_SECTION
-    }
-    present: dict[str, DocumentRead] = {
-        document.path: document for document in read_documents(vault, arch) if document.section == CONSTRAINTS_SECTION
-    }
-    problems: list[str] = [
-        f"{path}: the constraints document is not as the matrix last read it (it was added or removed)"
-        for path in sorted(set(recorded) ^ set(present))
-        if path in present or recorded[path].get("lifecycle") != LIFECYCLE_RETIRED
-    ]
-    path: str
-    for path in sorted(set(recorded) & set(present)):
-        held: dict[str, str] = {key: entry["hash"] for key, entry in recorded[path].get("headings", {}).items()}
-        current: dict[str, str] = dict(present[path].headings)
-        problems.extend(
-            f"{path}: the constraints heading {key!r} is not as the matrix last read it"
-            for key in sorted({*held, *current})
-            if held.get(key, "") != current.get(key, "")
-        )
-    return [*problems, *_linked_from_problems(matrix, vault)]
-
-
-def _epic(entry: object) -> Epic | None:
-    """Narrow one decoded bead to an Epic.
-
-    Returns:
-        The Epic, or None when the bead is not an Epic.
+        The Epics, each with its title and the PRD file stems its ``prd:`` labels name, in id
+        order.
 
     Raises:
-        MatrixError: The bead lacks an id or a title, or its labels are not a list of strings.
-
-    """
-    message: str
-    if not isinstance(entry, dict):
-        message = "beads printed an issue that is not a JSON object"
-        raise MatrixError(message)
-    bead: object = entry.get("id")
-    title: object = entry.get("title")
-    labels: object = entry.get("labels") or []
-    if not isinstance(bead, str) or not bead or not isinstance(title, str) or not title:
-        message = "beads printed an issue with no id or no title"
-        raise MatrixError(message)
-    if not isinstance(labels, list) or not all(isinstance(label, str) for label in labels):
-        message = f"the labels of {bead} are not a list of strings"
-        raise MatrixError(message)
-    if entry.get("issue_type") != EPIC_TYPE:
-        return None
-    stems: list[str] = [
-        label.strip()[len(PRD_LABEL_PREFIX) :]
-        for label in labels
-        if isinstance(label, str) and label.strip().startswith(PRD_LABEL_PREFIX)
-    ]
-    return Epic(bead=bead, title=title, stems=tuple(dict.fromkeys(stem for stem in stems if stem)))
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def parse_epics(text: str) -> list[Epic]:
-    """Read the Epics from the JSON ``bd list --json`` or ``bd show --json`` prints.
-
-    Args:
-        text: The JSON text: an array of issues.
-
-    Returns:
-        The Epics among the issues, in the order printed. Issues of another type are left out.
-
-    Raises:
-        MatrixError: The text is not a JSON array of issues.
+        MatrixError: Beads could not be read, or ``bead`` was given and is not an Epic.
 
     """
     message: str
     try:
-        decoded: object = json.loads(text)
-    except json.JSONDecodeError as error:
-        message = f"beads did not print JSON: {error}"
+        graph: beadgraph.Graph = beadgraph.load(control)
+    except beadgraph.GraphError as error:
+        message = f"cannot read the Epic beads: {error}"
         raise MatrixError(message) from error
-    if not isinstance(decoded, list):
-        message = "beads did not print a JSON array of issues"
+    stems: dict[str, tuple[str, ...]] = {}
+    record: JsonObject
+    for record in graph.records:
+        held: beadgraph.Bead = beadgraph.bead_of(record)
+        if held.kind == EPIC_TYPE:
+            stems[held.id] = _prd_stems(record)
+    if bead is None:
+        return sorted(
+            (
+                EpicBead(bead=epic.id, title=epic.title, prd_stems=stems.get(epic.id, ()))
+                for epic in graph.of_kind(EPIC_TYPE)
+                if not epic.closed
+            ),
+            key=lambda epic: epic.bead,
+        )
+    found: beadgraph.Bead | None = graph.beads.get(bead)
+    if found is None or found.kind != EPIC_TYPE:
+        message = f"{bead} is not an Epic"
         raise MatrixError(message)
-    return [epic for epic in map(_epic, decoded) if epic is not None]
+    return [EpicBead(bead=found.id, title=found.title, prd_stems=stems.get(found.id, ()))]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_epics(control: Path, bead: str | None = None) -> list[Epic]:
-    """Ask beads for the open Epics, or for one Epic.
-
-    A ``bd`` that is missing or fails raises ``MatrixError``.
-
-    Args:
-        control: The control repository, whose beads database holds the Epics.
-        bead: The one Epic to read; None reads every open Epic.
+def _requirement_key(title: str) -> str:
+    """Key one requirement by its heading.
 
     Returns:
-        The Epics.
+        The identifier that opens the heading, else the slug of the heading.
 
     Raises:
-        MatrixError: ``bead`` was given and is not an Epic.
+        MatrixError: The heading holds no letter or digit to build a key from.
 
     """
-    arguments: list[str] = (
-        ["list", "--type", EPIC_TYPE, "--status", "open", "--json", "--limit", "0"]
-        if bead is None
-        else ["show", bead, "--json"]
-    )
-    epics: list[Epic] = parse_epics(_run("bd", arguments, control))
-    if bead is not None and [epic.bead for epic in epics] != [bead]:
-        message: str = f"{bead} is not an Epic"
-        raise MatrixError(message)
-    return epics
-
-
-def _prd_file(epic: Epic, files: Mapping[str, Sequence[Path]]) -> Path | str:
-    """Find the one PRD file an Epic's labels name.
-
-    Returns:
-        The file, or the reason there is not exactly one.
-
-    """
-    if not epic.stems:
-        return f"it has no {PRD_LABEL_PREFIX}<stem> label"
-    found: list[Path] = [path for stem in epic.stems for path in files.get(stem, [])]
-    if not found:
-        return f"no file is named {' or '.join(stem + MARKDOWN_SUFFIX for stem in epic.stems)} under the PRD folder"
-    if len(found) > 1:
-        return "its labels name more than one PRD file: " + ", ".join(sorted(str(path) for path in found))
-    return found[0]
-
-
-def _apply_prd(matrix: Matrix, epic: Epic, relative: str, digest: str, stamp: Stamp) -> str:
-    """Create or refresh the PRD row of one Epic.
-
-    Returns:
-        ``created``, ``refreshed`` when the PRD's hash changed, or ``unchanged``.
-
-    """
-    key: NodeId = make_id(KIND_PRD, epic.bead)
-    stem: str = Path(relative).stem
-    node: Node | None = matrix["nodes"].get(key)
-    if node is None:
-        matrix["nodes"][key] = {
-            "id": key,
-            "kind": KIND_PRD,
-            "name": epic.title,
-            "aliases": [stem],
-            "links": [],
-            "changed": stamp.change(),
-            "bead": epic.bead,
-            "path": relative,
-            "hash": digest,
-            "coverage": COVERAGE_NOT_ASSESSED,
-            "expertise": [],
-        }
-        return "created"
-    outcome: str = "unchanged"
-    if node.get("hash") != digest:
-        node["hash"] = digest
-        node["coverage"] = COVERAGE_NOT_ASSESSED
-        outcome = "refreshed"
-    if outcome == "refreshed" or node.get("path") != relative or node["name"] != epic.title:
-        node["path"] = relative
-        node["name"] = epic.title
-        node["aliases"] = sorted({*node.get("aliases", []), stem})
-        node["changed"] = stamp.change()
-    return outcome
+    opened: re.Match[str] | None = _IDENTIFIER.match(title)
+    if opened is not None:
+        return opened.group(1)
+    try:
+        return slug(title)
+    except ValueError as error:
+        message: str = f"cannot key the requirement heading {title!r}: {error}"
+        raise MatrixError(message) from error
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def sync_prds(matrix: Matrix, epics: Sequence[Epic], prd_dir: Path, stamp: Stamp) -> PrdsSynced:
-    """Give every Epic one PRD row holding its PRD file, the file's hash and the Epic id.
+def parse_requirements(text: str) -> list[RequirementRead]:
+    """Read the requirements a PRD states.
 
-    An Epic names its PRD with a ``prd:<stem>`` label; the PRD is the one Markdown file of that
-    stem under the PRD folder. A new row, and a row whose PRD hash changed, has coverage not
-    assessed. An Epic whose label names no file, or more than one, gets no row and is reported.
-    A row whose Epic is not among ``epics`` is left as it is.
+    A requirement is one ``####`` heading under the ``## Requirements`` heading. Its group is
+    the ``###`` heading above it. Its own text is its heading line and everything up to the next
+    heading of its level or above. A ``#`` line inside a fenced code block is not a heading. A
+    key that repeats within the PRD gets ``-2``, ``-3`` and so on, so the same PRD yields the
+    same keys on every read. A heading with no letter or digit raises ``MatrixError``.
+
+    Args:
+        text: The whole PRD file.
+
+    Returns:
+        The requirements, in document order.
+
+    """
+    found: list[tuple[str, str, list[str]]] = []
+    inside: bool = False
+    group: str = ""
+    own: list[str] | None = None
+    fenced: bool = False
+    line: str
+    for line in text.splitlines():
+        if line.lstrip().startswith(CODE_FENCES):
+            fenced = not fenced
+        match: re.Match[str] | None = None if fenced else _HEADING.match(line)
+        level: int = 0 if match is None else len(match.group(1))
+        title: str = "" if match is None else match.group(2)
+        if match is not None and level <= SECTION_LEVEL:
+            inside = level == SECTION_LEVEL and name_key(title) == REQUIREMENTS_HEADING
+            group, own = "", None
+        elif inside and level == GROUP_LEVEL:
+            group, own = title, None
+        elif inside and level == REQUIREMENT_LEVEL and title:
+            own = [line.rstrip()]
+            found.append((title, group, own))
+        elif own is not None:
+            own.append(line.rstrip())
+    seen: dict[str, int] = {}
+    requirements: list[RequirementRead] = []
+    lines: list[str]
+    for title, group, lines in found:
+        key: str = _requirement_key(title)
+        seen[key] = seen.get(key, 0) + 1
+        requirements.append(
+            RequirementRead(
+                key=key if seen[key] == 1 else f"{key}-{seen[key]}",
+                name=title,
+                group=group,
+                digest=hashlib.sha256("\n".join(lines).strip("\n").encode()).hexdigest(),
+            ),
+        )
+    return requirements
+
+
+def _recorded_prd(entry: Entry | None) -> str | None:
+    """Read the PRD path an epic entry records.
+
+    Returns:
+        The path relative to the vault root, or None when there is no entry or it records none.
+
+    """
+    prd: JsonValue = None if entry is None else entry.attributes.get("prd")
+    path: JsonValue = prd.get("path") if isinstance(prd, dict) else None
+    return path if isinstance(path, str) and path else None
+
+
+def _given_prd(prd: str, vault: Path) -> str:
+    """Name the PRD file a caller gave the way the matrix does: relative to the vault root.
+
+    Returns:
+        The file's path relative to the vault root; a file given relative is taken as relative
+        to the vault root.
+
+    Raises:
+        MatrixRefusedError: The file is outside the vault.
+
+    """
+    given: Path = Path(prd).expanduser()
+    located: Path = (given if given.is_absolute() else vault / given).resolve()
+    if not located.is_relative_to(vault):
+        message: str = f"the PRD {prd} is outside the vault {vault}"
+        raise MatrixRefusedError(message)
+    return located.relative_to(vault).as_posix()
+
+
+def _labelled_prd(epic: EpicBead, files: Mapping[str, Sequence[str]]) -> tuple[str | None, str]:
+    """Find the PRD file an Epic's ``prd:`` labels name.
+
+    Returns:
+        The file's path relative to the vault root and an empty reason, when the labels name
+        exactly one file of the PRD folder; otherwise None and why no file is named.
+
+    """
+    if not epic.prd_stems:
+        return None, "the matrix records no PRD for it and it has no prd: label; give its PRD"
+    named: list[str] = sorted({path for stem in epic.prd_stems for path in files.get(stem, ())})
+    if len(named) == 1:
+        return named[0], ""
+    labels: str = ", ".join(PRD_LABEL_PREFIX + stem for stem in epic.prd_stems)
+    if not named:
+        return None, f"no file of the PRD folder has the name its label states ({labels})"
+    return None, f"its labels ({labels}) name more than one PRD file: {', '.join(named)}"
+
+
+def _epic_entry(epic: EpicBead, prd: tuple[str, str] | None, existing: Entry | None) -> Entry:
+    """Build the entry of an Epic from its bead and its PRD file.
+
+    Returns:
+        The entry, on the architecture side: the Epic's title and everything else the entry
+        already has; with a PRD (its path and its hash), also the PRD's path and hash and the
+        PRD file's stem among its aliases.
+
+    """
+    aliases: tuple[str, ...] = () if existing is None else existing.aliases
+    attributes: dict[str, JsonValue] = {} if existing is None else dict(existing.attributes)
+    if prd is not None:
+        stem: str = Path(prd[0]).stem
+        if name_key(stem) not in {name_key(epic.title), *(name_key(alias) for alias in aliases)}:
+            aliases = (*aliases, stem)
+        attributes["prd"] = {"path": prd[0], "hash": prd[1]}
+    return Entry(
+        id=make_id(KIND_EPIC, epic.bead),
+        kind=KIND_EPIC,
+        name=epic.title,
+        side=SIDE_ARCHITECTURE,
+        aliases=aliases,
+        purpose="" if existing is None else existing.purpose,
+        attributes=attributes,
+    )
+
+
+def _carry_over(matrix: Matrix, gone: Sequence[EntryId], arrived: Mapping[EntryId, RequirementRead]) -> list[Carried]:
+    """Re-key each requirement that was replaced one for one within its group.
+
+    When exactly one requirement left a group and exactly one arrived in it, the one that left
+    takes the id of the one that arrived, so its relationships carry over.
+
+    Returns:
+        Each requirement re-keyed, with the id it had and the id it has now.
+
+    """
+    leaving: dict[str, list[EntryId]] = {}
+    arriving: dict[str, list[EntryId]] = {}
+    key: EntryId
+    for key in gone:
+        group: JsonValue = matrix.entry(key).attributes.get("group")
+        leaving.setdefault(group if isinstance(group, str) else "", []).append(key)
+    read: RequirementRead
+    for key, read in arrived.items():
+        arriving.setdefault(read.group, []).append(key)
+    carried: list[Carried] = []
+    name: str
+    for name in sorted(leaving):
+        if len(leaving[name]) == 1 and len(arriving.get(name, [])) == 1:
+            matrix.rename(leaving[name][0], arriving[name][0])
+            carried.append({"was": leaving[name][0], "now": arriving[name][0]})
+    return carried
+
+
+def _sync_requirements(matrix: Matrix, epic: EntryId, bead: str, text: str, result: EpicsSynced) -> None:
+    """Bring the requirement entries of one Epic up to date with its PRD.
+
+    Each requirement the PRD states has one entry joined to the Epic by ``hasRequirement``, both
+    on the architecture side. A
+    requirement replaced one for one within its group keeps its relationships
+    (:func:`_carry_over`); any other requirement the PRD no longer states is removed and reported
+    with the relationships removed with it.
+    """
+    current: dict[EntryId, RequirementRead] = {
+        make_id(KIND_REQUIREMENT, f"{bead}/{read.key}"): read for read in parse_requirements(text)
+    }
+    held: list[EntryId] = [relationship.end for relationship in matrix.outgoing(epic, (REL_HAS_REQUIREMENT,))]
+    gone: list[EntryId] = [key for key in held if key not in current]
+    arrived: dict[EntryId, RequirementRead] = {key: read for key, read in current.items() if key not in held}
+    carried: list[Carried] = _carry_over(matrix, gone, arrived)
+    result["requirementsCarried"].extend(carried)
+    replaced: set[EntryId] = {pair["was"] for pair in carried}
+    key: EntryId
+    for key in gone:
+        if key in replaced:
+            continue
+        lost: list[Relationship] = [*matrix.outgoing(key), *matrix.incoming(key)]
+        result["requirementsRemoved"].append({
+            "id": key,
+            "name": matrix.entry(key).name,
+            "relationships": [relationship_json(each) for each in lost if each.kind != REL_HAS_REQUIREMENT],
+        })
+        matrix.remove(key)
+    read: RequirementRead
+    for key, read in current.items():
+        existing: Entry | None = matrix.find(key)
+        attributes: dict[str, JsonValue] = {"hash": read.digest}
+        if read.group:
+            attributes["group"] = read.group
+        entry: Entry = Entry(
+            id=key,
+            kind=KIND_REQUIREMENT,
+            name=read.name,
+            side=SIDE_ARCHITECTURE,
+            aliases=() if existing is None else existing.aliases,
+            purpose="" if existing is None else existing.purpose,
+            attributes=attributes,
+        )
+        if entry != existing:
+            matrix.put(entry)
+            result["requirementsAdded" if existing is None else "requirementsChanged"].append(key)
+        if all(relationship.end != key for relationship in matrix.outgoing(epic, (REL_HAS_REQUIREMENT,))):
+            matrix.link(Relationship(kind=REL_HAS_REQUIREMENT, start=epic, end=key, side=SIDE_ARCHITECTURE))
+
+
+def _put_epic(matrix: Matrix, entry: Entry, existing: Entry | None, result: EpicsSynced) -> None:
+    """Record an Epic's entry when it differs from the one the matrix holds, and count it."""
+    if entry == existing:
+        result["unchanged"] += 1
+        return
+    matrix.put(entry)
+    result["created" if existing is None else "refreshed"].append(entry.id)
+
+
+def _sync_epic(matrix: Matrix, epic: EpicBead, source: PrdSource, result: EpicsSynced) -> None:
+    """Create or refresh the entry of one Epic and its requirements.
+
+    The PRD is the file the caller gave, else the one the Epic's entry already records, else the
+    one its ``prd:`` labels name. An Epic with none of them, or whose PRD cannot be read, gets
+    an entry that records no PRD, or keeps the entry it has, and is reported; its requirement
+    entries are left as they are.
+    """
+    key: EntryId = make_id(KIND_EPIC, epic.bead)
+    existing: Entry | None = matrix.find(key)
+    relative: str | None = _recorded_prd(existing) if source.given is None else _given_prd(source.given, source.vault)
+    reason: str = ""
+    if relative is None:
+        relative, reason = _labelled_prd(epic, source.files)
+    raw: bytes = b""
+    text: str = ""
+    if relative is not None:
+        try:
+            raw = (source.vault / relative).read_bytes()
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            reason = f"its PRD {relative} cannot be read: {error}"
+    if relative is None or reason:
+        kept: Entry = _epic_entry(epic, None, existing)
+        _put_epic(matrix, kept, existing, result)
+        result["noPrd"].append({"bead": epic.bead, "reason": reason})
+        return
+    _put_epic(matrix, _epic_entry(epic, (relative, hashlib.sha256(raw).hexdigest()), existing), existing, result)
+    _sync_requirements(matrix, key, epic.bead, text, result)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def sync_epics(matrix: Matrix, epics: Sequence[EpicBead], prd_dir: Path, *, prd: str | None = None) -> EpicsSynced:
+    """Give every Epic one entry with its PRD, and one requirement entry per requirement the PRD states.
+
+    An Epic's PRD is the file ``prd`` names, else the file its entry already records, else the
+    one file of the PRD folder whose stem its ``prd:`` labels name. The entry holds the Epic's
+    title, the PRD's path in the vault and the hash of the file. Each ``####`` heading under the
+    PRD's ``## Requirements`` heading is one requirement (:func:`parse_requirements`), keyed
+    under the Epic's beads id and joined to the Epic by ``hasRequirement``. Everything recorded
+    is on the architecture side. A requirement replaced one for one within its group keeps its
+    relationships; any other requirement the PRD no longer states is removed and reported. An
+    Epic whose PRD file is not known or cannot be read gets an entry that records no PRD and is
+    listed under ``noPrd``. An entry whose Epic is not among ``epics`` is left as it is. A vault
+    that is not a git repository raises ``MatrixError``.
 
     Args:
         matrix: The matrix, changed in place.
-        epics: The Epics to give rows.
+        epics: The Epics to give entries (:func:`read_epics`).
         prd_dir: The folder the PRD files are under, at any depth.
-        stamp: The moment and the maker to record on each changed row.
+        prd: The PRD file of the one Epic given: absolute, or relative to the vault root. None
+            takes each Epic's PRD from its entry, else from its labels.
 
     Returns:
-        The rows created and refreshed, how many were already current, and the Epics left out.
+        The epic entries created and refreshed, how many were already current, what changed
+        among the requirements, the Epics with no PRD, and the PRD files no epic entry names.
 
     Raises:
-        MatrixError: The PRD folder is not a directory, or a PRD file cannot be read.
+        MatrixError: The PRD folder is not a directory.
+        MatrixRefusedError: ``prd`` is given with other than one Epic, or is outside the vault.
 
     """
     message: str
     if not prd_dir.is_dir():
         message = f"the PRD folder {prd_dir} is not a directory"
         raise MatrixError(message)
+    if prd is not None and len(epics) != 1:
+        message = "a PRD file is given for exactly one Epic"
+        raise MatrixRefusedError(message)
     vault: Path = vault_root(prd_dir)
-    files: dict[str, list[Path]] = {}
-    path: Path
-    for path in sorted(prd_dir.rglob("*" + MARKDOWN_SUFFIX)):
-        files.setdefault(path.stem, []).append(path)
-    result: PrdsSynced = {"created": [], "refreshed": [], "unchanged": 0, "unresolved": []}
-    epic: Epic
+    listed: list[str] = sorted(relative_path(path, vault) for path in prd_dir.rglob("*" + MARKDOWN_SUFFIX))
+    files: dict[str, list[str]] = {}
+    path: str
+    for path in listed:
+        files.setdefault(Path(path).stem.casefold(), []).append(path)
+    result: EpicsSynced = {
+        "created": [],
+        "refreshed": [],
+        "unchanged": 0,
+        "requirementsAdded": [],
+        "requirementsChanged": [],
+        "requirementsCarried": [],
+        "requirementsRemoved": [],
+        "noPrd": [],
+        "unnamedPrds": [],
+    }
+    source: PrdSource = PrdSource(vault=vault, given=prd, files=files)
+    epic: EpicBead
     for epic in epics:
-        found: Path | str = _prd_file(epic, files)
-        if isinstance(found, str):
-            result["unresolved"].append({"bead": epic.bead, "reason": found})
-            continue
-        try:
-            digest: str = hashlib.sha256(found.read_bytes()).hexdigest()
-        except OSError as error:
-            message = f"cannot read the PRD {found}: {error}"
-            raise MatrixError(message) from error
-        outcome: str = _apply_prd(matrix, epic, relative_path(found, vault), digest, stamp)
-        if outcome == "unchanged":
-            result["unchanged"] += 1
-        else:
-            result["created" if outcome == "created" else "refreshed"].append(make_id(KIND_PRD, epic.bead))
+        _sync_epic(matrix, epic, source, result)
+    named: set[str] = {held for held in map(_recorded_prd, matrix.entries((KIND_EPIC,))) if held is not None}
+    result["unnamedPrds"] = [path for path in listed if path not in named]
     return result

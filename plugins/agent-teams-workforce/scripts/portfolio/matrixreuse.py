@@ -1,40 +1,40 @@
-"""What a Task builds, and whether what it built takes shared behaviour from where it is provided.
+"""Whether what a Task built takes shared behaviour from where it is provided.
 
-- :func:`task_elements` reads the matrix ids of the elements a Task builds from the Task's bead.
-- :func:`check_reuse` is the deterministic part of the build pipeline's reuse audit. For the
-  files a Task changed it reports a capability the Task must use that nothing references
-  (``unused``), a line that does itself what a shared capability provides (``duplicate``), and a
-  new definition whose name reads like a provided behaviour, for a reviewer to rule on
-  (``judgment``). Every finding is a text match against the signals each ``provides`` entry
-  carries; nothing here judges.
+:func:`check_reuse` (``check-reuse``) is the deterministic part of the build pipeline's reuse
+audit. It is handed the ids a Task states and the worktree the Task changed. For the files that
+changed it reports a shared capability the Task must use that nothing references (``unused``), a
+line that does itself what a shared capability provides (``duplicate``), and a new definition
+whose name reads like a provided behaviour, for a reviewer to rule on (``judgment``). Every
+finding is a text match against the signals each ``provides`` item of a capability carries;
+nothing here judges, and nothing here changes the matrix.
+
+A shared capability is a feature that states what it provides. An id that is such a feature is
+that capability; any other id stands for the capabilities the work that builds the entry must
+use (``matrixtraverse.capabilities``).
 """
 
-import json
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from matrix_contract import (
-    REUSE_DUPLICATE,
-    REUSE_JUDGMENT,
-    REUSE_UNUSED,
-    TASK_ELEMENTS_KEY,
-    Matrix,
-    MatrixError,
-    NodeId,
-    Provides,
-    ReuseItem,
-)
-from matrixquery import Capability, uses_view, words
+from matrix_contract import KIND_FEATURE, Entry, EntryId, EntryKind, JsonValue, MatrixError, Side
+from matrixstore import Matrix
 from matrixsync import program_output
+from matrixtraverse import CapabilityReach, capabilities, words
 
-METADATA_KEY: Final = "metadata"
+type ReuseFinding = Literal["unused", "duplicate", "judgment"]
+
+REUSE_UNUSED: Final[ReuseFinding] = "unused"
+REUSE_DUPLICATE: Final[ReuseFinding] = "duplicate"
+REUSE_JUDGMENT: Final[ReuseFinding] = "judgment"
+ATTR_PROVIDES: Final = "provides"
 MIN_SHARED_WORDS: Final = 2
 """How many words of a provided behaviour a new definition's name must share to be put to a reviewer."""
 STATUS_PATH_AT: Final = 3
@@ -45,15 +45,64 @@ _DEFINITION: Final[re.Pattern[str]] = re.compile(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class Provided:
+    """One thing a shared capability provides, as its feature's ``provides`` attribute states it."""
+
+    id: str
+    behaviour: str
+    """What a consumer obtains, in one sentence."""
+    consumers_must: str
+    """What a consumer must not implement itself."""
+    interface: str
+    """The name of the package, layer, operation or construct a consumer takes it through."""
+    use_signals: tuple[str, ...]
+    """Text that shows a consumer uses it."""
+    duplicate_signals: tuple[str, ...]
+    """Text that shows a consumer is doing it itself."""
+
+
+@dataclass(frozen=True, slots=True)
+class Guarded:
+    """One shared capability the changed files are checked against."""
+
+    feature: Entry
+    provides: tuple[Provided, ...]
+    relied: tuple[Provided, ...]
+    """The items the work relies on, which have to be referenced: those named, or every item when none is named."""
+
+
+class ReuseItem(TypedDict):
+    """One finding of the reuse check."""
+
+    finding: ReuseFinding
+    feature: EntryId
+    provides: str
+    """The id of the ``provides`` item the finding is about."""
+    detail: str
+    file: NotRequired[str]
+    line: NotRequired[int]
+
+
+class CapabilityRef(TypedDict):
+    """One shared capability the changed files were checked against."""
+
+    id: EntryId
+    kind: EntryKind
+    name: str
+    side: Side
+
+
 class ReuseResult(TypedDict):
     """What ``check-reuse`` prints."""
 
-    task: str
+    ids: list[EntryId]
+    """The ids the check was handed."""
     worktree: str
     files: list[str]
     """The changed files that were read."""
-    capabilities: list[NodeId]
-    """The shared capabilities the Task's elements must use."""
+    capabilities: list[CapabilityRef]
+    """The shared capabilities checked against."""
     violations: list[ReuseItem]
     judgment: list[ReuseItem]
     unchecked: list[str]
@@ -62,88 +111,104 @@ class ReuseResult(TypedDict):
     """True when there is no violation."""
 
 
-def _issue(decoded: object, task: str) -> dict[str, object]:
-    """Find one issue in what ``bd show --json`` printed.
+def _text(value: JsonValue) -> str:
+    """Narrow a member of a ``provides`` item to text.
 
     Returns:
-        The issue with the Task's id.
-
-    Raises:
-        MatrixError: The JSON holds no issue with that id.
+        The value when it is a string, otherwise the empty string.
 
     """
-    issues: list[object] = decoded if isinstance(decoded, list) else [decoded]
-    issue: object
-    for issue in issues:
-        if isinstance(issue, dict) and issue.get("id") == task:
-            return {str(key): value for key, value in issue.items()}
-    message: str = f"beads printed no issue {task}"
-    raise MatrixError(message)
+    return value if isinstance(value, str) else ""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def parse_task_elements(text: str, task: str) -> list[str]:
-    """Read the elements a Task builds from the JSON ``bd show <task> --json`` prints.
-
-    The Task names them in its metadata under the key the matrix contract fixes, as a list of
-    matrix ids or as that list written as JSON text.
-
-    Args:
-        text: The JSON text.
-        task: The Task's id.
+def _texts(value: JsonValue) -> tuple[str, ...]:
+    """Narrow a member of a ``provides`` item to the non-empty strings it lists.
 
     Returns:
-        The ids named, in order and without repeats; none when the Task names no element.
-
-    Raises:
-        MatrixError: The text is not JSON, holds no such issue, or names its elements as
-            something other than a list of strings.
+        The strings, in order; nothing for a value that is not a list.
 
     """
-    message: str
-    try:
-        decoded: object = json.loads(text)
-    except json.JSONDecodeError as error:
-        message = f"beads did not print JSON: {error}"
-        raise MatrixError(message) from error
-    metadata: object = _issue(decoded, task).get(METADATA_KEY) or {}
-    named: object = metadata.get(TASK_ELEMENTS_KEY) if isinstance(metadata, dict) else None
-    if isinstance(named, str) and named.strip():
-        try:
-            named = json.loads(named)
-        except json.JSONDecodeError as error:
-            message = f"the {TASK_ELEMENTS_KEY} of {task} is not a JSON list: {error}"
-            raise MatrixError(message) from error
-    if named is None or (isinstance(named, str) and not named.strip()):
-        return []
-    if not isinstance(named, list) or not all(isinstance(entry, str) and entry for entry in named):
-        message = f"the {TASK_ELEMENTS_KEY} of {task} is not a list of matrix ids"
-        raise MatrixError(message)
-    return list(dict.fromkeys(str(entry) for entry in named))
+    return tuple(item for item in value if isinstance(item, str) and item) if isinstance(value, list) else ()
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def task_elements(control: Path, task: str) -> list[str]:
-    """Ask beads which elements a Task builds.
-
-    A ``bd`` that is missing or fails raises ``MatrixError``.
-
-    Args:
-        control: The control repository, whose beads database holds the Task.
-        task: The Task's id.
+def _provided(feature: Entry) -> tuple[Provided, ...]:
+    """Read what a feature states it provides.
 
     Returns:
-        The matrix ids the Task names; none when it names no element.
+        One item per object of the feature's ``provides`` attribute that has an id; empty for a
+        feature that states none.
 
     """
-    return parse_task_elements(program_output("bd", ["show", task, "--json"], control), task)
+    stated: JsonValue = feature.attributes.get(ATTR_PROVIDES)
+    items: list[Provided] = []
+    item: JsonValue
+    for item in stated if isinstance(stated, list) else []:
+        if not isinstance(item, dict) or not _text(item.get("id")):
+            continue
+        interface: JsonValue = item.get("interface")
+        items.append(
+            Provided(
+                id=_text(item.get("id")),
+                behaviour=_text(item.get("behaviour")),
+                consumers_must=_text(item.get("consumersMust")),
+                interface=_text(interface.get("name")) if isinstance(interface, dict) else "",
+                use_signals=_texts(item.get("useSignals")),
+                duplicate_signals=_texts(item.get("duplicateSignals")),
+            ),
+        )
+    return tuple(items)
+
+
+def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
+    """Work out the shared capabilities some ids stand for.
+
+    An id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+
+    Returns:
+        Each capability once, in id order: a feature among the ids that states what it provides,
+        with every item relied on; and each capability the work that builds the other ids must
+        use, with the items its ``supportedBy`` relationships name, or every item when they name
+        none.
+
+    """
+    named: dict[EntryId, set[str] | None] = {}
+    others: list[EntryId] = []
+    entry_id: EntryId
+    for entry_id in dict.fromkeys(entry_ids):
+        entry: Entry = matrix.entry(entry_id)
+        if entry.kind == KIND_FEATURE and _provided(entry):
+            named[entry_id] = None
+        else:
+            others.append(entry_id)
+    reach: CapabilityReach
+    for reach in capabilities(matrix, others) if others else []:
+        if reach.feature in named and named[reach.feature] is None:
+            continue
+        relied: set[str] | None = named.setdefault(reach.feature, set())
+        if not reach.relies:
+            named[reach.feature] = None
+        elif relied is not None:
+            relied.update(reach.relies)
+    guarded: list[Guarded] = []
+    for entry_id in sorted(named):
+        feature: Entry = matrix.entry(entry_id)
+        provides: tuple[Provided, ...] = _provided(feature)
+        wanted: set[str] | None = named[entry_id]
+        guarded.append(
+            Guarded(
+                feature=feature,
+                provides=provides,
+                relied=provides if wanted is None else tuple(item for item in provides if item.id in wanted),
+            ),
+        )
+    return guarded
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def changed_files(worktree: Path) -> list[str]:
     """List the files of a worktree that differ from its commit.
 
-    A folder that is no git tree raises ``MatrixError``.
+    A folder that is no git tree raises ``MatrixError`` from ``program_output``.
 
     Args:
         worktree: The worktree.
@@ -151,7 +216,13 @@ def changed_files(worktree: Path) -> list[str]:
     Returns:
         Every modified, added or untracked path, relative to the worktree, sorted.
 
+    Raises:
+        TypeError: ``worktree`` is not a path.
+
     """
+    if not isinstance(worktree, Path):
+        message: str = "the worktree must be a path"
+        raise TypeError(message)
     printed: str = program_output("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], worktree)
     entries: list[str] = [entry for entry in printed.split("\0") if entry]
     paths: set[str] = set()
@@ -192,30 +263,19 @@ def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
     return read
 
 
-def _relied(capability: Capability) -> list[Provides]:
-    """List the ``provides`` entries of a capability a consumer relies on.
-
-    Returns:
-        The entries the consumer's links name, or every entry when the links name none.
-
-    """
-    named: set[str] = set(capability["reliedOn"])
-    return [entry for entry in capability["provides"] if not named or entry["id"] in named]
-
-
-def _holds(texts: dict[str, list[str]], signals: Sequence[str]) -> bool:
+def _holds(texts: Mapping[str, Sequence[str]], signals: Sequence[str]) -> bool:
     """Tell whether some text holds one of some signals.
 
     Returns:
         True when a line of a file holds a signal.
 
     """
-    return any(signal in line for lines in texts.values() for line in lines for signal in signals if signal)
+    return any(signal in line for lines in texts.values() for line in lines for signal in signals)
 
 
 def _unused(
-    must: Sequence[Capability],
-    changed: dict[str, list[str]],
+    guarded: Sequence[Guarded],
+    changed: Mapping[str, Sequence[str]],
     worktree: Path,
 ) -> tuple[list[ReuseItem], list[str]]:
     """Find the capabilities a Task must use that nothing references.
@@ -224,81 +284,79 @@ def _unused(
     when a signal is not in them.
 
     Returns:
-        One item per relied-on ``provides`` entry whose use signals occur nowhere, and the
-        entries that carry no use signal.
+        One item per relied-on ``provides`` item whose use signals occur nowhere, and the items
+        that carry no use signal.
 
     """
     items: list[ReuseItem] = []
     unchecked: list[str] = []
     everything: dict[str, list[str]] | None = None
-    capability: Capability
-    for capability in must:
-        entry: Provides
-        for entry in _relied(capability):
-            signals: list[str] = entry.get("useSignals", [])
-            if not signals:
-                unchecked.append(f"{capability['feature']['id']}#{entry['id']}")
+    capability: Guarded
+    for capability in guarded:
+        item: Provided
+        for item in capability.relied:
+            if not item.use_signals:
+                unchecked.append(f"{capability.feature.id}#{item.id}")
                 continue
-            if _holds(changed, signals):
+            if _holds(changed, item.use_signals):
                 continue
             if everything is None:
                 everything = _lines(worktree, program_output("git", ["ls-files", "-z"], worktree).split("\0"))
-            if not _holds(everything, signals):
+            if not _holds(everything, item.use_signals):
                 items.append({
                     "finding": REUSE_UNUSED,
-                    "feature": capability["feature"]["id"],
-                    "provides": entry["id"],
-                    "detail": f"nothing references {entry['interface']['name']}: none of {signals} occurs",
+                    "feature": capability.feature.id,
+                    "provides": item.id,
+                    "detail": f"nothing references {item.interface}: none of {list(item.use_signals)} occurs",
                 })
     return items, unchecked
 
 
-def _duplicates(scope: Sequence[Capability], changed: dict[str, list[str]]) -> list[ReuseItem]:
+def _duplicates(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]) -> list[ReuseItem]:
     """Find the changed lines that do themselves what a shared capability provides.
 
     Returns:
-        One item per line of a changed file that holds a duplicate signal of a ``provides`` entry.
+        One item per line of a changed file that holds a duplicate signal of a ``provides`` item.
 
     """
     items: list[ReuseItem] = []
-    capability: Capability
-    for capability in scope:
-        entry: Provides
-        for entry in capability["provides"]:
-            signals: list[str] = [signal for signal in entry.get("duplicateSignals", []) if signal]
+    capability: Guarded
+    for capability in guarded:
+        item: Provided
+        for item in capability.provides:
             items.extend(
                 {
                     "finding": REUSE_DUPLICATE,
-                    "feature": capability["feature"]["id"],
-                    "provides": entry["id"],
+                    "feature": capability.feature.id,
+                    "provides": item.id,
                     "file": file,
                     "line": number,
-                    "detail": f"{signal!r} is what {entry['interface']['name']} exists to do: {entry['consumersMust']}",
+                    "detail": f"{signal!r} is what {item.interface} exists to do: {item.consumers_must}",
                 }
                 for file, lines in changed.items()
                 for number, line in enumerate(lines, start=1)
-                for signal in signals
+                for signal in item.duplicate_signals
                 if signal in line
             )
     return items
 
 
-def _judgment(scope: Sequence[Capability], changed: dict[str, list[str]]) -> list[ReuseItem]:
+def _judgment(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]) -> list[ReuseItem]:
     """Find the definitions in changed files whose name reads like a provided behaviour.
 
     Returns:
-        One item per definition and ``provides`` entry that share enough words for a reviewer to
+        One item per definition and ``provides`` item that share enough words for a reviewer to
         be asked whether the definition duplicates the behaviour.
 
     """
-    behaviours: list[tuple[NodeId, Provides, set[str]]] = [
-        (capability["feature"]["id"], entry, set(words(entry["behaviour"])))
-        for capability in scope
-        for entry in capability["provides"]
+    behaviours: list[tuple[EntryId, Provided, set[str]]] = [
+        (capability.feature.id, item, set(words(item.behaviour)))
+        for capability in guarded
+        for item in capability.provides
     ]
     items: list[ReuseItem] = []
     file: str
-    lines: list[str]
+    lines: Sequence[str]
     for file, lines in changed.items():
         number: int
         line: str
@@ -309,12 +367,12 @@ def _judgment(scope: Sequence[Capability], changed: dict[str, list[str]]) -> lis
                 {
                     "finding": REUSE_JUDGMENT,
                     "feature": feature,
-                    "provides": entry["id"],
+                    "provides": item.id,
                     "file": file,
                     "line": number,
-                    "detail": f"{line.strip()} shares {sorted(named & behaviour)} with: {entry['behaviour']}",
+                    "detail": f"{line.strip()} shares {sorted(named & behaviour)} with: {item.behaviour}",
                 }
-                for feature, entry, behaviour in behaviours
+                for feature, item, behaviour in behaviours
                 if len(named & behaviour) >= MIN_SHARED_WORDS
             )
     return items
@@ -323,49 +381,58 @@ def _judgment(scope: Sequence[Capability], changed: dict[str, list[str]]) -> lis
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def check_reuse(
     matrix: Matrix,
-    built: Sequence[NodeId],
-    scope: Sequence[NodeId],
+    entry_ids: Sequence[EntryId],
     worktree: Path,
-    files: Sequence[str],
+    files: Sequence[str] | None = None,
 ) -> ReuseResult:
-    """Check the files a Task changed against the shared capabilities its repository must use.
+    """Check the files a Task changed against the shared capabilities the Task states.
 
-    An id that names no row raises ``MatrixRefusedError``; a worktree that is no git tree raises
-    ``MatrixError``.
+    An id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``, and a worktree
+    that is no git tree raises ``MatrixError`` from ``program_output``. Nothing is changed.
 
     Args:
         matrix: The matrix.
-        built: The ids of the elements the Task builds; every capability they must use has to
-            be referenced.
-        scope: The ids of the elements whose capabilities must not be duplicated: the Task's,
-            or all of its repository's.
+        entry_ids: The ids the Task states. A feature that states what it provides is a shared
+            capability and every item it provides has to be referenced; any other id stands for
+            the capabilities the work that builds the entry must use.
         worktree: The worktree the Task changed.
-        files: The changed files, relative to the worktree.
+        files: The changed files, relative to the worktree; None reads them from ``git status``.
 
     Returns:
         The violations (a capability nothing references, a line that duplicates one), the
-        definitions for a reviewer to rule on, and what could not be checked. The Task id is
-        left empty for the caller to fill.
+        definitions for a reviewer to rule on, and what could not be checked.
 
     Raises:
+        ValueError: No id is given.
         MatrixError: ``worktree`` is not a directory.
 
     """
+    message: str
+    if not entry_ids:
+        message = "check-reuse needs the id of at least one entry"
+        raise ValueError(message)
     if not worktree.is_dir():
-        message: str = f"the worktree {worktree} is not a directory"
+        message = f"the worktree {worktree} is not a directory"
         raise MatrixError(message)
-    must: list[Capability] = uses_view(matrix, list(built))["capabilities"]
-    guarded: list[Capability] = uses_view(matrix, list(dict.fromkeys([*built, *scope])))["capabilities"]
-    changed: dict[str, list[str]] = _lines(worktree, files)
+    guarded: list[Guarded] = _guarded(matrix, entry_ids)
+    changed: dict[str, list[str]] = _lines(worktree, changed_files(worktree) if files is None else files)
     unused: list[ReuseItem]
     unchecked: list[str]
-    unused, unchecked = _unused(must, changed, worktree)
+    unused, unchecked = _unused(guarded, changed, worktree)
     violations: list[ReuseItem] = [*unused, *_duplicates(guarded, changed)]
     return {
-        "task": "",
+        "ids": list(dict.fromkeys(entry_ids)),
         "worktree": str(worktree),
         "files": sorted(changed),
-        "capabilities": [capability["feature"]["id"] for capability in must],
+        "capabilities": [
+            {
+                "id": capability.feature.id,
+                "kind": capability.feature.kind,
+                "name": capability.feature.name,
+                "side": capability.feature.side,
+            }
+            for capability in guarded
+        ],
         "violations": violations,
         "judgment": _judgment(guarded, changed),
         "unchecked": unchecked,

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed argv, no shell.
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -44,11 +46,19 @@ RESOURCE_TYPES_KEY: Final = "resourceTypes"
 TERMS_KEY: Final = "terms"
 MATRIX_ENV: Final = "ATW_MATRIX"
 """The matrix file of the control repository. The matrix contract defines the same name."""
-MATRIX_NODES: Final = "nodes"
-MATRIX_KIND: Final = "kind"
-MATRIX_PRD_KIND: Final = "prd"
-MATRIX_BEAD: Final = "bead"
+MATRIX_ROLE_ENV: Final = "ATW_MATRIX_ROLE"
+"""The variable that names the role a matrix command runs as. The matrix contract defines the same name."""
+MATRIX_SCRIPT_ROLE: Final = "script"
+"""The role of a script step, which the launcher is."""
+MATRIX_COMMAND: Final[tuple[str, ...]] = ("bin", "atw-matrix")
+"""The matrix command, under the plugin root."""
+MATRIX_EXPERTISE_COMMAND: Final = "expertise"
 MATRIX_EXPERTISE: Final = "expertise"
+"""The member of the command's result that lists the Epic's skills."""
+MATRIX_REFUSED: Final = 1
+"""The status the matrix command exits with when the matrix refuses, as for a bead it holds no Epic for."""
+MATRIX_TIMEOUT: Final = 120.0
+LOGGER: Final = logging.getLogger(__name__)
 PLUGIN_ROOT_VARIABLE: Final = "${CLAUDE_PLUGIN_ROOT}"
 SKILL_DIRECTORY_VARIABLE: Final = "${CLAUDE_SKILL_DIR}"
 SKILLS_HEADING: Final = (
@@ -374,31 +384,49 @@ def matching_skills(plugin: Path, resource_types: Iterable[str], text: str) -> t
 def epic_expertise(bead: str, environ: Mapping[str, str]) -> tuple[str, ...]:
     """Read the expertise list recorded for an Epic: the skills its domains need.
 
-    This is the launcher's one dependency on the matrix. The list is the ``expertise`` field of
-    the Epic's PRD row in the matrix file ``ATW_MATRIX`` names.
+    This is the launcher's one dependency on the matrix. The list is what
+    ``atw-matrix expertise --epic <bead>`` prints, run as a script step in the environment given.
 
     Returns:
-        The skill names recorded for the Epic; empty when no matrix file is named, the file does
-        not exist, or it holds no PRD row for the Epic.
+        The skill names recorded for the Epic; empty when the environment names neither a matrix
+        file nor a control repository, or the matrix refuses the bead, as it does for one it
+        holds no Epic for. The refusal is logged.
 
     Raises:
-        TypeError: An argument violates the declared input contract, or the matrix file does not
-            hold the rows as a JSON object.
+        TypeError: An argument violates the declared input contract, or the command printed
+            something other than a JSON object.
+        RuntimeError: The matrix command could not be run, timed out, or failed otherwise than by
+            refusing.
 
     """
     if not isinstance(bead, str) or not isinstance(environ, Mapping):
         argument_error: str = "epic_expertise requires a bead id and an environment mapping"
         raise TypeError(argument_error)
-    named: str = environ.get(MATRIX_ENV, "").strip()
-    if not named or not Path(named).is_file():
+    if not environ.get(MATRIX_ENV, "").strip() and not environ.get(CONTROL_REPO_ENV, "").strip():
         return ()
-    matrix: dict[str, JsonValue] = json_object(json.loads(Path(named).read_text(encoding="utf-8")))
-    row: JsonValue
-    for row in json_object(matrix.get(MATRIX_NODES, {})).values():
-        node: dict[str, JsonValue] = json_object(row)
-        if node.get(MATRIX_KIND) == MATRIX_PRD_KIND and node.get(MATRIX_BEAD) == bead:
-            return tuple(string_list(node.get(MATRIX_EXPERTISE)))
-    return ()
+    program: Path = Path(__file__).resolve().parents[2].joinpath(*MATRIX_COMMAND)
+    asked: str = f"{program} {MATRIX_EXPERTISE_COMMAND} --epic {bead}"
+    message: str
+    try:
+        done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Fixed argv; no shell.
+            [str(program), MATRIX_EXPERTISE_COMMAND, "--epic", bead],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**environ, MATRIX_ROLE_ENV: MATRIX_SCRIPT_ROLE},
+            timeout=MATRIX_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        message = f"cannot read the expertise of {bead}: {asked} did not run: {error}"
+        raise RuntimeError(message) from error
+    if done.returncode == MATRIX_REFUSED:
+        LOGGER.warning("no expertise is read for %s: %s", bead, done.stderr.strip())
+        return ()
+    if done.returncode:
+        message = f"cannot read the expertise of {bead}: {asked} exited {done.returncode}: {done.stderr.strip()}"
+        raise RuntimeError(message)
+    result: dict[str, JsonValue] = json_object(json.loads(done.stdout))
+    return tuple(string_list(result.get(MATRIX_EXPERTISE)))
 
 
 def _command_roots() -> SkillRoots:

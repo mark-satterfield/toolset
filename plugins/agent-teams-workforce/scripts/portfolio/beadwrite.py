@@ -32,7 +32,6 @@ from beadcontracts import (
     EdgeCounts,
     EdgePlan,
     ExistingTask,
-    OtherTask,
     PlacedItem,
     PlannedTask,
     ReplacedTask,
@@ -245,7 +244,7 @@ def contract_block(task: Task, root: Path | None) -> str:
     lines += [
         f"Spec sections:\n{listed(task.spec_sections)}",
         f"Requirement ids: {', '.join(task.requirement_ids) or '(none)'}",
-        f"Matrix elements built:\n{listed(task.matrix_elements)}",
+        f"Matrix ids (stack, entries built, shared capabilities used):\n{listed(task.matrix_elements)}",
         f"Surfaces: {surfaces}",
         f"Test strategy: {_strategy_line(task.test_strategy)}",
         f"Definition of Done:\n{listed(task.definition_of_done)}",
@@ -575,8 +574,7 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
         root: The project root artifact paths are recorded relative to.
 
     Returns:
-        The Story, what was done to it, the keyed Tasks already under it, and the open
-        Tasks of other Epics built in the same repository.
+        The Story, what was done to it, and the keyed Tasks already under it.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -639,7 +637,6 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
             "decisionIds": story.decision_ids,
         },
         "existingTasks": existing,
-        "otherEpicTasks": other_epic_tasks(graph, epic_id, repo),
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
@@ -650,65 +647,6 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
             "updated": int(action == "updated"),
         },
     }
-
-
-def _same_repo(a: JsonValue, b: str) -> bool:
-    """Whether two repository paths name the same checkout.
-
-    Args:
-        a: A recorded repository path.
-        b: The repository path to compare with.
-
-    Returns:
-        True when both, with trailing separators removed, are the same path.
-
-    """
-    return isinstance(a, str) and a.strip().rstrip("/") == b.strip().rstrip("/")
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def other_epic_tasks(graph: Graph, epic_id: str, repo: str) -> list[OtherTask]:
-    """Return the open Tasks of other Epics that are built in this repository.
-
-    A Task is built in the repository its repository metadata key names, or, when it records
-    none, the one its Story records.
-
-    Args:
-        graph: The tracker graph, read with descriptions.
-        epic_id: The Epic being elaborated; its own Tasks are left out.
-        repo: The repository.
-
-    Returns:
-        Each Task's id, title, the start of its description, its status and its Epic.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-
-    """
-    task: Bead
-    if not (isinstance(graph, Graph)) or not (isinstance(epic_id, str)) or not (isinstance(repo, str)):
-        raise TypeError(_ARGUMENT_ERROR)
-    out: list[OtherTask] = []
-    for task in graph.of_kind("task"):
-        if task.closed:
-            continue
-        parent: beadgraph.Bead | None = graph.beads.get(task.parent) if task.parent else None
-        where: str | None = task.metadata.get(KEY_REPO_PATH) or (parent.metadata.get(KEY_REPO_PATH) if parent else None)
-        if not _same_repo(where, repo):
-            continue
-        epic: beadgraph.Bead | None = graph.epic_of(task.id)
-        if epic is not None and epic.id == epic_id:
-            continue
-        out.append(
-            {
-                "id": task.id,
-                "title": task.title,
-                "description": task.description[:300],
-                "status": task.status,
-                "epic": epic.id if epic else None,
-            },
-        )
-    return out
 
 
 def _design_source(value: str) -> DesignSource:

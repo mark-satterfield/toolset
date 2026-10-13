@@ -28,13 +28,24 @@ which mode.
 
 ### Mode `draft`
 
-Draft the TRD early, from the PRD and the approved arc42 material the request lists. Sources
-of a requirement are: a PRD requirement that needs a technical obligation; a standing
-obligation in an approved arc42 heading or in section 2 that applies to an element this PRD
-involves; and each shared capability the request lists, as one requirement of kind `reuse`.
+Draft the TRD early, from the PRD, the constraints the matrix returns for the Epic and the
+effective arc42 headings the request lists.
+
+Ask the matrix which constraints apply. `atw-matrix find --kinds epic --prd <the PRD's path in the vault>`
+names the Epic, and `atw-matrix epic <epic id> --constraints` returns each constraint that
+applies to something the Epic reaches, with its `statement`, the document and heading it is
+`statedIn` and the entries it reached. A constraint listed under `noSource` has no document
+that states it. Read the headings the result names and the headings the request lists, and
+only those. `atw-matrix node <id>` returns one entry with the documents and headings that
+describe it.
+
+Sources of a requirement are: a PRD requirement that needs a technical obligation; a
+constraint the matrix returns, or a standing obligation in an effective arc42 heading the
+request lists, that applies to an entry this PRD involves; and each shared capability the
+request lists, as one requirement of kind `reuse`.
 
 Return `noSource`: every obligation the PRD implies for which neither the PRD nor the
-approved material gives a source. The architect decides each; the TRD holds only sourced
+effective documents give a source. The architect decides each; the TRD holds only sourced
 requirements.
 
 ### Mode `update`
@@ -50,8 +61,21 @@ rest of the file stays as it is.
   period, a timeout, a retry count, that an alarm exists, that data is encrypted. For
   `reuse`: "<element> obtains <behaviour> from <shared capability> and does not implement
   its own."
-- `source`: the PRD heading, or the arc42 path and heading, or the section 2 item.
-- `appliesTo`: the matrix id of the element.
+- `source`: the PRD heading, or the arc42 document and heading. Give the document as its path
+  under the architecture root and the heading as the matrix holds it
+  (`atw-matrix node document:<path>` lists a document's headings).
+- `appliesTo`: the matrix id of the entry the requirement binds: a stack, a service, a
+  component, a piece of infrastructure, an event or a feature, as `atw-matrix node` or
+  `atw-matrix find` returns it. Never a name.
+
+You record nothing in the matrix yourself. A script step records each requirement as one
+constraint, with `statedIn` from its `source` and `appliesTo` from its `appliesTo`, and each
+`noSource` obligation as a constraint with no `statedIn`. In mode `draft` the script reads
+the requirements from your answer, so list every requirement the TRD states under the
+answer's `requirements`, each with exactly the `id`, `kind`, `statement`, `source` and
+`appliesTo` the TRD gives it; `appliesTo` is an empty string only for a requirement that
+binds the Epic as a whole. In mode `update` the request's `changes` already state them and
+`requirements` is empty. An inexact path, heading or id is a write the script cannot make.
 
 A requirement states what, with a value; the specs supply how: route paths, field names, key
 names, parameter names and schemas. It cites arc42 for the rule's reason. An obligation that

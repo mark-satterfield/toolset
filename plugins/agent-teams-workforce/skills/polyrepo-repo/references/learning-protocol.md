@@ -1,7 +1,8 @@
 # Learning Protocol
 
 The manifest is the steward's private cache of the repositories plus the few facts neither
-the folders nor GitHub hold: purpose, `owns`, groups, deprecation dates. It is
+the folders nor GitHub hold: groups and deprecation dates. What a repo holds and why it exists
+is the matrix's, not the manifest's. It is
 only useful if it is correct, and the repositories change constantly. Keeping it correct is
 the steward's normal operation, done on its own authority: there is no read-back step and no
 approval step for a manifest change.
@@ -11,19 +12,19 @@ approval step for a manifest change.
 - **The `polyrepo` tool** writes every mechanical fact. `reconcile --fix` adds entries for
   new repos, removes entries whose repo is gone, follows renames, sets `remote_url`,
   `lifecycle`, archived state and `deprecated_on`, and appends the changelog itself.
-  `create`, `rename`, `deprecate` and `purpose` do the same for their own changes. Every one
+  `create`, `rename` and `deprecate` do the same for their own changes, and for the matrix's
+  stacks (see *The matrix* in the `polyrepo-repo` skill). Every one
   of them commits and pushes the steward's files. Never edit a field the tool maintains.
-- **The steward** writes what needs judgment: a purpose (through `purpose <repo> --text`),
-  and groups, `owns`, `role`, `owner` (by editing the manifest, per the
-  `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward.
+- **The steward** writes what needs judgment: groups and `owner` (by editing the manifest, per the
+  `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward. A stack's
+  `homeIn` or alias is written in the matrix (`link`, `put`), not here.
 
 ## What counts as a learning event
 
 Anything the steward learns that changes one of the judgment fields:
 
-- What a repo is for (its purpose), or what it owns.
 - A repo joining or leaving a group; a group added or removed.
-- A change of a repo's role or owner.
+- A change of a repo's owner.
 
 Facts that are not about the repositories themselves go elsewhere: "where to find things"
 to the knowledge store (**polyrepo-info**), the project's own scripts and procedures to
@@ -46,7 +47,7 @@ requirements, deployment order) are never stored; see `manifest-schema.md`.
 
 3. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
 4. **Commit and push** with `commit --message "<what changed>"`.
-5. **Speak in outcomes.** "Noted — X now owns Y." Not the file mechanics.
+5. **Speak in outcomes.** "Noted — X is now in group Y." Not the file mechanics.
 
 ## Drift
 

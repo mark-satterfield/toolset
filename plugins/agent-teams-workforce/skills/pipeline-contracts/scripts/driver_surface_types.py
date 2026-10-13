@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "6a0c133764bb470508f0f0da86ab0f92dfb77e9e121e2e8476a25ed790f83efd"
+SCHEMA_SHA256: Final[str] = "9557bd0fc6ed3e1ac87ff0538800f0c10a30870f8db49f71e1457190ffdfa740"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -25,8 +25,6 @@ PROJECT_ROOT_ENV: Final[str] = "ATW_PROJECT_ROOT"
 PRD_EPIC_SYNC_ENV: Final[str] = "ATW_PRD_EPIC_SYNC"
 #: Path of the PRD-to-Epic verify script.
 PRD_EPIC_VERIFY_ENV: Final[str] = "ATW_PRD_EPIC_VERIFY"
-#: The fleet directory: SKILLSPOKE_APP_ROOT, else the control repository's parent.
-FLEET_DIR_ENV: Final[str] = "ATW_FLEET_DIR"
 #: Absolute path of the control repository (SKILLSPOKE_CC, else the driver's repository root). The
 #: driver modules live under it at DRIVER_DIR_PARTS.
 CONTROL_REPO_ENV: Final[str] = "ATW_CONTROL_REPO"
@@ -198,7 +196,6 @@ class DriverEnvironment(TypedDict):
     ATW_PROJECT_ROOT: str
     ATW_PRD_EPIC_SYNC: str
     ATW_PRD_EPIC_VERIFY: str
-    ATW_FLEET_DIR: str
     ATW_CONTROL_REPO: str
     ATW_ARCH_PATH: NotRequired[str]
     ATW_DESIGN_PACKAGES_DIR: NotRequired[str]

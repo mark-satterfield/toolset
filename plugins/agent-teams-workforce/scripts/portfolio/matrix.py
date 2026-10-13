@@ -1,21 +1,20 @@
 """atw-matrix: the one command through which the matrix is read and written.
 
-The matrix is the index of how things in the project relate: repositories, stacks, services,
-components, libraries, layers, infrastructure, PRDs, features, architecture documents, design
-facts and disagreements, with the approval marker and the code-trust marker. Its shape is
-``skills/artifact-handoff/schemas/matrix.schema.json``; the file is
+The matrix is one JSON file of entries and relationships: Epics and their requirements,
+features, constraints, arc42 documents, services, components, infrastructure, events, stacks,
+packages, layers and disagreements, each carrying the side it came from (architecture or
+repository) and, where set, the verified mark. Its shape is
+``skills/artifact-handoff/schemas/matrix.schema.json`` and its kinds are
+``skills/artifact-handoff/schemas/matrix-kinds.json``; the file is
 ``ops/sdlc-automation/matrix.json`` in the control repository unless ``--matrix`` or the matrix
 variable names another.
 
-Every sub-command prints one JSON object on stdout. The read sub-commands (``prd``, ``find``,
-``node``, ``uses``, ``disagreements``, ``summary``) answer from the file and change nothing.
-``check`` reports every way the file fails its contract. ``sync-prds`` and ``sync-documents``
-bring the file up to date with beads and the vault. ``matrixcli`` holds the sub-commands that
-record a design (``put``, ``link``,
-``claim``, ``settle``, ``note-sendback``, ``add-resource-type``, ``expertise``), open and close
-its review (``unapproved``, ``approve``), mark what was built (``mark-built``,
-``mark-deployed``, ``mark-merged``) and check reuse (``check-reuse``). The schema's command
-table says which role may run each; the role is the value of the role variable, and the
+Every sub-command prints one JSON object on stdout. This module holds the reads, which answer
+from the file and change nothing (``epic``, ``find``, ``node``, ``deps``, ``stacks``,
+``layers``, ``impact``, ``related``, ``uses``, ``story-scope``, ``review-scope``, ``summary``),
+and ``check``, which reports every way the file fails its contract. ``matrixcli`` holds the
+sub-commands that change the matrix, bring it up to date, seed it and mark it. The registry's
+command table says which role may run each; the role is the value of the role variable, and the
 operator when it is not set.
 """
 
@@ -33,68 +32,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
-from matrix_contract import (
-    COMMAND_RULES,
-    KIND_PRD,
-    KINDS,
-    Claim,
-    Kind,
-    Matrix,
-    MatrixError,
-    Node,
-    NodeId,
-)
+from matrix_contract import COMMAND_RULES, ENTRY_KINDS, EntryKind, entry_kind
 from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome
-from matrixcli import COMMANDS as DESIGN_COMMANDS
-from matrixcli import add_parsers, elements_of_task
+from matrixcli import COMMANDS as CHANGE_COMMANDS
+from matrixcli import add_parsers
 from matrixquery import (
     DEFAULT_LIMIT,
-    disagreements_for,
-    elements_of_repository,
+    deps_view,
+    epic_view,
     find,
+    impact_view,
+    layers_view,
     node_view,
-    prd_view,
-    resolve,
+    related_view,
+    stacks_view,
+    story_scope,
     summarize,
     uses_view,
-    words,
 )
+from matrixreview import review_scope
+from matrixseed import NAMING_CONFIG_ENV
 from matrixstore import (
-    CHANGED_BY_SYNC,
     CONTROL_REPO_FALLBACK_ENV,
     DEFAULT_LOCK_WAIT,
+    Matrix,
     MatrixRefusedError,
-    Stamp,
     file_problems,
-    make_id,
     read_matrix,
     require_role,
     role_of,
-    timestamp,
-    update_matrix,
-)
-from matrixsync import (
-    DocumentsSynced,
-    Epic,
-    PrdsSynced,
-    hold_for_review,
-    parse_epics,
-    read_epics,
-    sync_documents,
-    sync_prds,
-    vault_problems,
 )
 
 KIND_SEPARATOR: Final = ","
-SYNC_STEP: Final = "sync-documents"
-"""The journal step named on a claim the vault read places when the caller names none."""
-
-
-class DisagreementsResult(TypedDict):
-    """What ``disagreements`` prints."""
-
-    document: str
-    disagreements: list[Node]
 
 
 class CheckResult(TypedDict):
@@ -102,119 +71,174 @@ class CheckResult(TypedDict):
 
     valid: bool
     problems: list[str]
-    vaultChecked: bool
-    """False when no architecture root was given, so the two rules that need the documents were not checked."""
 
 
-def _run_prd(call: Call) -> Outcome:
-    """Run ``prd``.
+def _run_epic(call: Call) -> Outcome:
+    """Run ``epic``.
 
     Returns:
-        The PRD row of the Epic, the features it needs, and with ``--closure`` everything it reaches.
+        The Epic with its PRD, its requirements with their features and covering documents, and
+        what each flag adds: the constraints, everything the Epic reaches, and the links with
+        nothing recorded at the other end.
 
     """
-    return Outcome(prd_view(read_matrix(call.matrix()), call.required("epic"), closure=call.flag("closure")))
+    return Outcome(
+        epic_view(
+            read_matrix(call.matrix()),
+            call.required("epic"),
+            closure=call.flag("closure"),
+            constraints=call.flag("constraints"),
+            unlinked=call.flag("unlinked"),
+        ),
+    )
 
 
-def _kinds(call: Call) -> tuple[Kind, ...]:
+def _kinds(call: Call) -> tuple[EntryKind, ...]:
     """Read the kinds a ``find`` is limited to.
 
-    Returns:
-        The kinds ``--kinds`` names, or every kind when it was not given.
+    A name that is not an entry kind raises ``MatrixError`` from ``entry_kind``.
 
-    Raises:
-        MatrixRefusedError: ``--kinds`` names something that is not a row kind.
+    Returns:
+        The kinds ``--kinds`` names, in registry order, or every kind when it was not given.
 
     """
     stated: str | None = call.text("kinds")
     if stated is None:
-        return KINDS
-    names: list[str] = [name.strip() for name in stated.split(KIND_SEPARATOR) if name.strip()]
-    unknown: list[str] = [name for name in names if name not in KINDS]
-    if unknown:
-        message: str = f"--kinds names {', '.join(unknown)}, which are not among {', '.join(KINDS)}"
-        raise MatrixRefusedError(message)
-    return tuple(kind for kind in KINDS if kind in names)
+        return ENTRY_KINDS
+    named: set[EntryKind] = {entry_kind(name.strip()) for name in stated.split(KIND_SEPARATOR) if name.strip()}
+    return tuple(kind for kind in ENTRY_KINDS if kind in named)
 
 
 def _run_find(call: Call) -> Outcome:
     """Run ``find``.
 
     Returns:
-        The rows that match the words given.
+        The entries that share words with the text, ranked, or the Epic whose PRD is the path.
 
     Raises:
-        MatrixRefusedError: Neither ``--text`` nor ``--provides`` holds a word, or ``--limit`` is negative.
+        MatrixRefusedError: ``--limit`` is negative.
 
     """
-    text: str = call.text("text") or ""
-    provides: str = call.text("provides") or ""
-    limit: object = getattr(call.args, "limit", DEFAULT_LIMIT)
-    message: str
-    if not words(f"{text} {provides}"):
-        message = "give --text or --provides with at least one word of two or more letters"
-        raise MatrixRefusedError(message)
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
-        message = "--limit must be 0 or more"
+    limit: int | None = call.number("limit")
+    if limit is not None and limit < 0:
+        message: str = "--limit must be 0 or more"
         raise MatrixRefusedError(message)
     matrix: Matrix = read_matrix(call.matrix())
-    return Outcome(find(matrix, text, provides=provides, kinds=_kinds(call), limit=limit))
+    return Outcome(
+        find(
+            matrix,
+            call.text("text") or "",
+            kinds=_kinds(call),
+            prd=call.text("prd"),
+            limit=DEFAULT_LIMIT if limit is None else limit,
+        ),
+    )
 
 
 def _run_node(call: Call) -> Outcome:
     """Run ``node``.
 
     Returns:
-        The row the id or name refers to, with the links that point at it.
+        The entry with its relationships from both ends.
 
     """
-    matrix: Matrix = read_matrix(call.matrix())
-    return Outcome(node_view(matrix, resolve(matrix, call.required("row"))))
+    return Outcome(node_view(read_matrix(call.matrix()), call.entry("id")))
+
+
+def _run_deps(call: Call) -> Outcome:
+    """Run ``deps``.
+
+    Returns:
+        What the entry depends on (``--of``) or what depends on it (``--on``), to any depth.
+
+    """
+    inward: bool = call.text("on") is not None
+    return Outcome(deps_view(read_matrix(call.matrix()), call.entry("on" if inward else "of"), inward=inward))
+
+
+def _run_stacks(call: Call) -> Outcome:
+    """Run ``stacks``.
+
+    Returns:
+        The stacks, or those of one app, of one repository, or that hold one resource type.
+
+    """
+    return Outcome(
+        stacks_view(
+            read_matrix(call.matrix()),
+            app=call.text("app"),
+            repository=call.text("repository"),
+            resource_type=call.text("resource_type"),
+        ),
+    )
+
+
+def _run_layers(call: Call) -> Outcome:
+    """Run ``layers``.
+
+    Returns:
+        Every layer with the packages it carries and the components that attach it.
+
+    """
+    return Outcome(layers_view(read_matrix(call.matrix())))
+
+
+def _run_impact(call: Call) -> Outcome:
+    """Run ``impact``.
+
+    Returns:
+        What a change to the entry reaches.
+
+    """
+    return Outcome(impact_view(read_matrix(call.matrix()), call.entry("id")))
+
+
+def _run_related(call: Call) -> Outcome:
+    """Run ``related``.
+
+    Returns:
+        The Epics that reach what the Epic reaches, each with what is shared.
+
+    """
+    return Outcome(related_view(read_matrix(call.matrix()), call.required("epic")))
 
 
 def _run_uses(call: Call) -> Outcome:
     """Run ``uses``.
 
     Returns:
-        The shared capabilities the elements of a repository, the elements named, or the
-        elements a Task builds, must use.
-
-    Raises:
-        MatrixRefusedError: Not exactly one of ``--repository``, ``--elements`` and ``--task``
-            was given.
+        The shared capabilities the work that builds the entries must use.
 
     """
-    matrix: Matrix = read_matrix(call.matrix())
-    repository: str | None = call.text("repository")
-    task: str | None = call.text("task")
-    named: list[str] = call.texts("elements")
-    if sum([repository is not None, task is not None, bool(named)]) != 1:
-        message: str = "give exactly one of --repository, --elements and --task"
-        raise MatrixRefusedError(message)
-    if task is not None:
-        named = elements_of_task(call, task)
-    elements: list[NodeId] = (
-        [resolve(matrix, name) for name in named] if repository is None else elements_of_repository(matrix, repository)
-    )
-    return Outcome(uses_view(matrix, elements))
+    return Outcome(uses_view(read_matrix(call.matrix()), call.entries("ids")))
 
 
-def _run_disagreements(call: Call) -> Outcome:
-    """Run ``disagreements``.
+def _run_story_scope(call: Call) -> Outcome:
+    """Run ``story-scope``.
 
     Returns:
-        The recorded disagreements that quote the document, with their settlements.
+        The stack and its repository, the documents that describe each entry, the constraints
+        that apply and the shared capabilities.
 
     """
-    document: str = call.required("document")
-    return Outcome({"document": document, "disagreements": disagreements_for(read_matrix(call.matrix()), document)})
+    return Outcome(story_scope(read_matrix(call.matrix()), call.entry("stack"), call.entries("ids")))
+
+
+def _run_review_scope(call: Call) -> Outcome:
+    """Run ``review-scope``.
+
+    Returns:
+        The documents the Epic reaches that are not effective, each with the headings reached.
+
+    """
+    return Outcome(review_scope(read_matrix(call.matrix()), call.required("epic")))
 
 
 def _run_summary(call: Call) -> Outcome:
     """Run ``summary``.
 
     Returns:
-        The counts of rows by kind and by marker.
+        The counts of entries and relationships by kind, by side and by mark.
 
     """
     return Outcome(summarize(read_matrix(call.matrix())))
@@ -228,98 +252,97 @@ def _run_check(call: Call) -> Outcome:
         status when it does not conform.
 
     """
-    path: Path = call.matrix()
-    problems: list[str] = file_problems(path)
-    arch: Path | None = call.folder("arch", [ARCH_PATH_ENV])
-    bead: str | None = call.text("bead")
-    if not problems:
-        matrix: Matrix = read_matrix(path)
-        if arch is not None:
-            problems.extend(vault_problems(matrix, arch))
-        if bead is not None and make_id(KIND_PRD, bead) not in matrix["nodes"]:
-            problems.append(f"the matrix has no PRD row for {bead}")
-    result: CheckResult = {"valid": not problems, "problems": problems, "vaultChecked": arch is not None}
+    problems: list[str] = file_problems(call.matrix())
+    result: CheckResult = {"valid": not problems, "problems": problems}
     return Outcome(result, EXIT_REFUSED if problems else EXIT_OK)
 
 
-def _saved_epics(path: Path, bead: str | None) -> list[Epic]:
-    """Read the Epics from a file holding what ``bd list --json`` printed.
-
-    Returns:
-        The Epics in the file; only the one named when ``bead`` is given.
-
-    Raises:
-        MatrixError: The file cannot be read.
-
-    """
-    try:
-        epics: list[Epic] = parse_epics(path.read_text(encoding="utf-8"))
-    except OSError as error:
-        message: str = f"cannot read the Epics file {path}: {error}"
-        raise MatrixError(message) from error
-    return [epic for epic in epics if bead is None or epic.bead == bead]
-
-
-def _run_sync_prds(call: Call) -> Outcome:
-    """Run ``sync-prds``.
-
-    Returns:
-        The PRD rows created and refreshed, and the Epics that could not be given one.
-
-    """
-    prd_dir: Path = call.required_folder("prd_dir", [PRD_DIR_ENV])
-    bead: str | None = call.text("bead")
-    saved: str | None = call.text("epics_file")
-    epics: list[Epic] = (
-        read_epics(call.required_folder("control", [CONTROL_REPO_ENV, CONTROL_REPO_FALLBACK_ENV]), bead)
-        if saved is None
-        else _saved_epics(Path(saved).expanduser(), bead)
-    )
-    stamp: Stamp = Stamp(timestamp(), CHANGED_BY_SYNC)
-
-    def change(matrix: Matrix) -> PrdsSynced:
-        return sync_prds(matrix, epics, prd_dir, stamp)
-
-    return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
-
-
-def _run_sync_documents(call: Call) -> Outcome:
-    """Run ``sync-documents``.
-
-    Returns:
-        What reading the vault changed in the matrix. With ``--bead``, the read is an Epic's:
-        the headings it finds changed are claimed for the Epic, and an effective document that
-        now holds unreviewed text is set to in-review in the vault.
-
-    """
-    arch: Path = call.required_folder("arch", [ARCH_PATH_ENV])
-    bead: str | None = call.text("bead")
-    stamp: Stamp = Stamp(timestamp(), bead or CHANGED_BY_SYNC)
-    full: bool = call.flag("full")
-
-    def change(matrix: Matrix) -> DocumentsSynced:
-        synced: DocumentsSynced = sync_documents(matrix, arch, stamp, full=full)
-        if bead is not None:
-            held: Claim = {"bead": bead, "step": call.text("step") or SYNC_STEP, "at": stamp.at}
-            synced["inReview"] = hold_for_review(matrix, arch, [*synced["added"], *synced["changed"]], held)
-        return synced
-
-    return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
-
-
 COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
-    "prd": _run_prd,
+    "epic": _run_epic,
     "find": _run_find,
     "node": _run_node,
+    "deps": _run_deps,
+    "stacks": _run_stacks,
+    "layers": _run_layers,
+    "impact": _run_impact,
+    "related": _run_related,
     "uses": _run_uses,
-    "disagreements": _run_disagreements,
+    "story-scope": _run_story_scope,
+    "review-scope": _run_review_scope,
     "summary": _run_summary,
     "check": _run_check,
-    "sync-prds": _run_sync_prds,
-    "sync-documents": _run_sync_documents,
-    **DESIGN_COMMANDS,
+    **CHANGE_COMMANDS,
 }
-"""Every sub-command, by the name the schema's command table gives it."""
+"""Every sub-command, by the name the registry's command table gives it."""
+
+
+def _read_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+    where: argparse.ArgumentParser,
+) -> None:
+    """Add the sub-commands that read the matrix and change nothing."""
+    epic: argparse.ArgumentParser = commands.add_parser("epic", parents=[where], help="what an Epic reaches")
+    epic.add_argument("epic", help="the Epic's beads id")
+    epic.add_argument("--closure", action="store_true", help="include everything the Epic reaches, by repository")
+    epic.add_argument("--constraints", action="store_true", help="include the constraints that bind what it reaches")
+    epic.add_argument("--unlinked", action="store_true", help="include the links with nothing at the other end")
+    found: argparse.ArgumentParser = commands.add_parser("find", parents=[where], help="entries that match some words")
+    found.add_argument("--text", help="the words to look for")
+    found.add_argument("--kinds", help="the kinds of entry to search, separated by commas")
+    found.add_argument("--prd", help="a PRD's path in the vault: the Epic whose PRD it is")
+    found.add_argument("--limit", type=int, help=f"the most entries to print; 0 prints all; default: {DEFAULT_LIMIT}")
+    node: argparse.ArgumentParser = commands.add_parser("node", parents=[where], help="one entry and its relationships")
+    node.add_argument("id", help="the entry's id")
+    deps: argparse.ArgumentParser = commands.add_parser("deps", parents=[where], help="the dependencies of an entry")
+    direction: argparse._MutuallyExclusiveGroup = deps.add_mutually_exclusive_group(required=True)
+    direction.add_argument("--of", help="the id of the entry whose dependencies are asked for")
+    direction.add_argument("--on", help="the id of the entry whose dependents are asked for")
+    stacks: argparse.ArgumentParser = commands.add_parser("stacks", parents=[where], help="the stacks, or some of them")
+    stacks.add_argument("--app", help="only the stacks of this app")
+    stacks.add_argument("--repository", help="only the stacks this repository holds")
+    stacks.add_argument("--resource-type", help="only the stacks that hold an entry of this resource type")
+    commands.add_parser("layers", parents=[where], help="every layer with its packages and the components that use it")
+    impact: argparse.ArgumentParser = commands.add_parser("impact", parents=[where], help="what a change reaches")
+    impact.add_argument("--id", required=True, help="the id of the entry to be changed")
+    related: argparse.ArgumentParser = commands.add_parser(
+        "related",
+        parents=[where],
+        help="the Epics that reach what an Epic reaches",
+    )
+    related.add_argument("--epic", required=True, help="the Epic's beads id")
+    uses: argparse.ArgumentParser = commands.add_parser(
+        "uses",
+        parents=[where],
+        help="the shared capabilities the work that builds some entries must use",
+    )
+    uses.add_argument("--ids", nargs="+", required=True, help="the ids of the entries the work builds")
+    scope: argparse.ArgumentParser = commands.add_parser(
+        "story-scope",
+        parents=[where],
+        help="what a Story that builds some entries of a stack must be handed",
+    )
+    scope.add_argument("--stack", required=True, help="the id of the stack the Story builds in")
+    scope.add_argument("--ids", nargs="+", required=True, help="the ids of the entries the Story builds")
+    review: argparse.ArgumentParser = commands.add_parser(
+        "review-scope",
+        parents=[where],
+        help="the documents an Epic reaches that are not effective",
+    )
+    review.add_argument("--epic", required=True, help="the Epic's beads id")
+    commands.add_parser("summary", parents=[where], help="the counts of entries and relationships")
+    commands.add_parser("check", parents=[where], help="check the matrix file against the schema and the registry")
+
+
+def _source(option: str, text: str) -> argparse.ArgumentParser:
+    """Build the option group that names one source a sub-command reads.
+
+    Returns:
+        A parser holding the one option, for sub-commands to take as a parent.
+
+    """
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(option, help=text)
+    return parser
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -332,63 +355,26 @@ def _parser() -> argparse.ArgumentParser:
     where: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
     where.add_argument("--matrix", help="the matrix file; default: the matrix variable, else the control repository")
     where.add_argument("--lock-wait", type=float, default=DEFAULT_LOCK_WAIT, help="seconds to wait for the lock")
-    arch: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
-    arch.add_argument("--arch", help=f"the architecture root in the vault; default: {ARCH_PATH_ENV}")
-    who: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
-    who.add_argument("--bead", help="the Epic the change is made for")
-    who.add_argument("--step", help="the journal step id of the session that makes the change")
+    sources: dict[str, argparse.ArgumentParser] = {
+        "control": _source(
+            "--control",
+            f"the control repository bd runs in; default: {CONTROL_REPO_ENV}, else {CONTROL_REPO_FALLBACK_ENV}",
+        ),
+        "arch": _source("--arch", f"the architecture root in the vault; default: {ARCH_PATH_ENV}"),
+        "prds": _source("--prd-dir", f"the folder of the vault the PRD files are under; default: {PRD_DIR_ENV}"),
+        "naming": _source(
+            "--naming",
+            f"the naming rules file; default: {NAMING_CONFIG_ENV}, else the control repository's",
+        ),
+        "folder": _source("--directory", "the seeding folder; default: state/seed beside the matrix file"),
+    }
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         prog=PROGRAM,
         description="Read and change the matrix. Prints one JSON object on stdout.",
     )
-    commands = parser.add_subparsers(dest="command", required=True)
-    prd: argparse.ArgumentParser = commands.add_parser("prd", parents=[where], help="what the matrix holds for a PRD")
-    prd.add_argument("epic", help="the Epic id")
-    prd.add_argument("--closure", action="store_true", help="include everything the PRD reaches, with markers")
-    found: argparse.ArgumentParser = commands.add_parser("find", parents=[where], help="rows that match some words")
-    found.add_argument("--text", help="the words to look for")
-    found.add_argument("--provides", help="a behaviour to look for among the shared capabilities")
-    found.add_argument("--kinds", help="the kinds of row to search, separated by commas")
-    found.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="the most rows to print; 0 prints all")
-    node: argparse.ArgumentParser = commands.add_parser("node", parents=[where], help="one row with its reverse links")
-    node.add_argument("row", help="the row's id, its former element matrix id, or a name only it answers to")
-    uses: argparse.ArgumentParser = commands.add_parser(
-        "uses",
-        parents=[where],
-        help="the shared capabilities some elements must use",
-    )
-    uses.add_argument("--repository", help="the repository whose elements are asked about")
-    uses.add_argument("--elements", nargs="+", help="the ids of the elements asked about")
-    uses.add_argument("--task", help="the Task whose elements are asked about")
-    uses.add_argument("--task-file", help="a file holding what `bd show <task> --json` printed, read in place of bd")
-    uses.add_argument("--control", help=f"the control repository bd runs in; default: {CONTROL_REPO_ENV}")
-    disputed: argparse.ArgumentParser = commands.add_parser(
-        "disagreements",
-        parents=[where],
-        help="recorded disagreements that quote a document",
-    )
-    disputed.add_argument("--document", required=True, help="the document's path relative to the vault root")
-    commands.add_parser("summary", parents=[where], help="the counts of rows by kind and by marker")
-    check: argparse.ArgumentParser = commands.add_parser(
-        "check",
-        parents=[where, arch],
-        help="check the matrix file against its contract",
-    )
-    check.add_argument("--bead", help="also require the PRD row of this Epic")
-    prds: argparse.ArgumentParser = commands.add_parser("sync-prds", parents=[where], help="PRD rows from beads")
-    prds.add_argument("--bead", help="the one Epic to give a PRD row; default: every open Epic")
-    prds.add_argument("--prd-dir", help=f"the folder the PRD files are under; default: {PRD_DIR_ENV}")
-    prds.add_argument("--control", help=f"the control repository bd runs in; default: {CONTROL_REPO_ENV}")
-    prds.add_argument("--epics-file", help="a file holding what `bd list --json` printed, read in place of bd")
-    documents: argparse.ArgumentParser = commands.add_parser(
-        "sync-documents",
-        parents=[where, arch],
-        help="document rows, heading hashes and lifecycle from the vault",
-    )
-    documents.add_argument("--bead", help="the Epic that changed the documents; its review then finds the changes")
-    documents.add_argument("--step", help="the journal step id of the session that asks")
-    documents.add_argument("--full", action="store_true", help="read every document whatever git reports")
-    add_parsers(commands, where, arch, who)
+    commands: argparse._SubParsersAction[argparse.ArgumentParser] = parser.add_subparsers(dest="command", required=True)
+    _read_parsers(commands, where)
+    add_parsers(commands, where, sources)
     return parser
 
 
@@ -406,12 +392,12 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
         a matrix that does not conform.
 
     Raises:
-        RuntimeError: The sub-commands built and the schema's command table name different commands.
+        RuntimeError: The sub-commands built and the registry's command table name different commands.
 
     """
     stray: list[str] = sorted(set(COMMANDS) ^ set(COMMAND_RULES))
     if stray:
-        message: str = f"the schema's command table and the sub-commands built differ on {', '.join(stray)}"
+        message: str = f"the registry's command table and the sub-commands built differ on {', '.join(stray)}"
         raise RuntimeError(message)
     args: argparse.Namespace = _parser().parse_args(argv)
     call: Call = Call(args, os.environ if environ is None else environ)
@@ -419,7 +405,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     try:
         require_role(command, role_of(call.environ))
         outcome: Outcome = COMMANDS[command](call)
-    except MatrixError as error:
+    except ValueError as error:
         sys.stderr.write(f"{PROGRAM} {command}: {error}\n")
         return EXIT_REFUSED
     sys.stdout.write(json.dumps(outcome.result, ensure_ascii=False) + "\n")

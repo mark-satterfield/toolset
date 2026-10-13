@@ -41,8 +41,13 @@ For each fact:
    - Section 7: where it runs and which stack holds each resource.
    - Section 8: the rule as a design fact with its reason, for example "Because of X, the
      address is verified by Y".
-2. In every other document named, replace any restatement of the fact with a link to the
-   home heading, so that the fact is stated in one place.
+2. In every other document named, and in every document the matrix names as describing the
+   same entry, replace any restatement of the fact with a link to the home heading, so that
+   the fact is stated in one place. `atw-matrix node <entry id>` returns, under `describedBy`,
+   each document and heading that describes the entry, with the document's `lifecycle`, and
+   `atw-matrix node document:<path>` returns a document's headings and the entries it
+   describes. Read the documents the matrix names; do not search the architecture root for
+   them.
 3. Keep the document at architecture level, the first level of
    `architecture-baseline/review-standard.md`: the why and the mechanism. A fact in the
    request that is a route path, a field name, a key or index name, a parameter name, a
@@ -58,6 +63,11 @@ when a fact changes what it shows.
 
 Section 2 is the owner's and stays as it is. Documents hold the design as it is: no decision
 record, history or open-items list. A script sets `lifecycle_state` and commits after review.
+
+You read the matrix and record nothing in it. When your result is accepted, a script step runs
+`atw-matrix sync-documents --paths` on the files you changed, which records each document, its
+headings and, from its `shows`, what it describes. Name in `shows` each entry by the name the
+matrix holds for it, so that the document is found from the entry.
 
 Write the result at the path the request names, to `write-result.schema.json`: each heading
 you changed or created, each link you added, each restatement you removed,

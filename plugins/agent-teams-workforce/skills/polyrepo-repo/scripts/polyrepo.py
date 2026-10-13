@@ -8,9 +8,13 @@
 The repository folders and GitHub are the source of truth. Every fact this tool reports about
 a repo (branch, uncommitted files, last commit, main against origin/main, GitHub state) is read
 live from git and GitHub on each call. The manifest contributes only what neither holds:
-purpose, owns and groups. `reconcile` compares disk, GitHub and the manifest, and
+groups and deprecation dates. What a repository holds and why it exists is the matrix's: its
+stacks, with their purposes, read through `atw-matrix` (`inventory` prints them), and this tool
+keeps the matrix's stacks true to the repositories (`create`, `rename`, `deprecate`, `doctor`).
+`reconcile` compares disk, GitHub and the manifest, and
 `reconcile --fix` repairs every mechanical finding: it rewrites the manifest, pushes, creates or
-renames the GitHub repo so local and GitHub move together, and appends the changelog.
+renames the GitHub repo so local and GitHub move together, and appends the changelog. The
+manifest keeps no `owns`, `purpose`, `purpose_head` or `role`; its next write drops them.
 
 Settings come from `.polyrepo/config.yaml`, found in this order: `--config`, `$POLYREPO_CONFIG`,
 the nearest `.polyrepo/config.yaml` above the working directory, `$SKILLSPOKE_CC/.polyrepo/`.
@@ -21,11 +25,10 @@ Usage:
   polyrepo.py status [repo ...] [--no-fetch]
   polyrepo.py list [--group G] [--lifecycle L] [--space S]
   polyrepo.py search attr=value [attr~regex ...] [--fetch]
-  polyrepo.py inventory [--all] [--no-fetch]
-  polyrepo.py purpose <repo> [--text TEXT]
+  polyrepo.py inventory [--all] [--no-fetch] [--name N]
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
-  polyrepo.py create <name> --space S --template T --purpose TEXT [--dry-run]
+  polyrepo.py create <name> --space S --template T [--dry-run]
   polyrepo.py rename <repo> <new-name> [--dry-run]
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
@@ -85,7 +88,7 @@ GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
 WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
-PURPOSE_NEUTRAL_FILES = ("AGENTS.md", "CLAUDE.md")
+RETIRED_FIELDS = ("owns", "purpose", "purpose_head", "role")
 ENTRY_LISTS = ("repos", "deprecations")
 WORKTREES_LINE = ".worktrees/"
 OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
@@ -496,21 +499,6 @@ def main_vs_origin(
         return main, om, None, None
     a, b = counts.split()
     return main, om, int(a), int(b)
-
-
-def mentions(repo: Path, item: str) -> bool:
-    """Tell whether a repo's tracked files name an item it claims to own.
-
-    The item is matched case-insensitively as written and with `-` as `_`.
-
-    Returns:
-        True when a tracked file contains one of the forms.
-
-    """
-    argv = ["grep", "-q", "-i", "-F", "-I"]
-    for f in sorted({item, item.replace("-", "_")}):
-        argv += ["-e", f]
-    return git(repo, *argv).returncode == 0
 
 
 # --------------------------------------------------------------------------------------------
@@ -1049,12 +1037,217 @@ class Manifest:
                 members[members.index(old)] = new
         self.dirty = True
 
+    def drop_retired_fields(self) -> None:
+        """Remove the fields the manifest no longer keeps (`RETIRED_FIELDS`) from every entry.
+
+        What a repository holds and why it exists is the matrix's, so an entry carries none of them.
+        """
+        for e in self.entries().values():
+            for key in RETIRED_FIELDS:
+                e.pop(key, None)
+
     def save(self) -> None:
-        """Write the manifest back when it changed."""
+        """Write the manifest back when it changed, without the retired fields."""
         if self.dirty:
+            self.drop_retired_fields()
             with self.path.open("w") as fh:
                 self.yaml.dump(self.doc, fh)
             self.dirty = False
+
+
+# --------------------------------------------------------------------------------------------
+# the matrix: the stacks a repository holds, and why. The matrix is read and changed only
+# through `atw-matrix`; this tool keeps its stacks true to the repositories (S1 to S3, S6).
+
+MATRIX_COMMAND = PLUGIN_ROOT / "bin" / "atw-matrix"
+MATRIX_ROLE = "repository-steward"
+MATRIX_ROLE_ENV = "ATW_MATRIX_ROLE"
+MATRIX_FILE_ENV = "ATW_MATRIX"
+MATRIX_TIMEOUT = 300
+NAMING_RULES_ENV = "RESOURCE_NAMING_CONFIG"
+NAMING_RULES_FILE = ".resource-naming.yaml"
+STACK_NAME_SEPARATOR = "-"
+LIBRARY_STACK_TYPE = "lib"
+EXECUTION_IMPORTED = "imported"
+EXECUTION_EXECUTABLE = "executable"
+PURPOSE_NOT_STATED = "The purpose is not stated."
+MATRIX_SKIP_SPACES = ("marketing",)
+CHECK_PROBLEMS_SHOWN = 5
+HELD_KEYS = ("id", "kind", "name", "side")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MatrixStack:
+    """One stack the matrix holds, as `atw-matrix stacks` returns it."""
+
+    id: str
+    name: str
+    side: str
+    repository: str | None
+    holds: int
+    view: dict[str, object]
+
+
+def parse_matrix_stacks(data: dict[str, object]) -> list[MatrixStack]:
+    """Read the stacks from what `atw-matrix stacks` printed.
+
+    A value that is not the shape `stacks` prints raises the PolyrepoError of the narrowing
+    helper that finds it.
+
+    Returns:
+        The stacks, in the order the matrix gave them.
+
+    """
+    out: list[MatrixStack] = []
+    for row in _seq(data.get("stacks"), "the matrix's stacks"):
+        item = _map(row, "a matrix stack row")
+        stack = _map(item.get("stack"), "a matrix stack")
+        held = [
+            {k: v for k, v in _map(_map(h, "a hold").get("entry"), "a held entry").items() if k in HELD_KEYS}
+            for h in _seq(item.get("holds") or [], "the entries a stack holds")
+        ]
+        repository = _opt_str(stack.get("repository"), "a stack's repository")
+        view: dict[str, object] = {
+            "id": _str(stack.get("id"), "a stack's id"),
+            "name": _str(stack.get("name"), "a stack's name"),
+            "type": stack.get("type"),
+            "side": _str(stack.get("side"), "a stack's side"),
+            "purpose": stack.get("purpose"),
+            "executionUse": stack.get("executionUse"),
+            "repository": repository,
+            "holds": held,
+        }
+        out.append(
+            MatrixStack(str(view["id"]), str(view["name"]), str(view["side"]), repository, len(held), view),
+        )
+    return out
+
+
+def matrix_run(cfg: Config, args: list[str]) -> dict[str, object]:
+    """Run one `atw-matrix` command as the repository steward and read its JSON object.
+
+    The matrix is the file `$ATW_MATRIX` names, else the one under `$ATW_CONTROL_REPO`, else the
+    one in the control repository the config sits in. `check` prints its object and exits
+    non-zero when the matrix is invalid; any other command that exits non-zero has failed.
+
+    Returns:
+        The object the command printed.
+
+    Raises:
+        PolyrepoError: when the command did not run, failed, or printed no JSON object.
+
+    """
+    env: dict[str, str | None] = {MATRIX_ROLE_ENV: MATRIX_ROLE}
+    if not os.environ.get(MATRIX_FILE_ENV) and not os.environ.get(CONTROL_REPO_ENV):
+        env[CONTROL_REPO_ENV] = str(cfg.file.parent.parent)
+    cp = run([str(MATRIX_COMMAND), *args], timeout=MATRIX_TIMEOUT, env=env)
+    try:
+        parsed: object = json.loads(cp.stdout) if cp.stdout.strip() else None
+    except json.JSONDecodeError:
+        parsed = None
+    if not isinstance(parsed, dict) or (cp.returncode != 0 and args[0] != "check"):
+        msg = f"atw-matrix {' '.join(args[:2])} failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    return _map(parsed, "the atw-matrix output")
+
+
+def read_matrix_stacks(cfg: Config, repository: str | None = None) -> list[MatrixStack]:
+    """Read the matrix's stacks, or only those one repository holds (`stacks --repository`).
+
+    Returns:
+        The stacks.
+
+    """
+    return parse_matrix_stacks(matrix_run(cfg, ["stacks", *(["--repository", repository] if repository else [])]))
+
+
+def matrix_commit(cfg: Config) -> str:
+    """Commit and push the matrix file after a change (`atw-matrix commit`).
+
+    Returns:
+        One sentence saying whether a commit was made and pushed.
+
+    """
+    done = matrix_run(cfg, ["commit"])
+    return f"matrix committed: {bool(done.get('committed'))}, pushed: {bool(done.get('pushed'))}"
+
+
+def stack_types(cfg: Config) -> tuple[str, ...]:
+    """Read the stack types the project's naming rules list (`segments.type.enum`).
+
+    The rules are the file `$RESOURCE_NAMING_CONFIG` names, else `.resource-naming.yaml` in the
+    control repository.
+
+    Returns:
+        The values a repository name's type segment may have.
+
+    Raises:
+        PolyrepoError: when the file cannot be read or lists no types.
+
+    """
+    stated = os.environ.get(NAMING_RULES_ENV, "").strip()
+    path = Path(stated).expanduser() if stated else cfg.file.parent.parent / NAMING_RULES_FILE
+    try:
+        loaded: object = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, YAMLError) as exc:
+        msg = f"cannot read the naming rules {path}: {exc}"
+        raise PolyrepoError(msg) from exc
+    segment = _map(_map(_map(loaded, "the naming rules").get("segments"), "segments").get("type"), "segments.type")
+    types = _strs(segment.get("enum"), "segments.type.enum")
+    if not types:
+        msg = f"the naming rules {path} list no stack types (segments.type.enum)"
+        raise PolyrepoError(msg)
+    return tuple(types)
+
+
+def holds_stack(name: str, types: tuple[str, ...]) -> bool:
+    """Tell whether a repository of this name holds a stack: its name ends in a listed stack type.
+
+    Returns:
+        True when the last hyphen-separated token of the name is one of the types.
+
+    """
+    return STACK_NAME_SEPARATOR in name and name.rpartition(STACK_NAME_SEPARATOR)[2] in types
+
+
+def record_stack(cfg: Config, name: str, space: str, known: list[MatrixStack]) -> str:
+    """Record in the matrix the stack a repository named `name` holds (S1).
+
+    The stack takes the repository's name. A stack the matrix already holds under that id gets
+    its `repository`; one it does not hold is recorded on the repository side with its app, its
+    execution use (imported for a library, else executable) and the purpose not stated.
+
+    An `atw-matrix` refusal propagates as the PolyrepoError of `matrix_run`.
+
+    Returns:
+        One sentence saying what was recorded.
+
+    """
+    sid = f"stack:{name}"
+    args = ["put", "stack", "--side", "repository", "--id", sid, "--repository", name]
+    if any(s.id == sid for s in known):
+        matrix_run(cfg, args)
+        return f"matrix: {sid} now names {name} as its repository"
+    kind = name.rpartition(STACK_NAME_SEPARATOR)[2]
+    use = EXECUTION_IMPORTED if kind == LIBRARY_STACK_TYPE else EXECUTION_EXECUTABLE
+    matrix_run(cfg, [*args, "--name", name, "--app", space, "--execution-use", use, "--purpose", PURPOSE_NOT_STATED])
+    return f"matrix: recorded {sid} ({use}, app {space}), purpose not stated"
+
+
+def require_no_stacks(cfg: Config, repository: str) -> None:
+    """Refuse to go on while the matrix has stacks in a repository that is leaving use (S3).
+
+    Raises:
+        PolyrepoError: when any stack names the repository, with the ids to move or remove.
+
+    """
+    held = read_matrix_stacks(cfg, repository)
+    if held:
+        msg = (
+            f"the matrix still has stacks in {repository}: {', '.join(s.id for s in held)}; move each "
+            "(put stack --repository) or remove it (remove stack:<id> --held), then try again"
+        )
+        raise PolyrepoError(msg)
 
 
 # --------------------------------------------------------------------------------------------
@@ -1070,7 +1263,18 @@ class State:
     duplicates: list[tuple[str, list[Path]]]
     gh: GitHub
     manifest: Manifest
-    confirmed: dict[tuple[str, str], bool] = dataclasses.field(default_factory=dict)
+    held_stacks: list[MatrixStack] | None = None
+
+    def matrix_stacks(self) -> list[MatrixStack]:
+        """Read the matrix's stacks once per command.
+
+        Returns:
+            Every stack the matrix holds.
+
+        """
+        if self.held_stacks is None:
+            self.held_stacks = read_matrix_stacks(self.cfg)
+        return self.held_stacks
 
     def resolve(self, wanted: list[str]) -> list[str]:
         """Resolve repo names or paths given on the command line to tracked repo names.
@@ -1094,30 +1298,6 @@ class State:
         rec = self.gh.resolve(name)
         return f"renamed:{rec['name']}" if rec else "missing"
 
-    def confirm(self, src: str, item: str) -> bool | None:
-        """Check live whether a repo's code names an item it claims to own.
-
-        Returns:
-            True or False from the repo's tracked files; None when src is not on disk.
-
-        """
-        r = self.local.get(src)
-        if r is None:
-            return None
-        key = (src, item)
-        if key not in self.confirmed:
-            self.confirmed[key] = mentions(r.path, item)
-        return self.confirmed[key]
-
-    def confirm_all(self, names: set[str] | None = None) -> None:
-        """Run every live `owns` check touching the names (all when None), in parallel."""
-        pairs: set[tuple[str, str]] = set()
-        for n, e in self.manifest.entries().items():
-            if names is None or n in names:
-                pairs |= {(n, str(o)) for o in e.get("owns") or []}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-            list(ex.map(lambda p: self.confirm(*p), sorted(pairs)))
-
     def lifecycle(self, name: str) -> str:
         """Derive a repo's lifecycle from reality first, the manifest second.
 
@@ -1133,41 +1313,6 @@ class State:
         e = self.manifest.entries().get(name)
         man = str(e.get("lifecycle")) if e and e.get("lifecycle") else "active"
         return "active" if man in LIFECYCLES_INACTIVE else man
-
-    def purpose_moved(self, r: LocalRepo | None, purpose_head: object) -> bool:
-        """Say whether a repo's main has moved since its purpose was written.
-
-        Commits that touch only agent instruction files (`AGENTS.md`, `CLAUDE.md`, at any
-        depth) do not count: they say nothing about what the repo is. In the repo that
-        holds the steward's own folder, commits that touch only that folder do not count
-        either: recording a purpose there commits the manifest, which would otherwise
-        mark the purpose stale again at once.
-
-        Returns:
-            True when the purpose needs a recheck.
-
-        """
-        if not r or not r.main_sha:
-            return False
-        if not purpose_head:
-            return True
-        if purpose_head == r.main_sha:
-            return False
-        excludes = [f":(exclude,glob)**/{n}" for n in PURPOSE_NEUTRAL_FILES]
-        own = self.cfg.file.parent.resolve()
-        if r.path == own or r.path in own.parents:
-            excludes.append(f":(exclude){own.relative_to(r.path).as_posix()}")
-        cp = git(
-            r.path,
-            "diff",
-            "--quiet",
-            str(purpose_head),
-            r.main_sha,
-            "--",
-            ".",
-            *excludes,
-        )
-        return cp.returncode != 0
 
     def tracked_names(self, all_github: bool = False) -> list[str]:
         """Every repo in scope: on disk, in the manifest, or a deprecated project repo on GitHub.
@@ -1186,13 +1331,13 @@ class State:
         return sorted(names, key=str.lower)
 
     def record(self, name: str, deep: bool = True) -> dict[str, object]:
-        """Build a repo's full record: live facts plus the manifest's purpose, owns, groups.
+        """Build a repo's full record: live facts, the manifest's groups, and the matrix's stacks.
 
-        Groups are reported only for a repo that exists and is active. Each `owns` item
-        carries `confirmed`, checked live against the repo's tracked files (None when the
-        repo is not on disk, or when deep is False). The record carries no dependencies:
-        a dependency is between services, components and infrastructure, never between
-        repos.
+        Groups are reported only for a repo that exists and is active. With deep, the record
+        carries `stacks`: the matrix's stacks that name the repo as their repository, each with
+        its purpose and what it holds (an empty list when the matrix has none). The record
+        carries no dependencies: a dependency is between services, components and
+        infrastructure, never between repos.
 
         Returns:
             The record.
@@ -1202,7 +1347,6 @@ class State:
         e = self.manifest.entries().get(name) or CommentedMap()
         g = self.gh.get(name)
         pat = self.cfg.classify(name)
-        purpose_head = e.get("purpose_head")
         lifecycle = self.lifecycle(name)
         live = r is not None or g is not None
         rec: dict[str, object] = {
@@ -1210,7 +1354,6 @@ class State:
             "space": r.space if r else self.cfg.expected_space(name),
             "path": str(r.path) if r else None,
             "lifecycle": lifecycle,
-            "role": str(e["role"]) if e.get("role") else None,
             "present": {
                 "disk": r is not None,
                 "github": g is not None,
@@ -1241,18 +1384,10 @@ class State:
             ),
             "origin_url": r.origin_url if r else None,
             "github": g,
-            "purpose": str(e["purpose"]).strip() if e.get("purpose") else None,
-            "purpose_head": purpose_head,
-            "purpose_stale": self.purpose_moved(r, purpose_head),
-            "owns": [
-                {
-                    "item": str(o),
-                    "confirmed": self.confirm(name, str(o)) if deep else None,
-                }
-                for o in e.get("owns") or []
-            ],
             "groups": (self.manifest.groups_of(name) if live and lifecycle not in LIFECYCLES_INACTIVE else []),
         }
+        if deep:
+            rec["stacks"] = [s.view for s in self.matrix_stacks() if s.repository == name]
         if e.get("deprecated_on"):
             rec["deprecated_on"] = str(e["deprecated_on"])
         return rec
@@ -1542,10 +1677,10 @@ def _check_github_only(
 
 
 def _check_relationships(st: State) -> list[Finding]:
-    """Check group members, `owns` claims and stored dependencies.
+    """Check group members and stored dependencies.
 
-    Group members are checked against disk and GitHub, each `owns` claim against the owning
-    repo's code, and the manifest must store no repo-to-repo dependency.
+    Group members are checked against disk and GitHub, and the manifest must store no
+    repo-to-repo dependency.
 
     Returns:
         The findings.
@@ -1565,18 +1700,6 @@ def _check_relationships(st: State) -> list[Finding]:
                 action=man.drop_stored_dependencies,
                 manifest_change=True,
             ),
-        )
-
-    st.confirm_all()
-    for n, e in man.entries().items():
-        out.extend(
-            Finding(
-                "owns-unconfirmed",
-                n,
-                f"the manifest says {n} owns {o}, but no tracked file in {n} names it",
-            )
-            for o in e.get("owns") or []
-            if st.confirm(n, str(o)) is False
         )
     return out
 
@@ -1694,7 +1817,7 @@ def _check_local(
                 "untracked-repo",
                 name,
                 f"repo on disk at {r.path} with no manifest entry",
-                fix=f"add a manifest entry (lifecycle {lc}); its purpose is then a purpose-missing finding",
+                fix=f"add a manifest entry (lifecycle {lc})",
                 action=lambda: man.add_entry(name, entry_fields(cfg, name, lc)),
                 manifest_change=True,
             ),
@@ -1882,13 +2005,13 @@ def _check_main_pushed(st: State, name: str, r: LocalRepo, *, origin_ok: bool) -
 
 
 def _check_disk_fields(st: State, name: str, r: LocalRepo, e: CommentedMap) -> list[Finding]:
-    """Check the manifest fields the disk decides: local_path and purpose.
+    """Check the manifest field the disk decides: local_path.
 
     Returns:
         The findings.
 
     """
-    man, b = st.manifest, st.cfg.default_branch
+    man = st.manifest
     out: list[Finding] = []
     lp = e.get("local_path")
     if lp is not None and Path(str(lp)).expanduser() != r.path:
@@ -1900,22 +2023,6 @@ def _check_disk_fields(st: State, name: str, r: LocalRepo, e: CommentedMap) -> l
                 fix="remove local_path; the tool finds the path on disk",
                 action=lambda: man.set_field(name, "local_path", None),
                 manifest_change=True,
-            ),
-        )
-    if st.lifecycle(name) in LIFECYCLES_INACTIVE:
-        pass
-    elif not e.get("purpose"):
-        out.append(
-            Finding("purpose-missing", name, "manifest entry has no purpose"),
-        )
-    elif st.purpose_moved(r, e.get("purpose_head")):
-        ph = e.get("purpose_head")
-        why = f"was written at {str(ph)[:12]}" if ph else "has no recorded purpose_head"
-        out.append(
-            Finding(
-                "purpose-recheck",
-                name,
-                f"purpose {why}; {b} is now {(r.main_sha or 'unknown')[:12]}",
             ),
         )
     return out
@@ -2008,6 +2115,7 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
         return []
 
     def act() -> None:
+        require_no_stacks(cfg, name)
         must(
             run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120),
         )
@@ -2021,7 +2129,10 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
             "archive-due",
             name,
             f"deprecated {age} days ago ({start}); repos are archived {days} days after deprecation",
-            fix=f"archive {cfg.owner}/{name} on GitHub, set lifecycle archived, and drop it from the beads fleet list",
+            fix=(
+                f"archive {cfg.owner}/{name} on GitHub, set lifecycle archived, and drop it from the beads fleet list"
+                " (once no matrix stack names it)"
+            ),
             action=act,
         ),
     ]
@@ -2550,8 +2661,7 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
     names = st.resolve(args.repos) if args.repos else sorted(st.local, key=str.lower)
-    st.confirm_all(set(names))
-    recs = [st.record(n) for n in names]
+    recs = [st.record(n, deep=False) for n in names]
 
     def text() -> str:
         lines = []
@@ -2566,9 +2676,10 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
-    """Report the full record of every repo on disk.
+    """Report the full record of every repo on disk, with the matrix's stacks for each.
 
-    --all adds every other repo the manifest or GitHub has.
+    --all adds every other repo the manifest or GitHub has. --name keeps only the repo with that
+    name, compared without case; `repos` is empty when no repo has it.
 
     Returns:
         0.
@@ -2576,7 +2687,8 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
     names = st.tracked_names(all_github=True) if args.all else sorted(st.local, key=str.lower)
-    st.confirm_all()
+    if args.name:
+        names = [n for n in names if n.casefold() == args.name.casefold()]
     recs = [st.record(n) for n in names]
     data = {
         "root": str(cfg.root),
@@ -2658,62 +2770,13 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
             raise PolyrepoError(msg)
         terms.append(m.groups())
     st = gather(cfg, fetch=args.fetch, use_cache=not args.no_cache)
-    deep = any(a.split(".")[0] == "owns" for a, _, _ in terms)
-    if deep:
-        st.confirm_all()
+    deep = any(a.split(".")[0] == "stacks" for a, _, _ in terms)
     recs = [st.record(n, deep=deep) for n in st.tracked_names()]
     hits = [r for r in recs if all(_matches(_lookup(r, a), op, v) for a, op, v in terms)]
     emit(
         args,
         {"count": len(hits), "repos": hits},
         lambda: "\n".join(_status_line(r) for r in hits),
-    )
-    return 0
-
-
-def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
-    """Record a repo's purpose (or confirm the current one) as checked at its current main.
-
-    Returns:
-        0.
-
-    Raises:
-        PolyrepoError: when the repo is not on disk, has no main, or has no purpose to confirm.
-
-    """
-    st = gather(cfg, fetch=False, use_cache=True)
-    (name,) = st.resolve([args.repo])
-    r = st.local.get(name)
-    if r is None or not r.main_sha:
-        msg = f"{name} has no local {cfg.default_branch} to check a purpose against"
-        raise PolyrepoError(msg)
-    st.manifest.add_entry(name, entry_fields(cfg, name, st.lifecycle(name)))
-    e = st.manifest.entries()[name]
-    if args.text:
-        st.manifest.set_field(name, "purpose", args.text.strip())
-    elif not e.get("purpose"):
-        msg = f"{name} has no purpose to confirm; pass --text"
-        raise PolyrepoError(msg)
-    st.manifest.set_field(name, "purpose_head", r.main_sha)
-    st.manifest.save()
-    what = "set" if args.text else "confirmed"
-    append_changelog(
-        cfg,
-        "polyrepo purpose",
-        [f"{name}: purpose {what} at {cfg.default_branch} {r.main_sha[:12]}"],
-    )
-    data: dict[str, object] = {
-        "repo": name,
-        "purpose": str(st.manifest.entries()[name]["purpose"]).strip(),
-        "purpose_head": r.main_sha,
-    }
-    finish_records(cfg, data)
-    emit(
-        args,
-        data,
-        lambda: "\n".join(
-            [f"{name}: purpose {what} at {(r.main_sha or 'unknown')[:12]}", *_records_line(data)],
-        ),
     )
     return 0
 
@@ -3076,7 +3139,7 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
 
 
 def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
-    """Create a repo from a template, on disk and on GitHub, with its manifest entry.
+    """Create a repo from a template, on disk and on GitHub, with its manifest entry and its stack.
 
     Returns:
         0 on success, 1 when a step after rendering failed.
@@ -3105,7 +3168,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 "then commit"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
-            f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
+            f"add the manifest entry (lifecycle {args.lifecycle})",
+            "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
             "add it to the beads fleet list (repos.additional)",
             "index it once with the pinned GitNexus (gitnexus-reindex.sh)",
@@ -3144,6 +3208,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             [
                 f"{name}: created at {dest} and pushed to GitHub"
                 + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
+                + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
                 + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
                 + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
                 *_records_line(res),
@@ -3228,32 +3293,51 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
             res["gitnexus_error"] = failure
 
 
-def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
-    """Add the new repo's manifest entry, set up its beads, log it, and commit the records.
+def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
+    """Record in the matrix the stack the new repo holds, when it holds one (S1).
+
+    A repo holds a stack when its name ends in a stack type the naming rules list and it is not
+    in a space the matrix leaves alone. A repo that some stack already names as its repository
+    is left as it is. The matrix file is committed after a change.
 
     Returns:
-        0, or 1 when the environment or beads setup failed.
+        One sentence for each thing done or left.
+
+    """
+    if space in MATRIX_SKIP_SPACES:
+        return [f"matrix: left alone; {space} repositories keep their rows as they are"]
+    known = read_matrix_stacks(cfg)
+    held = [s.id for s in known if s.repository == name]
+    if held:
+        return [f"matrix: {', '.join(held)} already name {name} as their repository"]
+    if not holds_stack(name, stack_types(cfg)):
+        return [f"matrix: no stack recorded; {name} ends in no stack type"]
+    return [record_stack(cfg, name, space, known), matrix_commit(cfg)]
+
+
+def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
+    """Add the new repo's manifest entry, record its stack in the matrix, set up its beads, log it, and commit.
+
+    Returns:
+        0, or 1 when the environment, matrix or beads setup failed.
 
     """
     name = args.name
     man = Manifest(cfg.manifest)
-    man.add_entry(
-        name,
-        entry_fields(
-            cfg,
-            name,
-            args.lifecycle,
-            {
-                "purpose": args.purpose.strip(),
-                "purpose_head": git_out(dest, "rev-parse", "HEAD"),
-            },
-        ),
-    )
+    man.add_entry(name, entry_fields(cfg, name, args.lifecycle))
     man.save()
     log = [
         f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}",
     ]
     code = 0
+    try:
+        stack_log = _create_stack_records(cfg, name, args.space)
+        res["matrix"] = stack_log
+        log.extend(stack_log)
+    except PolyrepoError as exc:
+        res["matrix_error"] = str(exc)
+        log.append(f"matrix update FAILED: {exc}")
+        code = 1
     if res.get("environment_error"):
         log.append(f"environment setup FAILED: {res['environment_error']}")
         code = 1
@@ -4268,6 +4352,9 @@ def _rename_plan(
     if taken is not None and (rec is None or taken["name"] != rec["name"]):
         msg = f"{cfg.owner}/{new} already exists on GitHub"
         raise PolyrepoError(msg)
+    deprecating = new.startswith("deprecated-")
+    if deprecating:
+        require_no_stacks(cfg, old)
     url = cfg.github_url(new)
     steps: list[str] = []
     if rec and rec["name"] != new:
@@ -4279,6 +4366,8 @@ def _rename_plan(
         f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items()),
     )
     active = lc not in LIFECYCLES_INACTIVE
+    if not deprecating and not (r and r.space in MATRIX_SKIP_SPACES):
+        steps.append(f"matrix: move-repository, so every stack that names {old} names {new}")
     if r and new_path:
         steps.append(
             "beads fleet list (repos.additional): "
@@ -4378,6 +4467,13 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
         man.set_field(new, k, v)
     man.set_field(new, "local_path", None)
     man.save()
+    if not new.startswith("deprecated-") and not (plan.r and plan.r.space in MATRIX_SKIP_SPACES):
+        try:
+            moved = _seq(matrix_run(cfg, ["move-repository", "--from", old, "--to", new]).get("stacks"), "moved stacks")
+            if moved:
+                done.extend([f"matrix: {', '.join(str(i) for i in moved)} now name {new}", matrix_commit(cfg)])
+        except PolyrepoError as exc:
+            done.append(f"matrix NOT updated: {exc}")
     if plan.r and plan.new_path:
         try:
             done.extend(
@@ -4723,6 +4819,9 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
     a linked worktree); otherwise it is left, the rest of the deprecation stands, and the
     path to delete by hand is reported. Its linked worktrees are removed with it.
+
+    The matrix must hold no stack that names the repo: the rename refuses, with the stack ids,
+    until each is moved (`put stack --repository`) or removed (`remove stack:<id> --held`).
 
     Returns:
         0 on success, 1 when a step failed part way, a pull request did not close, or the
@@ -5950,6 +6049,139 @@ def _naming_example_findings(cfg: Config, sections: dict[str, str], doc_name: st
     return out
 
 
+def _matrix_findings(st: State) -> list[Finding]:
+    """Check the matrix's stacks against the repositories (S6), with the repair for each.
+
+    The findings are an active code repository (its name ends in a listed stack type, and it is
+    not in a space the matrix leaves alone) that no stack names as its repository; a stack whose
+    repository was renamed, is deprecated or archived, or exists nowhere; and a matrix that
+    `atw-matrix check` finds invalid. A stack whose repository exists nowhere may belong to a
+    repository elaboration has yet to create, so it is reported and not repaired.
+
+    Returns:
+        The findings; each repairable one carries the `atw-matrix` call that corrects it.
+
+    """
+    cfg = st.cfg
+    known = st.matrix_stacks()
+    types = stack_types(cfg)
+    named = {s.repository for s in known if s.repository}
+    out: list[Finding] = []
+    for name in st.tracked_names():
+        r = st.local.get(name)
+        if name in named or st.lifecycle(name) in LIFECYCLES_INACTIVE or (r is None and st.gh.get(name) is None):
+            continue
+        space = r.space if r else cfg.expected_space(name)
+        if space is None or space in MATRIX_SKIP_SPACES or not holds_stack(name, types):
+            continue
+        out.append(
+            Finding(
+                "stack-missing",
+                name,
+                f"{name} holds code, but no stack in the matrix names it as its repository",
+                fix=f"record stack:{name} on the repository side, purpose not stated",
+                action=functools.partial(record_stack, cfg, name, space, known),
+            ),
+        )
+    for s in known:
+        if s.repository is None:
+            continue
+        out.extend(_stack_repository_findings(st, s))
+    checked = matrix_run(cfg, ["check"])
+    if checked.get("valid") is not True:
+        problems = _strs(checked.get("problems") or [], "the matrix's problems")
+        shown = "; ".join(problems[:CHECK_PROBLEMS_SHOWN])
+        out.append(
+            Finding("matrix-invalid", "matrix", f"atw-matrix check reports {len(problems)} problem(s): {shown}"),
+        )
+    return out
+
+
+def _stack_repository_findings(st: State, s: MatrixStack) -> list[Finding]:
+    """Check that the repository one stack names is an active repository.
+
+    Returns:
+        No finding for an active repository. For a renamed one, the repair that names its new
+        name; for a deprecated or archived one, the repair that removes a hint stack holding
+        nothing or else unsets the repository; for one that exists nowhere, a finding with no repair.
+
+    """
+    cfg, repo = st.cfg, str(s.repository)
+    state = st.live_state(repo)
+    if state == "active":
+        return []
+    put = ["put", "stack", "--side", "repository", "--id", s.id]
+    if state == "missing":
+        return [
+            Finding(
+                "stack-repository-missing",
+                repo,
+                f"{s.id} names {repo} as its repository, which exists on neither disk nor GitHub",
+            ),
+        ]
+    if state.startswith("renamed:"):
+        new = state.removeprefix("renamed:")
+        return [
+            Finding(
+                "stack-repository-renamed",
+                repo,
+                f"{s.id} names {repo}, which GitHub has renamed to {new}",
+                fix=f"set the repository of {s.id} to {new}",
+                action=functools.partial(matrix_run, cfg, [*put, "--repository", new]),
+            ),
+        ]
+    drop = s.side == "repository" and s.holds == 0
+    return [
+        Finding(
+            "stack-repository-inactive",
+            repo,
+            f"{s.id} names {repo}, which is deprecated or archived",
+            fix=f"remove {s.id}, a hint that holds nothing" if drop else f"unset the repository of {s.id}",
+            action=functools.partial(matrix_run, cfg, ["remove", s.id] if drop else [*put, "--unset", "repository"]),
+        ),
+    ]
+
+
+def _matrix_doctor(cfg: Config, fix: bool, no_cache: bool) -> tuple[int, list[DoctorFinding]]:
+    """Run the matrix check of the doctor, and with fix repair what it can and commit the matrix.
+
+    Returns:
+        (the number of findings repaired, the findings still open). A matrix that cannot be
+        read or committed is one `error` finding.
+
+    """
+    try:
+        findings = _matrix_findings(gather(cfg, fetch=False, use_cache=not no_cache))
+        fixed = _repair_matrix_findings(findings) if fix else 0
+        if fixed:
+            matrix_commit(cfg)
+    except PolyrepoError as exc:
+        return 0, [_finding("matrix", "-", "error", str(exc))]
+    return fixed, [
+        _finding("matrix", f.repo, f.kind, f.detail + (f" ({f.error})" if f.error else ""))
+        for f in findings
+        if f.status != "fixed"
+    ]
+
+
+def _repair_matrix_findings(findings: list[Finding]) -> int:
+    """Run the repair of each matrix finding that has one, marking it fixed or failed.
+
+    Returns:
+        The number repaired.
+
+    """
+    for f in findings:
+        if f.action is None:
+            continue
+        try:
+            f.action()
+            f.status = "fixed"
+        except (GitFailedError, PolyrepoError) as exc:
+            f.status, f.error = "failed", str(exc)
+    return sum(f.status == "fixed" for f in findings)
+
+
 def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
@@ -5958,7 +6190,8 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     or closes the pull requests it finds. The checks are reconcile, agents-sync --check, the
     beads fleet audit, the beads fleet list and open pull requests in deprecated repos (in
     parallel, each its own process), the governance
-    entries, the knowledge-store pointers and the repository-naming document.
+    entries, the knowledge-store pointers, the repository-naming document and the matrix's
+    stacks against the repositories (repaired under --fix, and the matrix committed).
 
     Returns:
         0 when no check reports a finding, else 1.
@@ -5991,7 +6224,11 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     findings.extend(_governance_findings(cfg))
     findings.extend(_knowledge_findings(cfg))
     findings.extend(_naming_doc_findings(cfg))
-    counts: dict[str, int] = dict.fromkeys([*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc"], 0)
+    matrix_fixed, matrix_open = _matrix_doctor(cfg, args.fix, args.no_cache)
+    findings.extend(matrix_open)
+    if args.fix:
+        repairs["matrix"] = {"exit": 0, "fixed": matrix_fixed, "records": None, "error": None}
+    counts: dict[str, int] = dict.fromkeys([*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc", "matrix"], 0)
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     report: dict[str, object] = {
@@ -6127,15 +6364,8 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
         action="store_true",
         help="also every repo the manifest or GitHub has that is not on disk",
     )
+    s.add_argument("--name", help="only the repo with this name, compared without case")
     s.set_defaults(func=cmd_inventory)
-
-    s = add(
-        "purpose",
-        "record or confirm a repo's purpose at its current main",
-    )
-    s.add_argument("repo")
-    s.add_argument("--text", help="the new purpose (omit to confirm the current one)")
-    s.set_defaults(func=cmd_purpose)
 
     s = add("grep", "rg across the repos on disk")
     s.add_argument("pattern")
@@ -6166,7 +6396,6 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.add_argument("name")
     s.add_argument("--space", required=True, help="the app space it belongs in")
     s.add_argument("--template", required=True, help="the Copier template")
-    s.add_argument("--purpose", required=True, help="one line: what the repo is")
     s.add_argument("--lifecycle", default="active")
     s.add_argument(
         "--dir",
@@ -6283,7 +6512,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument(
         "--fix",
         action="store_true",
-        help="run every repair (reconcile, agents-sync, beads-fleet, deprecated-prs) first",
+        help="run every repair (reconcile, agents-sync, beads-fleet, deprecated-prs, matrix stacks)",
     )
     s.set_defaults(func=cmd_doctor)
 

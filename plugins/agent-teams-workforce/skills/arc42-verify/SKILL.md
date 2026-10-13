@@ -49,24 +49,30 @@ business requirements, is for the owner.
 | **Layout and naming** | Every section is a folder with a `README.md`; no section 9; documents sit in the section the MODEL names; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; built documents use the same layout under `built/<element>/` | `references/verification-checklist.md` |
 | **Catalog** | Every document carries `view_type` (a MENU type), `scope`, `subject`, `shows` and `lifecycle_state`, with valid values, and `shows` matches what the document's diagram shows | `references/verification-checklist.md` |
 | **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; no repository names; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
-| **One home per fact** | Each design fact the matrix holds for the documents in scope is stated under its home heading and nowhere else; another document that needs it links to that heading | this file |
+| **One home per fact** | Each design fact about an entry the documents in scope describe is stated under one heading the matrix names for that entry and nowhere else; another document that needs it links to that heading | this file |
 | **Level of detail** | No arc42 document holds content below architecture level | this file |
 | **Consistency** | No two documents contradict each other; applicable subjects have the coverage the MODEL requires; no document conflicts with a section 2 constraint; navigation and links satisfy the MODEL | `references/view-consistency-checks.md` |
 
 ### One home per fact
 
-The matrix registers each design fact with one home, a document and a heading, and refuses a
-second. For the documents in scope:
+The matrix holds no entry for a design fact. A fact's content stays under its arc42 heading, and
+the matrix holds the heading: a `describedBy` relationship from the entry the fact is about to the
+document, with the heading. For the documents in scope:
 
-1. List the facts whose home is in one of them: `atw-matrix node <document id>` names the rows
-   that link to a document, and `atw-matrix find --kinds fact --text "<subject>"` lists facts by
-   subject.
-2. For each fact, the home heading exists in the home document and states the fact. A home that is
-   missing is a `FAIL` with the fact id and the path.
-3. Any other document in scope that states the same fact in its own words, where a link to the home
-   heading belongs, is a `FAIL` with both paths and the restating sentence quoted.
-4. A statement of design in a document that the matrix holds no fact for is a `WARN` with the
-   quoted sentence: it has no registered home.
+1. List what each describes: `atw-matrix node document:<path under the architecture root>`
+   returns the document's `headings` and, under `describes`, each entry it describes with the
+   heading. `atw-matrix find --kinds document --text "<subject>"` lists documents by subject.
+2. For each entry, `atw-matrix node <entry id>` returns under `describedBy` every document and
+   heading that describes it, in scope or not. Each heading the matrix names exists in its
+   document. A heading that is missing is a `FAIL` with the entry id, the path and the heading.
+3. A fact about the entry is stated under one of those headings. Any other document in scope that
+   states the same fact in its own words, where a link to that heading belongs, is a `FAIL` with
+   both paths and the restating sentence quoted.
+4. A statement of design in a document about a thing the matrix holds no `describedBy` for is a
+   `WARN` with the quoted sentence: the matrix names no home for it.
+5. `disputedBy` on a document's entry names each recorded disagreement that quotes it, and
+   `atw-matrix node disagreement:<id>` returns the disagreeing statements with the ruling once
+   one is made. A disagreement with no ruling is a `FAIL` under Consistency, with both paths.
 
 ### Level of detail
 
@@ -85,7 +91,9 @@ limit, a lifetime, a timeout, a retry count) is a `WARN`: its home is the TRD.
    root cannot be resolved, ask one question. State whether this is a bounded review of named
    documents or a whole-project assessment; a sample is never a whole-project verdict.
 2. **Load the rules** from the MODEL, the MENU, the criteria file and the references above. For
-   coverage, establish the subjects from the matrix and the design in scope, and apply the MODEL's
+   coverage, establish the subjects from the matrix (the `subject` of each document entry, and
+   the services, components and stacks `atw-matrix find --kinds service,component,stack` returns)
+   and the design in scope, and apply the MODEL's
    coverage obligations and its assessment results.
 3. **Assert each check.** Walk the six families in order. For every check, record `PASS`, `FAIL`
    or `WARN` with the path, a one-line observation and the evidence (a quoted line, or a named

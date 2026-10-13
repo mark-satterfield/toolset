@@ -20,7 +20,8 @@ from architecture_work_contract import (
     validate_lead_routing,
     validate_scope_review,
 )
-from matrix_contract import validate_reviewer_scope
+from matrix_contract import KIND_DISAGREEMENT, REL_DISPUTES
+from matrixstore import read_matrix
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
@@ -37,9 +38,12 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import StepError
-from orchestrator.flows.architecture_check import FINDINGS_LEAD_DESCRIPTION, FINDINGS_LEAD_PURPOSE
+from orchestrator.flows.architecture_check import (
+    FINDINGS_LEAD_DESCRIPTION,
+    FINDINGS_LEAD_PURPOSE,
+    validate_reviewer_scope,
+)
 from orchestrator.flows.architecture_files import (
-    APPROVE,
     ARCHITECTURE_FOLDER,
     ARTIFACT_RESOLVED,
     ARTIFACT_REVIEW,
@@ -54,6 +58,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_SPECIALISTS,
     LABEL_TRD,
     PLUGIN,
+    PROMOTE,
     ROLE_DECIDER,
     ROLE_LEAD,
     ROLE_REVIEWER,
@@ -62,9 +67,12 @@ from orchestrator.flows.architecture_files import (
     ArchitectureStepError,
     agents_with_role,
     checked_file,
+    cited_document,
     descriptions_with_role,
+    document_path,
     is_finish,
     journal_file,
+    matrix_file,
     output_check,
     planned_params,
     read_context,
@@ -80,15 +88,21 @@ if TYPE_CHECKING:
         ScopeFinding,
         ScopeReview,
         SpecialistList,
+        UnsettledMatter,
     )
-    from matrix_contract import ReviewerScope
+    from matrixstore import Matrix
     from step_journal_contract import Artifact, Journal, Step, StepId, StepPlan
+
+    from orchestrator.flows.architecture_check import ReviewerScope
 
 FINDINGS: Final = "findings"
 OUTSIDE_SCOPE: Final = "findings outside the scope"
 ALTERNATIVES: Final = "alternatives requested"
 ROUTING: Final = "routing"
 STANDS: Final = "stands"
+SETTLED: Final = "disagreements settled"
+ATTR_STANDS: Final = "stands"
+ATTR_HEADING: Final = "heading"
 SCOPE_PARAM: Final = "scope"
 TRD_PARAM: Final = "trd"
 ID_LENGTH: Final = 8
@@ -115,19 +129,22 @@ def _in_scope(finding: ScopeFinding, scope: ReviewerScope) -> bool:
     """Tell whether a finding is about an item of the reviewer's scope.
 
     Returns:
-        True when the finding names a row or a heading of the scope, by its item or by its
+        True when the finding names a document or a heading of the scope, by its item or by its
         location, and for every finding of a reviewer whose scope is the TRD.
 
     """
     if scope["trd"] is not None:
         return True
-    items: set[str] = {row["id"] for row in scope["rows"]} | {row["name"] for row in scope["rows"]}
+    items: set[str] = set()
     documents: set[str] = set()
     headings: set[tuple[str, str]] = set()
-    for listed in scope["headings"]:
-        items.update({listed["heading"], f"{listed['document']}#{listed['heading']}"})
-        documents.add(listed["document"])
-        headings.add((listed["document"], listed["heading"]))
+    for listed in scope["documents"]:
+        path: str = document_path(listed["id"])
+        items.update({listed["id"], listed["name"], path})
+        documents.add(path)
+        for heading in listed["headings"]:
+            items.update({heading, f"{path}#{heading}"})
+            headings.add((path, heading))
     source: str = finding["location"]["source"]
     return (
         finding["item"] in items
@@ -152,7 +169,7 @@ def _review_group(run: StepRun) -> tuple[list[Step], StepId]:
     siblings: list[Step] = journal["steps"] if parent is None else parent["steps"]
     position: int = next(index for index, step in enumerate(siblings) if step["id"] == run.step["id"])
     later: list[int] = [
-        index for index, step in enumerate(siblings) if index > position and step.get("script") == APPROVE
+        index for index, step in enumerate(siblings) if index > position and step.get("script") == PROMOTE
     ]
     if not later:
         raise ArchitectureStepError(run, "no promotion step follows the review in its container")
@@ -344,12 +361,46 @@ def lead(run: StepRun) -> AgentLaunch:
     )
 
 
+def _disagreements(arch: Path, matter: UnsettledMatter) -> tuple[list[JsonValue], list[str]]:
+    """Read back from the matrix the disagreements a question to the decider is about.
+
+    A disagreement is one the question is about when the positions' evidence cites every document
+    heading the disagreement disputes.
+
+    Returns:
+        The ids of those disagreements whose ``stands`` is set, and of those whose ``stands`` is
+        unset.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    cited: set[tuple[str | None, str]] = {
+        (cited_document(arch, citation["source"]), citation["heading"].strip())
+        for position in matter["positions"]
+        for citation in position["evidence"]
+    }
+    settled: list[JsonValue] = []
+    unset: list[str] = []
+    for entry in matrix.entries((KIND_DISAGREEMENT,)):
+        disputed: set[tuple[str | None, str]] = {
+            (statement.end, str(statement.attributes.get(ATTR_HEADING, "")).strip())
+            for statement in matrix.outgoing(entry.id, (REL_DISPUTES,))
+        }
+        if disputed and disputed <= cited:
+            if entry.attributes.get(ATTR_STANDS):
+                settled.append(entry.id)
+            else:
+                unset.append(entry.id)
+    return settled, unset
+
+
 @agent_step(*agents_with_role(PLUGIN, ROLE_DECIDER))
 def decider(run: StepRun) -> AgentLaunch:
     """Build the session of the decider: one question file in, one ruling out.
 
-    The decider records its ruling in the matrix itself, as the settlement of the matter. A
-    ruling that raises an owner concern fails the step with the concerns as its evidence.
+    The decider records its ruling in the matrix itself, with ``atw-matrix settle``, as the
+    settlement of the matter. The accept step reads each disagreement the question is about back
+    from the matrix and fails the step when its ``stands`` is unset. A ruling that raises an owner
+    concern fails the step with the concerns as its evidence.
 
     Returns:
         The launch, with the question as its only input.
@@ -362,14 +413,31 @@ def decider(run: StepRun) -> AgentLaunch:
     question: Path | None = run.inputs.optional_file(LABEL_QUESTION)
     if question is None:
         raise ArchitectureStepError(run, f"its inputs hold no file artifact named {LABEL_QUESTION!r}")
-    checked_file(run, question, validate_architecture_question)
+    matter: UnsettledMatter = checked_file(run, question, validate_architecture_question)
+    arch: Path = Path(context["architectureRoot"])
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         ruling: ArchitectureRuling = checked_file(accepted, output, validate_architecture_ruling)
         concerns: tuple[str, ...] = tuple(f"{entry['kind']}: {entry['concern']}" for entry in ruling["ownerConcerns"])
         if concerns:
             raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, concerns)
-        return Completion(artifacts=(file_artifact(LABEL_RULING, output), value_artifact(STANDS, ruling["stands"])))
+        settled: list[JsonValue]
+        unset: list[str]
+        settled, unset = accepted.tools.portfolio(accepted.inputs.stage, _disagreements, arch, matter)
+        if unset:
+            raise ArchitectureStepError(
+                accepted,
+                "the matrix holds no ruling for a disagreement the question is about: its `stands` is unset; "
+                "the ruling is recorded with atw-matrix settle",
+                *unset,
+            )
+        return Completion(
+            artifacts=(
+                file_artifact(LABEL_RULING, output),
+                value_artifact(STANDS, ruling["stands"]),
+                value_artifact(SETTLED, settled),
+            ),
+        )
 
     return AgentLaunch(
         output=run.context.work / ARCHITECTURE_FOLDER / f"ruling-{run.step['id'][:ID_LENGTH]}.json",

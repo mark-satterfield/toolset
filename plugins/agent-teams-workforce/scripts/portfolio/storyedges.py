@@ -32,36 +32,40 @@ by hand is never removed and an edge the sources no longer derive is.
 from __future__ import annotations
 
 import json
-import re
+import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Final, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
 
 import beadgraph
-import contracts
 from beadcontracts import PlannedWrite
 from beadgraph import Bead, Graph, Writer, join_ids, now_iso, split_ids
-from contracts import JsonObject
 from typeguard import CollectionCheckStrategy, typechecked
 
-# The bead metadata keys are generated from the beads-contract schema, their one definition.
+# The bead metadata keys and the matrix contract are generated from their schemas, their one
+# definition each.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 
 # isort: split
+import beads_contract
 from bead_metadata import (
-    KEY_REPO_PATH,
     KEY_STORY_EDGE_REASONS,
     KEY_STORY_OWNED_BLOCKERS,
     KEY_STORY_OWNED_BLOCKERS_AT,
 )
+from matrix_contract import KIND_STACK, Entry, EntryId, JsonValue
+from matrixstore import Matrix, matrix_path, read_matrix
+
+if TYPE_CHECKING:
+    from bead_metadata import BuildContract
+    from contracts import JsonObject
 
 _ARGUMENT_ERROR: str = "Arguments violate the storyedges input contract"
 
-#: The `<repo key>: <path>` line a Story's notes carry when its metadata holds no repository.
-_REPO_LINE: Final[re.Pattern[str]] = re.compile(
-    rf"^\s*{re.escape(KEY_REPO_PATH)}:\s*(\S.*?)\s*$",
-    re.MULTILINE,
-)
+#: The attribute of a stack entry that names the repository holding it.
+ATTR_REPOSITORY: Final = "repository"
 
 
 class EdgeReason(TypedDict):
@@ -145,30 +149,81 @@ class StoryEdges(TypedDict):
     summary: StoryEdgeSummary
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def repository_of(bead: Bead, record: JsonObject) -> str | None:
-    """Return the repository a Story is scoped to, normalized to an absolute path when it is one.
-
-    Args:
-        bead: The Story.
-        record: Its tracker record, for the repository line in its notes.
+def _stated_ids(record: JsonObject) -> list[str]:
+    """Read the matrix ids one Task's tracker record states.
 
     Returns:
-        The repository, or None when the Story records none.
+        The ids its `matrix_elements` key carries, read through `beads_contract.read_contract`,
+        the one reader of the build contract; none when it carries none.
+
+    Raises:
+        ValueError: The Task's metadata is not readable.
+
+    """
+    try:
+        contract: BuildContract = beads_contract.read_contract(record)
+    except ValueError as error:
+        message: str = f"reading the matrix ids of the Task {record.get('id')}: {error}"
+        raise ValueError(message) from error
+    return list(contract.get("matrix_elements", []))
+
+
+def _repository_of(matrix: Matrix, stated: str) -> str | None:
+    """Find the repository of the stack one stated id names or is held by.
+
+    Returns:
+        The stack's `repository`; None when the id is no entry's, the entry has no stack, or
+        the stack names no repository.
+
+    """
+    entry: Entry | None = matrix.find(EntryId(stated))
+    if entry is None:
+        return None
+    stack: Entry | None = entry if entry.kind == KIND_STACK else None
+    if stack is None:
+        home: EntryId | None = matrix.home(entry.id)
+        stack = matrix.find(home) if home is not None else None
+    repository: JsonValue = stack.attributes.get(ATTR_REPOSITORY) if stack is not None else None
+    return repository if isinstance(repository, str) and repository else None
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def story_repositories(graph: Graph, matrix: Matrix) -> dict[str, str]:
+    """Return the repository each open Story is scoped to, from the stack its Tasks state.
+
+    A Task states the matrix ids of what it builds; the stack among them, or the stack that
+    holds an entry among them, names its repository in the matrix. A Story whose Tasks state
+    stacks of more than one repository takes the first in name order.
+
+    Args:
+        graph: The tracker graph.
+        matrix: The matrix.
+
+    Returns:
+        Open Story id -> the repository's name. A Story whose Tasks state no stack that names a
+        repository is left out.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(bead, Bead)):
+    record: JsonObject
+    if not isinstance(graph, Graph) or not isinstance(matrix, Matrix):
         raise TypeError(_ARGUMENT_ERROR)
-    value: str = bead.metadata.get(KEY_REPO_PATH, "").strip()
-    if not value:
-        match: re.Match[str] | None = _REPO_LINE.search(str(record.get("notes") or ""))
-        value = match.group(1).strip() if match else ""
-    if not value:
-        return None
-    return str(Path(value).resolve()) if value.startswith("/") else value
+    found: dict[str, set[str]] = {}
+    for record in graph.records:
+        task: Bead = beadgraph.bead_of(record)
+        if task.kind != "task":
+            continue
+        story: str | None = _story_of(graph, task.id)
+        if story is None or graph.beads[story].closed:
+            continue
+        stated: str
+        for stated in _stated_ids(record):
+            repository: str | None = _repository_of(matrix, stated)
+            if repository is not None:
+                found.setdefault(story, set()).add(repository)
+    return {story: min(repositories) for story, repositories in found.items()}
 
 
 def _earlier_epics(graph: Graph) -> dict[str, set[str]]:
@@ -212,24 +267,13 @@ def _story_of(graph: Graph, bead_id: str) -> str | None:
     return next((b.id for b in graph.ancestors(bead_id) if b.kind == "story"), None)
 
 
-def _story_repositories(graph: Graph, records: dict[str, JsonObject]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    story: Bead
-    for story in graph.of_kind("story"):
-        if story.closed:
-            continue
-        repository: str | None = repository_of(story, records.get(story.id, {}))
-        if repository:
-            result[story.id] = repository
-    return result
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def derive(graph: Graph) -> DerivedEdges:
+def derive(graph: Graph, repositories: Mapping[str, str]) -> DerivedEdges:
     """Return the Story edges Epic order within a repository and Task edges between Stories require.
 
     Args:
         graph: The tracker graph.
+        repositories: Open Story id -> the repository it is scoped to (`story_repositories`).
 
     Returns:
         `required`: (later, earlier) -> the reasons; `repos`: Story id -> repository.
@@ -246,10 +290,9 @@ def derive(graph: Graph) -> DerivedEdges:
     b: str | None
     task: Bead
     blocker: str
-    if not (isinstance(graph, Graph)):
+    if not isinstance(graph, Graph) or not isinstance(repositories, Mapping):
         raise TypeError(_ARGUMENT_ERROR)
-    records: dict[str, dict[str, contracts.JsonValue]] = {str(r.get("id")): r for r in graph.records}
-    repos: dict[str, str] = _story_repositories(graph, records)
+    repos: dict[str, str] = dict(repositories)
     earlier: dict[str, set[str]] = _earlier_epics(graph)
     epic_of: dict[str, str | None] = {story: (epic.id if (epic := graph.epic_of(story)) else None) for story in repos}
     required: dict[tuple[str, str], list[EdgeReason]] = {}
@@ -473,6 +516,10 @@ def _write_story_edges(
 def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
     """Derive every Story edge and write the difference, except for refused Stories.
 
+    Each Story's repository is read from the matrix: the `repository` of the stack its Tasks
+    state. The matrix is the file the environment names (`matrixstore.matrix_path`); a matrix
+    that is missing or unreadable raises `MatrixError`, a `ValueError`, from `read_matrix`.
+
     Args:
         graph: The tracker graph, read after the Task edges were written.
         writer: The tracker writer; a dry-run writer records the writes instead.
@@ -494,7 +541,8 @@ def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
     unchanged: int
     if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)):
         raise TypeError(_ARGUMENT_ERROR)
-    derived: DerivedEdges = derive(graph)
+    matrix: Matrix = read_matrix(matrix_path(None, os.environ))
+    derived: DerivedEdges = derive(graph, story_repositories(graph, matrix))
     required, repos = derived["required"], derived["repos"]
     conflicts: list[EdgeConflict] = [
         {

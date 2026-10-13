@@ -13,7 +13,8 @@ actually has, not to force projects into a fixed mold.
 The manifest records **structural facts about repositories** and **pointers to canonical
 sources**. It never caches, restates, or duplicates a fact whose canonical home is another
 document. This applies to every write the steward makes to the manifest, whether through the
-`polyrepo` tool or by judgment (purposes, ownership, grouping).
+`polyrepo` tool or by judgment (grouping). What a repository holds and why it exists is the
+matrix's (its stacks and their purposes), never the manifest's.
 
 ### What belongs
 
@@ -21,8 +22,8 @@ Facts that are true of the repository *as a repository*, and that have no other 
 
 | Belongs | Example |
 |---|---|
-| Repo identity | `name`, `purpose` (one line, what the repo *is*), `role`, `lifecycle` |
-| Ownership | `owner`, `owns` |
+| Repo identity | `name`, `lifecycle` |
+| Ownership | `owner` |
 | Repo grouping | groups |
 | Lifecycle dates | `deprecated_on` |
 | Pointers | a path or link to the canonical document for anything else |
@@ -44,15 +45,15 @@ Any **derived fact** — anything decided, specified, or described somewhere els
 
 Naming a technology is not automatically a violation. Apply this test:
 
-- **Identity — keep.** A statement of what *this* repo is, owns, or provisions. `SkillSpoke-sessionCache-infra: ElastiCache (Valkey/Redis) for sessions` is what that repo *is*; deleting it would make the manifest useless for finding which repo owns what.
+- **Identity — keep.** A statement of what *this* repo is. The manifest states no purpose, no `owns` and no `role`: what a repo holds and what it is for is the matrix's stacks.
 - **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
 
 A **dependency** is between services, components and infrastructure, never between code
 repositories: a repository is only where code lives, and repos can be combined or split while
 service A still depends on service B. The manifest therefore stores no repo-to-repo dependency
 edge. The canonical home of a dependency is the effective arc42 architecture in the
-`skillspoke-docs` vault; `owns` (the service or component placement in each repo) is what maps
-a question about a repo onto it.
+`skillspoke-docs` vault, and the matrix (`atw-matrix deps`) answers it; the matrix's stacks
+map a question about a repo onto it.
 
 ### Why
 
@@ -135,10 +136,6 @@ see *Schema version history (v4)* for what replaced each of them and why.
 
 ```yaml
 - name: string                   # the project-internal name
-  purpose: string                # one sentence
-  role: enum                     # service, library, infra, docs,
-                                 # orchestrator, meta, app, mobile-app,
-                                 # sdk, scripts, fork, other
   remote_url: string?            # primary remote
   default_branch: string?        # main, master, develop, etc.
   owner: string?
@@ -153,9 +150,10 @@ tool derives from the project's repo-root environment variable plus this
 `name` — recording it in the manifest is exactly the kind of hardcoded,
 machine-specific path that goes stale on every re-clone or new machine.
 
-Required: `name`, `purpose`, `role`, `lifecycle`. Everything else is
+Required: `name`, `lifecycle`. Everything else is
 encouraged but optional — fill in what you can, mark the rest as
-`unknown` or omit.
+`unknown` or omit. An entry that still carries `purpose`, `purpose_head`, `owns` or `role` loses
+them at the tool's next write of the manifest.
 
 ## Group schema
 
@@ -461,6 +459,7 @@ read `schema_version` and know exactly what changed between versions.
 - **v5** - removed repo-to-repo dependencies: `relationships.dependencies`, its
   `Dependency` schema, the `group:<name>` endpoint notation and `relationships.cycles`.
   A dependency is between services, components and infrastructure, never between code
-  repositories, so its canonical home is the effective arc42 architecture. `owns` stays as
-  the service and component placement in each repo. Not backward-compatible: a v4 manifest
+  repositories, so its canonical home is the effective arc42 architecture. (`owns`, `purpose`,
+  `purpose_head` and `role` have since left the manifest: the matrix's stacks hold what a repo
+  holds and why it exists, and the tool drops the four fields at its next write.) Not backward-compatible: a v4 manifest
   carrying `relationships.dependencies` must drop it to become valid v5.

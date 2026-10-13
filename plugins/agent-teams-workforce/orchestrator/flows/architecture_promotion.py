@@ -1,106 +1,166 @@
-"""The script step that promotes reviewed architecture: approval, lifecycle, and the two commits.
+"""The script step that promotes reviewed architecture: lifecycle, the matrix's mirror of it, and the commits.
 
 It promotes by rule: when no review returned a finding, or the lead recorded that every item is
-resolved. It marks the reviewed rows and headings approved in the matrix, sets the reviewed
-documents effective in the vault, commits and pushes the vault when a document changed, and
-commits the matrix file. Anything else is a failure with a structured cause.
+resolved. It sets the documents in review for the Epic effective in their front matter, brings
+their matrix entries up to date so that each mirrors its lifecycle, removes each disagreement a
+document maintainer of this run corrected the losing statement of, commits and pushes the vault
+when a document changed, and commits and pushes the matrix file. Anything else is a failure with
+a structured cause.
 """
 
 from __future__ import annotations
 
-import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from matrix_contract import BASIS_REVIEWED, LIFECYCLE_EFFECTIVE, Matrix, ReviewScope, validate_review_scope
-from matrixreview import Approved, approve
-from matrixstore import Stamp, matrix_path, timestamp, update_matrix
-from matrixsync import set_lifecycle, vault_root
+from architecture_work_contract import validate_write_request, validate_write_result
+from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT
+from matrixreview import review_scope
+from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
+from matrixsync import LIFECYCLE_EFFECTIVE, relative_path, set_lifecycle, sync_documents, vault_root
+from matrixwrite import commit
+from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
+from orchestrator.flows.architecture_check import validate_review_scope
 from orchestrator.flows.architecture_files import (
-    APPROVE,
     ARCHITECTURE_FOLDER,
+    LABEL_REQUEST,
     LABEL_SCOPE,
+    PROMOTE,
     ROLE_LEAD,
+    WRITE_REQUEST,
+    WRITTEN,
     ArchitectureContext,
     ArchitectureStepError,
     agents_with_role,
     checked_file,
+    document_path,
     lead_resolved,
+    matrix_file,
     read_context,
 )
 from orchestrator.flows.architecture_review import ALTERNATIVES, FINDINGS
 
 if TYPE_CHECKING:
-    from step_journal_contract import Artifact, Journal, Step, StepId
+    from collections.abc import Sequence
 
-APPROVED_ITEMS: Final = "approved items"
+    from architecture_work_contract import WriteRequest, WriteResult
+    from matrix_contract import EntryId
+    from matrixreview import ReviewScope
+    from matrixstore import Matrix
+    from matrixwrite import CommitResult
+    from step_journal_contract import Artifact, Step
+
+    from orchestrator.core.io import JsonValue
+
+PROMOTED: Final = "promoted documents"
 VAULT_COMMIT: Final = "vault commit"
 MATRIX_COMMIT: Final = "matrix commit"
 BRANCH: Final = "main"
 REMOTE: Final = "origin"
+ATTR_LIFECYCLE: Final = "lifecycle"
+ATTR_STANDS: Final = "stands"
 
 
-def _approve(run: StepRun, steps: list[StepId], arch: Path) -> Approved:
-    """Mark approved what is in review for the Epic, as ``atw-matrix approve`` does.
+@dataclass(frozen=True)
+class Promoted:
+    """What one promotion did in the vault and in the matrix."""
+
+    documents: tuple[str, ...]
+    """The documents set effective, each by its path under the architecture root."""
+    not_effective: tuple[str, ...]
+    """Those of them whose matrix entry does not show the lifecycle effective afterwards."""
+    removed: tuple[EntryId, ...]
+    """The disagreements removed: settled, and the losing statement corrected in this run."""
+
+
+def _promote(bead: str, arch: Path, corrected: Sequence[str]) -> Promoted:
+    """Set effective what is in review for the Epic, and mirror it in the matrix.
+
+    Each document ``atw-matrix review-scope`` returns for the Epic is set effective in its front
+    matter; then, in one matrix change, the entries of those documents are brought up to date as
+    ``atw-matrix sync-documents --paths`` does, and each disagreement named that the matrix holds
+    with a ruling is removed.
+
+    Args:
+        bead: The Epic.
+        arch: The architecture root inside the vault.
+        corrected: The ids of the disagreements whose losing statement a document maintainer of
+            this run corrected.
 
     Returns:
-        What was approved, what remains, the coverage and the documents made effective; each
-        of those documents is set effective in the vault in the same matrix change.
+        The documents set effective, those the matrix does not show as effective afterwards, and
+        the disagreements removed.
 
     """
-    stamp: Stamp = Stamp(timestamp(), f"{run.bead} approve")
+    path: Path = matrix_file()
+    scope: ReviewScope = review_scope(read_matrix(path), bead)
+    documents: list[str] = sorted(document_path(document["id"]) for document in scope["documents"])
+    vault: Path = vault_root(arch)
+    relative: str
+    for relative in documents:
+        set_lifecycle(vault, relative_path(arch / relative, vault), LIFECYCLE_EFFECTIVE)
 
-    def change(matrix: Matrix) -> Approved:
-        result: Approved = approve(matrix, run.bead, steps, BASIS_REVIEWED, stamp)
-        if result["promoted"]:
-            vault: Path = vault_root(arch)
-            path: str
-            for path in result["promoted"]:
-                set_lifecycle(vault, path, LIFECYCLE_EFFECTIVE)
-        return result
+    def change(matrix: Matrix) -> list[EntryId]:
+        if documents:
+            sync_documents(matrix, arch, paths=documents)
+        removed: list[EntryId] = []
+        stated: str
+        for stated in dict.fromkeys(corrected):
+            entry = matrix.find(as_entry_id(stated))
+            if entry is not None and entry.kind == KIND_DISAGREEMENT and entry.attributes.get(ATTR_STANDS):
+                matrix.remove(entry.id)
+                removed.append(entry.id)
+        return removed
 
-    return update_matrix(matrix_path(None, os.environ), change)
+    removed: list[EntryId] = update_matrix(path, change)
+    after: Matrix = read_matrix(path)
+    not_effective: list[str] = []
+    for relative in documents:
+        mirrored = after.find(make_id(KIND_DOCUMENT, relative))
+        if mirrored is None or mirrored.attributes.get(ATTR_LIFECYCLE) != LIFECYCLE_EFFECTIVE:
+            not_effective.append(relative)
+    return Promoted(tuple(documents), tuple(not_effective), tuple(removed))
 
 
-def _commit(run: StepRun, repository: Path, paths: list[str], message: str, *, push: bool) -> str | None:
-    """Commit named paths of one repository, and push when asked.
+def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> str | None:
+    """Commit named paths of the vault and push them.
 
-    Only the named paths are staged and committed. With ``push``, the branch is pushed when
-    this call made a commit or an earlier one was left unpushed.
+    Only the named paths are staged and committed. The branch is pushed when this call made a
+    commit or an earlier one was left unpushed.
 
     Returns:
         The commit this call made or pushed, or None when the paths held nothing to commit and
         nothing was left to push.
 
     """
-    run.tools.git(repository, ["add", "-A", "--", *paths], stage=APPROVE)
+    run.tools.git(vault, ["add", "-A", "--", *paths], stage=PROMOTE)
     staged: str = run.tools.command(
         ["git", "diff", "--cached", "--name-only", "--", *paths],
-        stage=APPROVE,
-        cwd=repository,
+        stage=PROMOTE,
+        cwd=vault,
     ).stdout.strip()
-    commit: str | None = None
+    made: str | None = None
     if staged:
-        run.tools.git(repository, ["commit", "-q", "-m", message, "--", *paths], stage=APPROVE)
-        commit = run.tools.command(["git", "rev-parse", "HEAD"], stage=APPROVE, cwd=repository).stdout.strip()
-    if push:
-        ahead = run.tools.command(
-            ["git", "rev-list", "--count", f"{REMOTE}/{BRANCH}..HEAD"],
-            stage=APPROVE,
-            cwd=repository,
-            check=False,
-        )
-        if commit is not None or (ahead.exit == 0 and ahead.stdout.strip() != "0"):
-            run.tools.git(repository, ["push", REMOTE, BRANCH], stage=APPROVE)
-            commit = run.tools.command(["git", "rev-parse", "HEAD"], stage=APPROVE, cwd=repository).stdout.strip()
-    return commit
+        run.tools.git(vault, ["commit", "-q", "-m", message, "--", *paths], stage=PROMOTE)
+        made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
+    ahead = run.tools.command(
+        ["git", "rev-list", "--count", f"{REMOTE}/{BRANCH}..HEAD"],
+        stage=PROMOTE,
+        cwd=vault,
+        check=False,
+    )
+    if made is not None or (ahead.exit == 0 and ahead.stdout.strip() != "0"):
+        run.tools.git(vault, ["push", REMOTE, BRANCH], stage=PROMOTE)
+        made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
+    return made
 
 
 def _require_resolved(run: StepRun) -> None:
@@ -124,11 +184,12 @@ def _scope_documents(run: StepRun) -> list[str]:
     """List the documents the review scope of this promotion names.
 
     The check step that planned the promotion recorded the scope. Naming its documents again
-    lets a promotion that was interrupted after the approval still commit and push them.
+    lets a promotion that was interrupted after the documents were set effective still commit
+    and push them.
 
     Returns:
-        The documents with an unapproved heading when the review was opened; none when no step
-        recorded a scope for this promotion.
+        The path under the architecture root of each document in review when the check step ran;
+        none when no step recorded a scope for this promotion.
 
     """
     planned: str = step_journal.planned_for_name(run.step["id"])
@@ -139,62 +200,99 @@ def _scope_documents(run: StepRun) -> list[str]:
         for held in step["artifacts"]:
             if held["name"] == LABEL_SCOPE and held["kind"] != "value":
                 scope: ReviewScope = checked_file(run, Path(held["path"]), validate_review_scope)
-                return [listed["document"] for listed in scope["headings"]]
+                return [document_path(document["id"]) for document in scope["documents"]]
     return []
 
 
-@script_step(APPROVE)
-def promote(run: StepRun) -> Completion:
-    """Promote the reviewed documents and mark them approved.
+def _file(step: Step, *names: str) -> Path | None:
+    """Find a file a step holds under one of some artifact names.
 
     Returns:
-        The approved items file, and the vault commit and the matrix commit when one was made.
+        The path of the first file artifact with one of the names, in the order the names are
+        given; None when the step holds none.
+
+    """
+    name: str
+    for name in names:
+        held: Artifact
+        for held in step["artifacts"]:
+            if held["name"] == name and held["kind"] != "value":
+                return Path(held["path"])
+    return None
+
+
+def _corrected(run: StepRun) -> list[str]:
+    """List the disagreements whose losing statement a document maintainer of this run corrected.
+
+    A done step that holds what a document maintainer wrote also holds the write request it was
+    launched from. A settlement of that request is applied unless the result lists it among what
+    was not written.
+
+    Returns:
+        The matrix ids of those disagreements, in journal order.
+
+    """
+    corrected: list[str] = []
+    step: Step
+    for step in step_journal.steps_in_order(run.journal()):
+        written: Path | None = _file(step, WRITTEN)
+        asked: Path | None = _file(step, WRITE_REQUEST, LABEL_REQUEST)
+        if step["status"] != STATUS_DONE or written is None or asked is None:
+            continue
+        request: WriteRequest = checked_file(run, asked, validate_write_request)
+        result: WriteResult = checked_file(run, written, validate_write_result)
+        unapplied: list[str] = [left["entry"] for left in (*result["notApplied"], *result["belowArchitectureLevel"])]
+        corrected.extend(
+            settlement["disagreement"]
+            for settlement in request["settlements"]
+            if not any(settlement["disagreement"] in entry for entry in unapplied)
+        )
+    return corrected
+
+
+@script_step(PROMOTE)
+def promote(run: StepRun) -> Completion:
+    """Set the reviewed documents effective, mirror them in the matrix, and commit both.
+
+    Returns:
+        The file of what was promoted, and the vault commit and the matrix commit when one was
+        made or pushed.
 
     Raises:
-        ArchitectureStepError: Something in review could not be approved; the file of approved
-            items names each and the reason.
+        ArchitectureStepError: The matrix does not show a promoted document as effective; the
+            file of what was promoted names each.
 
     """
     _require_resolved(run)
     context: ArchitectureContext = read_context(run)
     arch: Path = Path(context["architectureRoot"])
-    journal: Journal = run.journal()
-    named: list[Step] = [step_journal.find_step(journal, step_id) for step_id in run.step.get("inputs", [])]
-    reviews: list[StepId] = [step["id"] for step in named if "agent" in step]
-    approved: Approved = run.tools.portfolio(APPROVE, _approve, run, reviews, arch)
-    path: Path = run.context.work / ARCHITECTURE_FOLDER / "approved.json"
-    write_json(path, approved)
-    artifacts: list[Artifact] = [file_artifact(APPROVED_ITEMS, path)]
-    documents: list[str] = sorted({
-        *approved["promoted"],
-        *(anchor["document"] for anchor in approved["headings"]),
-        *_scope_documents(run),
-    })
+    promoted: Promoted = run.tools.portfolio(PROMOTE, _promote, str(run.bead), arch, _corrected(run))
+    path: Path = run.context.work / ARCHITECTURE_FOLDER / "promoted.json"
+    record: dict[str, JsonValue] = {
+        "documents": [*promoted.documents],
+        "notEffective": [*promoted.not_effective],
+        "removedDisagreements": [*promoted.removed],
+    }
+    write_json(path, record)
+    artifacts: list[Artifact] = [file_artifact(PROMOTED, path)]
+    documents: list[str] = sorted({*promoted.documents, *_scope_documents(run)})
     if documents:
-        vault: Path = run.tools.portfolio(APPROVE, vault_root, arch)
-        made: str | None = _commit(
+        vault: Path = run.tools.portfolio(PROMOTE, vault_root, arch)
+        made: str | None = _commit_vault(
             run,
             vault,
-            documents,
-            f"docs(architecture): approve the reviewed architecture of {run.bead}",
-            push=True,
+            [relative_path(arch / relative, vault) for relative in documents],
+            f"docs(architecture): set the reviewed architecture of {run.bead} effective",
         )
         if made is not None:
             artifacts.append(value_artifact(VAULT_COMMIT, made))
-    matrix: Path = matrix_path(None, os.environ)
-    recorded: str | None = _commit(
-        run,
-        matrix.parent,
-        [matrix.name],
-        f"chore(matrix): record the approved architecture of {run.bead}",
-        push=False,
-    )
-    if recorded is not None:
-        artifacts.append(value_artifact(MATRIX_COMMIT, recorded))
-    if approved["remaining"]:
+    recorded: CommitResult = run.tools.portfolio(PROMOTE, commit, matrix_file(), str(run.bead))
+    if recorded["committed"] or recorded["pushed"]:
+        artifacts.append(value_artifact(MATRIX_COMMIT, recorded["head"]))
+    if promoted.not_effective:
         raise ArchitectureStepError(
             run,
-            f"{len(approved['remaining'])} items in review could not be approved; see {path}",
-            *(f"{left['id']}: {left['reason']}" for left in approved["remaining"]),
+            f"the matrix does not show {len(promoted.not_effective)} promoted documents as effective; see {path}",
+            *promoted.not_effective,
         )
     return Completion(artifacts=tuple(artifacts))

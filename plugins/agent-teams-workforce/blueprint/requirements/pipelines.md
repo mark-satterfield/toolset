@@ -30,3 +30,9 @@ its name, what runs it, its phases and the pipeline role it plays.
 
 Every composite the contracts declare has a workflow script, or is run by the orchestrator
 or the driver as the contracts state. A composite that nothing runs is not declared.
+
+## The matrix in the build and deploy lanes
+
+The rewrite of the build and deploy lanes implements their use of the matrix exactly as
+section 4 of `blueprint/design/matrix.md` specifies it, in its Build and Deploy tables. The
+rewrite is not complete without it.

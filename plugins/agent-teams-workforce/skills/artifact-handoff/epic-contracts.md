@@ -92,7 +92,7 @@ Fields and interpretation: Python edge write report summary with blockers, added
 
 Schema: [matrix.schema.json](schemas/matrix.schema.json).
 
-Fields and interpretation: One JSON file holds how repositories, stacks, elements, PRDs, features, facts, disagreements and architecture documents relate, with each row's approval and the code state of each element. It is read and written only through `atw-matrix`; Python reads its generated form, `scripts/matrix_contract.py`. The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run. An element whose code state is built or deployed is trusted and is not built again.
+Fields and interpretation: One JSON file with three members, `version`, `entries` and `relationships`. The entries are Epics and their requirements, features, constraints, disagreements, arc42 documents, services, components, infrastructure, events, stacks, packages and layers; each entry and each relationship states its side, `architecture` or `repository`. What kinds exist is data, in `schemas/matrix-kinds.json`. It is read and written only through `atw-matrix`; Python reads its generated form, `scripts/matrix_contract.py`. The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run. The one code mark is `verified`, with the commit, which the build driver sets when a Story's code has merged; an entry without it may still have to be built.
 
 ## repo-creation
 
@@ -112,7 +112,7 @@ Fields and interpretation: Python items array with id, element, views, requires 
 
 ## task-context
 
-Fields and interpretation: Python existingTasks/otherEpicTasks snapshot with keys,ids,titles,status,requirementIds and relevant descriptions/epic. Existing started/closed/deferred work is preserved; other-Epic overlap adds blockers, never suppresses Tasks.
+Fields and interpretation: Python snapshot. existingTasks holds the Story's started Tasks and those elaboration did not write, with keys,ids,titles,status and relevant descriptions. stacks holds the matrix ids of the stacks the Story builds in; stackWork holds, for each of them, what `atw-matrix work --id <stack id> --not-epic <epic id>` returns: the open Tasks of other Epics that name the stack or an entry it holds, each with its Story and Epic. sharedCapabilities holds what `atw-matrix uses --ids` returns for the entries the Tasks build. Existing started/closed/deferred work is preserved; other-Epic overlap adds blockers, never suppresses Tasks. A Task states the matrix ids of its stack, what it builds and the shared capabilities it uses, exactly as this file gives them.
 
 ## filed-documents
 
@@ -148,7 +148,7 @@ Fields and interpretation: needs each name what the PRD needs, its PRD requireme
 
 Schema: [architecture-result.schema.json](schemas/architecture-result.schema.json).
 
-Fields and interpretation: conclusion (`complete-and-approved`, `ready-for-review` or `unsettled`); the features with the PRD requirements each serves; the new elements; each shared capability an element uses; the facts with their one home; the settled disagreements; one answer for every criterion whose level is architecture or technical-requirement; notesForSpecs; unsettled matters; reviewSignals; costEvidence. Complete means every such criterion is `satisfied` at a place that exists or `not-applicable` with its reason, every fact has one home, and `unsettled` is empty unless the conclusion is `unsettled`. A script selects the reviewers from reviewSignals by the `appliesWhen` rules of architecture-baseline/review-criteria.json, and takes what is unapproved from the matrix.
+Fields and interpretation: conclusion (`complete-and-approved`, `ready-for-review` or `unsettled`); the features with the PRD requirements each serves; noFeature, every requirement no feature serves, with the reason; the new elements; each shared capability an element uses; the facts with their one home; the settled disagreements; one answer for every criterion whose level is architecture or technical-requirement; notesForSpecs; unsettled matters; reviewSignals; costEvidence. Complete means every such criterion is `satisfied` at a place that exists or `not-applicable` with its reason, every fact has one home, and `unsettled` is empty unless the conclusion is `unsettled`. Every feature and element the result names is an entry the architect already recorded in the matrix, and every requirement of the Epic is served by a feature or listed in noFeature: the step that accepts the result fails otherwise. A script selects the reviewers from reviewSignals by the `appliesWhen` rules of architecture-baseline/review-criteria.json, and reads from the matrix which documents are in review.
 
 ## specialist-request
 
@@ -172,7 +172,7 @@ Fields and interpretation: mode (`draft` or `update`); the PRD, TRD and state pa
 
 Schema: [trd-answer.schema.json](schemas/trd-answer.schema.json).
 
-Fields and interpretation: mode; the requirement ids written or changed; noSource, the obligations the PRD implies that neither the PRD nor the approved material gives a source for. Complete means the TRD at the request's path holds exactly what the request asked, and every unsourced obligation is in noSource and not in the TRD.
+Fields and interpretation: mode; the requirement ids written or changed; requirements, for mode `draft` every requirement the TRD states with its id, kind, statement, source and appliesTo (a matrix id, or an empty string for the Epic as a whole), which Python records as constraints, and empty for mode `update`; noSource, the obligations the PRD implies that neither the PRD nor the approved material gives a source for. Complete means the TRD at the request's path holds exactly what the request asked, and every unsourced obligation is in noSource and not in the TRD.
 
 ## write-request
 
@@ -236,13 +236,13 @@ Fields and interpretation: Python writes it when the run is opened: the Epic, th
 
 Schema: [check-result.schema.json](schemas/check-result.schema.json).
 
-Fields and interpretation: valid, problems (one sentence each), unansweredCriteria and corrections. Python writes one before each review: the problems of the matrix file and of the documents it indexes, a missing PRD row, and each architecture or technical-requirement criterion the architecture result leaves unanswered. When it is not valid, `aws-solutions-architect` is handed it as `findings`.
+Fields and interpretation: valid, problems (one sentence each), unansweredCriteria and corrections. Python writes one before each review: the problems of the matrix file, a missing Epic entry, and each architecture or technical-requirement criterion the architecture result leaves unanswered. When it is not valid, `aws-solutions-architect` is handed it as `findings`.
 
 ## review-scope
 
-Schema: [matrix.schema.json](schemas/matrix.schema.json) `$defs/ReviewScope` and `$defs/ReviewerScope`.
+Definition: `ReviewScope` in `scripts/portfolio/matrixreview.py` (what `atw-matrix review-scope --epic` prints) and `ReviewerScope` in `orchestrator/flows/architecture_check.py`.
 
-Fields and interpretation: Python lists what is not approved for the Epic (rows, headings, and headings another Epic holds) and marks it in review, as `atw-matrix unapproved` does. For each reviewer the criteria file selects it writes a ReviewerScope: the reviewer, its groups and their criteria, the unapproved rows and headings when a group covers documents, the TRD path when a group covers its requirements, and the review signals that selected it. A reviewer is handed its own file as `review scope`.
+Fields and interpretation: Python reads from the matrix the documents the Epic reaches that are not effective, and records nothing. The review scope holds `epic`, `requirements`, `features` and `documents`; each document has its `id`, `kind`, `name`, `side`, `lifecycle`, the `headings` reached and, under `reachedBy`, what leads the Epic to it. For each reviewer the criteria file selects, Python writes a ReviewerScope: `bead`, `epic`, `reviewer`, its `groups` and their `criteria`, `documents` (the documents in review, empty when no group of the reviewer covers documents), `trd` (the TRD path when a group covers its requirements, else null) and `signals` (the lists of the architect's result that selected it). A reviewer is handed its own file as `review scope`.
 
 ## specialists
 
@@ -250,6 +250,6 @@ Schema: [specialists.schema.json](schemas/specialists.schema.json).
 
 Fields and interpretation: Python lists the agents whose role is design-specialist, each with the description its definition gives. `architecture-team-lead` is handed it as `specialists`.
 
-## approved-items
+## promoted-documents
 
-Not an agent artifact. The promotion step writes what it approved, what it promoted to effective and what it could not approve with the reason; its one definition is `Approved` in `scripts/portfolio/matrixreview.py`.
+Not an agent artifact. The promotion step writes the documents it set effective, the disagreements it removed and what it could not set effective with the reason; `orchestrator/flows/architecture_promotion.py` writes it as `promoted.json`.
