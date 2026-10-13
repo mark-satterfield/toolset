@@ -20,7 +20,7 @@ skills:
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
-effort: medium
+effort: high
 isolation: worktree
 color: cyan
 ---

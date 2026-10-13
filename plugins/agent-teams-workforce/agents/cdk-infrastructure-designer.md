@@ -19,7 +19,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:resource-naming
 - agent-teams-workforce:architecture-baseline
-effort: medium
+effort: high
 isolation: worktree
 color: cyan
 ---

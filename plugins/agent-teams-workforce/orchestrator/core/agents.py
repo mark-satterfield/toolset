@@ -17,7 +17,10 @@ from collections.abc import (
     Generator,  # ruff: ignore[typing-only-standard-library-import] - Runtime decorator resolves generator annotations.
 )
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
+from typing import Final
 from uuid import uuid4
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
@@ -28,7 +31,17 @@ import strictschema
 from driver_surface_types import ARCH_PATH_ENV, STOP_FILE_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .agent_context import PipelineStoppedError, SessionCleanupError, SessionSetupError, brief, prepare
+from .agent_context import (
+    AgentDefinition,
+    Launch,
+    PipelineStoppedError,
+    SessionCleanupError,
+    SessionSetupError,
+    brief,
+    launch_model,
+    load_agent,
+    prepare,
+)
 from .agent_process import SessionProcesses, SessionRequest
 from .artifacts import ArtifactStore
 from .constraints import Section2Guard
@@ -61,7 +74,12 @@ from .handback_contract import (
 from .io import JsonValue, json_object, write_json
 from .manifest import record_session
 from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError
+from .skills import epic_expertise
 from .tools import Tools
+
+FABLE: Final = "fable"
+FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
+"""The model every agent whose definition states Fable runs on while the Fable allowance is spent."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -332,7 +350,7 @@ class AgentRunner:
         directory: Path,
         *,
         keep_output: bool,
-    ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], str, Session]:
+    ) -> tuple[Path, dict[str, str], list[tuple[str, Path]], Launch, Session]:
         scratch = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
         env = check_type(
             child_environment(scratch),
@@ -340,11 +358,13 @@ class AgentRunner:
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
         inputs = self._inputs(step)
-        model = (
-            "opus"
-            if step.model == "fable"
-            and (self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time())
-            else step.model
+        agent: AgentDefinition = load_agent(self.plugin, step.agent)
+        fable_spent: bool = (
+            self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time()
+        )
+        launch: Launch = Launch(
+            model_replacements=FABLE_REPLACEMENT if fable_spent else MappingProxyType({}),
+            expertise=epic_expertise(self.context.bead, os.environ),
         )
         row: Session = {
             "sessionId": session_id,
@@ -352,8 +372,8 @@ class AgentRunner:
             "phase": self.context.stage,
             "step": step.stage,
             "agent": step.agent,
-            "model": model,
-            "effort": step.effort,
+            "model": launch_model(agent, launch),
+            "effort": agent.effort,
         }
         record_session(self.context, self.store, row)
         step.output.parent.mkdir(parents=True, exist_ok=True)
@@ -362,7 +382,7 @@ class AgentRunner:
             # never recorded, so it cannot be attributed to this session's inputs.
             step.output.unlink(missing_ok=True)
         self.store.record_fingerprint(step.inputs, step.output)
-        return scratch, env, inputs, model, row
+        return scratch, env, inputs, launch, row
 
     def _execute_in_directory(
         self,
@@ -383,7 +403,7 @@ class AgentRunner:
         """
         session_id = str(uuid4())
         try:
-            scratch, env, inputs, model, row = self._setup_request(
+            scratch, env, inputs, launch, row = self._setup_request(
                 step,
                 session_id,
                 directory,
@@ -417,7 +437,7 @@ class AgentRunner:
                         Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).expanduser(),
                         directory,
                         step,
-                        model,
+                        launch,
                     ),
                 )
             except (OSError, ValueError, KeyError, ImportError) as exc:
@@ -431,13 +451,13 @@ class AgentRunner:
                 row=row,
             )
             info = facts["rate"]
-            if info is not None and is_refusal(info) and model == "fable":
+            if info is not None and is_refusal(info) and row["model"] == FABLE:
                 with self._lock:
                     self.context.model_policy["fable_until"] = reset_of(info) or exhausted_reset(info) or 0
                     self.context.model_policy["fable_blocked"] = not bool(self.context.model_policy["fable_until"])
                 self._emit_fable_wall(info)
-                model, resume = "opus", True
-                row["model"] = model
+                launch, resume = replace(launch, model_replacements=FABLE_REPLACEMENT), True
+                row["model"] = FABLE_REPLACEMENT[FABLE]
                 record_session(self.context, self.store, row)
                 continue
             self._check_session(step, facts, stream)

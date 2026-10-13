@@ -22,7 +22,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 - agent-teams-workforce:skillspoke-standard-event
-effort: medium
+effort: high
 isolation: worktree
 color: cyan
 ---

@@ -11,8 +11,12 @@ from typing import NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 from .handback_contract import OTHER_CAUSE, Session
 from .io import JsonValue
+
+# isort: split
+from step_journal_contract import STEP_ID_PATTERN, StepId
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
 type OutputValidator = Callable[[Path], ValidationResult]
@@ -88,7 +92,12 @@ class DeterministicStep[T]:
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class AgentStep:
-    """A bounded agent request and its exact output validation contract."""
+    """A bounded agent request and its exact output validation contract.
+
+    The session's model and effort are not part of a step: the agent's definition states them.
+    ``request`` is the text of what is asked and ``journal_step`` is the id of the step in the
+    bead's step journal; a step that has neither sends a brief without them.
+    """
 
     stage: str
     agent: str
@@ -97,14 +106,27 @@ class AgentStep:
     outcome: str
     validate: Path | OutputValidator
     final: Path | None
-    model: str
-    effort: str
     add_dirs: tuple[Path, ...] = ()
     corrective: bool = True
+    request: str | None = None
+    journal_step: StepId | None = None
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
+        """Validate every constructed field, including nested collection entries.
+
+        Raises:
+            ValueError: The request is empty, or the journal step id is not a step id.
+
+        """
+        check_type(self.request, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.journal_step, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        if self.request is not None and not self.request.strip():
+            message: str = "an agent step's request must not be empty"
+            raise ValueError(message)
+        if self.journal_step is not None and STEP_ID_PATTERN.search(self.journal_step) is None:
+            message = f"not a step journal id: {self.journal_step!r}"
+            raise ValueError(message)
         check_type(self.stage, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.agent, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -116,8 +138,6 @@ class AgentStep:
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
         check_type(self.final, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.model, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.effort, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.add_dirs, tuple[Path, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.corrective, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 

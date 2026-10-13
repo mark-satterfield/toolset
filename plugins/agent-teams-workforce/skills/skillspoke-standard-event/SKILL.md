@@ -7,6 +7,9 @@ description: >-
   values shared-events-service fills in, the event type naming convention, and optional payload
   schemas. Use whenever you design, specify, review, implement or consume a SkillSpoke event.
 user-invocable: false
+expertiseFor:
+  resourceTypes: [event, event-bus, event-rule]
+  terms: ["domain event", "event-driven", "publishes an event"]
 ---
 
 # SkillSpoke standard event

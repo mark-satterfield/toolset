@@ -40,10 +40,10 @@ from target_contract import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.core.agent_context import yaml_safe_load
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
+from orchestrator.core.frontmatter import yaml_safe_load
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -266,8 +266,6 @@ class _RepositoryScoping:
                 final=None,
                 validate=self._check_candidate,
                 outcome="Repository placement ruling for the approved architecture elements.",
-                model="sonnet",
-                effort="high",
                 add_dirs=(self.work, self.placement.arch, self.prd.parent),
                 corrective=not bool(feedback_data.get("errors")),
             ),

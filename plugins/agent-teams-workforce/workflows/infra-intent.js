@@ -205,6 +205,7 @@ Size every resource for the load the change and the project state; prefer per-re
     label: 'intent:author',
     phase: 'Provisioning intent',
     agentType: 'cdk-infrastructure-designer',
+    effort: 'medium',
     schema: {
       type: 'object',
       additionalProperties: false,

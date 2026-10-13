@@ -18,6 +18,8 @@ triggers:
   - diagram labels overlap
   - render mermaid to png
   - check diagram readability
+expertiseFor:
+  terms: ["diagram"]
 ---
 
 # Architecture diagramming

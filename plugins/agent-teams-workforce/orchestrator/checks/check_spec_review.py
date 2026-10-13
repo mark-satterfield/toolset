@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-import yaml
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -34,11 +33,7 @@ from orchestrator.flows import spec_authoring
 from orchestrator.flows.spec_authoring import SpecAuthoring, SpecRequest
 from orchestrator.flows.spec_review import (
     DECIDER,
-    DECIDER_EFFORT,
-    DECIDER_MODEL,
     REVIEWER,
-    REVIEWER_EFFORT,
-    REVIEWER_MODEL,
     SpecReviewOutcome,
 )
 from placement_contract import KEY_FRONTEND, KEY_ITEM_IDS, KEY_PLACEMENTS, KEY_REPO_PATH
@@ -60,7 +55,7 @@ CORRECTED: Final[str] = "\nCorrected.\n"
 KINDS: Final[tuple[SpecDocument, ...]] = (DOCUMENT_SPEC, DOCUMENT_DATA_MODEL, DOCUMENT_CRITERIA)
 
 
-def _finding(identifier: str, document: SpecDocument, criterion: str) -> Finding:
+def finding(identifier: str, document: SpecDocument, criterion: str) -> Finding:
     """Build one finding as a reviewer session would write it.
 
     Returns:
@@ -198,7 +193,7 @@ class Scenario:
     store: ArtifactStore
 
 
-def _scenario(root: Path, sessions: Sessions) -> Scenario:
+def build_scenario(root: Path, sessions: Sessions) -> Scenario:
     """Build a repository's spec authoring flow over the files the earlier phases leave.
 
     Returns:
@@ -273,7 +268,7 @@ def _scenario(root: Path, sessions: Sessions) -> Scenario:
     return Scenario(flow, runner, store)
 
 
-def _names(steps: list[AgentStep]) -> list[str]:
+def step_names(steps: list[AgentStep]) -> list[str]:
     """Name each step by the last part of its stage.
 
     Returns:
@@ -285,44 +280,22 @@ def _names(steps: list[AgentStep]) -> list[str]:
 
 def _resumed_without_sessions(root: Path) -> None:
     """Require a later run over the same files to start no session at all."""
-    again: Scenario = _scenario(root, Sessions(reviewer_fails=True))
+    again: Scenario = build_scenario(root, Sessions(reviewer_fails=True))
     again.flow.documents()
     again.flow.review()
-    require(not again.runner.steps, f"an unchanged repository started sessions again: {_names(again.runner.steps)}")
-
-
-def _front_matter(agent: str) -> dict[str, object]:
-    """Read an agent definition's front matter.
-
-    Returns:
-        The front matter fields.
-
-    """
-    text: str = (Path(__file__).resolve().parents[2] / "agents" / f"{agent}.md").read_text(encoding="utf-8")
-    loaded: object = yaml.safe_load(text[4:].split("\n---", 1)[0])
-    require(isinstance(loaded, dict), f"{agent}: front matter is not an object")
-    return {str(key): value for key, value in loaded.items()} if isinstance(loaded, dict) else {}
+    require(not again.runner.steps, f"an unchanged repository started sessions again: {step_names(again.runner.steps)}")
 
 
 def _review_passes(root: Path) -> None:
     """Check a review with no finding: one reviewer session, handed exactly six files, and nothing after it."""
-    scenario: Scenario = _scenario(root, Sessions())
+    scenario: Scenario = build_scenario(root, Sessions())
     scenario.flow.documents()
     authored: list[AgentStep] = list(scenario.runner.steps)
     ended: SpecReviewOutcome = scenario.flow.review()
     after: list[AgentStep] = scenario.runner.steps[len(authored) :]
-    require(_names(after) == ["review"], f"a passing review ran {_names(after)}")
+    require(step_names(after) == ["review"], f"a passing review ran {step_names(after)}")
     reviewer: AgentStep = after[0]
     require(reviewer.agent == REVIEWER, "the review step does not start openapi-contract-reviewer")
-    require(
-        (reviewer.model, reviewer.effort) == (REVIEWER_MODEL, REVIEWER_EFFORT),
-        "the reviewer's model or effort changed",
-    )
-    front: dict[str, object] = _front_matter(REVIEWER)
-    require(
-        (front.get("model"), front.get("effort")) == (REVIEWER_MODEL, REVIEWER_EFFORT),
-        "the reviewer step and the reviewer's definition state different model or effort",
-    )
     work: Path = scenario.flow.work
     expected: list[str] = [
         *(str(step.output) for step in authored),
@@ -352,20 +325,20 @@ def _findings_reach_authors(root: Path) -> None:
     """Check that findings go once to each author, a dispute is ruled on and an upheld finding is revised."""
     sessions: Sessions = Sessions(
         findings=[
-            _finding("F1", DOCUMENT_SPEC, "I1"),
-            _finding("F2", DOCUMENT_DATA_MODEL, "I2"),
-            _finding("F3", DOCUMENT_CRITERIA, "A5"),
+            finding("F1", DOCUMENT_SPEC, "I1"),
+            finding("F2", DOCUMENT_DATA_MODEL, "I2"),
+            finding("F3", DOCUMENT_CRITERIA, "A5"),
         ],
         disputes={DOCUMENT_DATA_MODEL: ["F2"]},
         rulings={"F2": RULING_FINDING_STANDS},
     )
-    scenario: Scenario = _scenario(root, sessions)
+    scenario: Scenario = build_scenario(root, sessions)
     scenario.flow.documents()
     authored: int = len(scenario.runner.steps)
     ended: SpecReviewOutcome = scenario.flow.review()
     after: list[AgentStep] = scenario.runner.steps[authored:]
     require(
-        _names(after)
+        step_names(after)
         == [
             "review",
             "spec.correction",
@@ -375,7 +348,7 @@ def _findings_reach_authors(root: Path) -> None:
             "data-model.revision",
             "criteria.revision",
         ],
-        f"the findings were routed as {_names(after)}",
+        f"the findings were routed as {step_names(after)}",
     )
     requests: tuple[SpecRequest, SpecRequest, SpecRequest] = scenario.flow.requests()
     work: Path = scenario.flow.work
@@ -387,10 +360,7 @@ def _findings_reach_authors(root: Path) -> None:
         "the author's correction is not handed the review and its own document",
     )
     ruling: AgentStep = after[4]
-    require(
-        (ruling.agent, ruling.model, ruling.effort) == (DECIDER, DECIDER_MODEL, DECIDER_EFFORT),
-        "the ruling seat changed",
-    )
+    require(ruling.agent == DECIDER, "the ruling seat changed")
     require(
         str(work / f"spec-{SLUG}.data-model.correction.json") in ruling.inputs
         and str(work / f"spec-{SLUG}.spec.correction.json") not in ruling.inputs,
@@ -421,12 +391,15 @@ def _findings_reach_authors(root: Path) -> None:
 
 def _reviewer_fails(root: Path) -> None:
     """Check that a failed reviewer session raises, records nothing and sends nothing to an author."""
-    scenario: Scenario = _scenario(root, Sessions(reviewer_fails=True))
+    scenario: Scenario = build_scenario(root, Sessions(reviewer_fails=True))
     scenario.flow.documents()
     authored: int = len(scenario.runner.steps)
     with expected_error(StepError):
         scenario.flow.review()
-    require(_names(scenario.runner.steps[authored:]) == ["review"], "a failed review was followed by other sessions")
+    require(
+        step_names(scenario.runner.steps[authored:]) == ["review"],
+        "a failed review was followed by other sessions",
+    )
     require(
         not (scenario.flow.work / f"spec-{SLUG}.review-outcome.json").exists(),
         "a failed review left a recorded result",

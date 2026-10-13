@@ -3,6 +3,9 @@ name: s3
 description: AWS S3 object storage for bucket management, object operations, and access control. Use when creating buckets, uploading files, configuring lifecycle policies, setting up static websites, managing permissions, or implementing cross-region replication.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/AmazonS3/latest/userguide/
+expertiseFor:
+  resourceTypes: [bucket]
+  terms: ["S3", "bucket", "file upload"]
 ---
 
 # AWS S3
@@ -80,29 +83,23 @@ aws s3api put-bucket-encryption \
 ```python
 import boto3
 
-s3 = boto3.client('s3', region_name='us-west-2')
+s3 = boto3.client("s3", region_name="us-west-2")
 
 # Create bucket
-s3.create_bucket(
-    Bucket='my-secure-bucket-12345',
-    CreateBucketConfiguration={'LocationConstraint': 'us-west-2'}
-)
+s3.create_bucket(Bucket="my-secure-bucket-12345", CreateBucketConfiguration={"LocationConstraint": "us-west-2"})
 
 # Enable versioning
-s3.put_bucket_versioning(
-    Bucket='my-secure-bucket-12345',
-    VersioningConfiguration={'Status': 'Enabled'}
-)
+s3.put_bucket_versioning(Bucket="my-secure-bucket-12345", VersioningConfiguration={"Status": "Enabled"})
 
 # Block public access
 s3.put_public_access_block(
-    Bucket='my-secure-bucket-12345',
+    Bucket="my-secure-bucket-12345",
     PublicAccessBlockConfiguration={
-        'BlockPublicAcls': True,
-        'IgnorePublicAcls': True,
-        'BlockPublicPolicy': True,
-        'RestrictPublicBuckets': True
-    }
+        "BlockPublicAcls": True,
+        "IgnorePublicAcls": True,
+        "BlockPublicPolicy": True,
+        "RestrictPublicBuckets": True,
+    },
 )
 ```
 
@@ -132,24 +129,20 @@ aws s3 cp s3://source-bucket/file.txt s3://dest-bucket/file.txt
 import boto3
 from botocore.config import Config
 
-s3 = boto3.client('s3', config=Config(signature_version='s3v4'))
+s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 # Generate presigned URL for download (GET)
 url = s3.generate_presigned_url(
-    'get_object',
-    Params={'Bucket': 'my-bucket', 'Key': 'path/to/file.txt'},
-    ExpiresIn=3600  # URL valid for 1 hour
+    "get_object",
+    Params={"Bucket": "my-bucket", "Key": "path/to/file.txt"},
+    ExpiresIn=3600,  # URL valid for 1 hour
 )
 
 # Generate presigned URL for upload (PUT)
 upload_url = s3.generate_presigned_url(
-    'put_object',
-    Params={
-        'Bucket': 'my-bucket',
-        'Key': 'uploads/newfile.txt',
-        'ContentType': 'text/plain'
-    },
-    ExpiresIn=3600
+    "put_object",
+    Params={"Bucket": "my-bucket", "Key": "uploads/newfile.txt", "ContentType": "text/plain"},
+    ExpiresIn=3600,
 )
 ```
 

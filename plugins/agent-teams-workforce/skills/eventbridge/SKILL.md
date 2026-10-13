@@ -3,6 +3,9 @@ name: eventbridge
 description: AWS EventBridge serverless event bus for event-driven architectures. Use when creating rules, configuring event patterns, setting up scheduled events, integrating with SaaS, or building cross-account event routing.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/eventbridge/latest/userguide/
+expertiseFor:
+  resourceTypes: [event-bus, event-rule, schedule]
+  terms: ["EventBridge", "event bus", "scheduled"]
 ---
 
 # AWS EventBridge
@@ -85,30 +88,24 @@ aws lambda add-permission \
 ```python
 import boto3
 
-events = boto3.client('events')
+events = boto3.client("events")
 
 # Create event bus
-events.create_event_bus(Name='my-app-events')
+events.create_event_bus(Name="my-app-events")
 
 # Create rule
 events.put_rule(
-    Name='order-created-rule',
-    EventBusName='my-app-events',
-    EventPattern=json.dumps({
-        'source': ['my-app.orders'],
-        'detail-type': ['Order Created']
-    }),
-    State='ENABLED'
+    Name="order-created-rule",
+    EventBusName="my-app-events",
+    EventPattern=json.dumps({"source": ["my-app.orders"], "detail-type": ["Order Created"]}),
+    State="ENABLED",
 )
 
 # Add target
 events.put_targets(
-    Rule='order-created-rule',
-    EventBusName='my-app-events',
-    Targets=[{
-        'Id': 'process-order',
-        'Arn': 'arn:aws:lambda:us-east-1:123456789012:function:ProcessOrder'
-    }]
+    Rule="order-created-rule",
+    EventBusName="my-app-events",
+    Targets=[{"Id": "process-order", "Arn": "arn:aws:lambda:us-east-1:123456789012:function:ProcessOrder"}],
 )
 ```
 
@@ -118,22 +115,20 @@ events.put_targets(
 import boto3
 import json
 
-events = boto3.client('events')
+events = boto3.client("events")
 
 events.put_events(
     Entries=[
         {
-            'Source': 'my-app.orders',
-            'DetailType': 'Order Created',
-            'Detail': json.dumps({
-                'order_id': '12345',
-                'customer_id': 'cust-789',
-                'total': 99.99,
-                'items': [
-                    {'product_id': 'prod-1', 'quantity': 2}
-                ]
+            "Source": "my-app.orders",
+            "DetailType": "Order Created",
+            "Detail": json.dumps({
+                "order_id": "12345",
+                "customer_id": "cust-789",
+                "total": 99.99,
+                "items": [{"product_id": "prod-1", "quantity": 2}],
             }),
-            'EventBusName': 'my-app-events'
+            "EventBusName": "my-app-events",
         }
     ]
 )
@@ -262,15 +257,15 @@ aws events put-rule \
 ```python
 # Good event structure
 {
-    'Source': 'mycompany.orders.api',
-    'DetailType': 'Order Created',
-    'Detail': json.dumps({
-        'version': '1.0',
-        'correlation_id': 'req-abc-123',
-        'timestamp': '2024-01-15T10:30:00Z',
-        'order_id': '12345',
-        'data': {...}
-    })
+    "Source": "mycompany.orders.api",
+    "DetailType": "Order Created",
+    "Detail": json.dumps({
+        "version": "1.0",
+        "correlation_id": "req-abc-123",
+        "timestamp": "2024-01-15T10:30:00Z",
+        "order_id": "12345",
+        "data": {...},
+    }),
 }
 ```
 

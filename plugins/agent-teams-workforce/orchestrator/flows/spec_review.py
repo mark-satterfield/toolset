@@ -44,11 +44,7 @@ from orchestrator.core.models import AgentStep, StepError
 _ARGUMENT_ERROR: Final[str] = "Arguments violate the spec_review input contract"
 
 REVIEWER: Final[str] = "openapi-contract-reviewer"
-REVIEWER_MODEL: Final[str] = "sonnet"
-REVIEWER_EFFORT: Final[str] = "low"
 DECIDER: Final[str] = "spec-decider"
-DECIDER_MODEL: Final[str] = "opus"
-DECIDER_EFFORT: Final[str] = "high"
 CRITERIA_FILE: Final[str] = "skills/architecture-baseline/review-criteria.json"
 
 REVIEW_RESULT: Final[str] = "Review of this repository's specification documents against the implementation criteria."
@@ -88,8 +84,6 @@ class ReviewedDocument:
     agent: str
     inputs: tuple[str, ...]
     check: Callable[[Path], object]
-    model: str
-    effort: str
     derived_from: tuple[SpecDocument, ...] = ()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -104,8 +98,6 @@ class ReviewedDocument:
         check_type(self.agent, str)
         check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.check, Callable[[Path], object])
-        check_type(self.model, str)
-        check_type(self.effort, str)
         if self.kind not in SPEC_DOCUMENTS or any(kind not in SPEC_DOCUMENTS for kind in self.derived_from):
             message: str = f"not a specification document kind: {self.kind!r} / {self.derived_from!r}"
             raise ValueError(message)
@@ -158,11 +150,9 @@ class SpecReviewScope:
 
 @dataclass(frozen=True)
 class _Seat:
-    """Who runs one session of this step, at what model and effort, reading which directories."""
+    """Who runs one session of this step, reading which directories."""
 
     agent: str
-    model: str
-    effort: str
     dirs: tuple[Path, ...]
 
 
@@ -313,8 +303,6 @@ class SpecReviewStep:
                 final=self.scope.work / file_name,
                 validate=schema,
                 outcome=outcome,
-                model=seat.model,
-                effort=seat.effort,
                 add_dirs=(*seat.dirs, self.scope.criteria.parent),
             ),
         )
@@ -326,7 +314,7 @@ class SpecReviewStep:
             The review, validated.
 
         """
-        seat: _Seat = _Seat(REVIEWER, REVIEWER_MODEL, REVIEWER_EFFORT, (self.scope.work,))
+        seat: _Seat = _Seat(REVIEWER, (self.scope.work,))
         accepted: Path = self._session("review", seat, self.review_inputs(), SPEC_REVIEW_SCHEMA_PATH, REVIEW_RESULT)
         return validate_spec_review(strict_json(accepted), str(accepted))
 
@@ -355,7 +343,7 @@ class SpecReviewStep:
             before: str = check_type(self.store.module.sha256_file(document.path), str)
             accepted: Path = self._session(
                 stage,
-                _Seat(document.agent, document.model, document.effort, self.scope.author_dirs),
+                _Seat(document.agent, self.scope.author_dirs),
                 tuple(
                     dict.fromkeys((
                         *document.inputs,
@@ -401,7 +389,7 @@ class SpecReviewStep:
             return []
         accepted: Path = self._session(
             "ruling",
-            _Seat(DECIDER, DECIDER_MODEL, DECIDER_EFFORT, self.scope.author_dirs),
+            _Seat(DECIDER, self.scope.author_dirs),
             (
                 str(self.review_path),
                 *dict.fromkeys(str(path) for path in disputes.values()),

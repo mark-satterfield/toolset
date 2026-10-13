@@ -136,35 +136,6 @@ def read(path: Path) -> dict[str, JsonValue]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def model_for(agent: str) -> tuple[str, str]:
-    """Choose the configured model and effort for an architecture role.
-
-    Returns:
-        The validated result for this operation.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-
-    """
-    if not (isinstance(agent, str)):
-        argument_error: str = "model_for: arguments do not satisfy the declared input contract"
-        raise TypeError(argument_error)
-    if agent in PROPOSERS:
-        return "fable", "high"
-    if agent in {
-        "architecture-pattern-challenger",
-        "architecture-tradeoff-skeptic",
-        "failure-mode-analyst",
-    }:
-        return "fable", "medium"
-    if agent in {"prd-reality-reconciler", "operational-readiness-reviewer"}:
-        return "opus", "medium"
-    if agent == "architecture-decider":
-        return "opus", "high"
-    return "sonnet", "medium"
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class ArchitectureStep:
     """One architecture agent request and its artifact contract."""
@@ -406,9 +377,6 @@ class Architecture:
         if not (isinstance(request, ArchitectureStep)):
             argument_error: str = "agent: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
-        model: str
-        effort: str
-        model, effort = model_for(request.agent)
         schema: Path = self.schemas / f"{request.schema}.schema.json"
         step: AgentStep = AgentStep(
             stage=request.stage or f"architecture:{request.output.stem}",
@@ -418,8 +386,6 @@ class Architecture:
             final=request.output,
             outcome=request.outcome,
             validate=schema,
-            model=model,
-            effort=effort,
             add_dirs=(self.context.work, self.arch, self.prd.parent),
         )
         if not self.store.reusable(step.inputs, (request.output,)):

@@ -21,6 +21,8 @@ hooks:
     - matcher: Bash(aws ce *)
       command: aws sts get-caller-identity --query Account --output text
       once: true
+expertiseFor:
+  terms: ["budget", "cost ceiling", "spend limit"]
 ---
 
 # AWS Cost & Operations

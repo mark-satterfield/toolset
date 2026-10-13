@@ -3,6 +3,9 @@ name: iam
 description: AWS Identity and Access Management for users, roles, policies, and permissions. Use when creating IAM policies, configuring cross-account access, setting up service roles, troubleshooting permission errors, or managing access control.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/IAM/latest/UserGuide/
+expertiseFor:
+  resourceTypes: [iam-role]
+  terms: ["IAM", "least privilege", "access control", "authorization", "sign-in", "sign in"]
 ---
 
 # AWS IAM
@@ -78,29 +81,19 @@ aws iam attach-role-policy \
 import boto3
 import json
 
-iam = boto3.client('iam')
+iam = boto3.client("iam")
 
 trust_policy = {
     "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Principal": {"Service": "lambda.amazonaws.com"},
-            "Action": "sts:AssumeRole"
-        }
-    ]
+    "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}],
 }
 
 # Create role
-iam.create_role(
-    RoleName='MyLambdaRole',
-    AssumeRolePolicyDocument=json.dumps(trust_policy)
-)
+iam.create_role(RoleName="MyLambdaRole", AssumeRolePolicyDocument=json.dumps(trust_policy))
 
 # Attach managed policy
 iam.attach_role_policy(
-    RoleName='MyLambdaRole',
-    PolicyArn='arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+    RoleName="MyLambdaRole", PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 )
 ```
 

@@ -3,6 +3,9 @@ name: step-functions
 description: AWS Step Functions workflow orchestration with state machines. Use when designing workflows, implementing error handling, configuring parallel execution, integrating with AWS services, or debugging executions.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/step-functions/latest/dg/
+expertiseFor:
+  resourceTypes: [state-machine]
+  terms: ["Step Functions", "state machine", "workflow orchestration"]
 ---
 
 # AWS Step Functions
@@ -90,25 +93,19 @@ aws stepfunctions create-state-machine \
 import boto3
 import json
 
-sfn = boto3.client('stepfunctions')
+sfn = boto3.client("stepfunctions")
 
 definition = {
     "Comment": "Order workflow",
     "StartAt": "ProcessOrder",
-    "States": {
-        "ProcessOrder": {
-            "Type": "Task",
-            "Resource": "arn:aws:lambda:...",
-            "End": True
-        }
-    }
+    "States": {"ProcessOrder": {"Type": "Task", "Resource": "arn:aws:lambda:...", "End": True}},
 }
 
 response = sfn.create_state_machine(
-    name='OrderWorkflow',
+    name="OrderWorkflow",
     definition=json.dumps(definition),
-    roleArn='arn:aws:iam::123456789012:role/StepFunctionsRole',
-    type='STANDARD'
+    roleArn="arn:aws:iam::123456789012:role/StepFunctionsRole",
+    type="STANDARD",
 )
 ```
 
@@ -118,19 +115,19 @@ response = sfn.create_state_machine(
 import boto3
 import json
 
-sfn = boto3.client('stepfunctions')
+sfn = boto3.client("stepfunctions")
 
 response = sfn.start_execution(
-    stateMachineArn='arn:aws:states:us-east-1:123456789012:stateMachine:OrderWorkflow',
-    name='order-12345',
+    stateMachineArn="arn:aws:states:us-east-1:123456789012:stateMachine:OrderWorkflow",
+    name="order-12345",
     input=json.dumps({
-        'order_id': '12345',
-        'customer_id': 'cust-789',
-        'items': [{'product_id': 'prod-1', 'quantity': 2}]
-    })
+        "order_id": "12345",
+        "customer_id": "cust-789",
+        "items": [{"product_id": "prod-1", "quantity": 2}],
+    }),
 )
 
-execution_arn = response['executionArn']
+execution_arn = response["executionArn"]
 ```
 
 ### Choice State (Conditional Logic)

@@ -3,6 +3,9 @@ name: lambda
 description: AWS Lambda serverless functions for event-driven compute. Use when creating functions, configuring triggers, debugging invocations, optimizing cold starts, setting up event source mappings, or managing layers.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/lambda/latest/dg/
+expertiseFor:
+  resourceTypes: [lambda-function, lambda-layer]
+  terms: ["Lambda"]
 ---
 
 # AWS Lambda
@@ -77,26 +80,29 @@ import boto3
 import zipfile
 import io
 
-lambda_client = boto3.client('lambda')
+lambda_client = boto3.client("lambda")
 
 # Create zip in memory
 zip_buffer = io.BytesIO()
-with zipfile.ZipFile(zip_buffer, 'w') as zf:
-    zf.writestr('lambda_function.py', '''
+with zipfile.ZipFile(zip_buffer, "w") as zf:
+    zf.writestr(
+        "lambda_function.py",
+        """
 def handler(event, context):
     return {"statusCode": 200, "body": "Hello"}
-''')
+""",
+    )
 zip_buffer.seek(0)
 
 # Create function
 lambda_client.create_function(
-    FunctionName='MyFunction',
-    Runtime='python3.12',
-    Role='arn:aws:iam::123456789012:role/lambda-role',
-    Handler='lambda_function.handler',
-    Code={'ZipFile': zip_buffer.read()},
+    FunctionName="MyFunction",
+    Runtime="python3.12",
+    Role="arn:aws:iam::123456789012:role/lambda-role",
+    Handler="lambda_function.handler",
+    Code={"ZipFile": zip_buffer.read()},
     Timeout=30,
-    MemorySize=256
+    MemorySize=256,
 )
 ```
 
@@ -217,12 +223,14 @@ aws lambda invoke \
 ```python
 # GOOD: Initialize outside handler
 import boto3
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('MyTable')
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("MyTable")
+
 
 def handler(event, context):
     # Reuses existing connection
-    return table.get_item(Key={'id': event['id']})
+    return table.get_item(Key={"id": event["id"]})
 ```
 
 ### Security

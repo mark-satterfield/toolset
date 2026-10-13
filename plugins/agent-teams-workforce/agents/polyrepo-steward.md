@@ -14,7 +14,7 @@ description: >-
   repo". A caller that needs repository facts in order to do repository work hands the work
   here instead.
 model: sonnet
-effort: medium
+effort: high
 color: yellow
 skills:
 - agent-teams-workforce:subagent-contract

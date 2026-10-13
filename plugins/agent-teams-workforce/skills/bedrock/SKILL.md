@@ -3,6 +3,9 @@ name: bedrock
 description: AWS Bedrock foundation models for generative AI. Use when invoking foundation models, building AI applications, creating embeddings, configuring model access, or implementing RAG patterns.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/bedrock/latest/userguide/
+expertiseFor:
+  resourceTypes: [foundation-model]
+  terms: ["Bedrock", "foundation model", "LLM", "generative AI", "embedding"]
 ---
 
 # AWS Bedrock
@@ -72,27 +75,27 @@ cat response.json | jq -r '.content[0].text'
 import boto3
 import json
 
-bedrock = boto3.client('bedrock-runtime')
+bedrock = boto3.client("bedrock-runtime")
+
 
 def invoke_claude(prompt, max_tokens=1024):
     response = bedrock.invoke_model(
-        modelId='anthropic.claude-3-sonnet-20240229-v1:0',
-        contentType='application/json',
-        accept='application/json',
+        modelId="anthropic.claude-3-sonnet-20240229-v1:0",
+        contentType="application/json",
+        accept="application/json",
         body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': max_tokens,
-            'messages': [
-                {'role': 'user', 'content': prompt}
-            ]
-        })
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }),
     )
 
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
+    result = json.loads(response["body"].read())
+    return result["content"][0]["text"]
+
 
 # Usage
-response = invoke_claude('What is Amazon S3?')
+response = invoke_claude("What is Amazon S3?")
 print(response)
 ```
 
@@ -102,30 +105,30 @@ print(response)
 import boto3
 import json
 
-bedrock = boto3.client('bedrock-runtime')
+bedrock = boto3.client("bedrock-runtime")
+
 
 def stream_claude(prompt):
     response = bedrock.invoke_model_with_response_stream(
-        modelId='anthropic.claude-3-sonnet-20240229-v1:0',
-        contentType='application/json',
-        accept='application/json',
+        modelId="anthropic.claude-3-sonnet-20240229-v1:0",
+        contentType="application/json",
+        accept="application/json",
         body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': 1024,
-            'messages': [
-                {'role': 'user', 'content': prompt}
-            ]
-        })
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": prompt}],
+        }),
     )
 
-    for event in response['body']:
-        chunk = json.loads(event['chunk']['bytes'])
-        if chunk['type'] == 'content_block_delta':
-            yield chunk['delta'].get('text', '')
+    for event in response["body"]:
+        chunk = json.loads(event["chunk"]["bytes"])
+        if chunk["type"] == "content_block_delta":
+            yield chunk["delta"].get("text", "")
+
 
 # Usage
-for text in stream_claude('Write a haiku about cloud computing.'):
-    print(text, end='', flush=True)
+for text in stream_claude("Write a haiku about cloud computing."):
+    print(text, end="", flush=True)
 ```
 
 ### Generate Embeddings
@@ -134,26 +137,24 @@ for text in stream_claude('Write a haiku about cloud computing.'):
 import boto3
 import json
 
-bedrock = boto3.client('bedrock-runtime')
+bedrock = boto3.client("bedrock-runtime")
+
 
 def get_embedding(text):
     response = bedrock.invoke_model(
-        modelId='amazon.titan-embed-text-v2:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'inputText': text,
-            'dimensions': 1024,
-            'normalize': True
-        })
+        modelId="amazon.titan-embed-text-v2:0",
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps({"inputText": text, "dimensions": 1024, "normalize": True}),
     )
 
-    result = json.loads(response['body'].read())
-    return result['embedding']
+    result = json.loads(response["body"].read())
+    return result["embedding"]
+
 
 # Usage
-embedding = get_embedding('AWS Lambda is a serverless compute service.')
-print(f'Embedding dimension: {len(embedding)}')
+embedding = get_embedding("AWS Lambda is a serverless compute service.")
+print(f"Embedding dimension: {len(embedding)}")
 ```
 
 ### Conversation with History
@@ -162,7 +163,8 @@ print(f'Embedding dimension: {len(embedding)}')
 import boto3
 import json
 
-bedrock = boto3.client('bedrock-runtime')
+bedrock = boto3.client("bedrock-runtime")
+
 
 class Conversation:
     def __init__(self, system_prompt=None):
@@ -170,41 +172,32 @@ class Conversation:
         self.system = system_prompt
 
     def chat(self, user_message):
-        self.messages.append({
-            'role': 'user',
-            'content': user_message
-        })
+        self.messages.append({"role": "user", "content": user_message})
 
-        body = {
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': 1024,
-            'messages': self.messages
-        }
+        body = {"anthropic_version": "bedrock-2023-05-31", "max_tokens": 1024, "messages": self.messages}
 
         if self.system:
-            body['system'] = self.system
+            body["system"] = self.system
 
         response = bedrock.invoke_model(
-            modelId='anthropic.claude-3-sonnet-20240229-v1:0',
-            contentType='application/json',
-            accept='application/json',
-            body=json.dumps(body)
+            modelId="anthropic.claude-3-sonnet-20240229-v1:0",
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
         )
 
-        result = json.loads(response['body'].read())
-        assistant_message = result['content'][0]['text']
+        result = json.loads(response["body"].read())
+        assistant_message = result["content"][0]["text"]
 
-        self.messages.append({
-            'role': 'assistant',
-            'content': assistant_message
-        })
+        self.messages.append({"role": "assistant", "content": assistant_message})
 
         return assistant_message
 
+
 # Usage
-conv = Conversation(system_prompt='You are an AWS solutions architect.')
-print(conv.chat('What database should I use for a chat application?'))
-print(conv.chat('What about for time-series data?'))
+conv = Conversation(system_prompt="You are an AWS solutions architect.")
+print(conv.chat("What database should I use for a chat application?"))
+print(conv.chat("What about for time-series data?"))
 ```
 
 ### List Available Models
@@ -340,19 +333,17 @@ aws iam simulate-principal-policy \
 import time
 from botocore.exceptions import ClientError
 
+
 def invoke_with_retry(bedrock, body, max_retries=3):
     for attempt in range(max_retries):
         try:
-            return bedrock.invoke_model(
-                modelId='anthropic.claude-3-sonnet-20240229-v1:0',
-                body=json.dumps(body)
-            )
+            return bedrock.invoke_model(modelId="anthropic.claude-3-sonnet-20240229-v1:0", body=json.dumps(body))
         except ClientError as e:
-            if e.response['Error']['Code'] == 'ModelNotReadyException':
-                time.sleep(2 ** attempt)
+            if e.response["Error"]["Code"] == "ModelNotReadyException":
+                time.sleep(2**attempt)
             else:
                 raise
-    raise Exception('Max retries exceeded')
+    raise Exception("Max retries exceeded")
 ```
 
 ### ThrottlingException

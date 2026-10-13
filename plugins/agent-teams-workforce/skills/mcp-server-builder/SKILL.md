@@ -1,6 +1,9 @@
 ---
 name: "mcp-server-builder"
 description: "MCP Server Builder"
+expertiseFor:
+  resourceTypes: [mcp-server]
+  terms: ["MCP"]
 ---
 
 # MCP Server Builder

@@ -1,6 +1,9 @@
 ---
 name: "observability-designer"
 description: "Observability Designer (POWERFUL)"
+expertiseFor:
+  resourceTypes: [alarm, dashboard]
+  terms: ["SLO", "observability", "monitoring"]
 ---
 
 # Observability Designer (POWERFUL)

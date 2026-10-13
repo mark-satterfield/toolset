@@ -10,6 +10,8 @@ description: "Accessibility audit skill for scanning, fixing, and verifying WCAG
 license: MIT
 metadata:
   updated: 2026-03-18
+expertiseFor:
+  terms: ["accessibility", "WCAG", "screen reader"]
 ---
 
 # Accessibility Audit

@@ -177,8 +177,6 @@ def run(
                 final=None,
                 validate=lambda path: document(path, arch),
                 outcome="Technical requirements document with architecture citations.",
-                model="fable",
-                effort="medium",
                 add_dirs=(work, arch, prd.parent),
                 corrective=not bool(errors),
             ),

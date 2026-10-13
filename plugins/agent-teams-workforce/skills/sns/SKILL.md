@@ -3,6 +3,9 @@ name: sns
 description: AWS SNS notification service for pub/sub messaging. Use when creating topics, managing subscriptions, configuring message filtering, sending notifications, or setting up mobile push.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/sns/latest/dg/
+expertiseFor:
+  resourceTypes: [topic]
+  terms: ["SNS", "push notification", "SMS"]
 ---
 
 # AWS SNS
@@ -85,27 +88,23 @@ aws sns subscribe \
 ```python
 import boto3
 
-sns = boto3.client('sns')
+sns = boto3.client("sns")
 
 # Create topic
-response = sns.create_topic(Name='my-topic')
-topic_arn = response['TopicArn']
+response = sns.create_topic(Name="my-topic")
+topic_arn = response["TopicArn"]
 
 # Subscribe Lambda
 sns.subscribe(
-    TopicArn=topic_arn,
-    Protocol='lambda',
-    Endpoint='arn:aws:lambda:us-east-1:123456789012:function:my-function'
+    TopicArn=topic_arn, Protocol="lambda", Endpoint="arn:aws:lambda:us-east-1:123456789012:function:my-function"
 )
 
 # Subscribe SQS with filter
 sns.subscribe(
     TopicArn=topic_arn,
-    Protocol='sqs',
-    Endpoint='arn:aws:sqs:us-east-1:123456789012:order-queue',
-    Attributes={
-        'FilterPolicy': '{"event_type": ["order_created", "order_updated"]}'
-    }
+    Protocol="sqs",
+    Endpoint="arn:aws:sqs:us-east-1:123456789012:order-queue",
+    Attributes={"FilterPolicy": '{"event_type": ["order_created", "order_updated"]}'},
 )
 ```
 
@@ -115,38 +114,28 @@ sns.subscribe(
 import boto3
 import json
 
-sns = boto3.client('sns')
-topic_arn = 'arn:aws:sns:us-east-1:123456789012:my-topic'
+sns = boto3.client("sns")
+topic_arn = "arn:aws:sns:us-east-1:123456789012:my-topic"
 
 # Simple publish
-sns.publish(
-    TopicArn=topic_arn,
-    Message='Hello, World!',
-    Subject='Notification'
-)
+sns.publish(TopicArn=topic_arn, Message="Hello, World!", Subject="Notification")
 
 # Publish with attributes (for filtering)
 sns.publish(
     TopicArn=topic_arn,
-    Message=json.dumps({'order_id': '12345', 'status': 'created'}),
+    Message=json.dumps({"order_id": "12345", "status": "created"}),
     MessageAttributes={
-        'event_type': {
-            'DataType': 'String',
-            'StringValue': 'order_created'
-        },
-        'priority': {
-            'DataType': 'Number',
-            'StringValue': '1'
-        }
-    }
+        "event_type": {"DataType": "String", "StringValue": "order_created"},
+        "priority": {"DataType": "Number", "StringValue": "1"},
+    },
 )
 
 # Publish to FIFO topic
 sns.publish(
-    TopicArn='arn:aws:sns:us-east-1:123456789012:my-topic.fifo',
-    Message=json.dumps({'order_id': '12345'}),
-    MessageGroupId='order-12345',
-    MessageDeduplicationId='unique-id'
+    TopicArn="arn:aws:sns:us-east-1:123456789012:my-topic.fifo",
+    Message=json.dumps({"order_id": "12345"}),
+    MessageGroupId="order-12345",
+    MessageDeduplicationId="unique-id",
 )
 ```
 
@@ -195,38 +184,28 @@ Filter policy examples:
 import boto3
 import json
 
-sns = boto3.client('sns')
-sqs = boto3.client('sqs')
+sns = boto3.client("sns")
+sqs = boto3.client("sqs")
 
 # Create topic
-topic = sns.create_topic(Name='orders-topic')
-topic_arn = topic['TopicArn']
+topic = sns.create_topic(Name="orders-topic")
+topic_arn = topic["TopicArn"]
 
 # Create queues for different processors
 queues = {
-    'analytics': sqs.create_queue(QueueName='order-analytics')['QueueUrl'],
-    'fulfillment': sqs.create_queue(QueueName='order-fulfillment')['QueueUrl'],
-    'notification': sqs.create_queue(QueueName='order-notification')['QueueUrl']
+    "analytics": sqs.create_queue(QueueName="order-analytics")["QueueUrl"],
+    "fulfillment": sqs.create_queue(QueueName="order-fulfillment")["QueueUrl"],
+    "notification": sqs.create_queue(QueueName="order-notification")["QueueUrl"],
 }
 
 # Subscribe each queue
 for name, queue_url in queues.items():
-    queue_arn = sqs.get_queue_attributes(
-        QueueUrl=queue_url,
-        AttributeNames=['QueueArn']
-    )['Attributes']['QueueArn']
+    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
 
-    sns.subscribe(
-        TopicArn=topic_arn,
-        Protocol='sqs',
-        Endpoint=queue_arn
-    )
+    sns.subscribe(TopicArn=topic_arn, Protocol="sqs", Endpoint=queue_arn)
 
 # One publish reaches all queues
-sns.publish(
-    TopicArn=topic_arn,
-    Message=json.dumps({'order_id': '12345', 'total': 99.99})
-)
+sns.publish(TopicArn=topic_arn, Message=json.dumps({"order_id": "12345", "total": 99.99}))
 ```
 
 ### Lambda Permission for SNS
@@ -357,19 +336,19 @@ aws sns set-topic-attributes \
 # Correct: attributes must be message attributes
 sns.publish(
     TopicArn=topic_arn,
-    Message='body content',
+    Message="body content",
     MessageAttributes={
-        'event_type': {
-            'DataType': 'String',
-            'StringValue': 'order_created'  # This is filtered
+        "event_type": {
+            "DataType": "String",
+            "StringValue": "order_created",  # This is filtered
         }
-    }
+    },
 )
 
 # Wrong: this won't be filtered
 sns.publish(
     TopicArn=topic_arn,
-    Message=json.dumps({'event_type': 'order_created'})  # Not filtered
+    Message=json.dumps({"event_type": "order_created"}),  # Not filtered
 )
 ```
 

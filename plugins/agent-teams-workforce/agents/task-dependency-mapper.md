@@ -16,6 +16,7 @@ skills:
 - agent-teams-workforce:beads-contract
 - agent-teams-workforce:artifact-handoff
 effort: medium
+epicExpertise: at-launch
 isolation: worktree
 color: yellow
 ---

@@ -3,6 +3,9 @@ name: dynamodb
 description: AWS DynamoDB NoSQL database for scalable data storage. Use when designing table schemas, writing queries, configuring indexes, managing capacity, implementing single-table design, or troubleshooting performance issues.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/
+expertiseFor:
+  resourceTypes: [dynamodb-table]
+  terms: ["DynamoDB"]
 ---
 
 # AWS DynamoDB
@@ -65,19 +68,13 @@ aws dynamodb create-table \
 ```python
 import boto3
 
-dynamodb = boto3.resource('dynamodb')
+dynamodb = boto3.resource("dynamodb")
 
 table = dynamodb.create_table(
-    TableName='Users',
-    KeySchema=[
-        {'AttributeName': 'PK', 'KeyType': 'HASH'},
-        {'AttributeName': 'SK', 'KeyType': 'RANGE'}
-    ],
-    AttributeDefinitions=[
-        {'AttributeName': 'PK', 'AttributeType': 'S'},
-        {'AttributeName': 'SK', 'AttributeType': 'S'}
-    ],
-    BillingMode='PAY_PER_REQUEST'
+    TableName="Users",
+    KeySchema=[{"AttributeName": "PK", "KeyType": "HASH"}, {"AttributeName": "SK", "KeyType": "RANGE"}],
+    AttributeDefinitions=[{"AttributeName": "PK", "AttributeType": "S"}, {"AttributeName": "SK", "AttributeType": "S"}],
+    BillingMode="PAY_PER_REQUEST",
 )
 
 table.wait_until_exists()
@@ -89,77 +86,61 @@ table.wait_until_exists()
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('Users')
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("Users")
 
 # Put item
 table.put_item(
     Item={
-        'PK': 'USER#123',
-        'SK': 'PROFILE',
-        'name': 'John Doe',
-        'email': 'john@example.com',
-        'created_at': '2024-01-15T10:30:00Z'
+        "PK": "USER#123",
+        "SK": "PROFILE",
+        "name": "John Doe",
+        "email": "john@example.com",
+        "created_at": "2024-01-15T10:30:00Z",
     }
 )
 
 # Get item
-response = table.get_item(
-    Key={'PK': 'USER#123', 'SK': 'PROFILE'}
-)
-item = response.get('Item')
+response = table.get_item(Key={"PK": "USER#123", "SK": "PROFILE"})
+item = response.get("Item")
 
 # Update item
 table.update_item(
-    Key={'PK': 'USER#123', 'SK': 'PROFILE'},
-    UpdateExpression='SET #name = :name, updated_at = :updated',
-    ExpressionAttributeNames={'#name': 'name'},
-    ExpressionAttributeValues={
-        ':name': 'John Smith',
-        ':updated': '2024-01-16T10:30:00Z'
-    }
+    Key={"PK": "USER#123", "SK": "PROFILE"},
+    UpdateExpression="SET #name = :name, updated_at = :updated",
+    ExpressionAttributeNames={"#name": "name"},
+    ExpressionAttributeValues={":name": "John Smith", ":updated": "2024-01-16T10:30:00Z"},
 )
 
 # Delete item
-table.delete_item(
-    Key={'PK': 'USER#123', 'SK': 'PROFILE'}
-)
+table.delete_item(Key={"PK": "USER#123", "SK": "PROFILE"})
 ```
 
 ### Query Operations
 
 ```python
 # Query by partition key
-response = table.query(
-    KeyConditionExpression=Key('PK').eq('USER#123')
-)
+response = table.query(KeyConditionExpression=Key("PK").eq("USER#123"))
 
 # Query with sort key condition
-response = table.query(
-    KeyConditionExpression=Key('PK').eq('USER#123') & Key('SK').begins_with('ORDER#')
-)
+response = table.query(KeyConditionExpression=Key("PK").eq("USER#123") & Key("SK").begins_with("ORDER#"))
 
 # Query with filter
-response = table.query(
-    KeyConditionExpression=Key('PK').eq('USER#123'),
-    FilterExpression=Attr('status').eq('active')
-)
+response = table.query(KeyConditionExpression=Key("PK").eq("USER#123"), FilterExpression=Attr("status").eq("active"))
 
 # Query with projection
 response = table.query(
-    KeyConditionExpression=Key('PK').eq('USER#123'),
-    ProjectionExpression='PK, SK, #name, email',
-    ExpressionAttributeNames={'#name': 'name'}
+    KeyConditionExpression=Key("PK").eq("USER#123"),
+    ProjectionExpression="PK, SK, #name, email",
+    ExpressionAttributeNames={"#name": "name"},
 )
 
 # Paginated query
-paginator = dynamodb.meta.client.get_paginator('query')
+paginator = dynamodb.meta.client.get_paginator("query")
 for page in paginator.paginate(
-    TableName='Users',
-    KeyConditionExpression='PK = :pk',
-    ExpressionAttributeValues={':pk': {'S': 'USER#123'}}
+    TableName="Users", KeyConditionExpression="PK = :pk", ExpressionAttributeValues={":pk": {"S": "USER#123"}}
 ):
-    for item in page['Items']:
+    for item in page["Items"]:
         print(item)
 ```
 
@@ -169,23 +150,12 @@ for page in paginator.paginate(
 # Batch write (up to 25 items)
 with table.batch_writer() as batch:
     for i in range(100):
-        batch.put_item(Item={
-            'PK': f'USER#{i}',
-            'SK': 'PROFILE',
-            'name': f'User {i}'
-        })
+        batch.put_item(Item={"PK": f"USER#{i}", "SK": "PROFILE", "name": f"User {i}"})
 
 # Batch get (up to 100 items)
-dynamodb = boto3.resource('dynamodb')
+dynamodb = boto3.resource("dynamodb")
 response = dynamodb.batch_get_item(
-    RequestItems={
-        'Users': {
-            'Keys': [
-                {'PK': 'USER#1', 'SK': 'PROFILE'},
-                {'PK': 'USER#2', 'SK': 'PROFILE'}
-            ]
-        }
-    }
+    RequestItems={"Users": {"Keys": [{"PK": "USER#1", "SK": "PROFILE"}, {"PK": "USER#2", "SK": "PROFILE"}]}}
 )
 ```
 
@@ -214,24 +184,19 @@ from botocore.exceptions import ClientError
 # Only put if item doesn't exist
 try:
     table.put_item(
-        Item={'PK': 'USER#123', 'SK': 'PROFILE', 'name': 'John'},
-        ConditionExpression='attribute_not_exists(PK)'
+        Item={"PK": "USER#123", "SK": "PROFILE", "name": "John"}, ConditionExpression="attribute_not_exists(PK)"
     )
 except ClientError as e:
-    if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+    if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
         print("Item already exists")
 
 # Optimistic locking with version
 table.update_item(
-    Key={'PK': 'USER#123', 'SK': 'PROFILE'},
-    UpdateExpression='SET #name = :name, version = version + :inc',
-    ConditionExpression='version = :current_version',
-    ExpressionAttributeNames={'#name': 'name'},
-    ExpressionAttributeValues={
-        ':name': 'New Name',
-        ':inc': 1,
-        ':current_version': 5
-    }
+    Key={"PK": "USER#123", "SK": "PROFILE"},
+    UpdateExpression="SET #name = :name, version = version + :inc",
+    ConditionExpression="version = :current_version",
+    ExpressionAttributeNames={"#name": "name"},
+    ExpressionAttributeValues={":name": "New Name", ":inc": 1, ":current_version": 5},
 )
 ```
 
@@ -309,13 +274,8 @@ table.update_item(
 import time
 from botocore.config import Config
 
-config = Config(
-    retries={
-        'max_attempts': 10,
-        'mode': 'adaptive'
-    }
-)
-dynamodb = boto3.resource('dynamodb', config=config)
+config = Config(retries={"max_attempts": 10, "mode": "adaptive"})
+dynamodb = boto3.resource("dynamodb", config=config)
 ```
 
 ### Hot Partitions
@@ -360,17 +320,13 @@ aws cloudwatch get-metric-statistics \
 # Parallel scan
 import concurrent.futures
 
+
 def scan_segment(segment, total_segments):
-    return table.scan(
-        Segment=segment,
-        TotalSegments=total_segments
-    )
+    return table.scan(Segment=segment, TotalSegments=total_segments)
+
 
 with concurrent.futures.ThreadPoolExecutor() as executor:
-    results = list(executor.map(
-        lambda s: scan_segment(s, 4),
-        range(4)
-    ))
+    results = list(executor.map(lambda s: scan_segment(s, 4), range(4)))
 ```
 
 ## References

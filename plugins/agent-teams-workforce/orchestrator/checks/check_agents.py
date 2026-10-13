@@ -77,6 +77,17 @@ class Capture(TypedDict):
 
 RESET_AT = 2_000_000_000
 CORRECTION_ATTEMPTS = 2
+SKILL_MARKER = "The fixture skill sentence."
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def write_agent(plugin: Path, model: str) -> None:
+    """Write the fixture agent definition with the model its session runs on."""
+    (plugin / "agents" / "sample.md").write_text(
+        "---\ndescription: Sample\ntools: Read, Write\ndisallowedTools: Agent\n"
+        f"skills: [agent-teams-workforce:subagent-contract]\nmodel: {model}\neffort: medium\n"
+        "isolation: worktree\n---\nWrite the supplied artifact.\n",
+    )
 
 
 FAKE = """
@@ -189,11 +200,10 @@ def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentSte
     plugin, config = root / "plugin", root / "config"
     (plugin / "agents").mkdir(parents=True)
     config.mkdir()
-    (plugin / "agents" / "sample.md").write_text(
-        "---\ndescription: Sample\ntools: Read, Write\ndisallowedTools: Agent\n"
-        "skills: [agent-teams-workforce:subagent-contract]\nmodel: fable\n"
-        "isolation: worktree\n---\nWrite the supplied artifact.\n",
-    )
+    write_agent(plugin, "sonnet")
+    skill = plugin / "skills" / "subagent-contract"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(f"---\nname: subagent-contract\ndescription: Fixture.\n---\n{SKILL_MARKER}\n")
     (config / "settings.json").write_text(
         json.dumps(
             {
@@ -253,8 +263,6 @@ def fixture(root: Path, module: ArtifactProducer) -> tuple[AgentRunner, AgentSte
         "Write the survey.",
         schema,
         work / "result.json",
-        "sonnet",
-        "medium",
         (root,),
     )
     return runner, step, stream
@@ -293,10 +301,15 @@ def check_command(
     agent = row["agents"]["atw-sample"]
     require("isolation" not in agent, "'isolation' not in agent")
     require(agent["model"] == "sonnet", "agent['model'] == 'sonnet'")
+    require(agent["effort"] == "medium", "agent['effort'] == 'medium'")
+    require("skills" not in agent, "the launched agent must not carry a skills list Claude Code never preloads")
+    prompt = check_type(agent["prompt"], str)
+    require(prompt.count(SKILL_MARKER) == 1, "the launched agent's prompt must hold its skill text once")
     require(
-        agent["skills"] == ["agent-teams-workforce:subagent-contract"],
-        "agent['skills'] == ['agent-teams-workforce:subagent-contract']",
+        f"Base directory for this skill: {(runner.plugin / 'skills' / 'subagent-contract').resolve()}" in prompt,
+        "the skill text must name the skill's base directory",
     )
+    require("env" not in row["settings"], "a session that starts no agent sets no nesting environment")
     hooks = json_object(row["settings"]["hooks"])
     before = check_type(
         hooks["PreToolUse"],
@@ -437,10 +450,10 @@ def check_quota(runner: AgentRunner, step: AgentStep, root: Path) -> None:
     step = replace(
         step,
         stage="fable",
-        model="fable",
         output=root / "fable.json",
         final=root / "fable-final.json",
     )
+    write_agent(fresh.plugin, "fable")
     os.environ["FAKE_MODE"] = "fable"
     require(fresh.run(step) == step.final, "fresh.run(step) == step.final")
     first, second = records(root)[-2:]

@@ -1,6 +1,9 @@
 ---
 name: "senior-devops"
 description: Comprehensive DevOps skill for CI/CD, infrastructure automation, containerization, and AWS. Includes pipeline setup, infrastructure as code, deployment automation, and monitoring. Use when setting up pipelines, deploying applications, managing infrastructure, implementing monitoring, or optimizing deployment processes.
+expertiseFor:
+  resourceTypes: [pipeline]
+  terms: ["CI/CD", "deployment pipeline"]
 ---
 
 # Senior Devops

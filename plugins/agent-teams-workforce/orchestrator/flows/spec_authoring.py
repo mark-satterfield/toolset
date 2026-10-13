@@ -91,8 +91,6 @@ class SpecRequest:
     inputs: tuple[str, ...]
     outcome: str
     validate: Path | Callable[[Path], tuple[list[str], list[str]] | None]
-    model: str = "sonnet"
-    effort: str = "medium"
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
@@ -102,8 +100,6 @@ class SpecRequest:
         check_type(self.inputs, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.outcome, str)
         check_type(self.validate, Path | Callable[[Path], tuple[list[str], list[str]] | None])
-        check_type(self.model, str)
-        check_type(self.effort, str)
 
 
 class SpecAuthoring:
@@ -231,7 +227,6 @@ class SpecAuthoring:
                 self.inputs,
                 "Data model specification for this repository's placed items.",
                 lambda path: document(path, self.arch),
-                model="fable",
             ),
             SpecRequest(
                 "acceptance-criteria-writer",
@@ -239,7 +234,6 @@ class SpecAuthoring:
                 self.inputs + tuple(map(str, self.docs[:2])),
                 "Acceptance criteria and definition of done for the saved specifications.",
                 nonempty,
-                effort="low",
             ),
         )
 
@@ -281,8 +275,6 @@ class SpecAuthoring:
                 final=None,
                 validate=request.validate,
                 outcome=request.outcome,
-                model=request.model,
-                effort=request.effort,
                 add_dirs=(self.work, self.arch, self.prd.parent, self.repo),
             ),
         )
@@ -385,8 +377,6 @@ class SpecAuthoring:
                         agent=request.agent,
                         inputs=request.inputs,
                         check=check_type(request.validate, Callable[[Path], object]),
-                        model=request.model,
-                        effort=request.effort,
                         derived_from=(DOCUMENT_SPEC, DOCUMENT_DATA_MODEL) if kind == DOCUMENT_CRITERIA else (),
                     )
                     for kind, request in zip(kinds, self.requests(), strict=True)

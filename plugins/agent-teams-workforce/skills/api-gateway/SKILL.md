@@ -3,6 +3,9 @@ name: api-gateway
 description: AWS API Gateway for REST and HTTP API management. Use when creating APIs, configuring integrations, setting up authorization, managing stages, implementing rate limiting, or troubleshooting API issues.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/apigateway/latest/developerguide/
+expertiseFor:
+  resourceTypes: [rest-api]
+  terms: ["API Gateway"]
 ---
 
 # AWS API Gateway
@@ -136,27 +139,23 @@ aws apigateway create-deployment \
 ```python
 import json
 
+
 def handler(event, context):
     # HTTP API event
-    http_method = event.get('requestContext', {}).get('http', {}).get('method')
-    path = event.get('rawPath', '')
-    query_params = event.get('queryStringParameters', {})
-    body = event.get('body', '')
+    http_method = event.get("requestContext", {}).get("http", {}).get("method")
+    path = event.get("rawPath", "")
+    query_params = event.get("queryStringParameters", {})
+    body = event.get("body", "")
 
-    if body and event.get('isBase64Encoded'):
+    if body and event.get("isBase64Encoded"):
         import base64
-        body = base64.b64decode(body).decode('utf-8')
+
+        body = base64.b64decode(body).decode("utf-8")
 
     # Process request
-    response_body = {'message': 'Success', 'path': path}
+    response_body = {"message": "Success", "path": path}
 
-    return {
-        'statusCode': 200,
-        'headers': {
-            'Content-Type': 'application/json'
-        },
-        'body': json.dumps(response_body)
-    }
+    return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps(response_body)}
 ```
 
 ### Configure CORS
@@ -307,14 +306,10 @@ aws apigatewayv2 get-authorizer --api-id abc123 --authorizer-id xyz789
 
 ```python
 # Correct format
-return {
-    'statusCode': 200,
-    'headers': {'Content-Type': 'application/json'},
-    'body': json.dumps({'message': 'success'})
-}
+return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"message": "success"})}
 
 # Wrong - missing statusCode
-return {'message': 'success'}
+return {"message": "success"}
 ```
 
 ### 504 Gateway Timeout

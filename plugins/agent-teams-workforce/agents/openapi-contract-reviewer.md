@@ -15,6 +15,7 @@ permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-standard-event, agent-teams-workforce:artifact-handoff, agent-teams-workforce:architecture-baseline]
 effort: low
+epicExpertise: at-launch
 isolation: worktree
 color: purple
 ---

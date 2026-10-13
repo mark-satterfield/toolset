@@ -3,6 +3,9 @@ name: sqs
 description: AWS SQS message queue service for decoupled architectures. Use when creating queues, configuring dead-letter queues, managing visibility timeouts, implementing FIFO ordering, or integrating with Lambda.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/
+expertiseFor:
+  resourceTypes: [queue]
+  terms: ["SQS", "queue", "dead-letter"]
 ---
 
 # AWS SQS
@@ -61,17 +64,17 @@ aws sqs create-queue \
 ```python
 import boto3
 
-sqs = boto3.client('sqs')
+sqs = boto3.client("sqs")
 
 response = sqs.create_queue(
-    QueueName='my-queue',
+    QueueName="my-queue",
     Attributes={
-        'VisibilityTimeout': '60',
-        'MessageRetentionPeriod': '604800',
-        'ReceiveMessageWaitTimeSeconds': '20'  # Long polling
-    }
+        "VisibilityTimeout": "60",
+        "MessageRetentionPeriod": "604800",
+        "ReceiveMessageWaitTimeSeconds": "20",  # Long polling
+    },
 )
-queue_url = response['QueueUrl']
+queue_url = response["QueueUrl"]
 ```
 
 ### Create FIFO Queue
@@ -111,37 +114,32 @@ aws sqs set-queue-attributes \
 import boto3
 import json
 
-sqs = boto3.client('sqs')
-queue_url = 'https://sqs.us-east-1.amazonaws.com/123456789012/my-queue'
+sqs = boto3.client("sqs")
+queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
 
 # Send single message
 sqs.send_message(
     QueueUrl=queue_url,
-    MessageBody=json.dumps({'order_id': '12345', 'action': 'process'}),
-    MessageAttributes={
-        'MessageType': {
-            'DataType': 'String',
-            'StringValue': 'Order'
-        }
-    }
+    MessageBody=json.dumps({"order_id": "12345", "action": "process"}),
+    MessageAttributes={"MessageType": {"DataType": "String", "StringValue": "Order"}},
 )
 
 # Send to FIFO queue
 sqs.send_message(
-    QueueUrl='https://sqs.us-east-1.amazonaws.com/123456789012/my-queue.fifo',
-    MessageBody=json.dumps({'order_id': '12345'}),
-    MessageGroupId='order-12345',
-    MessageDeduplicationId='unique-id-12345'
+    QueueUrl="https://sqs.us-east-1.amazonaws.com/123456789012/my-queue.fifo",
+    MessageBody=json.dumps({"order_id": "12345"}),
+    MessageGroupId="order-12345",
+    MessageDeduplicationId="unique-id-12345",
 )
 
 # Batch send (up to 10 messages)
 sqs.send_message_batch(
     QueueUrl=queue_url,
     Entries=[
-        {'Id': '1', 'MessageBody': json.dumps({'id': 1})},
-        {'Id': '2', 'MessageBody': json.dumps({'id': 2})},
-        {'Id': '3', 'MessageBody': json.dumps({'id': 3})}
-    ]
+        {"Id": "1", "MessageBody": json.dumps({"id": 1})},
+        {"Id": "2", "MessageBody": json.dumps({"id": 2})},
+        {"Id": "3", "MessageBody": json.dumps({"id": 3})},
+    ],
 )
 ```
 
@@ -151,8 +149,8 @@ sqs.send_message_batch(
 import boto3
 import json
 
-sqs = boto3.client('sqs')
-queue_url = 'https://sqs.us-east-1.amazonaws.com/123456789012/my-queue'
+sqs = boto3.client("sqs")
+queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
 
 while True:
     # Long polling (wait up to 20 seconds)
@@ -160,24 +158,21 @@ while True:
         QueueUrl=queue_url,
         MaxNumberOfMessages=10,
         WaitTimeSeconds=20,
-        MessageAttributeNames=['All'],
-        AttributeNames=['All']
+        MessageAttributeNames=["All"],
+        AttributeNames=["All"],
     )
 
-    messages = response.get('Messages', [])
+    messages = response.get("Messages", [])
 
     for message in messages:
         try:
-            body = json.loads(message['Body'])
+            body = json.loads(message["Body"])
             print(f"Processing: {body}")
 
             # Process message...
 
             # Delete on success
-            sqs.delete_message(
-                QueueUrl=queue_url,
-                ReceiptHandle=message['ReceiptHandle']
-            )
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"])
         except Exception as e:
             print(f"Error processing message: {e}")
             # Message will become visible again after visibility timeout
@@ -198,9 +193,9 @@ Lambda handler:
 
 ```python
 def handler(event, context):
-    for record in event['Records']:
-        body = json.loads(record['body'])
-        message_id = record['messageId']
+    for record in event["Records"]:
+        body = json.loads(record["body"])
+        message_id = record["messageId"]
 
         try:
             process_message(body)
@@ -208,7 +203,7 @@ def handler(event, context):
             # Raise to put message back in queue
             raise
 
-    return {'batchItemFailures': []}
+    return {"batchItemFailures": []}
 ```
 
 ## CLI Reference

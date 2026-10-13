@@ -1,6 +1,9 @@
 ---
 name: "email-template-builder"
 description: "Email Template Builder"
+expertiseFor:
+  resourceTypes: [email-template]
+  terms: ["email"]
 ---
 
 # Email Template Builder

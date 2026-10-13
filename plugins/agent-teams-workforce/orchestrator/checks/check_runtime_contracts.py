@@ -21,7 +21,7 @@ import archmatrix
 import wsjf
 from driver_surface_types import CONTROL_REPO_ENV, DRIVER_DIR_PARTS
 from orchestrator.checks.check_support import expected_error, require
-from orchestrator.core.agent_context import prepare
+from orchestrator.core.agent_context import Launch, prepare
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.matrix import read_snapshot, row_for, satisfied, snapshot
@@ -119,7 +119,8 @@ class RuntimeContracts(unittest.TestCase):
             agents: Path = plugin / "agents"
             agents.mkdir(parents=True)
             (agents / "fixture.md").write_text(
-                "---\ndescription: local fixture\ntools: Read\nmcpServers: fixture-local-probe\n---\nFixture only.\n",
+                "---\ndescription: local fixture\ntools: Read\nmcpServers: fixture-local-probe\n"
+                "model: sonnet\neffort: high\n---\nFixture only.\n",
                 encoding="utf-8",
             )
             step: AgentStep = AgentStep(
@@ -130,8 +131,6 @@ class RuntimeContracts(unittest.TestCase):
                 "Prepare only.",
                 root / "schema",
                 None,
-                "sonnet",
-                "high",
             )
             config: Path = root / "config"
             config.mkdir()
@@ -139,10 +138,10 @@ class RuntimeContracts(unittest.TestCase):
             mcp.write_text('{"mcpServers":{"fixture-local-probe":{"command":"never-executed"}}}', encoding="utf-8")
             session: Path = root / "session"
             with patch.dict(os.environ, {CONTROL_REPO_ENV: control, "CLAUDE_CONFIG_DIR": str(config)}):
-                args: list[str] = prepare(plugin, config, session, step, "sonnet")
+                args: list[str] = prepare(plugin, config, session, step, Launch())
                 mcp.unlink()
                 with expected_error(ValueError):
-                    prepare(plugin, config, root / "missing-mcp", step, "sonnet")
+                    prepare(plugin, config, root / "missing-mcp", step, Launch())
             require((session / "mcp.json").stat().st_mode & 0o777 == PRIVATE_FILE_MODE, "MCP file privacy drift")
             require("--strict-mcp-config" in args, "runtime boundary probe failed")
             require(session.stat().st_mode & 0o777 == PRIVATE_DIRECTORY_MODE, "runtime boundary probe failed")
@@ -150,11 +149,11 @@ class RuntimeContracts(unittest.TestCase):
             require(json_object(agent["atw-fixture"])["tools"] == ["Read"], "runtime boundary probe failed")
             require(bool((session / "settings.json").is_file()), "runtime boundary probe failed")
             (agents / "fixture.md").write_text(
-                "---\ndescription: fixture\nmaxTurns: ten\n---\nBody.\n",
+                "---\ndescription: fixture\nmaxTurns: ten\nmodel: sonnet\neffort: high\n---\nBody.\n",
                 encoding="utf-8",
             )
             with expected_error(TypeError):
-                prepare(plugin, config, root / "invalid-metadata", step, "sonnet")
+                prepare(plugin, config, root / "invalid-metadata", step, Launch())
 
     @staticmethod
     def test_catalog_producer_to_consumer() -> None:

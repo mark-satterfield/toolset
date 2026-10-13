@@ -3,6 +3,9 @@ name: cognito
 description: AWS Cognito user authentication and authorization service. Use when setting up user pools, configuring identity pools, implementing OAuth flows, managing user attributes, or integrating with social identity providers.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/cognito/latest/developerguide/
+expertiseFor:
+  resourceTypes: [user-pool]
+  terms: ["Cognito", "sign-up", "sign up", "sign-in", "sign in", "log in", "login", "password", "passkey"]
 ---
 
 # AWS Cognito
@@ -102,26 +105,21 @@ import hmac
 import hashlib
 import base64
 
-cognito = boto3.client('cognito-idp')
+cognito = boto3.client("cognito-idp")
+
 
 def get_secret_hash(username, client_id, client_secret):
     message = username + client_id
-    dig = hmac.new(
-        client_secret.encode('utf-8'),
-        message.encode('utf-8'),
-        digestmod=hashlib.sha256
-    ).digest()
+    dig = hmac.new(client_secret.encode("utf-8"), message.encode("utf-8"), digestmod=hashlib.sha256).digest()
     return base64.b64encode(dig).decode()
 
+
 response = cognito.sign_up(
-    ClientId='client-id',
-    SecretHash=get_secret_hash('user@example.com', 'client-id', 'client-secret'),
-    Username='user@example.com',
-    Password='SecurePassword123!',
-    UserAttributes=[
-        {'Name': 'email', 'Value': 'user@example.com'},
-        {'Name': 'name', 'Value': 'John Doe'}
-    ]
+    ClientId="client-id",
+    SecretHash=get_secret_hash("user@example.com", "client-id", "client-secret"),
+    Username="user@example.com",
+    Password="SecurePassword123!",
+    UserAttributes=[{"Name": "email", "Value": "user@example.com"}, {"Name": "name", "Value": "John Doe"}],
 )
 ```
 
@@ -129,10 +127,10 @@ response = cognito.sign_up(
 
 ```python
 cognito.confirm_sign_up(
-    ClientId='client-id',
-    SecretHash=get_secret_hash('user@example.com', 'client-id', 'client-secret'),
-    Username='user@example.com',
-    ConfirmationCode='123456'
+    ClientId="client-id",
+    SecretHash=get_secret_hash("user@example.com", "client-id", "client-secret"),
+    Username="user@example.com",
+    ConfirmationCode="123456",
 )
 ```
 
@@ -140,43 +138,43 @@ cognito.confirm_sign_up(
 
 ```python
 response = cognito.initiate_auth(
-    ClientId='client-id',
-    AuthFlow='USER_SRP_AUTH',
+    ClientId="client-id",
+    AuthFlow="USER_SRP_AUTH",
     AuthParameters={
-        'USERNAME': 'user@example.com',
-        'SECRET_HASH': get_secret_hash('user@example.com', 'client-id', 'client-secret'),
-        'SRP_A': srp_a  # From SRP library
-    }
+        "USERNAME": "user@example.com",
+        "SECRET_HASH": get_secret_hash("user@example.com", "client-id", "client-secret"),
+        "SRP_A": srp_a,  # From SRP library
+    },
 )
 
 # For simple password auth (not recommended for production)
 response = cognito.admin_initiate_auth(
-    UserPoolId='us-east-1_abc123',
-    ClientId='client-id',
-    AuthFlow='ADMIN_USER_PASSWORD_AUTH',
+    UserPoolId="us-east-1_abc123",
+    ClientId="client-id",
+    AuthFlow="ADMIN_USER_PASSWORD_AUTH",
     AuthParameters={
-        'USERNAME': 'user@example.com',
-        'PASSWORD': 'password',
-        'SECRET_HASH': get_secret_hash('user@example.com', 'client-id', 'client-secret')
-    }
+        "USERNAME": "user@example.com",
+        "PASSWORD": "password",
+        "SECRET_HASH": get_secret_hash("user@example.com", "client-id", "client-secret"),
+    },
 )
 
-tokens = response['AuthenticationResult']
-id_token = tokens['IdToken']
-access_token = tokens['AccessToken']
-refresh_token = tokens['RefreshToken']
+tokens = response["AuthenticationResult"]
+id_token = tokens["IdToken"]
+access_token = tokens["AccessToken"]
+refresh_token = tokens["RefreshToken"]
 ```
 
 ### Refresh Tokens
 
 ```python
 response = cognito.initiate_auth(
-    ClientId='client-id',
-    AuthFlow='REFRESH_TOKEN_AUTH',
+    ClientId="client-id",
+    AuthFlow="REFRESH_TOKEN_AUTH",
     AuthParameters={
-        'REFRESH_TOKEN': refresh_token,
-        'SECRET_HASH': get_secret_hash('user@example.com', 'client-id', 'client-secret')
-    }
+        "REFRESH_TOKEN": refresh_token,
+        "SECRET_HASH": get_secret_hash("user@example.com", "client-id", "client-secret"),
+    },
 )
 ```
 
@@ -197,26 +195,21 @@ ServerSideTokenCheck=true
 ```python
 import boto3
 
-cognito_identity = boto3.client('cognito-identity')
+cognito_identity = boto3.client("cognito-identity")
 
 # Get identity ID
 response = cognito_identity.get_id(
-    IdentityPoolId='us-east-1:12345678-1234-1234-1234-123456789012',
-    Logins={
-        'cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123': id_token
-    }
+    IdentityPoolId="us-east-1:12345678-1234-1234-1234-123456789012",
+    Logins={"cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123": id_token},
 )
-identity_id = response['IdentityId']
+identity_id = response["IdentityId"]
 
 # Get credentials
 response = cognito_identity.get_credentials_for_identity(
-    IdentityId=identity_id,
-    Logins={
-        'cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123': id_token
-    }
+    IdentityId=identity_id, Logins={"cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123": id_token}
 )
 
-credentials = response['Credentials']
+credentials = response["Credentials"]
 # Use credentials['AccessKeyId'], credentials['SecretKey'], credentials['SessionToken']
 ```
 
@@ -308,7 +301,7 @@ import jwt
 import requests
 
 # Get JWKS
-jwks_url = f'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123/.well-known/jwks.json'
+jwks_url = f"https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123/.well-known/jwks.json"
 jwks = requests.get(jwks_url).json()
 
 # Decode and verify (use python-jose or similar)
@@ -317,9 +310,9 @@ from jose import jwt
 claims = jwt.decode(
     token,
     jwks,
-    algorithms=['RS256'],
-    audience='client-id',
-    issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123'
+    algorithms=["RS256"],
+    audience="client-id",
+    issuer="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123",
 )
 ```
 

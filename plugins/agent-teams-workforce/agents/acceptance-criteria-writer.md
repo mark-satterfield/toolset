@@ -15,7 +15,8 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:senior-qa
 - agent-teams-workforce:artifact-handoff
-effort: medium
+effort: low
+epicExpertise: at-launch
 isolation: worktree
 color: purple
 ---

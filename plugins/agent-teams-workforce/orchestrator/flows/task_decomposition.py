@@ -197,8 +197,6 @@ class TaskDecomposition:
                 final=output,
                 validate=self.runner.plugin / "skills/artifact-handoff/schemas" / schema,
                 outcome=outcome,
-                model="fable",
-                effort="medium",
                 add_dirs=(self.work, Path(self.repo)),
                 corrective=corrective,
             ),

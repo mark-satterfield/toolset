@@ -117,8 +117,6 @@ def run(
                 final=final,
                 outcome="Cross-Story Task dependencies for the supplied Stories.",
                 validate=schema_path,
-                model="fable",
-                effort="medium",
                 add_dirs=(context.work,),
             ),
         )

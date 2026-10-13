@@ -3,6 +3,9 @@ name: cloudwatch
 description: AWS CloudWatch monitoring for logs, metrics, alarms, and dashboards. Use when setting up monitoring, creating alarms, querying logs with Insights, configuring metric filters, building dashboards, or troubleshooting application issues.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/
+expertiseFor:
+  resourceTypes: [alarm, log-group, dashboard]
+  terms: ["CloudWatch", "alarm"]
 ---
 
 # AWS CloudWatch
@@ -68,22 +71,20 @@ aws cloudwatch put-metric-alarm \
 ```python
 import boto3
 
-cloudwatch = boto3.client('cloudwatch')
+cloudwatch = boto3.client("cloudwatch")
 
 cloudwatch.put_metric_alarm(
-    AlarmName='HighCPU-i-1234567890abcdef0',
-    MetricName='CPUUtilization',
-    Namespace='AWS/EC2',
-    Statistic='Average',
+    AlarmName="HighCPU-i-1234567890abcdef0",
+    MetricName="CPUUtilization",
+    Namespace="AWS/EC2",
+    Statistic="Average",
     Period=300,
     Threshold=80.0,
-    ComparisonOperator='GreaterThanThreshold',
+    ComparisonOperator="GreaterThanThreshold",
     EvaluationPeriods=2,
-    Dimensions=[
-        {'Name': 'InstanceId', 'Value': 'i-1234567890abcdef0'}
-    ],
-    AlarmActions=['arn:aws:sns:us-east-1:123456789012:alerts'],
-    OKActions=['arn:aws:sns:us-east-1:123456789012:alerts']
+    Dimensions=[{"Name": "InstanceId", "Value": "i-1234567890abcdef0"}],
+    AlarmActions=["arn:aws:sns:us-east-1:123456789012:alerts"],
+    OKActions=["arn:aws:sns:us-east-1:123456789012:alerts"],
 )
 ```
 
@@ -157,31 +158,31 @@ aws logs get-query-results --query-id <query-id>
 import boto3
 import time
 
-logs = boto3.client('logs')
+logs = boto3.client("logs")
 
 # Start query
 response = logs.start_query(
-    logGroupName='/aws/lambda/MyFunction',
+    logGroupName="/aws/lambda/MyFunction",
     startTime=int(time.time()) - 3600,
     endTime=int(time.time()),
-    queryString='''
+    queryString="""
         fields @timestamp, @message
         | filter @message like /ERROR/
         | sort @timestamp desc
         | limit 50
-    '''
+    """,
 )
 
-query_id = response['queryId']
+query_id = response["queryId"]
 
 # Wait for results
 while True:
     result = logs.get_query_results(queryId=query_id)
-    if result['status'] == 'Complete':
+    if result["status"] == "Complete":
         break
     time.sleep(1)
 
-for row in result['results']:
+for row in result["results"]:
     print(row)
 ```
 
@@ -204,21 +205,18 @@ aws logs put-metric-filter \
 ```python
 import boto3
 
-cloudwatch = boto3.client('cloudwatch')
+cloudwatch = boto3.client("cloudwatch")
 
 cloudwatch.put_metric_data(
-    Namespace='MyApp',
+    Namespace="MyApp",
     MetricData=[
         {
-            'MetricName': 'OrdersProcessed',
-            'Value': 1,
-            'Unit': 'Count',
-            'Dimensions': [
-                {'Name': 'Environment', 'Value': 'Production'},
-                {'Name': 'OrderType', 'Value': 'Standard'}
-            ]
+            "MetricName": "OrdersProcessed",
+            "Value": 1,
+            "Unit": "Count",
+            "Dimensions": [{"Name": "Environment", "Value": "Production"}, {"Name": "OrderType", "Value": "Standard"}],
         }
-    ]
+    ],
 )
 ```
 

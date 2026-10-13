@@ -3,6 +3,9 @@ name: rds
 description: AWS RDS relational database service for managed databases. Use when provisioning databases, configuring backups, managing replicas, troubleshooting connectivity, or optimizing performance.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/
+expertiseFor:
+  resourceTypes: [relational-database]
+  terms: ["RDS", "Aurora", "PostgreSQL", "relational database"]
 ---
 
 # AWS RDS
@@ -93,23 +96,23 @@ aws rds create-db-instance \
 ```python
 import boto3
 
-rds = boto3.client('rds')
+rds = boto3.client("rds")
 
 response = rds.create_db_instance(
-    DBInstanceIdentifier='my-postgres',
-    DBInstanceClass='db.t3.medium',
-    Engine='postgres',
-    EngineVersion='16.1',
-    MasterUsername='admin',
-    MasterUserPassword='SecurePassword123!',
+    DBInstanceIdentifier="my-postgres",
+    DBInstanceClass="db.t3.medium",
+    Engine="postgres",
+    EngineVersion="16.1",
+    MasterUsername="admin",
+    MasterUserPassword="SecurePassword123!",
     AllocatedStorage=100,
-    StorageType='gp3',
-    DBSubnetGroupName='my-db-subnet-group',
-    VpcSecurityGroupIds=['sg-rds12345'],
+    StorageType="gp3",
+    DBSubnetGroupName="my-db-subnet-group",
+    VpcSecurityGroupIds=["sg-rds12345"],
     MultiAZ=True,
     BackupRetentionPeriod=7,
     StorageEncrypted=True,
-    PubliclyAccessible=False
+    PubliclyAccessible=False,
 )
 ```
 
@@ -174,24 +177,21 @@ aws rds modify-db-instance \
 import boto3
 import psycopg2
 
-rds = boto3.client('rds')
+rds = boto3.client("rds")
 
 # Generate auth token
 token = rds.generate_db_auth_token(
-    DBHostname='my-postgres.abc123.us-east-1.rds.amazonaws.com',
-    Port=5432,
-    DBUsername='iam_user',
-    Region='us-east-1'
+    DBHostname="my-postgres.abc123.us-east-1.rds.amazonaws.com", Port=5432, DBUsername="iam_user", Region="us-east-1"
 )
 
 # Connect
 conn = psycopg2.connect(
-    host='my-postgres.abc123.us-east-1.rds.amazonaws.com',
+    host="my-postgres.abc123.us-east-1.rds.amazonaws.com",
     port=5432,
-    database='mydb',
-    user='iam_user',
+    database="mydb",
+    user="iam_user",
     password=token,
-    sslmode='require'
+    sslmode="require",
 )
 ```
 

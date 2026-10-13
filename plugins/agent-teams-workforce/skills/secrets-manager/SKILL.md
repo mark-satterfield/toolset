@@ -3,6 +3,9 @@ name: secrets-manager
 description: AWS Secrets Manager for secure secret storage and rotation. Use when storing credentials, configuring automatic rotation, managing secret versions, retrieving secrets in applications, or integrating with RDS.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/secretsmanager/latest/userguide/
+expertiseFor:
+  resourceTypes: [secret]
+  terms: ["Secrets Manager", "secret", "API key", "credential"]
 ---
 
 # AWS Secrets Manager
@@ -68,22 +71,19 @@ aws secretsmanager create-secret \
 import boto3
 import json
 
-secrets = boto3.client('secretsmanager')
+secrets = boto3.client("secretsmanager")
 
 response = secrets.create_secret(
-    Name='prod/myapp/database',
-    Description='Production database credentials',
+    Name="prod/myapp/database",
+    Description="Production database credentials",
     SecretString=json.dumps({
-        'username': 'admin',
-        'password': 'MySecurePassword123!',
-        'host': 'mydb.cluster-xyz.us-east-1.rds.amazonaws.com',
-        'port': 5432,
-        'database': 'myapp'
+        "username": "admin",
+        "password": "MySecurePassword123!",
+        "host": "mydb.cluster-xyz.us-east-1.rds.amazonaws.com",
+        "port": 5432,
+        "database": "myapp",
     }),
-    Tags=[
-        {'Key': 'Environment', 'Value': 'production'},
-        {'Key': 'Application', 'Value': 'myapp'}
-    ]
+    Tags=[{"Key": "Environment", "Value": "production"}, {"Key": "Application", "Value": "myapp"}],
 )
 ```
 
@@ -93,20 +93,23 @@ response = secrets.create_secret(
 import boto3
 import json
 
-secrets = boto3.client('secretsmanager')
+secrets = boto3.client("secretsmanager")
+
 
 def get_secret(secret_name):
     response = secrets.get_secret_value(SecretId=secret_name)
 
-    if 'SecretString' in response:
-        return json.loads(response['SecretString'])
+    if "SecretString" in response:
+        return json.loads(response["SecretString"])
     else:
         import base64
-        return base64.b64decode(response['SecretBinary'])
+
+        return base64.b64decode(response["SecretBinary"])
+
 
 # Usage
-credentials = get_secret('prod/myapp/database')
-db_password = credentials['password']
+credentials = get_secret("prod/myapp/database")
+db_password = credentials["password"]
 ```
 
 ### Caching Secrets
@@ -116,12 +119,11 @@ from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
 
 # Configure cache
 cache_config = SecretCacheConfig(
-    max_cache_size=100,
-    secret_refresh_interval=3600,
-    secret_version_stage_refresh_interval=3600
+    max_cache_size=100, secret_refresh_interval=3600, secret_version_stage_refresh_interval=3600
 )
 
 cache = SecretCache(config=cache_config)
+
 
 def get_cached_secret(secret_name):
     secret = cache.get_secret_string(secret_name)
@@ -190,17 +192,18 @@ Resources:
 import json
 import urllib.request
 
+
 def handler(event, context):
     # Use AWS Parameters and Secrets Lambda Extension
     secrets_port = 2773
-    secret_name = 'prod/myapp/database'
+    secret_name = "prod/myapp/database"
 
-    url = f'http://localhost:{secrets_port}/secretsmanager/get?secretId={secret_name}'
-    headers = {'X-Aws-Parameters-Secrets-Token': os.environ['AWS_SESSION_TOKEN']}
+    url = f"http://localhost:{secrets_port}/secretsmanager/get?secretId={secret_name}"
+    headers = {"X-Aws-Parameters-Secrets-Token": os.environ["AWS_SESSION_TOKEN"]}
 
     request = urllib.request.Request(url, headers=headers)
     response = urllib.request.urlopen(request)
-    secret = json.loads(response.read())['SecretString']
+    secret = json.loads(response.read())["SecretString"]
 
     credentials = json.loads(secret)
     return credentials
