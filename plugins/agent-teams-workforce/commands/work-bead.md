@@ -1,13 +1,15 @@
 ---
-description: "Route one bead to the composite that owns it and dispatch it, by path"
+description: "Route one bead: build a Task with task-to-deploy, or report where an Epic's elaboration stands"
 argument-hint: "<bead-id>"
-allowed-tools: [Bash, Read, Skill, Workflow]
+allowed-tools: [Bash, Read, Workflow]
 ---
 
 # Work a bead
 
-Dispatch `$ARGUMENTS` through the pipeline that owns it. Do not implement anything
-yourself and do not hand-roll a phase.
+Route `$ARGUMENTS` through the router that owns its kind. A Task is built by dispatching
+`task-to-deploy`. An Epic or a Story is elaboration work, which the pipeline's driver runs; for
+those this command dispatches nothing and reports where the Epic's elaboration stands. Do not
+implement anything yourself and do not hand-roll a phase.
 
 ## 1. Resolve the bead
 
@@ -62,11 +64,9 @@ Workflow({scriptPath: "$ROOT/workflows/route-elaboration.js",
 **Bug — neither.** A bug is a reporting mechanism, not work. It is TRIAGED by a
 person into an Epic, a Task, or a closure. Both routers skip it, naming triage;
 there is no triage composite to dispatch. Hand a bug to `route-build.js` and
-report the skip — do not force it into `bug-fix`.
+report the skip.
 
-Do **not** pass `childCount`. Neither router reads it. An Epic that already has
-Stories can still need working, because its PRD may have moved on and the beads
-beneath it drifted — treating "has children" as "done" is how that drift goes unseen.
+Do **not** pass `childCount`. Neither router reads it.
 
 The router returns `{action, composite, reason}`:
 
@@ -93,9 +93,6 @@ Task's contract names, not a worktree you built. A resumed run finds its earlier
 anyway: `workspace` recognises a linked worktree on a feature branch for this bead and
 reuses it.
 
-For an `elaborate` there is no worktree at all: elaboration authors documents and writes
-beads, so there is no feature branch for it to land on.
-
 ## 4. Dispatch — `work` only
 
 Read the Task's build contract with the `beads-contract` CLI — it is the one authority on
@@ -109,84 +106,69 @@ Its `bead` field is the composite's `bead` argument, complete: id, title, descri
 repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
 the requirement ids and the architecture views the Task was designed against — every field the
 schema's build-contract projection defines (`$ROOT/skills/beads-contract/schemas/bead-metadata.schema.json`).
-Pass it as-is, adding the Task's
-`type` and `labels`, and pass the JSON object printed by
-`python3 $ROOT/skills/artifact-handoff/scripts/infra_vocabulary.py` as the
-`infraVocabulary` argument (together they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
-not drop fields from it. If `missing` names the repository, the Task's build contract is incomplete:
+Pass it as-is, adding the Task's `type` and `labels`; do not rebuild it by hand and do not drop
+fields from it. If `missing` names the repository, the Task's build contract is incomplete:
 elaboration records the repository on the Task, so report the id and that reason and stop — never
 work out a repository yourself.
-
-The project's configuration reaches the composite as arguments, read from the environment
-(see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script cannot read the
-environment itself. The driver environment variables used below (`ATW_PROJECT_ROOT`,
-`ATW_PRD_DIR`) are defined in the `pipeline-contracts` skill
-(`$ROOT/skills/pipeline-contracts/schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`).
-`ATW_PR_COMMAND` is required: if it is unset, report `ATW_PR_COMMAND is unset` and stop. Omit
-any other argument whose variable is unset, and name it in your report.
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
-         prCommand: "$ATW_PR_COMMAND",
-         projectRoot: "$ATW_PROJECT_ROOT",
+         infraVocabulary: <the object passed to the router>,
          pluginRoot: "$ROOT",
          designSystem: {packagesDir: "<host-configured packages directory>"}}})
 ```
 
-Every value is the expanded value of its variable, not the literal variable name. `designSystem.packagesDir` is the host's folder of supplied cds bundles; a `web-ui` Task picks up a mockup placed there any time before it is built. Omit it when the host configures none. The
-composite's `workspace` phase turns the contract's repository into the worktree; do not
-pre-cut one.
+`<composite>` is the one the router named, `task-to-deploy`. `infraVocabulary` is required: the
+composite refuses to start without it, and with the Task's `type` and `labels` it tells
+`task-to-deploy` an infrastructure Task. `designSystem.packagesDir` is the host's folder of
+supplied cds bundles; a `web-ui` Task picks up a mockup placed there any time before it is
+built. Omit it when the host configures none. The composite's `workspace` phase turns the
+contract's repository into the worktree; do not pre-cut one.
 
 Then go to step 6.
 
 ## 5. Elaborate — `elaborate` only
 
-The bead is an Epic or a Story. Nothing decomposes
-it. Its **document** is what decomposes, and the beads beneath it are what that
-chain deposits.
-
-**This command dispatches no elaboration.** `prd-to-spec` runs in the Python orchestrator
-(`$ROOT/orchestrator/run.py`), and the pipeline's driver starts it: the driver's elaboration
-lane selects the Epic, builds its dispatch arguments and reads its handback. There is no
-workflow script for it, and a session does not start the orchestrator or the driver.
+The bead is an Epic, a Story or a feature. **This command dispatches no elaboration.**
+`prd-to-spec` runs in the Python orchestrator (`$ROOT/orchestrator/run.py`), and the pipeline's
+driver starts it: the driver's elaboration lane selects the Epic, builds its dispatch arguments
+and reads its handback. There is no workflow script for it, and a session does not start the
+orchestrator or the driver.
 
 A Story is elaborated through its parent Epic: `prd-to-spec` takes an Epic and its PRD. For a
 Story, take its parent Epic from the parent chain (step 1) and continue below with that Epic.
-A Story with no parent Epic: report that and stop.
+A Story with no parent Epic, and a feature: report the router's reason and stop.
 
-Resolve the Epic's PRD. PRDs live under
-`$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
+One elaboration dispatch is one pass over the Epic's step journal; it begins at the first step
+the journal does not mark done. Print that step:
 
 ```bash
-ls -R "$ATW_PRD_DIR"
+atw-step-journal next --dir "$ATW_CONTROL_REPO/.claude/workflow-runs/step-journals" --bead <epic id>
 ```
 
-- Found → note its path.
-- Not found → report that the Epic has no linked PRD; the driver skips an Epic whose PRD
-  does not resolve. This command does not write a PRD.
+`ATW_CONTROL_REPO` is the `CONTROL_REPO_ENV` variable of the `pipeline-contracts` skill
+(`$ROOT/skills/pipeline-contracts/schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`);
+if it is unset, report `ATW_CONTROL_REPO is unset` and stop. When the command reports that it
+cannot read the journal file, the Epic has no step journal: report that. Read the Epic's
+elaboration state with
+`python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" metadata get <epic id>`.
 
-Then invoke the `elaborate-prd-epic` skill with the Epic's `id` and the PRD path. It reports
-the Epic's elaboration state, where the Epic's step journal stands and what earlier
-dispatches wrote. `/agent-teams-workforce:start-prd` hands off to the same skill from the
-other door.
-
-Do not work out a repo span. The span step of the run reads it from the matrix, after the
-architecture is approved.
+Then go to step 6. Write nothing: the run writes the Stories, the Tasks and their edges itself.
 
 ## 6. Report
 
 One line each, no more:
 
 - which composite ran, and why the router chose it; for an `elaborate`, that the pipeline's
-  driver runs elaboration and this command dispatched nothing, with what the
-  `elaborate-prd-epic` skill reported
+  driver runs elaboration and this command dispatched nothing, with the Epic's elaboration
+  state and the step its journal names next
 - the phase it reached
-- for a Task, the commit on its Story branch (a Task deploys nothing and opens no pull request); for a bug, the deploy result
+- for a Task, the Story worktree and branch the work was committed on, and the commit (a Task
+  deploys nothing and opens no pull request: its Story deploys and opens one pull request once
+  its last Task is done)
 - the `stage` and `headline` of a run that stopped, **verbatim**
 - what you did NOT do
-- the worktree and branch the work landed on
-- the PR URL, or the explicit reason there is none
 - when the result carries `cdsAudit`, its verdict and finding count
 
 When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped.

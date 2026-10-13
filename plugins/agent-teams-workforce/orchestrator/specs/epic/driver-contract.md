@@ -304,9 +304,9 @@ freshness check.
 
 - **7.18 Entry point.** The owner starts the pipeline only with `python3
   ops/sdlc-automation/keeper.py`; the elaboration lane is the only door into `prd-to-spec`. No
-  plugin command dispatches it: `/start-prd` resolves a PRD's Epic and `/work-bead` routes an Epic
-  or a Story to `prd-to-spec`, and each then reports that the driver's elaboration lane elaborates
-  the Epic.
+  plugin command dispatches it: `/work-bead` rules that an Epic or a Story is elaboration work
+  and then reports that the driver's elaboration lane elaborates the Epic, with the step the
+  Epic's journal names next.
 - **7.6 and 7.17 at the boundary.** The lane's "Elaboration done" read (`ELABORATION_DONE`)
   now means Stories, Tasks, Task edges and Task WSJF scores all exist; the Epic's own WSJF is not
   rewritten by elaboration.

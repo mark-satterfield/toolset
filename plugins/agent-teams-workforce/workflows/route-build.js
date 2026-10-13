@@ -68,7 +68,7 @@ function decide() {
     return skip(`${type || 'container'} carries elaboration work, not development work → SKIP here; route it through route-elaboration.js`)
   }
   if (type === 'feature' || byLabel('feature', 'prd', 'requirement')) {
-    return skip(`feature is a request, not development work (type="${type || 'n/a'}"${labelTail}) → SKIP here; route it through route-elaboration.js or /agent-teams-workforce:start-prd`)
+    return skip(`feature is a request, not development work (type="${type || 'n/a'}"${labelTail}) → SKIP here; route it through route-elaboration.js`)
   }
   return skip(`type="${type || 'n/a'}"${labelTail} has no build composite → SKIP`)
 }

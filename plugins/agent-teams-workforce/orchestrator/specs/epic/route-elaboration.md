@@ -97,8 +97,8 @@ The verdict is computed from the bead each time and nothing of it is saved.
 
 ## 9. Requirements that apply
 
-- 7.18 Entry point: the only entry is the driver started by `keeper.py`; `/work-bead` and
-  `/start-prd` dispatch no elaboration.
+- 7.18 Entry point: the only entry is the driver started by `keeper.py`; `/work-bead` dispatches
+  no elaboration.
 - 7.16 Hierarchy: a Bug is never routed to a composite (Claude Code never creates or works bug
   beads; bugs are for humans and a later triage process).
 - 7.11 Deterministic over agentic: routing is code, no agent.

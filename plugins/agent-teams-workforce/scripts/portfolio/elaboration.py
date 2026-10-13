@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The Epic elaboration lifecycle: whether an Epic may be elaborated now, and finishing it.
 
-`prd-to-spec` is the one elaborator, and every door into it — the headless lane, a person at
-`/work-bead` or `/start-prd` — arrives here twice.
+`prd-to-spec` is the one elaborator, and its one door, the driver's elaboration lane, arrives
+here twice.
 
 At the START, one Epic is judged, and the first condition that fails is the refusal:
 
