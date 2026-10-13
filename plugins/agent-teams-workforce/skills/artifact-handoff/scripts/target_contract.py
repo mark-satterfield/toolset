@@ -62,6 +62,7 @@ KEY_IMPLEMENTATION_WORK: Final = "implementationWork"
 KEY_ITEMS: Final = "items"
 KEY_KIND: Final = "kind"
 KEY_LIFECYCLE_STATE: Final = "lifecycle_state"
+KEY_MATRIX_ID: Final = "matrixId"
 KEY_NAMED: Final = "named"
 KEY_NOTE: Final = "note"
 KEY_OK: Final = "ok"
@@ -196,6 +197,7 @@ class DeltaItem(TypedDict):
 
     id: str
     element: str
+    matrixId: NotRequired[str]
     views: list[str]
     kind: NotRequired[DeltaItemKind]
     state: NotRequired[ElementState]

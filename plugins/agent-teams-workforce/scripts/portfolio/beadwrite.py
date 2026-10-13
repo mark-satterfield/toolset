@@ -101,6 +101,7 @@ from bead_metadata import (
     KEY_DECISION_IDS,
     KEY_DEFINITION_OF_DONE,
     KEY_ELAB_KEY,
+    KEY_MATRIX_ELEMENTS,
     KEY_REPO_PATH,
     KEY_REQUIREMENT_IDS,
     KEY_SPEC_PATH,
@@ -244,6 +245,7 @@ def contract_block(task: Task, root: Path | None) -> str:
     lines += [
         f"Spec sections:\n{listed(task.spec_sections)}",
         f"Requirement ids: {', '.join(task.requirement_ids) or '(none)'}",
+        f"Matrix elements built:\n{listed(task.matrix_elements)}",
         f"Surfaces: {surfaces}",
         f"Test strategy: {_strategy_line(task.test_strategy)}",
         f"Definition of Done:\n{listed(task.definition_of_done)}",
@@ -309,6 +311,7 @@ def task_metadata(task: Task) -> dict[str, str]:
     m[KEY_ACCEPTANCE_CRITERIA] = _json(task.acceptance)
     m[KEY_DEFINITION_OF_DONE] = _json(task.definition_of_done)
     m[KEY_REQUIREMENT_IDS] = _json(task.requirement_ids)
+    m[KEY_MATRIX_ELEMENTS] = _json(task.matrix_elements)
     m[KEY_SURFACES] = _json(task.surfaces) if task.surfaces is not None else UNKNOWN
     m[KEY_TEST_STRATEGY] = _json(task.test_strategy) if task.test_strategy else UNKNOWN
     if task.cds_design_source:

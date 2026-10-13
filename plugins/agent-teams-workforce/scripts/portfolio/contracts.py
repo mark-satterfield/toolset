@@ -266,6 +266,7 @@ class DeltaItem(TypedDict):
 
     id: str
     element: str
+    matrixId: NotRequired[str]
     views: list[str]
     kind: NotRequired[str]
     state: NotRequired[str]

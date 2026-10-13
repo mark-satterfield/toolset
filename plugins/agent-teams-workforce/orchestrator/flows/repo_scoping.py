@@ -274,6 +274,7 @@ def span_items(matrix: Matrix, bead: str) -> list[DeltaItem]:
         item: DeltaItem = {
             "id": ids[node["id"]],
             "element": node["name"],
+            "matrixId": node["id"],
             "views": [link["to"] for link in node["links"] if link["type"] == LINK_DESCRIBED_BY],
             "kind": KIND_IMPLEMENTATION_GAP if node["id"] in roots else KIND_PREREQUISITE,
             "state": STATE_UNKNOWN,

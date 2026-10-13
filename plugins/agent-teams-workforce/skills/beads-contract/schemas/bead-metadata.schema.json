@@ -577,6 +577,17 @@
       },
       "description": "JSON array of requirement and delta-item ids, for traceability."
     },
+    "matrix_elements": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "CONTRACT_KEYS"
+      ],
+      "x-contract": {
+        "argument": "matrix_elements",
+        "kind": "list"
+      },
+      "description": "JSON array of the matrix ids of the elements the Task builds; `atw-matrix uses --task` and `atw-matrix check-reuse --task` read the shared capabilities those elements must use from it."
+    },
     "decision_ids": {
       "$ref": "#/$defs/JsonList",
       "x-groups": [

@@ -127,6 +127,7 @@
       "properties": {
         "id": {"type": "string"},
         "element": {"type": "string"},
+        "matrixId": {"description": "The matrix id of the element the item builds.", "type": "string"},
         "views": {"type": "array", "items": {"type": "string"}},
         "kind": {"$ref": "#/$defs/DeltaItemKind"},
         "state": {"$ref": "#/$defs/ElementState"},

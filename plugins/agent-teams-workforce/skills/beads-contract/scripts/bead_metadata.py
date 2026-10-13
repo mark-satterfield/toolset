@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "9c14c621c196fd7ac047c7cdef3163ba02f688651caadbc8416bd69b4ac46a27"
+SCHEMA_SHA256: Final[str] = "9ec789e963293fbdce9374bfa848c5fdfe1adb17bf2da6f2028585cb9d0a500c"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -146,6 +146,9 @@ KEY_ACCEPTANCE_CRITERIA: Final[str] = "acceptance_criteria"
 KEY_DEFINITION_OF_DONE: Final[str] = "definition_of_done"
 #: JSON array of requirement and delta-item ids, for traceability.
 KEY_REQUIREMENT_IDS: Final[str] = "requirement_ids"
+#: JSON array of the matrix ids of the elements the Task builds; `atw-matrix uses --task` and `atw-matrix check-
+#: reuse --task` read the shared capabilities those elements must use from it.
+KEY_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
 #: JSON array of architecture view paths (relative to the arc42 folder, #<heading> for part of a view) the item
 #: was designed against.
 KEY_DECISION_IDS: Final[str] = "decision_ids"
@@ -275,6 +278,7 @@ ARG_SPEC_SECTIONS: Final[str] = "specSections"
 ARG_ACCEPTANCE_CRITERIA: Final[str] = "acceptanceCriteria"
 ARG_DEFINITION_OF_DONE: Final[str] = "definitionOfDone"
 ARG_REQUIREMENT_IDS: Final[str] = "requirementIds"
+ARG_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
 ARG_DECISION_IDS: Final[str] = "decisionIds"
 ARG_SURFACES: Final[str] = "surfaces"
 ARG_TEST_STRATEGY: Final[str] = "testStrategy"
@@ -293,6 +297,7 @@ CONTRACT_SCHEMA: Final[tuple[tuple[str, str, ContractKind], ...]] = (
     (KEY_ACCEPTANCE_CRITERIA, ARG_ACCEPTANCE_CRITERIA, KIND_LIST),
     (KEY_DEFINITION_OF_DONE, ARG_DEFINITION_OF_DONE, KIND_LIST),
     (KEY_REQUIREMENT_IDS, ARG_REQUIREMENT_IDS, KIND_LIST),
+    (KEY_MATRIX_ELEMENTS, ARG_MATRIX_ELEMENTS, KIND_LIST),
     (KEY_DECISION_IDS, ARG_DECISION_IDS, KIND_LIST),
     (KEY_SURFACES, ARG_SURFACES, KIND_LIST_OR_UNKNOWN),
     (KEY_TEST_STRATEGY, ARG_TEST_STRATEGY, KIND_OBJECT_OR_UNKNOWN),
@@ -435,6 +440,7 @@ CONTRACT_KEYS: Final[tuple[str, ...]] = (
     KEY_ACCEPTANCE_CRITERIA,
     KEY_DEFINITION_OF_DONE,
     KEY_REQUIREMENT_IDS,
+    KEY_MATRIX_ELEMENTS,
     KEY_DECISION_IDS,
     KEY_SURFACES,
     KEY_TEST_STRATEGY,
@@ -566,6 +572,7 @@ class BeadMetadata(TypedDict, total=False):
     acceptance_criteria: str
     definition_of_done: str
     requirement_ids: str
+    matrix_elements: str
     decision_ids: str
     surfaces: str
     test_strategy: str
@@ -653,6 +660,7 @@ class BuildContract(TypedDict, total=False):
     acceptanceCriteria: list[str]
     definitionOfDone: list[str]
     requirementIds: list[str]
+    matrix_elements: list[str]
     decisionIds: list[str]
     surfaces: list[str] | None
     testStrategy: JsonObject | None

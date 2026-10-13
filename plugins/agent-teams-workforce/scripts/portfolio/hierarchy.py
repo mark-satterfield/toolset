@@ -450,9 +450,11 @@ class Task:
     cds_design_source: str | None = None
     cds_bundles: list[str] = field(default_factory=list)
     cds_artifacts: list[dict[str, str]] = field(default_factory=list)
+    matrix_elements: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
+        check_type(self.matrix_elements, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.key, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.repo_path, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.title, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -998,6 +1000,7 @@ class _TaskSources:
     edges: list[tuple[str, str]]
     scores: dict[str, JsonObject]
     designs: dict[str, UiDesign]
+    elements: dict[str, str]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1056,6 +1059,11 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         ui_authority(files.detailing, options.packages_dir)
         if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
+        {
+            key: item["matrixId"]
+            for key, item in placed_items(files.scope).items()
+            if "matrixId" in item and item["slug"] == slug
+        },
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}
     return [_read_task(key, _task_document(by_key[key]), sources) for key in order]
@@ -1157,6 +1165,9 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         spec_paths=list(dict.fromkeys(cited)) or list(sources.refs),
         spec_sections=list(t.spec_sections),
         requirement_ids=list(t.requirement_ids),
+        matrix_elements=list(
+            dict.fromkeys(sources.elements[item] for item in t.requirement_ids if item in sources.elements),
+        ),
         decision_ids=list(t.decision_ids) or list(sources.options.story_decision_ids),
         surfaces=surfaces,
         test_strategy=sources.strategy,
