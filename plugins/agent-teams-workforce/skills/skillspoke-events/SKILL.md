@@ -100,7 +100,9 @@ its own meaning:
   segment, with dots as the only separator.
 - Because a name states a fact that has happened, its last segment is one past-tense, semantically
   precise verb (`registered`, `finalized`, `locked-out`), and a noun belongs in the entity segment
-  (`subscription.trial-end.approached`).
+  (`subscription.trial-end.approached`). The verbs `updated`, `modified`, `processed`, `handled` and `transitioned` name no
+  particular transition and are not used; `changed` is used only when the entity segment names what
+  changed and the signal-only body names the changed keys.
 - Because a name must survive service rewrites, database changes, language migrations, team
   reorganization and indefinite replay, it names a business or technical capability and contains
   no service, stack, technology, persistence-operation or deployment identifier.
@@ -220,8 +222,8 @@ in calls of up to ten: `error` and `business` events first, then `state` and `tr
 | 400 | The body is unparseable | Permanent failure |
 | 422 with `details[]` naming each failed field | The event fails validation: an unknown field, a missing required value, a missing `trace.correlationId`, an absent or inconsistent `visibility` block (`piiPresent` true with `public`), an unregistered event type, a `category` that differs from the registry entry, a `pii-required` type declared `piiPresent=false`, a caller that is not the entry's allowed producer, a malformed or identifying `dedupKey`, a publisher-supplied reference with `piiPresent=true` | Raises `EnvelopeRejected`; because the request is a contract defect that a retry cannot fix, reports a batch item failure so the message goes to the publisher's DLQ and is redriven after the contract is fixed |
 | 403 from the API Gateway authorization layer | Infrastructure drift | Retries with bounded backoff, then dead-letters the message tagged `PublishAuthorisationFailure` |
-| 500 | `PutEvents` or a coat-check write failed | Transient: bounded retry with backoff |
-| 503 | The registry could not be read on a cold cache | Transient: bounded retry with backoff |
+| 503 | `PutEvents` or a coat-check write failed, or the registry could not be read on a cold cache | Transient: bounded retry with backoff |
+| 500 | An unexpected gateway fault | Not retried; the fact stays in the producer's outbox, stream or DLQ for redrive |
 
 Nothing is stored or published on any non-2xx response.
 
