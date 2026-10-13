@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict
 
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "story-deploy-args.schema.json"
-SCHEMA_SHA256: Final = "b7d77c0b06337e435b850e757c21f06bf41968301cc355da71d529117a3cfb47"
+SCHEMA_SHA256: Final = "2f49589360e50f9a2d0cede08c6dfb0fc8c557e3fdadee0f3c224e108b430f71"
 
 type Composite = Literal["story-deploy", "built-version", "story-deploy-fix", "deploy-mechanism"]
 COMPOSITE_STORY_DEPLOY: Final[Composite] = "story-deploy"
@@ -22,14 +22,6 @@ _COMPOSITES_ORDER: Final[tuple[Composite, ...]] = (
     "deploy-mechanism",
 )
 COMPOSITES: Final[frozenset[Composite]] = frozenset(_COMPOSITES_ORDER)
-
-type DeployState = Literal["", "waiting-for-ssm", "deploying", "pr-open"]
-STATE_NONE: Final[DeployState] = ""
-STATE_WAITING_FOR_SSM: Final[DeployState] = "waiting-for-ssm"
-STATE_DEPLOYING: Final[DeployState] = "deploying"
-STATE_PR_OPEN: Final[DeployState] = "pr-open"
-_DEPLOY_STATES_ORDER: Final[tuple[DeployState, ...]] = ("", "waiting-for-ssm", "deploying", "pr-open")
-DEPLOY_STATES: Final[frozenset[DeployState]] = frozenset(_DEPLOY_STATES_ORDER)
 
 type FailureStep = Literal["publish", "synth", "deploy", "verify"]
 STEP_PUBLISH: Final[FailureStep] = "publish"
@@ -50,11 +42,6 @@ KEY_STORY: Final = "story"
 KEY_REPO_PATH: Final = "repoPath"
 KEY_EPIC_ID: Final = "epicId"
 KEY_STORY_SLUG: Final = "storySlug"
-KEY_STATE: Final = "state"
-KEY_ATTEMPT: Final = "attempt"
-KEY_PR_URL: Final = "prUrl"
-KEY_PUBLISHED_HEAD: Final = "publishedHead"
-KEY_BUILT_VERSION_ERROR: Final = "builtVersionError"
 KEY_TASKS: Final = "tasks"
 KEY_BEAD_ID: Final = "beadId"
 KEY_JOURNAL: Final = "journal"
@@ -73,11 +60,6 @@ ARG_KEYS: Final[tuple[str, ...]] = (
     "repoPath",
     "epicId",
     "storySlug",
-    "state",
-    "attempt",
-    "prUrl",
-    "publishedHead",
-    "builtVersionError",
     "tasks",
     "beadId",
     "journal",
@@ -126,30 +108,8 @@ JOURNAL_REF_KEYS: Final[tuple[str, ...]] = ("path", "run", "step")
 _JOURNAL_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("path", "run", "step")
 JOURNAL_REF_REQUIRED: Final[frozenset[str]] = frozenset(_JOURNAL_REF_REQUIRED_ORDER)
 JOURNAL_REF_CLOSED: Final = True
-STORY_DEPLOY_INPUT_KEYS: Final[tuple[str, ...]] = (
-    "story",
-    "repoPath",
-    "epicId",
-    "storySlug",
-    "state",
-    "attempt",
-    "prUrl",
-    "publishedHead",
-    "builtVersionError",
-    "tasks",
-)
-_STORY_DEPLOY_INPUT_REQUIRED_ORDER: Final[tuple[str, ...]] = (
-    "story",
-    "repoPath",
-    "epicId",
-    "storySlug",
-    "state",
-    "attempt",
-    "prUrl",
-    "publishedHead",
-    "builtVersionError",
-    "tasks",
-)
+STORY_DEPLOY_INPUT_KEYS: Final[tuple[str, ...]] = ("story", "repoPath", "epicId", "storySlug", "tasks")
+_STORY_DEPLOY_INPUT_REQUIRED_ORDER: Final[tuple[str, ...]] = ("story", "repoPath", "epicId", "storySlug", "tasks")
 STORY_DEPLOY_INPUT_REQUIRED: Final[frozenset[str]] = frozenset(_STORY_DEPLOY_INPUT_REQUIRED_ORDER)
 STORY_DEPLOY_INPUT_CLOSED: Final = False
 BUILT_VERSION_ARGS_KEYS: Final[tuple[str, ...]] = (
@@ -275,11 +235,6 @@ class StoryDeployInput(TypedDict):
     repoPath: str
     epicId: str
     storySlug: str
-    state: DeployState
-    attempt: int
-    prUrl: str
-    publishedHead: str
-    builtVersionError: str
     tasks: list[TaskRef]
 
 

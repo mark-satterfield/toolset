@@ -42,7 +42,6 @@ class EnumNaming:
 #: Enum definition -> naming. The values themselves come from the schema.
 ENUMS: Final[dict[str, EnumNaming]] = {
     "Composite": EnumNaming("Composite", "COMPOSITES", "COMPOSITE_"),
-    "DeployState": EnumNaming("DeployState", "DEPLOY_STATES", "STATE_", "STATE_NONE"),
     "FailureStep": EnumNaming("FailureStep", "FAILURE_STEPS", "STEP_"),
     "VerifiedStackStatus": EnumNaming("VerifiedStackStatus", "VERIFIED_STATUSES", None),
 }
