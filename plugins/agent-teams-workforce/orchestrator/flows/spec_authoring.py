@@ -43,7 +43,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import StepError
-from orchestrator.flows.architecture_files import ARTIFACT_TRD
+from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context, read_result
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -85,6 +85,7 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
+from orchestrator.flows.repo_scoping import shared_capabilities
 from orchestrator.flows.spec_authoring_ui import normalize_ui
 from orchestrator.flows.trd_authoring import document
 
@@ -333,7 +334,8 @@ def context(run: StepRun) -> Completion:
         steps planned after this one.
 
     Raises:
-        StepError: The span places no item in the repository.
+        StepError: The span places no item in the repository, the matrix cannot answer what its
+            elements use, or the solutions architect's result cannot be read.
 
     """
     held: Repository = repository_of(dict(run.params()), SPEC_CONTEXT)
@@ -354,6 +356,8 @@ def context(run: StepRun) -> Completion:
             "slug": held.slug,
             "frontend": held.frontend,
             "items": items,
+            "sharedCapabilities": shared_capabilities(run, SPEC_CONTEXT, items),
+            "notesForSpecs": read_result(run, read_context(run))["notesForSpecs"],
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
         },
     )

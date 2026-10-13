@@ -78,6 +78,7 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
+from orchestrator.flows.repo_scoping import shared_capabilities
 from orchestrator.flows.spec_authoring import design_system
 
 # isort: split
@@ -165,13 +166,23 @@ def context(run: StepRun) -> Completion:
         JsonValue,
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
-    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
-    write_json(facts, {"existingTasks": existing, "otherEpicTasks": others, "repoPath": held.path, "slug": held.slug})
     placed: dict[str, JsonValue] = json_object(
         run.tools.portfolio(TASK_CONTEXT, hierarchy.placed_items, span_files(run.inputs)),
     )
+    built: list[JsonValue] = [item for item in placed.values() if json_object(item)["slug"] == held.slug]
+    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
+    write_json(
+        facts,
+        {
+            "existingTasks": existing,
+            "otherEpicTasks": others,
+            "repoPath": held.path,
+            "slug": held.slug,
+            "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
+        },
+    )
     items: Path = run.context.work / f"tasks-{held.slug}.items.json"
-    write_json(items, {"items": [item for item in placed.values() if json_object(item)["slug"] == held.slug]})
+    write_json(items, {"items": built})
     name: str = Path(held.path).name
     upstream: list[str] = list(run.step.get("inputs", []))
     decompose: StepPlan = {

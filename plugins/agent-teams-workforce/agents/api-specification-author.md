@@ -53,7 +53,11 @@ Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.
 
 Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
-architecture and the TRD do not hold these details; you settle them here.
+architecture and the TRD do not hold these details; you settle them here. Start from
+`notesForSpecs` in your context file, which holds the details the solutions architect already
+knew. The context file's `sharedCapabilities` lists what this repository's elements obtain from
+shared capabilities: state under "Shared capabilities used" which contract uses which, and
+specify no behaviour that a listed capability provides.
 
 ## Review correction
 

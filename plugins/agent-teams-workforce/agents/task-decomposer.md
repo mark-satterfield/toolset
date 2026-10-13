@@ -41,7 +41,9 @@ size them using the wsjf skill's agent-pipeline reference jobs. Tasks are how to
 requirements or test-only activities. Every placed item, including prerequisites and overlaps
 with another Epic, gets a Task. An existing started or closed Task in context is reused, not
 rewritten; another Epic's Task that plans the same work is recorded as an external blocker and
-never replaces this Epic's Task.
+never replaces this Epic's Task. The task context's `sharedCapabilities` lists what this
+repository's elements obtain from shared capabilities: a Task consumes a listed behaviour from
+the capability that provides it, and no Task builds that behaviour in this repository.
 Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
 `tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
 the surface set and what an empty list and null each mean, and the score rules (jobSize on the

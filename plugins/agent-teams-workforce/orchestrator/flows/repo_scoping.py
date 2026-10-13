@@ -33,7 +33,7 @@ from matrix_contract import (
     Node,
     NodeId,
 )
-from matrixquery import PrdView, prd_view
+from matrixquery import Capability, PrdView, UsesResult, prd_view, uses_view
 from matrixstore import make_id, matrix_path, read_matrix
 from placement_contract import (
     KEY_ITEM_IDS,
@@ -47,7 +47,14 @@ from placement_contract import (
     Placement,
     PlacementRuling,
 )
-from target_contract import KIND_IMPLEMENTATION_GAP, KIND_PREREQUISITE, STATE_UNKNOWN, DeltaItem, DeltaResult
+from target_contract import (
+    KEY_MATRIX_ID,
+    KIND_IMPLEMENTATION_GAP,
+    KIND_PREREQUISITE,
+    STATE_UNKNOWN,
+    DeltaItem,
+    DeltaResult,
+)
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.driver_contracts import dispatch_arguments
@@ -71,6 +78,8 @@ from orchestrator.flows.elaboration_support import REPO_SCOPING_PHASE, enter_pha
 from orchestrator.flows.repo_placement import app_space, forbidden
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from step_journal_contract import StepPlan
 
 SPAN: Final = "atw-matrix prd --closure"
@@ -289,6 +298,33 @@ def span_items(matrix: Matrix, bead: str) -> list[DeltaItem]:
         for needed in item.get("requires", []):
             by_id[needed].setdefault("requiredBy", []).append(item["id"])
     return items
+
+
+def shared_capabilities(run: StepRun, step: str, items: Sequence[JsonValue]) -> list[Capability]:
+    """List the shared capabilities the elements one repository builds must use.
+
+    The elements are the matrix rows the items name; the answer is what ``atw-matrix uses``
+    prints for them. A matrix that cannot be read, or an item that names a row the matrix lacks,
+    fails the step.
+
+    Args:
+        run: The step that asks.
+        step: The step's name, for a failure.
+        items: The items placed in the repository.
+
+    Returns:
+        Each supporting feature that applies to the elements, with what it provides, the
+        ``provides`` entries relied on, and the rows that provide it.
+
+    """
+    matrix: Matrix = run.tools.portfolio(step, read_matrix, matrix_path(None, os.environ))
+    elements: list[NodeId] = [
+        NodeId(check_type(json_object(item)[KEY_MATRIX_ID], str))
+        for item in items
+        if KEY_MATRIX_ID in json_object(item)
+    ]
+    used: UsesResult = run.tools.portfolio(step, uses_view, matrix, elements)
+    return used["capabilities"]
 
 
 def _repository_kind(name: str, config: dict[str, JsonValue]) -> str | None:
