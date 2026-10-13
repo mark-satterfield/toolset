@@ -130,6 +130,28 @@ judgment, and each has an obvious next step:
 - **search** — `search` for record attributes; `grep` for content. For facts neither holds
   (which repos contain a DynamoDB table), hand off to **polyrepo-info**.
 
+## The matrix
+
+Every repository and stack has a row in the matrix. The steward owns a repository row's
+`name`, `aliases`, `purpose` and `status`, and a stack row's `repository`. Read and write the
+matrix only through `${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix`, and put the environment
+assignment `ATW_MATRIX_ROLE=repository-steward` on every write command line:
+
+```bash
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --name <name> --status <status>
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind stack --name <stack> --repository <repo>
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" node repository:<lowercase name>
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" check
+```
+
+Lifecycle is the row's `status`: `deprecated` (deprecated repo), `retired` (archived repo),
+`expected` (planned repo); an active repo has none. The matrix schema has no field for a
+repository's role, and a repository's `code` marker belongs to the build driver; the steward
+writes neither. `create`, `rename`, `deprecate` and the archive repair each update the
+matrix row in the same piece of work (a new row, a row under the new name with the old name
+in `--aliases`, or the new `status`), and `atw-matrix check` must report `"valid": true`
+afterwards. `apps/marketing/` rows are left as they are.
+
 ## Naming patterns
 
 The config's `naming.patterns` are the rule; in summary: `SkillSpoke` and

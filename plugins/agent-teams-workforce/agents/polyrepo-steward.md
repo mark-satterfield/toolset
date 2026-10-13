@@ -184,10 +184,33 @@ commits on `main`, and a rename not mirrored on GitHub, and `--fix` repairs them
 
 ### The matrix, and placing an element for the solutions architect
 
-The matrix holds one row for each repository and each stack. When you create, rename or
-deprecate a repository, or learn that a stack exists that the matrix lacks, write the row with
-`atw-matrix put --kind repository` or `atw-matrix put --kind stack`, so that every design
-finds where things live. `atw-matrix node <id>` shows a row.
+The matrix holds one row for each repository and each stack. You own these repository
+facts in it: `name`, `aliases`, `purpose` and `status`; and for a stack row also its
+`repository`. The matrix is read and written only through
+`${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix`, and every write command line carries the environment
+assignment `ATW_MATRIX_ROLE=repository-steward`, the one role that may run `put` on a
+repository or stack row:
+
+```bash
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind repository --id repository:<lowercase name> --name <name> --status <status>
+ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put --kind stack --name <stack> --repository <repo> --purpose "<one line>"
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" node repository:<lowercase name>
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" check
+```
+
+A repository's lifecycle is its row's `status`: `deprecated` for a deprecated repo, `retired`
+for an archived one, `expected` for a planned one, and no status for an active one. The
+matrix schema has no field for a repository's role (service, library, infrastructure, web,
+tooling, documentation) and the steward may not write a repository's `code` marker; the build
+driver owns that marker. Never invent either field.
+
+Creating, renaming, deprecating or archiving a repository updates its matrix row in the same
+piece of work, before you report it done: after `create` you write the repository row
+(`--name`, `--purpose`, and `--status expected` for a planned repo) and a row for each stack
+it holds; after `rename` you write the row under the new name with the old spelling in
+`--aliases`; after `deprecate` and after the archive repair you set `status`. Run
+`atw-matrix check` afterwards; it must report `"valid": true`. Marketing repositories keep
+their rows as they are.
 
 `aws-solutions-architect` starts you when a new element has no repository or stack the
 matrix can name. Answer which existing repository and stack own it, preferring a suitable
