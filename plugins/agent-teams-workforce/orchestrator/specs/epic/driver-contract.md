@@ -126,7 +126,7 @@ unfinished handback read while the supervisor is shutting down is restated as an
 The sessions the run registered through its session events are added when the handback names none.
 
 The build and deploy lanes' host-session path (the completed workflow's result object read by
-`runjournal.workflow_result` and `handbackio.handback_from_result`, else the session's
+`harnesspaths.workflow_result` and `handbackio.handback_from_result`, else the session's
 `HANDBACK_SENTINEL` line read by `handbackio.parse_handback`) is not used by this lane. That result
 object is not validated against any schema, and its failure, refusal and artifact parts are not
 mapped into `Handback` (§7).
