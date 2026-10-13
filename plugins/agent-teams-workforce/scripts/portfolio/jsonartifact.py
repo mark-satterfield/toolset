@@ -34,7 +34,6 @@ from contracts import JsonObject, JsonValue, json_object
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from researchrecovery import recover
-from roundcontracts import Overlap
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 
@@ -72,6 +71,15 @@ class CoordinatorDispatch(TypedDict):
     claimIds: list[str]
     claimFiles: list[str]
     coverageIds: list[str]
+
+
+class Overlap(TypedDict):
+    """The coordinator's explicit reason for overlapping assignments."""
+
+    files: list[str]
+    claimIds: list[str]
+    agentTypes: list[str]
+    reason: str
 
 
 class CoordinatorDocument(TypedDict):
