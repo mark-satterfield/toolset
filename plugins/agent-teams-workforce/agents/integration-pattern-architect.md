@@ -1,6 +1,7 @@
 ---
 name: integration-pattern-architect
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server
@@ -20,6 +21,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---
@@ -40,7 +42,7 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Design service boundaries, synchronous/asynchronous integration, event delivery and REST routes. Reconcile publishers, consumers, interface ownership, retry/dead-letter behavior and idempotency across the affected views.
+Design service boundaries, which interactions are synchronous calls and which are events, and the event delivery path. Reconcile publishers, consumers, interface ownership, retry/dead-letter behavior and idempotency across the affected views.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

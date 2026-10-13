@@ -24,6 +24,8 @@ view. There are no decision records, no ADRs and no decision logs, and a design 
 written as a rule: the next design follows it as an established pattern unless it states a reason to
 change.
 
+A design fact is stated in one document. Another document that needs it links to its heading.
+
 Section 2 is the owner's. A design outcome is never written there, because only the owner writes
 constraints.
 

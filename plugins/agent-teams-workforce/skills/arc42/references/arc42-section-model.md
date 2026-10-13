@@ -55,7 +55,8 @@ service's stacks in its subject folder.
 ### 8. Crosscutting Concepts — architecture, concepts
 Patterns used across many services (for example idempotency, an event envelope, structured
 logging), one file per concept, each with its structure and its behaviour. A pattern described here is followed by the next
-design unless that design states a reason to change it; it is not a rule.
+design unless that design states a reason to change it; it is a design fact with its reason, and
+only section 2 holds the owner's constraints.
 
 ### 10. Quality Requirements
 The quality scenarios the architecture is designed to meet, each with a stimulus and a measurable
@@ -68,6 +69,31 @@ not here.
 ### 12. Glossary
 The terms the architecture uses, so every view and every diagram label means the same thing by the
 same word.
+
+## One home for each design fact
+
+One design fact lives in exactly one document. Every other document that needs it links to its
+heading. Which section is the home follows from what the fact is:
+
+- Section 3 holds context: what is outside the system and what crosses the boundary.
+- Section 4 holds the solution strategy.
+- Section 5 holds building blocks: what each block is responsible for, what it owns, what it
+  provides to consumers, and its interfaces by name. A shared service, component, layer or library
+  states under a heading "Provides" each behaviour consumers obtain from it and must not implement
+  themselves, one line per behaviour.
+- Section 6 holds runtime: which building blocks interact, in what order, for the important
+  scenarios and their failures. It links to a rule; the rule itself is stated in its home.
+- Section 7 holds deployment: where each block runs and which stack holds each resource.
+- Section 8 holds crosscutting concepts: the rule as a design fact with its reason, for example
+  "Because of X, the address is verified by Y".
+
+## Level of detail
+
+Every section stays at architecture level: the why and the mechanism. A statement belongs here when
+it stays true if the code is rewritten or a table's keys are renamed. A limit, a lifetime, a
+retention period, a timeout or a retry count is a requirement of the TRD. A route method or path, a
+field name, a key or index name, a parameter name, a metric or alarm name and a schema are written
+in the specs. A document has a single purpose and holds only facts that belong to its subject.
 
 ## Views and scopes
 

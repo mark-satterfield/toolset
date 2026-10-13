@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The question for the decider is defined once, as architecture-result.schema.json#/$defs/UnsettledMatter.",
+  "$ref": "architecture-result.schema.json#/$defs/UnsettledMatter"
+}

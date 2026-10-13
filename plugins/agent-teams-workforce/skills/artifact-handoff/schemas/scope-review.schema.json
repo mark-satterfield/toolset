@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A reviewer's result for the unapproved content is defined once, as architecture-result.schema.json#/$defs/ScopeReview.",
+  "$ref": "architecture-result.schema.json#/$defs/ScopeReview"
+}

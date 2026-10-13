@@ -1,6 +1,7 @@
 ---
 name: trd-validator
 description: >-
+role: architecture-reviewer
   Validates each TRD technical requirement is unambiguous, testable, and
   feasible within the owner's constraints and the effective architecture, flagging
   any requirement that contradicts the architecture, and builds the TRD's SOURCE

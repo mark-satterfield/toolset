@@ -306,3 +306,85 @@ Fields and interpretation: Owner-run portfolio readiness artifacts are indexed f
 ## round-results
 
 Fields and interpretation: proposer/diagram files use architecture-writer.schema.json; reviewer/cost files use architecture-review.schema.json. The plan role decides which contract, never a producer-selected alternate. Complete means the assigned claim, coverage and repair set has an accepted result under its role contract. The ledger folds those result files; coordinator and decider read both.
+
+## architecture-work
+
+The files of the architecture team that `aws-solutions-architect` leads. Every shape is defined once, in [architecture-result.schema.json](schemas/architecture-result.schema.json); each file below has its own schema file that refers to its definition there. Python reads them through `scripts/architecture_work_contract.py`, which is generated from that schema.
+
+## architecture-state
+
+Schema: [architecture-state.schema.json](schemas/architecture-state.schema.json).
+
+Fields and interpretation: needs each name what the PRD needs, its PRD requirement headings, a state (approved, disagreement or missing), the statements judged and the judgment; conclusion is `complete-and-approved` or `work-remains`. `aws-solutions-architect` writes it before anything else. Complete means every thing the PRD needs of the architecture has one entry, and the conclusion follows from the states.
+
+## architecture-result
+
+Schema: [architecture-result.schema.json](schemas/architecture-result.schema.json).
+
+Fields and interpretation: conclusion (`complete-and-approved`, `ready-for-review` or `unsettled`); the features with the PRD requirements each serves; the new elements; each shared capability an element uses; the facts with their one home; the settled disagreements; one answer for every criterion whose level is architecture or technical-requirement; notesForSpecs; unsettled matters; reviewSignals; costEvidence. Complete means every such criterion is `satisfied` at a place that exists or `not-applicable` with its reason, every fact has one home, and `unsettled` is empty unless the conclusion is `unsettled`. A script selects the reviewers from reviewSignals by the `appliesWhen` rules of architecture-baseline/review-criteria.json, and takes what is unapproved from the matrix.
+
+## specialist-request
+
+Schema: [specialist-request.schema.json](schemas/specialist-request.schema.json).
+
+Fields and interpretation: kind (`question` or `task`), the request, its bounds, the PRD sections and arc42 headings it concerns, the elements whose code is trusted, and the answer path. `aws-solutions-architect` writes one for each design specialist or diagram author it starts; `architecture-team-lead` writes one when it asks for an opinion. Complete means one gap of this PRD is stated so that it can be answered without reading anything the request does not name.
+
+## specialist-answer
+
+Schema: [specialist-answer.schema.json](schemas/specialist-answer.schema.json).
+
+Fields and interpretation: the answer in one sentence; reasons, each with its source; assumptions; alternatives only when asked; needs (another specialty to ask); for a task, decisions as design facts with their arc42 section; for a diagram task, diagrams as Mermaid source with their home; notesForSpecs. Complete means the request is answered and nothing else is.
+
+## trd-request
+
+Schema: [trd-request.schema.json](schemas/trd-request.schema.json).
+
+Fields and interpretation: mode (`draft` or `update`); the PRD, TRD and state paths; for a draft the approved headings and the shared capabilities used; for an update the changes by requirement id; the answer path. `aws-solutions-architect` writes it.
+
+## trd-answer
+
+Schema: [trd-answer.schema.json](schemas/trd-answer.schema.json).
+
+Fields and interpretation: mode; the requirement ids written or changed; noSource, the obligations the PRD implies that neither the PRD nor the approved material gives a source for. Complete means the TRD at the request's path holds exactly what the request asked, and every unsourced obligation is in noSource and not in the TRD.
+
+## write-request
+
+Schema: [write-request.schema.json](schemas/write-request.schema.json).
+
+Fields and interpretation: the facts, each with its statement, reason, one home and the documents that link to it; the restatements to replace with links; the settled disagreements to apply; the diagrams to place; the result path. `aws-solutions-architect` writes it for `architecture-maintainer`.
+
+## write-result
+
+Schema: [write-result.schema.json](schemas/write-result.schema.json).
+
+Fields and interpretation: the headings changed and created, the links added, the restatements removed, belowArchitectureLevel (entries not written because they belong in the TRD or the specs) and notApplied with the reason. Complete means every entry of the request is written in its home, returned in belowArchitectureLevel or listed in notApplied.
+
+## scope-review
+
+Schema: [scope-review.schema.json](schemas/scope-review.schema.json).
+
+Fields and interpretation: passed (the items that meet every criterion that applies to them); findings, each with its criterion id, item, observation, location, correction and doneWhen; dependsOnApproved; alternativesRequested. The reviewer is handed the review scope `atw-matrix unapproved` writes (matrix.schema.json, `$defs/ReviewScope`). Complete means every item of the reviewer's scope is in passed or has a finding, a dependsOnApproved report or an alternative request. Python drops, and counts, a finding whose item is outside the scope.
+
+## lead-routing
+
+Schema: [lead-routing.schema.json](schemas/lead-routing.schema.json).
+
+Fields and interpretation: one entry for each finding, alternative request or unsettled matter: who raised it, the routing (`reject`, `correct`, `opinion`, `competing-design` or `decider`), one sentence of reason, and the journal steps added for it. `architecture-team-lead` writes it before it adds a step.
+
+## architecture-question
+
+Schema: [architecture-question.schema.json](schemas/architecture-question.schema.json).
+
+Fields and interpretation: the matter, its kind, and the two or more positions, each with its statement, evidence and cost. `architecture-team-lead` writes it for `architecture-decider`; it is the shape of an `unsettled` entry of the architecture result.
+
+## architecture-ruling
+
+Schema: [architecture-ruling.schema.json](schemas/architecture-ruling.schema.json).
+
+Fields and interpretation: the matter, the position that stands, the reason, what the losing position must change, and owner concerns (a business conflict or a section 2 conflict only). Complete means the ruling rests on the evidence the two positions gave. It is recorded in the matrix as the settlement of the matter.
+
+## built-comparison
+
+Schema: [built-comparison.schema.json](schemas/built-comparison.schema.json).
+
+Fields and interpretation: differences, each with the element, the code location, the approved heading, the difference and the built-difference document written for it; filesWritten. `built-architecture-comparer` writes it for one Story. An empty differences list means the code the Story built matches the approved architecture.

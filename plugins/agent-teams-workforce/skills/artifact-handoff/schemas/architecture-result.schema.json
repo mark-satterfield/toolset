@@ -1,0 +1,555 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Architecture work",
+  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, a reviewer's result for the unapproved content, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of a row as atw-matrix prints it. The review scope a reviewer is handed is defined by matrix.schema.json ($defs/ReviewScope).",
+  "$ref": "#/$defs/ArchitectureResult",
+  "$defs": {
+    "NeedState": {
+      "description": "`approved`: the architecture for the need exists and the matrix marks it approved. `disagreement`: it exists and is approved, and two statements disagree. `missing`: no approved statement meets the need.",
+      "type": "string",
+      "enum": ["approved", "disagreement", "missing"]
+    },
+    "StateConclusion": {
+      "description": "`complete-and-approved`: every need is `approved`. `work-remains`: at least one need is `disagreement` or `missing`.",
+      "type": "string",
+      "enum": ["complete-and-approved", "work-remains"]
+    },
+    "Conclusion": {
+      "description": "`complete-and-approved`: everything the PRD needs existed and was approved, and no arc42 document changed. `ready-for-review`: the architect designed or settled something and it is ready for review. `unsettled`: at least one matter is listed in `unsettled`.",
+      "type": "string",
+      "enum": ["complete-and-approved", "ready-for-review", "unsettled"]
+    },
+    "CriterionStatus": {
+      "description": "`satisfied`: `satisfiedAt` names where. `not-applicable`: `reason` says why the criterion does not apply to this PRD.",
+      "type": "string",
+      "enum": ["satisfied", "not-applicable"]
+    },
+    "UnsettledKind": {
+      "description": "`technical-choice`: two positions remain, each with evidence and a real cost. `business-conflict`: two business requirements that no design meets together, or a design that only works against section 2.",
+      "type": "string",
+      "enum": ["technical-choice", "business-conflict"]
+    },
+    "RequestKind": {
+      "description": "`question`: one question to answer. `task`: one bounded piece of design, or one diagram to draw.",
+      "type": "string",
+      "enum": ["question", "task"]
+    },
+    "TrdMode": {
+      "description": "`draft`: write the TRD from the PRD and the approved arc42 material. `update`: apply the listed changes and nothing else.",
+      "type": "string",
+      "enum": ["draft", "update"]
+    },
+    "TrdChangeKind": {
+      "type": "string",
+      "enum": ["add", "change", "remove"]
+    },
+    "RequirementKind": {
+      "description": "`obligation`: something that must be true of an element, with a checkable value. `reuse`: the element obtains a behaviour from a shared capability and does not implement its own.",
+      "type": "string",
+      "enum": ["obligation", "reuse"]
+    },
+    "Routing": {
+      "description": "What the lead decides for one item. `reject`: the finding goes no further. `correct`: the architect corrects it and the reviewer that raised it re-checks. `opinion`: one specialist is asked, and the answer goes to the architect with the correction. `competing-design`: the architect designs the other position of one matter. `decider`: the decider rules.",
+      "type": "string",
+      "enum": ["reject", "correct", "opinion", "competing-design", "decider"]
+    },
+    "OwnerConcernKind": {
+      "description": "`business-conflict`: two business requirements cannot both be met by any design. `section-2-conflict`: the only workable design conflicts with a section 2 constraint.",
+      "type": "string",
+      "enum": ["business-conflict", "section-2-conflict"]
+    },
+    "Citation": {
+      "description": "Where something is stated or can be checked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "heading"],
+      "properties": {
+        "source": {
+          "description": "An arc42 path relative to the architecture root, a PRD or TRD path, an AWS documentation URL, or code as repository, revision and file:line.",
+          "type": "string",
+          "minLength": 1
+        },
+        "heading": {
+          "description": "The heading in that document, or the id of the PRD or TRD requirement; an empty string when the source has none.",
+          "type": "string"
+        }
+      }
+    },
+    "Need": {
+      "description": "One thing the PRD needs of the architecture, and the architect's judgment of it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "need", "prdRequirements", "state", "evidence", "judgment"],
+      "properties": {
+        "id": {"description": "N1, N2 and so on, unique in the file.", "type": "string", "pattern": "^N[1-9][0-9]*$"},
+        "need": {"description": "What the PRD needs, in one sentence.", "type": "string", "minLength": 1},
+        "prdRequirements": {"description": "The PRD requirement headings the need comes from.", "type": "array", "items": {"type": "string"}},
+        "state": {"$ref": "#/$defs/NeedState"},
+        "evidence": {"description": "The approved statements judged, and for a disagreement the statements that disagree.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "judgment": {"description": "Why the state is what it is.", "type": "string", "minLength": 1}
+      }
+    },
+    "ArchitectureState": {
+      "description": "The solutions architect's answer to the request `Establish the state of the architecture for this PRD`, written before it does anything else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "needs", "conclusion", "summary"],
+      "properties": {
+        "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
+        "needs": {"type": "array", "items": {"$ref": "#/$defs/Need"}},
+        "conclusion": {"$ref": "#/$defs/StateConclusion"},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "FeatureEntry": {
+      "description": "One feature the PRD needs, as the architect recorded it in the matrix.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "prdRequirements", "elements", "sharedCapabilities"],
+      "properties": {
+        "id": {"description": "The matrix id of the feature row.", "type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "prdRequirements": {"description": "The PRD requirement headings the feature serves.", "type": "array", "items": {"type": "string"}},
+        "elements": {"description": "The matrix ids of the elements that realize it.", "type": "array", "items": {"type": "string"}},
+        "sharedCapabilities": {"description": "The matrix ids of the supporting features it uses.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "SharedUse": {
+      "description": "One behaviour one element obtains from a shared capability and does not implement itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "capability", "behaviour"],
+      "properties": {
+        "element": {"description": "The matrix id of the element that uses the capability.", "type": "string", "minLength": 1},
+        "capability": {"description": "The matrix id of the supporting feature.", "type": "string", "minLength": 1},
+        "behaviour": {"description": "The behaviour obtained, as the capability's `provides` entry states it.", "type": "string", "minLength": 1}
+      }
+    },
+    "FactEntry": {
+      "description": "One design fact with its one home.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "reason", "home", "linkedFrom"],
+      "properties": {
+        "id": {"description": "The matrix id of the fact row.", "type": "string", "minLength": 1},
+        "statement": {"description": "The fact, at architecture level, in the form its arc42 section requires.", "type": "string", "minLength": 1},
+        "reason": {"description": "Why the design is so.", "type": "string", "minLength": 1},
+        "home": {"description": "The one arc42 document and heading that states the fact.", "$ref": "#/$defs/Citation"},
+        "linkedFrom": {"description": "The arc42 paths of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "CriterionAnswer": {
+      "description": "The architect's answer to one criterion of architecture-baseline/review-criteria.json whose level is architecture or technical-requirement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "status", "satisfiedAt", "reason"],
+      "properties": {
+        "criterion": {"description": "The criterion id.", "type": "string", "minLength": 1},
+        "status": {"$ref": "#/$defs/CriterionStatus"},
+        "satisfiedAt": {"description": "For `satisfied`, each arc42 document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "reason": {"description": "For `not-applicable`, why the criterion does not apply to this PRD; an empty string for `satisfied`.", "type": "string"}
+      }
+    },
+    "SpecNote": {
+      "description": "One detail below architecture and technical-requirement level that is already known, kept for the spec authors.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "detail", "source"],
+      "properties": {
+        "element": {"description": "The matrix id of the element the detail concerns.", "type": "string", "minLength": 1},
+        "detail": {"description": "The route, field, key, parameter, name or schema detail.", "type": "string", "minLength": 1},
+        "source": {"description": "Where the detail comes from: a path and heading, a URL, or `design` for something decided in this run.", "type": "string", "minLength": 1}
+      }
+    },
+    "Position": {
+      "description": "One of the positions on a matter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "evidence", "cost"],
+      "properties": {
+        "id": {"description": "A short name for the position, unique in the matter.", "type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "cost": {"description": "What choosing this position costs.", "type": "string", "minLength": 1}
+      }
+    },
+    "UnsettledMatter": {
+      "description": "A matter the architect could not settle, or the question the lead puts to the decider: the matter and the positions on it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "matter", "positions"],
+      "properties": {
+        "id": {"description": "U1, U2 and so on, unique in the file.", "type": "string", "pattern": "^U[1-9][0-9]*$"},
+        "kind": {"$ref": "#/$defs/UnsettledKind"},
+        "matter": {"description": "What has to be decided, in one or two sentences.", "type": "string", "minLength": 1},
+        "positions": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/Position"}}
+      }
+    },
+    "Choice": {
+      "description": "A decision the architect made between alternatives that each had a cost.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact", "alternatives", "reason"],
+      "properties": {
+        "fact": {"description": "The matrix id of the fact that states what was chosen.", "type": "string", "minLength": 1},
+        "alternatives": {"description": "The alternatives that were not chosen.", "type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "CostEvidence": {
+      "description": "The unit math behind one cost constraint in the TRD.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "assumptions", "unitMath", "sources"],
+      "properties": {
+        "resource": {"description": "The matrix id of the billable element.", "type": "string", "minLength": 1},
+        "assumptions": {"description": "The stated usage the estimate rests on.", "type": "string", "minLength": 1},
+        "unitMath": {"description": "The arithmetic, with the fixed monthly floor kept apart from usage cost.", "type": "string", "minLength": 1},
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
+      }
+    },
+    "ReviewSignals": {
+      "description": "The facts about this run's design that the reviewer groups of architecture-baseline/review-criteria.json name in `appliesWhen.result`. A script selects reviewers from them; an empty list selects none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["newRuntimeResources", "newBillableResources", "changedBillableLimits", "choices", "newPatterns", "failureBehaviours"],
+      "properties": {
+        "failureBehaviours": {"description": "The matrix ids of the facts this run decided that state retry, dead-letter, idempotent or recovery behaviour.", "type": "array", "items": {"type": "string"}},
+        "newRuntimeResources": {"description": "The matrix ids of elements this run added that run in AWS.", "type": "array", "items": {"type": "string"}},
+        "newBillableResources": {"description": "The matrix ids of elements this run added that AWS bills for and the approved design did not already hold.", "type": "array", "items": {"type": "string"}},
+        "changedBillableLimits": {"description": "The TRD requirement ids whose limit or volume on an existing billable element this run changed.", "type": "array", "items": {"type": "string"}},
+        "choices": {"type": "array", "items": {"$ref": "#/$defs/Choice"}},
+        "newPatterns": {"description": "The matrix ids of each new service, new shared capability, and element of a resource type the matrix had not held.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "ArchitectureResult": {
+      "description": "The solutions architect's result for one Epic. The script reads `conclusion`, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "conclusion", "features", "newElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "notesForSpecs", "unsettled", "reviewSignals", "costEvidence", "summary"],
+      "properties": {
+        "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
+        "conclusion": {"$ref": "#/$defs/Conclusion"},
+        "features": {"type": "array", "items": {"$ref": "#/$defs/FeatureEntry"}},
+        "newElements": {"description": "The matrix ids of the elements this run recorded.", "type": "array", "items": {"type": "string"}},
+        "sharedCapabilities": {"type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
+        "facts": {"description": "The design facts this run decided.", "type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
+        "settledDisagreements": {"description": "The matrix ids of the disagreements this run settled.", "type": "array", "items": {"type": "string"}},
+        "criteria": {"description": "One answer for every criterion whose level is architecture or technical-requirement.", "type": "array", "items": {"$ref": "#/$defs/CriterionAnswer"}},
+        "notesForSpecs": {"type": "array", "items": {"$ref": "#/$defs/SpecNote"}},
+        "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
+        "reviewSignals": {"$ref": "#/$defs/ReviewSignals"},
+        "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "SpecialistRequest": {
+      "description": "What the solutions architect, or the lead when it asks for an opinion, asks of one design specialist or diagram author.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "request", "bounds", "concerns", "trustedCode", "answerPath"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/RequestKind"},
+        "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
+        "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
+        "concerns": {"description": "The PRD sections and arc42 headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "trustedCode": {"description": "The matrix ids of elements whose code the matrix marks built or deployed. Code of any other element is a hint only.", "type": "array", "items": {"type": "string"}},
+        "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
+      }
+    },
+    "Reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "source"],
+      "properties": {
+        "statement": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/Citation"}
+      }
+    },
+    "NeededSpecialty": {
+      "description": "Another specialty the answer needs, for the architect to ask.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specialty", "why"],
+      "properties": {
+        "specialty": {"type": "string", "minLength": 1},
+        "why": {"type": "string", "minLength": 1}
+      }
+    },
+    "DesignFact": {
+      "description": "One decision a bounded task returns, for the architect to accept or change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "reason", "section", "sources"],
+      "properties": {
+        "statement": {"description": "One sentence, at architecture level.", "type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "section": {"description": "The arc42 section the fact belongs in: 3, 4, 5, 6, 7 or 8.", "type": "string", "pattern": "^[3-8]$"},
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
+      }
+    },
+    "Diagram": {
+      "description": "One diagram for architecture-maintainer to place.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["home", "viewType", "mermaid", "shows"],
+      "properties": {
+        "home": {"description": "The arc42 document and heading the diagram belongs under.", "$ref": "#/$defs/Citation"},
+        "viewType": {"description": "The view type, from the documentation model's list of view types.", "type": "string", "minLength": 1},
+        "mermaid": {"description": "The Mermaid source, without the code fence.", "type": "string", "minLength": 1},
+        "shows": {"description": "The names of the elements the diagram shows.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "SpecialistAnswer": {
+      "description": "A design specialist's or diagram author's answer to one request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answer", "reasons", "assumptions", "alternatives", "needs", "decisions", "diagrams", "notesForSpecs", "summary"],
+      "properties": {
+        "answer": {"description": "The answer to the question in one sentence, or for a task what was decided in one sentence.", "type": "string", "minLength": 1},
+        "reasons": {"type": "array", "items": {"$ref": "#/$defs/Reason"}},
+        "assumptions": {"description": "What the answer rests on that the sources do not establish.", "type": "array", "items": {"type": "string"}},
+        "alternatives": {"description": "The alternatives considered; empty unless the request asks for them.", "type": "array", "items": {"type": "string"}},
+        "needs": {"type": "array", "items": {"$ref": "#/$defs/NeededSpecialty"}},
+        "decisions": {"description": "For a task, the decisions as design facts; empty for a question.", "type": "array", "items": {"$ref": "#/$defs/DesignFact"}},
+        "diagrams": {"description": "For a diagram task, the diagrams drawn; otherwise empty.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}},
+        "notesForSpecs": {"type": "array", "items": {"$ref": "#/$defs/SpecNote"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "TrdChange": {
+      "description": "One change to the TRD. For `remove`, only `id` carries meaning and the other texts are empty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change", "id", "kind", "statement", "source", "appliesTo"],
+      "properties": {
+        "change": {"$ref": "#/$defs/TrdChangeKind"},
+        "id": {"description": "The requirement id; for `add`, an empty string lets trd-author assign the next id.", "type": "string"},
+        "kind": {"$ref": "#/$defs/RequirementKind"},
+        "statement": {"description": "What must be true, with its checkable value.", "type": "string"},
+        "source": {"$ref": "#/$defs/Citation"},
+        "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
+      }
+    },
+    "TrdRequest": {
+      "description": "What the solutions architect asks of trd-author.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "prdPath", "trdPath", "statePath", "approvedHeadings", "sharedCapabilities", "changes", "answerPath"],
+      "properties": {
+        "mode": {"$ref": "#/$defs/TrdMode"},
+        "prdPath": {"type": "string", "minLength": 1},
+        "trdPath": {"description": "The absolute path of the TRD file.", "type": "string", "minLength": 1},
+        "statePath": {"description": "The absolute path of the architect's state file.", "type": "string", "minLength": 1},
+        "approvedHeadings": {"description": "For `draft`, the approved arc42 headings and section 2 documents to draw standing obligations from; empty for `update`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "sharedCapabilities": {"description": "For `draft`, each shared capability the design uses, to be written as one requirement of kind `reuse`; empty for `update`.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
+        "changes": {"description": "For `update`, the changes to apply; empty for `draft`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
+        "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
+      }
+    },
+    "NoSource": {
+      "description": "An obligation the PRD implies for which neither the PRD nor the approved material gives a source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation", "prdRequirement", "why"],
+      "properties": {
+        "obligation": {"type": "string", "minLength": 1},
+        "prdRequirement": {"description": "The PRD requirement heading that implies it.", "type": "string", "minLength": 1},
+        "why": {"description": "What the architecture would have to state for the obligation to have a source.", "type": "string", "minLength": 1}
+      }
+    },
+    "TrdAnswer": {
+      "description": "trd-author's answer to one request. The TRD itself is the file at the request's `trdPath`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "requirementIds", "noSource", "summary"],
+      "properties": {
+        "mode": {"$ref": "#/$defs/TrdMode"},
+        "requirementIds": {"description": "For `draft`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
+        "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "Restatement": {
+      "description": "A place that states a fact a second time, to be replaced by a link to the fact's home.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact", "at"],
+      "properties": {
+        "fact": {"description": "The id of the fact in this request, or the matrix id of an approved fact.", "type": "string", "minLength": 1},
+        "at": {"$ref": "#/$defs/Citation"}
+      }
+    },
+    "AppliedSettlement": {
+      "description": "A settled disagreement to apply to the documents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disagreement", "stands", "corrections"],
+      "properties": {
+        "disagreement": {"description": "The matrix id of the disagreement row.", "type": "string", "minLength": 1},
+        "stands": {"description": "The statement that stands.", "$ref": "#/$defs/Citation"},
+        "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/Citation"}}
+      }
+    },
+    "WriteRequest": {
+      "description": "What the solutions architect asks architecture-maintainer to write into arc42.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "facts", "restatements", "settlements", "diagrams", "resultPath"],
+      "properties": {
+        "bead": {"type": "string", "minLength": 1},
+        "facts": {"type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
+        "restatements": {"type": "array", "items": {"$ref": "#/$defs/Restatement"}},
+        "settlements": {"type": "array", "items": {"$ref": "#/$defs/AppliedSettlement"}},
+        "diagrams": {"type": "array", "items": {"$ref": "#/$defs/Diagram"}},
+        "resultPath": {"description": "The absolute path the write result is written to.", "type": "string", "minLength": 1}
+      }
+    },
+    "UnappliedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry", "why"],
+      "properties": {
+        "entry": {"description": "The id of the fact, or a description of the restatement, settlement or diagram.", "type": "string", "minLength": 1},
+        "why": {"type": "string", "minLength": 1}
+      }
+    },
+    "WriteResult": {
+      "description": "architecture-maintainer's result for one write request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headingsChanged", "headingsCreated", "linksAdded", "restatementsRemoved", "belowArchitectureLevel", "notApplied", "summary"],
+      "properties": {
+        "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "belowArchitectureLevel": {"description": "Entries not written because they are below architecture level, for the architect to move to the TRD or to notesForSpecs.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
+        "notApplied": {"description": "Entries that could not be applied for any other reason.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "ScopeFinding": {
+      "description": "One defect in one unapproved item, measured against one criterion at the item's own level.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "criterion", "item", "observation", "location", "correction", "doneWhen"],
+      "properties": {
+        "id": {"description": "F1, F2 and so on, unique in the review.", "type": "string", "pattern": "^F[1-9][0-9]*$"},
+        "criterion": {"description": "The id of the criterion the item does not meet.", "type": "string", "minLength": 1},
+        "item": {"description": "The item of the review scope: a matrix row id, a document path and heading joined by `#`, or a TRD requirement id.", "type": "string", "minLength": 1},
+        "observation": {"description": "What the item says or lacks, stated as a fact a reader can check.", "type": "string", "minLength": 1},
+        "location": {"$ref": "#/$defs/Citation"},
+        "correction": {"description": "The bounded change that removes the defect.", "type": "string", "minLength": 1},
+        "doneWhen": {"description": "The condition that shows the correction is made.", "type": "string", "minLength": 1}
+      }
+    },
+    "DependsOnApproved": {
+      "description": "An unapproved item that cannot be correct unless an approved statement is wrong.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "unapproved", "approved", "why"],
+      "properties": {
+        "item": {"type": "string", "minLength": 1},
+        "unapproved": {"$ref": "#/$defs/Citation"},
+        "approved": {"$ref": "#/$defs/Citation"},
+        "why": {"type": "string", "minLength": 1}
+      }
+    },
+    "AlternativeRequest": {
+      "description": "A request for a competing design of one item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "option", "why"],
+      "properties": {
+        "item": {"type": "string", "minLength": 1},
+        "option": {"description": "The option that was not considered.", "type": "string", "minLength": 1},
+        "why": {"description": "Why it could plainly be better.", "type": "string", "minLength": 1}
+      }
+    },
+    "ScopeReview": {
+      "description": "One reviewer's result for the unapproved items its criteria apply to. Every item of its scope is in `passed` or has a finding, a `dependsOnApproved` report or an alternative request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "findings", "dependsOnApproved", "alternativesRequested", "summary"],
+      "properties": {
+        "passed": {"description": "The items that meet every criterion that applies to them.", "type": "array", "items": {"type": "string"}},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/ScopeFinding"}},
+        "dependsOnApproved": {"type": "array", "items": {"$ref": "#/$defs/DependsOnApproved"}},
+        "alternativesRequested": {"type": "array", "items": {"$ref": "#/$defs/AlternativeRequest"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "RoutedItem": {
+      "description": "The lead's decision for one finding, alternative request or unsettled matter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "raisedBy", "routing", "reason", "steps"],
+      "properties": {
+        "item": {"description": "The finding id, the item of the alternative request, or the id of the unsettled matter.", "type": "string", "minLength": 1},
+        "raisedBy": {"description": "The reviewer that raised it, or `aws-solutions-architect` for an unsettled matter.", "type": "string", "minLength": 1},
+        "routing": {"$ref": "#/$defs/Routing"},
+        "reason": {"description": "One sentence.", "type": "string", "minLength": 1},
+        "steps": {"description": "The ids of the journal steps the lead added for it; empty for `reject`.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "LeadRouting": {
+      "description": "architecture-team-lead's output: one decision for each item it was started for.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "summary"],
+      "properties": {
+        "items": {"type": "array", "items": {"$ref": "#/$defs/RoutedItem"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "OwnerConcern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "concern", "requirements"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/OwnerConcernKind"},
+        "concern": {"type": "string", "minLength": 1},
+        "requirements": {"description": "The business requirements or section 2 constraints in conflict.", "type": "array", "items": {"$ref": "#/$defs/Citation"}}
+      }
+    },
+    "ArchitectureRuling": {
+      "description": "architecture-decider's ruling on one matter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matter", "stands", "reason", "losingPositionChanges", "ownerConcerns", "summary"],
+      "properties": {
+        "matter": {"description": "The id of the matter in the question file.", "type": "string", "minLength": 1},
+        "stands": {"description": "The id of the position that stands; an empty string only when an owner concern is raised.", "type": "string"},
+        "reason": {"description": "Why that position stands, from the evidence the two sides gave.", "type": "string", "minLength": 1},
+        "losingPositionChanges": {"description": "What the losing position must change.", "type": "string"},
+        "ownerConcerns": {"type": "array", "items": {"$ref": "#/$defs/OwnerConcern"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "BuiltDifference": {
+      "description": "One difference, at architecture level, between code a Story built and the approved architecture.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "code", "architecture", "difference", "document"],
+      "properties": {
+        "element": {"description": "The matrix id of the element.", "type": "string", "minLength": 1},
+        "code": {"description": "Where the code shows it: repository, revision and file:line.", "$ref": "#/$defs/Citation"},
+        "architecture": {"description": "The approved arc42 heading it differs from.", "$ref": "#/$defs/Citation"},
+        "difference": {"description": "What the code does and what the architecture says, in one or two sentences.", "type": "string", "minLength": 1},
+        "document": {"description": "The path, relative to the architecture root, of the built-difference document written for it.", "type": "string", "minLength": 1}
+      }
+    },
+    "BuiltComparison": {
+      "description": "built-architecture-comparer's result for one Story. An empty differences list means the code the Story built matches the approved architecture.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["differences", "filesWritten", "summary"],
+      "properties": {
+        "differences": {"type": "array", "items": {"$ref": "#/$defs/BuiltDifference"}},
+        "filesWritten": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

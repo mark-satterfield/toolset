@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "trd-author's answer is defined once, as architecture-result.schema.json#/$defs/TrdAnswer.",
+  "$ref": "architecture-result.schema.json#/$defs/TrdAnswer"
+}

@@ -16,10 +16,20 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal, TypeIs
+from typing import TYPE_CHECKING, Final, Literal, TypeIs
+
+if TYPE_CHECKING:
+    from collections.abc import Collection
 
 type Level = Literal["all", "architecture", "technical-requirement", "implementation"]
 type Home = Literal["arc42", "trd", "specs"]
+type ScopeKind = Literal["heading", "scenario-fact", "trd-requirement", "spec-document"]
+"""A kind of unapproved content a reviewer group is selected for.
+
+``heading``: an arc42 heading that was added or changed. ``scenario-fact``: a design fact of
+kind ``scenario``. ``trd-requirement``: a TRD requirement that is new or changed.
+``spec-document``: a specification document of a repository.
+"""
 
 LEVEL_ALL: Final[Literal["all"]] = "all"
 LEVEL_ARCHITECTURE: Final[Literal["architecture"]] = "architecture"
@@ -32,6 +42,7 @@ LEVELS: Final[tuple[Level, ...]] = (
     LEVEL_IMPLEMENTATION,
 )
 HOMES: Final[tuple[Home, ...]] = ("arc42", "trd", "specs")
+SCOPE_KINDS: Final[tuple[ScopeKind, ...]] = ("heading", "scenario-fact", "trd-requirement", "spec-document")
 
 SKILL_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "architecture-baseline"
 CRITERIA_PATH: Final[Path] = SKILL_DIR / "review-criteria.json"
@@ -42,7 +53,8 @@ _DOCUMENT_KEYS: Final[frozenset[str]] = frozenset({"title", "introduction", "lev
 _LEVEL_KEYS: Final[frozenset[str]] = frozenset({"id", "idPrefix", "heading", "note", "responsible", "reviewPoint"})
 _RULE_KEYS: Final[frozenset[str]] = frozenset({"id", "level", "text"})
 _CRITERION_KEYS: Final[frozenset[str]] = _RULE_KEYS | {"home"}
-_GROUP_KEYS: Final[frozenset[str]] = frozenset({"id", "reviewer", "criteria"})
+_GROUP_KEYS: Final[frozenset[str]] = frozenset({"id", "reviewer", "criteria", "appliesWhen"})
+_CONDITION_KEYS: Final[frozenset[str]] = frozenset({"scope", "result"})
 
 
 class ReviewCriteriaError(ValueError):
@@ -76,12 +88,49 @@ class Criterion:
 
 
 @dataclass(frozen=True, slots=True)
+class AppliesWhen:
+    """When a reviewer group is selected: the rule a script applies, with no judgment.
+
+    The group is selected when the unapproved content holds an item of one of the ``scope``
+    kinds, or when one of the lists named in ``result`` is not empty in ``reviewSignals`` of the
+    solutions architect's result (``ReviewSignals`` in architecture-result.schema.json).
+    """
+
+    scope: tuple[ScopeKind, ...]
+    result: tuple[str, ...]
+
+    def selects(self, scope_kinds: Collection[ScopeKind], result_signals: Collection[str]) -> bool:
+        """Apply the rule to one run.
+
+        Args:
+            scope_kinds: The kinds of unapproved content the run holds.
+            result_signals: The names of the ``reviewSignals`` lists that are not empty.
+
+        Returns:
+            True when the group's reviewer reviews this run.
+
+        Raises:
+            TypeError: An argument is a string and not a collection of names.
+
+        """
+        if isinstance(scope_kinds, str) or isinstance(result_signals, str):
+            message: str = "selects requires two collections of names"
+            raise TypeError(message)
+        return any(kind in scope_kinds for kind in self.scope) or any(name in result_signals for name in self.result)
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewerGroup:
-    """The criteria one reviewer covers."""
+    """The criteria one reviewer covers, and when that reviewer is selected.
+
+    A criterion may be in more than one group: each group's reviewer reviews it for its own
+    specialty.
+    """
 
     id: str
     reviewer: str
     criteria: tuple[str, ...]
+    applies_when: AppliesWhen
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,8 +318,39 @@ def _criterion(value: object, where: str) -> Criterion:
     )
 
 
+def _is_scope_kind(value: object) -> TypeIs[ScopeKind]:
+    return isinstance(value, str) and value in SCOPE_KINDS
+
+
+def _applies_when(value: object, where: str) -> AppliesWhen:
+    """Read the rule that selects one reviewer group.
+
+    Returns:
+        The rule.
+
+    Raises:
+        ReviewCriteriaError: The entry is malformed, names an unknown kind of unapproved content,
+            or states no condition.
+
+    """
+    entry: dict[str, object] = _closed(value, where, _CONDITION_KEYS)
+    scope: tuple[ScopeKind, ...] = tuple(
+        kind for kind in _names(entry["scope"], f"{where}.scope") if _is_scope_kind(kind)
+    )
+    result: tuple[str, ...] = _names(entry["result"], f"{where}.result")
+    if len(scope) != len(_items(entry["scope"], f"{where}.scope")):
+        message: str = f"{where}.scope: every entry is one of {list(SCOPE_KINDS)}"
+        raise ReviewCriteriaError(message)
+    if not scope and not result:
+        message = f"{where}: a group states at least one condition that selects it"
+        raise ReviewCriteriaError(message)
+    return AppliesWhen(scope=scope, result=result)
+
+
 def _group(value: object, where: str) -> ReviewerGroup:
     """Read one reviewer group.
+
+    A malformed selection rule fails with the ReviewCriteriaError of ``_applies_when``.
 
     Returns:
         The group.
@@ -288,6 +368,7 @@ def _group(value: object, where: str) -> ReviewerGroup:
         id=_line(entry["id"], f"{where}.id"),
         reviewer=_line(entry["reviewer"], f"{where}.reviewer"),
         criteria=criteria,
+        applies_when=_applies_when(entry["appliesWhen"], f"{where}.appliesWhen"),
     )
 
 

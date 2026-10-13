@@ -25,8 +25,9 @@ P7. Never write section 2. Only architecture-maintainer writes arc42. A script p
 P8. A finding names the criterion id, the item, the observation with its path and heading,
     and a bounded correction with a condition that shows it is done. A preference is not a
     finding. Something no criterion requires is not a finding.
-P9. A review covers only content that is not yet approved. A re-check covers only the
-    corrected items.
+P9. A review covers only content that is not yet approved. Approved content is reference: it
+    is reported only when an unapproved item cannot be correct unless an approved statement
+    is wrong. A re-check covers only the corrected items.
 
 ## Architecture level: arc42 sections 3 to 8
 
@@ -88,6 +89,8 @@ I3. Each event has the values passed to the shared-events-service API, its paylo
 I4. Configuration names, SSM parameter names, and log, metric and alarm names are present
     and are generated with atw-naming.
 I5. Idempotency key fields and timeout settings are stated.
-I6. Exact contract fields agree between the producer's spec and the consumer's spec.
+I6. Each contract this repository shares with another repository (a route it exposes or
+    calls, an event it publishes or consumes) names the other repository's element, and its
+    fields are exactly those of the other repository's spec where that spec exists.
 I7. A Task can name the repository, stack, handler, table, route, event and the shared
     capabilities it must use without inventing a design.

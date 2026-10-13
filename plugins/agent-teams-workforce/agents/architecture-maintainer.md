@@ -1,6 +1,7 @@
 ---
 name: architecture-maintainer
 description: Integrate an approved target and repair conformance findings in canonical architecture.
+role: document-maintainer
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server

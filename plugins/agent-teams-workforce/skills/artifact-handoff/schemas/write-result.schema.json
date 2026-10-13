@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "architecture-maintainer's write result is defined once, as architecture-result.schema.json#/$defs/WriteResult.",
+  "$ref": "architecture-result.schema.json#/$defs/WriteResult"
+}

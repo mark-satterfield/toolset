@@ -93,7 +93,7 @@
     {
       "id": "P9",
       "level": "all",
-      "text": "A review covers only content that is not yet approved. A re-check covers only the corrected items."
+      "text": "A review covers only content that is not yet approved. Approved content is reference: it is reported only when an unapproved item cannot be correct unless an approved statement is wrong. A re-check covers only the corrected items."
     },
     {
       "id": "A1",
@@ -249,7 +249,7 @@
       "id": "I6",
       "level": "implementation",
       "home": "specs",
-      "text": "Exact contract fields agree between the producer's spec and the consumer's spec."
+      "text": "Each contract this repository shares with another repository (a route it exposes or calls, an event it publishes or consumes) names the other repository's element, and its fields are exactly those of the other repository's spec where that spec exists."
     },
     {
       "id": "I7",
@@ -262,47 +262,56 @@
     {
       "id": "ownership-boundary",
       "reviewer": "architecture-boundary-guardian",
-      "criteria": ["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14"]
+      "criteria": ["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14"],
+      "appliesWhen": {"scope": ["heading"], "result": []}
     },
     {
       "id": "runtime-failure",
       "reviewer": "failure-mode-analyst",
-      "criteria": ["A5"]
+      "criteria": ["A5"],
+      "appliesWhen": {"scope": ["scenario-fact"], "result": ["failureBehaviours"]}
     },
     {
       "id": "pattern",
       "reviewer": "architecture-pattern-challenger",
-      "criteria": ["A2", "A9"]
+      "criteria": ["A2", "A9"],
+      "appliesWhen": {"scope": [], "result": ["newPatterns"]}
     },
     {
       "id": "tradeoff",
       "reviewer": "architecture-tradeoff-skeptic",
-      "criteria": ["P4"]
+      "criteria": ["P4"],
+      "appliesWhen": {"scope": [], "result": ["choices"]}
     },
     {
       "id": "operations",
       "reviewer": "operational-readiness-reviewer",
-      "criteria": ["T2", "A6"]
+      "criteria": ["T2", "A6"],
+      "appliesWhen": {"scope": [], "result": ["newRuntimeResources"]}
     },
     {
       "id": "cost-new",
       "reviewer": "cost-architecture-reviewer",
-      "criteria": ["T2"]
+      "criteria": ["T2"],
+      "appliesWhen": {"scope": [], "result": ["newBillableResources"]}
     },
     {
       "id": "cost-changed",
       "reviewer": "cost-impact-reviewer",
-      "criteria": ["T2"]
+      "criteria": ["T2"],
+      "appliesWhen": {"scope": [], "result": ["changedBillableLimits"]}
     },
     {
       "id": "trd",
       "reviewer": "trd-validator",
-      "criteria": ["T1", "T2", "T3", "T4", "T5", "T6"]
+      "criteria": ["T1", "T2", "T3", "T4", "T5", "T6"],
+      "appliesWhen": {"scope": ["trd-requirement"], "result": []}
     },
     {
       "id": "specs",
       "reviewer": "openapi-contract-reviewer",
-      "criteria": ["I1", "I2", "I3", "I4", "I5", "I6", "I7"]
+      "criteria": ["I1", "I2", "I3", "I4", "I5", "I6", "I7"],
+      "appliesWhen": {"scope": ["spec-document"], "result": []}
     }
   ]
 }

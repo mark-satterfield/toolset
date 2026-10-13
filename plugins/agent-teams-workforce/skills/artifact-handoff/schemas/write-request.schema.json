@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A write request to architecture-maintainer is defined once, as architecture-result.schema.json#/$defs/WriteRequest.",
+  "$ref": "architecture-result.schema.json#/$defs/WriteRequest"
+}

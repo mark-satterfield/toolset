@@ -1,6 +1,7 @@
 ---
 name: api-contract-designer
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   mcp__mcp-graphrag-server
@@ -17,6 +18,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 mcpServers:
@@ -40,7 +42,7 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Design REST contracts with methods, paths, authorizers, request/response schemas, errors and version/compatibility behavior. Respect the selected platform and connected event/data contracts.
+Design each REST interface at architecture level: which building block exposes it, what it is for, who may call it and how the caller is authorized, how it fails, and how it stays compatible as it changes. Respect the selected platform and the connected event and data designs. Methods, paths, request and response fields and status codes are implementation level and are written in the specs by api-specification-author.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

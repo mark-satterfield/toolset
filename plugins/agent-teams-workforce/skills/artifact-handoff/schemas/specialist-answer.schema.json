@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A specialist's answer is defined once, as architecture-result.schema.json#/$defs/SpecialistAnswer.",
+  "$ref": "architecture-result.schema.json#/$defs/SpecialistAnswer"
+}

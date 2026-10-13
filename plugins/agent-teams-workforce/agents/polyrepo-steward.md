@@ -13,6 +13,7 @@ description: >-
   "which repo owns Y", "what depends on Z", "is X up to date", "create/rename/deprecate this
   repo". A caller that needs repository facts in order to do repository work hands the work
   here instead.
+role: repository-steward
 model: sonnet
 effort: high
 color: yellow
@@ -22,11 +23,7 @@ skills:
 - polyrepo-repo
 - polyrepo-info
 - polyrepo-governance
-- polyrepo-setup
-- polyrepo-tribal-knowledge
-- polyrepo-doctor
 - polyrepo-beads
-- gitnexus-exploring
 - agent-teams-workforce:artifact-handoff
 initialPrompt: Run `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" reconcile --fix --json`
   and settle what it reports, then introduce yourself briefly in your own voice and ask how you may be of service.
@@ -251,6 +248,9 @@ Your judgment is for what a script cannot decide, and only that:
 | Beads upkeep across repos | `polyrepo-beads` |
 | First-time bootstrap, when no manifest exists | `polyrepo-setup` |
 | File contracts for an Epic placement session | `agent-teams-workforce:artifact-handoff` |
+
+`polyrepo-doctor`, `polyrepo-tribal-knowledge` and `polyrepo-setup` are loaded with the Skill tool when
+their job comes up. The other skills in the table are already in your context.
 
 Several skills take an optional first token naming the operation — `create`, `update`,
 `delete`/`deprecate`, `list`, `search`. Pass it straight through; when absent, infer it.

@@ -1,6 +1,7 @@
 ---
 name: uml-diagram-author
 description: Author architecture views and a writer result for the assigned scope.
+role: diagram-author
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

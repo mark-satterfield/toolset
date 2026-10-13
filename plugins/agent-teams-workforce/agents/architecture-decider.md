@@ -1,6 +1,7 @@
 ---
 name: architecture-decider
 description: Approve or return architecture from independent evidence in the saved artifacts.
+role: decider
 tools: Read, Glob, Grep, Write, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit

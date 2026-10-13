@@ -1,6 +1,7 @@
 ---
 name: persistence-architecture-specialist
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
@@ -18,11 +19,11 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:dynamodb
 - agent-teams-workforce:database-schema-designer
-- agent-teams-workforce:rds
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---
@@ -43,7 +44,7 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Design store ownership, keys, indexes and access patterns; specify consistency, lifecycle, retention, encryption and capacity assumptions from the approved scope.
+Design which building block owns each store, what each store holds and which blocks may read or write it. State the consistency each scenario needs, the lifecycle of the data and why it is encrypted. Limits, retention periods and capacity values are TRD requirements. Key attribute names, indexes and access patterns are implementation level and are written in the specs by data-model-specification-author.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

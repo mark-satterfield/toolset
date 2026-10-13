@@ -1,6 +1,7 @@
 ---
 name: graphql-schema-designer
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   mcp__mcp-graphrag-server
@@ -17,6 +18,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 mcpServers:
@@ -40,7 +42,7 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 
 ## Assignment
 
-Design GraphQL types, queries, mutations, subscriptions and resolver contracts where the approved scope selects GraphQL. Include authorization, ownership, null/error and compatibility behavior.
+Where the design selects GraphQL, design which building block exposes the API, which operations it offers and what each is for, which block resolves each operation from which owned data, who may call it, how it fails and how it stays compatible. Type, field and argument names and the schema text are implementation level and are written in the specs by api-specification-author.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
 plan entry by agentType. Author its files, answer its finding/repair IDs and update its coverage

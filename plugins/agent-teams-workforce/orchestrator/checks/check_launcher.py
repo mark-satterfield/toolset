@@ -4,7 +4,10 @@ For every agent the flows name: its definition states a model and an effort, and
 agent's prompt holds the text of each of its front matter skills exactly once. For three real
 agents of different kinds, the whole argument list is the one a session without started agents
 has always been given. For a made-up agent that may start others: the allowlist, the dropped
-Agent denial, the nesting settings, the started agents' skills and the Epic's expertise.
+Agent denial, the nesting settings, the started agents' skills and the Epic's expertise. For every
+real definition that states a role, the roles it may start or how it takes expertise: the fields
+are valid, and an agent that may start others is given exactly the agents that play those roles,
+each with skills a session can find.
 """
 
 from __future__ import annotations
@@ -36,9 +39,10 @@ from orchestrator.core.agent_context import (
     definitions,
     load_agent,
     prepare,
+    started_agents,
 )
 from orchestrator.core.driver_contracts import denied_tools
-from orchestrator.core.frontmatter import string_list
+from orchestrator.core.frontmatter import split_front_matter, string_list
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import AgentStep
 from orchestrator.core.skills import (
@@ -49,6 +53,7 @@ from orchestrator.core.skills import (
     load_skills,
     matching_skills,
     skill_block,
+    skill_location,
 )
 from step_journal_contract import StepId
 
@@ -56,7 +61,8 @@ PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
 QUOTED: Final[re.Pattern[str]] = re.compile(r'"([a-z0-9][a-z0-9-]+)"')
 MANY_SKILLS: Final = "event-schema-designer"
 REVIEWER: Final = "architecture-boundary-guardian"
-PROJECT_SKILLS_AGENT: Final = "polyrepo-steward"
+UNQUALIFIED_SKILLS_AGENT: Final = "polyrepo-steward"
+ROLE_FIELDS: Final[frozenset[str]] = frozenset({"role", "startsRoles", "epicExpertise"})
 STEP_ID: Final = "0f8fad5b-d9cb-469f-a165-70867728950e"
 ALPHA: Final = "The alpha fixture sentence."
 BETA: Final = "The beta fixture sentence."
@@ -133,7 +139,7 @@ def check_skill_text(roots: SkillRoots) -> None:
 def check_arguments(config: Path, root: Path) -> None:
     """Check the whole argument list and settings of real agents that start no other agent."""
     name: str
-    for name in (MANY_SKILLS, REVIEWER, PROJECT_SKILLS_AGENT):
+    for name in (MANY_SKILLS, REVIEWER, UNQUALIFIED_SKILLS_AGENT):
         agent: AgentDefinition = load_agent(PLUGIN, name)
         session: Path = root / name
         arguments: list[str] = prepare(PLUGIN, config, session, step_for(name, root), Launch())
@@ -171,7 +177,60 @@ def check_arguments(config: Path, root: Path) -> None:
         if agent.mcp_servers:
             configured: dict[str, JsonValue] = json_object(read_object(session / "mcp.json")["mcpServers"])
             require(sorted(configured) == sorted(agent.mcp_servers), f"{name}: its MCP servers are configured")
-    report(f"PASS: argument list and settings unchanged for {MANY_SKILLS}, {REVIEWER} and {PROJECT_SKILLS_AGENT}")
+    report(f"PASS: argument list and settings unchanged for {MANY_SKILLS}, {REVIEWER} and {UNQUALIFIED_SKILLS_AGENT}")
+
+
+def check_started(roots: SkillRoots, agent: AgentDefinition) -> int:
+    """Check the session definitions of one real agent that may start others.
+
+    Returns:
+        The number of agents it may start.
+
+    """
+    started: tuple[AgentDefinition, ...] = started_agents(PLUGIN, agent)
+    require(
+        {helper.role for helper in started} == set(agent.starts_roles),
+        f"{agent.name}: the agents it may start play exactly the roles it names",
+    )
+    entries: dict[str, JsonValue] = definitions(roots, agent, started, Launch())
+    keys: list[str] = [f"{AGENT_PREFIX}{helper.name}" for helper in started]
+    require(sorted(entries) == sorted([f"{AGENT_PREFIX}{agent.name}", *keys]), f"{agent.name}: defined agents")
+    tools: list[str] = string_list(json_object(entries[f"{AGENT_PREFIX}{agent.name}"])["tools"])
+    require(f"Agent({', '.join(keys)})" in tools, f"{agent.name}: the allowlist names exactly the agents it may start")
+    require("Agent" not in tools, f"{agent.name}: the Agent tool is given only as the allowlist")
+    helper: AgentDefinition
+    for helper in started:
+        entry: dict[str, JsonValue] = json_object(entries[f"{AGENT_PREFIX}{helper.name}"])
+        require("Agent" in string_list(entry["disallowedTools"]), f"{helper.name}: a started agent starts no agent")
+        listed: list[str] = string_list(entry.get("skills"))
+        require(len(listed) == len(load_skills(roots, helper.skills)), f"{helper.name}: every skill is listed once")
+        skill: str
+        for skill in listed:
+            require(
+                (skill_location(roots, skill)[0] / "SKILL.md").is_file(),
+                f"{helper.name}: skill {skill} is not one a session can find under that name",
+            )
+    return len(started)
+
+
+def check_roles(roots: SkillRoots) -> None:
+    """Check every real definition that states a role, the roles it may start or how it takes expertise."""
+    stated: int = 0
+    starters: dict[str, int] = {}
+    path: Path
+    for path in sorted((PLUGIN / "agents").glob("*.md")):
+        fields: dict[str, object]
+        fields, _ = split_front_matter(path.read_text(encoding="utf-8"), f"agent {path.stem}")
+        if not ROLE_FIELDS & set(fields):
+            continue
+        agent: AgentDefinition = load_agent(PLUGIN, path.stem)
+        stated += 1
+        if agent.starts_roles:
+            require(agent.role is not None, f"{agent.name}: an agent that may start others states its own role")
+            starters[agent.name] = check_started(roots, agent)
+    require(stated > 0, "no real definition states a role")
+    summary: str = ", ".join(f"{name} may start {count}" for name, count in sorted(starters.items())) or "none"
+    report(f"PASS: {stated} real definitions state valid role fields; agents that may start others: {summary}")
 
 
 def write_fixture(plugin: Path, config: Path) -> None:
@@ -313,6 +372,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {CONTROL_REPO_ENV: str(control)}):
         root: Path = Path(directory).resolve()
         check_skill_text(SkillRoots(PLUGIN, config, control))
+        check_roles(SkillRoots(PLUGIN, config, control))
         check_arguments(config, root)
         check_starter(root)
 

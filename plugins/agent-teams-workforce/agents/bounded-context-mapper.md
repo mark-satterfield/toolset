@@ -1,6 +1,7 @@
 ---
 name: bounded-context-mapper
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server
@@ -19,6 +20,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:architecture-baseline
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---

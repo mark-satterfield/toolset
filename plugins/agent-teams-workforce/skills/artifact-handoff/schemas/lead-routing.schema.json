@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "architecture-team-lead's routing is defined once, as architecture-result.schema.json#/$defs/LeadRouting.",
+  "$ref": "architecture-result.schema.json#/$defs/LeadRouting"
+}

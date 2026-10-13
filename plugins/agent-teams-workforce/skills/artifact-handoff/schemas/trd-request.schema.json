@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A request to trd-author is defined once, as architecture-result.schema.json#/$defs/TrdRequest.",
+  "$ref": "architecture-result.schema.json#/$defs/TrdRequest"
+}

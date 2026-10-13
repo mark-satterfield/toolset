@@ -1,6 +1,7 @@
 ---
 name: domain-event-modeler
 description: Author architecture views and a writer result for the assigned scope.
+role: design-specialist
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server
@@ -21,6 +22,7 @@ skills:
 - agent-teams-workforce:architecture-baseline
 - agent-teams-workforce:skillspoke-standard-event
 effort: high
+epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---
@@ -44,8 +46,8 @@ applicable AWS documentation; no live account inventory. Retain provenance and v
 Read the skillspoke-standard-event skill before work. Model domain events as facts: which fact
 each event states, the bounded context and aggregate that owns it, what triggers it, and the
 causal flow it belongs to. Name the business meaning of the data an event carries; the event type
-name, the values passed to the shared-events-service API and the payload schema are
-event-schema-designer's. Connect bounded contexts and distinguish domain meaning from delivery
+name is event-schema-designer's, and the values passed to the shared-events-service API and the
+payload schema are written in the specs. Connect bounded contexts and distinguish domain meaning from delivery
 mechanics.
 
 Read the PRD, survey, round plan, ledger, effective/open target views and draft. Select your own
