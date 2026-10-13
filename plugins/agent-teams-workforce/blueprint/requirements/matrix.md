@@ -57,14 +57,15 @@ Each question below is answered from the matrix alone, without reading documents
 | Q6 | Which services, components and infrastructure implement this feature? | A list of them, each with the stack that is its home in code. |
 | Q7 | What does this stack do? | Its stated purpose. |
 | Q8 | Where does this piece of functionality already live? | The stacks whose purpose matches, found by describing the functionality. |
-| Q9 | What does this stack use, and what uses it? | The stacks it uses and the stacks that use it, followed to any depth. |
+| Q9 | What does this stack depend on across stack boundaries, of any kind (a shared library it imports, a layer it uses, a shared service it calls, an event it publishes or consumes and the rule that routes it, a value it reads that another stack stored, shared infrastructure it runs in), and how is each related? | A list of the things it depends on, each with the stack that holds it and the kind of the relationship, followed to any depth; for a shared library, also the distribution (package, layer) that brings it to this stack's code. |
 | Q10 | Where is this stack's source? | One repository. |
 | Q11 | What type of stack is this? | One type, from the stack's name. |
 | Q12 | Which repositories are relevant to this Epic? | The set of repositories, each with the stacks that make it relevant and the features that lead to them. |
 | Q13 | What is missing for this Epic? | Requirements with no feature, features with no covering document, and described services, components and infrastructure with no stack. |
 | Q14 | Which of this is proved by a build? | For each piece of information, verified or not verified. |
-| Q15 | Which shared libraries does this stack's code use, and through which distribution (package, layer) does each reach it? | A list of libraries, each with the distribution that brings it to this stack's code. |
+| Q15 | What depends on this stack, service, component, library, layer or piece of infrastructure, and how? | A list of the things that depend on it, each with the stack that holds it and the kind of the relationship, followed to any depth. |
 | Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
+| Q17 | Which app does this stack belong to, and which stacks belong to this app? | One app for a stack; the list of stacks for an app. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
@@ -217,7 +218,9 @@ an arc42 document is not a finding.
 - **R11.** The matrix records the services, components and infrastructure the architecture
   documents describe, each mapped to the stack that is its home in code.
 - **R12.** The matrix records every relationship as many-to-many wherever the things relate
-  that way (section 3.2). A one-to-one mapping misstates shared architecture.
+  that way (section 3.2). A one-to-one mapping misstates shared architecture. Every
+  relationship records its kind: how the two things are related. A lookup returns the kind
+  from either side of the relationship.
 - **R13.** The matrix records links and short statements that identify a thing. The content
   of a design stays in its arc42 document, so that the matrix and arc42 never state the same
   design twice.
@@ -233,10 +236,17 @@ an arc42 document is not a finding.
 - **R16.** The matrix records a purpose for every stack, in the form section 3.3 shows. The
   purpose is what lets an agent recognize where functionality lives, and it matters most for
   anything shared.
-- **R17.** The matrix records what each stack uses, stack to stack, and answers both
-  directions to any depth (Q9). This is what keeps each elaboration run's architecture
-  consistent with what exists, and what keeps logic that belongs in a shared library or the
-  chassis out of a Lambda.
+- **R17.** The matrix records every dependency that crosses a stack boundary, of any kind: a
+  shared library a stack imports, a layer it uses, a shared service it calls, an event it
+  publishes or consumes and the rule that routes it, a value it reads that another stack
+  stored, shared infrastructure it runs in. A relationship between two stacks is recorded
+  whether the thing depended on is code or infrastructure. The matrix answers both
+  directions to any depth: what a stack depends on (Q9) and what depends on a stack,
+  service, component, library, layer or piece of infrastructure (Q15). This gives the
+  pipeline the full picture around anything it designs or changes, keeps each elaboration
+  run's architecture consistent with what exists, and keeps logic that belongs in a shared
+  library or the chassis out of a Lambda. The packages a repository installs are one part of
+  this picture.
 - **R18.** The matrix takes a stack's type from the last token of its name, as the naming
   conventions document defines it. The list of types is extended in that document; the
   matrix defines no type of its own. Scope, execution use and distribution are not types.
@@ -290,8 +300,8 @@ an arc42 document is not a finding.
 ### Scope, execution use and distribution
 
 - **R32.** The matrix records, for every stack, the one app it belongs to: `employer`,
-  `marketing`, `personal-agent` or `shared` (section 3.4). `shared` is recorded as the
-  stack's app in the same way as the other three.
+  `marketing`, `personal-agent` or `shared` (section 3.4), and answers both directions
+  (Q17). `shared` is recorded as the stack's app in the same way as the other three.
 - **R33.** The matrix records the execution use of a thing: executable or callable (a
   service, a Lambda), or shared code that other code imports (a library).
 - **R34.** The matrix records every custom Python library as a package published to
@@ -301,7 +311,7 @@ an arc42 document is not a finding.
   many-to-many: a custom library can have no layer of its own, one layer can contain several
   packages, and a layer can contain only third-party packages.
 - **R36.** The matrix records, for each shared library a stack's code uses, the distribution
-  (package, layer) through which that library reaches it (Q15).
+  (package, layer) through which that library reaches it (Q9).
 
 ## 6. Open points
 
