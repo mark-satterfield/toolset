@@ -52,6 +52,7 @@ from step_journal_contract import (
     STATUS_PLANNED,
     STATUS_RUNNING,
     STEP_ID_PATTERN,
+    VALUE_KINDS,
     Artifact,
     ArtifactKind,
     BeadId,
@@ -77,6 +78,12 @@ DEFAULT_LOCK_WAIT: Final = 60.0
 """Seconds a change waits for another process's change to the same journal to finish."""
 LOCK_POLL: Final = 0.05
 STDIN_MARK: Final = "-"
+WORKFLOW_RUNS_DIRECTORY: Final = "workflow-runs"
+"""The directory of a control repository that holds saved run data, under ``.claude``."""
+JOURNALS_DIRECTORY: Final = "step-journals"
+"""The one directory, inside the workflow runs directory, that holds every bead's step journal."""
+PLANNED_FOR_PREFIX: Final = "for "
+"""A value artifact named ``for <step id>`` is held by the step whose result planned that step."""
 EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
 
@@ -96,7 +103,7 @@ class Invalidation(TypedDict):
     reset: list[StepId]
     """The steps set back to planned, in walk order."""
     removed: list[StepId]
-    """The child steps removed because the step whose result added them was reset."""
+    """The steps removed because the step whose result added them was reset."""
     pruned: list[StepId]
     """The remaining steps whose inputs named a removed step and lost that id."""
 
@@ -820,8 +827,60 @@ def resolve_inputs(journal: Journal, step_id: StepId) -> list[InputArtifacts]:
     return resolved
 
 
-def _reset(step: Step, reset: list[StepId], removed: list[StepId]) -> None:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def planned_for_name(step_id: StepId) -> str:
+    """Name the value artifact a step records for a step its result planned.
+
+    The artifact holds the parameters the planned step is handed, and is the record that the
+    step holding it planned that step: :func:`invalidate_from` removes the planned step when the
+    step that planned it is reset.
+
+    Args:
+        step_id: The planned step.
+
+    Returns:
+        ``for <step id>``.
+
+    """
+    return f"{PLANNED_FOR_PREFIX}{step_id}"
+
+
+def _planned_by(step: Step) -> list[StepId]:
+    """List the steps a step's artifacts record as planned by its result.
+
+    Returns:
+        The step id of every value artifact named as :func:`planned_for_name` names it.
+
+    """
+    planned: list[StepId] = []
+    artifact: Artifact
+    for artifact in step["artifacts"]:
+        named: str = artifact["name"].removeprefix(PLANNED_FOR_PREFIX)
+        if (
+            artifact["kind"] in VALUE_KINDS
+            and artifact["name"].startswith(PLANNED_FOR_PREFIX)
+            and STEP_ID_PATTERN.search(named) is not None
+        ):
+            planned.append(StepId(named))
+    return planned
+
+
+def _remove_steps(steps: list[Step], gone: set[StepId], removed: list[StepId]) -> None:
+    """Take every step whose id is in ``gone`` out of the tree, with the steps below it."""
+    kept: list[Step] = []
+    step: Step
+    for step in steps:
+        if step["id"] in gone:
+            removed.extend(below["id"] for below in _walk([step]) if below["id"] not in removed)
+            continue
+        _remove_steps(step["steps"], gone, removed)
+        kept.append(step)
+    steps[:] = kept
+
+
+def _reset(step: Step, reset: list[StepId], removed: list[StepId], planned: list[StepId]) -> None:
     """Set a step back to planned; drop the child steps of a performed step, reset the others."""
+    planned.extend(_planned_by(step))
     step["status"] = STATUS_PLANNED
     step.pop("started", None)
     step.pop("finished", None)
@@ -830,15 +889,24 @@ def _reset(step: Step, reset: list[StepId], removed: list[StepId]) -> None:
     step["artifacts"] = []
     reset.append(step["id"])
     if _performs(step):
-        removed.extend(child["id"] for child in _walk(step["steps"]))
+        below: Step
+        for below in _walk(step["steps"]):
+            planned.extend(_planned_by(below))
+            removed.append(below["id"])
         step["steps"] = []
         return
     child: Step
     for child in step["steps"]:
-        _reset(child, reset, removed)
+        _reset(child, reset, removed, planned)
 
 
-def _invalidate(steps: Sequence[Step], target: StepId, reset: list[StepId], removed: list[StepId]) -> bool:
+def _invalidate(
+    steps: Sequence[Step],
+    target: StepId,
+    reset: list[StepId],
+    removed: list[StepId],
+    planned: list[StepId],
+) -> bool:
     """Reset ``target`` and every step after it in walk order within ``steps``.
 
     Returns:
@@ -849,10 +917,10 @@ def _invalidate(steps: Sequence[Step], target: StepId, reset: list[StepId], remo
     step: Step
     for step in steps:
         if found or step["id"] == target:
-            _reset(step, reset, removed)
+            _reset(step, reset, removed, planned)
             found = True
             continue
-        found = _invalidate(step["steps"], target, reset, removed)
+        found = _invalidate(step["steps"], target, reset, removed, planned)
         if found and _performs(step) and step["status"] == STATUS_DONE:
             step["status"] = STATUS_RUNNING
             step.pop("finished", None)
@@ -865,7 +933,10 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidat
 
     Each reset step loses ``started``, ``finished``, ``failure``, ``session`` and its artifacts. A reset step
     that has an agent or a script loses its child steps, which came from its result; a reset step
-    that only contains child steps keeps them, reset the same way. A step above the named step
+    that only contains child steps keeps them, reset the same way. A step that a reset step's
+    result planned anywhere else in the journal, recorded by that step's artifact named as
+    :func:`planned_for_name` names it, is removed with the steps below it, so the step plans it
+    again when it runs again. A step above the named step
     comes before it in walk order and is not reset: one that only contains child steps takes its
     status from them, and one with an agent or a script that was done becomes running, since a
     child step of it is no longer done. An id of a removed step is dropped from the ``inputs`` of
@@ -885,8 +956,11 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidat
     find_step(journal, step_id)
     reset: list[StepId] = []
     removed: list[StepId] = []
-    _invalidate(journal["steps"], step_id, reset, removed)
+    planned: list[StepId] = []
+    _invalidate(journal["steps"], step_id, reset, removed, planned)
+    _remove_steps(journal["steps"], set(planned), removed)
     gone: set[StepId] = set(removed)
+    reset = [held for held in reset if held not in gone]
     pruned: list[StepId] = []
     step: Step
     for step in _walk(journal["steps"]):
@@ -922,6 +996,72 @@ def journal_path(directory: Path, bead: BeadId) -> Path:
         message: str = f"the bead id {bead!r} does not match {BEAD_ID_PATTERN.pattern}"
         raise StepJournalError(message)
     return directory / f"{bead}{JOURNAL_SUFFIX}"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def journals_directory(location: Path) -> Path:
+    """Name the one directory that holds the step journal of every bead.
+
+    This is the only place that names it: the orchestrator and the driver both call it, and
+    :func:`journal_path` names a bead's file inside it.
+
+    Args:
+        location: An Epic work directory (``<workflow runs>/artifacts/<bead>``), or the workflow
+            runs directory itself.
+
+    Returns:
+        ``<workflow runs>/step-journals``.
+
+    Raises:
+        StepJournalError: ``location`` is neither of the two.
+
+    """
+    if location.name == WORKFLOW_RUNS_DIRECTORY:
+        return location / JOURNALS_DIRECTORY
+    runs: Path = location.parent.parent
+    if runs.name == WORKFLOW_RUNS_DIRECTORY:
+        return runs / JOURNALS_DIRECTORY
+    message: str = (
+        f"{location} is neither an Epic work directory under {WORKFLOW_RUNS_DIRECTORY} nor that directory, "
+        "so it does not say where step journals are held"
+    )
+    raise StepJournalError(message)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def steps_in_order(journal: Journal) -> list[Step]:
+    """List every step of a journal in walk order.
+
+    Args:
+        journal: The journal.
+
+    Returns:
+        Each step before its child steps, siblings in order; the steps themselves, not copies.
+
+    """
+    return list(_walk(journal["steps"]))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def parent_step(journal: Journal, step_id: StepId) -> Step | None:
+    """Find the step that directly contains a step.
+
+    A step that is not in the journal raises ``StepRefusedError`` from :func:`find_step`.
+
+    Args:
+        journal: The journal.
+        step_id: The contained step.
+
+    Returns:
+        The containing step itself, or None for an outermost step.
+
+    """
+    find_step(journal, step_id)
+    step: Step
+    for step in _walk(journal["steps"]):
+        if any(child["id"] == step_id for child in step["steps"]):
+            return step
+    return None
 
 
 def _read_text(path: Path) -> str:

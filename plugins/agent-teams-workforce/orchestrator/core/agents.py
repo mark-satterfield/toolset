@@ -13,15 +13,13 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import (
-    Generator,  # ruff: ignore[typing-only-standard-library-import] - Runtime decorator resolves generator annotations.
-)
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 
@@ -163,6 +161,33 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
 
 CONTENT_FAILURES: tuple[type[Exception], ...] = (OSError, ValueError, UnicodeError, jsonschema.ValidationError)
 """Failures of an agent output itself; they take the corrective path, never the defect path."""
+SESSION_DIRECTORY_PREFIX: Final = "atw-session-"
+
+
+class SessionNotResumedError(StepError):
+    """A session that was asked to resume ended without running a turn.
+
+    The process ended with a failure status and no result event, no usage wall and no timeout, so
+    the conversation it was to continue was not taken up. The caller may start the step in a
+    new session.
+    """
+
+
+def _never_ran(facts: SessionFacts) -> bool:
+    """Tell whether a session process ended without running a turn.
+
+    Returns:
+        True when it exited with a failure status and left no result event, no usage wall, no
+        timeout and no cancellation.
+
+    """
+    return (
+        facts["result"] is None
+        and facts["rate"] is None
+        and not facts["timeout"]
+        and facts["exit"] != 0
+        and not facts.get("cancelledCause")
+    )
 
 
 def _write_errors(step: AgentStep, exc: Exception) -> Path:
@@ -499,6 +524,223 @@ class AgentRunner:
     def _record_output(self, step: AgentStep, final: Path) -> None:
         """Record the validated output's receipt; a receipt failure is raised, never downgraded."""
         self.store.accept(step.stage, step.inputs, (final,), producer=step.agent)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def run_session(
+        self,
+        step: AgentStep,
+        inputs: Sequence[tuple[str, Path]],
+        *,
+        session: str,
+        resume: bool = False,
+        fresh_output: bool = True,
+    ) -> Path:
+        """Run one step of a step journal as one session, with the session id the caller chose.
+
+        The step journal alone decides whether a step runs, so nothing here looks at an earlier
+        output or at a receipt: the session is launched, its output is validated with one
+        corrective resume, a Fable refusal is resumed on the replacement model, the stream is
+        logged and the session row is recorded in the run record. The validated output stays at
+        ``step.output``. A session that was asked to resume and ended without running a turn
+        raises ``SessionNotResumedError``, a ``StepError``.
+
+        Args:
+            step: The request; ``final`` must be None.
+            inputs: The files the brief names, each with its label, in order.
+            session: The session id, a UUID. The session's working directory is named for it, so
+                a later dispatch that resumes the id runs in the same directory.
+            resume: True continues the conversation ``session`` names; False starts it.
+            fresh_output: True removes a file already at ``step.output`` before a session that
+                starts; False keeps it for a session that updates the file in place. A resumed
+                session always keeps it.
+
+        Returns:
+            ``step.output``.
+
+        Raises:
+            ValueError: ``session`` is not a UUID, or ``step.final`` is set.
+            PipelineStoppedError: The supervisor requested a stop between sessions.
+            SessionSetupError: Session configuration failed before launch.
+            StepError: Execution or output validation failed.
+
+        """
+        if step.final is not None:
+            message: str = f"a journal step's output stays at its output path; {step.stage} names a final path"
+            raise ValueError(message)
+        identifier: str = str(UUID(session))
+        try:
+            return self._run_session(step, list(inputs), identifier, resume=resume, fresh_output=fresh_output)
+        except PipelineStoppedError, SessionSetupError:
+            raise
+        except StepError as exc:
+            if exc.cause in ACCOUNT_CAUSES:
+                self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
+            raise
+        except Exception as exc:
+            evidence: Path = self.context.work / f"{self.store.module.safe_key(step.stage)}.runner-error.txt"
+            evidence.parent.mkdir(parents=True, exist_ok=True)
+            evidence.write_text(traceback.format_exc(), encoding="utf-8")
+            raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
+
+    def _run_session(
+        self,
+        step: AgentStep,
+        inputs: list[tuple[str, Path]],
+        session_id: str,
+        *,
+        resume: bool,
+        fresh_output: bool,
+    ) -> Path:
+        """Hold a session slot and the session's own directory for one journal step.
+
+        Returns:
+            The validated output path.
+
+        Raises:
+            SessionSetupError: The executable is unusable or the directory cannot be made.
+
+        """
+        try:
+            self._version()
+        except (OSError, ValueError, StepError) as exc:
+            raise SessionSetupError(str(exc)) from exc
+        with self.context.session_slots:
+            directory: Path = Path(tempfile.gettempdir()) / f"{SESSION_DIRECTORY_PREFIX}{session_id}"
+            try:
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            except OSError as exc:
+                raise SessionSetupError(str(exc)) from exc
+            try:
+                return self._journal_session(step, inputs, directory, resume=resume, fresh_output=fresh_output)
+            finally:
+                with _finalization("remove temporary session directory"):
+                    shutil.rmtree(directory)
+
+    def _journal_setup(
+        self,
+        step: AgentStep,
+        session_id: str,
+        directory: Path,
+    ) -> tuple[Path, dict[str, str], Launch, Session]:
+        """Prepare the scratch directory, environment and launch of a journal step's session.
+
+        Returns:
+            The scratch directory, the child environment, the launch and the session row, which
+            is recorded in the run record.
+
+        """
+        scratch: Path = self.context.work / "scratch" / self.store.module.safe_key(self.context.run_id)
+        env: dict[str, str] = check_type(
+            child_environment(scratch),
+            dict[str, str],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        agent: AgentDefinition = load_agent(self.plugin, step.agent)
+        fable_spent: bool = (
+            self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time()
+        )
+        launch: Launch = Launch(
+            model_replacements=FABLE_REPLACEMENT if fable_spent else MappingProxyType({}),
+            expertise=epic_expertise(self.context.bead, os.environ),
+        )
+        row: Session = {
+            "sessionId": session_id,
+            "cwd": str(directory),
+            "phase": self.context.stage,
+            "step": step.stage,
+            "agent": step.agent,
+            "model": launch_model(agent, launch),
+            "effort": agent.effort,
+        }
+        record_session(self.context, self.store, row)
+        step.output.parent.mkdir(parents=True, exist_ok=True)
+        return scratch, env, launch, row
+
+    def _journal_session(
+        self,
+        step: AgentStep,
+        inputs: list[tuple[str, Path]],
+        directory: Path,
+        *,
+        resume: bool,
+        fresh_output: bool,
+    ) -> Path:
+        """Run the session of one journal step through its corrective and model-fallback resumes.
+
+        Returns:
+            The validated output path.
+
+        Raises:
+            SessionSetupError: Agent configuration is invalid or unavailable.
+            SessionNotResumedError: The resume the caller asked for ended without a turn.
+            StepError: The session failed, or its output remains invalid after correction.
+
+        """
+        session_id: str = directory.name.removeprefix(SESSION_DIRECTORY_PREFIX)
+        try:
+            scratch, env, launch, row = self._journal_setup(step, session_id, directory)
+            if fresh_output and not resume:
+                step.output.unlink(missing_ok=True)
+        except (OSError, ValueError, KeyError, ImportError) as exc:
+            raise SessionSetupError(str(exc)) from exc
+        asked_to_resume: bool = resume
+        corrective: bool = False
+        attempt: int = 0
+        while True:
+            _check_stop()
+            attempt += 1
+            command: list[str] = [
+                self.executable,
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--resume" if resume else "--session-id",
+                session_id,
+            ]
+            try:
+                command.extend(
+                    prepare(
+                        self.plugin,
+                        Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).expanduser(),
+                        directory,
+                        step,
+                        launch,
+                    ),
+                )
+            except (OSError, ValueError, KeyError, ImportError) as exc:
+                raise SessionSetupError(str(exc)) from exc
+            stream: Path = scratch / f"{self.store.module.safe_key(step.stage)}-{session_id}-{attempt}.stream.jsonl"
+            facts: SessionFacts = self._session(
+                command=command,
+                prompt=brief(self.context.bead, step, inputs, corrective=corrective),
+                env=env,
+                stream=stream,
+                row=row,
+            )
+            info: dict[str, JsonValue] | None = facts["rate"]
+            if info is not None and is_refusal(info) and row["model"] == FABLE:
+                with self._lock:
+                    self.context.model_policy["fable_until"] = reset_of(info) or exhausted_reset(info) or 0
+                    self.context.model_policy["fable_blocked"] = not bool(self.context.model_policy["fable_until"])
+                self._emit_fable_wall(info)
+                launch, resume = replace(launch, model_replacements=FABLE_REPLACEMENT), True
+                row["model"] = FABLE_REPLACEMENT[FABLE]
+                record_session(self.context, self.store, row)
+                continue
+            if asked_to_resume and attempt == 1 and _never_ran(facts):
+                raise SessionNotResumedError(step.stage, OTHER_CAUSE, (str(stream),))
+            self._check_session(step, facts, stream)
+            try:
+                validate_output(step)
+            except CONTENT_FAILURES as exc:
+                errors: Path = _write_errors(step, exc)
+                if corrective or not step.corrective:
+                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from exc
+                inputs.append(("validation errors", errors))
+                corrective = resume = True
+                continue
+            return step.output
 
     def _session(
         self,
