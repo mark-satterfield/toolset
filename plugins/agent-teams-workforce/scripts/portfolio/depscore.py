@@ -31,45 +31,8 @@
                          result to FILE and `--against FILE` (repeatable) reports the files
                          created, changed and deleted since that saved fingerprint; with either,
                          the per-file hashes stay on disk and are not printed; no `bd` call
-    arch-revision        bind the architecture step's saved work to the arc42 views it read or
-                         wrote: `check` records them, or sets aside saved work one of whose
-                         views changed into a dated stale folder; `mark` records the step's own
-                         integration (integrating, integrated); no `bd` call
-    arch-resume          read the architecture step's saved work in its working directory and
-                         print only the facts its control flow needs (finished steps, last
-                         round, open findings by id, unreviewed claims per writer, the decision's
-                         verdict, the integration's files); writes the full claim and finding
-                         ledger to `ledger.json` there; a saved file that cannot be parsed is
-                         set aside and named in `warnings`; no `bd` call
-    arch-target          check an approved draft and write it to `target/<subject>/`, every view
-                         `in-review`; refuses a draft with no view while design work is named,
-                         a file in section 2, a survey with no assessment, or a subject with no
-                         name left; the folder name is derived from the subject (lower-case,
-                         hyphens, dates and the Epic, PRD and bead names taken out: `Company
-                         Intelligence` is `company-intelligence`) and returned as
-                         `subject`, the subject as given as `subjectName`; no `bd` call
-    arch-delta           list a written target's build items: the elements its delta shows
-                         (an entirely new target's views are its delta; no architecture
-                         change has no delta), numbered D1, D2 ... in element-name order, then
-                         the future set's implementation gaps, then one `prerequisite` item
-                         per entry of the target's `closure.json`, every item with the ids it
-                         `requires`; `--delta-dir` is the target's delta/ path, which exists
-                         only for a partial change;
-                         `--roots-only` leaves the closure out, `--save FILE` also writes the
-                         listing to FILE; no `bd` call
-    arch-closure         check the prerequisite closure the architecture step's Closure phase
-                         saved (every element the delta's work rests on that is not built and
-                         current) against the target's build items and the open beads, and
-                         write it beside the target's baseline as `closure.json`; reads beads,
-                         writes none
-    arch-target-names    tell which names an approved target's files mention as whole words;
-                         no `bd` call
-    arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
-                         holding it; no `bd` call
     arch-built-remove    delete the `built/<element>/` files the effective version now matches
                          and commit the removal in the repository holding them; no `bd` call
-    arch-commit          commit the architecture files an integration changed, staging only
-                         those paths, and push the branch; no `bd` call
     spec-ui-append       write the `ui` items' design sources (bundle build spec and Section
                          IDs, cds, or none) as the `## UI design sources` section of a saved
                          spec document; no `bd` call
@@ -96,15 +59,6 @@
                          make (saved delta-items.json, recon-<slug>.json, tasks-<slug>.json),
                          and warnings where a required item has no Task, no open bead and is
                          not done; no `bd` call
-    arch-integration-files  measure the files an integration wrote since its saved
-                         fingerprint, union them with the maintainer's report, write the lists
-                         to a files file and relay their counts; no `bd` call
-    arch-review-check    check a saved conformance review against the integration's files and
-                         the approved coverage rows; relays counts; no `bd` call
-    saved-target         the facts a resumed elaboration needs from an Epic's saved architecture
-                         target and integration report; no `bd` call
-    saved-span           the saved span ruling (`repo-scoping.json`) a resumed elaboration
-                         replays; no `bd` call
     relay-read           print again the relay envelope of a result saved with `--relay FILE`,
                          re-running nothing; no `bd` call
     story-edges          derive and write the Story -> Story `blocks` edges from Epic order within
@@ -137,26 +91,15 @@ import beadgraph
 import edgeset
 import relay
 import wsjf as rubric
-from archclosure import write_closure
-from archfiles import IntegrationOptions, files_from, integration_files, review_check
 from architecture_artifacts import parse_conformance_result
-from archresume import ResumeError, ResumeOptions, resume_facts
-from archrevision import check as revision_check
-from archrevision import mark as revision_mark
+from archstate import promote as approve_arch
 from archstate import (
-    TargetOptions,
-    commit_integration,
-    delta_items,
     remove_built,
-    remove_target,
     restore_constraints,
     snapshot_constraints,
     snapshot_tree,
-    target_names,
     tree_diff,
-    write_target,
 )
-from archstate import promote as approve_arch
 from archstate import states as arch_states
 from assesscontext import assess_context, task_context
 from bead_metadata import (
@@ -194,12 +137,10 @@ from edgeset import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError, SpanFiles, SpanStories, StoryFiles, repo_slugs
 from reconfacts import ReconError, recon_facts
-from resumefacts import saved_span, saved_target
 from scoring import ScoringError, judge_input, plan, record, score
 from scoringcontracts import Plan
 from specui import SpecUiError, spec_ui_append
 from storyedges import story_edges
-from target_contract import DELTA_ITEMS_FILE
 from typeguard import CollectionCheckStrategy, check_type
 
 if TYPE_CHECKING:
@@ -465,29 +406,6 @@ class _Subcommands(Protocol):
     def add_parser(self, name: str, *, help: str, parents: list[argparse.ArgumentParser]) -> argparse.ArgumentParser:
         """Create a parser for one command."""
         ...
-
-
-def _configure_command_1(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    name: str
-    what: str
-    for name, what in (
-        (
-            "saved-target",
-            "the saved architecture target's facts a resumed elaboration needs",
-        ),
-        (
-            "saved-span",
-            "the saved span ruling (repo-scoping.json) a resumed elaboration replays",
-        ),
-    ):
-        sv: argparse.ArgumentParser = sub.add_parser(name, help=f"{what}; no `bd` call", parents=[common])
-        sv.add_argument(
-            "--art-dir",
-            type=Path,
-            required=True,
-            help="the Epic's artifacts directory",
-        )
 
 
 def _configure_command_2(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
@@ -950,14 +868,8 @@ def _configure_command_29(sub: _Subcommands, common: argparse.ArgumentParser) ->
     )
     aap.add_argument(
         "--arch-files",
-        default="",
+        required=True,
         help="the architecture files the integration changed or created, comma-separated",
-    )
-    aap.add_argument(
-        "--arch-files-from",
-        type=Path,
-        default=None,
-        help="instead of --arch-files: the `touched` list of an arch-integration-files files file",
     )
     aap.add_argument(
         "--reviewed-from",
@@ -1017,17 +929,6 @@ def _configure_command_31(sub: _Subcommands, common: argparse.ArgumentParser) ->
     )
 
 
-def _configure_command_32(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    atn: argparse.ArgumentParser = sub.add_parser(
-        "arch-target-names",
-        help="tell which names an approved target's files mention; writes nothing, runs no `bd` command",
-        parents=[common],
-    )
-    atn.add_argument("--target-dir", required=True, help="the target/<subject>/ folder")
-    atn.add_argument("--names", required=True, help="the names, comma-separated")
-
-
 def _configure_command_33(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
     """Register one command family and its arguments."""
     asn: argparse.ArgumentParser = sub.add_parser(
@@ -1060,187 +961,6 @@ def _configure_command_33(sub: _Subcommands, common: argparse.ArgumentParser) ->
     )
 
 
-def _configure_command_34(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    arv: argparse.ArgumentParser = sub.add_parser(
-        "arch-revision",
-        help="bind the architecture step's saved work to the arc42 views it read or wrote, "
-        "setting it aside when one of them changed; no `bd` call",
-        parents=[common],
-    )
-    arv.add_argument(
-        "action",
-        choices=("check", "mark"),
-        help="check the binding, or mark the integration",
-    )
-    arv.add_argument(
-        "--arch-root",
-        required=True,
-        help="the architecture directory holding arc42/",
-    )
-    arv.add_argument(
-        "--work-dir",
-        required=True,
-        help="the architecture step's working directory",
-    )
-    arv.add_argument(
-        "--stale-root",
-        default=None,
-        help="where `check` makes the dated stale folder (the Epic's artifacts directory)",
-    )
-    arv.add_argument(
-        "--state",
-        choices=("integrating", "integrated"),
-        default=None,
-        help="with `mark`: the integration began, or was approved",
-    )
-
-
-def _configure_command_35(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    aif: argparse.ArgumentParser = sub.add_parser(
-        "arch-integration-files",
-        help="measure the files an integration wrote since its saved fingerprint, union them "
-        "with the maintainer's report, and write the lists to a files file; relays counts; "
-        "no `bd` call",
-        parents=[common],
-    )
-    aif.add_argument("--arch-root", required=True, help="the architecture directory")
-    aif.add_argument(
-        "--before",
-        type=Path,
-        required=True,
-        help="the fingerprint saved before",
-    )
-    aif.add_argument(
-        "--report",
-        type=Path,
-        required=True,
-        help="the maintainer's saved report",
-    )
-    aif.add_argument(
-        "--files-out",
-        type=Path,
-        required=True,
-        help="the files file to write",
-    )
-    aif.add_argument(
-        "--last",
-        type=Path,
-        default=None,
-        help="the previous measurement's fingerprint",
-    )
-    aif.add_argument(
-        "--save-last",
-        type=Path,
-        default=None,
-        help="save this measurement's fingerprint",
-    )
-    aif.add_argument(
-        "--accumulate",
-        action="store_true",
-        help="keep the reported lists already in the files file",
-    )
-
-
-def _configure_command_36(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    arc: argparse.ArgumentParser = sub.add_parser(
-        "arch-review-check",
-        help="check a saved conformance review against the integration's files and the "
-        "approved coverage rows; relays counts; no `bd` call",
-        parents=[common],
-    )
-    arc.add_argument("--review", type=Path, required=True, help="the saved review")
-    arc.add_argument(
-        "--files",
-        type=Path,
-        required=True,
-        help="the arch-integration-files files file",
-    )
-    arc.add_argument(
-        "--coverage-from",
-        type=Path,
-        required=True,
-        help="the relay file of the arch-resume run holding the approved coverage rows",
-    )
-
-
-def _configure_command_37(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    arz: argparse.ArgumentParser = sub.add_parser(
-        "arch-resume",
-        help="the facts the architecture step's control flow needs from its saved work; "
-        "writes ledger.json there, runs no `bd` command",
-        parents=[common],
-    )
-    arz.add_argument(
-        "--work-dir",
-        required=True,
-        help="the architecture working directory of one Epic",
-    )
-    arz.add_argument(
-        "--roster",
-        required=True,
-        help="each role's agents, as role=a,b;role=c",
-    )
-    arz.add_argument(
-        "--assign",
-        default="",
-        help="owners the coordinator assigned to findings, as F1.2.3=agent,...",
-    )
-
-    arz.add_argument(
-        "--proposal-team",
-        default="",
-        help="deprecated compatibility input; coordinator dispatches select architecture specialists",
-    )
-
-    arz.add_argument(
-        "--round-plan",
-        default="",
-        help="validated durable round plan JSON",
-    )
-
-
-def _configure_command_38(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    atg: argparse.ArgumentParser = sub.add_parser(
-        "arch-target",
-        help="check an approved draft and write it to target/<subject>/ as in-review; runs no `bd` command",
-        parents=[common],
-    )
-    atg.add_argument("--draft", required=True, help="the draft target directory")
-    atg.add_argument(
-        "--baseline",
-        default="",
-        help="validated survey JSON retaining baseline and implementation work",
-    )
-    atg.add_argument(
-        "--arch-root",
-        required=True,
-        help="the architecture directory holding target/",
-    )
-    atg.add_argument(
-        "--subject",
-        required=True,
-        help="the subject the target describes, as a display name or a folder name; the folder name is derived from it",
-    )
-    atg.add_argument(
-        "--forbid",
-        default="",
-        help="names a subject never carries (the Epic, the PRD), comma-separated",
-    )
-    atg.add_argument(
-        "--seed",
-        action="store_true",
-        help="write only the baseline handoff (baseline.json, with the note naming the "
-        "architecture change: none, new or partial) from --baseline into the draft, so "
-        "every review has the documents it reviews",
-    )
-    _dry_run_flag(atg)
-
-
 def _configure_command_39(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
     """Register one command family and its arguments."""
     ast: argparse.ArgumentParser = sub.add_parser(
@@ -1258,72 +978,6 @@ def _configure_command_39(sub: _Subcommands, common: argparse.ArgumentParser) ->
         default=None,
         help="the architecture directory every `--arch-files` path must sit under",
     )
-
-
-def _configure_command_40(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    adl: argparse.ArgumentParser = sub.add_parser(
-        "arch-delta",
-        help="list the elements a target's delta shows, one item per element; writes nothing, runs no `bd` command",
-        parents=[common],
-    )
-    adl.add_argument(
-        "--delta-dir",
-        required=True,
-        help="the target/<subject>/delta/ directory",
-    )
-    adl.add_argument(
-        "--roots-only",
-        action="store_true",
-        help="list the root items alone, without the prerequisites closure.json adds",
-    )
-    adl.add_argument(
-        "--save",
-        type=Path,
-        default=None,
-        help=f"also write the full listing to this file (the Epic's {DELTA_ITEMS_FILE})",
-    )
-
-
-def _configure_command_41(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    acl: argparse.ArgumentParser = sub.add_parser(
-        "arch-closure",
-        help="check a prerequisite closure against the delta and the open beads and write "
-        "it beside the target's baseline as closure.json; reads beads, writes no bead",
-        parents=[common],
-    )
-    acl.add_argument(
-        "--closure",
-        required=True,
-        help="the closure the Closure phase saved",
-    )
-    acl.add_argument(
-        "--delta-dir",
-        required=True,
-        help="the target/<subject>/delta/ directory",
-    )
-    _dry_run_flag(acl)
-
-
-def _configure_command_42(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    atr: argparse.ArgumentParser = sub.add_parser(
-        "arch-target-remove",
-        help="delete target/<subject>/ and commit the removal; runs no `bd` command",
-        parents=[common],
-    )
-    atr.add_argument(
-        "--arch-root",
-        required=True,
-        help="the architecture directory holding target/",
-    )
-    atr.add_argument(
-        "--target-dir",
-        required=True,
-        help="the target/<subject>/ folder to remove",
-    )
-    atr.add_argument("--message", required=True, help="the commit message")
 
 
 def _configure_command_43(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
@@ -1345,32 +999,6 @@ def _configure_command_43(sub: _Subcommands, common: argparse.ArgumentParser) ->
         help="the built files to remove, comma-separated",
     )
     abr.add_argument("--message", required=True, help="the commit message")
-
-
-def _configure_command_44(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    acm: argparse.ArgumentParser = sub.add_parser(
-        "arch-commit",
-        help="commit the architecture files an integration changed and push; runs no `bd` command",
-        parents=[common],
-    )
-    acm.add_argument(
-        "--arch-root",
-        required=True,
-        help="the architecture directory the files sit under",
-    )
-    acm.add_argument(
-        "--files",
-        default="",
-        help="the integrated files to commit, comma-separated",
-    )
-    acm.add_argument(
-        "--files-from",
-        type=Path,
-        default=None,
-        help="instead of --files: the `all` list of an arch-integration-files files file",
-    )
-    acm.add_argument("--message", required=True, help="the commit message")
 
 
 def _configure_command_45(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
@@ -1439,7 +1067,6 @@ def _configure_command_47(sub: _Subcommands, common: argparse.ArgumentParser) ->
 
 
 _COMMAND_CONFIGURATORS: tuple[Callable[[_Subcommands, argparse.ArgumentParser], None], ...] = (
-    _configure_command_1,
     _configure_command_2,
     _configure_command_3,
     _configure_command_4,
@@ -1461,19 +1088,9 @@ _COMMAND_CONFIGURATORS: tuple[Callable[[_Subcommands, argparse.ArgumentParser], 
     _configure_command_29,
     _configure_command_30,
     _configure_command_31,
-    _configure_command_32,
     _configure_command_33,
-    _configure_command_34,
-    _configure_command_35,
-    _configure_command_36,
-    _configure_command_37,
-    _configure_command_38,
     _configure_command_39,
-    _configure_command_40,
-    _configure_command_41,
-    _configure_command_42,
     _configure_command_43,
-    _configure_command_44,
     _configure_command_45,
     _configure_command_46,
     _configure_command_47,
@@ -1520,22 +1137,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _required[T](value: T | None) -> T:
-    """Require a value present for the selected command.
-
-    Returns:
-        The supplied value.
-
-    Raises:
-        ValueError: A required command option is absent.
-
-    """
-    if value is None:
-        message: str = "Required command option is absent"
-        raise ValueError(message)
-    return value
-
-
 def _required_text(value: str | Path | None) -> str:
     """Require the string variant of a command option.
 
@@ -1576,7 +1177,6 @@ class _CommandOptions:
     directory: Path | None
     out: Path | None
     relay: Path | None
-    art_dir: Path | None
     level: str | None
     epic: str | None
     task: str | None
@@ -1614,44 +1214,16 @@ class _CommandOptions:
     repos: str | None
     also: str | None
     arch_files: str | None
-    arch_files_from: Path | None
     reviewed_from: Path | None
     reviewed_files: str | None
     arch_root: str | None
     keep: bool
     kept: str | None
-    target_dir: str | None
-    names: str | None
     save: Path | None
     against: list[Path]
     counts: bool
-    action: str | None
-    work_dir: str | None
-    stale_root: str | None
-    state: str | None
-    before: Path | None
-    report: Path | None
-    files_out: Path | None
-    last: Path | None
-    save_last: Path | None
-    accumulate: bool
-    review: Path | None
     files: Path | str | None
-    coverage_from: Path | None
-    roster: str | None
-    assign: str | None
-    proposal_team: str | None
-    round_plan: str | None
-    draft: str | None
-    baseline: str | None
-    subject: str | None
-    forbid: str | None
-    seed: bool
-    delta_dir: str | None
-    roots_only: bool
-    closure: str | None
     message: str | None
-    files_from: Path | None
     doc: Path | None
     ui: Path | None
     items: str | None
@@ -1692,11 +1264,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
         ),
         relay=check_type(
             getattr(namespace, "relay", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        art_dir=check_type(
-            getattr(namespace, "art_dir", None),
             Path | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
@@ -1885,11 +1452,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             str | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        arch_files_from=check_type(
-            getattr(namespace, "arch_files_from", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         reviewed_from=check_type(
             getattr(namespace, "reviewed_from", None),
             Path | None,
@@ -1915,16 +1477,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             str | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        target_dir=check_type(
-            getattr(namespace, "target_dir", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        names=check_type(
-            getattr(namespace, "names", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         save=check_type(
             getattr(namespace, "save", None),
             Path | None,
@@ -1940,139 +1492,14 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             bool,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        action=check_type(
-            getattr(namespace, "action", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        work_dir=check_type(
-            getattr(namespace, "work_dir", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        stale_root=check_type(
-            getattr(namespace, "stale_root", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        state=check_type(
-            getattr(namespace, "state", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        before=check_type(
-            getattr(namespace, "before", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        report=check_type(
-            getattr(namespace, "report", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        files_out=check_type(
-            getattr(namespace, "files_out", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        last=check_type(
-            getattr(namespace, "last", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        save_last=check_type(
-            getattr(namespace, "save_last", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        accumulate=check_type(
-            getattr(namespace, "accumulate", False),
-            bool,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        review=check_type(
-            getattr(namespace, "review", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         files=check_type(
             getattr(namespace, "files", None),
             Path | str | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        coverage_from=check_type(
-            getattr(namespace, "coverage_from", None),
-            Path | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        roster=check_type(
-            getattr(namespace, "roster", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        assign=check_type(
-            getattr(namespace, "assign", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        proposal_team=check_type(
-            getattr(namespace, "proposal_team", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        round_plan=check_type(
-            getattr(namespace, "round_plan", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        draft=check_type(
-            getattr(namespace, "draft", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        baseline=check_type(
-            getattr(namespace, "baseline", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        subject=check_type(
-            getattr(namespace, "subject", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        forbid=check_type(
-            getattr(namespace, "forbid", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        seed=check_type(
-            getattr(namespace, "seed", False),
-            bool,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        delta_dir=check_type(
-            getattr(namespace, "delta_dir", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        roots_only=check_type(
-            getattr(namespace, "roots_only", False),
-            bool,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        closure=check_type(
-            getattr(namespace, "closure", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         message=check_type(
             getattr(namespace, "message", None),
             str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        files_from=check_type(
-            getattr(namespace, "files_from", None),
-            Path | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
         doc=check_type(
@@ -2223,12 +1650,7 @@ def _dispatch_arch_approve(args: _CommandOptions, head: JsonObject) -> JsonObjec
         The selected command result.
 
     """
-    files: list[str]
-    files = (
-        files_from(args.arch_files_from, "touched")
-        if args.arch_files_from
-        else split_ids(_required_text(args.arch_files))
-    )
+    files: list[str] = split_ids(_required_text(args.arch_files))
     if args.dry_run:
         return json_object({
             **head,
@@ -2268,16 +1690,6 @@ def _dispatch_arch_constraints_restore(args: _CommandOptions, head: JsonObject) 
     return json_object({**head, **restore_constraints(_required_text(args.arch_root), _required_text(args.kept))})
 
 
-def _dispatch_arch_target_names(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-target-names command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({**head, **target_names(_required_text(args.target_dir), split_ids(_required_text(args.names)))})
-
-
 def _dispatch_arch_snapshot(args: _CommandOptions, head: JsonObject) -> JsonObject:
     """Execute the arch-snapshot command selected by the CLI.
 
@@ -2304,91 +1716,6 @@ def _dispatch_arch_snapshot(args: _CommandOptions, head: JsonObject) -> JsonObje
     return json_object(result)
 
 
-def _dispatch_arch_revision(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-revision command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    why: str
-    if args.action == "mark":
-        if not args.state:
-            why = "arch-revision mark needs --state integrating or integrated"
-            return json_object({
-                **head,
-                "ok": False,
-                "error": why,
-                "summary": json_object({"ok": False, "error": why}),
-            })
-        return json_object({**head, **revision_mark(_required(args.arch_root), _required(args.work_dir), args.state)})
-    return json_object({**head, **revision_check(_required(args.arch_root), _required(args.work_dir), args.stale_root)})
-
-
-def _dispatch_saved_target(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the saved-target command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({**head, **saved_target(_required_path(args.art_dir))})
-
-
-def _dispatch_saved_span(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the saved-span command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({**head, **saved_span(_required_path(args.art_dir))})
-
-
-def _dispatch_arch_resume(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-resume command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **resume_facts(
-            _required_text(args.work_dir),
-            ResumeOptions(
-                roster=_required_text(args.roster),
-                assign=_required_text(args.assign),
-                team=_required_text(args.proposal_team),
-                plan=_required_text(args.round_plan),
-            ),
-        ),
-    })
-
-
-def _dispatch_arch_target(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-target command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **write_target(
-            _required_text(args.draft),
-            TargetOptions(
-                arch_root=_required_text(args.arch_root),
-                subject=_required_text(args.subject),
-                forbid=split_ids(_required_text(args.forbid)),
-                dry_run=args.dry_run,
-                baseline=_required_text(args.baseline),
-                seed=args.seed,
-            ),
-        ),
-    })
-
-
 def _dispatch_arch_state(args: _CommandOptions, head: JsonObject) -> JsonObject:
     """Execute the arch-state command selected by the CLI.
 
@@ -2397,40 +1724,6 @@ def _dispatch_arch_state(args: _CommandOptions, head: JsonObject) -> JsonObject:
 
     """
     return json_object({**head, **arch_states(split_ids(_required_text(args.arch_files)), arch_root=args.arch_root)})
-
-
-def _dispatch_arch_delta(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-delta command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    listing: JsonObject = json_object(
-        head | delta_items(_required_text(args.delta_dir), with_closure=not args.roots_only),
-    )
-    if args.save is not None:
-        args.save.parent.mkdir(parents=True, exist_ok=True)
-        args.save.write_text(json.dumps(listing, indent=2) + "\n", encoding="utf-8")
-        listing["saved"] = str(args.save)
-    return json_object(listing)
-
-
-def _dispatch_arch_closure(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-closure command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **write_closure(
-            json.loads(Path(_required(args.closure)).read_text(encoding="utf-8")),
-            _required_text(args.delta_dir),
-            dry_run=args.dry_run,
-        ),
-    })
 
 
 def _dispatch_closure_edges(args: _CommandOptions, head: JsonObject) -> JsonObject:
@@ -2443,23 +1736,6 @@ def _dispatch_closure_edges(args: _CommandOptions, head: JsonObject) -> JsonObje
     return json_object({
         **head,
         **closure_task_edges(_span_stories(_required_path(args.dir), split_ids(_required_text(args.repos)))),
-    })
-
-
-def _dispatch_arch_target_remove(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-target-remove command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **remove_target(
-            _required_text(args.arch_root),
-            _required_text(args.target_dir),
-            message=_required_text(args.message),
-        ),
     })
 
 
@@ -2476,61 +1752,6 @@ def _dispatch_arch_built_remove(args: _CommandOptions, head: JsonObject) -> Json
             _required_text(args.arch_root),
             split_ids(_required_text(args.files)),
             message=_required_text(args.message),
-        ),
-    })
-
-
-def _dispatch_arch_commit(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-commit command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    files: list[str]
-    files = files_from(args.files_from, "all") if args.files_from else split_ids(_required_text(args.files))
-    return json_object({
-        **head,
-        **commit_integration(_required_text(args.arch_root), files, message=_required_text(args.message)),
-    })
-
-
-def _dispatch_arch_integration_files(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-integration-files command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **integration_files(
-            _required_text(args.arch_root),
-            IntegrationOptions(
-                before=_required_path(args.before),
-                report=_required_path(args.report),
-                files_out=_required_path(args.files_out),
-                last=args.last,
-                save_last=args.save_last,
-                accumulate=args.accumulate,
-            ),
-        ),
-    })
-
-
-def _dispatch_arch_review_check(args: _CommandOptions, head: JsonObject) -> JsonObject:
-    """Execute the arch-review-check command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    return json_object({
-        **head,
-        **review_check(
-            _required_path(args.review),
-            files=_required_path(args.files),
-            coverage_from=_required_path(args.coverage_from),
         ),
     })
 
@@ -3061,22 +2282,10 @@ _EARLY_COMMANDS: dict[str, Callable[[_CommandOptions, JsonObject], JsonObject]] 
     "arch-approve": _dispatch_arch_approve,
     "arch-constraints": _dispatch_arch_constraints,
     "arch-constraints-restore": _dispatch_arch_constraints_restore,
-    "arch-target-names": _dispatch_arch_target_names,
     "arch-snapshot": _dispatch_arch_snapshot,
-    "arch-revision": _dispatch_arch_revision,
-    "saved-target": _dispatch_saved_target,
-    "saved-span": _dispatch_saved_span,
-    "arch-resume": _dispatch_arch_resume,
-    "arch-target": _dispatch_arch_target,
     "arch-state": _dispatch_arch_state,
-    "arch-delta": _dispatch_arch_delta,
-    "arch-closure": _dispatch_arch_closure,
     "closure-edges": _dispatch_closure_edges,
-    "arch-target-remove": _dispatch_arch_target_remove,
     "arch-built-remove": _dispatch_arch_built_remove,
-    "arch-commit": _dispatch_arch_commit,
-    "arch-integration-files": _dispatch_arch_integration_files,
-    "arch-review-check": _dispatch_arch_review_check,
     "spec-ui-append": _dispatch_spec_ui_append,
     "recon-facts": _dispatch_recon_facts,
     "cds-bundles": _dispatch_cds_bundles,
@@ -3253,7 +2462,6 @@ def main(argv: list[str] | None = None) -> int:
         GraphError,
         HierarchyError,
         SpecUiError,
-        ResumeError,
         ReconError,
         relay.RelayError,
         rubric.WsjfError,

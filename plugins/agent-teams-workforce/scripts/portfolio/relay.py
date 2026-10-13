@@ -9,8 +9,8 @@ trusted; both are checked deterministically:
   argument list after it. A command line typed differently from the one the script built is
   refused with exit 3 before anything runs.
 - `--relay FILE`: the full result is written to FILE as `{"command": ..., "result": ...}`, and
-  stdout carries only the result's relay VIEW, the few facts the script branches on (for
-  `arch-resume` see `view`), flattened to one object of scalars (`flatten`), plus `~file`,
+  stdout carries only the result's relay VIEW, the few facts the script branches on (see
+  `view`), flattened to one object of scalars (`flatten`), plus `~file`,
   `~sha256`, `~bytes` (FILE's path, SHA-256 and size), `~exit` and `~checksum`, the SHA-256 of
   the canonical JSON of `{exit, view}`; its canonical ASCII JSON is base64-encoded after
   `RELAY64v1:` on one line (`line`). The runner returns that line verbatim; the script parses
@@ -166,20 +166,7 @@ def _counted(result: JsonObject, keys: tuple[str, ...]) -> JsonObject:
 
 #: Per command, the lists its relay view carries as counts; the names stay in the relay file.
 COUNTED: Final[dict[str, tuple[str, ...]]] = {
-    "arch-integration-files": (
-        "touched",
-        "deleted",
-        "all",
-        "unreported",
-        "section2",
-        "outside",
-        "changedSinceLast",
-        "reportedTouched",
-        "reportedDeleted",
-    ),
-    "arch-review-check": ("missed", "coverageUnverified"),
     "arch-approve": ("promoted", "unchanged", "noFrontmatter", "wouldApprove"),
-    "arch-commit": ("files",),
 }
 
 
@@ -209,7 +196,7 @@ def view(command: str, result: JsonObject) -> JsonObject:
     """Select the part of a command's result the workflow script receives.
 
     Returns:
-        For an error, only the error; for `arch-resume`, the whole result; for a command in
+        For an error, only the error; for a command in
         WHITELIST, those keys; for a command in COUNTED, its lists as counts; for
         `arch-snapshot --counts`, each diff's lists as counts; otherwise the result without
         the ECHOED keys.
@@ -225,10 +212,6 @@ def view(command: str, result: JsonObject) -> JsonObject:
     error: JsonValue = result.get("error")
     if error:
         return {"error": error}
-    if command == "arch-resume":
-        # Everything arch-resume prints reaches the workflow: arch-resume decides what it
-        # prints, so no list of its keys is kept here to fall out of step with it.
-        return result
     if command in WHITELIST:
         return {k: result[k] for k in WHITELIST[command] if k in result}
     out: JsonObject = {k: v for k, v in result.items() if k not in ECHOED}
