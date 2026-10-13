@@ -1,20 +1,24 @@
 ---
-description: "Start a PRD at the top of the pipeline — Epic, TRD, Spec+Story per repo, Tasks"
-argument-hint: "<prd-path-or-title> [repo,repo,... — an override, rarely needed]"
-allowed-tools: [Bash, Read, Glob, Skill, Workflow]
+description: "Resolve a PRD's Epic and report where its elaboration stands; the pipeline's driver runs elaboration"
+argument-hint: "<prd-path-or-title>"
+allowed-tools: [Bash, Read, Glob, Skill]
 ---
 
 # Start a PRD
 
-Take `$ARGUMENTS` from a PRD document to an emitted Epic → Story → Task hierarchy.
+Take `$ARGUMENTS` from a PRD document to the Epic the pipeline elaborates, and report where
+that Epic's elaboration stands.
 
-The pipeline elaborates an Epic and reads the PRD linked to it. This command starts
-from the PRD document, resolves the Epic linked to it, and hands that Epic to the same
-procedure `/agent-teams-workforce:work-bead <epic-id>` uses.
+The pipeline elaborates an Epic and reads the PRD linked to it. Elaboration, `prd-to-spec`,
+runs in the Python orchestrator (`${CLAUDE_PLUGIN_ROOT}/orchestrator/run.py`), and the
+pipeline's driver starts it for an Epic its elaboration lane selects. **This command dispatches
+nothing**: there is no workflow script for elaboration, and a session does not start the
+orchestrator or the driver. It starts from the PRD document, resolves the Epic linked to it, and
+hands that Epic to the same procedure `/agent-teams-workforce:work-bead <epic-id>` uses.
 
 ## 1. Locate the PRD
 
-The first argument is a path or a title. If it is a title, search the PRD directory: the
+The argument is a path or a title. If it is a title, search the PRD directory: the
 directory in the PRD_DIR_ENV variable the `pipeline-contracts` skill names
 (`${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/SKILL.md`, schema
 `schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`). Read the name from the skill's
@@ -34,7 +38,7 @@ When `PRD_DIR` printed empty, report `<PRD_DIR_VAR> is unset` and stop. Otherwis
 grep -ril -- "<title>" "<PRD_DIR>"
 ```
 
-Read the PRD. Extract `title` and `body`. Stop and report if you cannot find it —
+Read the PRD. Stop and report if you cannot find it —
 do not invent a PRD from the title.
 
 ## 2. Resolve the Epic linked to the PRD
@@ -51,27 +55,18 @@ atw-bd list --type epic --label "prd:<prd file stem>"
 - Not found → stop and report that the PRD has no linked Epic. A PRD and its Epic are
   written together when the PRD is created; this command creates neither.
 
-Every other condition — the Epic is scored, the Epics it depends on are elaborated, it
-is not owned by another run — is checked by `prd-to-spec` at its start, which refuses
-with a named reason. Report a refusal as it comes back.
+Whether the Epic is selected is the driver's decision: it selects an Epic that is open, scored,
+with no unmet prerequisite, and whose elaboration state is ready, or in progress with no live
+run owning it. This command changes none of that.
 
 ## 3. Hand off
 
-Invoke the `elaborate-prd-epic` skill with the resolved pair. Pass a BRD path only in the uncommon case that a BRD exists —
-it is optional, and a PRD never has to reference one. It owns the `prd-to-spec` dispatch and the
-report. The run writes the hierarchy into beads itself — you verify and report
-what it wrote, you do not write it.
+Invoke the `elaborate-prd-epic` skill with the Epic's `id` and the PRD path. It reports the
+Epic's elaboration state, where the Epic's step journal stands, and what earlier dispatches
+wrote into beads. You report what it found; you write nothing.
 
-**Do not work out the repo span and do not pass one.** The span is an OUTPUT of
-the run: `prd-to-spec` rules it after the architecture decision, from the design
-that decision produced and from the repositories that actually exist. It cannot be
-known before then — the span is a property of work no repository contains yet.
-
-The second argument is an override for the case where a human has already decided
-the span and wants this one run pinned to it. Pass it only when the invoker named
-it. It is an argument, never a setting: nothing stores it, and the next run without
-it is scoped afresh, which is what stops a re-run after an adjustment inheriting a
-span computed before the adjustment.
+**Do not work out the repo span.** The span is an output of the run: its span step reads it from
+the matrix after the architecture is approved.
 
 Do not re-implement any of that here. If it needs to change, change it there so
 both doors change together.

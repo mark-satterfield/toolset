@@ -5,14 +5,21 @@ description: The one place for the pipeline contracts agents and code share outs
 
 # Pipeline contracts
 
-Two contracts live here. Each is defined once, in this skill's `schemas/`; agents read this file and
-the schema, and code loads the generated module. Nothing outside this skill restates a variable
-name, a denied tool, a composite id, a phase id or title, a role set or a progress marker.
+Three contracts live here. Each is defined once, in this skill's `schemas/`; agents read this file
+and the schema, and code loads the generated module. Nothing outside this skill restates a variable
+name, a denied tool, a composite id, a phase id or title, a role set, a progress marker or a field
+of the step journal.
 
 | Contract | Definition | Generated module | Generator | Staleness check |
 |---|---|---|---|---|
 | Driver surface and environment | [schemas/driver-surface.schema.json](schemas/driver-surface.schema.json) | `scripts/driver_surface_types.py` | `scripts/generate_types.py` | `scripts/check_generated.py` |
 | Composite names and phases | [schemas/composites.json](schemas/composites.json) under [schemas/composites.schema.json](schemas/composites.schema.json) | `scripts/composites_contract.py`, `scripts/shared-blocks/composite-phases.js` (plugin root) | `scripts/generate_composites.py` | `scripts/check_composites_contract.py` |
+| Step journal (one file per bead: its steps, each with its status, its session, its inputs and its artifacts) | [schemas/step-journal.schema.json](schemas/step-journal.schema.json) | `scripts/step_journal_contract.py` | `scripts/generate_step_journal_contract.py` | the same script with `--check` |
+
+An agent reads and changes a step journal only through the command `atw-step-journal` (plugin
+`bin/`), whose behaviour is `orchestrator/core/step_journal.py`; the orchestrator and the driver
+call the same module. An elaboration run begins at the first step of the Epic's journal that is
+not done, and nothing else decides where it begins.
 
 Change a contract by editing its schema or `composites.json`, then run its generator. Each check exits
 1 when a generated file differs from what its source generates.
@@ -41,7 +48,8 @@ before it is killed.
 acted on. The account windows are `ACCOUNT_WINDOWS`; any other window is model-specific; a window is
 exhausted at `EXHAUSTED_UTILIZATION`.
 
-This contract carries no handback classification and no receipt data.
+This contract carries no handback classification: `orchestrator/core/handback_contract.py` defines
+it.
 
 ## Composite names and phases
 

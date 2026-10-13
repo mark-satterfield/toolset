@@ -26,8 +26,8 @@ color: blue
 
 Read artifact-handoff's Epic contracts for fields and completion rules. The brief carries only
 facts and paths. Read the relevant input files and produce the result at the exact output path.
-Python validates, publishes and records it. Never run submission/checkpoint helpers or author
-receipt metadata. Validation errors, when present, are another input file; repair those specific
+The workflow validates and records it. Never run submission or checkpoint helpers.
+Validation errors, when present, are another input file; repair those specific
 findings and retain valid content. No pipeline run, bead write, agent dispatch or self-approval.
 Never expose secrets, edit section 2, or touch apps/marketing repositories.
 

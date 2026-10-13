@@ -53,7 +53,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact; the glossary is the deliverable, not your commentary on it.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it. Align code-facing guidance with the naming the effective views and the repositories already use for events, handlers and infrastructure.
 - Validate before claiming done: cross-check every glossary term against the PRD, context map, and event model for contradictions; observed consistency, not absence of complaints, is the bar.
-- You never approve your own glossary and never write the checks that gate it; hand it to your required reviewers via the coordinator.
+- You never approve your own glossary and never write the checks that gate it; hand it to your required reviewers through whoever delegated the task.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — a definition inferred from context is not a provided fact.
 - Prefer the skills and tools provided to you over internal training.
 

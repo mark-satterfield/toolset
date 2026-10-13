@@ -51,11 +51,11 @@ So this skill demands exactly two things, and adds nothing to them.
 Nothing else is consulted. Not child counts, not whether Stories or Tasks already exist,
 not the Epic's age, not its history.
 
-This gate answers a person's question. What decides whether an Epic IS elaborated is
-`prd-to-spec`'s own start check, `depscore.py elaboration-start`, which every door into
-elaboration passes through: it requires the state rule above and also that the Epic is
-scored, that every Epic it depends on is in the `ELABORATION_DONE` state, and that no other run
-owns it.
+This gate answers a person's question. What decides whether an Epic IS elaborated is the
+pipeline's driver and `prd-to-spec`'s own claim. The driver selects an Epic only when the state
+rule above holds, the Epic is scored, its PRD resolves and every Epic it depends on is in the
+`ELABORATION_DONE` state. The claim at the start of a dispatch (`elaboration.start`) refuses an
+Epic that is not open, whose elaboration is done, or that another run owns.
 
 ## Result
 

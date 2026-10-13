@@ -35,7 +35,7 @@ if [ -z "${ARCH_VAR}" ]; then
   exit 1
 fi
 if [ -z "${ARCH}" ]; then
-  echo "REFUSED: ${ARCH_VAR} is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/, target/ and built/ folders) and does not run without it. Set ${ARCH_VAR} in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
+  echo "REFUSED: ${ARCH_VAR} is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/ and built/ folders) and does not run without it. Set ${ARCH_VAR} in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"

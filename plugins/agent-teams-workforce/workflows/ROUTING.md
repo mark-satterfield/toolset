@@ -15,7 +15,7 @@ before writing one.**
 
 | Composite | Front-end | For |
 |---|---|---|
-| `prd-to-spec` | epic-lifecycle → architecture (… → Closure) → arch-delta → repo-scoping ∥ trd-authoring → (prd-reconciliation → spec-authoring, per repo) → task-decomposition → cross-Story Task dependencies → finish (elaboration-finish) → arch-target-remove | a feature with no implementation-ready contract yet. It elaborates an existing Epic and refuses, with a named reason, one that is not open, not scored, waiting on an Epic whose elaboration is not `done`, or not `ready` or `in_progress` with no other owner. `depscore.py prd-parse` checks the PRD file — readable, not `superseded`, an H1, requirement headings with acceptance criteria under `## Requirements`, a non-empty `## Definition of Done` — and a failed check holds the Epic for a person; the PRD is never edited. The architecture step runs for every PRD and writes the Epic's target and delta under `target/<subject>/`; an owner concern or PRD defect holds the Epic before any Story exists. Every later phase reads the delta. `depscore.py arch-delta` lists its items, one per element the delta views show. `repo-scoping` places each item in a repository, and the span is the repositories the delta changes. The TRD states the architecture's obligations on the elements the delta adds or changes, citing view paths. Per repository, `prd-reconciliation` details each placed item against the code on `main` — one status from `$defs.ReconStatus` in the `artifact-handoff` skill's `schemas/recon.schema.json`, each citing `file:line` — and a failed detailing blocks that repository's Spec. Spec authoring specifies the change (`from → to`) for the items whose status is in `$defs.WorkStatus` only. Task decomposition makes Tasks for those items only (`depscore.py plan-tasks` refuses a Task that cites none), and an open Task of another Epic in the same repository that plans the work gets a `blocks` edge (`blockedByExternal`, written by `write-task`) instead of a duplicate. Each step WRITES what it authors into beads itself, keyed by `elab_key`: spec authoring writes the Story, task decomposition writes the Story's Tasks with their judged sizes and their `blocks` edges, and the cross-Story step writes the `blocks` edges between Stories. `elaboration-finish` scores the Epic and its Tasks and marks it `done` only when beads holds every Story, Task and edge the saved documents name; otherwise the run returns ok:false at stage `hierarchy-not-persisted` naming what is missing. Once the Epic is `done`, `depscore.py arch-target-remove` deletes `target/<subject>/` and commits the removal in the repository holding the architecture. |
+| `prd-to-spec` | not a workflow script: the Python orchestrator (`orchestrator/run.py`), started by the pipeline's driver. One dispatch claims the Epic and runs the steps of the Epic's step journal from the first that is not done: Open the run → Architecture → TRD → Specs and Stories (one container of steps per repository) → Tasks (one per repository) → Task edges → Score the Tasks → Apply the done rule → Story edges → Mark the Epic elaborated | a feature with no implementation-ready contract yet. It elaborates an existing Epic; the claim refuses, with a named reason, one that is not open, whose elaboration is done, or that another run owns. The driver selects only an Epic that is scored, has a PRD that resolves, waits on no Epic whose elaboration is not done, and is ready, or in progress with no live owner. In the Architecture step `aws-solutions-architect` establishes the architecture the PRD needs in the arc42 documents and has the TRD written; reviewers selected by rule review the unapproved content; a script approves it in the matrix and makes the reviewed documents effective. An owner concern of the decider, or a GitHub sign-in the run needs to create a repository, holds the Epic for a person. The repository span is read from the matrix: the elements the PRD's features are realized by, and what those depend on, that no pipeline has built, grouped by repository. Per repository, the spec steps write the contracts, the data model and the acceptance criteria, one review settles its findings, and the Story bead is written; the Task steps decompose the Story into sized Tasks, one step per Task bead write (an open Task of another Epic in the same repository that plans the work gets a `blocks` edge instead of a duplicate). Each step writes what it authors into beads itself, keyed by the elaboration key. The Task edges between Stories are written, the Tasks are scored, the done rule requires a Story and Tasks for every repository, and the Epic is marked elaborated. `orchestrator/specs/epic/prd-to-spec.md` describes it. |
 | `task-to-deploy` | workspace (the Story's branch) → infra-intent (an infrastructure Task) → baseline suite-run → red loop → green loop → refactor → documentation → final suite-run → commit | work whose spec/contract already exists and is implementation-ready — the Task's build contract names its repository, its spec documents and the architecture views it is designed against, and the run builds to it without ruling any architecture of its own. An infrastructure Task (a type or label in the infrastructure vocabulary, rule 2 below) runs `infra-intent` first and has `cdk-stack-author` as its Green implementer |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior. **On-demand only** — nothing routes here automatically; a bug reaches it after a person triages it (see [A Bug is never routed](#a-bug-is-never-routed)) |
 
@@ -42,9 +42,9 @@ Notes on order:
   identified this way is skipped, not dispatched.
 - **Spec-ready (rule 3) is checked before feature (rule 4)** on purpose. A
   feature that *already* has an implementation-ready spec skips prd-to-spec
-  re-derivation and goes straight to the build-and-deploy tail. Without a
-  `spec*`/`implementation` label, a feature falls through to rule 4 and runs
-  prd-to-spec first.
+  and goes straight to the build-and-deploy tail. Without a
+  `spec*`/`implementation` label, a feature falls through to rule 4 and is routed
+  to prd-to-spec.
 
 ### Ambiguity (rule 6)
 
@@ -119,8 +119,10 @@ None of it is a script in this folder. One tick:
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
    (`atw-bd update --status` / claim), so a second runner can't grab the same bead.
 3. **Route it.** Call `route-build` with `{ bead }` for a Task or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. A Bug can be handed to either — both skip it, naming triage. Neither reads `childCount`.
-   - composite is non-null → run that composite on-demand, dispatched by path
+   - composite is a build composite → run that composite on-demand, dispatched by path
      (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
+   - composite is `prd-to-spec` → dispatch nothing and report it: elaboration is not a workflow
+     script, and the pipeline's driver runs it.
    - composite is null → **report the skip** (id + reason) and leave the bead's
      status as it was.
 4. **Report the outcome** — composite result, or the skip reason.
@@ -138,8 +140,8 @@ implements it, and adding a `sweep.js` here would not work.
 
 **The Workflow runtime permits one level of nesting.** A leaf mini calls `agent()`
 and returns an artifact; a composite calls `workflow()` to stitch minis together.
-That is the one level, and it is already spent: `bug-fix` calls `tdd-red`,
-`prd-to-spec` calls `spec-authoring`, and so on. A sweep script that read `atw-bd ready`
+That is the one level, and it is already spent: `task-to-deploy` calls `tdd-red`,
+`tdd-green` and the other minis. A sweep script that read `atw-bd ready`
 and called `workflow('bug-fix')` per bead would be sweep → composite → mini, which is
 two levels, and the runtime throws. This is not a limitation to work around; it is why
 composites stay flat and why a full run is sequenced from outside rather than by
@@ -151,7 +153,7 @@ So the driver is a caller of the Workflow tool, never a workflow script. Two exi
 | Driver | What it is | When it drives |
 |---|---|---|
 | **The orchestrating session** (`/loop`, or `/agent-teams-workforce:next-task` / `:work-bead` one bead at a time) | A Claude Code session running the loop below with the Workflow tool | Interactive and semi-attended work |
-| **An external supervisor the host project provides** | A process that claims beads, dispatches headless sessions, and journals every run | Long unattended campaigns |
+| **An external supervisor the host project provides** | A process that claims beads, dispatches headless sessions for the build composites, starts the Python orchestrator for `prd-to-spec`, and journals every run | Long unattended campaigns, and every elaboration |
 
 The consequence is worth stating plainly: **"unattended" is only as unattended as
 whatever is driving it.** A `/loop` sweep stops when its session stops. An external

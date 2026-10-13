@@ -73,7 +73,7 @@ The router returns `{action, composite, reason}`:
 | action | What to do |
 | --- | --- |
 | `work` | Dispatch that composite (step 3b, then 4) |
-| `elaborate` | **Go to step 5.** No worktree, no composite dispatch from here. |
+| `elaborate` | **Go to step 5.** Nothing is dispatched from here: the pipeline's driver runs elaboration. |
 | `skip` | **Stop.** Report the id and the reason. Do not dispatch anything. |
 
 A skip is an outcome, not an obstacle. Never relabel a bead to make it routable —
@@ -93,8 +93,8 @@ Task's contract names, not a worktree you built. A resumed run finds its earlier
 anyway: `workspace` recognises a linked worktree on a feature branch for this bead and
 reuses it.
 
-For an `elaborate` there is no worktree at all: that path authors documents and returns
-bead specifications, so there is no feature branch for it to land on.
+For an `elaborate` there is no worktree at all: elaboration authors documents and writes
+beads, so there is no feature branch for it to land on.
 
 ## 4. Dispatch — `work` only
 
@@ -114,7 +114,7 @@ Pass it as-is, adding the Task's
 `python3 $ROOT/skills/artifact-handoff/scripts/infra_vocabulary.py` as the
 `infraVocabulary` argument (together they tell `task-to-deploy` an infrastructure Task); do not rebuild it by hand and do
 not drop fields from it. If `missing` names the repository, the Task's build contract is incomplete:
-the repository is ruled during elaboration, so report the id and that reason and stop — never
+elaboration records the repository on the Task, so report the id and that reason and stop — never
 work out a repository yourself.
 
 The project's configuration reaches the composite as arguments, read from the environment
@@ -146,11 +146,14 @@ The bead is an Epic or a Story. Nothing decomposes
 it. Its **document** is what decomposes, and the beads beneath it are what that
 chain deposits.
 
-A Story is elaborated through its parent Epic: `prd-to-spec` takes an Epic and its PRD,
-and re-specifies every Story beneath it, so a Story passed in the Epic's place would be
-elaborated as if it were an Epic. For a Story, take its parent Epic from the parent
-chain (step 1) and continue below with that Epic. A Story with no parent Epic: report
-that and stop.
+**This command dispatches no elaboration.** `prd-to-spec` runs in the Python orchestrator
+(`$ROOT/orchestrator/run.py`), and the pipeline's driver starts it: the driver's elaboration
+lane selects the Epic, builds its dispatch arguments and reads its handback. There is no
+workflow script for it, and a session does not start the orchestrator or the driver.
+
+A Story is elaborated through its parent Epic: `prd-to-spec` takes an Epic and its PRD. For a
+Story, take its parent Epic from the parent chain (step 1) and continue below with that Epic.
+A Story with no parent Epic: report that and stop.
 
 Resolve the Epic's PRD. PRDs live under
 `$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
@@ -159,29 +162,25 @@ Resolve the Epic's PRD. PRDs live under
 ls -R "$ATW_PRD_DIR"
 ```
 
-- Found → read it and extract `title` and `body`.
-- Not found → stop and report that the Epic has no linked PRD. This command does not
-  write a PRD.
+- Found → note its path.
+- Not found → report that the Epic has no linked PRD; the driver skips an Epic whose PRD
+  does not resolve. This command does not write a PRD.
 
-Then invoke the `elaborate-prd-epic` skill with the resolved pair, passing the Epic with
-its `id`. It owns the `prd-to-spec` dispatch and the report. Check nothing about the
-Epic's readiness here: `prd-to-spec` checks, at its start, that the Epic is open and
-scored, that every Epic it depends on is elaborated, and that its `elaboration_state` is
-`ready` or `in_progress` (allowed values defined in
-`$ROOT/skills/beads-contract/schemas/bead-metadata.schema.json`) with no other owner, and refuses with a named reason otherwise. The run writes the returned hierarchy into
-beads itself; the skill verifies what landed rather than writing it by hand. `/agent-teams-workforce:start-prd` hands off to the same skill from
-the other door — do not re-implement any of it here.
+Then invoke the `elaborate-prd-epic` skill with the Epic's `id` and the PRD path. It reports
+the Epic's elaboration state, where the Epic's step journal stands and what earlier
+dispatches wrote. `/agent-teams-workforce:start-prd` hands off to the same skill from the
+other door.
 
-Do not work out a repo span. `prd-to-spec` RULES the span during the run, after
-the architecture decision, and it is recomputed every run rather than stored — so
-a span derived here would pin the answer to what was visible before the design
-existed, and a re-run after an adjustment would inherit it.
+Do not work out a repo span. The span step of the run reads it from the matrix, after the
+architecture is approved.
 
 ## 6. Report
 
 One line each, no more:
 
-- which composite ran, and why the router chose it
+- which composite ran, and why the router chose it; for an `elaborate`, that the pipeline's
+  driver runs elaboration and this command dispatched nothing, with what the
+  `elaborate-prd-epic` skill reported
 - the phase it reached
 - for a Task, the commit on its Story branch (a Task deploys nothing and opens no pull request); for a bug, the deploy result
 - the `stage` and `headline` of a run that stopped, **verbatim**

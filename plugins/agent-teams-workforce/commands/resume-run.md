@@ -9,6 +9,10 @@ allowed-tools: [Bash, Read, Workflow]
 Continue the run `$ARGUMENTS` was interrupted from — or establish that it must not
 be resumed, which is the more important half.
 
+This command resumes a run of a workflow script. An elaboration (`prd-to-spec`) is not one: it
+has no workflow run id, and the next dispatch by the pipeline's driver continues it at the first
+step its step journal does not mark done.
+
 ## 1. Establish what the run left behind
 
 A killed run does not clean up. Before anything else, find out what is on disk.
@@ -125,7 +129,7 @@ it before diagnosing, rather than assuming a cached result was non-empty.
 Restart, and say why, when any of these holds:
 
 1. The plugin version changed, or the script was edited.
-2. The work already on disk is known to be **wrong** — a resumed Red will survey
+2. The work already on disk is known to be **wrong** — a resumed Red will read
    those tests and may keep them. Clean the tree first; no run argument makes Red
    ignore tests that are already there.
 3. The run died in Green with production code half-applied and no one has looked

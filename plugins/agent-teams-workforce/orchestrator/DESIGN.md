@@ -10,14 +10,14 @@ under `specs/epic/` describe each part of the flow step by step.
 
 Names used throughout:
 
-- `<plugin>` = `/Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-workforce`
+- `<plugin>` = the `agent-teams-workforce` plugin (`$ATW_PLUGIN_ROOT`)
 - `<orch>` = `<plugin>/orchestrator`
-- `<control>` = `$ATW_CONTROL_REPO` (today `/Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke`)
+- `<control>` = `$ATW_CONTROL_REPO`, the control repository
 - `<driver>` = `<control>/ops/sdlc-automation`
-- `<work>` = `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (the Epic's working directory;
+- `<work>` = `<control>/.claude/workflow-runs/artifacts/<epic-id>/` (the Epic's work directory;
   `core/io.py` `work_directory`)
 - `<arch>` = `$ATW_ARCH_PATH`
-- `<config>` = `$CLAUDE_CONFIG_DIR` of the pipeline (today `~/.claude-skillspoke`)
+- `<config>` = `$CLAUDE_CONFIG_DIR` of the pipeline
 - `<installPath>` = the installed plugin the pipeline runs, from `pluginversion.running_dir()`
 
 ## 0. Evidence used
@@ -80,9 +80,10 @@ Layout:
 | Path | Holds |
 |---|---|
 | `<orch>/run.py` | argument parsing, the flow registry, handback writing, signal handling, the top-level handler of section 6.7 |
-| `<orch>/core/` | the step journal and its runner, the registry of step code, the agent runner and launcher, the artifact store, the tools layer (`bd`, git, `gh`, `polyrepo.py`, `cdk`), the section 2 guard, the event writer |
-| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `elaboration_steps.py`, `elaboration_result.py`, and the phase functions `spec_authoring.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py` |
-| `<orch>/checks/brief_check.py` | the brief and contract-skill check (section 2.3, PLAN S03e) |
+| `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `skills.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
+| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
+| `<orch>/port_journal.py` | builds the step journal of a bead that has saved run data and no journal; the driver's `journalport.py` calls it |
+| `<orch>/checks/brief_check.py` | the brief and contract-skill check (section 2.3) |
 | `<orch>/checks/run_all.py` | the one command that runs every check in `<orch>/checks/` |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
 
@@ -101,19 +102,19 @@ The control repository comes from `ATW_CONTROL_REPO`, then `SKILLSPOKE_CC`, or `
 A check whose declared argument cannot be supplied is reported `SKIPPED` and the command exits
 non-zero. No hook runs this command.
 
-The flow registry holds one flow, `prd-to-spec`. Its phases are functions called by it, not
-separate entries: the only entry into the Epic pipeline is the driver (CONTEXT 7.18).
+The flow registry holds one flow, `prd-to-spec`. Its work is the steps of the Epic's journal
+(section 2.1), not separate flows: the only entry into the Epic pipeline is the driver
+(CONTEXT 7.18).
 
 **Reasons and evidence.**
 - The flows call the plugin's agent definitions, skills and `scripts/portfolio/` modules, and must
-  run against the same version of them. The driver already resolves the installed version
+  run against the same version of them. The driver resolves the installed version
   (`pluginversion.running_dir()` reads `installed_plugins.json` `installPath`), so a dispatch that
   runs `<installPath>/orchestrator/run.py` gets matching code and agents.
 - A child process per dispatch keeps a crash out of the supervisor, picks up a newly installed
-  version on the next dispatch, and lets the driver keep killing by process group as
-  `headless._kill_group` does today.
+  version on the next dispatch, and lets the driver stop it by process group.
 - The Agent SDK is not used (section 5.1), so the package needs nothing beyond the interpreter the
-  driver already runs.
+  driver runs.
 
 ## 2. Step model (S02 item 2)
 
@@ -128,22 +129,30 @@ asks the journal for the next step, runs it, and repeats until no step is left o
 it begins at the first step without child steps that is not done.
 
 The outermost steps of an Epic's journal are Open the run, Architecture, TRD, Specs and Stories,
-Tasks, Task edges, Score the Tasks, Story edges and Mark the Epic elaborated
+Tasks, Task edges, Score the Tasks, Apply the done rule, Story edges and Mark the Epic elaborated
 (`flows/prd_to_spec.py` `outermost_steps`). A step with child steps is never run itself. Steps
 found at run time are added by the step that finds them: the open-run step plans the architect's
 step and the check after it, the check plans the reviewers and the promotion, the span step plans
-one spec step per repository, and a spec step plans its repository's Task step.
+one container per repository with its first step, that first step plans the repository's spec
+steps, and the Story bead write plans the repository's container under Tasks.
 
 A step without child steps is one of two kinds, and the registry (`core/journal_registry.py`) finds
 its code:
 
-- **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`):
-  `prd_to_spec.open_run`, `atw-matrix check; atw-matrix unapproved`, `atw-matrix approve`,
-  `trd.confirm`, `atw-matrix prd --closure`, `spec_authoring.run`, `task_decomposition.run`,
-  `task_edges.run`, `elaboration.score`, `storyedges.story_edges`, `elaboration.finish`. A handler
-  returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
-- **Agent step.** The step's `agent` name is the key of a launch builder (`@agent_step(...)`), which
-  is registered by role for every agent whose definition states that role. The builder returns an
+- **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`). The
+  keys are defined in `flows/architecture_files.py`, `flows/repo_scoping.py` and
+  `flows/elaboration_files.py`: `prd_to_spec.open_run`, `architecture.earlier_work`,
+  `atw-matrix check; atw-matrix unapproved`, `atw-matrix approve`, `trd.confirm`,
+  `atw-matrix prd --closure`, `spec_authoring.context`, `cdsbundles.list_bundles`,
+  `spec_authoring.normalize_ui`, `specui.spec_ui_append`, `spec_authoring.story_document`,
+  `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
+  `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `task_decomposition.record`,
+  `beadwrite.closure_task_edges`, `task_edges.listing`, `beadwrite.write_all_task_edges`,
+  `elaboration.score`, `elaboration.done_rule`, `storyedges.story_edges`, `elaboration.finish`. A
+  handler returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
+- **Agent step.** The step's `agent` name is the key of a launch builder (`@agent_step(...)`). A
+  builder of the architecture team is registered for every agent whose definition states its role;
+  the builders of the spec, Task and Task edge agents are registered by agent name. The builder returns an
   `AgentLaunch`: the output path, the validator of the output, the one-line outcome, the readable
   directories, the labelled files of the brief, and an `accept` function that says what the step
   records when the output is accepted.
@@ -181,42 +190,35 @@ The dispatch result (the handback, section 4.4) is assembled from the journal's 
 
 ### 2.2 How `scripts/portfolio/` and the other tools are called
 
-**Decision.** In-process import for every `scripts/portfolio/` module (`matrixstore`, `matrixsync`,
-`matrixreview`, `matrixquery`, `matrixexpertise`, `beadgraph`, `beadwrite`, `hierarchy`,
-`elaboration`, `scoring`, `storyedges`, `cdsbundles`, `specui`).
-Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through `beadgraph`),
-`git`, `gh`, `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py <cmd> --json`, `cdk`.
+**Decision.** In-process import for every `scripts/portfolio/` module the flow uses (`matrixstore`,
+`matrixsync`, `matrixreview`, `matrixquery`, `matrixexpertise`, `beadgraph`, `beadwrite`,
+`hierarchy`, `elaboration`, `storyedges`, `cdsbundles`, `specui`, `archstate`).
+Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through
+`beadgraph.run_bd`), `git`, `gh`, `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py <cmd>
+--json`, `cdk` (`core/tools.py` `Tools.command`, `git`, `polyrepo`, `cdk`).
 
-**This overturns the PLAN recommendation** (subprocess for `depscore.py` subcommands). Evidence:
-- `depscore.py` is a CLI over these modules (its docstring lists each subcommand as a call into
-  them); calling it as a subprocess returns only an exit status and printed JSON.
-- The modules raise typed exceptions: `beadgraph.GraphError` with a `cause` field,
-  `scoring.ScoringError`, `specui.SpecUiError`, `archresume.ResumeError`. A subprocess reduces them
-  to exit 2 and a JSON `{error, cause}` (`depscore.main`). The `GraphError.cause` field is kept as
-  the carrier, and section 6.2 changes how it is set (from structured facts, not from `bd`'s
-  standard error).
-- The specs already plan in-process calls: `task-decomposition.md` §5 ("calling the existing
-  library functions directly (no `depscore.py` subprocess)"), `spec-authoring.md` step 12
-  (`beadwrite.write_story` in-process), `prd-to-spec.md` step 14 (`elaboration.finish` logic
-  in-process).
+**Reasons.**
+- `depscore.py` is the command line over these modules for the workflows and the owner; calling it
+  as a subprocess returns only an exit status and printed JSON.
+- The modules raise typed exceptions, and `beadgraph.GraphError` carries a `cause` field set from
+  structured facts (section 6.2). An in-process call keeps the exception and its cause.
 - The orchestrator runs from the same plugin version as the modules (section 1). The driver modules
   it loads from the control repository are the ones `core/driver_contracts.py` names.
 
-**What an in-process call must handle** (the verifier's finding 9):
-- Every deterministic step body runs inside `try ... except Exception`; an exception that is not a
-  `StepError` becomes `StepError(<step's stage>, "other", <path of a file holding the
-  traceback>)`. The typed exceptions above map as section 6.1 says.
-- Imported calls run under `contextlib.redirect_stdout(sys.stderr)`, so nothing a module prints can
-  enter the event channel (section 4.1).
+**What an in-process call handles.**
+- A step calls a module function through `Tools.portfolio` (one call) or `Tools.operation` (a whole
+  operation that re-reads its inputs before it writes). An exception that is not a `StepError`
+  becomes `StepError(<stage>, <cause>, <path of an evidence file holding the traceback>)`; the
+  cause is the `GraphError`'s own, and `other` for every other exception (section 6.1).
+- Imported calls run under `contextlib.redirect_stdout(sys.stderr)`, one at a time, so nothing a
+  module prints can enter the event channel (section 4.1).
 - `run.py`'s top-level handler catches `BaseException` (section 6.7), so `SystemExit` or
   `KeyboardInterrupt` raised in a worker thread and re-raised by `future.result()` still produces a
   handback.
-- A module that starts a subprocess must give it a timeout. The ones that do not today are listed
-  in the modules themselves.
+- Every subprocess the tools layer starts has a timeout.
 
-`depscore.py` stays the command line over these modules for the workflows and the owner. The
-orchestrator calls the module functions themselves: the scoring step calls `elaboration.finish`
-and the Story edge step calls `storyedges.story_edges` (section 11.6).
+The scoring step and the marking step call `elaboration.finish`, and the Story edge step calls
+`storyedges.story_edges` (section 11.6).
 
 ### 2.3 Briefs carry facts only
 
@@ -294,8 +296,8 @@ Every step of spec authoring, the spec review, Task decomposition, the Task edge
 its own journal step, planned by the step that discovers it: the span step plans one container per
 repository, each repository's first step plans that repository's steps, a review plans the
 correction its result calls for, a plan plans one step per Task bead write. `specs/epic/` lists
-them. No step keeps a record of its own about what is done: no receipt beside a file, no input
-hash, no list of completed steps. A step that writes a bead finds the bead by its elaboration key,
+them. The journal is the one record of what is done; a step keeps none of its own. A step that
+writes a bead finds the bead by its elaboration key,
 so running it again after an invalidation updates that bead and creates no second one.
 
 ### 3.3 What the orchestrator names itself
@@ -310,29 +312,29 @@ from the driver.
 
 **Decision.** The orchestrator writes one JSON object per line on stdout and nothing else there
 (diagnostics go to stderr, and imported code runs with stdout redirected to stderr, section 2.2).
-The driver captures stdout to the run's `.out` file and translates each event into the existing
-callbacks, so `ledger.EVENT_TYPES`, `observe.py`, `outcomes.py`, `runview.py` and the dashboard keep
-their event types.
+The driver captures stdout to the run's `.out` file and routes each event to its own callbacks
+(`<driver>/orchestrated.py` `Events.feed`), which write the ledger's phase and verdict events.
 
 The event names, their fields, the session states and the note kinds are defined in one place,
 `orchestrator/core/handback_contract.py` (`EventName`, `OrchestratorEvent` and its member
-TypedDicts, `validate_event`, and the event builders). The driver loads that module through
-`ops/sdlc-automation/handbackcontract.py`, validates every line with `validate_event`, and branches on
-the `Wire` event values. How the driver routes each event:
+TypedDicts, `validate_event`, and the event builders). `core/events.py` `EventWriter` validates
+each event before it writes the line. The driver loads the contract through
+`ops/sdlc-automation/handbackcontract.py`, validates every line with `validate_event`, and branches
+on the `Wire` event values. How the driver routes each event:
 
-- a phase event is announced through `on_phase` with the composite contract's progress prefix;
-- a verdict event goes to `on_verdict` with its fields;
-- a session event is announced through `on_phase`, and the driver registers the session's process
-  group with `childproc` and `sessionregistry` when it starts and forgets it when it ends;
-- a heartbeat writes nothing to the ledger; it counts as progress for the dispatch's idle timeout
+- a phase event is announced with the composite contract's progress prefix before the phase;
+- a verdict event goes to the verdict callback with its fields;
+- a session event is announced as `agent <agent> <state>`; when a session starts and its process
+  group is verified, the driver registers the group with `childproc`, `spendguard` and
+  `sessionregistry`, and forgets it when the session ends;
+- a heartbeat is announced nowhere; it counts as progress for the dispatch's idle timeout
   (section 9);
-- a note is announced through `on_phase` with its kind;
+- a note is announced as `note <kind>`;
 - a fable-wall event is recorded with `fablewall.record`.
 
-The orchestrator writes a heartbeat every `ATW_HEARTBEAT` seconds (default 300) while any of its
-sessions has written a stream line since the last heartbeat. The progress prefix keeps
-`outcomes._phase_name` counting phases as it does today; session and note texts carry no prefix, so
-they are recorded but never counted as phases. No ledger event type is added.
+A session's runner writes a heartbeat every `ATW_HEARTBEAT` seconds (default 300) while the session
+has written a stream line since its last heartbeat (`core/agent_process.py`). Session and note
+texts carry no progress prefix, so `outcomes._phase_name` records them and counts only phases.
 
 ### 4.2 Phase names
 
@@ -359,16 +361,22 @@ refusal codes) are defined in one place, `orchestrator/core/handback_contract.py
 (`HandbackDocument`, `validate`, `Wire`); the driver loads it through
 `ops/sdlc-automation/handbackcontract.py`.
 
-`detailPath` is the run record, whose shape is `orchestrator/core/manifest.py` `RunManifest`; each
-of its sessions is a `handback_contract.Session`. It also carries the notes of section 4.1.
+The flow's report is projected to the wire contract by `handback_contract.wire_result`; a report
+that fails validation is saved beside the handback as `.invalid.json` and replaced by the
+contract's `rejected` document.
 
-`run.py` exits 0 whenever it wrote a handback, whatever `ok` says; a non-zero exit means it died
-before writing one, and the driver makes its usual environment failure (`no-handback`). Section 6.7
-makes that case rare.
+`detailPath` is the run record `<work>/run.json`, whose shape is `orchestrator/core/manifest.py`
+`RunManifest`; each of its sessions is a `handback_contract.Session`. It also carries the flow's
+report and the note and verdict events of the dispatch. For a failure that escapes the flow
+(section 6.7) `detailPath` is the traceback file beside the handback.
 
-Keys dropped from the handback: `dispatchFailures` (folded into `failure`), `degraded`. The driver
-sets `failure_origin` from `failure.cause` (`api` and `quota` are `environment`, every other cause
-is `work`) instead of `handbackio.step_defect_origin`, which reads text (section 6.5).
+`run.py` exits 0 whenever it wrote a handback, whatever `ok` says; a process that ended without
+one is a failed dispatch at the driver's stage `no-handback`, built from the child's last
+exception line (`orchestrated.failed_handback`).
+
+The driver sets the failure origin from the handback's structured failure
+(`<driver>/pluginhandback.py`): a cause of `api` or `quota`, and the classification `interrupted`,
+are `environment`; every other failure is `work`.
 
 The dispatch arguments the orchestrator reads, the scratch file names and the `run.py` command line
 are defined in one place, `ops/sdlc-automation/dispatchargs.py` (`DispatchArguments`,
@@ -377,23 +385,20 @@ are defined in one place, `ops/sdlc-automation/dispatchargs.py` (`DispatchArgume
 
 ### 4.5 Cost attribution and the run unit (QUESTIONS 21)
 
-**Decision.** The run unit stays one dispatch: one cost record `state/runs/<run stem>.cost.json`
-per orchestrator run, summing every agent session that run started. Each agent session is its own
-top-level Claude Code session, so the record lists them:
+**Decision.** The run unit is one dispatch: one cost record per orchestrator run, at
+`costsidecar.sidecar_for(<run log>)`, summing every agent session that run started. Each agent
+session is its own top-level Claude Code session, so the record lists them:
 
-- The runner chooses each session's id itself (`--session-id <uuid>`, section 5.2) and records it
-  in `run.json` and the handback's `sessions[]`. A resumed session (sections 5.5, 6.3) keeps its id.
-- S03d changes `runcost.py`: `measure_run` takes the session list from the handback
-  (`dispatch.Handback` gains `sessions: tuple[dict, ...]`), measures each with
-  `measure_session(sessionId)` (which already finds a transcript in any project folder through
-  `session_project`), sums the four components, and builds the per-phase and per-role totals from
-  the session list instead of workflow `.meta.json` files. The record's shape and its
-  deduplication key are defined in one place, `ops/sdlc-automation/costsidecar.py` (`CostSidecar`,
-  `record_key`).
-- `KNOWN_COMPOSITES` is unchanged.
+- The journal runner chooses each session's id (`--session-id <uuid>`, section 5.2) and records it
+  on the journal step; the session runner records it in `run.json` and the handback's `sessions[]`.
+  A resumed session (sections 2.1, 5.5, 6.3) keeps its id.
+- The driver measures the sessions the handback names together (`runcost.measure_sessions`), each
+  from its transcript, and builds the per-phase and per-role totals from the session rows. The
+  record's shape and its deduplication key are defined in one place,
+  `ops/sdlc-automation/costsidecar.py` (`CostSidecar`, `record_key`).
 
 **What proves a run is running (CONTEXT 7.12).** The Epic shows "running" only while the driver's
-lease is live and the orchestrator's process is verified, as for any dispatch today
+lease is live and the orchestrator's process is verified, as for any dispatch
 (`sessionregistry`, `childproc`). An agent step shows "running" only between its `session started`
 and `session ended` events and only while its `pid` is alive (`os.kill(pid, 0)`, with the `pgid`
 from the event matching `os.getpgid(pid)`). The phase shown is the last `phase` event the run wrote;
@@ -409,99 +414,106 @@ SDK. Reasons: the driver already starts, supervises, kills and costs `claude` pr
 installed (section 0) and its own documentation says it passes its options to "the CLI subprocess",
 so it would add a dependency and run the same binary.
 
-The runner loads the agent's definition and its skills; the prompt is only the brief (section 2.3):
+The launcher (`core/agent_context.py`) loads the agent's definition and its skills; the prompt is
+only the brief (section 2.3):
 
-1. The runner reads `<installPath>/agents/<agent>.md`: its frontmatter and its body.
-2. It writes `<session dir>/agents.json` = `{"atw-<agent>": {description, prompt: <body>, tools,
-   disallowedTools, model, effort, skills, maxTurns, mcpServers}}` with the values from the
-   frontmatter, except `model` and `effort`, which come from section 5.4 (and `model` from section
-   5.5 on a Fable fallback). `isolation` is left out (section 5.3). `skills` is the frontmatter list
-   as it stands, so the skills holding the agent's procedures and contracts (sections 2.4, 2.5) load
-   with it.
-3. It passes `--agents <session dir>/agents.json --agent atw-<agent>`.
-4. It writes the brief on stdin.
+1. It reads `<plugin>/agents/<agent>.md`: its front matter and its body (`load_agent`). A
+   definition must state `model` and `effort`.
+2. It writes `<session dir>/agents.json` (`definitions`). The entry of the launched agent,
+   `atw-<agent>`, holds `description`, `model`, `effort`, `maxTurns` and `mcpServers` where the
+   definition states them, `tools`, `disallowedTools`, and `prompt`: the definition's body followed
+   by the full text of its skills. It has no `skills` list, because Claude Code preloads none for
+   the agent a session is launched as. `model` is the definition's, or `opus` in its place on a
+   Fable fallback (section 5.5). `isolation` is left out (section 5.3).
+3. For an agent whose definition has `startsRoles`, the same file holds one entry for every agent
+   whose `role` is among them: its body as `prompt`, its `skills` list (which Claude Code preloads
+   for an agent started with the Agent tool), its tools, and the Agent tool denied. The launched
+   agent's `tools` then name exactly those agents: `Agent(atw-<a>, atw-<b>, ...)`.
+4. An agent whose definition states `epicExpertise` is also given the skills of the Epic's
+   expertise list (`core/skills.py` `epic_expertise`, from the matrix).
+5. It passes `--agents <session dir>/agents.json --agent atw-<agent>`, and the brief is written on
+   stdin.
 
-No schema text, rule text or file content is placed in the prompt.
+No schema text, rule text or file content is placed in the brief.
 
-Why a session-local definition and not `--agent agent-teams-workforce:<agent>`: the runner must
-leave out `isolation` and set the model on a Fable fallback without editing agent files, and the
-documented `--agent` behaviour then holds for the exact definition the runner wrote. The `atw-`
-prefix keeps the name apart from the plugin's own agent.
+Why a session-local definition and not `--agent agent-teams-workforce:<agent>`: the launcher must
+leave out `isolation`, put the skill text in the launched agent's prompt, limit the agents it may
+start, and set the model on a Fable fallback without editing agent files. The `atw-` prefix keeps
+the name apart from the plugin's own agent.
 
-**Minimum CLI version.** The `--agents` file form needs 2.1.281 or later (section 0). At start the
-runner reads `claude --version` once (`pluginversion.claude_version` does the same read); a version
-below 2.1.281, or one it cannot parse, fails the run at stage `input`, cause `other`, before any
-session.
+**Minimum CLI version.** The `--agents` file form needs 2.1.281 or later (section 0). Before its
+first session the runner reads `claude --version` once; a version below 2.1.281, or one it cannot
+parse, is a session setup failure (classification `setup`) before any session starts.
 
 ### 5.2 The command line and minimal context
 
 ```
 claude -p --output-format stream-json --verbose
-  --session-id <uuid>
+  --session-id <uuid>            (or --resume <uuid> to continue a session)
   --agents <session dir>/agents.json --agent atw-<agent>
   --model <model> --effort <effort>
   --setting-sources project
   --settings <session dir>/settings.json
   --strict-mcp-config [--mcp-config <session dir>/mcp.json]
-  --plugin-dir <installPath> [--plugin-dir <other plugin installPath> ...]
+  --plugin-dir <plugin> [--plugin-dir <other plugin installPath> ...]
   --permission-mode bypassPermissions
-  --disallowedTools <each of headlessenv.DENIED_TOOLS, plus Agent and AskUserQuestion>
-  --add-dir <each directory the step's addDirs names>
+  --disallowedTools <headlessenv.DENIED_TOOLS, AskUserQuestion, and Agent unless the agent may start agents>
+  --add-dir <each directory the launch names>
 ```
 
 - **Working directory.** A per-session directory outside every repository,
-  `$ATW_SESSION_ROOT/<run id>/<step>-<n>/` (new environment variable; default
-  `<config>/atw-sessions/`). It holds `agents.json`, `settings.json`, `mcp.json` and nothing else.
-  Reason: with the working directory inside `<control>`, Claude Code auto-discovers the control
-  repository's `AGENTS.md`/`CLAUDE.md` and the `ops/` and `ops/sdlc-automation/` ones above it; an
-  Epic agent needs none of them, because its brief names every path it reads and its definition and
-  skills hold its rules.
+  `<temporary directory>/atw-session-<session id>/`, made before the session and removed after it.
+  It is named for the session id, so a later dispatch that resumes the id runs in a directory of
+  the same name. It holds `agents.json`, `settings.json` and `mcp.json`. Reason: with the working
+  directory inside `<control>`, Claude Code auto-discovers the control repository's
+  `AGENTS.md`/`CLAUDE.md` and the ones above it; an Epic agent needs none of them, because its
+  brief names every path it reads and its definition and skills hold its rules.
 - **Settings.** `--setting-sources project` with a working directory that holds no project
-  settings loads no settings file; user settings (`<config>/settings.json`) are not loaded. Today
-  they enable nine plugins, two `SessionStart` context injectors, a `UserPromptSubmit` injector,
-  the status line, `model: opus` and `effortLevel: high` (read 2026-10-09), all of which would load
-  into every session. `--settings <session dir>/settings.json` brings back only the safety hooks:
-  the runner copies, from `<config>/settings.json`, every `PreToolUse` hook whose command names one
-  of `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
-  `aws-profile-required.sh` (a constant list in the runner, matched by script file name, so the
-  hook commands themselves are read from the owner's file, not copied into code).
-- **Plugins and skills.** `--plugin-dir <installPath>` loads `agent-teams-workforce`. For every
-  skill the agent's frontmatter `skills` names with another plugin's prefix (for example `cds:`),
-  the runner adds that plugin's `installPath` from `<config>/plugins/installed_plugins.json`. No
-  other plugin loads.
-- **MCP servers.** The runner writes `<session dir>/mcp.json` with only the servers the agent's
-  frontmatter `mcpServers` names, taking each definition from the sources `mcpconfig.collect_allowed`
-  reads (`<control>/.mcp.json`, then the global config), and passes it with `--strict-mcp-config`.
-  With none named, `--mcp-config` is omitted and no server loads. Reason: `--strict-mcp-config`
-  stops every other configured server from loading, and the server definitions live in those config
-  files, not in the agent file; the `mcpServers` list in `agents.json` then names servers that exist.
-- **Tools.** The agent's `tools` and `disallowedTools` come from its frontmatter through
-  `agents.json`; `--disallowedTools` adds the driver's denied list plus `Agent` and
-  `AskUserQuestion`, so no Epic session starts another agent or waits on a person.
-- **What is accepted as loading, explicitly.** `<config>` holds `rules`, `skills` and `agents`
-  entries (symlinks into the owner's `~/.claude`), and a user `CLAUDE.md` may exist there. They are
-  user-level memory and content, not settings files, and `--setting-sources` is not documented to
-  exclude them. They are accepted: excluding them would mean a different `CLAUDE_CONFIG_DIR` for
-  agent sessions, which would also move the transcripts and the login the driver relies on. The
-  descriptions of the plugin's own skills load with `--plugin-dir`; that is accepted, because the
-  agents name those skills. The `Agent` tool is denied, so no agent listing is loaded. **S07 checks
-  this** from the owner's first run: the `system`/`init` event at the top of one agent session's
-  transcript lists what loaded (tools, skills, MCP servers, plugins), and the first assistant
-  turn's `usage` gives the startup tokens against the 68k baseline (`measurements/baseline.md`).
+  settings loads no settings file; user settings (`<config>/settings.json`) are not loaded.
+  `--settings <session dir>/settings.json` holds (`agent_context.session_settings`):
+  every `PreToolUse` hook of `<config>/settings.json` whose command names one of
+  `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
+  `aws-profile-required.sh` (a constant list, matched by script file name, so the hook commands
+  themselves are read from the owner's file); one `PostToolUse` hook on `Write|Edit` that runs
+  `<orch>/hooks/python-quality.py`; for a session that may start agents,
+  `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so a
+  started agent starts none and every start blocks; and, for an agent whose `epicExpertise` is
+  `live`, `bashOutputMaxChars` at Claude Code's largest value, so a skill a command prints reaches
+  the session whole.
+- **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce`. For every skill
+  that the launched agent, or an agent it may start, names with another plugin's prefix (for
+  example `cds:`), the launcher adds that plugin's install path from
+  `<config>/plugins/installed_plugins.json`. No other plugin loads.
+- **MCP servers.** The launcher writes `<session dir>/mcp.json` with only the servers the
+  `mcpServers` of the launched agent, and of the agents it may start, name, taking each definition
+  from `<control>/.mcp.json`, then the global config (`agent_context.mcp_servers`), and passes it
+  with `--strict-mcp-config`. A named server that neither file defines is a session setup failure.
+  With none named, `--mcp-config` is omitted and no server loads.
+- **Tools.** The agent's `tools` and `disallowedTools` come from its front matter through
+  `agents.json`. `--disallowedTools` adds the driver's denied list and `AskUserQuestion`, so no Epic
+  session waits on a person, and `Agent`, so a session starts no agent. An agent whose definition
+  has `startsRoles` keeps `Agent`, limited as section 5.1 says, and keeps `SendMessage` when its
+  definition lists it, so it can continue an agent it started.
+- **What loads besides.** `<config>` holds `rules`, `skills` and `agents` entries and may hold a
+  user `CLAUDE.md`. They are user-level memory and content, not settings files, and
+  `--setting-sources` does not exclude them; a different `CLAUDE_CONFIG_DIR` for agent sessions
+  would also move the transcripts and the login the driver relies on. The descriptions of the
+  plugin's own skills load with `--plugin-dir`. The `system`/`init` event at the top of an agent
+  session's transcript lists what loaded (tools, skills, MCP servers, plugins).
 - **Not used:** `--bare` (it accepts only `ANTHROPIC_API_KEY` auth, and the pipeline runs on the
-  subscription: `breaker.exhausted_reset` reads the `five_hour` and `seven_day` subscription
-  windows); `--json-schema` (results are files, section 5.6); `--no-session-persistence` (the
-  transcript is the cost record).
-- **Environment.** `headlessenv.child_env` as today (the `ATW_*` variables, `TMPDIR` in the run's
-  scratch folder, `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`).
+  subscription: `breaker.exhausted_reset` reads the subscription windows); `--json-schema` (results
+  are files, section 5.6); `--no-session-persistence` (the transcript is the cost record).
+- **Environment.** `headlessenv.child_env(<work>/scratch/<run id>)`, with the plugin's `bin`
+  folder first on `PATH` (so a session runs `atw-matrix`, `atw-step-journal` and `atw-expertise` by
+  name) and `ATW_MATRIX_ROLE` set to the launched agent's `role` when the matrix contract knows it.
 
 ### 5.3 `isolation: worktree` (QUESTIONS 2)
 
-**Decision.** Ignored: the runner leaves `isolation` out of `agents.json` and passes no
-`--worktree`. Every Epic agent writes only under `<work>` (outside every repository) or, for the
-architecture writers and maintainer, under `<arch>`, and reads repositories by absolute path; a
-worktree would isolate nothing it writes. The working directory is outside every repository
-(section 5.2), so there is no repository to cut a worktree of.
+**Decision.** Ignored: the launcher leaves `isolation` out of `agents.json` and passes no
+`--worktree`. Every Epic agent writes only under `<work>` (outside every repository) or, for
+`architecture-maintainer`, under `<arch>`, and reads repositories by absolute path; a worktree
+would isolate nothing it writes. The working directory is outside every repository (section 5.2),
+so there is no repository to cut a worktree of.
 
 ### 5.4 The agents the Epic pipeline launches
 
@@ -520,9 +532,11 @@ definitions state, never by name, so the roster of a role is the set of definiti
 | `architecture-boundary-guardian`, `failure-mode-analyst`, `architecture-pattern-challenger`, `architecture-tradeoff-skeptic`, `operational-readiness-reviewer`, `cost-architecture-reviewer`, `cost-impact-reviewer`, `trd-validator` | `architecture-reviewer` | by the script, when the rule of its reviewer group selects it; again for a re-check the lead plans |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when a review raised something or the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
-| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer`, `openapi-contract-reviewer`, `spec-decider` | | inside the step `spec_authoring.run` |
-| `task-decomposer` | | inside the step `task_decomposition.run` |
-| `task-dependency-mapper` | | inside the step `task_edges.run`, when the span has two or more repositories |
+| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the UI sources step (the contracts author, frontend repositories), the step that writes its document, and a correction or a revision the review plans |
+| `openapi-contract-reviewer` | | by the script, once per repository, after the three documents |
+| `spec-decider` | | by the script, only when an author disputed a finding of the review |
+| `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
+| `task-dependency-mapper` | | by the script, under Task edges, when the span has two or more repositories |
 
 An agent whose definition has `startsRoles` is given an `Agent` tool limited to agents with those
 roles, at depth one; an agent started by another agent starts no one. `ATW_MATRIX_ROLE` is the
@@ -530,24 +544,25 @@ launched agent's role, which decides the `atw-matrix` commands it may run.
 
 ### 5.5 Agents declaring `model: fable` (QUESTIONS 1)
 
-**Decision.** The runner uses `fable` as the frontmatter says; the CLI accepts `fable` as a model
-alias (section 0). The Fable allowance is handled per step, from structured facts:
+**Decision.** The runner uses `fable` as the front matter says; the CLI accepts `fable` as a model
+alias (section 0). The Fable allowance is handled per step, from structured facts
+(`core/agents.py`):
 
-- When a session's stream carries a `rate_limit_event` whose `rate_limit_info` `fablewall.is_refusal`
-  accepts, the runner ends that session, emits a `fable-wall` event (the driver records it with
-  `fablewall.record`), and runs **that one step again on `opus`**, resuming the same session so its
-  work so far is kept. On the resume the runner rewrites `agents.json` with `model: "opus"` and
+- When the stream of a session that runs on `fable` carries a rejected `rate_limit_event` whose
+  `rate_limit_info` `fablewall.is_refusal` accepts, the runner ends that session, emits a
+  `fable-wall` event (the driver records it with `fablewall.record`), and runs **that one step
+  again on `opus`**, resuming the same session so its work so far is kept. On the resume the
+  launcher rewrites `agents.json` with `model: "opus"` for every definition that states `fable` and
   passes `--resume <sessionId> --agents <session dir>/agents.json --agent atw-<agent> --model opus`,
-  together with every other flag of section 5.2 unchanged, so the agent definition and the session
-  model agree and no precedence question arises. The model changed, so the retry is reasonable
-  (CONTEXT 7.4).
+  together with every other flag of section 5.2, so the agent definition and the session model
+  agree. The model changed, so the retry is reasonable (CONTEXT 7.4). A second refusal, on `opus`,
+  fails the step with cause `other`.
 - While the Fable wall stands, every `fable` step starts on `opus` (written the same way into
   `agents.json` and `--model`). The driver passes `fableUntil` (the epoch from
   `fablewall.resets_at()`, or absent) in the dispatch arguments; the orchestrator also honours a
   wall it saw itself during the run.
-- `fablerecovery.py` (workflow resume, `FABLE-CALL` log cutoffs, `workflow_record`) does not apply
-  to orchestrated runs. It stays for the Task pipeline's Workflow dispatches until S12 and is
-  deleted in S15. `fablewall.py` stays: it reads structured fields only.
+- The driver's `fablerecovery.py` serves the build and deploy lanes' Workflow sessions and has no
+  part in an orchestrated run. `fablewall.py` reads structured fields only.
 
 ### 5.6 Output, validation, timeouts, kill and session id
 
@@ -562,7 +577,8 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   (`harnesspaths.project_dir` rule).
 - **Stream reading.** The runner reads stdout line by line for three things only: `rate_limit_event`
   (section 6), the final `result` event (section 6), and liveness. It writes the raw stream to
-  `<run scratch>/<step>-<n>.stream.jsonl` in the failure record.
+  `<work>/scratch/<run id>/<step>-<session id>-<attempt>.stream.jsonl`, with the session's standard
+  error beside it, and a failure names that file as evidence.
 - **Timeouts.** A session with no stream line for `ATW_SESSION_IDLE` seconds (default 1800) or
   running longer than `ATW_SESSION_LIMIT` seconds (default 7200) is killed; the step fails at its
   stage, cause `other` (a stuck session is not a transient fault).
@@ -580,104 +596,140 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
 | Failure point | Structured fact | Cause |
 |---|---|---|
 | Agent session: account usage wall | a `rate_limit_event` with `rate_limit_info.status == "rejected"` that `fablewall.is_refusal` does not accept | `quota`, with `failure.resumeAt` = `breaker.exhausted_reset(info)` |
-| Agent session: Fable allowance | the same event, accepted by `fablewall.is_refusal` | none: the step reruns on `opus` (section 5.5) |
-| Agent session: API failure | the `result` event with `terminal_reason == "api_error"`, or `is_error` with `api_error_status` set | `api` (`quota` when the same stream carried a rejected `rate_limit_event`) |
-| Agent session: ended with no `result` event, killed by a timeout, or `subtype` `error_max_turns` / `error_during_execution` | the exit status and the absence or `subtype` of the `result` event | `other` |
+| Agent session: Fable allowance | the same event, accepted by `fablewall.is_refusal`, in a session that runs on `fable` | none: the step reruns on `opus` (section 5.5) |
+| Agent session: API failure | the `result` event with `terminal_reason == "api_error"`, or `is_error` with `api_error_status` set | `api` |
+| Agent session: ended with no `result` event, killed by a timeout, a failure exit status, or a `result` whose `subtype` is not `success` | the exit status and the absence or `subtype` of the `result` event | `other` |
+| Agent session: stopped because another session of the run hit the usage wall or an API failure | the stop the runner recorded for the run's sessions | the cause of that stop (`quota` with its `resumeAt`, or `api`) |
 | Agent session: no valid output file after the corrective retry | the parse or schema exception | `other` |
-| `bd` call: the call outlived its timeout | `subprocess.TimeoutExpired` (timeout `ATW_BD_TIMEOUT`, default 180 s, as `beadsio.DEFAULT_TIMEOUT`) | `bd-timeout` |
-| `bd` call: the lock was not acquired in time | the lock acquisition's own result (section 6.2) | `contention` |
+| Agent session: its schema file cannot be read or applied | the exception of the schema load or of the validation machinery | `other`, classified `pipeline-code-defect` |
+| `bd` call: the call outlived its timeout | `subprocess.TimeoutExpired` (timeout `ATW_BD_TIMEOUT`, default 180 s) | `bd-timeout` |
+| `bd` call: a lock was not acquired in time | the lock acquisition's own result (section 6.2) | `contention` |
 | `bd` call: any other non-zero exit | the exit status | `other` |
-| git (run by the orchestrator, or by a module changed per section 11.7): the index lock is held | the failing subcommand's `exit` is non-zero and `<repo>/.git/index.lock` (or the worktree's) exists | `contention` |
-| git push rejected because the branch moved | after the failed push (`subcommand: push`), `git fetch` then `git merge-base --is-ancestor origin/<branch> HEAD` exits 1 | `contention` (pull with rebase, then push again) |
-| git: anything else, or a git subprocess timeout | the exit status, or `subprocess.TimeoutExpired` | `other` |
-| `polyrepo.py`, `gh`, `cdk`: non-zero exit | the exit status (their JSON results carry only `error` text, no code: `polyrepo.py` `cmd_create`, `res["error"] = str(exc)`) | `other`, except the owner facts of section 11.3 |
-| element status matrix or the vault integration: lock wait expired | the lock's own result (sections 7.4, 10.3) | `contention` |
-| element status matrix: file missing or not valid | `FileNotFoundError`, `json.JSONDecodeError`, a missing `elements` object | `other` |
-| a portfolio module raises a typed error | the exception type and its field (`GraphError.cause`; `ScoringError`, `ResumeError`, `SpecUiError` are `other`) | as named |
-| a deterministic step raises any other `Exception` | the exception type (section 2.2) | `other`, with the traceback file as evidence |
-| section 2 changed by a session | the guard's comparison (section 7.3) | `other` |
+| git: the index lock is held | the failing subcommand's exit is non-zero and the file `git rev-parse --git-path index.lock` names exists | `contention` |
+| git push rejected because the branch moved | after the failed push, `git fetch` then `git merge-base --is-ancestor <remote>/<branch> HEAD` exits 1 | `contention`, after a pull with rebase |
+| any executable (`git`, `gh`, `uv run polyrepo.py`, `cdk`): the call outlived its timeout | `subprocess.TimeoutExpired` | `tool-timeout` |
+| any executable: the connection failed | `ConnectionError` | `network` |
+| any executable: any other non-zero exit | the exit status (the JSON results of `polyrepo.py` carry only `error` text, no code) | `other`, except the owner facts of section 11.3 |
+| the section 2 guard: its lock wait expired | the lock's own result (section 7.3) | `contention` |
+| a portfolio module raises `beadgraph.GraphError` | the exception's `cause` field | as the field says |
+| a portfolio module raises any other exception (the matrix file missing or not valid, its lock wait expired, a refused matrix command, a scoring or UI-source error) | the exception type | `other`, with the traceback in the evidence file |
+| section 2 changed by a session | the guard's comparison (section 7.3) | `other`, at stage `constraints-written` |
 
-No cause is set from message text. CONTEXT 7.4 settles this for every row.
+No cause is set from message text. CONTEXT 7.4 settles this for every row. The cause constants are
+defined once, in `core/handback_contract.py`.
 
 ### 6.2 `bd`: the structured fact for `bd-timeout` and `contention` (QUESTIONS 6)
 
 **Decision.** `bd` reports no structured lock or server code: its JSON error object carries only
-`error`, `hint` and `schema_version` and it exits 1 for every error (section 0). So the
-orchestrator creates the facts itself at the call site:
+`error`, `hint` and `schema_version` and it exits 1 for every error (section 0). So the facts are
+made at the call site, `beadgraph.run_bd`, which every `bd` call of the orchestrator and of the
+owner-run portfolio commands goes through:
 
-- **Serialize to prevent contention.** Every `bd` call the orchestrator makes (directly or through
-  `beadgraph._bd`) holds the driver's gate, an exclusive `fcntl.flock` on
-  `<driver>/state/bd-gate.lock` (the gate `beadsio._bd_gate` already holds around every driver
-  `bd` call). Every `bd` write also holds the central beads lock the Linear sync and the fleet sync
-  take (the `mkdir` lock at `$CENTRAL_BEADS_LOCK`, default `$TMPDIR/skillspoke-central-beads.lock`,
-  `ops/lib/central-beads-lock.sh`), taken after the gate. With both held, the only writers that can
-  overlap a pipeline write are a person's own `bd` commands.
-- **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s,
-  as `beadsio.BD_GATE_WAIT`).
+- **Serialize to prevent contention.** Every `bd` call holds the driver's gate, an exclusive
+  `fcntl.flock` on `<driver>/state/bd-gate.lock` (the gate the driver holds around its own `bd`
+  calls). Every `bd` write also holds the central beads lock the Linear sync and the fleet sync take
+  (the `mkdir` lock at `$CENTRAL_BEADS_LOCK`, default `<temporary directory>/skillspoke-central-beads.lock`,
+  `ops/lib/central-beads-lock.sh`), taken after the gate (`core/tool_locks.py` `bd_gate`). With both
+  held, the only writers that can overlap a pipeline write are a person's own `bd` commands.
+- **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s).
 - **`bd-timeout`** = `subprocess.TimeoutExpired` on the `bd` call.
-- **`other`** = any other non-zero exit, with the command and `bd`'s output as evidence in the failure record.
+- **`other`** = any other non-zero exit, with the command and `bd`'s output in the failure's
+  evidence.
 
-`beadgraph._bd` is changed in place (S03b): it takes the gate from the orchestrator (a callable the
-orchestrator installs), passes a timeout, and stops classifying `bd`'s standard error
-(`failure_cause`, `connection_retryable`, `CONNECTION_BACKOFF`); a `GraphError` carries the cause
-above. The owner-run portfolio commands use the same function and get the same behaviour.
+`beadgraph.run_bd` reads nothing from `bd`'s standard error to choose a cause; a `GraphError`
+carries one of the three causes above.
 
 ### 6.3 Retry policy
 
-- **`contention` and `bd-timeout`**: retried at the call site, the same call again, with backoff
-  starting at 30 s and doubling, with at most three attempts. Exhaustion records an item failure. Each
-  attempt re-reads what it needs, so an applied write is updated, never created twice (the writers
-  are keyed by the elaboration key, `bead_metadata.KEY_ELAB_KEY` in the beads-contract schema).
-- **`api` and `quota`**: not retried in the orchestrator. Every live session of the run is stopped,
-  completed steps keep their records, and the run returns `ok:false` with `failure.cause` (and
-  `failure.resumeAt` for `quota`). The driver's breaker pauses and redispatches; the rerun reuses
-  every recorded step.
+- **`contention`, `bd-timeout`, `tool-timeout` and `network`**: retried at the call site
+  (`core/tools.py` `retry_call`), the same call or the same whole operation again, three attempts
+  in all, waiting 30 s and then 60 s. A write is retried as a whole operation (`Tools.operation`)
+  whose body reads the beads again before it writes, so an applied write is updated, never created
+  twice (the bead writes are keyed by the elaboration key, `bead_metadata.KEY_ELAB_KEY` in the
+  beads-contract schema). Exhaustion is a `RetryExhaustedError`, classified `item`.
+- **`api` and `quota`**: not retried in the orchestrator. Every live session of the run is stopped
+  with that cause, the journal keeps every done step, and the run returns `ok:false` with
+  `failure.cause` (and `failure.resumeAt` for `quota`). The driver's breaker pauses and
+  dispatches again; that dispatch begins at the first step that is not done, and a step that holds
+  a session continues it.
 - **One corrective retry** with specific feedback (CONTEXT 7.4): when an agent step's output is
-  missing or invalid after a normal session end, Python writes the exact validation errors (or the
-  missing path) to `<output>.errors.json` and resumes the same session once (`--resume
-  <sessionId>`, with the flags of section 5.2) with a brief whose inputs add that file and whose
-  outcome line says "Correct the output named in the errors file." The session keeps what it already
-  read, and the prompt cache makes the resume cheaper than a new session. A second failure fails the
-  step with cause `other`. The specs' named corrective passes (repo scoping's avoid list, task
-  decomposition's uncited items, the closure refusal, the decider's re-ask) follow the same rule:
-  their feedback is a file Python writes, listed as an input.
-- **Never**: rerunning a step with nothing changed. `other` fails the run with the step, its cause
-  and the evidence paths, in the failure record.
+  missing or invalid after a normal session end, Python writes the exact validation errors to
+  `<output>.errors.json` and resumes the same session once (`--resume <sessionId>`, with the flags
+  of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, and whose
+  outcome line says "Correct the output named in the errors file." The session keeps what it
+  already read, and the prompt cache makes the resume cheaper than a new session. A second failure
+  fails the step with cause `other`. A launch can switch the corrective retry off; the
+  decomposer's correction step does.
+- **Corrections that are journal steps.** A correction the flow plans is a step of its own, with
+  the file that states what to correct among its inputs: the architect's correction of a
+  mechanical defect (at most 3, section 11.1), a correction the lead plans for a finding, an
+  author's correction and revision of a spec document, and the decomposer's one correction of a
+  plan with a gap.
+- **A session that cannot be resumed.** When a session that was asked to resume ends with a failure
+  status and no turn, the journal runner gives the step a new session id and starts it once in a
+  new session (`SessionNotResumedError`).
+- **Never**: rerunning a step with nothing changed. `other` fails the step with its stage, its
+  cause and the evidence paths, in the journal and in the handback.
 
-### 6.4 `beadwrite.WRITE_BACKOFF` (QUESTIONS 7)
+### 6.4 Bead writes have one retry layer (QUESTIONS 7)
 
-**Decision.** Removed from the library. `beadwrite.write_story` and `write_task` raise on the first
-`GraphError`; the orchestrator's call site applies the backoff of section 6.3. Reason: two retry
-layers multiply attempts and hide the cause, and CONTEXT 7.4 sets one schedule (30 s, doubling, cap
-30 min) that the library's 2 s and 5 s do not follow.
+**Decision.** `beadwrite.write_story` and `write_task` raise on the first `GraphError`; the
+orchestrator's call site applies the retry of section 6.3. Reason: two retry layers multiply
+attempts and hide the cause.
 
 ### 6.5 The usage-wall pause and the API-outage origin (QUESTIONS 8)
 
 **Decision.** For orchestrated runs the pause and origin come from the handback's structured
 fields, not from text:
-- `failurecause.pause_from_cause` reads `failure.resumeAt` (a number) for `quota` instead of
-  `reset_epoch_in(headline)`.
-- The driver sets `failure_origin` from `failure.cause` (section 4.4).
-- `breaker.pause_of`'s text paths (`wall_of` parsing the headline, `transient_of`'s regex),
-  `handbackio._died_of_outage`, `handbackio.step_defect_origin` and
-  `headless._resume_unavailable` are not called for an orchestrated composite. They remain for the
-  Task pipeline's Workflow sessions until S12 moves those lanes, and are deleted then.
+- `failurecause.pause_for` uses `pause_from_cause` whenever the handback states a known cause: it
+  reads `failure.resumeAt` (a number) for `quota`, and pauses without a reset time for `api`.
+- The driver sets the failure origin from `failure.cause` and the classification (section 4.4).
+- `breaker.pause_of`'s text paths, `handbackio._died_of_outage`, `handbackio.step_defect_origin`
+  and `headless._resume_unavailable` read the output of the build and deploy lanes' Workflow
+  sessions; a handback that states its cause does not reach them.
 
 ### 6.6 The `relay` cause (QUESTIONS 5)
 
-**Decision.** The orchestrator never produces `relay`. `failurecause.CAUSE_RELAY` stays until S15,
-because the Task pipeline's Workflow scripts still use the relay until then; S15 removes it from
-`failurecause.py` and its readers, as PLAN S15 step 3 says.
+**Decision.** The orchestrator never produces `relay`. `failurecause.CAUSE_RELAY` is the driver's
+own cause for the relay of the build and deploy lanes' Workflow scripts; the handback contract
+does not define it.
 
 ### 6.7 The top-level handler
 
-`run.py` wraps the whole flow in `try ... except BaseException`. On any escape (a `StepError` not
-handled by its flow, `SystemExit`, `KeyboardInterrupt`, or an exception re-raised from a worker
-thread by `future.result()`) it stops every live session group, releases the Epic
-(`elaboration-release`, section 8) when it had claimed it, writes a handback with `ok:false`, the
-stage of the step that was running (from the run record), cause `other` (or the `StepError`'s
-cause), and the traceback file as evidence, then exits 0. Only a failure to write the handback file
-itself leaves the driver's `no-handback`.
+A step that raises is recorded as failed in the journal (section 2.1) and the flow reports the
+failure itself: it releases the Epic (`elaboration.release`) when it had claimed it and the Epic is
+not marked done, writes the run record, and returns a report with `ok:false`.
+
+`run.py` wraps the whole flow in `try ... except BaseException` for what escapes it (`SystemExit`,
+`KeyboardInterrupt`, an exception re-raised from a worker thread, or a failure before the flow
+starts). It writes the traceback to a file beside the handback (suffix `.traceback.txt`), runs
+the cleanup the run registered (stop every live session group, then release the Epic), and writes
+a handback with `ok:false`, the stage of the step that was running, the cause and classification
+of section 6.8, and the traceback file as `detailPath`, then exits 0. `SIGINT` and `SIGTERM` raise
+`InterruptedError` in the main thread; the run stops its sessions and reports the stop stage
+`interrupted`. Only a failure to write the handback file itself, or a failure before the handback
+path is known (the control repository variable unset, the dispatch-arguments contract unloadable),
+leaves the driver's `no-handback`.
+
+### 6.8 Classification
+
+Every failure carries a classification beside its cause (`core/handback.py` `failure_for`,
+vocabulary in `core/handback_contract.py`). It is decided from the exception chain:
+
+| Classification | When | What the driver does |
+|---|---|---|
+| `interrupted` | the stop file was seen between sessions (`PipelineStoppedError`, stage `shutdown`), or a signal or keyboard interrupt (stage `interrupted`); the stage that was running is kept as `interruptedStage` | never an item failure, never counted toward repeated failures |
+| `pipeline-code-defect` | a session cleanup error, a runtime type check failure, a handback validation failure, a `PipelineDefectError`; a `TypeError`, `ValueError`, `AttributeError`, `KeyError`, `NameError` or `IndexError` in the chain; an `ImportError` after an agent session started; any failure that is no `StepError` and fits no other row | stops new dispatch |
+| `setup` | a failure before the flow started, a session setup error, or a `StepError` at stage `input`; an `ImportError` before any agent session started | stops new dispatch |
+| `item` | a retry allowance used up; any other `StepError` whose cause is not transient | recorded for the item; other items continue |
+| `transient` | a cause among `quota`, `api`, `bd-timeout`, `contention`, `timeout`, `tool-timeout`, `network`, or a timeout or connection error in the chain, with retries left to the driver | pauses or backs off, then dispatches again |
+
+The rows are tested in the order `pipeline-code-defect` (the first four conditions), `setup`,
+`pipeline-code-defect` (the named exception types), `item` (retries used up), `transient`, `item`.
+
+A fatal classification (`setup`, `pipeline-code-defect`) also touches the stop file
+`$ATW_STOP_FILE` when the driver set it, so no further agent step starts while the paid sessions
+that are running finish.
 
 ## 7. Concurrency (S02 item 7)
 
@@ -696,78 +748,88 @@ the owner sets both.
 
 ### 7.2 `bd` writes
 
-Serialized by the two locks of section 6.2. The driver's `bd-gate.lock` is used by the orchestrator
-for every `bd` call, so orchestrators and the driver take turns; the central beads lock is used for
+Serialized by the two locks of section 6.2. The driver's `bd-gate.lock` is held by the orchestrator
+for every `bd` call, so orchestrators and the driver take turns; the central beads lock is held for
 writes, so the Linear and fleet syncs take turns with them too.
 
 ### 7.3 The section 2 guard across runs (QUESTIONS 4)
 
-**Decision.** One guard per architecture root, shared by every orchestrator process, kept in
-`<driver>/state/section2-guard/`:
+**Decision.** One guard per architecture root, shared by every orchestrator process
+(`core/constraints.py` `Section2Guard`), kept in `<driver>/state/section2-guard/<key>/`, where
+`<key>` is the first 16 hexadecimal digits of the SHA-256 of the architecture root's path. The
+session runner puts every agent session inside it whenever the dispatch names an architecture
+root.
 
-- `guard.lock`: an exclusive `fcntl.flock` taken for every guard operation below, so two
-  orchestrator processes never snapshot, compare or restore at the same time.
-- `live/<sessionId>`: one empty file per live agent session of any run, created before the session
-  starts and removed after its check (stale entries, whose recorded pid is not alive, are removed
-  under the lock).
+- `guard.lock`: an exclusive `fcntl.flock` taken for every guard operation below (wait
+  `ATW_ARCH_LOCK_WAIT`, default 120 s), so two orchestrator processes never snapshot, compare or
+  restore at the same time.
+- `live/<sessionId>`: one file per live agent session of any run, holding the process id of the
+  orchestrator that runs it, written before the session starts and removed after its check. An
+  entry whose process is not alive is removed under the lock.
 - `snapshot.json` and `kept/`: the one standing snapshot
   (`archstate.snapshot_constraints(<arch>, keep=True)`: digest, git status, existence, kept copy),
-  plus the vault's `HEAD` commit when it was taken.
+  with the vault's `HEAD` commit when it was taken.
 
 Rules, each under `guard.lock`:
 
 1. **Snapshot.** Before an agent session starts, when `live/` is empty (no session of any run is
-   live), the snapshot is retaken. Otherwise the new session shares the standing snapshot.
+   live), the snapshot is taken. Otherwise the new session shares the standing snapshot.
 2. **Check.** When any session ends, section 2 is snapshotted again and compared with the standing
    snapshot (digest, existence, git status).
-3. **An owner's committed change is accepted.** When section 2 differs but its git status is clean
-   and every commit between the snapshot's `HEAD` and the current `HEAD` that touches section 2
-   carries no `Pipeline-Run:` trailer, the change is the owner's committed work: the snapshot is
-   retaken, nothing is restored, nothing fails. The promotion step commits only the
-   documents it names, and none of them is in section 2.
-4. **Any other change is restored.** The changed folder is copied to
-   `<driver>/state/section2-guard/changed-<timestamp>/` (so an uncommitted edit the owner made at the
-   same moment is never lost), section 2 is restored with `archstate.restore_constraints(<arch>,
-   kept)`, every live session of **this** run is stopped, and the step whose session just ended
-   fails at stage `constraints-written`, cause `other`, naming the sessions that were live (of any
-   run, from `live/`) and the `changed-` copy. Another run's guard check that then sees section 2
-   equal to the snapshot finds nothing to do.
-5. A snapshot, check or restore that fails fails the step at its stage, cause `other`.
+3. **An owner's committed change is accepted.** When section 2 differs, its git status is clean,
+   the vault's `HEAD` moved forward from the snapshot's, at least one commit between the two
+   touches section 2 and none of those commits carries a `Pipeline-Run:` trailer, the change is
+   the owner's committed work: the snapshot is taken again, nothing is restored, nothing fails.
+4. **Any other change is restored.** The changed folder is copied to `changed-<timestamp>/` in the
+   guard's folder (so an uncommitted edit the owner made at the same moment is never lost),
+   section 2 is restored with `archstate.restore_constraints(<arch>, kept)`, every live session of
+   **this** run is stopped, and the step whose session just ended fails at stage
+   `constraints-written`, cause `other`. The evidence names the `changed-` copy, the sessions that
+   were live (of any run, from `live/`) and what the restore wrote and deleted. Another run's guard
+   check that then sees section 2 equal to the snapshot finds nothing to do.
+5. A snapshot, check or restore that fails fails the step at stage `constraints-written`, cause
+   `other`; a lock wait that expires fails it with cause `contention`.
 
 **Reason.** Sessions of one run and of concurrent Epic runs overlap, so a per-session or per-run
 before-and-after cannot attribute a change and two runs would restore from different copies. One
-shared snapshot under one lock gives one answer; the outcome (restore and record the failure) does not
-depend on which session is blamed. The owner's way to change section 2 while the pipeline runs is to
-commit the change: a committed change by the owner is accepted, and an uncommitted change made
-while sessions run is restored but kept as a copy and named in the failure record.
+shared snapshot under one lock gives one answer; the outcome (restore and record the failure) does
+not depend on which session is blamed. The owner's way to change section 2 while the pipeline runs
+is to commit the change: a committed change by the owner is accepted, and an uncommitted change
+made while sessions run is restored but kept as a copy and named in the failure's evidence.
 
 ### 7.4 Two Epics changing arc42 at the same time
 
 Every change of the matrix is made under the matrix's lock (`matrixstore.update_matrix`). Before
 deciding a fact whose home is an existing heading, the architect claims it (`atw-matrix claim`); a
 heading another Epic in progress holds is that Epic's to have reviewed, and the review scope lists
-it under `heldByOthers`. The promotion step approves and commits only the items of its own Epic's
-reviews, by name.
+it under `heldByOthers`. The promotion step approves only what is in review for its own Epic and
+commits only the documents its own review names.
 
 ## 8. Owner holds and questions (S02 item 8)
 
 **Decision.** The orchestrator writes no owner inbox entry and no hold. It returns owner facts in
-the handback and the driver acts on them exactly as today (`driver-contract.md` §4):
+the handback and the driver acts on them (`driver-contract.md` §4):
 
-- the flow returns `ok:false`, `stage: "requires-human-action"`, and `requiredHumanActions` (a list
-  of strings, each naming the fact and what the owner does);
+- a step that needs the owner fails with a `StepError` at stage `requires-human-action`, whose
+  evidence lines each name the fact and what the owner does; the journal records the failure on
+  the step;
+- the dispatch result, assembled from the journal (`flows/elaboration_result.py`), is then
+  `ok:false`, `stage: "requires-human-action"`, with `requiredHumanActions` set to those evidence
+  lines;
 - the driver's `lane._person_needed` holds the Epic (`elabstate.hold_for_person`:
   elaboration state `bead_metadata.ELABORATION_AUTHORING`, cause
   `bead_metadata.CAUSE_AWAITING_HUMAN`, both from
   `skills/beads-contract/schemas/bead-metadata.schema.json`), and its `human_log`
-  writes the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`) with the restore command.
+  writes the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`) with the restore command;
+- the next dispatch after the owner acts begins at that same step.
 
-Only owner facts become `requiredHumanActions` (CONTEXT 7.9): the architecture decider's
-`business-conflict` and `architecture-conflict` concerns, a missing architecture root
-(`no-arch-path`), and the repository-creation owner facts of section 11.3. Every other failure
-returns a `failure.cause`; `other` records an item failure and excludes it from selection for the current invocation. Fatal classifications stop new dispatch. The orchestrator releases the Epic's lifecycle owner
-(`elaboration-release`) on every exit after a successful claim unless the Epic was marked done
-(`prd-to-spec.md` step 16, and section 6.7).
+Only owner facts become `requiredHumanActions` (CONTEXT 7.9): the owner concerns of an
+`architecture-decider` ruling (`business-conflict`: two business requirements no design meets
+together; `section-2-conflict`: the only workable design conflicts with a section 2 constraint),
+and the repository-creation owner facts of section 11.3. Every other failure returns a
+`failure.cause` and a classification (section 6.8). The orchestrator releases the Epic's lifecycle
+owner (`elaboration.release`) on every exit after a successful claim unless the Epic was marked
+done (`prd-to-spec.md`, and section 6.7).
 
 ## 9. What the driver does for the elaboration lane
 
@@ -855,30 +917,37 @@ The step `atw-matrix prd --closure` (`flows/repo_scoping.py`) reads the span fro
 agent places anything. An element with no repository in the matrix, a repository that may hold no
 product element (the control repository, the architecture folder, a marketing repository), and a
 missing repository whose name matches no template each fail the step. It writes
-`span-elements.json` and `repo-scoping.json` and plans one spec step per repository. An Epic whose
-features reach no element to build fails the step.
+`span-elements.json` and `repo-scoping.json` and plans one container per repository, each with its
+first step `spec_authoring.context`. An Epic whose features reach no element to build fails the
+step.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 
-**The app space.** `polyrepo.py create` requires `--space`, `--template` and `--purpose`. The
-steward's `missingRepos` entry gives name, template and purpose; part B derives `--space`
-deterministically from the name: the `space` of the first `repositories.patterns` entry in
-`<control>/.polyrepo/config.yaml` whose `regex` matches the name and whose `kind` is `application`
-(the same rule `polyrepo.py` uses to classify a name). A name that matches no application pattern,
-or matches the `marketing` pattern, is a placement finding for the one corrective pass
-(`repo-scoping.md` step 6). The folder inside the space comes from the config's
-`templates.placement`, which `polyrepo.py create` already applies.
+A repository the matrix names and the inventory (`polyrepo.py inventory`) lacks is created by the
+span step with `polyrepo.py create`, which requires `--space`, `--template` and `--purpose`.
 
-**Owner facts.** Recognised before any `polyrepo.py create` runs, by a preflight whose results are
-exit statuses and JSON fields:
-1. `gh auth status` exits non-zero → owner fact: "the GitHub CLI is not signed in on this machine;
-   run `gh auth login`".
+- **The template** is the kind in `templates.kinds` of `<control>/.polyrepo/config.yaml` whose
+  `name_regex` matches the repository's name. The same match decides whether a repository is a
+  frontend repository.
+- **The purpose** is the one the repository's matrix row states, or a sentence naming the Epic
+  when the row states none.
+- **The app space** is derived from the name (`flows/repo_placement.py` `app_space`): the `space`
+  of the first `repositories.patterns` entry in the same file whose `regex` matches the name. A
+  name whose first matching pattern is not of kind `application`, or is in the `marketing` space,
+  and a name no pattern matches, fail the step. The folder inside the space comes from the
+  config's `templates.placement`, which `polyrepo.py create` applies.
+
+**Owner facts.** Recognised before the first `polyrepo.py create` runs, by a preflight whose
+results are exit statuses and command output:
+1. `gh auth status` exits non-zero → owner fact: the GitHub CLI is not signed in on this machine;
+   run `gh auth login`.
 2. `gh api user/memberships/orgs/<github_owner> --jq .state` (`github_owner` from
-   `<control>/.polyrepo/config.yaml`, today `satteritsik`) exits non-zero or prints a value other
-   than `active` → owner fact: "the signed-in GitHub account is not an active member of
-   `<github_owner>`".
-Either returns `requiredHumanActions` and stops repo scoping at stage `repo-creation` with no cause
-(section 8). A `polyrepo.py create` that fails after a passing preflight is a recorded failure with cause `other` (its result carries only error text, section 6.1).
+   `<control>/.polyrepo/config.yaml`) exits non-zero or prints a value other than `active` → owner
+   fact: the signed-in GitHub account is not an active member of `<github_owner>`.
+Either is written to `repo-creation.json` and fails the span step at stage
+`requires-human-action`, with the owner fact as its evidence (section 8). A `polyrepo.py create`
+that fails after a passing preflight fails the step at stage `repo-creation`, cause `other` (its
+result carries only error text, section 6.1).
 
 ### 11.4 The TRD
 
@@ -919,7 +988,7 @@ elaboration is done.
   mark the Epic.
 - **The task-deps schema check is the mapper session's output check.** The session's output is
   validated against the schema narrowed to the span's Task names, so the exact errors reach the one
-  corrective retry; `write_all_task_edges` keeps the key validation it has as the writer.
+  corrective retry; `write_all_task_edges` validates the keys again before it writes.
 - **Which metadata marks a Task as started.** A Task is started when its status is neither `open`
   nor `blocked`, or any key of the `BUILD_LIFECYCLE_KEYS` or `CDS_AUDIT_KEYS` group of
   `skills/beads-contract/schemas/bead-metadata.schema.json` (imported from the generated

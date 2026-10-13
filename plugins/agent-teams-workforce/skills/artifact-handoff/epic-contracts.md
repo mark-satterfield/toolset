@@ -12,18 +12,6 @@ criterion a document is judged by. `aws-solutions-architect` is responsible for 
 an Epic needs; the files it and its team hand on are in the `architecture-work` section and the
 sections after it.
 
-## architecture-review
-
-Schema: [architecture-review.schema.json](schemas/architecture-review.schema.json).
-
-Fields and interpretation: findings name claimId, claim, file, verdict (verified/unsupported/wrong), evidence and owner. coverageChecks use row id, verdict and independent evidence; resolutions accept/reject author responses by findingId. repairChecks verify/revise the named repair with files/evidence; cost reviewers include estimates. Complete means every assigned claim, coverage row and repair is checked against the same authoring standard, including required absent views. No invented requirement or design edits.
-
-## conformance
-
-Schema: [conformance.schema.json](schemas/conformance.schema.json).
-
-Fields and interpretation: conforms, reviewedFiles, findings (file/finding/evidence), coverageChecks and summary report independent semantic agreement with the approved target. Complete means all measured integration changes and required affected scopes are checked. conforms cannot be true with unresolved concrete defects; the reviewer never edits views.
-
 ## placement
 
 Schema: [placement.schema.json](schemas/placement.schema.json).
@@ -142,13 +130,9 @@ Not an agent artifact. `orchestrator/run.py` writes it and the driver reads it; 
 
 Fields and interpretation: Python JSON-line ledger events expose phase/verdict/session/process facts; driver translates existing callbacks. Complete means truthful observed transitions, no inferred running state.
 
-## retired
-
-Fields and interpretation: Not produced by direct Epic sessions: the Story draft is removed (DESIGN 11.5). Historical records are not active contracts.
-
 ## out-of-scope
 
-Fields and interpretation: Owner-run portfolio readiness artifacts are indexed for historical accounting but not produced by Epic elaboration; their existing workflows remain until the plan removes them. No new Epic session or contract is inferred from those rows.
+Fields and interpretation: The artifacts of the owner-run portfolio workflows (WSJF scoring, dependency assessment, Task dependency assessment) are produced by those workflows, not by Epic elaboration. No Epic session or contract is inferred from those rows.
 
 ## architecture-work
 

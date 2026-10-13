@@ -24,9 +24,9 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 ## PRD Validation
 
-`prd-to-spec` reads what it takes from the PRD file with `depscore.py prd-parse`, assuming the PRD was
-validated before its Epic was made ready, and dispatches none of these agents; the `prd-validation`
-workflow runs on its own.
+`prd-to-spec` hands the PRD file to its agents as it stands, assuming the PRD was validated before
+its Epic was made ready, and starts none of these agents; the `prd-validation` workflow runs on
+its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ workflow runs on its own.
 | c4-diagram-author | execute | Draws one C4 diagram of a settled design for the solutions architect. |
 | uml-diagram-author | execute | Draws one UML diagram of a settled design for the solutions architect. |
 | architecture-maintainer | execute | Writes the solutions architect's decisions into the arc42 documents, each fact in its one home with links from the documents that need it, and corrects the documents from what a Story built. Never writes section 2. |
-| architecture-conformance-reviewer | test | Checks ONE integration of an approved target into the effective version and reports findings without fixing them: the target was applied exactly, every view the catalog lists for each changed element was updated, and no contradicting content was left. |
+| architecture-conformance-reviewer | test | In `built-version`, checks one correction of the effective documents from what a Story built and reports findings without fixing them: each element reads as the built documents show it, every document the catalog lists for a changed element was updated, and no contradicting content was left. |
 | graphql-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it. |
 | failure-mode-analyst | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: failure, retry and recovery behaviour. |
 

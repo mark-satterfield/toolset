@@ -5,7 +5,7 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 **Status: to be deleted in S08; not rewritten.** It assesses a Task created outside elaboration,
 and no such Task legitimately exists: every Task is created by elaboration under a Story of an
 Epic (CONTEXT 7.16; the owner's answers 7 and 8 of 2026-10-09). Elaboration sets every Task's
-edges itself (`task-decomposition.md`, `prd-to-spec.md` steps 11 to 13). S08 deletes
+edges itself (`task-decomposition.md`, and the Task edges steps of `prd-to-spec.md`). S08 deletes
 `task-dependency-assessment.js` unconditionally (PLAN S08), together with the
 `task-dependency-mapper`'s second assignment and `assess-plan --level task` / `assess-context
 --task` when nothing else uses them. This file stays only as the record of what is deleted.
@@ -29,8 +29,8 @@ one key, `*_KEYS` for a key group). This spec restates none of their names or sh
 ## Who calls it (the S01f question)
 
 - **The Epic pipeline does not call this flow.** Tasks written by elaboration carry
-  `KEY_ELAB_KEY` and get their `blocks` edges from elaboration (`depscore.py write-task` within a Story,
-  `write-all-task-edges` across Stories; see `<orch>/specs/epic/task-decomposition.md` and
+  `KEY_ELAB_KEY` and get their `blocks` edges from elaboration (the step `beadwrite.write_task` within a Story,
+  the step `beadwrite.write_all_task_edges` across Stories; see `<orch>/specs/epic/task-decomposition.md` and
   `<orch>/specs/epic/prd-to-spec.md`). `prd-to-spec` does dispatch the same agent,
   `task-dependency-mapper`, but in its other assignment (edges between Tasks of different Stories
   of one Epic), which belongs to the `prd-to-spec` spec, not here.

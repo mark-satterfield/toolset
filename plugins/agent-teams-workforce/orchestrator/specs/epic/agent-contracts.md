@@ -2,15 +2,15 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-S03e; DESIGN.md supersedes pre-design spec wording. Every contract an agent produces or consumes
-lives as a JSON Schema in the artifact-handoff skill; a contract only code produces and consumes
-lives in one typed Python module in the producer's repository, named in the Rules column with
-Skill `none`. This table names each contract's one place and restates none of its fields.
-An agent of a contract loads a contract skill: artifact-handoff, or architecture-baseline, which holds
-the criteria of every level and points the architecture team to the same schemas folder.
-`polyrepo-steward` loads neither: its definition names the schemas folder for the one request it answers. Python-produced
-artifacts have no fictional agent reviewer. Legacy and owner-run portfolio rows are explicitly
-accounted for below, but are outside direct Epic sessions.
+Every contract an agent produces or consumes lives as a JSON Schema in the artifact-handoff
+skill; a contract only code produces and consumes lives in one typed Python module in the
+producer's repository, named in the Rules column with Skill `none`. This table names each
+contract's one place and restates none of its fields. An agent of a contract loads a contract
+skill: artifact-handoff, or architecture-baseline, which holds the criteria of every level and
+points the architecture team to the same schemas folder. `polyrepo-steward` loads neither: its
+definition names the schemas folder for the one request it answers. An artifact Python produces
+has no agent reviewer. The rows of the owner-run portfolio workflows carry the contract
+`out-of-scope`: no Epic session produces or reads them.
 
 ## Agents
 
@@ -50,18 +50,19 @@ accounted for below, but are outside direct Epic sessions.
 | task-decomposer | agents/task-decomposer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:artifact-handoff, agent-teams-workforce:wsjf | tasks,tasks-correction | story,placement,span-elements,spec-document,data-model-document,criteria-document,spec-ui |
 | task-dependency-mapper | agents/task-dependency-mapper.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:artifact-handoff | task-deps | tasks,closure-edges |
 
-## Removed dispatches
+## Agents no Epic step starts
 
-user-story-writer is replaced by Python (DESIGN 11.5). prd-validation-analyst, filing-clerk,
-advantage-evaluator, phase-gate-enforcer, wsjf-scorer and epic-sequencer are not Epic dispatches.
-architecture-fitness-function-author and ubiquitous-language-writer are not in the Epic roster.
-prd-reality-reconciler and architecture-conformance-reviewer are started by the built-version
-workflow, not by Epic elaboration. workflow-command-runner is never an Epic session.
+A script step writes the Story document, so no step starts user-story-writer (DESIGN 11.5).
+prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer and
+epic-sequencer are started by their own workflows or by a person. No Epic step starts
+architecture-fitness-function-author or ubiquitous-language-writer. prd-reality-reconciler and
+architecture-conformance-reviewer are started by the built-version workflow.
+workflow-command-runner is never an Epic session.
 
 ## Artifacts
 
-Paths reproduce INDEX.md exactly. Python means no agent producer/reviewer at that edge.
-Retired, legacy and out-of-scope rows are coverage dispositions, not new dispatch contracts.
+Paths reproduce INDEX.md exactly. Python means no agent producer or reviewer at that edge.
+An `out-of-scope` row is listed for coverage and is no Epic contract.
 
 | Artifact | Contract | Producers | Reviewers or consumers | Skill | Rules |
 |---|---|---|---|---|---|
@@ -107,7 +108,6 @@ Retired, legacy and out-of-scope rows are coverage dispositions, not new dispatc
 | `<work>/spec-<slug>.review.json` | spec-review | openapi-contract-reviewer | api-specification-author,data-model-specification-author,acceptance-criteria-writer,spec-decider | artifact-handoff `schemas/spec-review.schema.json` | spec-review (`spec_review_contract.SpecReview`) |
 | `<work>/spec-<slug>.<document>.correction.json`, `spec-<slug>.<document>.revision.json` | spec-correction | api-specification-author,data-model-specification-author,acceptance-criteria-writer | spec-decider | artifact-handoff `schemas/spec-correction.schema.json` | spec-correction (`spec_review_contract.SpecCorrection`) |
 | `<work>/spec-<slug>.ruling.json` | spec-ruling | spec-decider | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/spec-ruling.schema.json` | spec-ruling (`spec_review_contract.SpecRuling`) |
-| `<work>/story-<slug>.draft.json` (retired by DESIGN 11.5) | retired | python | python | none | retired |
 | `<work>/story-<slug>.json` | story | python | task-decomposer | artifact-handoff | story |
 | the filed Spec documents in the vault | filed-documents | python | python | artifact-handoff | filed-documents |
 | `<work>/tasks-<slug>.items.json` | task-items | python | python | artifact-handoff | task-items |
@@ -117,14 +117,13 @@ Retired, legacy and out-of-scope rows are coverage dispositions, not new dispatc
 | `<workDir>/score-plan.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/judge-input-epic.json`, `judge-input-task.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/prd/<epic-id>.md` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/judgments/<level>/<key>.input.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` (+ `.meta.json`) | out-of-scope | python | python | none | out-of-scope |
+| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/record.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/score.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/assess-plan.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/context.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/edges.json` (+ `.meta.json`) | out-of-scope | python | python | none | out-of-scope |
+| `<workDir>/edges.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/reasoning.md` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/validation.json` | out-of-scope | python | python | none | out-of-scope |
 | `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | out-of-scope | python | python | none | out-of-scope |

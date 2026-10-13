@@ -6,8 +6,8 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 scoring belongs to the future readiness process, which is not yet built (CONTEXT 7.17; the owner's
 answer 6 of 2026-10-09); elaboration assumes it is done and no Epic flow runs this one. The only
 part of it the Epic pipeline uses is the Task WSJF arithmetic (`scoring.score`, rubric
-`wsjf.py`), which `prd-to-spec` step 14 runs with the write scope limited to the Epic's Tasks, from
-the sizes `task-decomposition` writes. Whether this owner-run command is kept until the readiness
+`wsjf.py`), which the `prd-to-spec` steps `elaboration.score` and `elaboration.finish` run with the
+write scope limited to the Epic's Tasks, from the sizes the Task bead writes record. Whether this owner-run command is kept until the readiness
 process exists is the owner's concern, outside this rewrite. The rest of this file is the record of its
 contract, for that decision and for the readiness process.
 
@@ -31,15 +31,13 @@ This spec restates none of their names or values.
 
 ## Who calls it (the S01f question)
 
-- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only in its finish step,
-  which runs the **arithmetic** step of this flow (`scoring.score`) with the write scope limited
-  to the Epic's Tasks. Today `depscore.py elaboration-finish` also writes the Epic's values, with
-  its size rolled up from its Tasks; the rewrite drops that write (CONTEXT 7.17). It never judges:
-  the Epic's value must already be judged (by the readiness process; today by this flow), and its
-  Tasks arrive sized and fingerprinted by `depscore.py write-task` (see
-  `<orch>/specs/epic/task-decomposition.md`, whose corrective pass leaves no Task unsized). So the
-  arithmetic is one shared Python function that both this flow and the `prd-to-spec` finish step
-  call.
+- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only in its steps
+  `elaboration.score` and `elaboration.finish`, which run the **arithmetic** step of this flow
+  (`scoring.score`) with the write scope limited to the Epic's Tasks and write no value on the
+  Epic (CONTEXT 7.17). They never judge: the Epic's value must already be judged (by this flow),
+  and its Tasks arrive sized and fingerprinted by the step `beadwrite.write_task` (see
+  `<orch>/specs/epic/task-decomposition.md`, whose correction leaves no Task unsized). So the
+  arithmetic is one shared Python function that both this flow and those steps call.
 - **The driver does not call this flow.** Commit `64b4adbb` (2026-10-02) deleted `triggers.py`; the
   supervisor no longer assesses or re-scores on its own. What is left in `<driver>`: the ledger
   event types `trigger_plan` and `trigger_dispatch` (`ledger.EVENT_TYPES`, no producer),

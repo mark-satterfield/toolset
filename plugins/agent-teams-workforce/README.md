@@ -1,6 +1,6 @@
 # Agentic Workflow Plugin
 
-This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce. The pipeline runs from PRD Creation through a TRD Authoring phase (Phase 2.5) into Specs, with the architecture documentation as the source of truth that feeds both the TRD and the Specs: the effective architecture in its arc42 folder, the targets proposed for a feature, and the deltas between them.
+This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce. The pipeline runs from PRD Creation into elaboration, which establishes the architecture a PRD needs, has the TRD written with it, and writes the Specs, the Stories and the Tasks, and from there into the build of each Task and the deploy of each Story. The architecture documentation is the source of truth that feeds both the TRD and the Specs: the effective architecture in its arc42 folder, with the matrix recording which of its content is approved.
 
 ## Structure
 
@@ -18,7 +18,7 @@ The roster is defined by the agent files in `agents/`.
 
 Current roster scope:
 
-- 172 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
+- 183 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
 
 > [!IMPORTANT]
 >

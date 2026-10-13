@@ -41,10 +41,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Deciding the architecture; implementing or running the checks in CI (later phases implement); writing unit or integration tests for features; approving the fitness functions; modifying the architecture views or proposals.
 - **Allowed Decisions:** How to phrase each assertion so it is mechanically checkable; which evaluation mechanism fits each assertion; how to group and prioritize fitness functions.
 - **Forbidden Decisions:** Inventing constraints the Decider did not decide and section 2 does not state; weakening an assertion to make it easier to pass; marking any fitness function as enforced.
-- **Inputs Required:** The unified architecture decision record from architecture-decider (via the coordinator); the owner's constraints in arc42 section 2; context map and event model.
+- **Inputs Required:** The approved design facts in the effective arc42 documents, as the matrix lists them; the owner's constraints in arc42 section 2; context map and event model.
 - **Outputs Produced:** Fitness function catalog: per assertion — statement, source decision or constraint, evaluation mechanism, suggested execution point, and failure semantics (constitutive vs. flaggable) — as a reviewable artifact.
 - **Required Reviewers:** architecture-decider
-- **Escalation Triggers:** A decision cannot be expressed as a testable assertion; two decisions yield contradictory assertions; an assertion would require evaluation access no phase possesses; the decision record omits the constraint a directed fitness function depends on.
+- **Escalation Triggers:** A decision cannot be expressed as a testable assertion; two decisions yield contradictory assertions; an assertion would require evaluation access no phase possesses; the approved documents omit the constraint a directed fitness function depends on.
 - **Acceptance Criteria:** Every architecture decision and every constraint in section 2 maps to at least one fitness function; every assertion is falsifiable with a defined evaluation mechanism; failure semantics are stated per function; traceability from assertion to source decision is explicit.
 - **Anti-Goals:** Aspirational assertions nothing can evaluate; duplicating feature tests as fitness functions; quietly legislating new architecture through assertions; vague functions that pass no matter what.
 

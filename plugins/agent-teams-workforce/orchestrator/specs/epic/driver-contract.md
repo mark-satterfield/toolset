@@ -71,8 +71,9 @@ loads it through `beadmeta.py`). This file names those constants and never resta
   `KEY_ELABORATION_STATE`, `KEY_ELABORATION_STATE_AT`, `KEY_ELABORATION_STATE_CAUSE` and
   `KEY_ELABORATION_STATE_OWNER` (a subset of that group) only for a person hold (`elabstate.hold_for_person`: `ELABORATION_AUTHORING`, cause
   `CAUSE_AWAITING_HUMAN`, owner empty) and from `elabmark.py` (owner's CLI, cause `CAUSE_HUMAN`).
-  `ELABORATION_IN_PROGRESS` and `ELABORATION_DONE` are written by the workflow (`depscore.py
-  elaboration-start` / `elaboration-finish`, see `<orch>/specs/epic/prd-to-spec.md`).
+  `ELABORATION_IN_PROGRESS` and `ELABORATION_DONE` are written by the orchestrator
+  (`elaboration.start` when a dispatch claims the Epic, `elaboration.finish` in the journal step
+  that marks the Epic elaborated; see `<orch>/specs/epic/prd-to-spec.md`).
 
 ## 3. What the driver sends
 
@@ -149,7 +150,7 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 | detail paths, sessions | failure evidence; human-action detail paths |
 | beads emitted, lifecycle done | recorded on the handback event only; read by `outcomes.py` to word the ending ("Finished: N Story and Task beads written" when the lifecycle is done, else "unfinished") |
 
-The build and deploy parts of `Handback` are recorded on the handback event or unused by this lane. The retired incident handback field is no longer emitted or consumed.
+The build and deploy parts of `Handback` are recorded on the handback event or unused by this lane.
 
 **Interruption.** An item stopped by an owner stop-execution of that item, a SIGTERM to it, or a
 supervisor shutdown or drain gets a handback from `handback_contract.interrupted_failure`:
@@ -242,9 +243,7 @@ Readers and what they need:
   `dispatching bead <id> to` in the first 64 KiB of a transcript born between 30 s before and 120 s
   after the dispatch start, in the project folders of the cwds recorded for the bead.
 
-## 7. Contracts the Python orchestrator breaks or must replace
-
-Facts, for S02 and S05 to decide on:
+## 7. How an elaboration run differs from a build or deploy run
 
 - A build or deploy run is one host session, whose transcript tree and `subagents/workflows/wf_*`
   folders carry its cost, phases and verdicts. An elaboration run has no host session, no Workflow
@@ -259,34 +258,41 @@ Facts, for S02 and S05 to decide on:
   `headless._dispatch_with_recovery`, typed in `recoverytypes.py`) exist only for the build and
   deploy lanes' Workflow runtime and command runner; an orchestrated dispatch carries neither. The
   workflow result envelope those lanes read has no single definition (§4).
-- Some of today's classification reads text: `breaker.pause_of` parses the headline for the usage
-  wall and its reset time, `handbackio._died_of_outage` and `step_defect_origin` match output and
-  dispatch-failure message text, and `headless._resume_unavailable` matches headline phrases.
-  CONTEXT 7.4 says causes are never classified by matching error text.
+- Some classification of a build or deploy run reads text: `breaker.pause_of` parses the headline
+  for the usage wall and its reset time, `handbackio._died_of_outage` and `step_defect_origin`
+  match output and dispatch-failure message text, and `headless._resume_unavailable` matches
+  headline phrases. An elaboration handback states its cause and classification as structured
+  fields, and the driver reads those (`failurecause.pause_for`, `pluginhandback.py`): CONTEXT 7.4
+  says causes are never classified by matching error text.
 - `observe.py` shows an Epic "Done" only with state `ELABORATION_DONE`, a TRD, a Story and a Task. That rule
   stays as it is: every Epic that reaches elaboration gets Stories and Tasks (CONTEXT 7.6), so no
   "nothing to build" record exists for it to accept.
 
 ## 8. Session-runner rules every Epic flow cites
 
-**Section 2 guard (hard limit, CONTEXT 6).** Every agent session of every Epic flow (the
-composite's own step, every phase, and the owner-run portfolio flows) runs inside one guard, which
-S02 places in the session runner. No flow keeps a copy of its own.
+**Section 2 guard (hard limit, CONTEXT 6).** Every agent session of an elaboration run runs inside
+one guard, which the session runner applies (`<orch>/core/constraints.py` `Section2Guard`,
+`<orch>/DESIGN.md` section 7.3). No flow keeps a copy of its own. The guard is shared by every
+orchestrator process and keeps its state under `state/section2-guard/`, one folder per
+architecture root.
 
-1. Before the session: `archstate.snapshot_constraints(<arch>, keep=True)` (today `depscore.py
-   arch-constraints --keep`): the digest of `<arch>/arc42/02-architecture-constraints/`,
-   its git status, whether it exists, and a kept copy.
-2. After the session ends, whatever its outcome: snapshot again.
-3. Any difference in digest, existence or git status: `archstate.restore_constraints(<arch>,
-   kept)` (today `depscore.py arch-constraints-restore --kept <copy>`), then fail the step at stage
-   `constraints-written`, cause `OTHER_CAUSE` (record failure; no retry).
-4. A snapshot or restore that itself fails fails the step at its stage, cause `OTHER_CAUSE`.
+1. Before a session, when no session of any run is live: `archstate.snapshot_constraints(<arch>,
+   keep=True)`: the digest of `<arch>/arc42/02-architecture-constraints/`, its git status, whether
+   it exists, and a kept copy, with the vault's `HEAD` commit. A session that starts while another
+   is live shares that snapshot.
+2. After a session ends, whatever its outcome: snapshot again and compare.
+3. A difference that is the owner's committed work (clean git status, new commits that touch
+   section 2, none with a `Pipeline-Run:` trailer) is accepted: the snapshot is taken again.
+4. Any other difference in digest, existence or git status: the changed folder is copied aside,
+   `archstate.restore_constraints(<arch>, kept)` restores section 2, the run's live sessions are
+   stopped, and the step fails at stage `constraints-written`, cause `OTHER_CAUSE`.
+5. A snapshot or restore that itself fails fails the step at stage `constraints-written`, cause
+   `OTHER_CAUSE`; a guard lock that is not acquired in time fails it with `CONTENTION_CAUSE`.
 
 It stops wrong output nothing later catches: every agent with Write or Edit (the polyrepo-steward,
 the solutions architect and the agents it starts, `architecture-maintainer`, `trd-author`, the
-spec authors, `task-decomposer`, `task-dependency-mapper`, `wsjf-scorer`, `epic-sequencer`) can write
-anywhere, and no later step re-reads section 2. How the guard spans sessions that run in parallel
-(the per-repository spec chains, the architecture reviewers) is S02's to settle.
+spec authors, `task-decomposer`, `task-dependency-mapper`) can write anywhere, and no later step
+re-reads section 2.
 
 **Step record.** A step's output is recorded in the Epic's step journal as an artifact, by file
 path or as a value, in the one journal change that marks the step done. A later step is handed
@@ -298,7 +304,9 @@ freshness check.
 
 - **7.18 Entry point.** The owner starts the pipeline only with `python3
   ops/sdlc-automation/keeper.py`; the elaboration lane is the only door into `prd-to-spec`. No
-  plugin command (`/start-prd`, `/work-bead`) dispatches it; S08 deletes both.
+  plugin command dispatches it: `/start-prd` resolves a PRD's Epic and `/work-bead` routes an Epic
+  or a Story to `prd-to-spec`, and each then reports that the driver's elaboration lane elaborates
+  the Epic.
 - **7.6 and 7.17 at the boundary.** The lane's "Elaboration done" read (`ELABORATION_DONE`)
   now means Stories, Tasks, Task edges and Task WSJF scores all exist; the Epic's own WSJF is not
   rewritten by elaboration.
@@ -318,9 +326,10 @@ freshness check.
   into the Python run: the runner sets the cause (a `*_CAUSE` constant of `handback_contract.py`)
   from the session's structured result (exit status, stream events), exception types and script
   JSON fields. The remaining choices are open items in QUESTIONS.md.
-- **7.9 Who gets asked what.** Only owner facts become required human actions: the architecture's
-  `owner-concern` (business or section 2 conflict), a missing architecture path (`no-arch-path`),
-  and credentials the run cannot hold. The driver alone writes the hold and the owner inbox from
+- **7.9 Who gets asked what.** Only owner facts become required human actions: the owner concerns
+  of an `architecture-decider` ruling (two business requirements no design meets together, or a
+  conflict with section 2), and a GitHub sign-in or organisation membership the span step needs
+  before it can create a repository. The driver alone writes the hold and the owner inbox from
   them (§4). Every other failure carries its cause and its classification; ordinary item failures are recorded and fatal defects stop new dispatch. Neither creates an owner action automatically.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
 - **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the

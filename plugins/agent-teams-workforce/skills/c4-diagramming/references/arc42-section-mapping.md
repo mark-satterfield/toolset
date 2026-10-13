@@ -62,9 +62,9 @@ component views.
 
 ## Versions
 
-A view in `arc42/` is the effective version. A proposed design is drawn in `target/<subject>/`
-with the same section layout, and the change between effective and target in
-`target/<subject>/delta/`. A difference the build delivered is drawn in `built/<subject>/`. Files
+The documents are in `arc42/`. A document whose `lifecycle_state` is `effective` was reviewed and
+approved; one that is `in-review` awaits review, and the matrix records which content is approved.
+A difference the build delivered is drawn in `built/<element>/`. Files
 and folders are named for their subject, never for a PRD, an Epic, a bead id, a date or a pipeline
 gate.
 

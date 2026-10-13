@@ -32,7 +32,8 @@ any step fails.
 
 An earlier start happens only when the owner asks for it: `atw-step-journal invalidate` sets the
 named step and every step after it back to planned, and removes the steps those steps planned. The
-next dispatch runs from that step.
+driver's `elabmark.py --bead <id> --start-at <step>` does the same through its `journalstart.py`.
+The next dispatch runs from that step.
 
 ## The outermost steps
 
