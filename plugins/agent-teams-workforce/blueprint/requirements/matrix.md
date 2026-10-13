@@ -66,6 +66,14 @@ Each question below is answered from the matrix alone, without reading documents
 | Q15 | Which of the project's own stacks, libraries, layers, services and infrastructure depend on this stack, service, component, library, layer or piece of infrastructure, and how? | A list of the things that depend on it, each with the stack that holds it and the kind of the relationship, followed to any depth. |
 | Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
 | Q17 | Which app does this stack belong to, and which stacks belong to this app? | One app for a stack; the list of stacks for an app. |
+| Q18 | Which arc42 documents describe this service, component or piece of infrastructure? | A list of documents, each with the heading that describes it and whether the document is effective. |
+| Q19 | Which stack is this Story or Task placed in and what does it build, and which Stories and Tasks are placed in this stack? | One stack with its repository and the things built; for a stack, the open Stories and Tasks placed in it, each with its Epic. |
+| Q20 | What rests on this architecture document, feature, service, component, piece of infrastructure or stack? | The features, constraints and dependents that rest on it, the requirements and Epics those serve, and the open Stories and Tasks that build it. For a component, this includes which requirements of which PRDs it implements. |
+| Q21 | Which other Epics share a feature, architecture document, service, component or stack with this Epic, or drive or rest on the same architecture decision? | A list of Epics, each with what is shared and how. |
+| Q22 | What does this stack publish and deploy, and which commands test, publish and deploy it? | Whether it publishes a package, deploys with CDK, or both, and the three commands. |
+| Q23 | Which stacks hold infrastructure of a given resource type? | A list of stacks, each with the matching infrastructure. |
+| Q24 | Which expertise does this Epic need? | A list of skills. |
+| Q25 | Which stacks does this repository hold? | A list of stacks. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
@@ -93,6 +101,7 @@ This list is not complete.
 | Package | One Python package: a custom library published to CodeArtifact, or a third-party package. |
 | Layer | One AWS Lambda layer. It contains packages and is used by Lambdas. |
 | Repository | Where a stack's source can currently be found. An attribute of a stack. |
+| Story and Task | One open Story or Task, by its beads id, placed in the stack it lands in, with the things it builds. |
 
 ### 3.2 The relationships
 
@@ -166,15 +175,16 @@ contains packages and is used by Lambdas.
 the moment it is read. That says nothing about whether it covers the PRD in hand: the same
 document may need additions as the next feature is designed.
 
-**Implementation.** A piece of information in the matrix is verified when the code that
-makes it real has been built and tested and has passed. That always includes its CI/CD and
-its CDK. This is the whole definition. Whether something is currently deployed is not
-recorded and has no bearing on verified: the environment is a development environment where
-stacks are deployed and torn down freely.
+**Implementation.** The matrix has one code mark: verified. It is set when a Story's code
+has been built and tested and has passed, including its CI/CD and its CDK. It is recorded on
+the stack and its components, with the commit. This is the whole definition. No deployed
+mark and no merged mark exists. Whether something is currently deployed is not recorded and
+has no bearing on verified: the environment is a development environment where stacks are
+deployed and torn down freely.
 
-Verified applies to any piece of information in the matrix, an entry or a relationship, and
-is not limited to code. "This service uses the chassis" is a relationship, and it is planned
-until a build proves it.
+A relationship that the Story's code makes real is verified with the stack or component it
+starts from. "This service uses the chassis" is a relationship, and it is planned until a
+build proves it.
 
 Everything in the matrix is used, verified or not. Verified never decides whether an entry
 or a relationship is read, linked to, designed against or built on. The mark changes what
@@ -193,7 +203,7 @@ the pipeline assumes, and it never blocks a step:
 |---|---|---|
 | Seeded | The matrix starts with what is known today: every existing stack and the repository that holds it; the purpose of each stack; every Epic and its PRD; the services, components and infrastructure the architecture documents describe, mapped to the stacks and repositories that are their home in code. | The seeding work, once, from the repositories, beads and the effective arc42 documents. |
 | Filled in and corrected | As elaboration runs: the features derived from PRD requirements; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
-| Confirmed | Information, an entry or a relationship, is marked verified once the code, including its CI/CD and its CDK, has been built and tested and has passed. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
+| Confirmed | A stack and its components are marked verified, with the commit, once a Story's code has been built and tested and has passed, including its CI/CD and its CDK. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
 ## 5. Requirements
@@ -291,16 +301,17 @@ the pipeline assumes, and it never blocks a step:
 - **R23.** The matrix keeps "this document is approved" separate from "this document covers
   this requirement", because an effective document can be trusted and still not cover the
   PRD in hand.
-- **R24.** The matrix marks each piece of information as verified or not verified,
-  separately from every other piece. A piece of information is an entry or a relationship;
-  the mark applies to both and is not limited to code. A verified entry or relationship
-  describes something that exists: the pipeline counts on it existing and trusts its code.
-  An entry or relationship that is not verified describes what is designed or planned and
-  is theoretical until a build proves it.
-- **R25.** The build pipeline marks information verified only when the code has been built
+- **R24.** The matrix has one code mark, verified, and records it on the stack and its
+  components, with the commit. Each is marked separately from every other, and a
+  relationship the code makes real is verified with the stack or component it starts from.
+  A verified entry or relationship describes something that exists: the pipeline counts on
+  it existing and trusts its code. An entry or relationship that is not verified describes
+  what is designed or planned and is theoretical until a build proves it.
+- **R25.** The build pipeline sets the verified mark only when a Story's code has been built
   and tested and has passed, and that always includes its CI/CD and its CDK. Nothing else
-  marks it. No elaboration step reads code to decide whether something is built. Whether
-  something is currently deployed is not recorded and has no bearing on verified.
+  sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
+  decide whether something is built. Whether something is currently deployed is not recorded
+  and has no bearing on verified.
 - **R26.** The pipeline uses everything in the matrix, verified or not. Verified never
   decides whether an entry or a relationship is read, linked to, designed against or built
   on, and it never blocks a step. The mark changes only what the pipeline assumes: an entry
@@ -341,24 +352,15 @@ the pipeline assumes, and it never blocks a step:
 - **R36.** The matrix records, for each shared library a stack's code uses, the distribution
   (package, layer) through which that library reaches it (Q9).
 
-## 6. Open points
+### Growth and use
 
-1. How each stack's purpose is established, given that no accurate statement of purpose
-   exists today, including in the repositories' README files.
-2. Whether a technical requirement or constraint is an entry of its own or an attribute of
-   features and stacks.
-3. The complete list of stack types; the naming conventions document's list is probably
-   incomplete.
-4. Which approval markers the lookups need beyond mirroring whether a document is effective
-   (in review, changed since approval, approval below the level of a document).
-5. What happens to a verified mark when the verified thing is changed afterwards.
-6. How a PRD requirement is identified, so that coverage is recorded per requirement.
-7. How "the same feature or a similar one" is found.
-8. Whether a disagreement between documents and its settlement is recorded in the matrix so
-   that it is not raised again.
-9. Whether a single design fact, with the one arc42 heading that is its home, is a kind of
-   thing the matrix records.
-10. Whether a name that an arc42 document uses and nothing else classifies is recorded.
-11. How two Epics elaborated at the same time are kept from changing the same thing.
-12. Whether the matrix states, for a Task, the shared capabilities it must use, and whether
-    the build checks for duplicates of them.
+- **R37.** The matrix accepts new kinds of entry and new kinds of relationship without
+  restructuring what it already holds, because the owner expects to add things not yet
+  thought of.
+- **R38.** No pipeline step discovers by scanning what the matrix holds. Each such step reads
+  the matrix, and a change that introduces a matrix lookup removes the mechanism it replaces
+  in the same change, so that the old way of finding out never runs beside the new one.
+- **R39.** The matrix is read and maintained at every pipeline step where something it holds
+  is needed or becomes known: in elaboration, in build, in deploy and in repository work. A
+  fact that becomes known at a step and is recorded only later, or elsewhere, is found again
+  by scanning.

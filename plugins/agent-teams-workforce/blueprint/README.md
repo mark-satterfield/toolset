@@ -31,4 +31,4 @@ One topic per document. A topic has the same file name in both folders.
 
 | Topic | Requirements | Design |
 |---|---|---|
-| The matrix | [requirements/matrix.md](requirements/matrix.md) | none yet |
+| The matrix | [requirements/matrix.md](requirements/matrix.md) | [design/matrix.md](design/matrix.md) |
