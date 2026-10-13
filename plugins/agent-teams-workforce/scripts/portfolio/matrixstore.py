@@ -33,6 +33,7 @@ from driver_surface_types import CONTROL_REPO_ENV
 from matrix_contract import (
     APPROVAL_APPROVED,
     APPROVAL_CHANGED_SINCE_APPROVAL,
+    APPROVAL_UNVERIFIED,
     COMMAND_RULES,
     DEFAULT_MATRIX_PARTS,
     ELEMENT_KINDS,
@@ -56,6 +57,7 @@ from matrix_contract import (
     ROLES,
     VERSION,
     Anchor,
+    Approval,
     ApprovalState,
     Change,
     HeadingHash,
@@ -67,6 +69,7 @@ from matrix_contract import (
     NodeId,
     Role,
     validate_matrix,
+    validate_node,
 )
 
 TIMESTAMP_FORMAT: Final = "%Y-%m-%dT%H:%M:%SZ"
@@ -318,16 +321,32 @@ def _placement_problems(matrix: Matrix, node: Node) -> list[str]:
 
 
 def _home_problems(matrix: Matrix, node: Node) -> list[str]:
-    """Check that the home of a fact or a supporting feature is in a document the matrix knows.
+    """Check that the home of an approved fact or supporting feature is in a document the matrix knows.
+
+    A row that is not approved may name a home that is still to be written: the architect records
+    the fact before the document exists. :func:`heading_problems` reports it until it does, and
+    nothing is approved without it.
 
     Returns:
-        One sentence when the home document is not a row.
+        One sentence when the row is approved and its home document is not a row.
 
     """
     home: Anchor | None = node.get("home")
-    if home is None or make_id(KIND_DOCUMENT, home["document"]) in matrix["nodes"]:
+    approved: bool = "approval" in node and node["approval"]["state"] == APPROVAL_APPROVED
+    if home is None or not approved or make_id(KIND_DOCUMENT, home["document"]) in matrix["nodes"]:
         return []
     return [f"{node['id']}: the home document {home['document']!r} is not a row"]
+
+
+def _standing_problems(node: Node) -> list[str]:
+    """Check that a disagreement names at most one statement that stands.
+
+    Returns:
+        One sentence when more than one statement of the row is marked as standing.
+
+    """
+    standing: int = sum(1 for statement in node.get("statements", []) if statement.get("stands") is True)
+    return [f"{node['id']}: {standing} statements are marked as standing"] if standing > 1 else []
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -342,16 +361,19 @@ def heading_problems(matrix: Matrix) -> list[str]:
         matrix: A matrix that satisfies the schema.
 
     Returns:
-        One sentence per fact or supporting feature whose home document is a row that has no
-        such heading now.
+        One sentence per fact or supporting feature whose home document is not a row yet, or is
+        a row that has no such heading now.
 
     """
     problems: list[str] = []
     node: Node
     for node in matrix["nodes"].values():
         home: Anchor | None = node.get("home")
-        document: Node | None = None if home is None else matrix["nodes"].get(make_id(KIND_DOCUMENT, home["document"]))
-        if home is None or document is None:
+        if home is None:
+            continue
+        document: Node | None = matrix["nodes"].get(make_id(KIND_DOCUMENT, home["document"]))
+        if document is None:
+            problems.append(f"{node['id']}: the home document {home['document']!r} is not a row yet")
             continue
         heading: HeadingHash | None = document.get("headings", {}).get(home["heading"])
         if heading is None or not heading["hash"]:
@@ -400,6 +422,7 @@ def consistency_problems(matrix: Matrix) -> list[str]:
         problems.extend(_link_problems(matrix, node))
         problems.extend(_placement_problems(matrix, node))
         problems.extend(_home_problems(matrix, node))
+        problems.extend(_standing_problems(node))
         if node["kind"] == KIND_FACT:
             first: NodeId = facts.setdefault(_fact_key(node), key)
             if first != key:
@@ -463,6 +486,45 @@ def heading_state(document: Node, heading: str, current: ApprovalState) -> Appro
     if current == APPROVAL_CHANGED_SINCE_APPROVAL and matches:
         return APPROVAL_APPROVED
     return current
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unapprove(node: Node, bead: str, stamp: Stamp) -> None:
+    """Record that a row was changed, so it is not approved until it is reviewed again.
+
+    The row's ``changed`` is set. A row that carries the approval marker becomes unverified and
+    names the Epic that changed it, which is how that Epic's review finds it.
+
+    Args:
+        node: The row, changed in place.
+        bead: The Epic that made the change; empty when no Epic did.
+        stamp: The moment and the maker of the change.
+
+    """
+    node["changed"] = stamp.change()
+    if "approval" not in node:
+        return
+    approval: Approval = {"state": APPROVAL_UNVERIFIED}
+    if bead:
+        approval["bead"] = bead
+    node["approval"] = approval
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def owner_of(node: Node) -> str:
+    """Name the Epic that holds a row while it is not approved.
+
+    Args:
+        node: The row.
+
+    Returns:
+        The Epic its approval marker names, or an empty string when the row has no marker, is
+        approved, or was recorded by no Epic.
+
+    """
+    if "approval" not in node or node["approval"]["state"] == APPROVAL_APPROVED:
+        return ""
+    return node["approval"].get("bead", "")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -638,6 +700,21 @@ def serialize(matrix: Matrix) -> str:
     return json.dumps(matrix, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def write_text(path: Path, text: str) -> None:
+    """Put text in place of a file the matrix command writes, in one move.
+
+    A reader of the file sees it as it was or as it is now, never half written. A file that
+    cannot be written raises ``MatrixError``.
+
+    Args:
+        path: The file; its directory must exist.
+        text: The whole text of the file.
+
+    """
+    _write_text(path, text)
+
+
 def _write_text(path: Path, text: str) -> None:
     """Put text in place of a file in one move.
 
@@ -652,7 +729,7 @@ def _write_text(path: Path, text: str) -> None:
         descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
         os.fchmod(descriptor, FILE_MODE)
     except OSError as error:
-        message = f"cannot write the matrix {path}: {error}"
+        message = f"cannot write {path}: {error}"
         raise MatrixError(message) from error
     scratch: Path = Path(temporary)
     try:
@@ -663,7 +740,7 @@ def _write_text(path: Path, text: str) -> None:
         scratch.replace(path)
     except OSError as error:
         scratch.unlink(missing_ok=True)
-        message = f"cannot write the matrix {path}: {error}"
+        message = f"cannot write {path}: {error}"
         raise MatrixError(message) from error
 
 
@@ -749,14 +826,56 @@ def create_matrix(path: Path, matrix: Matrix, *, replace: bool = False, wait: fl
         _write_text(path, serialize(checked_matrix(matrix, f"the matrix to write to {path}")))
 
 
+def _row_texts(matrix: Matrix) -> dict[NodeId, str]:
+    """Render each row of a matrix as text, to tell afterwards which rows a change touched.
+
+    Returns:
+        Each row's id and its JSON text.
+
+    """
+    return {key: json.dumps(node, sort_keys=True, ensure_ascii=False) for key, node in matrix["nodes"].items()}
+
+
+def _checked_change(matrix: Matrix, before: Mapping[NodeId, str], where: str) -> None:
+    """Require a changed matrix to conform, validating against the schema only what the change touched.
+
+    The matrix satisfied the schema when it was read, so the rows the change left alone still do.
+    The rows it added or changed, and everything of the matrix that is not a row, are validated
+    against the schema; the rules the schema cannot state are checked over the whole matrix,
+    because a change to one row can break a rule that concerns another.
+
+    Raises:
+        MatrixError: A row is filed under something that is not a row id, a changed row or the
+            rest of the matrix does not satisfy the schema, or the matrix breaks a rule the
+            schema cannot state.
+
+    """
+    message: str
+    validate_matrix({**matrix, "nodes": {}}, where)
+    key: NodeId
+    node: Node
+    for key, node in matrix["nodes"].items():
+        if before.get(key) == json.dumps(node, sort_keys=True, ensure_ascii=False):
+            continue
+        if NODE_ID_PATTERN.search(key) is None:
+            message = f"{where}: {key!r} is not a row id"
+            raise MatrixError(message)
+        validate_node(node, f"{where}: the row {key}")
+    problems: list[str] = consistency_problems(matrix)
+    if problems:
+        message = f"{where} is not consistent ({len(problems)} problems): " + "; ".join(problems[:20])
+        raise MatrixError(message)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def update_matrix[T](path: Path, change: Callable[[Matrix], T], *, wait: float = DEFAULT_LOCK_WAIT) -> T:
     """Apply one change to a matrix file as a single locked read-modify-write.
 
-    The matrix is read under the lock, ``change`` edits it in place, and the result is validated
-    and moved into place before the lock is released. A change that leaves the matrix as it was
-    writes nothing. When ``change`` raises, or the changed matrix does not conform, the file is
-    left as it was.
+    The matrix is read and validated under the lock, ``change`` edits it in place, and the result
+    is checked and moved into place before the lock is released. Only the rows the change
+    touched are validated against the schema again; the rules the schema cannot state are
+    checked over the whole matrix. A change that leaves the matrix as it was writes nothing.
+    When ``change`` raises, or the changed matrix does not conform, the file is left as it was.
 
     Args:
         path: The matrix file.
@@ -776,10 +895,11 @@ def update_matrix[T](path: Path, change: Callable[[Matrix], T], *, wait: float =
     with matrix_lock(path, wait):
         matrix: Matrix = read_matrix(path)
         before: str = serialize(matrix)
+        rows: dict[NodeId, str] = _row_texts(matrix)
         result: T = change(matrix)
         after: str = serialize(matrix)
         if after != before:
-            checked_matrix(matrix, f"the matrix to write to {path}")
+            _checked_change(matrix, rows, f"the matrix to write to {path}")
             _write_text(path, after)
     return result
 

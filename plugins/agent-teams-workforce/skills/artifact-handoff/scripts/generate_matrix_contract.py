@@ -51,6 +51,8 @@ VOCABULARIES: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("DisagreementRule", "RULE", "DISAGREEMENT_RULES", "disagreementRule"),
     ("DisagreementStatus", "DISAGREEMENT", "DISAGREEMENT_STATUSES", "disagreementStatus"),
     ("InterfaceKind", "INTERFACE", "INTERFACE_KINDS", "interfaceKind"),
+    ("HeadingChange", "HEADING", "HEADING_CHANGES", "headingChange"),
+    ("ReuseFinding", "REUSE", "REUSE_FINDINGS", "reuseFinding"),
     ("Role", "ROLE", "ROLES", "role"),
 )
 # Every vocabulary whose values must all be row kinds.
@@ -64,6 +66,7 @@ STRINGS: Final[tuple[str, ...]] = ("moment", "resourceTypeName")
 # (TypedDict name, $defs entry) for every closed object the module types.
 RECORDS: Final[tuple[tuple[str, str], ...]] = (
     ("DocumentsSyncedAt", "DocumentsSyncedAt"),
+    ("Claim", "Claim"),
     ("HeadingHash", "HeadingHash"),
     ("Link", "Link"),
     ("Anchor", "Anchor"),
@@ -72,9 +75,13 @@ RECORDS: Final[tuple[tuple[str, str], ...]] = (
     ("Interface", "Interface"),
     ("Provides", "Provides"),
     ("DisputedStatement", "DisputedStatement"),
-    ("Claim", "Claim"),
     ("Change", "Change"),
     ("SendBack", "SendBack"),
+    ("ScopeRow", "ScopeRow"),
+    ("ScopeHeading", "ScopeHeading"),
+    ("HeldHeading", "HeldHeading"),
+    ("ReviewScope", "ReviewScope"),
+    ("ReuseItem", "ReuseItem"),
     ("Node", "Node"),
 )
 # The TypedDict of the schema root.
@@ -85,6 +92,7 @@ ROOT_STRINGS: Final[tuple[tuple[str, str], ...]] = (
     ("ROLE_ENV", "x-roleEnv"),
     ("LOCK_DIRECTORY", "x-lockDirectory"),
     ("LOCK_SUFFIX", "x-lockSuffix"),
+    ("TASK_ELEMENTS_KEY", "x-taskElementsKey"),
 )
 DEFAULT_PATH_KEY: Final[str] = "x-defaultMatrixPath"
 OPERATOR_KEY: Final[str] = "x-operatorRole"
@@ -92,8 +100,11 @@ LINK_TYPES_KEY: Final[str] = "x-linkTypes"
 COMMANDS_KEY: Final[str] = "x-commands"
 FACT_SECTIONS_KEY: Final[str] = "x-factHomeSections"
 DOCUMENT_ROOTS_KEY: Final[str] = "x-documentRoots"
+PUT_KINDS_KEY: Final[str] = "x-putKinds"
+PUT_FIELDS_KEY: Final[str] = "x-putFields"
+SETTLE_RULES_KEY: Final[str] = "x-disagreementRules"
 # Every $defs entry the generated readers validate against by name.
-VALIDATED: Final[tuple[str, ...]] = ("Node", "Link", "Provides")
+VALIDATED: Final[tuple[str, ...]] = ("Node", "Link", "Provides", "DisputedStatement", "ReviewScope")
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 _SCALARS: Final[dict[str, str]] = {"string": "str", "integer": "int", "boolean": "bool", "null": "None"}
 
@@ -579,6 +590,51 @@ def _check_tables(schema: Mapping[str, JsonValue], definitions: Mapping[str, Jso
     _strings(list(roots.values()), DOCUMENT_ROOTS_KEY)
 
 
+def _check_put(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
+    """Require the tables of what a put may write to name only roles, row kinds and row fields.
+
+    A table that names a role, a kind or a field the schema does not have, or a role that may put
+    a kind whose fields no table lists, fails with the ``SchemaShapeError`` of the subset check.
+    """
+    kinds: list[str] = _enum(definitions, KIND_ENTRY)
+    fields: list[str] = list(_node(_node(definitions.get("Node"), "Node").get("properties"), "Node/properties"))
+    by_kind: dict[str, JsonValue] = _node(schema.get(PUT_FIELDS_KEY), PUT_FIELDS_KEY)
+    _subset(list(by_kind), kinds, PUT_FIELDS_KEY, "row kinds")
+    kind: str
+    listed: JsonValue
+    for kind, listed in by_kind.items():
+        where: str = f"{PUT_FIELDS_KEY}/{kind}"
+        _subset(_strings(listed, where), fields, where, "row fields")
+    by_role: dict[str, JsonValue] = _node(schema.get(PUT_KINDS_KEY), PUT_KINDS_KEY)
+    _subset(list(by_role), _enum(definitions, "role"), PUT_KINDS_KEY, "roles")
+    role: str
+    for role, listed in by_role.items():
+        where = f"{PUT_KINDS_KEY}/{role}"
+        _subset(_strings(listed, where), list(by_kind), where, f"kinds {PUT_FIELDS_KEY} lists")
+
+
+def _check_settle_rules(schema: Mapping[str, JsonValue], definitions: Mapping[str, JsonValue]) -> None:
+    """Require the table of settlement rules to cover the rule vocabulary and name only roles.
+
+    Raises:
+        SchemaShapeError: The table and the vocabulary differ, a rule names an unknown role, or a
+            rule does not say whether the command computes its outcome.
+
+    """
+    table: dict[str, JsonValue] = _node(schema.get(SETTLE_RULES_KEY), SETTLE_RULES_KEY)
+    _same(list(table), _enum(definitions, "disagreementRule"), SETTLE_RULES_KEY, "the disagreement rules")
+    roles: list[str] = _enum(definitions, "role")
+    name: str
+    spec: JsonValue
+    for name, spec in table.items():
+        where: str = f"{SETTLE_RULES_KEY}/{name}"
+        rule: dict[str, JsonValue] = _node(spec, where)
+        if not isinstance(rule.get("computed"), bool):
+            message: str = f"matrix schema: {where}/computed is not a boolean"
+            raise SchemaShapeError(message)
+        _subset(_strings(rule.get("roles"), where + "/roles"), roles, where + "/roles", "roles")
+
+
 def render(schema: Mapping[str, JsonValue]) -> str:
     """Render the generated module for a matrix schema.
 
@@ -599,6 +655,8 @@ def render(schema: Mapping[str, JsonValue]) -> str:
     _check_link_types(schema, definitions)
     _check_commands(schema, definitions)
     _check_tables(schema, definitions)
+    _check_put(schema, definitions)
+    _check_settle_rules(schema, definitions)
     known: dict[str, str] = dict.fromkeys(STRINGS, "str")
     known.update({entry: record for record, entry in RECORDS})
     alias_lines: list[str]
@@ -687,6 +745,16 @@ class CommandRule:
     """Whether the command changes the matrix file."""
     roles: frozenset[Role]
     """The roles that may run it."""
+
+
+@dataclass(frozen=True, slots=True)
+class SettleRule:
+    """What the schema fixes for one rule a disagreement is settled by."""
+
+    computed: bool
+    """Whether the command works out which statement stands, so the caller names none."""
+    roles: frozenset[Role]
+    """The roles that may settle by it."""
 
 
 def json_value(value: object) -> JsonValue:
@@ -871,8 +939,69 @@ def _document_roots() -> dict[DocumentClass, str]:
     return roots
 
 
+def _put_kinds() -> dict[Role, frozenset[Kind]]:
+    """Build the kinds of row each role may put from the schema's table.
+
+    Returns:
+        The kinds each role that may put a row may put.
+
+    """
+    table: dict[str, JsonValue] = _table("x-putKinds")
+    return {role: _members(table[role], KINDS, f"x-putKinds/{role}") for role in ROLES if role in table}
+
+
+def _put_fields() -> dict[Kind, frozenset[str]]:
+    """Build the fields a put may state for each kind of row from the schema's table.
+
+    Returns:
+        The row fields a caller may state for each kind a put may write.
+
+    Raises:
+        TypeError: A kind's fields are not a list of strings.
+
+    """
+    table: dict[str, JsonValue] = _table("x-putFields")
+    fields: dict[Kind, frozenset[str]] = {}
+    kind: Kind
+    for kind in KINDS:
+        if kind not in table:
+            continue
+        listed: JsonValue = table[kind]
+        if not isinstance(listed, list):
+            message: str = f"matrix schema: x-putFields/{kind} is not a list"
+            raise TypeError(message)
+        fields[kind] = frozenset(name for name in listed if isinstance(name, str))
+    return fields
+
+
+def _settle_rules() -> dict[DisagreementRule, SettleRule]:
+    """Build the settlement rules from the schema's table.
+
+    Returns:
+        One rule per way a disagreement is settled.
+
+    Raises:
+        TypeError: The table lacks a rule or a rule is malformed.
+
+    """
+    table: dict[str, JsonValue] = _table("x-disagreementRules")
+    rules: dict[DisagreementRule, SettleRule] = {}
+    name: DisagreementRule
+    for name in DISAGREEMENT_RULES:
+        rule: JsonValue = table.get(name)
+        computed: JsonValue = rule.get("computed") if isinstance(rule, dict) else None
+        if not isinstance(rule, dict) or not isinstance(computed, bool):
+            message: str = f"matrix schema: x-disagreementRules/{name} is malformed"
+            raise TypeError(message)
+        rules[name] = SettleRule(computed=computed, roles=_members(rule.get("roles"), ROLES, name))
+    return rules
+
+
 LINK_RULES: Final[dict[LinkType, LinkRule]] = _link_rules()
 COMMAND_RULES: Final[dict[str, CommandRule]] = _command_rules()
+PUT_KINDS: Final[dict[Role, frozenset[Kind]]] = _put_kinds()
+PUT_FIELDS: Final[dict[Kind, frozenset[str]]] = _put_fields()
+SETTLE_RULES: Final[dict[DisagreementRule, SettleRule]] = _settle_rules()
 FACT_HOME_SECTIONS: Final[dict[FactKind, int]] = _fact_home_sections()
 DOCUMENT_ROOTS: Final[dict[DocumentClass, str]] = _document_roots()
 PLACED_KINDS: Final[frozenset[Kind]] = frozenset({KIND_STACK, *ELEMENT_KINDS})
@@ -885,7 +1014,7 @@ PROBLEMS_SHOWN: Final = 20
 """The most schema failures an error message lists."""
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def _validator(definition: str | None) -> Draft202012Validator:
     """Build the validator of the matrix, or of one $defs entry of it.
 
@@ -961,6 +1090,53 @@ def validate_matrix(value: object, where: str = "matrix") -> Matrix:
     shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
     message: str = f"{where} does not satisfy the matrix schema ({len(problems)} problems): {shown}"
     raise MatrixError(message)
+
+
+def is_review_scope(value: object) -> TypeIs[ReviewScope]:
+    """Tell whether a value satisfies the ReviewScope definition.
+
+    Returns:
+        True when the schema accepts the value as a review scope.
+
+    """
+    return _validator("ReviewScope").is_valid(value)
+
+
+def validate_review_scope(value: object, where: str = "review scope") -> ReviewScope:
+    """Validate a review scope.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        MatrixError: The value does not satisfy the ReviewScope definition.
+
+    """
+    if is_review_scope(value):
+        return value
+    shown: str = "; ".join(schema_problems(value, "ReviewScope")[:PROBLEMS_SHOWN])
+    message: str = f"{where} does not satisfy ReviewScope: {shown}"
+    raise MatrixError(message)
+
+
+def is_statements(value: object) -> TypeIs[list[DisputedStatement]]:
+    """Tell whether a value is a list of disputed statements.
+
+    Returns:
+        True when the value is a list and the schema accepts each entry as a disputed statement.
+
+    """
+    return isinstance(value, list) and all(_validator("DisputedStatement").is_valid(entry) for entry in value)
+
+
+def is_provides(value: object) -> TypeIs[list[Provides]]:
+    """Tell whether a value is a list of provides entries.
+
+    Returns:
+        True when the value is a list and the schema accepts each entry as a provides entry.
+
+    """
+    return isinstance(value, list) and all(_validator("Provides").is_valid(entry) for entry in value)
 
 
 def validate_node(value: object, where: str = "row") -> Node:

@@ -11,8 +11,12 @@ Every sub-command prints one JSON object on stdout. The read sub-commands (``prd
 ``node``, ``uses``, ``disagreements``, ``summary``) answer from the file and change nothing.
 ``check`` reports every way the file fails its contract. ``sync-prds`` and ``sync-documents``
 bring the file up to date with beads and the vault. ``carry-over`` builds the file once from the
-element matrix. The schema's command table says which role may run each; the role is the value
-of the role variable, and the operator when it is not set.
+element matrix. ``matrixcli`` holds the sub-commands that record a design (``put``, ``link``,
+``claim``, ``settle``, ``note-sendback``, ``add-resource-type``, ``expertise``), open and close
+its review (``unapproved``, ``approve``), mark what was built (``mark-built``,
+``mark-deployed``, ``mark-merged``) and check reuse (``check-reuse``). The schema's command
+table says which role may run each; the role is the value of the role variable, and the
+operator when it is not set.
 """
 
 import argparse
@@ -20,7 +24,6 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -34,23 +37,20 @@ from matrix_contract import (
     COMMAND_RULES,
     KIND_PRD,
     KINDS,
+    Claim,
     DocumentsSyncedAt,
-    JsonValue,
     Kind,
     Matrix,
     MatrixError,
     Node,
     NodeId,
-    json_value,
 )
+from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome, decoded_file
 from matrixcarry import CarryReport, CarrySources, carry_over, parse_inventory, parse_old_matrix, parse_type_map
+from matrixcli import COMMANDS as DESIGN_COMMANDS
+from matrixcli import add_parsers, elements_of_task
 from matrixquery import (
     DEFAULT_LIMIT,
-    FindResult,
-    MatrixSummary,
-    NodeView,
-    PrdView,
-    UsesResult,
     disagreements_for,
     elements_of_repository,
     find,
@@ -71,7 +71,6 @@ from matrixstore import (
     create_matrix,
     file_problems,
     make_id,
-    matrix_path,
     read_matrix,
     require_role,
     role_of,
@@ -84,6 +83,7 @@ from matrixsync import (
     Epic,
     PrdsSynced,
     VaultChange,
+    hold_for_review,
     parse_epics,
     read_documents,
     read_epics,
@@ -94,10 +94,9 @@ from matrixsync import (
     vault_root,
 )
 
-PROGRAM: Final = "atw-matrix"
-EXIT_OK: Final = 0
-EXIT_REFUSED: Final = 1
 KIND_SEPARATOR: Final = ","
+SYNC_STEP: Final = "sync-documents"
+"""The journal step named on a claim the vault read places when the caller names none."""
 
 
 class DisagreementsResult(TypedDict):
@@ -114,146 +113,6 @@ class CheckResult(TypedDict):
     problems: list[str]
     vaultChecked: bool
     """False when no architecture root was given, so the two rules that need the documents were not checked."""
-
-
-type CommandResult = (
-    PrdView
-    | FindResult
-    | NodeView
-    | UsesResult
-    | DisagreementsResult
-    | MatrixSummary
-    | CheckResult
-    | PrdsSynced
-    | DocumentsSynced
-    | CarryReport
-)
-
-
-@dataclass(frozen=True, slots=True)
-class Outcome:
-    """What one sub-command prints on stdout and the status the process exits with."""
-
-    result: CommandResult
-    status: int = EXIT_OK
-
-
-@dataclass(frozen=True, slots=True)
-class Call:
-    """One invocation of the command: its parsed arguments and the environment it runs in."""
-
-    args: argparse.Namespace
-    environ: Mapping[str, str]
-
-    def text(self, name: str) -> str | None:
-        """Read a string option.
-
-        Returns:
-            The option's value, or None when it was not given.
-
-        """
-        value: object = getattr(self.args, name, None)
-        return value if isinstance(value, str) and value else None
-
-    def required(self, name: str) -> str:
-        """Read a string option the sub-command cannot do without.
-
-        Returns:
-            The option's value.
-
-        Raises:
-            MatrixRefusedError: The option was not given.
-
-        """
-        value: str | None = self.text(name)
-        if value is None:
-            message: str = f"--{name.replace('_', '-')} is required"
-            raise MatrixRefusedError(message)
-        return value
-
-    def flag(self, name: str) -> bool:
-        """Read a flag.
-
-        Returns:
-            True when the flag was given.
-
-        """
-        return getattr(self.args, name, False) is True
-
-    def texts(self, name: str) -> list[str]:
-        """Read an option that takes several strings.
-
-        Returns:
-            The strings given; none when the option was not given.
-
-        """
-        value: object = getattr(self.args, name, None)
-        return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
-
-    def matrix(self) -> Path:
-        """Decide which matrix file the sub-command works on.
-
-        Returns:
-            The file ``--matrix`` or the environment names.
-
-        """
-        return matrix_path(self.text("matrix"), self.environ)
-
-    def lock_wait(self) -> float:
-        """Read how long a change waits for the matrix's lock.
-
-        Returns:
-            The seconds given with ``--lock-wait``, or the default.
-
-        """
-        value: object = getattr(self.args, "lock_wait", None)
-        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else DEFAULT_LOCK_WAIT
-
-    def folder(self, option: str, variables: Sequence[str]) -> Path | None:
-        """Find a folder from an option or, when it was not given, from the environment.
-
-        Returns:
-            The folder the option names, else the folder the first set variable names, else None.
-
-        """
-        stated: str = self.text(option) or next(
-            (self.environ[name].strip() for name in variables if self.environ.get(name, "").strip()),
-            "",
-        )
-        return Path(stated).expanduser() if stated else None
-
-    def required_folder(self, option: str, variables: Sequence[str]) -> Path:
-        """Find a folder the sub-command cannot do without.
-
-        Returns:
-            The folder.
-
-        Raises:
-            MatrixRefusedError: Neither the option nor a variable names it.
-
-        """
-        folder: Path | None = self.folder(option, variables)
-        if folder is None:
-            message: str = f"give --{option.replace('_', '-')}, or set {' or '.join(variables)}"
-            raise MatrixRefusedError(message)
-        return folder
-
-
-def _decoded(path: Path, what: str) -> JsonValue:
-    """Read a JSON file the caller named.
-
-    Returns:
-        The decoded file.
-
-    Raises:
-        MatrixError: The file is missing, unreadable or not JSON.
-
-    """
-    try:
-        return json_value(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, TypeError) as error:
-        message: str = f"cannot read {what} {path}: {error}"
-        raise MatrixError(message) from error
 
 
 def _run_prd(call: Call) -> Outcome:
@@ -326,18 +185,23 @@ def _run_uses(call: Call) -> Outcome:
     """Run ``uses``.
 
     Returns:
-        The shared capabilities the elements of a repository, or the elements named, must use.
+        The shared capabilities the elements of a repository, the elements named, or the
+        elements a Task builds, must use.
 
     Raises:
-        MatrixRefusedError: Neither ``--repository`` nor ``--elements`` was given, or both were.
+        MatrixRefusedError: Not exactly one of ``--repository``, ``--elements`` and ``--task``
+            was given.
 
     """
     matrix: Matrix = read_matrix(call.matrix())
     repository: str | None = call.text("repository")
+    task: str | None = call.text("task")
     named: list[str] = call.texts("elements")
-    if (repository is None) == (not named):
-        message: str = "give exactly one of --repository and --elements"
+    if sum([repository is not None, task is not None, bool(named)]) != 1:
+        message: str = "give exactly one of --repository, --elements and --task"
         raise MatrixRefusedError(message)
+    if task is not None:
+        named = elements_of_task(call, task)
     elements: list[NodeId] = (
         [resolve(matrix, name) for name in named] if repository is None else elements_of_repository(matrix, repository)
     )
@@ -432,15 +296,22 @@ def _run_sync_documents(call: Call) -> Outcome:
     """Run ``sync-documents``.
 
     Returns:
-        What reading the vault changed in the matrix.
+        What reading the vault changed in the matrix. With ``--bead``, the read is an Epic's:
+        the headings it finds changed are claimed for the Epic, and an effective document that
+        now holds unreviewed text is set to in-review in the vault.
 
     """
     arch: Path = call.required_folder("arch", [ARCH_PATH_ENV])
-    stamp: Stamp = Stamp(timestamp(), call.text("bead") or CHANGED_BY_SYNC)
+    bead: str | None = call.text("bead")
+    stamp: Stamp = Stamp(timestamp(), bead or CHANGED_BY_SYNC)
     full: bool = call.flag("full")
 
     def change(matrix: Matrix) -> DocumentsSynced:
-        return sync_documents(matrix, arch, stamp, full=full)
+        synced: DocumentsSynced = sync_documents(matrix, arch, stamp, full=full)
+        if bead is not None:
+            held: Claim = {"bead": bead, "step": call.text("step") or SYNC_STEP, "at": stamp.at}
+            synced["inReview"] = hold_for_review(matrix, arch, [*synced["added"], *synced["changed"]], held)
+        return synced
 
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
@@ -455,11 +326,11 @@ def _run_carry_over(call: Call) -> Outcome:
     arch: Path = call.required_folder("arch", [ARCH_PATH_ENV])
     inventory: str | None = call.text("inventory")
     sources: CarrySources = CarrySources(
-        old=parse_old_matrix(_decoded(Path(call.required("source")).expanduser(), "the element matrix")),
-        types=parse_type_map(_decoded(Path(call.required("type_map")).expanduser(), "the mapping file")),
+        old=parse_old_matrix(decoded_file(Path(call.required("source")).expanduser(), "the element matrix")),
+        types=parse_type_map(decoded_file(Path(call.required("type_map")).expanduser(), "the mapping file")),
         inventory=None
         if inventory is None
-        else parse_inventory(_decoded(Path(inventory).expanduser(), "the repository inventory")),
+        else parse_inventory(decoded_file(Path(inventory).expanduser(), "the repository inventory")),
     )
     vault: Path = vault_root(arch)
     stamp: Stamp = Stamp(timestamp(), CHANGED_BY_CARRY_OVER)
@@ -485,8 +356,9 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "sync-prds": _run_sync_prds,
     "sync-documents": _run_sync_documents,
     "carry-over": _run_carry_over,
+    **DESIGN_COMMANDS,
 }
-"""The sub-commands built so far. The schema's command table also names the ones later work adds."""
+"""Every sub-command, by the name the schema's command table gives it."""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -501,6 +373,9 @@ def _parser() -> argparse.ArgumentParser:
     where.add_argument("--lock-wait", type=float, default=DEFAULT_LOCK_WAIT, help="seconds to wait for the lock")
     arch: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
     arch.add_argument("--arch", help=f"the architecture root in the vault; default: {ARCH_PATH_ENV}")
+    who: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
+    who.add_argument("--bead", help="the Epic the change is made for")
+    who.add_argument("--step", help="the journal step id of the session that makes the change")
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         prog=PROGRAM,
         description="Read and change the matrix. Prints one JSON object on stdout.",
@@ -523,6 +398,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     uses.add_argument("--repository", help="the repository whose elements are asked about")
     uses.add_argument("--elements", nargs="+", help="the ids of the elements asked about")
+    uses.add_argument("--task", help="the Task whose elements are asked about")
+    uses.add_argument("--task-file", help="a file holding what `bd show <task> --json` printed, read in place of bd")
+    uses.add_argument("--control", help=f"the control repository bd runs in; default: {CONTROL_REPO_ENV}")
     disputed: argparse.ArgumentParser = commands.add_parser(
         "disagreements",
         parents=[where],
@@ -546,7 +424,8 @@ def _parser() -> argparse.ArgumentParser:
         parents=[where, arch],
         help="document rows, heading hashes and lifecycle from the vault",
     )
-    documents.add_argument("--bead", help="the Epic to record as having made the changes; default: sync")
+    documents.add_argument("--bead", help="the Epic that changed the documents; its review then finds the changes")
+    documents.add_argument("--step", help="the journal step id of the session that asks")
     documents.add_argument("--full", action="store_true", help="read every document whatever git reports")
     carry: argparse.ArgumentParser = commands.add_parser(
         "carry-over",
@@ -557,6 +436,7 @@ def _parser() -> argparse.ArgumentParser:
     carry.add_argument("--type-map", required=True, help="the mapping file from resource type spellings")
     carry.add_argument("--inventory", help="a file holding what `polyrepo inventory` printed")
     carry.add_argument("--replace", action="store_true", help="replace a matrix file that already exists")
+    add_parsers(commands, where, arch, who)
     return parser
 
 
@@ -574,12 +454,12 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
         a matrix that does not conform.
 
     Raises:
-        RuntimeError: A built sub-command is missing from the schema's command table.
+        RuntimeError: The sub-commands built and the schema's command table name different commands.
 
     """
-    stray: list[str] = sorted(set(COMMANDS) - set(COMMAND_RULES))
+    stray: list[str] = sorted(set(COMMANDS) ^ set(COMMAND_RULES))
     if stray:
-        message: str = f"the schema's command table does not name {', '.join(stray)}"
+        message: str = f"the schema's command table and the sub-commands built differ on {', '.join(stray)}"
         raise RuntimeError(message)
     args: argparse.Namespace = _parser().parse_args(argv)
     call: Call = Call(args, os.environ if environ is None else environ)

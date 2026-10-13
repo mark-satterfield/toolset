@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# atw-matrix <prd|find|node|uses|disagreements|summary|check|sync-prds|sync-documents|carry-over> ...
-# — reads and changes the matrix: the index of how repositories, stacks, services, components,
-# libraries, layers, infrastructure, PRDs, features, architecture documents, design facts and
-# disagreements relate, with the approval marker and the code-trust marker.
-# scripts/portfolio/matrix.py is the command; the matrix's shape is
-# skills/artifact-handoff/schemas/matrix.schema.json. Give the matrix file with --matrix, or set
-# ATW_MATRIX, or set ATW_CONTROL_REPO and the file is ops/sdlc-automation/matrix.json under it.
-# Prints one JSON object on stdout. The command needs typeguard and jsonschema
-# (scripts/requirements.txt), which the python3 on PATH does not always have, so uv supplies them.
+# atw-matrix <sub-command> ... — reads and changes the matrix: the index of how repositories,
+# stacks, services, components, libraries, layers, infrastructure, PRDs, features, architecture
+# documents, design facts and disagreements relate, with the approval marker and the code-trust
+# marker.
+#   reads:   prd, find, node, uses, disagreements, summary, check, check-reuse
+#   syncs:   sync-prds, sync-documents, carry-over
+#   design:  put, link, claim, settle, note-sendback, add-resource-type, expertise
+#   review:  unapproved, approve
+#   code:    mark-built, mark-deployed, mark-merged
+# `atw-matrix <sub-command> --help` lists a sub-command's options. scripts/portfolio/matrix.py is
+# the command; the matrix's shape, and which role may run which sub-command, is
+# skills/artifact-handoff/schemas/matrix.schema.json. The role is the value of ATW_MATRIX_ROLE.
+# Give the matrix file with --matrix, or set ATW_MATRIX, or set ATW_CONTROL_REPO and the file is
+# ops/sdlc-automation/matrix.json under it. Prints one JSON object on stdout. The command needs
+# typeguard, jsonschema and PyYAML (scripts/requirements.txt), which the python3 on PATH does not
+# always have, so uv supplies them.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' \
+exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' --with 'pyyaml>=6' \
   python -P "$here/../scripts/portfolio/matrix.py" "$@"

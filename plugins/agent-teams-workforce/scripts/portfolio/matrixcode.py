@@ -1,0 +1,426 @@
+"""The code-trust marker: what the build and deploy pipelines record when they build, deploy and merge.
+
+Code no pipeline built is ``legacy``: a clue to how something was once solved, and never a
+finding against the architecture. Three events, and nothing else, make code trusted:
+
+- :func:`mark_built` when a Task's whole test suite passed and its commit landed on the Story
+  branch: the Task's repository, the service made of that repository and the elements the Task
+  names become ``built``. Nothing else in the repository changes.
+- :func:`mark_deployed` when a Story's deploy to AWS dev was verified: everything the Story
+  built, and the stacks deployed, become ``deployed``.
+- :func:`mark_merged` when the Story's pull request merged: the trusted code is on the default
+  branch.
+
+No architecture session writes the marker. The driver records it through the three ``record_*``
+functions, which it loads from this file by path; ``atw-matrix`` runs the same code.
+"""
+
+import sys
+from pathlib import Path
+from typing import Final, NotRequired, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+from matrix_contract import (
+    CODE_BUILT,
+    CODE_DEPLOYED,
+    CODE_NONE,
+    KIND_REPOSITORY,
+    KIND_SERVICE,
+    KIND_STACK,
+    LINK_CONTAINS,
+    PLACED_KINDS,
+    ROLE_BUILD_DRIVER,
+    TASK_ELEMENTS_KEY,
+    Code,
+    CodeState,
+    Matrix,
+    Node,
+    NodeId,
+    Role,
+)
+from matrixquery import resolve
+from matrixstore import (
+    DEFAULT_LOCK_WAIT,
+    MatrixRefusedError,
+    Stamp,
+    make_id,
+    matrix_path,
+    name_index,
+    name_key,
+    require_role,
+    timestamp,
+    update_matrix,
+)
+
+COMMAND_BUILT: Final = "mark-built"
+COMMAND_DEPLOYED: Final = "mark-deployed"
+COMMAND_MERGED: Final = "mark-merged"
+BUILD_DRIVER_ROLE: Final[Role] = ROLE_BUILD_DRIVER
+"""The role the build and deploy driver records the marker as."""
+ELEMENTS_KEY: Final = TASK_ELEMENTS_KEY
+"""The key under which a Task names the matrix ids of the elements it builds."""
+TRUSTED: Final[frozenset[CodeState]] = frozenset({CODE_BUILT, CODE_DEPLOYED})
+"""The states of code a pipeline built."""
+
+
+class Built(TypedDict):
+    """One Task whose tests passed and whose commit landed on its Story branch."""
+
+    task: str
+    story: str
+    repository: str
+    commit: str
+    ref: str
+    """The branch that holds the commit: the Story branch."""
+    elements: list[str]
+    """The ids, former ids or unique names of the elements the Task built; may be empty."""
+
+
+class Deployed(TypedDict):
+    """One Story whose deploy to AWS dev was verified."""
+
+    story: str
+    repository: str
+    commit: str
+    stacks: list[str]
+    """The names of the stacks that were verified."""
+
+
+class Merged(TypedDict):
+    """One Story whose pull request merged."""
+
+    story: str
+    ref: str
+    """The branch the code is on now: the repository's default branch."""
+    pr: NotRequired[str]
+
+
+class RowMark(TypedDict):
+    """One row whose code marker a call changed."""
+
+    id: NodeId
+    was: CodeState
+    now: CodeState
+
+
+class CodeMarked(TypedDict):
+    """What marking the code did: also what the three ``mark-*`` sub-commands print."""
+
+    command: str
+    at: str
+    rows: list[RowMark]
+    unknown: list[str]
+    """The stack names given that are no stack row, so nothing was marked for them."""
+
+
+def _needed(value: str, what: str) -> str:
+    """Require one piece of text a marker cannot be recorded without.
+
+    Returns:
+        The text, stripped.
+
+    Raises:
+        MatrixRefusedError: The text is empty.
+
+    """
+    if not value.strip():
+        message: str = f"the code marker needs {what}"
+        raise MatrixRefusedError(message)
+    return value.strip()
+
+
+def _held(node: Node) -> Code:
+    """Read the code marker a row holds.
+
+    Returns:
+        The marker; one that says no code is known for a row that has none.
+
+    """
+    none: Code = {"state": CODE_NONE}
+    return node.get("code", none)
+
+
+def _set(node: Node, code: Code, stamp: Stamp, marked: CodeMarked) -> None:
+    """Give a row its code marker, when it differs from the one it holds.
+
+    The moment is not part of the comparison, so recording the same event twice changes nothing.
+    """
+    held: Code = _held(node)
+    if {**held, "at": ""} == {**code, "at": ""}:
+        return
+    marked["rows"].append({"id": node["id"], "was": held["state"], "now": code["state"]})
+    node["code"] = code
+    node["changed"] = stamp.change()
+
+
+def _services(matrix: Matrix, repository: NodeId) -> list[Node]:
+    """Find the services made of a repository.
+
+    Returns:
+        The service rows that contain the repository, in id order.
+
+    """
+    return [
+        matrix["nodes"][key]
+        for key in sorted(matrix["nodes"])
+        if matrix["nodes"][key]["kind"] == KIND_SERVICE
+        and any(link["type"] == LINK_CONTAINS and link["to"] == repository for link in matrix["nodes"][key]["links"])
+    ]
+
+
+def _built_elements(matrix: Matrix, built: Built) -> list[Node]:
+    """Find the element rows a Task names.
+
+    Returns:
+        The rows, in the order named.
+
+    Raises:
+        MatrixRefusedError: A name is no row, or is a row that does not live in the Task's
+            repository.
+
+    """
+    rows: list[Node] = []
+    named: str
+    for named in built["elements"]:
+        node: Node = matrix["nodes"][resolve(matrix, named)]
+        if node["kind"] not in PLACED_KINDS or name_key(node.get("repository") or "") != name_key(built["repository"]):
+            message: str = f"{node['id']} does not live in the repository {built['repository']}"
+            raise MatrixRefusedError(message)
+        rows.append(node)
+    return rows
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def mark_built(matrix: Matrix, built: Built, stamp: Stamp) -> CodeMarked:
+    """Record that a Task built code the pipeline trusts.
+
+    The repository row, the service made of the repository and each element the Task names take
+    the state ``built`` with the Task, the Story, the commit and the branch. A row that was
+    deployed is built again: the new commit is not deployed yet, and the row keeps what it
+    recorded of the earlier deploy. No other row of the repository changes.
+
+    Args:
+        matrix: The matrix, changed in place.
+        built: The Task, its Story, its repository, the commit, the branch and the elements built.
+        stamp: The moment and the maker to record on each changed row.
+
+    Returns:
+        The rows whose marker changed.
+
+    Raises:
+        MatrixRefusedError: The Task, the repository, the commit or the branch is not given, the
+            repository is not a row, or an element named is not a row of that repository.
+
+    """
+    repository: NodeId = make_id(KIND_REPOSITORY, _needed(built["repository"], "the repository"))
+    if repository not in matrix["nodes"]:
+        message: str = f"the matrix has no repository {built['repository']!r}"
+        raise MatrixRefusedError(message)
+    marked: CodeMarked = {"command": COMMAND_BUILT, "at": stamp.at, "rows": [], "unknown": []}
+    node: Node
+    for node in (matrix["nodes"][repository], *_services(matrix, repository), *_built_elements(matrix, built)):
+        code: Code = {
+            **_held(node),
+            "state": CODE_BUILT,
+            "ref": _needed(built["ref"], "the branch"),
+            "commit": _needed(built["commit"], "the commit"),
+            "task": _needed(built["task"], "the Task"),
+            "at": stamp.at,
+        }
+        if built["story"].strip():
+            code["story"] = built["story"].strip()
+        _set(node, code, stamp, marked)
+    return marked
+
+
+def _stacks(matrix: Matrix, deployed: Deployed, marked: CodeMarked) -> list[Node]:
+    """Find the stack rows a deploy names.
+
+    Returns:
+        The rows of the named stacks: the stack of that name in the Story's repository, or the
+        one stack of that name when no repository is given. A name that finds no single row is
+        added to ``unknown`` and nothing is marked for it.
+
+    """
+    by_name: dict[str, list[NodeId]] = name_index(matrix, [KIND_STACK])
+    rows: list[Node] = []
+    name: str
+    for name in deployed["stacks"]:
+        placed: NodeId | None = (
+            make_id(KIND_STACK, deployed["repository"], name)
+            if deployed["repository"].strip() and name.strip()
+            else None
+        )
+        candidates: list[NodeId] = [placed] if placed in matrix["nodes"] and placed is not None else []
+        if not candidates and not deployed["repository"].strip():
+            candidates = by_name.get(name_key(name), [])
+        if len(candidates) == 1:
+            rows.append(matrix["nodes"][candidates[0]])
+        else:
+            marked["unknown"].append(name)
+    return rows
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def mark_deployed(matrix: Matrix, deployed: Deployed, stamp: Stamp) -> CodeMarked:
+    """Record that a Story's deploy to AWS dev was verified.
+
+    Every row the Story built, and each stack named, takes the state ``deployed`` with the
+    commit deployed and the stacks verified. A stack name that is no stack row is reported and
+    marks nothing; the deploy stands whatever the matrix can record of it.
+
+    Args:
+        matrix: The matrix, changed in place.
+        deployed: The Story, its repository, the commit deployed and the stacks verified.
+        stamp: The moment and the maker to record on each changed row.
+
+    Returns:
+        The rows whose marker changed, and the stack names that are no row. A deploy that names
+        no Story or no commit is refused with ``MatrixRefusedError``.
+
+    """
+    story: str = _needed(deployed["story"], "the Story")
+    commit: str = _needed(deployed["commit"], "the commit")
+    marked: CodeMarked = {"command": COMMAND_DEPLOYED, "at": stamp.at, "rows": [], "unknown": []}
+    targets: dict[NodeId, Node] = {node["id"]: node for node in _stacks(matrix, deployed, marked)}
+    node: Node
+    for node in matrix["nodes"].values():
+        if "code" in node and node["code"].get("story") == story and node["code"]["state"] in TRUSTED:
+            targets.setdefault(node["id"], node)
+    key: NodeId
+    for key in sorted(targets):
+        code: Code = {
+            **_held(targets[key]),
+            "state": CODE_DEPLOYED,
+            "story": story,
+            "deployedCommit": commit,
+            "stacks": sorted({name.strip() for name in deployed["stacks"] if name.strip()}),
+            "at": stamp.at,
+        }
+        _set(targets[key], code, stamp, marked)
+    return marked
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def mark_merged(matrix: Matrix, merged: Merged, stamp: Stamp) -> CodeMarked:
+    """Record that a Story's pull request merged, so its trusted code is on the default branch.
+
+    Every row the Story built or deployed takes the default branch as where its code is, and
+    the pull request when one is given. No state changes.
+
+    Args:
+        matrix: The matrix, changed in place.
+        merged: The Story, the default branch and the pull request.
+        stamp: The moment and the maker to record on each changed row.
+
+    Returns:
+        The rows whose marker changed. A merge that names no Story or no branch is refused with
+        ``MatrixRefusedError``.
+
+    """
+    story: str = _needed(merged["story"], "the Story")
+    ref: str = _needed(merged["ref"], "the default branch")
+    marked: CodeMarked = {"command": COMMAND_MERGED, "at": stamp.at, "rows": [], "unknown": []}
+    key: NodeId
+    for key in sorted(matrix["nodes"]):
+        node: Node = matrix["nodes"][key]
+        if "code" not in node or node["code"].get("story") != story or node["code"]["state"] not in TRUSTED:
+            continue
+        code: Code = {**node["code"], "ref": ref, "at": stamp.at}
+        if merged.get("pr", "").strip():
+            code["pr"] = merged.get("pr", "").strip()
+        _set(node, code, stamp, marked)
+    return marked
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def matrix_file(environ: dict[str, str]) -> Path:
+    """Name the matrix file the driver records in.
+
+    Args:
+        environ: The driver's environment.
+
+    Returns:
+        The file the matrix variable names, else the matrix of the control repository the
+        environment names. An environment that names neither raises ``MatrixError``.
+
+    """
+    return matrix_path(None, environ)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def record_built(path: Path, built: Built, role: Role) -> CodeMarked:
+    """Record a built Task in a matrix file, as one locked change.
+
+    A role that may not record it, a matrix that is missing or does not conform, or a Task the
+    matrix refuses raises ``MatrixError``; the file is then left as it was.
+
+    Args:
+        path: The matrix file.
+        built: The Task and what it built.
+        role: Who records it.
+
+    Returns:
+        The rows whose marker changed.
+
+    """
+    require_role(COMMAND_BUILT, role)
+    stamp: Stamp = Stamp(timestamp(), f"{built['task'].strip() or role} {COMMAND_BUILT}")
+
+    def change(matrix: Matrix) -> CodeMarked:
+        return mark_built(matrix, built, stamp)
+
+    return update_matrix(path, change, wait=DEFAULT_LOCK_WAIT)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def record_deployed(path: Path, deployed: Deployed, role: Role) -> CodeMarked:
+    """Record a verified Story deploy in a matrix file, as one locked change.
+
+    A role that may not record it, a matrix that is missing or does not conform, or a deploy the
+    matrix refuses raises ``MatrixError``; the file is then left as it was.
+
+    Args:
+        path: The matrix file.
+        deployed: The Story and what was deployed.
+        role: Who records it.
+
+    Returns:
+        The rows whose marker changed, and the stack names that are no row.
+
+    """
+    require_role(COMMAND_DEPLOYED, role)
+    stamp: Stamp = Stamp(timestamp(), f"{deployed['story'].strip() or role} {COMMAND_DEPLOYED}")
+
+    def change(matrix: Matrix) -> CodeMarked:
+        return mark_deployed(matrix, deployed, stamp)
+
+    return update_matrix(path, change, wait=DEFAULT_LOCK_WAIT)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def record_merged(path: Path, merged: Merged, role: Role) -> CodeMarked:
+    """Record a merged Story in a matrix file, as one locked change.
+
+    A role that may not record it, a matrix that is missing or does not conform, or a merge the
+    matrix refuses raises ``MatrixError``; the file is then left as it was.
+
+    Args:
+        path: The matrix file.
+        merged: The Story and where its code is now.
+        role: Who records it.
+
+    Returns:
+        The rows whose marker changed.
+
+    """
+    require_role(COMMAND_MERGED, role)
+    stamp: Stamp = Stamp(timestamp(), f"{merged['story'].strip() or role} {COMMAND_MERGED}")
+
+    def change(matrix: Matrix) -> CodeMarked:
+        return mark_merged(matrix, merged, stamp)
+
+    return update_matrix(path, change, wait=DEFAULT_LOCK_WAIT)

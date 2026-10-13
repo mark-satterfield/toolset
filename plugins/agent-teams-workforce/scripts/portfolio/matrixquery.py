@@ -56,7 +56,7 @@ from matrix_contract import (
     NodeId,
     Provides,
 )
-from matrixstore import MatrixRefusedError, make_id, name_index, name_key
+from matrixstore import MatrixRefusedError, make_id, name_index, name_key, owner_of
 
 DEFAULT_LIMIT: Final = 50
 """The most rows :func:`find` returns unless the caller asks for another number; 0 asks for all."""
@@ -153,7 +153,7 @@ class PrdView(TypedDict):
     features: list[RowSummary]
     """The features the PRD needs, each with its approval state."""
     fullyApproved: bool
-    """True when the PRD's coverage is approved and every row it reaches that carries an approval is approved."""
+    """True when the PRD's coverage is approved, and every row it reaches or its Epic recorded is approved."""
     notApproved: list[NodeId]
     closure: NotRequired[Closure]
 
@@ -516,6 +516,27 @@ def _closure(matrix: Matrix, reached: Sequence[NodeId]) -> Closure:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reached_from(matrix: Matrix, start: NodeId) -> list[NodeId]:
+    """List everything one row reaches through its links.
+
+    Args:
+        matrix: The matrix.
+        start: The row to start from; a PRD row gives what its Epic involves.
+
+    Returns:
+        The ids reached, without the row itself: features, the capabilities they use to any
+        depth, the elements that realize and provide them with their stacks and repositories,
+        the documents that describe them, and the facts whose home is a heading that describes
+        one of them. Empty when the matrix has no such row.
+
+    """
+    reached: list[NodeId] = [found for found in _reached(matrix, [start]) if found != start]
+    known: list[NodeId] = [key for key in (start, *reached) if key in matrix["nodes"]]
+    reached.extend(fact for fact in _facts_at(matrix, known) if fact not in reached)
+    return reached
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prd_view(matrix: Matrix, bead: str, *, closure: bool = False) -> PrdView:
     """Return what the matrix holds for one Epic's PRD.
 
@@ -539,13 +560,15 @@ def prd_view(matrix: Matrix, bead: str, *, closure: bool = False) -> PrdView:
         raise MatrixRefusedError(message)
     prd: Node = matrix["nodes"][key]
     needed: list[NodeId] = [link["to"] for link in prd["links"] if link["type"] == LINK_NEEDS]
-    reached: list[NodeId] = [found for found in _reached(matrix, [key]) if found != key]
-    reached.extend(fact for fact in _facts_at(matrix, [key, *reached]) if fact not in reached)
+    reached: list[NodeId] = reached_from(matrix, key)
     pending: list[NodeId] = [
         found
         for found in reached
         if "approval" in matrix["nodes"][found] and matrix["nodes"][found]["approval"]["state"] != APPROVAL_APPROVED
     ]
+    pending.extend(
+        found for found in sorted(matrix["nodes"]) if found not in pending and owner_of(matrix["nodes"][found]) == bead
+    )
     coverage: Coverage = prd.get("coverage", COVERAGE_APPROVED)
     view: PrdView = {
         "prd": prd,

@@ -66,6 +66,8 @@ type DisagreementRule = Literal[
 ]
 type DisagreementStatus = Literal["open", "settled", "applied"]
 type InterfaceKind = Literal["package", "layer", "service-operation", "construct", "event-api", "infrastructure"]
+type HeadingChange = Literal["new", "changed", "removed"]
+type ReuseFinding = Literal["unused", "duplicate", "judgment"]
 type Role = Literal[
     "operator",
     "script",
@@ -159,6 +161,12 @@ INTERFACE_SERVICE_OPERATION: Final[Literal["service-operation"]] = "service-oper
 INTERFACE_CONSTRUCT: Final[Literal["construct"]] = "construct"
 INTERFACE_EVENT_API: Final[Literal["event-api"]] = "event-api"
 INTERFACE_INFRASTRUCTURE: Final[Literal["infrastructure"]] = "infrastructure"
+HEADING_NEW: Final[Literal["new"]] = "new"
+HEADING_CHANGED: Final[Literal["changed"]] = "changed"
+HEADING_REMOVED: Final[Literal["removed"]] = "removed"
+REUSE_UNUSED: Final[Literal["unused"]] = "unused"
+REUSE_DUPLICATE: Final[Literal["duplicate"]] = "duplicate"
+REUSE_JUDGMENT: Final[Literal["judgment"]] = "judgment"
 ROLE_OPERATOR: Final[Literal["operator"]] = "operator"
 ROLE_SCRIPT: Final[Literal["script"]] = "script"
 ROLE_HOOKS: Final[Literal["hooks"]] = "hooks"
@@ -264,6 +272,8 @@ INTERFACE_KINDS: Final[tuple[InterfaceKind, ...]] = (
     INTERFACE_EVENT_API,
     INTERFACE_INFRASTRUCTURE,
 )
+HEADING_CHANGES: Final[tuple[HeadingChange, ...]] = (HEADING_NEW, HEADING_CHANGED, HEADING_REMOVED)
+REUSE_FINDINGS: Final[tuple[ReuseFinding, ...]] = (REUSE_UNUSED, REUSE_DUPLICATE, REUSE_JUDGMENT)
 ROLES: Final[tuple[Role, ...]] = (
     ROLE_OPERATOR,
     ROLE_SCRIPT,
@@ -285,6 +295,7 @@ MATRIX_ENV: Final = "ATW_MATRIX"
 ROLE_ENV: Final = "ATW_MATRIX_ROLE"
 LOCK_DIRECTORY: Final = "state"
 LOCK_SUFFIX: Final = ".lock"
+TASK_ELEMENTS_KEY: Final = "matrix_elements"
 DEFAULT_MATRIX_PARTS: Final[tuple[str, ...]] = ("ops", "sdlc-automation", "matrix.json")
 OPERATOR_ROLE: Final[Role] = ROLE_OPERATOR
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "matrix.schema.json"
@@ -298,11 +309,20 @@ class DocumentsSyncedAt(TypedDict):
     dirtyPaths: list[str]
 
 
+class Claim(TypedDict):
+    """Typed form of #/$defs/Claim in matrix.schema.json."""
+
+    bead: str
+    step: str
+    at: str
+
+
 class HeadingHash(TypedDict):
     """Typed form of #/$defs/HeadingHash in matrix.schema.json."""
 
     hash: str
     approvedHash: str | None
+    claim: NotRequired[Claim]
 
 
 class Link(TypedDict):
@@ -328,7 +348,7 @@ class Approval(TypedDict):
     state: ApprovalState
     basis: NotRequired[ApprovalBasis]
     bead: NotRequired[str]
-    step: NotRequired[str]
+    steps: NotRequired[list[str]]
     at: NotRequired[str]
 
 
@@ -372,14 +392,7 @@ class DisputedStatement(TypedDict):
     line: NotRequired[int]
     text: str
     lifecycle: Lifecycle
-
-
-class Claim(TypedDict):
-    """Typed form of #/$defs/Claim in matrix.schema.json."""
-
-    bead: str
-    step: str
-    at: str
+    stands: NotRequired[bool]
 
 
 class Change(TypedDict):
@@ -395,6 +408,54 @@ class SendBack(TypedDict):
     criterion: str
     step: str
     at: str
+
+
+class ScopeRow(TypedDict):
+    """Typed form of #/$defs/ScopeRow in matrix.schema.json."""
+
+    id: NodeId
+    kind: Kind
+    name: str
+    was: ApprovalState
+    home: NotRequired[Anchor]
+
+
+class ScopeHeading(TypedDict):
+    """Typed form of #/$defs/ScopeHeading in matrix.schema.json."""
+
+    document: str
+    heading: str
+    change: HeadingChange
+
+
+class HeldHeading(TypedDict):
+    """Typed form of #/$defs/HeldHeading in matrix.schema.json."""
+
+    document: str
+    heading: str
+    bead: str
+
+
+class ReviewScope(TypedDict):
+    """Typed form of #/$defs/ReviewScope in matrix.schema.json."""
+
+    bead: str
+    at: str
+    prd: NodeId
+    rows: list[ScopeRow]
+    headings: list[ScopeHeading]
+    heldByOthers: list[HeldHeading]
+
+
+class ReuseItem(TypedDict):
+    """Typed form of #/$defs/ReuseItem in matrix.schema.json."""
+
+    finding: ReuseFinding
+    feature: NodeId
+    provides: str
+    file: NotRequired[str]
+    line: NotRequired[int]
+    detail: str
 
 
 class Node(TypedDict):
@@ -437,6 +498,8 @@ class Node(TypedDict):
     linkedFrom: NotRequired[list[str]]
     statements: NotRequired[list[DisputedStatement]]
     rule: NotRequired[DisagreementRule]
+    standingFact: NotRequired[NodeId]
+    reopens: NotRequired[NodeId]
     settledBy: NotRequired[str | None]
     reason: NotRequired[str]
     evidence: NotRequired[list[str]]
@@ -476,6 +539,16 @@ class CommandRule:
     """Whether the command changes the matrix file."""
     roles: frozenset[Role]
     """The roles that may run it."""
+
+
+@dataclass(frozen=True, slots=True)
+class SettleRule:
+    """What the schema fixes for one rule a disagreement is settled by."""
+
+    computed: bool
+    """Whether the command works out which statement stands, so the caller names none."""
+    roles: frozenset[Role]
+    """The roles that may settle by it."""
 
 
 def json_value(value: object) -> JsonValue:
@@ -660,8 +733,69 @@ def _document_roots() -> dict[DocumentClass, str]:
     return roots
 
 
+def _put_kinds() -> dict[Role, frozenset[Kind]]:
+    """Build the kinds of row each role may put from the schema's table.
+
+    Returns:
+        The kinds each role that may put a row may put.
+
+    """
+    table: dict[str, JsonValue] = _table("x-putKinds")
+    return {role: _members(table[role], KINDS, f"x-putKinds/{role}") for role in ROLES if role in table}
+
+
+def _put_fields() -> dict[Kind, frozenset[str]]:
+    """Build the fields a put may state for each kind of row from the schema's table.
+
+    Returns:
+        The row fields a caller may state for each kind a put may write.
+
+    Raises:
+        TypeError: A kind's fields are not a list of strings.
+
+    """
+    table: dict[str, JsonValue] = _table("x-putFields")
+    fields: dict[Kind, frozenset[str]] = {}
+    kind: Kind
+    for kind in KINDS:
+        if kind not in table:
+            continue
+        listed: JsonValue = table[kind]
+        if not isinstance(listed, list):
+            message: str = f"matrix schema: x-putFields/{kind} is not a list"
+            raise TypeError(message)
+        fields[kind] = frozenset(name for name in listed if isinstance(name, str))
+    return fields
+
+
+def _settle_rules() -> dict[DisagreementRule, SettleRule]:
+    """Build the settlement rules from the schema's table.
+
+    Returns:
+        One rule per way a disagreement is settled.
+
+    Raises:
+        TypeError: The table lacks a rule or a rule is malformed.
+
+    """
+    table: dict[str, JsonValue] = _table("x-disagreementRules")
+    rules: dict[DisagreementRule, SettleRule] = {}
+    name: DisagreementRule
+    for name in DISAGREEMENT_RULES:
+        rule: JsonValue = table.get(name)
+        computed: JsonValue = rule.get("computed") if isinstance(rule, dict) else None
+        if not isinstance(rule, dict) or not isinstance(computed, bool):
+            message: str = f"matrix schema: x-disagreementRules/{name} is malformed"
+            raise TypeError(message)
+        rules[name] = SettleRule(computed=computed, roles=_members(rule.get("roles"), ROLES, name))
+    return rules
+
+
 LINK_RULES: Final[dict[LinkType, LinkRule]] = _link_rules()
 COMMAND_RULES: Final[dict[str, CommandRule]] = _command_rules()
+PUT_KINDS: Final[dict[Role, frozenset[Kind]]] = _put_kinds()
+PUT_FIELDS: Final[dict[Kind, frozenset[str]]] = _put_fields()
+SETTLE_RULES: Final[dict[DisagreementRule, SettleRule]] = _settle_rules()
 FACT_HOME_SECTIONS: Final[dict[FactKind, int]] = _fact_home_sections()
 DOCUMENT_ROOTS: Final[dict[DocumentClass, str]] = _document_roots()
 PLACED_KINDS: Final[frozenset[Kind]] = frozenset({KIND_STACK, *ELEMENT_KINDS})
@@ -674,7 +808,7 @@ PROBLEMS_SHOWN: Final = 20
 """The most schema failures an error message lists."""
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def _validator(definition: str | None) -> Draft202012Validator:
     """Build the validator of the matrix, or of one $defs entry of it.
 
@@ -750,6 +884,53 @@ def validate_matrix(value: object, where: str = "matrix") -> Matrix:
     shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
     message: str = f"{where} does not satisfy the matrix schema ({len(problems)} problems): {shown}"
     raise MatrixError(message)
+
+
+def is_review_scope(value: object) -> TypeIs[ReviewScope]:
+    """Tell whether a value satisfies the ReviewScope definition.
+
+    Returns:
+        True when the schema accepts the value as a review scope.
+
+    """
+    return _validator("ReviewScope").is_valid(value)
+
+
+def validate_review_scope(value: object, where: str = "review scope") -> ReviewScope:
+    """Validate a review scope.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        MatrixError: The value does not satisfy the ReviewScope definition.
+
+    """
+    if is_review_scope(value):
+        return value
+    shown: str = "; ".join(schema_problems(value, "ReviewScope")[:PROBLEMS_SHOWN])
+    message: str = f"{where} does not satisfy ReviewScope: {shown}"
+    raise MatrixError(message)
+
+
+def is_statements(value: object) -> TypeIs[list[DisputedStatement]]:
+    """Tell whether a value is a list of disputed statements.
+
+    Returns:
+        True when the value is a list and the schema accepts each entry as a disputed statement.
+
+    """
+    return isinstance(value, list) and all(_validator("DisputedStatement").is_valid(entry) for entry in value)
+
+
+def is_provides(value: object) -> TypeIs[list[Provides]]:
+    """Tell whether a value is a list of provides entries.
+
+    Returns:
+        True when the value is a list and the schema accepts each entry as a provides entry.
+
+    """
+    return isinstance(value, list) and all(_validator("Provides").is_valid(entry) for entry in value)
 
 
 def validate_node(value: object, where: str = "row") -> Node:

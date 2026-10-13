@@ -5,8 +5,10 @@ workflow, flow, tracker or real vault is touched. They cover: the generated cont
 with its schema and the schema's vocabularies and tables agree with the generated values; the
 carry-over of a small element matrix; reading changed documents only, and what an edit, a revert
 and a deletion mark; PRD rows; every read; what the consistency rules and the roles refuse; two
-processes writing at once, each loading the store by file path; and every sub-command of
-bin/atw-matrix run as a subprocess from another directory.
+processes writing at once, each loading the store by file path; every sub-command of
+bin/atw-matrix run as a subprocess from another directory; and one Epic's walk-through replayed
+as those commands: the design recorded, the documents written, the review opened and approved,
+the three questions answered, the code marked built, deployed and merged, and the reuse check.
 """
 
 import json
@@ -31,9 +33,12 @@ import matrixsync
 from matrix_contract import (
     APPROVAL_APPROVED,
     APPROVAL_CHANGED_SINCE_APPROVAL,
+    APPROVAL_IN_REVIEW,
     APPROVAL_UNVERIFIED,
     CODE_BUILT,
     CODE_DEPLOYED,
+    CODE_LEGACY,
+    CODE_NONE,
     COMMAND_RULES,
     COVERAGE_APPROVED,
     COVERAGE_NOT_ASSESSED,
@@ -41,15 +46,19 @@ from matrix_contract import (
     DISAGREEMENT_SETTLED,
     FACT_RULE,
     FEATURE_PRD,
+    HEADING_NEW,
     KIND_DISAGREEMENT,
     KIND_DOCUMENT,
     KIND_FACT,
     KIND_FEATURE,
     KIND_LAYER,
     KIND_PRD,
+    KIND_REPOSITORY,
     KIND_SERVICE,
+    KIND_STACK,
     KIND_TERM,
     KINDS,
+    LIFECYCLE_IN_REVIEW,
     LIFECYCLE_RETIRED,
     LINK_DESCRIBED_BY,
     LINK_NEEDS,
@@ -57,10 +66,19 @@ from matrix_contract import (
     LINK_RULES,
     LINK_TYPES,
     LINK_USES,
+    REUSE_DUPLICATE,
+    REUSE_UNUSED,
+    ROLE_ARCHITECTURE_LEAD,
+    ROLE_BUILD_DRIVER,
+    ROLE_BUILD_WORKFLOW,
     ROLE_ENV,
+    ROLE_HOOKS,
+    ROLE_REPOSITORY_STEWARD,
     ROLE_SCRIPT,
     ROLE_SOLUTIONS_ARCHITECT,
     ROLES,
+    RULE_EFFECTIVE_OVER_NON_EFFECTIVE,
+    TASK_ELEMENTS_KEY,
     ApprovalState,
     DocumentsSyncedAt,
     JsonValue,
@@ -103,6 +121,12 @@ FEATURE: NodeId = NodeId("feature:address proof")
 FACT: NodeId = NodeId("fact:proof secrets are hashed")
 EVENTS_ROW: NodeId = matrixstore.make_id(KIND_DOCUMENT, EVENTS)
 PRD_ROW: NodeId = matrixstore.make_id(KIND_PRD, BEAD)
+TOKEN_COMPONENT: NodeId = NodeId(f"component:{AUTH}/{AUTH}/proof token component")
+PROOFS_TABLE: NodeId = NodeId(f"infrastructure:{AUTH}/{AUTH}/identity-email-proofs")
+DISAGREEMENT: NodeId = matrixstore.make_id(KIND_DISAGREEMENT, "where the handler shape comes from")
+SERVICE: NodeId = matrixstore.make_id(KIND_SERVICE, AUTH)
+TASK: str = "ssbd-check1.1.1"
+STORY: str = "ssbd-check1.1"
 WRITER: str = """
 import importlib.util
 import sys
@@ -261,7 +285,7 @@ def _check_contract() -> None:
         entry: JsonValue = definitions.get(name) if isinstance(definitions, dict) else None
         require(isinstance(entry, dict) and entry.get("enum") == list(values), f"the {name} values match the schema")
     require(set(LINK_RULES) == set(LINK_TYPES), "every link type has its rule")
-    require(set(command.COMMANDS) <= set(COMMAND_RULES), "every built sub-command is in the schema's command table")
+    require(set(command.COMMANDS) == set(COMMAND_RULES), "the sub-commands built are the schema's command table")
     require(not COMMAND_RULES["find"].writes, "the command table says a read does not write")
     require(COMMAND_RULES["sync-prds"].writes, "the command table says a sync writes")
 
@@ -618,6 +642,465 @@ def _check_command(work: Path, vault: Path) -> None:
     require(_run(work, "check", *where, status=1).get("valid") is False, "check rejects a broken file")
 
 
+def _at(value: JsonValue, *keys: str | int) -> JsonValue:
+    """Read a value nested in decoded JSON.
+
+    Returns:
+        The value at the path of object keys and list positions; None when the path is not there.
+
+    """
+    current: JsonValue = value
+    key: str | int
+    for key in keys:
+        if isinstance(current, dict) and isinstance(key, str):
+            current = current.get(key)
+        elif isinstance(current, list) and isinstance(key, int) and -len(current) <= key < len(current):
+            current = current[key]
+        else:
+            return None
+    return current
+
+
+def _ids(value: JsonValue, field: str = "id") -> list[JsonValue]:
+    """List one field of each object in a decoded JSON list.
+
+    Returns:
+        The field of each entry, in order; empty when the value is not a list.
+
+    """
+    return [_at(entry, field) for entry in value] if isinstance(value, list) else []
+
+
+def _walk_matrix(work: Path, vault: Path) -> tuple[str, ...]:
+    """Carry the small element matrix over through the command and give the Epic its PRD row.
+
+    Returns:
+        The options that name the matrix file the walk-through works on.
+
+    """
+    sources: Path = work / "walk-sources"
+    sources.mkdir()
+    epic: JsonValue = {"id": BEAD, "title": "Address proof", "issue_type": "epic", "labels": ["prd:myagent-proof"]}
+    (sources / "old.json").write_text(json.dumps(_old_matrix()), encoding="utf-8")
+    (sources / "types.json").write_text(json.dumps(TYPE_MAP), encoding="utf-8")
+    (sources / "epics.json").write_text(json.dumps([epic]), encoding="utf-8")
+    where: tuple[str, ...] = ("--matrix", "walk/matrix.json")
+    files: tuple[str, ...] = ("--source", "walk-sources/old.json", "--type-map", "walk-sources/types.json")
+    _run(work, "carry-over", *where, "--arch", str(vault / ARCH), *files)
+    prds: tuple[str, ...] = ("--prd-dir", str(vault / SDLC), "--epics-file", "walk-sources/epics.json")
+    _run(work, "sync-prds", *where, *prds, role=ROLE_SCRIPT)
+    return where
+
+
+def _walk_capability(work: Path, vault: Path, where: tuple[str, ...]) -> None:
+    """Find the shared capability the Epic needs and record what it provides, as its architect does."""
+    who: tuple[str, ...] = ("--bead", BEAD, "--step", "architect")
+    scanned: dict[str, JsonValue] = _run(
+        work,
+        "expertise",
+        "--bead",
+        BEAD,
+        "--scan-prd",
+        "--prd-dir",
+        str(vault / SDLC),
+        *where,
+        role=ROLE_SCRIPT,
+    )
+    require(isinstance(scanned.get("expertise"), list), "expertise prints the Epic's expertise list")
+    found: dict[str, JsonValue] = _run(work, "find", "--provides", "chassis handler", *where)
+    require(_at(found, "matches", 0, "row", "id") == CAPABILITY, "find --provides returns the shared capability")
+    provides: JsonValue = [
+        {
+            "id": "handler-family",
+            "behaviour": "Handler shape, request context and idempotency for every Lambda.",
+            "consumersMust": "Not write its own handler base.",
+            "interface": {"kind": "layer", "name": LIB},
+            "useSignals": ["shared_chassis"],
+            "duplicateSignals": ["put_events("],
+        },
+    ]
+    home: tuple[str, ...] = ("--home-document", CHASSIS, "--home-heading", "Provides")
+    stated: tuple[str, ...] = ("--id", CAPABILITY, "--provides", json.dumps(provides), *home)
+    _run(work, "put", "--kind", "feature", *stated, *where, *who, status=1, role=ROLE_SCRIPT)
+    recorded: dict[str, JsonValue] = _run(
+        work,
+        "put",
+        "--kind",
+        "feature",
+        *stated,
+        *where,
+        *who,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(_at(recorded, "put", "node", "approval", "state") == APPROVAL_UNVERIFIED, "a changed row is unverified")
+    unchanged: dict[str, JsonValue] = _run(
+        work,
+        "put",
+        "--kind",
+        "feature",
+        *stated,
+        *where,
+        *who,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(_at(unchanged, "put", "changed") == [], "stating what a row holds changes nothing")
+    pending: dict[str, JsonValue] = _run(work, "check", *where, status=1, role=ROLE_SCRIPT)
+    require("has no heading 'Provides'" in json.dumps(pending), "check reports a home that is not written yet")
+
+
+def _walk_elements(work: Path, where: tuple[str, ...]) -> None:
+    """Record the Epic's new elements; only the repository steward records a repository."""
+    who: tuple[str, ...] = ("--bead", BEAD, "--step", "architect")
+    placed: tuple[str, ...] = ("--repository", AUTH_NAME, "--stack", AUTH_NAME)
+    steward: tuple[str, ...] = ("put", "--kind", "repository", "--name", "skillspoke-new-service", *where)
+    _run(work, *steward, *who, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    require(_at(_run(work, *steward, role=ROLE_REPOSITORY_STEWARD), "put", "created") is True, "the steward puts it")
+    component: dict[str, JsonValue] = _run(
+        work,
+        *("put", "--kind", "component", "--name", "proof token component", "--resource-type", "handler"),
+        *placed,
+        *where,
+        *who,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(_at(component, "put", "id") == TOKEN_COMPONENT, "an element's id is its kind, repository, stack and name")
+    require(_at(component, "put", "node", "code", "state") == CODE_NONE, "a new element has no code")
+    table: dict[str, JsonValue] = _run(
+        work,
+        *("put", "--kind", "infrastructure", "--name", "identity-email-proofs", "--resource-type", "dynamodb-table"),
+        *placed,
+        *where,
+        *who,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    added: JsonValue = table.get("expertiseAdded")
+    require(isinstance(added, list) and bool(added), "recording an element adds the skills for its resource type")
+    text: JsonValue = table.get("expertiseText")
+    require(
+        isinstance(text, str) and isinstance(added, list) and all(f'<skill name="{name}">' in text for name in added),
+        "and put prints the text of those skills",
+    )
+
+
+def _walk_links(work: Path, where: tuple[str, ...]) -> None:
+    """Record the Epic's feature, its links, a fact and a claim on the fact's home heading."""
+    who: tuple[str, ...] = ("--bead", BEAD, "--step", "architect")
+    feature: tuple[str, ...] = ("--kind", "feature", "--name", "Address proof", "--feature-type", "prd")
+    _run(work, "put", *feature, "--requirements", "EV-1", *where, *who, role=ROLE_SOLUTIONS_ARCHITECT)
+    links: list[tuple[str, ...]] = [
+        ("--from", PRD_ROW, "--type", "needs", "--to", FEATURE),
+        ("--from", FEATURE, "--type", "realizedBy", "--to", TOKEN_COMPONENT),
+        ("--from", FEATURE, "--type", "realizedBy", "--to", PROOFS_TABLE),
+        ("--from", FEATURE, "--type", "uses", "--to", CAPABILITY, "--provides", "handler-family"),
+        ("--from", FEATURE, "--type", "describedBy", "--to", EVENTS_ROW, "--heading", "Proof tokens"),
+    ]
+    stated_link: tuple[str, ...]
+    for stated_link in links:
+        joined: dict[str, JsonValue] = _run(work, "link", *stated_link, *where, *who, role=ROLE_SOLUTIONS_ARCHITECT)
+        require(joined.get("added") is True, f"link adds the {stated_link[3]} link")
+    _run(
+        work,
+        "link",
+        "--from",
+        FEATURE,
+        "--type",
+        "needs",
+        "--to",
+        CAPABILITY,
+        *where,
+        *who,
+        status=1,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    fact: tuple[str, ...] = (
+        *("--kind", "fact", "--name", "Proof secrets are hashed", "--fact-kind", FACT_RULE),
+        *("--statement", "Proof secrets are stored only as hashes."),
+        *("--home-document", EVENTS, "--home-heading", "Proof tokens", "--linked-from", CHASSIS),
+    )
+    _run(work, "put", *fact, *where, *who, role=ROLE_SOLUTIONS_ARCHITECT)
+    claimed: dict[str, JsonValue] = _run(
+        work,
+        "claim",
+        EVENTS_ROW,
+        "--heading",
+        "Proof tokens",
+        *where,
+        *who,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(claimed.get("granted") is True, "an Epic claims a heading")
+    other: dict[str, JsonValue] = _run(
+        work,
+        "claim",
+        EVENTS_ROW,
+        "--heading",
+        "Proof tokens",
+        "--bead",
+        "ssbd-other",
+        *where,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(other.get("granted") is False and _at(other, "claim", "bead") == BEAD, "a second Epic is told who holds it")
+    require(other.get("standing") == [FACT], "and is handed the holder's unapproved fact to build on")
+
+
+def _walk_documents(work: Path, vault: Path, where: tuple[str, ...]) -> None:
+    """Write the capability's home heading as the maintainer does, and read it for the Epic."""
+    chassis: Path = vault / CHASSIS
+    chassis.write_text(
+        chassis.read_text(encoding="utf-8") + "\n## Provides\n\nConsumers obtain the handler shape from the chassis.\n",
+        encoding="utf-8",
+    )
+    arch: tuple[str, ...] = ("--arch", str(vault / ARCH))
+    read: dict[str, JsonValue] = _run(
+        work,
+        "sync-documents",
+        "--bead",
+        BEAD,
+        "--step",
+        "architect",
+        *where,
+        *arch,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(read.get("inReview") == [CHASSIS], "an effective document with unreviewed text is set to in-review")
+    require(f"lifecycle_state: {LIFECYCLE_IN_REVIEW}" in chassis.read_text(encoding="utf-8"), "in its front matter")
+    statements: JsonValue = [
+        {"document": EVENTS, "heading": "Proof tokens", "text": "Proof secrets are stored only as hashes."},
+        {"document": CHASSIS, "heading": "Provides", "text": "Consumers obtain the handler shape from the chassis."},
+    ]
+    stated: tuple[str, ...] = ("--name", "where the handler shape comes from", "--statements", json.dumps(statements))
+    who: tuple[str, ...] = ("--bead", BEAD, "--step", "architect")
+    settle: tuple[str, ...] = ("settle", *stated, *where, *who)
+    _run(work, *settle, "--rule", "home-document", "--stands", "2", status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    _run(
+        work,
+        *settle,
+        "--rule",
+        RULE_EFFECTIVE_OVER_NON_EFFECTIVE,
+        "--stands",
+        "2",
+        status=1,
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    _run(work, *settle, "--rule", RULE_EFFECTIVE_OVER_NON_EFFECTIVE, status=1, role=ROLE_ARCHITECTURE_LEAD)
+    settled: dict[str, JsonValue] = _run(
+        work,
+        *settle,
+        "--rule",
+        RULE_EFFECTIVE_OVER_NON_EFFECTIVE,
+        "--reason",
+        "Approved text stands.",
+        role=ROLE_SOLUTIONS_ARCHITECT,
+    )
+    require(settled.get("approved") == [True, False], "settle works out which statement is in approved text")
+    require(_ids(_at(settled, "node", "statements"), "stands") == [True, False], "and the approved one stands")
+    require(_at(settled, "node", "disagreementStatus") == DISAGREEMENT_SETTLED, "the disagreement is settled")
+    recorded: dict[str, JsonValue] = _run(work, "disagreements", "--document", CHASSIS, *where)
+    require(DISAGREEMENT in _ids(recorded.get("disagreements")), "and is found again by its document")
+
+
+def _walk_review(work: Path, vault: Path, where: tuple[str, ...]) -> None:
+    """Open the Epic's review, require exactly what a reviewer is handed, approve it, and require nothing is left."""
+    arch: tuple[str, ...] = ("--arch", str(vault / ARCH))
+    checked: dict[str, JsonValue] = _run(work, "check", "--bead", BEAD, *where, *arch, role=ROLE_SCRIPT)
+    require(checked.get("valid") is True, "check accepts the recorded design once its documents are written")
+    before: dict[str, JsonValue] = _run(work, "prd", BEAD, *where)
+    require(before.get("fullyApproved") is False, "a design that is not reviewed is not fully approved")
+    _run(work, "unapproved", "--bead", BEAD, *where, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    scope: dict[str, JsonValue] = _run(
+        work,
+        "unapproved",
+        "--bead",
+        BEAD,
+        "--step",
+        "scope",
+        "--out",
+        "walk/review-scope.json",
+        *where,
+        role=ROLE_SCRIPT,
+    )
+    handed: set[JsonValue] = set(_ids(scope.get("rows")))
+    require(handed == {FEATURE, TOKEN_COMPONENT, PROOFS_TABLE, CAPABILITY, FACT, DISAGREEMENT}, f"the rows: {handed}")
+    require(
+        scope.get("headings") == [{"document": CHASSIS, "heading": "Provides", "change": HEADING_NEW}],
+        f"and the one new heading are exactly what a reviewer is handed: {scope.get('headings')}",
+    )
+    saved: JsonValue = json_value(json.loads((work / "walk" / "review-scope.json").read_text(encoding="utf-8")))
+    require(saved == scope, "the scope file holds what the command printed")
+    held: Matrix = matrixstore.read_matrix(work / "walk" / "matrix.json")
+    require(_state(held, FEATURE) == APPROVAL_IN_REVIEW, "what is handed to review is in review")
+    require(_state(held, TOKENS) == APPROVAL_APPROVED, "and what was approved is left alone")
+    steps: tuple[str, ...] = ("--steps", "review-1", "review-2")
+    _run(work, "approve", "--bead", BEAD, *steps, *where, *arch, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    passed: dict[str, JsonValue] = _run(work, "approve", "--bead", BEAD, *steps, *where, *arch, role=ROLE_SCRIPT)
+    require(passed.get("remaining") == [] and passed.get("coverage") == COVERAGE_APPROVED, "approve approves it all")
+    require(passed.get("promoted") == [CHASSIS], "and the reviewed document is effective again")
+    require("lifecycle_state: effective" in (vault / CHASSIS).read_text(encoding="utf-8"), "in its front matter")
+    again: dict[str, JsonValue] = _run(work, "unapproved", "--bead", BEAD, *where, role=ROLE_SCRIPT)
+    require(again.get("rows") == [] and again.get("headings") == [], "after approval nothing is unapproved")
+    approved: Matrix = matrixstore.read_matrix(work / "walk" / "matrix.json")
+    require(approved["nodes"][FEATURE]["approval"].get("steps") == ["review-1", "review-2"], "the reviews are named")
+    require(
+        "claim" not in approved["nodes"][EVENTS_ROW]["headings"]["Proof tokens"],
+        "and the Epic's claim is released",
+    )
+    sent: tuple[str, ...] = ("note-sendback", "--bead", BEAD, "--criterion", "A8", "--step", "lead", *where)
+    _run(work, *sent, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    require(_run(work, *sent, role=ROLE_ARCHITECTURE_LEAD).get("sendBacks") == 1, "the lead records a send-back")
+    typed: tuple[str, ...] = ("add-resource-type", "state-machine", *where)
+    require(_run(work, *typed, role=ROLE_SOLUTIONS_ARCHITECT).get("added") is True, "a resource type is added")
+    _run(work, "add-resource-type", "Not A Type", *where, status=1, role=ROLE_SOLUTIONS_ARCHITECT)
+    _commit(vault, "walk-through")
+
+
+def _walk_answers(work: Path, where: tuple[str, ...]) -> None:
+    """Ask the three questions the read side could not answer before a design was recorded."""
+    involved: dict[str, JsonValue] = _run(work, "prd", BEAD, "--closure", *where)
+    closure: JsonValue = involved.get("closure")
+    require(_ids(_at(closure, "features")) == [FEATURE], "what the Epic involves: its feature")
+    require(set(_ids(_at(closure, "elements"))) >= {TOKEN_COMPONENT, PROOFS_TABLE, LAYER}, "its elements")
+    require(set(_ids(_at(closure, "repositories"), "name")) == {AUTH_NAME, LIB}, "and its repositories")
+    require(involved.get("fullyApproved") is True and involved.get("notApproved") == [], "whether it is fully approved")
+    capability: dict[str, JsonValue] = _run(work, "node", CAPABILITY, *where)
+    require(_ids(_at(capability, "node", "provides")) == ["handler-family"], "what the shared capability provides")
+    require(_at(capability, "reverse", "usedBy") == [FEATURE], "and who uses it")
+    must: dict[str, JsonValue] = _run(work, "uses", "--elements", TOKEN_COMPONENT, *where)
+    require(_at(must, "capabilities", 0, "reliedOn") == ["handler-family"], "an element is told what it must use")
+    bead: JsonValue = [{"id": TASK, "metadata": {TASK_ELEMENTS_KEY: json.dumps([TOKEN_COMPONENT])}}]
+    (work / "walk" / "task.json").write_text(json.dumps(bead), encoding="utf-8")
+    task: dict[str, JsonValue] = _run(work, "uses", "--task", TASK, "--task-file", "walk/task.json", *where)
+    require(_ids(_ids(task.get("capabilities"), "feature")) == [CAPABILITY], "and so is a Task, by its elements")
+    hooked: dict[str, JsonValue] = _run(work, "expertise", "--bead", BEAD, "--emit-context", *where, role=ROLE_HOOKS)
+    require(_at(hooked, "hookSpecificOutput", "hookEventName") == "SubagentStart", "expertise prints a hook's output")
+    require(bool(_at(hooked, "hookSpecificOutput", "additionalContext")), "holding the text of the Epic's skills")
+
+
+def _code_state(work: Path, key: NodeId) -> str:
+    """Read the code marker of one row of the walk-through matrix.
+
+    Returns:
+        The row's code state.
+
+    """
+    return matrixstore.read_matrix(work / "walk" / "matrix.json")["nodes"][key]["code"]["state"]
+
+
+def _walk_build(work: Path, where: tuple[str, ...]) -> None:
+    """Mark a Task built, its Story deployed and merged, and require exactly the rows built to be trusted."""
+    built: tuple[str, ...] = (
+        *("mark-built", "--task", TASK, "--story", STORY, "--repository", AUTH_NAME),
+        *("--commit", "c0ffee1", "--ref", f"story/{STORY}", "--elements", TOKEN_COMPONENT),
+    )
+    _run(work, *built, *where, status=1, role=ROLE_SCRIPT)
+    marked: dict[str, JsonValue] = _run(work, *built, *where, role=ROLE_BUILD_DRIVER)
+    trusted: set[JsonValue] = {matrixstore.make_id(KIND_REPOSITORY, AUTH), SERVICE, TOKEN_COMPONENT}
+    require(set(_ids(marked.get("rows"))) == trusted, "mark-built marks the repository, its service and the component")
+    require(set(_ids(marked.get("rows"), "now")) == {CODE_BUILT}, "as built")
+    require(_code_state(work, TOKENS) == CODE_LEGACY, "another element of the repository stays legacy")
+    require(
+        _code_state(work, matrixstore.make_id(KIND_REPOSITORY, LIB)) == CODE_LEGACY,
+        "and so does another repository",
+    )
+    require(_run(work, *built, *where, role=ROLE_BUILD_DRIVER).get("rows") == [], "marking it again changes nothing")
+    deployed: dict[str, JsonValue] = _run(
+        work,
+        "mark-deployed",
+        "--story",
+        STORY,
+        "--repository",
+        AUTH_NAME,
+        "--commit",
+        "c0ffee1",
+        "--stacks",
+        AUTH_NAME,
+        "no-such-stack",
+        *where,
+        role=ROLE_BUILD_DRIVER,
+    )
+    require(deployed.get("unknown") == ["no-such-stack"], "a stack that is no row is reported, not refused")
+    require(_code_state(work, TOKEN_COMPONENT) == CODE_DEPLOYED, "mark-deployed marks what the Story built")
+    require(_code_state(work, matrixstore.make_id(KIND_STACK, AUTH, AUTH)) == CODE_DEPLOYED, "and the stack deployed")
+    merged: dict[str, JsonValue] = _run(
+        work,
+        "mark-merged",
+        "--story",
+        STORY,
+        "--ref",
+        "main",
+        *where,
+        role=ROLE_BUILD_DRIVER,
+    )
+    require(TOKEN_COMPONENT in _ids(merged.get("rows")), "mark-merged moves the Story's rows to the default branch")
+    code: Node = matrixstore.read_matrix(work / "walk" / "matrix.json")["nodes"][TOKEN_COMPONENT]
+    require(code["code"].get("ref") == "main" and code["code"].get("task") == TASK, "and keeps what built them")
+
+
+def _walk_reuse(work: Path, where: tuple[str, ...]) -> None:
+    """Check a changed file that duplicates a shared behaviour, then one that uses it."""
+    tree: Path = work / "worktree"
+    tree.mkdir()
+    (tree / "handler.py").write_text(
+        "import boto3\n\n\ndef publish(client):\n    client.put_events(Entries=[])\n",
+        "utf-8",
+    )
+    _git(tree, "init", "-q")
+    reuse: tuple[str, ...] = (
+        *("check-reuse", "--task", TASK, "--worktree", str(tree), "--elements", TOKEN_COMPONENT),
+        *("--files", "handler.py", *where),
+    )
+    _run(work, *reuse, status=1, role=ROLE_SCRIPT)
+    found: dict[str, JsonValue] = _run(work, *reuse, role=ROLE_BUILD_WORKFLOW)
+    findings: list[JsonValue] = _ids(found.get("violations"), "finding")
+    require(sorted(str(finding) for finding in findings) == [REUSE_DUPLICATE, REUSE_UNUSED], f"both: {findings}")
+    (tree / "handler.py").write_text(
+        "from shared_chassis import Handler\n\n\nclass Proof(Handler):\n    pass\n",
+        "utf-8",
+    )
+    require(
+        _run(work, *reuse, role=ROLE_BUILD_WORKFLOW).get("clean") is True,
+        "a file that uses the capability is clean",
+    )
+
+
+def _walk_two_writers(work: Path, where: tuple[str, ...]) -> None:
+    """Run several put commands at once and require every row to be there."""
+    names: list[str] = [f"walk {label} {index}" for label in ("first", "second") for index in range(3)]
+    writers: list[subprocess.Popen[str]] = [
+        subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Fixed argv: the plugin's own command.
+            [str(COMMAND), "put", "--kind", "term", "--name", name, *where],
+            cwd=work,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, ROLE_ENV: ROLE_SOLUTIONS_ARCHITECT},
+        )
+        for name in names
+    ]
+    writer: subprocess.Popen[str]
+    for writer in writers:
+        errors: str = writer.communicate(timeout=180)[1]
+        require(writer.returncode == 0, f"a put that ran beside others failed: {errors.strip()}")
+    rows: dict[NodeId, Node] = matrixstore.read_matrix(work / "walk" / "matrix.json")["nodes"]
+    require(all(matrixstore.make_id(KIND_TERM, name) in rows for name in names), "writers at once lose no row")
+
+
+def _check_walk_through(work: Path, vault: Path) -> None:
+    """Replay an Epic's walk-through as commands: design, documents, review, the three answers, the build."""
+    where: tuple[str, ...] = _walk_matrix(work, vault)
+    _walk_capability(work, vault, where)
+    _walk_elements(work, where)
+    _walk_links(work, where)
+    _walk_documents(work, vault, where)
+    _walk_review(work, vault, where)
+    _walk_answers(work, where)
+    _walk_build(work, where)
+    _walk_reuse(work, where)
+    _walk_two_writers(work, where)
+    final: dict[str, JsonValue] = _run(work, "check", *where, "--arch", str(vault / ARCH), role=ROLE_SCRIPT)
+    require(final.get("valid") is True, "the matrix conforms after the whole walk-through")
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
     """Run every matrix check against a temporary vault and temporary files."""
@@ -635,7 +1118,11 @@ def main() -> None:
         _check_refusals(path)
         _check_two_writers(path, work)
         _check_command(work, vault)
-    report("PASS: matrix contract, carry-over, document and PRD reads, queries, refusals, two writers and the command")
+        _check_walk_through(work, vault)
+    report(
+        "PASS: matrix contract, carry-over, document and PRD reads, queries, refusals, two writers, the command "
+        "and an Epic's walk-through: design, review, approval, the code marker and the reuse check",
+    )
 
 
 if __name__ == "__main__":

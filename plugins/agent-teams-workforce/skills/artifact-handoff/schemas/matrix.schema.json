@@ -9,6 +9,33 @@
   "x-lockDirectory": "state",
   "x-lockSuffix": ".lock",
   "x-operatorRole": "operator",
+  "x-taskElementsKey": "matrix_elements",
+  "x-putKinds": {
+    "solutions-architect": ["service", "component", "library", "layer", "infrastructure", "feature", "fact", "term"],
+    "repository-steward": ["repository", "stack"]
+  },
+  "x-putFields": {
+    "repository": ["name", "aliases", "purpose", "status"],
+    "stack": ["name", "aliases", "purpose", "repository", "status"],
+    "service": ["name", "aliases", "purpose", "status"],
+    "component": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
+    "library": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
+    "layer": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
+    "infrastructure": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
+    "feature": ["name", "aliases", "purpose", "featureType", "requirements", "provides", "home"],
+    "fact": ["name", "aliases", "purpose", "statement", "factKind", "subject", "home", "linkedFrom"],
+    "term": ["name", "aliases", "purpose"]
+  },
+  "x-disagreementRules": {
+    "effective-over-non-effective": {"computed": true, "roles": ["solutions-architect", "decider"]},
+    "home-document": {"computed": false, "roles": ["solutions-architect"]},
+    "security-practice": {"computed": false, "roles": ["solutions-architect"]},
+    "aws-evidence": {"computed": false, "roles": ["solutions-architect"]},
+    "best-practice": {"computed": false, "roles": ["solutions-architect"]},
+    "reuse": {"computed": false, "roles": ["solutions-architect"]},
+    "section-2": {"computed": false, "roles": ["solutions-architect", "decider"]},
+    "decider": {"computed": false, "roles": ["decider"]}
+  },
   "x-documentRoots": {
     "arc42": "arc42"
   },
@@ -147,6 +174,14 @@
     },
     "disagreementStatus": {"enum": ["open", "settled", "applied"]},
     "interfaceKind": {"enum": ["package", "layer", "service-operation", "construct", "event-api", "infrastructure"]},
+    "headingChange": {
+      "description": "How a heading in a review scope differs from what was approved.",
+      "enum": ["new", "changed", "removed"]
+    },
+    "reuseFinding": {
+      "description": "What the reuse check found: a listed capability that is not used, a shared behaviour done locally, or a definition a reviewer must rule on.",
+      "enum": ["unused", "duplicate", "judgment"]
+    },
     "role": {
       "description": "Who is running the command: the value of the x-roleEnv variable, or x-operatorRole when it is not set.",
       "enum": ["operator", "script", "hooks", "solutions-architect", "repository-steward", "decider", "architecture-lead", "build-driver", "build-workflow"]
@@ -171,8 +206,55 @@
       "additionalProperties": false,
       "required": ["hash", "approvedHash"],
       "properties": {
-        "hash": {"description": "The hash of the heading's own text; empty when an approved heading is no longer in the document.", "type": "string"},
-        "approvedHash": {"type": ["string", "null"]}
+        "hash": {"description": "The hash of the heading's own text; empty when an approved or claimed heading is not in the document.", "type": "string"},
+        "approvedHash": {"type": ["string", "null"]},
+        "claim": {"$ref": "#/$defs/Claim"}
+      }
+    },
+    "ScopeRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "was"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nodeId"},
+        "kind": {"$ref": "#/$defs/kind"},
+        "name": {"type": "string"},
+        "was": {"$ref": "#/$defs/approvalState"},
+        "home": {"$ref": "#/$defs/Anchor"}
+      }
+    },
+    "ScopeHeading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "heading", "change"],
+      "properties": {
+        "document": {"type": "string"},
+        "heading": {"type": "string"},
+        "change": {"$ref": "#/$defs/headingChange"}
+      }
+    },
+    "HeldHeading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "heading", "bead"],
+      "properties": {
+        "document": {"type": "string"},
+        "heading": {"type": "string"},
+        "bead": {"type": "string"}
+      }
+    },
+    "ReviewScope": {
+      "description": "What atw-matrix unapproved prints and writes: exactly what the reviewers of one Epic are handed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "at", "prd", "rows", "headings", "heldByOthers"],
+      "properties": {
+        "bead": {"type": "string"},
+        "at": {"$ref": "#/$defs/moment"},
+        "prd": {"$ref": "#/$defs/nodeId"},
+        "rows": {"description": "The rows that are not approved: features, elements, facts and the disagreements the Epic settled.", "type": "array", "items": {"$ref": "#/$defs/ScopeRow"}},
+        "headings": {"description": "The headings that are new, changed or removed against what was approved.", "type": "array", "items": {"$ref": "#/$defs/ScopeHeading"}},
+        "heldByOthers": {"description": "The differing headings another Epic claims, which are that Epic's to have reviewed.", "type": "array", "items": {"$ref": "#/$defs/HeldHeading"}}
       }
     },
     "Node": {
@@ -223,6 +305,8 @@
 
         "statements": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/DisputedStatement"}},
         "rule": {"$ref": "#/$defs/disagreementRule"},
+        "standingFact": {"description": "The fact that states what stands after the settlement, when one is recorded.", "$ref": "#/$defs/nodeId"},
+        "reopens": {"description": "The earlier disagreement this one reopens.", "$ref": "#/$defs/nodeId"},
         "settledBy": {"type": ["string", "null"]},
         "reason": {"type": "string"},
         "evidence": {"type": "array", "items": {"type": "string"}},
@@ -281,8 +365,8 @@
       "properties": {
         "state": {"$ref": "#/$defs/approvalState"},
         "basis": {"$ref": "#/$defs/approvalBasis"},
-        "bead": {"type": "string"},
-        "step": {"description": "The journal step id of the review that approved it.", "type": "string"},
+        "bead": {"description": "The Epic that recorded or changed the row, while it is not approved; the Epic whose review approved it afterwards.", "type": "string"},
+        "steps": {"description": "The journal step ids of the reviews that approved it.", "type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "at": {"$ref": "#/$defs/moment"}
       }
     },
@@ -333,7 +417,21 @@
         "heading": {"type": "string"},
         "line": {"type": "integer"},
         "text": {"type": "string"},
-        "lifecycle": {"$ref": "#/$defs/lifecycle"}
+        "lifecycle": {"$ref": "#/$defs/lifecycle"},
+        "stands": {"description": "True on the one statement that stands after the settlement and false on each statement that lost; absent while the disagreement is open, and on a carried note that names no loser.", "type": "boolean"}
+      }
+    },
+    "ReuseItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding", "feature", "provides", "detail"],
+      "properties": {
+        "finding": {"$ref": "#/$defs/reuseFinding"},
+        "feature": {"$ref": "#/$defs/nodeId"},
+        "provides": {"description": "The id of the provides entry concerned.", "type": "string"},
+        "file": {"type": "string"},
+        "line": {"type": "integer"},
+        "detail": {"type": "string"}
       }
     },
     "Claim": {

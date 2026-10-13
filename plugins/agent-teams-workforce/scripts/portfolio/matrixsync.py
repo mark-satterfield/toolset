@@ -10,7 +10,10 @@ Two operations, both rules with no judgment in them:
 - :func:`sync_prds` gives every Epic one ``prd`` row holding its PRD file, the hash of that file
   and the Epic id. A PRD whose hash changed is not assessed any more.
 
-Neither writes to the vault or to beads. Git and ``bd`` are the only programs run.
+Neither writes to beads, and the one thing either side of this module writes to the vault is the
+lifecycle line of a document's front matter (:func:`set_lifecycle`): in-review when an Epic's
+read finds a heading nobody has reviewed in an effective document (:func:`hold_for_review`), and
+effective again when the review approves it. Git and ``bd`` are the only programs run.
 """
 
 import hashlib
@@ -43,12 +46,15 @@ from matrix_contract import (
     KIND_PRD,
     LIFECYCLE_DRAFT,
     LIFECYCLE_EFFECTIVE,
+    LIFECYCLE_IN_REVIEW,
     LIFECYCLE_RETIRED,
     LIFECYCLES,
     Anchor,
     Approval,
     ApprovalState,
+    Claim,
     DisagreementStatus,
+    DisputedStatement,
     DocumentClass,
     DocumentsSyncedAt,
     HeadingHash,
@@ -61,6 +67,8 @@ from matrix_contract import (
 from matrixstore import Stamp, heading_state, make_id
 
 FENCE: Final = "---"
+LIFECYCLE_KEY: Final = "lifecycle_state"
+"""The front matter key that states a document's lifecycle."""
 CODE_FENCES: Final[tuple[str, ...]] = ("```", "~~~")
 MARKDOWN_SUFFIX: Final = ".md"
 PREAMBLE: Final = "(preamble)"
@@ -141,6 +149,8 @@ class DocumentsSynced(TypedDict):
     rowsChanged: list[NodeId]
     """Every fact, feature and disagreement whose marker the read changed."""
     lifecycleNotStated: list[str]
+    inReview: list[str]
+    """Every effective document whose front matter this read set to in-review, for the Epic that changed it."""
 
 
 class UnresolvedPrd(TypedDict):
@@ -190,6 +200,24 @@ def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
         message = f"{executable} {' '.join(arguments[:3])} failed in {folder}: {done.stderr.strip()}"
         raise MatrixError(message)
     return done.stdout
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def program_output(executable: str, arguments: Sequence[str], folder: Path) -> str:
+    """Run git or bd for another matrix module and return what it printed.
+
+    A program that is not installed, cannot be started or exits non-zero raises ``MatrixError``.
+
+    Args:
+        executable: The program's name; it is resolved on PATH.
+        arguments: Its arguments.
+        folder: The folder to run it in.
+
+    Returns:
+        The program's standard output.
+
+    """
+    return _run(executable, arguments, folder)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -356,7 +384,7 @@ def parse_document(relative: str, document_class: DocumentClass, text: str) -> D
     start: int
     scalars, shows, start = _front_matter(lines)
     body: list[str] = lines[start:]
-    stated: str = scalars.get("lifecycle_state", "")
+    stated: str = scalars.get(LIFECYCLE_KEY, "")
     lifecycle: Lifecycle = next((choice for choice in LIFECYCLES if choice == stated), LIFECYCLE_DRAFT)
     titles: list[str] = [match.group(1) for match in map(_TITLE.match, body) if match is not None]
     subject: str | None = scalars.get("subject") or None
@@ -497,33 +525,58 @@ def vault_change(vault: Path, arch: Path, synced: DocumentsSyncedAt, *, full: bo
     return VaultChange(commit=commit, paths=tuple(sorted(paths)), dirty=tuple(dirty), full=False)
 
 
-def _matches(headings: Mapping[str, HeadingHash]) -> bool:
-    """Tell whether every heading of a document is as it was approved.
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def placeholder(entry: HeadingHash) -> bool:
+    """Tell whether a heading entry only holds a claim on a heading that is not written yet.
+
+    Args:
+        entry: One heading entry of a document row.
 
     Returns:
-        True when each heading is present and its hash equals the hash recorded at approval.
+        True when the heading is not in the document and was never approved.
 
     """
-    return all(bool(entry["hash"]) and entry["hash"] == entry["approvedHash"] for entry in headings.values())
+    return not entry["hash"] and entry["approvedHash"] is None
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def headings_match(headings: Mapping[str, HeadingHash]) -> bool:
+    """Tell whether every heading of a document is as it was approved.
+
+    Args:
+        headings: The heading entries of a document row.
+
+    Returns:
+        True when each heading is present and its hash equals the hash recorded at approval. An
+        entry that only holds a claim on a heading still to be written is left out.
+
+    """
+    return all(
+        bool(entry["hash"]) and entry["hash"] == entry["approvedHash"]
+        for entry in headings.values()
+        if not placeholder(entry)
+    )
 
 
 def _merged_headings(read: DocumentRead, existing: Mapping[str, HeadingHash]) -> dict[str, HeadingHash]:
     """Join the headings a document has now with the hashes recorded when it was approved.
 
     Returns:
-        One entry per present heading, keeping its approved hash; and one entry with an empty
-        hash per approved heading the document no longer has.
+        One entry per present heading, keeping its approved hash and its claim; and one entry
+        with an empty hash per heading the document does not have that was approved or is claimed.
 
     """
-    merged: dict[str, HeadingHash] = {
-        key: {"hash": value, "approvedHash": existing[key]["approvedHash"] if key in existing else None}
-        for key, value in read.headings.items()
-    }
+    merged: dict[str, HeadingHash] = {}
     key: str
+    value: str
+    for key, value in read.headings.items():
+        merged[key] = {"hash": value, "approvedHash": existing[key]["approvedHash"] if key in existing else None}
     entry: HeadingHash
     for key, entry in existing.items():
-        if key not in merged and entry["approvedHash"] is not None:
+        if key not in merged and (entry["approvedHash"] is not None or "claim" in entry):
             merged[key] = {"hash": "", "approvedHash": entry["approvedHash"]}
+        if key in merged and "claim" in entry:
+            merged[key]["claim"] = entry["claim"]
     return merged
 
 
@@ -569,7 +622,7 @@ def _document_state(current: ApprovalState, headings: Mapping[str, HeadingHash])
         again for such a document whose headings all match; otherwise the state it has.
 
     """
-    matches: bool = _matches(headings)
+    matches: bool = headings_match(headings)
     if current == APPROVAL_APPROVED and not matches:
         return APPROVAL_CHANGED_SINCE_APPROVAL
     if current == APPROVAL_CHANGED_SINCE_APPROVAL and matches:
@@ -643,18 +696,23 @@ def _disagreement_status(node: Node, texts: Mapping[str, str]) -> DisagreementSt
     """Work out whether a settled disagreement has been applied to the documents.
 
     Returns:
-        Applied when a statement of the disagreement is no longer in its document, settled when
-        every statement that can be looked for is still there, and None when no statement names
-        a document the vault holds.
+        None when no statement that can be looked for names a document the vault holds. For a
+        settlement that names the statements that lost: applied when none of them is in its
+        document any more, else settled. For a carried note that names no loser: applied when a
+        statement is no longer in its document, else settled.
 
     """
-    found: list[bool] = [
-        " ".join(statement["text"].split()) in texts[statement["document"]]
-        for statement in node.get("statements", [])
-        if statement["document"] in texts
+    stated: list[DisputedStatement] = [
+        statement for statement in node.get("statements", []) if statement["document"] in texts
     ]
+    losers: list[DisputedStatement] = [statement for statement in stated if statement.get("stands") is False]
+    ruled: bool = any("stands" in statement for statement in node.get("statements", []))
+    watched: list[DisputedStatement] = losers if ruled else stated
+    found: list[bool] = [" ".join(entry["text"].split()) in texts[entry["document"]] for entry in watched]
     if not found:
         return None
+    if ruled:
+        return DISAGREEMENT_SETTLED if any(found) else DISAGREEMENT_APPLIED
     return DISAGREEMENT_SETTLED if all(found) else DISAGREEMENT_APPLIED
 
 
@@ -738,6 +796,7 @@ def apply_documents(
         "headingsChanged": [],
         "rowsChanged": [],
         "lifecycleNotStated": sorted(path for path, document in read.items() if not document.lifecycle_stated),
+        "inReview": [],
     }
     path: str
     for path in sorted({*paths, *read}):
@@ -799,6 +858,100 @@ def sync_documents(matrix: Matrix, arch: Path, stamp: Stamp, *, full: bool = Fal
     if touched or recorded["vaultCommit"] != change.commit or recorded["dirtyPaths"] != list(change.dirty):
         matrix["documentsSyncedAt"] = {"vaultCommit": change.commit, "at": stamp.at, "dirtyPaths": list(change.dirty)}
     return result
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
+    """Write a document's lifecycle into its front matter, the one place that states it.
+
+    This is the only write the matrix makes to the vault. It changes the one front matter line
+    and nothing of the document's body, so no heading hash changes.
+
+    Args:
+        vault: The vault root.
+        relative: The document, relative to the vault root.
+        lifecycle: The lifecycle to state.
+
+    Returns:
+        True when the file was changed; False when it already stated that lifecycle.
+
+    Raises:
+        MatrixError: The document cannot be read or written, or has no front matter.
+
+    """
+    file: Path = vault / relative
+    message: str
+    try:
+        lines: list[str] = file.read_text(encoding="utf-8").splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError) as error:
+        message = f"cannot read the document {file}: {error}"
+        raise MatrixError(message) from error
+    close: int = (
+        next((index for index in range(1, len(lines)) if lines[index].strip() == FENCE), 0)
+        if lines and lines[0].strip() == FENCE
+        else 0
+    )
+    if not close:
+        message = f"the document {file} has no front matter to state its lifecycle in"
+        raise MatrixError(message)
+    stated: str = f"{LIFECYCLE_KEY}: {lifecycle}\n"
+    at: int = next((index for index in range(1, close) if lines[index].partition(":")[0] == LIFECYCLE_KEY), 0)
+    if at and _unquote(lines[at].partition(":")[2]) == lifecycle:
+        return False
+    if at:
+        lines[at] = stated
+    else:
+        lines.insert(close, stated)
+    try:
+        file.write_text("".join(lines), encoding="utf-8")
+    except OSError as error:
+        message = f"cannot write the document {file}: {error}"
+        raise MatrixError(message) from error
+    return True
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def hold_for_review(matrix: Matrix, arch: Path, paths: Sequence[str], claim: Claim) -> list[str]:
+    """Record that an Epic changed some documents, so its review finds exactly what it changed.
+
+    For each document that has a heading that is not as it was approved: every such heading no
+    other Epic claims is claimed for the Epic, the document's marker names the Epic, and a
+    document whose front matter still says effective is set to in-review in the vault, because
+    it now holds text nobody has reviewed. A vault that cannot be written raises ``MatrixError``.
+
+    Args:
+        matrix: The matrix, changed in place.
+        arch: The architecture root inside the vault.
+        paths: The documents the Epic's read found added or changed, relative to the vault root.
+        claim: The Epic, its journal step and the moment.
+
+    Returns:
+        The documents whose front matter was set to in-review.
+
+    """
+    vault: Path = vault_root(arch)
+    rows: dict[str, Node] = _document_rows(matrix)
+    held: list[str] = []
+    path: str
+    for path in sorted(set(paths) & set(rows)):
+        node: Node = rows[path]
+        differing: list[HeadingHash] = [
+            entry
+            for entry in node.get("headings", {}).values()
+            if not placeholder(entry) and entry["hash"] != entry["approvedHash"]
+        ]
+        if not differing or node.get("lifecycle") == LIFECYCLE_RETIRED:
+            continue
+        entry: HeadingHash
+        for entry in differing:
+            entry.setdefault("claim", claim)
+        if "approval" in node and node["approval"]["state"] != APPROVAL_APPROVED:
+            node["approval"]["bead"] = claim["bead"]
+        if node.get("lifecycle") == LIFECYCLE_EFFECTIVE:
+            set_lifecycle(vault, path, LIFECYCLE_IN_REVIEW)
+            node["lifecycle"] = LIFECYCLE_IN_REVIEW
+            held.append(path)
+    return held
 
 
 def _link_targets(document: str, heading: str) -> list[str]:
