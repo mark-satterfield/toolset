@@ -997,6 +997,10 @@ def _walk_build(work: Path, where: tuple[str, ...]) -> None:
     trusted: set[JsonValue] = {matrixstore.make_id(KIND_REPOSITORY, AUTH), SERVICE, TOKEN_COMPONENT}
     require(set(_ids(marked.get("rows"))) == trusted, "mark-built marks the repository, its service and the component")
     require(set(_ids(marked.get("rows"), "now")) == {CODE_BUILT}, "as built")
+    story: dict[str, JsonValue] = _run(work, "story-built", "--story", STORY, *where)
+    require(set(_ids(story.get("rows"))) == trusted, "story-built lists exactly the rows the Story built")
+    require(story.get("repositories") == [AUTH_NAME], "and names its repository")
+    require(_run(work, "story-built", "--story", "no-such-story", *where).get("rows") == [], "another Story built none")
     require(_code_state(work, TOKENS) == CODE_LEGACY, "another element of the repository stays legacy")
     require(
         _code_state(work, matrixstore.make_id(KIND_REPOSITORY, LIB)) == CODE_LEGACY,

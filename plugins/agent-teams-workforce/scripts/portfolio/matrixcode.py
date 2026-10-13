@@ -31,11 +31,14 @@ from matrix_contract import (
     KIND_SERVICE,
     KIND_STACK,
     LINK_CONTAINS,
+    LINK_DESCRIBED_BY,
     PLACED_KINDS,
     ROLE_BUILD_DRIVER,
     TASK_ELEMENTS_KEY,
     Code,
     CodeState,
+    Kind,
+    Link,
     Matrix,
     Node,
     NodeId,
@@ -58,6 +61,7 @@ from matrixstore import (
 COMMAND_BUILT: Final = "mark-built"
 COMMAND_DEPLOYED: Final = "mark-deployed"
 COMMAND_MERGED: Final = "mark-merged"
+COMMAND_STORY_BUILT: Final = "story-built"
 BUILD_DRIVER_ROLE: Final[Role] = ROLE_BUILD_DRIVER
 """The role the build and deploy driver records the marker as."""
 ELEMENTS_KEY: Final = TASK_ELEMENTS_KEY
@@ -114,6 +118,34 @@ class CodeMarked(TypedDict):
     rows: list[RowMark]
     unknown: list[str]
     """The stack names given that are no stack row, so nothing was marked for them."""
+
+
+class Described(TypedDict):
+    """One arc42 heading that describes a row."""
+
+    document: str
+    """The document's path relative to the vault root."""
+    heading: NotRequired[str]
+    """The heading in that document; absent when the whole document describes the row."""
+
+
+class BuiltRow(TypedDict):
+    """One row whose trusted code a Story built."""
+
+    id: NodeId
+    kind: Kind
+    name: str
+    code: Code
+    describedBy: list[Described]
+
+
+class StoryBuilt(TypedDict):
+    """What a Story built that is trusted: also what the ``story-built`` sub-command prints."""
+
+    story: str
+    repositories: list[str]
+    """The names of the repository rows among ``rows``; empty when the Story has no trusted code."""
+    rows: list[BuiltRow]
 
 
 def _needed(value: str, what: str) -> str:
@@ -334,6 +366,59 @@ def mark_merged(matrix: Matrix, merged: Merged, stamp: Stamp) -> CodeMarked:
             code["pr"] = merged.get("pr", "").strip()
         _set(node, code, stamp, marked)
     return marked
+
+
+def _described(matrix: Matrix, node: Node) -> list[Described]:
+    """List the arc42 headings a row's ``describedBy`` links name.
+
+    Returns:
+        One entry per link, in the row's link order: the document's path and the link's heading.
+
+    """
+    described: list[Described] = []
+    link: Link
+    for link in node["links"]:
+        if link["type"] != LINK_DESCRIBED_BY or link["to"] not in matrix["nodes"]:
+            continue
+        document: Node = matrix["nodes"][link["to"]]
+        entry: Described = {"document": document.get("path") or document["name"]}
+        if "heading" in link:
+            entry["heading"] = link["heading"]
+        described.append(entry)
+    return described
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def story_built(matrix: Matrix, story: str) -> StoryBuilt:
+    """List the rows whose trusted code a Story built, each with the headings that describe it.
+
+    Args:
+        matrix: The matrix.
+        story: The Story's id.
+
+    Returns:
+        The rows whose code marker names the Story and is ``built`` or ``deployed``, in id order,
+        and the names of the repositories among them. A call that names no Story is refused with
+        ``MatrixRefusedError``.
+
+    """
+    wanted: str = _needed(story, "the Story")
+    built: StoryBuilt = {"story": wanted, "repositories": [], "rows": []}
+    key: NodeId
+    for key in sorted(matrix["nodes"]):
+        node: Node = matrix["nodes"][key]
+        if "code" not in node or node["code"].get("story") != wanted or node["code"]["state"] not in TRUSTED:
+            continue
+        if node["kind"] == KIND_REPOSITORY:
+            built["repositories"].append(node["name"])
+        built["rows"].append({
+            "id": node["id"],
+            "kind": node["kind"],
+            "name": node["name"],
+            "code": node["code"],
+            "describedBy": _described(matrix, node),
+        })
+    return built
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

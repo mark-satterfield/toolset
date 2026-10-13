@@ -51,6 +51,7 @@ from matrixcode import (
     COMMAND_BUILT,
     COMMAND_DEPLOYED,
     COMMAND_MERGED,
+    COMMAND_STORY_BUILT,
     Built,
     CodeMarked,
     Deployed,
@@ -58,6 +59,7 @@ from matrixcode import (
     record_built,
     record_deployed,
     record_merged,
+    story_built,
 )
 from matrixexpertise import (
     SUBAGENT_START,
@@ -651,6 +653,16 @@ def _run_mark_merged(call: Call) -> Outcome:
     return Outcome(marked)
 
 
+def _run_story_built(call: Call) -> Outcome:
+    """Run ``story-built``.
+
+    Returns:
+        The rows whose trusted code the Story built, each with the headings that describe it.
+
+    """
+    return Outcome(story_built(read_matrix(call.matrix()), call.required("story")))
+
+
 def elements_of_task(call: Call, task: str) -> list[str]:
     """Read the elements a Task builds, from a saved bead or from beads.
 
@@ -704,6 +716,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_BUILT: _run_mark_built,
     COMMAND_DEPLOYED: _run_mark_deployed,
     COMMAND_MERGED: _run_mark_merged,
+    COMMAND_STORY_BUILT: _run_story_built,
     "check-reuse": _run_check_reuse,
 }
 """The sub-commands this module holds, by the name the schema's command table gives each."""
@@ -851,6 +864,12 @@ def _build_parsers(
     merged.add_argument("--story", required=True, help="the Story")
     merged.add_argument("--ref", required=True, help="the default branch the code is on now")
     merged.add_argument("--pr", help="the pull request")
+    trusted: argparse.ArgumentParser = commands.add_parser(
+        COMMAND_STORY_BUILT,
+        parents=[where],
+        help="the rows whose trusted code a Story built, with the headings that describe them",
+    )
+    trusted.add_argument("--story", required=True, help="the Story")
     reuse: argparse.ArgumentParser = commands.add_parser(
         "check-reuse",
         parents=[where],
