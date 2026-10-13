@@ -57,7 +57,8 @@ or folder named for a PRD or Epic.
 
 ## 6. Aspirational content in the effective version
 
-The effective version describes the approved design. A proposed change belongs in a target.
+The effective version describes the approved design. A proposed change is written once the
+solutions architect has decided it.
 
 **Flag, in `arc42/`:** "we will eventually", "in the future we plan to", "a future version will",
 "we intend to migrate", "planned".

@@ -46,8 +46,8 @@ this body.
 
 ## Project coverage and validation
 
-Read the MODEL and MENU under the caller's architecture root and follow assigned coverage using
-`../arc42/references/coverage-evidence.md`. Existing catalog hits guide reuse, not whether a missing
+Read the MODEL and MENU under the caller's architecture root and follow the MODEL's coverage
+obligations for the diagrams you are assigned. Existing documents guide reuse, not whether a missing
 view is required. Select only the applicable views the design supports; report missing design to
 the caller. Keep prose, diagram declarations and parent/adjacent links consistent.
 
@@ -98,8 +98,7 @@ current view evidence before approval; self-checks do not replace their independ
    - The structure of a pattern used across many services → arc42 **section 8,
      Crosscutting Concepts**.
    Search the catalog for the subject and its elements first, so an existing view is updated
-   rather than duplicated, and write the view's catalog frontmatter. A proposed design goes in
-   `target/<subject>/`, not in `arc42/`.
+   rather than duplicated, and write the view's catalog frontmatter.
 
 6. **Verify the rendered image.** Render each diagram to PNG, look at it, and fix until nothing
    overlaps, as `architecture-diagramming` (`references/readability.md`) requires. The Mermaid

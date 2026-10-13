@@ -28,5 +28,5 @@ view at system scope.
 
 Section 4 changes only when a design alters the direction itself, for example adopting a new
 architectural style or a new system-wide integration approach. A design that follows the direction
-leaves section 4 as it is. A target that does change it carries its own copy of
-`04-solution-strategy/README.md`, and its delta states the change.
+leaves section 4 as it is. A design that does change it states the change as a design fact whose
+home is `04-solution-strategy/README.md`.

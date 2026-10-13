@@ -1,89 +1,109 @@
-# Update playbook — integration and correction
+# Update playbook — decisions and correction
 
-The effective version (`arc42/`) changes in two ways: by integrating an approved target, and by
-correcting it from what was built. Both follow the same loop: list the changed elements, find every
-view that shows them, update or delete each view, check the invariants, report.
+The effective documents (`arc42/`) change in two ways: by writing the solutions architect's
+decisions into them, and by correcting them from what a Story built. Both follow the same loop:
+take each fact, write it in its one home, replace every restatement with a link, check the
+invariants, report.
 
 ```text
-   changed elements (from the delta, or from built/)
+   facts (from the write request, or from built/<element>/)
                  |
                  v
-   find every effective view that shows each one     catalog: subject / shows,
-   (every scope: system, domain, service, component)  in arc42/
+   write each fact in its home                        the document and heading
+   (the form its section requires)                    the request names
                  |
                  v
-   replace, update or delete each view;               named for its subject,
-   add the target's new views                         in the section the MODEL names
+   find the other documents that describe the         atw-matrix node <id>
+   same element; replace a restatement with a link
+                 |
+                 v
+   place or update diagrams; keep the catalog true
                  |
                  v
    check the invariants (consistency-rules.md)
                  |
                  v
-   report: changed elements, views changed, invariant check, not integrated
+   report: headings changed and created, links added, restatements removed,
+           entries below architecture level, what could not be applied
 ```
 
-## Integration of an approved target
+## Writing decisions
 
-Inputs: `target/<subject>/` (the target views), `target/<subject>/delta/` (what changes), and the
-effective views the catalog returns for every element the delta names.
+Input: a write request. It lists design facts, each with an id, a statement with its reason, one
+home (a document path and a heading) and the paths of the documents that must link to it. It may
+also list restatements to replace with links, settled disagreements to apply and diagrams to place.
 
-1. **List the changed elements from the delta.** Every element added, changed or removed.
-2. **Find the effective views.** For each element, every view in `arc42/` whose `subject` or `shows`
-   names it. Compare that list with the target: every effective view showing a changed element needs
-   a target view, an in-place update, or a deletion. An effective view the target did not account for
-   is reported under "Not integrated" rather than left contradicting the target.
-3. **Apply each target view.**
-   - A target view that corresponds to an effective view replaces it in place: same path, the
-     target's content.
-   - A target view for a new subject is added in the section folder the MODEL's view table names,
-     named for its subject.
-   - An effective view whose subject the change removes is deleted, and every link to it is updated.
-   - An effective view that shows a changed element among others is updated in place: the element's
-     box, relationships and prose change; the rest stays.
-4. **Section 4 and section 8.** When the target carries its own copy of the strategy or of a concept,
-   the effective file is replaced with it. Otherwise they are left as they are.
-5. **Section 2 is not written.** A target that would change a constraint is reported, not applied.
+1. **Write each fact in its home**, under the heading named, in the form its section requires:
+   - Section 5: what the building block is responsible for, what it owns, its interfaces by name.
+     A shared service, component, layer or library states under a heading "Provides" each
+     behaviour consumers obtain from it.
+   - Section 6: which building blocks interact, in what order, for the scenario and its failures.
+     It links to a rule; the rule is stated in its home.
+   - Section 7: where it runs and which stack holds each resource.
+   - Section 8: the rule as a design fact with its reason.
+2. **Replace restatements with links.** In every other document the request names, and in every
+   document the matrix lists as describing the same element (`atw-matrix node <id>`), a
+   restatement of the fact becomes a link to the home heading.
+3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
+   replaced by a link to it.
+4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
+   parameter name, a metric or alarm name, or a schema is returned as below architecture level,
+   unwritten.
+5. **Create a document only for a home path that does not exist**, with the catalog front matter
+   and a file name that names its subject.
+6. **Place and update diagrams.** Place each diagram the request carries under its heading; update
+   or redraw a diagram when a fact changes what it shows.
+7. **Section 2 is not written.** A fact that conflicts with a constraint is reported and left
+   unwritten.
 
-The target folder stays in place after integration: later phases read the delta from it, and the
-caller removes it once the Specs and Tasks made from it are written.
+The files changed stay `in-review`; a script sets them to `effective` and commits after review.
 
 ## Correction from built
 
-Inputs: `built/<subject>/` (each view records a difference between what was built and the effective
-version, citing the code) and the effective views that show the elements it names.
+Input: the documents in `built/<element>/`, each recording a difference between what a Story
+built and the effective documents, citing the code; and the effective documents the matrix names
+for the elements they differ on.
 
-1. **List the elements the built views differ on.**
-2. **Find every effective view that shows each one**, at every scope.
-3. **Correct each view** to describe what was built, the same way as an integration: replace, update
-   in place, add or delete.
-4. **Report each built view the effective version now matches**, so the caller removes it. A built
-   view is kept only for a difference the effective version has not been brought up to date with.
+1. **List the elements the built documents differ on.**
+2. **Take each difference as a fact to correct in its home.** The home is the heading that states
+   the fact today.
+3. **Correct the home**, then replace any restatement in the other documents that describe the
+   element with a link, as for a decision.
+4. **Report each built document the effective documents now match**, so that the caller removes
+   it. A built document is kept only for a difference the effective documents have not been brought
+   up to date with.
 
-## Worked example A — integrating a new service
+A correction from built is made even when it conflicts with a constraint, so that the documents
+describe the system as it is. Report the conflict with the correction.
 
-The approved target `target/notification-preferences/` adds a preferences service with one table,
-publishing one event that an existing settings service consumes.
+## Worked example A — writing the decisions for a new service
 
-1. Changed elements: the preferences service (added), its table (added), the event (added), the
-   settings service (changed: it consumes the event).
-2. Effective views found: the system container view (`05-building-block-view/README.md`), the
-   domain view of the settings service's domain, the settings service's component view and its
-   sequence for saving settings, the system event flow in `06-runtime-view/`, the system deployment
-   in `07-deployment-view/README.md`.
-3. Applied: the system container, domain, event flow and deployment views are replaced with the
-   target's versions, which show the new service; the settings service's component and sequence views
-   are updated in place to show the consumer; the new service's component, data model, sequence and
-   stack views are added under its subject folder in sections 5, 6 and 7.
-4. Invariants: the new service appears at system, domain and service scope; every `shows` list names
-   it where the diagram shows it; no view still shows the settings service without the consumer.
+The write request holds four facts: a preferences service is responsible for notification
+preferences (home: its section 5 document, heading "Responsibility"); it owns one table (home: the
+same document, heading "Owns"); it publishes one event when a preference changes (home: the system
+event flow in section 6, heading "Preference changed"); the settings service consumes that event
+(home: the settings service's section 5 document, heading "Interfaces"). It names the system
+container document as one that must link to the new service.
+
+1. The preferences service's section 5 document does not exist: it is created with catalog front
+   matter, named for the service, with the two facts under their headings.
+2. The event fact is written under "Preference changed" in the system event flow. The settings
+   service's document gains the consumer under "Interfaces".
+3. The system container document shows the new service in its diagram and links to its document.
+   `atw-matrix node` for the settings service names its sequence document for saving settings; it
+   described the old interaction in its own words, and that sentence becomes a link to "Preference
+   changed".
+4. Invariants: every `shows` list names the new service where the diagram shows it; each fact is
+   stated once; no document contradicts another.
 
 ## Worked example B — correcting from built
 
-`built/settings-service/` records that the built table uses a different sort key than the effective
-data model shows.
+`built/settings-service/` records that the built service publishes its event through the shared
+events service, where the effective documents state that it writes to the event bus itself.
 
-1. Changed element: the settings table.
-2. Effective views found: the settings service's physical data model and the sequence diagrams that
-   query the table.
-3. Corrected: the data model shows the built key; the sequences show the query the code runs.
-4. Reported: `built/settings-service/` now matches the effective version and can be removed.
+1. Element: the settings service. Fact: how the service publishes its event.
+2. Home: the heading that states the publishing path, in the service's section 6 document for
+   saving settings.
+3. Corrected: the home states that the service publishes through the shared events service. The
+   system event flow restated the direct write; that sentence becomes a link to the home heading.
+4. Reported: `built/settings-service/` now matches the effective documents and can be removed.

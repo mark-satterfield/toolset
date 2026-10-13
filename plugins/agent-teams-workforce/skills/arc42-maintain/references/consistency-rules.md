@@ -15,7 +15,7 @@ element that exists only as a box in someone else's diagram has no description a
 **Violation signal.** A name in a view's `shows` list that no view names as its `subject`, at any
 scope.
 
-**Repair.** Add the element's own views from the target, or report the gap when the target has none.
+**Repair.** Add the element's own documents when the write request names them, or report the gap.
 
 ## 2. No two views contradict each other
 
@@ -29,8 +29,8 @@ another leaves two descriptions of one system, and a design that starts from the
 its sequence view shows an event; a data model's key differs from the key a sequence queries; one
 view names a component `auth-svc` and another `AuthService` with no glossary entry joining them.
 
-**Repair.** Bring every view that shows the element in line with the approved target or the built
-version, at every scope the catalog lists.
+**Repair.** Bring every view that shows the element in line with the decided fact or the built
+version, at every scope the matrix lists.
 
 ## 3. No view contradicts the owner's constraints
 

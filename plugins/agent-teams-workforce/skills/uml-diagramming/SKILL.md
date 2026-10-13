@@ -28,8 +28,8 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 
 ## Project coverage and validation
 
-Read the MODEL and MENU under the caller's architecture root and follow assigned coverage using
-`../arc42/references/coverage-evidence.md`. Existing catalog hits guide reuse, not whether a missing
+Read the MODEL and MENU under the caller's architecture root and follow the MODEL's coverage
+obligations for the diagrams you are assigned. Existing documents guide reuse, not whether a missing
 view is required. Select only the applicable views the design supports; report missing design to
 the caller. Keep prose, diagram declarations and parent/adjacent links consistent.
 

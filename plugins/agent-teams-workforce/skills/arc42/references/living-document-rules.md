@@ -1,6 +1,6 @@
 # Living-document rules
 
-Every version of the architecture — effective, target, delta, built — describes itself as it is.
+Every version of the architecture — effective and built — describes itself as it is.
 Every sub-skill that writes architecture follows these rules, and `arc42-verify` checks them.
 
 ## Each version describes itself as it is
@@ -11,8 +11,6 @@ Every sub-skill that writes architecture follows these rules, and `arc42-verify`
   struck through, appended to or kept beside the new content.
 - No view carries a changelog, a revision table or a "last updated" line. Version history lives in
   git, which is the one place it can stay accurate.
-- A delta describes the change between effective and target as the target states it ("the settings
-  service gains a preferences table"), not as a history of how the design was reached.
 
 ## Where a design outcome goes
 

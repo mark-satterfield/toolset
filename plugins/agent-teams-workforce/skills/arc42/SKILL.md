@@ -2,13 +2,13 @@
 name: arc42
 description: >-
   Thin router for the arc42 architecture documentation toolkit. Detects intent on
-  entry — author architecture views (a new architecture, or a target and its delta
-  for a change), maintain the effective version from an approved target or from
-  what was built, verify the documentation against the project's architecture
+  entry — author the documents of a new subject, maintain the effective documents
+  from the solutions architect's decisions or from what was built, verify the
+  documentation against the project's architecture
   documentation model, or draw a C4 or UML diagram — and dispatches to the right
   sub-skill. Holds no authoring logic itself. Resolves where the architecture
   lives. Use when the user mentions arc42, the architecture documentation, an
-  architecture view, a target or delta architecture, architecture sections, a C4
+  architecture view, architecture sections, a C4
   diagram (context, container, component, code), a UML diagram, or asks to write,
   update, integrate, audit or find views in the architecture.
 triggers:
@@ -16,8 +16,6 @@ triggers:
   - architecture documentation
   - architecture document
   - architecture view
-  - target architecture
-  - delta architecture
   - write the architecture
   - update the architecture
   - audit the architecture
@@ -42,7 +40,7 @@ sub-skills follow it and carry no copy of it, so that the model has one home. Th
 ## Resolve the architecture root
 
 Before any dispatch, establish the **architecture root**: the folder that holds `reference/`,
-`arc42/`, `target/` and `built/`.
+`arc42/` and `built/`.
 
 1. Take the path the caller gives. Otherwise take the path the project's environment sets for its
    architecture (in this plugin's workflows, the architecture-root variable `ARCH_PATH_ENV` that the
@@ -62,8 +60,8 @@ write.
 
 | Entry signal | Dispatch to |
 |---|---|
-| Write architecture views: a new architecture, the views for a new subject, or a target and its delta for a proposed change | `arc42-author` |
-| Integrate an approved target into the effective version, or correct the effective version from what was built | `arc42-maintain` |
+| Write a new architecture document for a subject that has none | `arc42-author` |
+| Write the solutions architect's decisions into the effective documents, or correct them from what was built | `arc42-maintain` |
 | Verify, audit, lint or check the architecture against the MODEL | `arc42-verify` |
 | Find the views that show an element, in any version | Answer from the catalog (`references/finding-views.md`); no sub-skill |
 | A C4 diagram request — system context, container, component, or code level | `c4-diagramming` |
@@ -78,8 +76,8 @@ from UML requests.
 
 When intent is unclear, ask one disambiguating question with at most two options. Example wording:
 
-> "Do you want a target design for this change, or to bring the effective architecture up to date
-> with an approved one?"
+> "Do you want a document for a subject that has none, or to write decided design facts into the
+> effective documents?"
 
 > "Is this diagram about how the system decomposes into deployable units (C4), or about the
 > behaviour and structure of code (UML)?"
@@ -95,9 +93,9 @@ then load that sub-skill's `SKILL.md` and execute it.
 
 ## What you do NOT do
 
-- You do not write architecture content. That is `arc42-author` (new views, targets, deltas) or
+- You do not write architecture content. That is `arc42-author` (the documents of a new subject) or
   `arc42-maintain` (the effective version).
-- You do not decide the design. The architecture team designs; its outcome becomes part of the
+- You do not decide the design. The solutions architect designs; its outcome becomes part of the
   architecture description in the section the MODEL names. There are no decision records.
 - You do not write constraints. Section 2 holds the owner's constraints; every sub-skill reads them
   and none writes them.

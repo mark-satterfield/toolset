@@ -22,13 +22,10 @@ behaviour, deployment.
 - **Evidence:** quote both statements, each with its path. A contradiction is credible only when both
   halves are shown.
 
-For a target, also compare the target views with the delta: every change the target makes appears in
-the delta, and the delta describes nothing the target does not hold.
-
 ## Check 2 — Applicable subjects have sufficient coverage
 
 Establish subjects independently of the current catalog and apply the MODEL coverage obligations
-at the reviewed scopes. Use `../../arc42/references/coverage-evidence.md`. Inspect the actual views,
+at the reviewed scopes, with the MODEL's assessment results. Inspect the actual views,
 including the needed parent and adjacent views, not only metadata. An element need not have a
 separate document when an existing view sufficiently answers its applicable reader questions.
 
@@ -72,5 +69,4 @@ no-conflict assertion.)
 
 Emit findings under the **View consistency** heading of the verdict, in check order. A clean run
 reports `[PASS] views agree at every scope; applicable subjects have sufficient coverage; no constraint conflicts;
-no dangling links`. Never resolve a contradiction by editing a view: that belongs to `arc42-maintain`
-or a new target.
+no dangling links`. Never resolve a contradiction by editing a view: that belongs to `arc42-maintain`.

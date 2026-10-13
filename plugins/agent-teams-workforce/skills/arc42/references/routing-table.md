@@ -9,19 +9,18 @@ object.
 
 | Intent signal | Examples | Dispatch to |
 |---|---|---|
-| Write views that do not exist yet: a new architecture, a new subject, or a target and delta for a change | "design the architecture for this feature", "write the target for the settings service", "add the views for the new service", "write the delta", "document the architecture from scratch" | `arc42-author` |
-| Bring the effective version up to date | "integrate the approved target", "apply the approved design to arc42", "the build differs from the architecture, correct it", "update every view that shows this service" | `arc42-maintain` |
+| Write the documents of a subject that has none: a new service, component or concept, or a new architecture | "add the documents for the new service", "document the architecture from scratch" | `arc42-author` |
+| Bring the effective documents up to date | "write the decided facts into arc42", "the build differs from the architecture, correct it", "replace this restated fact with a link" | `arc42-maintain` |
 
-A proposed change is written as a target and its delta first, because the effective version changes
-only by integrating an approved target or by correcting it from what was built. A request to "change
-section 5" for a design that has not been approved is an `arc42-author` target, not an
-`arc42-maintain` edit.
+The effective documents change only by writing the solutions architect's decisions into them or by
+correcting them from what was built. A request to "change section 5" for a design that has not
+been decided goes back to the caller: the solutions architect decides, and `arc42-maintain` writes.
 
 ## Finding views
 
 | Intent signal | Examples | Dispatch to |
 |---|---|---|
-| Find the views that show an element | "which views show the settings service", "where is the event envelope described", "what does the delta change" | No sub-skill: answer from the catalog per `finding-views.md` |
+| Find the views that show an element | "which views show the settings service", "where is the event envelope described" | No sub-skill: answer from the matrix per `finding-views.md` |
 
 ## Verification
 

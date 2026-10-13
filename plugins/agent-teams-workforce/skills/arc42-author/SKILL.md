@@ -1,19 +1,16 @@
 ---
 name: arc42-author
 description: >-
-  Authors architecture views to the project's architecture documentation model:
-  a new architecture in the arc42 section folders, the views for a new subject,
-  or a target and its delta for a proposed change. Each view is a diagram
-  (Mermaid) and the prose around it, at the scope it describes, with the catalog
-  frontmatter that lets every phase find it. It writes no constraints, no
-  decision records and no section 9. Use when the user asks to design, write,
-  scaffold or start an architecture, to write the views for a feature, service
-  or component, or to write a target or delta architecture for a change.
+  Writes the architecture documents of a subject that has none, to the
+  project's architecture documentation model: a new service, component or
+  concept, or the first documents of a new architecture in the arc42 section
+  folders. Each document is a diagram (Mermaid) and the prose around it, at the
+  scope it describes, with the catalog front matter. It writes no constraints,
+  no decision records and no section 9. Use when the user asks to write, scaffold
+  or start the architecture documents of a subject that has none.
 triggers:
-  - write a target architecture
-  - write the delta
-  - design the architecture for this feature
-  - add the views for a new service
+  - add the documents for a new service
+  - write the documents of a new subject
   - create the architecture documentation
   - scaffold arc42
   - bootstrap arc42
@@ -24,123 +21,111 @@ triggers:
   - write a crosscutting concept
 ---
 
-# arc42 Author — write architecture views
+# arc42 Author — write the documents of a new subject
 
-You write views the architecture does not yet hold:
+You write architecture documents for a subject the architecture does not yet describe:
 
-- **A target and its delta** for a proposed change, in `target/<subject>/` and
-  `target/<subject>/delta/`. This is the usual job.
-- **The views for a new subject**, or **a new architecture** in `arc42/` when the project has none.
+- **The documents of a new subject** in `arc42/`: a new service, component or concept.
+- **A new architecture** in `arc42/`, when the project has none.
 
-You do not change existing effective views; integrating an approved target into `arc42/` is
-`arc42-maintain`. You do not verify; that is `arc42-verify`.
+A change to a subject that already has documents is `arc42-maintain`: it writes decided design
+facts into the effective documents, each in its one home. Checking documents is `arc42-verify`.
 
 ## Read first
 
 1. The project's architecture documentation model (the MODEL), at
    `reference/architecture-documentation-model.md` under the architecture root the router resolved.
    It is the authority for what goes where; this skill tells you how to write it.
-2. The list of view types (the MENU), at `reference/diagram-and-model-types.md`.
-3. `../arc42/references/` — the section model, the living-document rules and how views are found
-   through the catalog.
-4. This skill's `references/section-templates.md` — what each section's views hold and the Mermaid
-   skeletons.
+2. The list of diagram and model types (the MENU), at `reference/diagram-and-model-types.md`.
+3. `../arc42/references/` — the section model, the living-document rules and how to find the
+   documents that describe an element.
+4. This skill's `references/section-templates.md` — what each section's documents hold and the
+   Mermaid skeletons.
 
-## Inputs a design starts from
-
-A design starts from the effective architecture (MODEL, "How a change moves through the versions",
-step 1):
+## What the documents start from
 
 - the owner's constraints in `arc42/02-architecture-constraints/`;
 - the strategy in `arc42/04-solution-strategy/`;
-- every effective view, at every scope, that shows an element the design touches, found through the
-  catalog (`../arc42/references/finding-views.md`);
-- every open target under `target/` that shows the same elements, so two designs in progress do not
-  contradict each other.
+- the design the caller gives you for the subject: its design facts, each with its reason;
+- the effective documents that describe the elements the subject connects to, which the matrix
+  names (`../arc42/references/finding-views.md`).
 
-An `in-review` view, and code that was not built from reviewed architecture, is input to check, not
-evidence the design is right.
+An `in-review` document, and code that no pipeline built, is input to check and not evidence that
+a design is right.
 
-## Authoring procedure
+## Procedure
 
-1. **Name the subject.** The feature, service, component or layer the views describe, as the glossary
-   and the stack names name it. It names the folder (`target/<subject>/`) and appears in every
-   view's `subject`. It is never a PRD, an Epic, a bead id or a date.
-2. **Find every scope the change reaches.** An element appears in views at more than one scope.
-   Adding a service, for example, changes the system container and integration views and adds the
-   service's own component, data and sequence views. List the existing views the catalog returns for
-   each element the design touches. Establish the subject inventory independently of those hits,
-   apply the MODEL coverage obligations, and identify applicable views with no file yet. Follow
-   `../arc42/references/coverage-evidence.md`; the MENU guides which views answer each question.
-3. **Write the target views.** New views for new elements, and a changed copy of each existing view
-   that shows a changed element, at every scope where it appears. Each view goes in the section
-   folder the MODEL's view table names, inside the version's folder, and is named for its subject.
-4. **Write the delta.** In `target/<subject>/delta/`, the views that show only what changes between
-   effective and target: what is added, changed and removed, stated as the target has it. Specs and
-   Tasks are made from the delta, so every change in the target appears in it.
-5. **Write each view as a diagram and its prose.** The diagram (Mermaid, fenced in the view file)
-   shows structure and flow. The prose states what the view is for, what the diagram cannot show
-   (reasons, limits, details of an element) and where the adjacent views are. A view that is only
-   prose, or only a diagram, is the exception.
-6. **Add the catalog frontmatter** to every view: `view_type` (a type from the MENU), `scope`,
-   `subject`, `shows` (every element in the view, by its glossary name or its stack name), and
+1. **Name the subject.** The service, component or concept the documents describe, as the glossary
+   and the stack names name it. It names the subject folder and appears in every document's
+   `subject`. It is never a PRD, an Epic, a bead id or a date.
+2. **Confirm the subject has no documents.** Ask the matrix (`atw-matrix find --text "<subject>"`).
+   When it names documents for the subject, the work is `arc42-maintain`.
+3. **Choose the documents the subject needs.** The MODEL's table of documents by scope is where to
+   start, and the MENU says which type answers which reader question. Write only the documents the
+   design supports.
+4. **Write each document as a diagram and its prose.** The diagram (Mermaid, fenced in the file)
+   shows structure and flow. The prose states what the document is for, what the diagram cannot
+   show (reasons, limits) and where the neighbouring documents are. Each document goes in the
+   section folder the MODEL names, inside the subject's folder, and is named for its subject.
+5. **State each design fact in one home.** Section 5 holds what a building block is responsible
+   for, what it owns and its interfaces by name; section 6 holds which blocks interact, in what
+   order; section 7 holds where each block runs; section 8 holds a rule with its reason. A document
+   that needs a fact whose home is elsewhere links to that heading
+   (`../arc42/references/arc42-section-model.md`).
+6. **Keep to architecture level.** A route path, a field name, a key or index name, a parameter
+   name, a metric or alarm name and a schema belong to the TRD or the specs, not to an arc42
+   document.
+7. **Add the catalog front matter** to every document: `view_type` (a type from the MENU), `scope`,
+   `subject`, `shows` (every element in the document, by its glossary name or its stack name) and
    `lifecycle_state: in-review`. Keep any classification fields the project uses beside them.
-7. **Follow the established patterns.** A design follows what the effective architecture establishes
-   (every API so far is REST, so the next API is REST) unless it states a reason and evidence to
-   change it. A change of pattern is written into the target's views, and into its section 8 or
-   section 4 copy when the pattern or the direction itself changes.
-8. **Supply coverage evidence.** Map assigned obligations to the views authored, adjacent-view links
-   and checks actually performed. Check diagram content against its declaration and MENU semantics;
-   distinguish rendering from visual readability and semantic correctness. Report unchecked work or
-   an unsupported design to the caller. Author self-checks are not independent review or approval.
+8. **Link the documents in.** Each new document links its parent and its neighbours, and the
+   section entry point gives a route to it, as the MODEL's navigation rules say.
+9. **Report** the documents written, the checks made on each diagram (it renders, it is readable,
+   it shows what its type promises) and anything the design did not let you write.
 
-## What a view contains
+## What a document contains
 
-- A description of the design, in present tense, as this version holds it.
+- A description of the design, in present tense.
 - Reasons where a reader needs them, in the prose around the diagram.
 - Claims about AWS that a reviewer can check against the AWS documentation.
 
-A view names stacks, services and components, never repositories. A repository is only a unit of
-version management with no functional boundary, so a view never says which repository holds a stack,
-service or component; the polyrepo-steward is the record of that. A deployed element is named by its
-stack name from the project's naming standard (`atw-naming name stack ...`).
+A document names stacks, services and components and never repositories; the polyrepo-steward and
+the matrix are the record of which repository holds each. A deployed element is named by its stack
+name from the project's naming standard (`atw-naming name stack ...`).
 
-A view does not contain requirements, history, decision records, rules ("services MUST …") or open
-items (`../arc42/references/living-document-rules.md`). A question you cannot answer from the inputs
-goes in your report to the caller, not into a view.
+A document holds no requirements, history, decision records, rules ("services MUST …") or open
+items (`../arc42/references/living-document-rules.md`). A question the inputs cannot answer goes
+in your report to the caller.
 
-## Constraints are the owner's
+## Section 2 is the owner's
 
 Section 2 holds the owner's constraints. You read them and write nothing in
-`02-architecture-constraints/`, in any version, because only the owner writes constraints
-(`references/constraints-guide.md`). When a design would need a constraint to change, report that to
-the caller with the reason.
+`02-architecture-constraints/` (`references/constraints-guide.md`). When a design would need a
+constraint to change, report that to the caller with the reason.
 
 ## A new architecture
 
 When the project has no architecture yet, create `arc42/` with one folder per section,
-`01-introduction-and-goals/` through `12-glossary/` (no section 9), each with a `README.md`. Write the
-views the inputs support, starting from the system scope: context (section 3), container (section 5
-entry point), system flows (section 6), system deployment (section 7 entry point). The MODEL
-determines whether an entry point embeds or links its highest-scope view. Leave section 2's
-`README.md` for the owner to fill. A section the inputs cannot fill yet stays as its folder and a
-`README.md` holding only the section title; the gap goes in your report, not into the file.
+`01-introduction-and-goals/` through `12-glossary/` (no section 9), each with a `README.md`. Write
+the documents the inputs support, starting from the system scope: context (section 3), container
+(section 5 entry point), system flows (section 6), system deployment (section 7 entry point). The
+MODEL says whether an entry point embeds or links its highest-scope document. Section 2's
+`README.md` is the owner's to fill. A section the inputs cannot fill yet stays as its folder and a
+`README.md` holding only the section title; the gap goes in your report.
 
-## What you do NOT do
+## What is outside this skill
 
-- You do not edit an effective view. That is `arc42-maintain`, after a target is approved.
-- You do not write constraints, decision records, ADRs or a section 9.
-- You do not name a file or folder for a PRD, an Epic, a bead id, a date or a pipeline gate.
-- You do not approve your own target. Every file you write is `in-review`.
-
-Consumed by: the assigned architecture reviewer and architecture-decider — check authored coverage evidence against the MODEL before target approval.
+- Changing an effective document: `arc42-maintain`.
+- Constraints, decision records, ADRs and a section 9.
+- Approval: every file you write is `in-review`, and a script sets `effective` after review.
 
 ## References
 
-- `references/section-templates.md` — what each section's views hold, per scope, with Mermaid
+- `references/section-templates.md` — what each section's documents hold, per scope, with Mermaid
   skeletons.
-- `references/constraints-guide.md` — what a constraint is, and that the pipeline reads section 2 and
-  never writes it.
+- `references/constraints-guide.md` — what a constraint is, and that section 2 is read and never
+  written.
 - `references/solution-strategy-guide.md` — what section 4 holds.
 - `references/crosscutting-concepts-guide.md` — how a section 8 concept is written.
-- `../arc42/references/` — the shared section model, living-document rules and catalog.
+- `../arc42/references/` — the shared section model, living-document rules and how to find
+  documents.

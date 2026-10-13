@@ -15,8 +15,7 @@ section, views are organised by the subject they describe (`05-building-block-vi
 `05-building-block-view/<domain>/<service>/...`), and files and folders are named for their subject,
 never for a PRD, an Epic, a bead id, a date or a pipeline gate. There is no section 9.
 
-The target and built versions use the same section layout inside `target/<subject>/` and
-`built/<subject>/`; a target's delta sits in `target/<subject>/delta/`.
+The built version uses the same section layout inside `built/<element>/`.
 
 ## The sections
 
