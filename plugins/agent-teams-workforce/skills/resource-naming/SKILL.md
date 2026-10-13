@@ -8,7 +8,8 @@ description: >-
   EventBridge bus, rule or schema, SQS queue or dead-letter queue, Secrets Manager secret,
   SSM parameter, VPC, subnet, security group, KMS alias, Cognito user pool or app client,
   Powertools service name or metrics namespace, environment variable, Python module file,
-  CDK stack file or Lambda config file. Run `atw-naming name ...` to get the name and
+  Python import package, Python distribution (the `name` in `pyproject.toml`), CDK stack
+  file or Lambda config file. Run `atw-naming name ...` to get the name and
   `atw-naming check ...` to verify an existing one; never type a name from memory or by
   copying a neighbour.
 allowed-tools: [Bash]
@@ -56,13 +57,20 @@ atw-naming name lambda --project <project> --domain careerProfile --action score
 atw-naming name ssm --project <project> --namespace careerProfile --resource-type dynamodb --resource-name arn
 atw-naming check stack <name>                     # exit 0, or non-zero with reasons
 atw-naming check stack <name> --project <project> # also require that project's prefix
+atw-naming name python-package --domain dataAccess                   # a library's import package
+atw-naming check python-package <name> --domain dataAccess           # the name must carry that domain
+atw-naming name python-distribution --repository <repository-name>   # pyproject.toml name
+atw-naming check python-distribution <name> --repository <repository-name>
 atw-naming where                                  # which config file is in use
 ```
 
 Each `{segment}` in a pattern is a flag of the same name in kebab-case (`{resourceType}` is
 `--resource-type`); a segment in `[...]` is optional; a `flag` segment (`--team`) takes no
 value. `name` refuses a missing or unknown `--project` and missing, extra or invalid
-segments; `check` accepts any project's prefix unless `--project` is given. Exit codes: 0 ok; 1 the name or an input breaks a rule (the reasons are on
+segments; `check` accepts any project's prefix unless `--project` is given. `check` also
+takes the segment flags: each one given must be the value the name carries in that segment,
+after the pattern's transform, so a name that has the right shape but was built from another
+value fails. Pass them whenever you know what the name was built from. Exit codes: 0 ok; 1 the name or an input breaks a rule (the reasons are on
 stderr); 2 no config, an invalid config or an unknown resource type.
 
 ## Where the config comes from
@@ -86,7 +94,7 @@ forbidden_substrings: [...]   # spellings never valid anywhere (case-insensitive
 forbidden_tokens: [...]       # words no name may contain (e.g. environment names)
 permitted_suffixes: [...]     # the only literal endings an AWS resource pattern may have
 type_words: [...]             # words for a kind of resource; no aws name may contain one (permitted suffixes exempt)
-segments:                     # style: camelCase|PascalCase|lowercase|kebab|region|az|accountId, enum, or flag
+segments:                     # style: camelCase|PascalCase|lowercase|kebab|hyphenated|region|az|accountId, enum, or flag
   team: {flag: team}          # value-less --team; patterns place it as [-{team}] after {project}
   domain: {style: camelCase}
   action: {style: camelCase, reject_words: [handler]}
