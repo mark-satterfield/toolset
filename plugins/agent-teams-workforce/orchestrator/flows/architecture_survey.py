@@ -53,9 +53,14 @@ class RepositorySummary(TypedDict):
 
 
 SURVEY_MARKDOWN: str = "survey.md"
+REPOSITORY_MENU: str = "repositories.json"
+"""The repository menu saved beside the survey; archevidence.load_repository_paths reads it there."""
+
 SURVEY_FILES: tuple[str, ...] = (
     SURVEY_FILE,
     SURVEY_MARKDOWN,
+    # The seal binds named repository evidence through the menu, so the menu travels with the survey.
+    REPOSITORY_MENU,
     f"{SURVEY_FILE}.meta.json",
     f"{SURVEY_MARKDOWN}.meta.json",
     survey_seal_path(Path(SURVEY_FILE)).name,
@@ -254,7 +259,7 @@ def produce_survey(flow: Architecture, *, recheck: bool = False) -> None:
         raise TypeError(argument_error)
     stage: str = "survey"
     repositories: list[RepositorySummary] = _survey_repositories(flow)
-    repo_file: Path = flow.work / "repositories.json"
+    repo_file: Path = flow.work / REPOSITORY_MENU
     write_json(repo_file, repositories)
     refs: tuple[Path, Path, Path, Path] = (
         flow.prd,

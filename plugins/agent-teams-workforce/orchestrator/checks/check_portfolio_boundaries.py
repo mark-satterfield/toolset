@@ -493,7 +493,7 @@ class EvidenceBoundaries(unittest.TestCase):
                 {**undigested, "form": []},
                 {**sealed, "form": SEAL_FORM_V2, "inputs": None},
                 {**sealed, "form": unknown_form},
-                {**sealed, "repos": ["named"]},
+                {**sealed, "repos": [""]},
                 {**sealed, "form": SEAL_FORM_V2, "revision": "short"},
             ]
             for malformed in cases:

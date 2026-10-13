@@ -13,7 +13,11 @@ from typing import override
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "portfolio"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
 
+import archbaseline
+from contracts import SealForm, survey_seal_path
 from orchestrator.checks.check_support import report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
@@ -24,6 +28,7 @@ from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
 from orchestrator.flows.architecture_support import Architecture
 from orchestrator.flows.architecture_survey import SURVEY_FILES, current_survey
+from survey_contract import SURVEY_FILE
 
 
 class NoAgentRunner(AgentRunner):
@@ -42,13 +47,59 @@ class NoAgentRunner(AgentRunner):
         raise AssertionError(message)
 
 
+_SEAL_NAME: str = survey_seal_path(Path(SURVEY_FILE)).name
+
+
+def _names_no_form(seal: Path) -> bool:
+    """Read whether a saved survey seal names no form, which is the form the survey step adopts.
+
+    Returns:
+        True for a seal with no form; False for a seal that names its form.
+
+    Raises:
+        TypeError: seal is not a Path.
+        ValueError: The seal is missing or fails the seal contract.
+
+    """
+    if not isinstance(seal, Path):
+        argument_error: str = "_names_no_form requires a Path"
+        raise TypeError(argument_error)
+    binding: tuple[SealForm | None, str] | None = archbaseline.survey_binding(seal)
+    if binding is None:
+        message: str = f"--survey-dir holds no readable survey seal: {seal}"
+        raise ValueError(message)
+    return binding[0] is None
+
+
+def _reused_twice(flow: Architecture, originals: dict[str, str], *, legacy: bool) -> None:
+    """Require the copied survey to be reused twice, adopted only when its seal names no form."""
+    seal: Path = flow.work / _SEAL_NAME
+    survey: Path = flow.work / SURVEY_FILE
+    require(current_survey(flow), "saved survey binding is no longer current")
+    require(flow.adopted == legacy, "only a seal that names no form is adopted")
+    require(current_survey(flow), "the seal cannot be reused a second time")
+    require(
+        legacy or hashlib.sha256(seal.read_bytes()).hexdigest() == originals[_SEAL_NAME],
+        "reusing a seal that names its form rewrote it",
+    )
+    require(
+        hashlib.sha256(survey.read_bytes()).hexdigest() == originals[SURVEY_FILE],
+        "reusing the survey changed it",
+    )
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
-    """Evaluate the existing isolated check contract."""
+    """Evaluate saved-survey reuse on a copy of the directory `--survey-dir` names.
+
+    `--survey-dir` is an architecture work directory holding a sealed `survey.json`, for example
+    `<control repo>/.claude/workflow-runs/artifacts/<epic>/architecture`.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--survey-dir", type=Path, required=True)
     args = parser.parse_args()
     source = args.survey_dir.resolve()
+    legacy: bool = _names_no_form(source / _SEAL_NAME)
     originals = {
         name: hashlib.sha256((source / name).read_bytes()).hexdigest()
         for name in SURVEY_FILES
@@ -82,20 +133,17 @@ def main() -> None:
         matrix = root / "matrix.json"
         write_json(matrix, {"elements": {}})
         flow = Architecture(context, store, runner, tools, matrix)
-        require(current_survey(flow), "saved survey binding is no longer current")
-        require(flow.adopted, "legacy survey was not adopted")
-        require(current_survey(flow), "adopted seal cannot be reused")
-        require(
-            hashlib.sha256((work / "survey.json").read_bytes()).hexdigest() == originals["survey.json"],
-            "hashlib.sha256((work / 'survey.json').read_bytes()).hexdigest() == originals['survey.json']",
-        )
+        _reused_twice(flow, originals, legacy=legacy)
         require(notes, "notes")
         require(all(n["kind"] == REUSED_NOTE for n in notes), "every emitted note must be a reused note")
     require(
         all(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest for name, digest in originals.items()),
         "original survey artifacts changed",
     )
-    report("PASS: copied saved survey adopted and reused twice; zero agent sessions; original artifacts unchanged")
+    report(
+        f"PASS: copied saved survey ({'adopted' if legacy else 'sealed form kept'}) reused twice; "
+        "zero agent sessions; original artifacts unchanged",
+    )
 
 
 if __name__ == "__main__":

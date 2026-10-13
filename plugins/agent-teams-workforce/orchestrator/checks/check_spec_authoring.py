@@ -9,19 +9,22 @@ from pathlib import Path
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/portfolio"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/artifact-handoff/scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/pipeline-contracts/scripts"))
+import cdsbundles
 from orchestrator.checks.check_support import expected_error, report, require
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.artifacts import ArtifactStore, load_artifactio
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import EVENT_KEY, EventName
-from orchestrator.core.io import JsonValue
+from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import AgentStep, RunContext
 from orchestrator.core.tools import Tools
 from orchestrator.flows.spec_authoring_ui import normalize_ui
 from recon_contract import (
     ARTIFACT_KIND_PAGE,
+    DEFAULT_DESIGN_SOURCE,
     DESIGN_SOURCE_BUNDLE,
     DESIGN_SOURCE_CDS,
     DESIGN_SOURCE_NONE,
@@ -52,6 +55,8 @@ def main() -> None:
     """
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
+        # The listing the flow passes: the real producer's result for a run with no packages directory.
+        no_bundles: dict[str, JsonValue] = json_object(cdsbundles.list_bundles(None))
         rows = normalize_ui(
             {
                 KEY_UI_ITEMS: [
@@ -62,7 +67,7 @@ def main() -> None:
                 ],
             },
             {"UI-1", "UI-2"},
-            {"bundles": []},
+            no_bundles,
             Tools(root / "evidence"),
         )
         items = check_type(
@@ -76,13 +81,32 @@ def main() -> None:
             items[0][KEY_ARTIFACT] == {KEY_KIND: ARTIFACT_KIND_PAGE, KEY_SLUG: "ui-1"},
             "UI artifact default changed",
         )
-        with expected_error(ValueError):
-            normalize_ui(
-                {KEY_UI_ITEMS: [{KEY_ITEM: "UI-1", KEY_DESIGN_SOURCE: "unknown"}]},
-                {"UI-1"},
-                {"bundles": []},
-                Tools(root / "evidence"),
-            )
+        defaulted: dict[str, JsonValue] = normalize_ui(
+            {KEY_UI_ITEMS: [{KEY_ITEM: "UI-1", KEY_DESIGN_SOURCE: "unknown"}]},
+            {"UI-1"},
+            no_bundles,
+            Tools(root / "evidence"),
+        )
+        defaulted_items: list[dict[str, JsonValue]] = check_type(
+            defaulted[KEY_UI_ITEMS],
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
+        require(
+            [row[KEY_DESIGN_SOURCE] for row in defaulted_items] == [DEFAULT_DESIGN_SOURCE],
+            "an unknown design source did not take the default",
+        )
+        require(
+            any(
+                "unknown design source" in warning
+                for warning in check_type(
+                    defaulted["warnings"],
+                    list[str],
+                    collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+                )
+            ),
+            "an unknown design source was defaulted without a warning",
+        )
         events: list[dict[str, JsonValue]] = []
 
         def emit(event: EventName, **fields: JsonValue) -> None:
