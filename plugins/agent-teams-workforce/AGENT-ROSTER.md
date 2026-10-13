@@ -79,11 +79,10 @@ its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet. No workflow currently dispatches it. |
 | trd-author | execute | Writes and keeps current the Technical Requirements Document at the solutions architect's request: the technical obligations of this PRD and its architecture, each with a checkable value, a source and the element it applies to. It cites the architecture rather than restating it. |
 | trd-validator | test | Reviews the unapproved TRD requirements of one Epic against the technical-requirement criteria. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or an architecture view, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
-| trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead. No workflow currently dispatches it. |
+| trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by whoever delegated the task. No workflow currently dispatches it. |
 
 ## Spec Authoring
 
@@ -106,7 +105,6 @@ its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate. No workflow currently dispatches it. |
 | task-decomposer | execute | Breaks the spec into tasks, each a coherent piece of the Story's work one agent can test and build in one session. |
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
 | wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. No workflow currently dispatches it; task-decomposer sizes the Tasks it decomposes. |

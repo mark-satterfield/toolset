@@ -18,7 +18,7 @@ The roster is defined by the agent files in `agents/`.
 
 Current roster scope:
 
-- 183 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
+- 178 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
 
 > [!IMPORTANT]
 >
