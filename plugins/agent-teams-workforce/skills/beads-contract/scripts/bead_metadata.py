@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "9ec789e963293fbdce9374bfa848c5fdfe1adb17bf2da6f2028585cb9d0a500c"
+SCHEMA_SHA256: Final[str] = "3375a14bc2567edc6f4366b5494d2f6c3f6fa950bdeda9477fe7e2595355e4c3"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -121,16 +121,6 @@ DONE_CAUSES: Final[frozenset[ElaborationCause]] = frozenset({
     CAUSE_HUMAN,
 })
 
-type StoryDeployState = Literal["waiting-for-ssm", "deploying", "pr-open"]
-STORY_DEPLOY_WAITING_FOR_SSM: Final[StoryDeployState] = "waiting-for-ssm"
-STORY_DEPLOY_DEPLOYING: Final[StoryDeployState] = "deploying"
-STORY_DEPLOY_PR_OPEN: Final[StoryDeployState] = "pr-open"
-STORY_DEPLOY_STATES: Final[tuple[StoryDeployState, ...]] = (
-    STORY_DEPLOY_WAITING_FOR_SSM,
-    STORY_DEPLOY_DEPLOYING,
-    STORY_DEPLOY_PR_OPEN,
-)
-
 # Metadata keys.
 #: REQUIRED on a Task: the one absolute repository path elaboration ruled; the build lane builds there.
 KEY_REPO_PATH: Final[str] = "repoPath"
@@ -221,17 +211,6 @@ KEY_STORY_OWNED_BLOCKERS: Final[str] = "story_owned_blockers"
 KEY_STORY_OWNED_BLOCKERS_AT: Final[str] = "story_owned_blockers_at"
 #: Keyed by blocker id.
 KEY_STORY_EDGE_REASONS: Final[str] = "story_edge_reasons"
-KEY_STORY_DEPLOY_STATE: Final[str] = "story_deploy_state"
-KEY_STORY_DEPLOY_ATTEMPT: Final[str] = "story_deploy_attempt"
-#: May be empty.
-KEY_STORY_DEPLOY_ERROR: Final[str] = "story_deploy_error"
-#: Comma-separated SSM parameters the Story's stacks read that AWS dev does not hold; may be empty.
-KEY_STORY_SSM_MISSING: Final[str] = "story_ssm_missing"
-KEY_STORY_PR_URL: Final[str] = "story_pr_url"
-#: The git sha the Story's branch was published at.
-KEY_STORY_PUBLISHED_HEAD: Final[str] = "story_published_head"
-#: May be empty.
-KEY_BUILT_VERSION_ERROR: Final[str] = "built_version_error"
 KEY_WSJF: Final[str] = "wsjf"
 KEY_WSJF_CALCULATED_AT: Final[str] = "wsjf_calculated_at"
 KEY_WSJF_RUBRIC: Final[str] = "wsjf_rubric"
@@ -508,13 +487,6 @@ STORY_KEYS: Final[tuple[str, ...]] = (
     KEY_STORY_OWNED_BLOCKERS,
     KEY_STORY_OWNED_BLOCKERS_AT,
     KEY_STORY_EDGE_REASONS,
-    KEY_STORY_DEPLOY_STATE,
-    KEY_STORY_DEPLOY_ATTEMPT,
-    KEY_STORY_DEPLOY_ERROR,
-    KEY_STORY_SSM_MISSING,
-    KEY_STORY_PR_URL,
-    KEY_STORY_PUBLISHED_HEAD,
-    KEY_BUILT_VERSION_ERROR,
 )
 #: Keys WSJF scoring writes; numeric values are stored as text.
 WSJF_KEYS: Final[tuple[str, ...]] = (
@@ -616,13 +588,6 @@ class BeadMetadata(TypedDict, total=False):
     story_owned_blockers: str
     story_owned_blockers_at: str
     story_edge_reasons: str
-    story_deploy_state: str
-    story_deploy_attempt: str
-    story_deploy_error: str
-    story_ssm_missing: str
-    story_pr_url: str
-    story_published_head: str
-    built_version_error: str
     wsjf: str
     wsjf_calculated_at: str
     wsjf_rubric: str

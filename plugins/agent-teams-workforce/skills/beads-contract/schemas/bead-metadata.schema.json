@@ -419,32 +419,6 @@
         ]
       }
     },
-    "StoryDeployState": {
-      "type": "string",
-      "enum": [
-        "waiting-for-ssm",
-        "deploying",
-        "pr-open"
-      ],
-      "x-python": {
-        "literal": "StoryDeployState",
-        "tuple": "STORY_DEPLOY_STATES",
-        "constants": [
-          [
-            "STORY_DEPLOY_WAITING_FOR_SSM",
-            "waiting-for-ssm"
-          ],
-          [
-            "STORY_DEPLOY_DEPLOYING",
-            "deploying"
-          ],
-          [
-            "STORY_DEPLOY_PR_OPEN",
-            "pr-open"
-          ]
-        ]
-      }
-    },
     "IsoTime": {
       "type": "string",
       "description": "An ISO-8601 timestamp."
@@ -981,55 +955,6 @@
         "STORY_KEYS"
       ],
       "description": "Keyed by blocker id."
-    },
-    "story_deploy_state": {
-      "$ref": "#/$defs/StoryDeployState",
-      "x-groups": [
-        "STORY_KEYS"
-      ]
-    },
-    "story_deploy_attempt": {
-      "type": "string",
-      "pattern": "^[0-9]+$",
-      "x-groups": [
-        "STORY_KEYS"
-      ]
-    },
-    "story_deploy_error": {
-      "type": "string",
-      "maxLength": 400,
-      "x-groups": [
-        "STORY_KEYS"
-      ],
-      "description": "May be empty."
-    },
-    "story_ssm_missing": {
-      "type": "string",
-      "x-groups": [
-        "STORY_KEYS"
-      ],
-      "description": "Comma-separated SSM parameters the Story's stacks read that AWS dev does not hold; may be empty."
-    },
-    "story_pr_url": {
-      "type": "string",
-      "x-groups": [
-        "STORY_KEYS"
-      ]
-    },
-    "story_published_head": {
-      "type": "string",
-      "x-groups": [
-        "STORY_KEYS"
-      ],
-      "description": "The git sha the Story's branch was published at."
-    },
-    "built_version_error": {
-      "type": "string",
-      "maxLength": 400,
-      "x-groups": [
-        "STORY_KEYS"
-      ],
-      "description": "May be empty."
     },
     "wsjf": {
       "type": "string",
