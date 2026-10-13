@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from matrix_contract import (
     APPROVAL_APPROVED,
     APPROVAL_IN_REVIEW,
+    BASIS_BUILT_CORRECTION,
     COVERAGE_APPROVED,
     COVERAGE_DESIGNED,
     COVERAGE_IN_PROGRESS,
@@ -433,4 +434,63 @@ def approve(matrix: Matrix, bead: str, steps: Sequence[str], basis: ApprovalBasi
         prd["coverage"] = coverage
         prd["changed"] = stamp.change()
     result["coverage"] = coverage
+    return result
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def approve_built_correction(
+    matrix: Matrix,
+    bead: str,
+    paths: Sequence[str],
+    steps: Sequence[str],
+    stamp: Stamp,
+) -> Approved:
+    """Mark approved the documents a reviewed correction from built code changed, and nothing else.
+
+    Each named document's headings take their present hash as the approved one, except a
+    heading another Epic claims; a document that is then wholly as approved is approved with
+    the built-correction basis, the Epic and the review steps, and is effective again: the caller writes that
+    into the vault for each document in ``promoted``. A named document the matrix holds no row
+    for, and a document left with a heading another Epic claims, is reported in ``remaining``.
+    No other row is approved and the PRD's coverage is left as it is.
+
+    Args:
+        matrix: The matrix, changed in place.
+        bead: The Epic the documents were corrected for.
+        paths: The documents, relative to the vault root.
+        steps: The journal step ids of the reviews that passed.
+        stamp: The moment and the maker to record on each changed row.
+
+    Returns:
+        What was approved and what remains and why; ``coverage`` is the PRD's as it stands.
+
+    Raises:
+        MatrixRefusedError: No Epic or no review step is named.
+
+    """
+    named: list[str] = list(dict.fromkeys(step for step in steps if step.strip()))
+    if not bead.strip() or not named:
+        message: str = "an approval of documents names the Epic and the review steps that passed"
+        raise MatrixRefusedError(message)
+    prd: Node | None = matrix["nodes"].get(make_id(KIND_PRD, bead))
+    result: Approved = {
+        "bead": bead,
+        "at": stamp.at,
+        "steps": named,
+        "approved": [],
+        "headings": [],
+        "remaining": [],
+        "coverage": COVERAGE_NOT_ASSESSED if prd is None else prd.get("coverage", COVERAGE_NOT_ASSESSED),
+        "promoted": [],
+        "claimsReleased": 0,
+    }
+    path: str
+    for path in sorted(set(paths)):
+        key: NodeId = make_id(KIND_DOCUMENT, path)
+        node: Node | None = matrix["nodes"].get(key)
+        if node is None or node["kind"] != KIND_DOCUMENT:
+            result["remaining"].append({"id": key, "reason": "the matrix holds no row for the document"})
+            continue
+        _approve_row(matrix, node, BASIS_BUILT_CORRECTION, result)
+        node["changed"] = stamp.change()
     return result

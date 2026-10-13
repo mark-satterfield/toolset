@@ -489,7 +489,7 @@
             {"name": "commitsAhead", "kind": "value", "holds": "the number of commits ahead of the default branch, an integer"}
           ],
           "adds": [
-            {"kinds": ["deploy:built-version", "deploy:pull-request", "deploy:merge-wait"], "when": "the branch holds commits: deploy:built-version only when the Story's delta items are recorded"}
+            {"kinds": ["deploy:built-version", "deploy:pull-request", "deploy:merge-wait"], "when": "the branch holds commits"}
           ]
         },
         "deploy:built-version": {
@@ -498,7 +498,7 @@
           "runBy": "driver",
           "reads": ["worktree", "branch"],
           "records": [
-            {"name": "built", "kind": "value", "holds": "{ stage, differences, builtFiles }: what the built-version workflow returned, with counts in place of lists"}
+            {"name": "built", "kind": "value", "holds": "{ stage, differences, builtFiles }: what the built-version workflow returned, with counts in place of lists; when the workflow corrected the effective architecture, the driver first approves the corrected documents in the matrix with the built-correction basis"}
           ],
           "adds": []
         },

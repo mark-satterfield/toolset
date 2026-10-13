@@ -11,7 +11,7 @@ finding against the architecture. Three events, and nothing else, make code trus
 - :func:`mark_merged` when the Story's pull request merged: the trusted code is on the default
   branch.
 
-No architecture session writes the marker. The driver records it through the three ``record_*``
+No architecture session writes the marker. The driver records it through the ``record_*``
 functions, which it loads from this file by path; ``atw-matrix`` runs the same code.
 """
 
@@ -24,12 +24,14 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
+    BASIS_BUILT_CORRECTION,
     CODE_BUILT,
     CODE_DEPLOYED,
     CODE_NONE,
     KIND_REPOSITORY,
     KIND_SERVICE,
     KIND_STACK,
+    LIFECYCLE_EFFECTIVE,
     LINK_CONTAINS,
     LINK_DESCRIBED_BY,
     PLACED_KINDS,
@@ -45,6 +47,7 @@ from matrix_contract import (
     Role,
 )
 from matrixquery import resolve
+from matrixreview import Approved, Remaining, approve_built_correction
 from matrixstore import (
     DEFAULT_LOCK_WAIT,
     MatrixRefusedError,
@@ -57,11 +60,14 @@ from matrixstore import (
     timestamp,
     update_matrix,
 )
+from matrixsync import set_lifecycle, sync_documents, vault_root
 
 COMMAND_BUILT: Final = "mark-built"
 COMMAND_DEPLOYED: Final = "mark-deployed"
 COMMAND_MERGED: Final = "mark-merged"
 COMMAND_STORY_BUILT: Final = "story-built"
+COMMAND_SYNC_DOCUMENTS: Final = "sync-documents"
+COMMAND_APPROVE: Final = "approve"
 BUILD_DRIVER_ROLE: Final[Role] = ROLE_BUILD_DRIVER
 """The role the build and deploy driver records the marker as."""
 ELEMENTS_KEY: Final = TASK_ELEMENTS_KEY
@@ -91,6 +97,32 @@ class Deployed(TypedDict):
     commit: str
     stacks: list[str]
     """The names of the stacks that were verified."""
+
+
+class BuiltCorrection(TypedDict):
+    """One reviewed correction of the effective architecture to what a Story built."""
+
+    epic: str
+    story: str
+    arch: str
+    """The architecture root inside the vault."""
+    files: list[str]
+    """The corrected documents: absolute paths, or paths relative to the architecture root."""
+    steps: list[str]
+    """The journal step ids of the reviews that passed."""
+
+
+class CorrectionRecorded(TypedDict):
+    """What recording a reviewed correction did."""
+
+    command: str
+    at: str
+    approved: list[NodeId]
+    headings: int
+    """How many headings took their present hash as the approved one."""
+    remaining: list[Remaining]
+    promoted: list[str]
+    """The documents set to effective in the vault, relative to the vault root."""
 
 
 class Merged(TypedDict):
@@ -482,6 +514,82 @@ def record_deployed(path: Path, deployed: Deployed, role: Role) -> CodeMarked:
 
     def change(matrix: Matrix) -> CodeMarked:
         return mark_deployed(matrix, deployed, stamp)
+
+    return update_matrix(path, change, wait=DEFAULT_LOCK_WAIT)
+
+
+def _vault_paths(arch: Path, vault: Path, files: list[str]) -> list[str]:
+    """Name corrected documents the way the matrix does: relative to the vault root.
+
+    Returns:
+        Each file's path relative to the vault root, once; a file given relative is taken as
+        relative to the architecture root.
+
+    Raises:
+        MatrixRefusedError: A file is outside the vault.
+
+    """
+    paths: dict[str, None] = {}
+    name: str
+    for name in files:
+        given: Path = Path(name)
+        located: Path = (given if given.is_absolute() else arch / given).resolve()
+        try:
+            paths[located.relative_to(vault).as_posix()] = None
+        except ValueError as error:
+            message: str = f"the corrected document {name} is outside the vault {vault}"
+            raise MatrixRefusedError(message) from error
+    return list(paths)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def record_built_correction(path: Path, correction: BuiltCorrection, role: Role) -> CorrectionRecorded:
+    """Record a reviewed correction of the effective architecture in a matrix file, as one locked change.
+
+    The document rows are brought up to date with the vault, then the corrected documents are
+    approved as they are now with the built-correction basis, the Epic and the review steps; a
+    corrected document whose front matter does not say effective is set to effective in the
+    vault. A role that may not record it, a matrix that is missing or does not conform, a vault
+    that cannot be read or written, or a correction the matrix refuses raises ``MatrixError``;
+    the matrix file is then left as it was.
+
+    Args:
+        path: The matrix file.
+        correction: The Story, its Epic, the corrected documents and the reviews that passed.
+        role: Who records it.
+
+    Returns:
+        The document rows approved, how many headings took a new approved hash, what was not
+        approved and why, and the documents set to effective.
+
+    """
+    require_role(COMMAND_SYNC_DOCUMENTS, role)
+    require_role(COMMAND_APPROVE, role)
+    arch: Path = Path(correction["arch"]).expanduser().resolve()
+    vault: Path = vault_root(arch).resolve()
+    documents: list[str] = _vault_paths(arch, vault, correction["files"])
+    stamp: Stamp = Stamp(timestamp(), f"{correction['story'].strip() or role} {BASIS_BUILT_CORRECTION}")
+
+    def change(matrix: Matrix) -> CorrectionRecorded:
+        sync_documents(matrix, arch, stamp)
+        approved: Approved = approve_built_correction(
+            matrix,
+            correction["epic"],
+            documents,
+            correction["steps"],
+            stamp,
+        )
+        promoted: str
+        for promoted in approved["promoted"]:
+            set_lifecycle(vault, promoted, LIFECYCLE_EFFECTIVE)
+        return {
+            "command": BASIS_BUILT_CORRECTION,
+            "at": stamp.at,
+            "approved": approved["approved"],
+            "headings": len(approved["headings"]),
+            "remaining": approved["remaining"],
+            "promoted": approved["promoted"],
+        }
 
     return update_matrix(path, change, wait=DEFAULT_LOCK_WAIT)
 
