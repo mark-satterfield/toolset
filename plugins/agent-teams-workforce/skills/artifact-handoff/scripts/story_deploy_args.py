@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict
 
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "story-deploy-args.schema.json"
-SCHEMA_SHA256: Final = "2f49589360e50f9a2d0cede08c6dfb0fc8c557e3fdadee0f3c224e108b430f71"
+SCHEMA_SHA256: Final = "c05d6a1760770eb8a839dac91d5670f4043c9b4e719e257193699a89c0c9d4cd"
 
 type Composite = Literal["story-deploy", "built-version", "story-deploy-fix", "deploy-mechanism"]
 COMPOSITE_STORY_DEPLOY: Final[Composite] = "story-deploy"
@@ -35,7 +35,6 @@ type VerifiedStackStatus = Literal["CREATE_COMPLETE", "UPDATE_COMPLETE"]
 _VERIFIED_STATUSES_ORDER: Final[tuple[VerifiedStackStatus, ...]] = ("CREATE_COMPLETE", "UPDATE_COMPLETE")
 VERIFIED_STATUSES: Final[frozenset[VerifiedStackStatus]] = frozenset(_VERIFIED_STATUSES_ORDER)
 
-SUBJECT_FOLDER_PATTERN: Final = "^[a-z0-9]+(-[a-z0-9]+)*$"
 PLUGIN_ROOT_PATTERN: Final = "^(?!.*//)(?!.*\\.\\.)/[A-Za-z0-9._/-]+$"
 
 KEY_STORY: Final = "story"
@@ -48,8 +47,6 @@ KEY_JOURNAL: Final = "journal"
 KEY_REPO_NAME: Final = "repoName"
 KEY_BRANCH: Final = "branch"
 KEY_ARCH_PATH: Final = "archPath"
-KEY_SUBJECT: Final = "subject"
-KEY_ITEMS: Final = "items"
 KEY_DEPSCORE: Final = "depscore"
 KEY_DEFAULT_BRANCH: Final = "defaultBranch"
 KEY_FAILURE: Final = "failure"
@@ -66,15 +63,12 @@ ARG_KEYS: Final[tuple[str, ...]] = (
     "repoName",
     "branch",
     "archPath",
-    "subject",
-    "items",
     "depscore",
     "defaultBranch",
     "failure",
     "pluginRoot",
     "relay",
 )
-ITEM_KEYS: Final[tuple[str, ...]] = ("id", "element", "status", "from", "to", "evidence")
 
 STORY_REF_KEYS: Final[tuple[str, ...]] = ("id", "title")
 _STORY_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("id",)
@@ -84,10 +78,6 @@ TASK_REF_KEYS: Final[tuple[str, ...]] = ("id", "title")
 _TASK_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("id", "title")
 TASK_REF_REQUIRED: Final[frozenset[str]] = frozenset(_TASK_REF_REQUIRED_ORDER)
 TASK_REF_CLOSED: Final = True
-BUILT_VERSION_ITEM_KEYS: Final[tuple[str, ...]] = ("id", "element", "status", "from", "to", "evidence")
-_BUILT_VERSION_ITEM_REQUIRED_ORDER: Final[tuple[str, ...]] = ("id", "element")
-BUILT_VERSION_ITEM_REQUIRED: Final[frozenset[str]] = frozenset(_BUILT_VERSION_ITEM_REQUIRED_ORDER)
-BUILT_VERSION_ITEM_CLOSED: Final = True
 DEPSCORE_REF_KEYS: Final[tuple[str, ...]] = ("script", "repo")
 _DEPSCORE_REF_REQUIRED_ORDER: Final[tuple[str, ...]] = ("script", "repo")
 DEPSCORE_REF_REQUIRED: Final[frozenset[str]] = frozenset(_DEPSCORE_REF_REQUIRED_ORDER)
@@ -120,19 +110,9 @@ BUILT_VERSION_ARGS_KEYS: Final[tuple[str, ...]] = (
     "repoName",
     "branch",
     "archPath",
-    "subject",
-    "items",
     "depscore",
 )
-_BUILT_VERSION_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = (
-    "journal",
-    "story",
-    "repoPath",
-    "archPath",
-    "subject",
-    "items",
-    "depscore",
-)
+_BUILT_VERSION_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = ("journal", "story", "repoPath", "archPath", "depscore")
 BUILT_VERSION_ARGS_REQUIRED: Final[frozenset[str]] = frozenset(_BUILT_VERSION_ARGS_REQUIRED_ORDER)
 BUILT_VERSION_ARGS_CLOSED: Final = False
 STORY_DEPLOY_FIX_ARGS_KEYS: Final[tuple[str, ...]] = (
@@ -174,20 +154,6 @@ class TaskRef(TypedDict):
 
     id: str
     title: str
-
-
-# One delta item of the Story's detailing.
-BuiltVersionItem = TypedDict(
-    "BuiltVersionItem",
-    {
-        "id": str,
-        "element": str,
-        "status": NotRequired[str],
-        "from": NotRequired[str],
-        "to": NotRequired[str],
-        "evidence": NotRequired[list[str]],
-    },
-)
 
 
 class DepscoreRef(TypedDict):
@@ -248,8 +214,6 @@ class BuiltVersionArgs(TypedDict):
     repoName: NotRequired[str]
     branch: NotRequired[str]
     archPath: str
-    subject: str
-    items: list[BuiltVersionItem]
     depscore: DepscoreRef
 
 

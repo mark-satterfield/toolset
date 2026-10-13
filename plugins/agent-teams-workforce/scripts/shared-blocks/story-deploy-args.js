@@ -8,7 +8,6 @@ const ARG_KEYS = Object.freeze([...new Set(['StoryDeployInput', 'BuiltVersionArg
 const FAILURE_STEPS = Object.freeze([...((STORY_DEPLOY_ARGS_DEFS.FailureStep || {}).enum || [])])
 const VERIFIED_STACK_STATUSES = Object.freeze([...((STORY_DEPLOY_ARGS_DEFS.VerifiedStackStatus || {}).enum || [])])
 const STORY_DEPLOY_COMPOSITES = Object.freeze([...((STORY_DEPLOY_ARGS_DEFS.Composite || {}).enum || [])])
-const ITEM_KEYS = Object.freeze(Object.keys((STORY_DEPLOY_ARGS_DEFS.BuiltVersionItem || {}).properties || {}))
 
 // Checks `value` against one schema node (the subset the schema uses: local $ref, type object, string,
 // integer and array, required, properties, additionalProperties false, enum, const, minLength, minimum,

@@ -46,7 +46,7 @@ ENUMS: Final[dict[str, EnumNaming]] = {
     "VerifiedStackStatus": EnumNaming("VerifiedStackStatus", "VERIFIED_STATUSES", None),
 }
 #: Pattern definition -> constant name.
-PATTERNS: Final[dict[str, str]] = {"SubjectFolder": "SUBJECT_FOLDER_PATTERN", "PluginRoot": "PLUGIN_ROOT_PATTERN"}
+PATTERNS: Final[dict[str, str]] = {"PluginRoot": "PLUGIN_ROOT_PATTERN"}
 #: The four argument shapes whose top-level keys become KEY_<NAME> constants.
 ARG_SHAPES: Final[tuple[str, ...]] = (
     "StoryDeployInput",
@@ -54,8 +54,6 @@ ARG_SHAPES: Final[tuple[str, ...]] = (
     "StoryDeployFixArgs",
     "DeployMechanismArgs",
 )
-#: The object definition whose keys are ITEM_KEYS.
-ITEM_DEF: Final[str] = "BuiltVersionItem"
 LOCAL_REF: Final[str] = "#/$defs/"
 
 
@@ -224,7 +222,7 @@ def build_model(schema: JsonObject) -> Model:
     objects: frozenset[str] = frozenset(
         name for name, raw in defs.items() if _is_object(raw) and raw.get("type") == "object"
     )
-    missing: list[str] = [name for name in (*ENUMS, *PATTERNS, *ARG_SHAPES, ITEM_DEF) if name not in defs]
+    missing: list[str] = [name for name in (*ENUMS, *PATTERNS, *ARG_SHAPES) if name not in defs]
     if missing:
         message: str = f"$defs lacks {missing}"
         raise SchemaShapeError(message)
@@ -331,9 +329,7 @@ def render(schema: JsonObject, digest: str) -> str:
     for name in ARG_SHAPES:
         arg_keys.extend(field.key for field in by_name[name].fields if field.key not in arg_keys)
     lines.extend(f'KEY_{_snake(key)}: Final = "{key}"' for key in arg_keys)
-    item_keys: tuple[str, ...] = tuple(field.key for field in by_name[ITEM_DEF].fields)
     lines.extend(_assign_tuple("ARG_KEYS: Final[tuple[str, ...]]", tuple(arg_keys)))
-    lines.extend(_assign_tuple("ITEM_KEYS: Final[tuple[str, ...]]", item_keys))
     lines.append("")
     for shape in model.shapes:
         keys: tuple[str, ...] = tuple(field.key for field in shape.fields)

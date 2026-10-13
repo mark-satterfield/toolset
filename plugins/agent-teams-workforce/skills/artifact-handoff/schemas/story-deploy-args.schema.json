@@ -19,11 +19,6 @@
       "type": "string",
       "enum": ["CREATE_COMPLETE", "UPDATE_COMPLETE"]
     },
-    "SubjectFolder": {
-      "description": "A subject folder name in archstate.subject_folder form: ASCII, lower-case, runs of characters outside a-z0-9 folded to one hyphen, no hyphen at either end.",
-      "type": "string",
-      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
-    },
     "PluginRoot": {
       "description": "The absolute path of an agent-teams-workforce install, with no '//' and no '..'.",
       "type": "string",
@@ -47,20 +42,6 @@
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "title": {"type": "string"}
-      }
-    },
-    "BuiltVersionItem": {
-      "description": "One delta item of the Story's detailing; status uses the detailing (recon) contract's status vocabulary.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "element"],
-      "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "element": {"type": "string", "minLength": 1},
-        "status": {"type": "string", "description": "A status from the detailing (recon) contract."},
-        "from": {"type": "string"},
-        "to": {"type": "string"},
-        "evidence": {"type": "array", "items": {"type": "string"}}
       }
     },
     "DepscoreRef": {
@@ -131,7 +112,7 @@
     "BuiltVersionArgs": {
       "description": "The arguments of the built-version workflow.",
       "type": "object",
-      "required": ["story", "repoPath", "archPath", "subject", "items", "depscore", "journal"],
+      "required": ["story", "repoPath", "archPath", "depscore", "journal"],
       "properties": {
         "beadId": {"type": "string", "minLength": 1, "description": "The consumer falls back to story.id."},
         "journal": {"$ref": "#/$defs/JournalRef"},
@@ -140,8 +121,6 @@
         "repoName": {"type": "string", "description": "The basename of the Story's repository root."},
         "branch": {"type": "string", "description": "The worktree's checked-out branch."},
         "archPath": {"type": "string", "minLength": 1, "description": "The ATW_ARCH_PATH directory."},
-        "subject": {"$ref": "#/$defs/SubjectFolder"},
-        "items": {"type": "array", "items": {"$ref": "#/$defs/BuiltVersionItem"}},
         "depscore": {"$ref": "#/$defs/DepscoreRef"}
       }
     },
