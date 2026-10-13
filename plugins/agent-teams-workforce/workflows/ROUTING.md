@@ -11,14 +11,12 @@ driver script: there is none, and there cannot be one — see
 [The driver is not a workflow script](#the-driver-is-not-a-workflow-script)
 before writing one.**
 
-## The four composites
+## The composites
 
 | Composite | Front-end | For |
 |---|---|---|
 | `prd-to-spec` | not a workflow script: the Python orchestrator (`orchestrator/run.py`), started by the pipeline's driver. One dispatch claims the Epic and runs the steps of the Epic's step journal from the first that is not done: Open the run → Architecture → TRD → Specs and Stories (one container of steps per repository) → Tasks (one per repository) → Task edges → Score the Tasks → Apply the done rule → Story edges → Mark the Epic elaborated | a feature with no implementation-ready contract yet. It elaborates an existing Epic; the claim refuses, with a named reason, one that is not open, whose elaboration is done, or that another run owns. The driver selects only an Epic that is scored, has a PRD that resolves, waits on no Epic whose elaboration is not done, and is ready, or in progress with no live owner. In the Architecture step `aws-solutions-architect` establishes the architecture the PRD needs in the arc42 documents and has the TRD written; reviewers selected by rule review the unapproved content; a script approves it in the matrix and makes the reviewed documents effective. An owner concern of the decider, or a GitHub sign-in the run needs to create a repository, holds the Epic for a person. The repository span is read from the matrix: the elements the PRD's features are realized by, and what those depend on, that no pipeline has built, grouped by repository. Per repository, the spec steps write the contracts, the data model and the acceptance criteria, one review settles its findings, and the Story bead is written; the Task steps decompose the Story into sized Tasks, one step per Task bead write (an open Task of another Epic in the same repository that plans the work gets a `blocks` edge instead of a duplicate). Each step writes what it authors into beads itself, keyed by the elaboration key. The Task edges between Stories are written, the Tasks are scored, the done rule requires a Story and Tasks for every repository, and the Epic is marked elaborated. `orchestrator/specs/epic/prd-to-spec.md` describes it. |
 | `task-to-deploy` | a workflow script the pipeline's driver dispatches with the Task's step journal. It runs the journal's steps from the first that is not done (`skills/pipeline-contracts/schemas/pipeline-steps.json`, pipeline `build`): workspace (the Story's branch) → infra-intent (an infrastructure Task) → regression scope → baseline suite-run → test agents and a Red check → implementers and a Green check → refactor → documentation → final suite-run → regression evidence → commit | work whose spec/contract already exists and is implementation-ready — the Task's build contract names its repository, its spec documents and the architecture views it is designed against, and the run builds to it without ruling any architecture of its own. An infrastructure Task (a type or label in the infrastructure vocabulary, rule 2 below) runs `infra-intent` first and has `cdk-stack-author` as its Green implementer |
-| `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior. **On-demand only** — nothing routes here automatically; a bug reaches it after a person triages it (see [A Bug is never routed](#a-bug-is-never-routed)) |
-
 ## Type / label → composite
 
 Routing is **deterministic first**: each router decides from `bead.type` and
@@ -54,7 +52,7 @@ read-only `ambiguity-detector` to classify from the title and description. That
 agent authors nothing and never runs the composite — it only returns a pick and a
 confidence. The router applies the verdict defensively:
 
-- a **confident pick of one of the four composites** is dispatched;
+- a **confident pick of one of the composites** is dispatched;
 - **`skip`, low confidence, or any unexpected value** is a reported SKIP.
 
 Set `allowAmbiguityAgent: false` to force a deterministic-only pass — genuinely
@@ -72,16 +70,11 @@ Both routers therefore SKIP a bug, naming triage as the destination:
 - `route-build` skips it because it is not development work;
 - `route-elaboration` skips it because it is not elaboration work either.
 
-**There is no triage composite to dispatch, by design.** `bug-triage` exists only
-as a read-only mini *inside* `bug-fix`: it manufactures a fix contract, and it
-neither mints the Epic/Task a triaged bug becomes nor closes a non-defect.
-Building the triage route is deferred until a normal Task builds all the way
-through to AWS dev. Until then the routers stop the wrong dispatch and report the
-bug by name every pass — no automation classifies a bug's outcome, because that
-classification is the judgment triage exists to make.
-
-`bug-fix` remains dispatchable **on demand**, by a person who has already triaged
-a bug and decided it is a fix. Nothing routes to it automatically.
+**There is no composite for a bug, by design.** The pipelines are elaboration,
+build and deploy, and a Bug bead is work for none of them. The routers stop the
+wrong dispatch and report the bug by name every pass — no automation classifies a
+bug's outcome, because that classification is the judgment triage exists to make.
+A build that finds a defect fixes it in that run.
 
 ## What `/loop` skips — and that skips are reported, never force-fit
 
@@ -143,7 +136,7 @@ implements it, and adding a `sweep.js` here would not work.
 and returns an artifact; a composite calls `workflow()` to stitch minis together.
 That is the one level, and it is already spent: `task-to-deploy` calls `tdd-red`,
 `tdd-green` and the other minis. A sweep script that read `atw-bd ready`
-and called `workflow('bug-fix')` per bead would be sweep → composite → mini, which is
+and called `workflow('task-to-deploy')` per bead would be sweep → composite → mini, which is
 two levels, and the runtime throws. This is not a limitation to work around; it is why
 composites stay flat and why a full run is sequenced from outside rather than by
 nesting one composite inside another (see `AGENT-TEAMS-WORKFORCE.md`, "The doctrine is

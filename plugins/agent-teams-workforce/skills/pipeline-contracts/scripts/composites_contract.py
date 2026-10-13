@@ -14,13 +14,12 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "5afd28953a1c317e2534505f5776439442c8de1e07743eec8a12af2b40e35d22"
+SOURCE_SHA256: Final[str] = "4b6c4f0e2c133898ba0a8f8704382f66916569a6615dedff0c0cb9797efd26c7"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
     "prd-to-spec",
     "task-to-deploy",
-    "bug-fix",
     "story-deploy",
     "story-deploy-fix",
     "deploy-mechanism",
@@ -34,7 +33,6 @@ type CompositeId = Literal[
 ]
 PRD_TO_SPEC: Final[CompositeId] = "prd-to-spec"
 TASK_TO_DEPLOY: Final[CompositeId] = "task-to-deploy"
-BUG_FIX: Final[CompositeId] = "bug-fix"
 STORY_DEPLOY: Final[CompositeId] = "story-deploy"
 STORY_DEPLOY_FIX: Final[CompositeId] = "story-deploy-fix"
 DEPLOY_MECHANISM: Final[CompositeId] = "deploy-mechanism"
@@ -70,11 +68,6 @@ type PhaseId = Literal[
     "cds-audit",
     "documentation",
     "commit",
-    "triage",
-    "integration",
-    "adversarial",
-    "deploy-to-dev",
-    "settle",
     "mechanism",
     "publish",
     "ssm-check",
@@ -107,7 +100,6 @@ type CompositeSet = Literal[
     "repo-required",
     "design-aware",
     "elaboration",
-    "bug",
     "story",
     "attaching",
     "former-trigger",
@@ -177,23 +169,6 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "commit", "title": "Commit"},
         ),
         "sets": frozenset({"target-repo", "code-build", "repo-required", "design-aware"}),
-        "openingKind": "task",
-    },
-    BUG_FIX: {
-        "runner": "workflow",
-        "phases": (
-            {"id": "workspace", "title": "Workspace"},
-            {"id": "triage", "title": "Triage"},
-            {"id": "red", "title": "Red"},
-            {"id": "green", "title": "Green"},
-            {"id": "refactor", "title": "Refactor"},
-            {"id": "integration", "title": "Integration"},
-            {"id": "adversarial", "title": "Adversarial"},
-            {"id": "deploy-to-dev", "title": "Deploy-to-dev"},
-            {"id": "settle", "title": "Settle"},
-            {"id": "run-ledger", "title": "Run Ledger"},
-        ),
-        "sets": frozenset({"target-repo", "code-build", "bug"}),
         "openingKind": "task",
     },
     STORY_DEPLOY: {
@@ -266,9 +241,9 @@ EVENT_PHASES: Final[Mapping[CompositeId, tuple[PhaseId, ...]]] = MappingProxyTyp
 #: The orchestrated set.
 ORCHESTRATED: Final[frozenset[CompositeId]] = frozenset({PRD_TO_SPEC})
 #: The target-repo set.
-TARGET_REPO: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY, BUG_FIX})
+TARGET_REPO: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The code-build set.
-CODE_BUILD: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY, BUG_FIX})
+CODE_BUILD: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The repo-required set.
 REPO_REQUIRED: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The design-aware set.
@@ -285,8 +260,6 @@ FORMER_TRIGGER: Final[frozenset[CompositeId]] = frozenset({
 })
 #: The one elaboration composite.
 ELABORATION_COMPOSITE: Final[CompositeId] = PRD_TO_SPEC
-#: The one bug composite.
-BUG_COMPOSITE: Final[CompositeId] = BUG_FIX
 #: Ids no longer dispatched, kept only to attribute historical cost and ledger rows.
 RETIRED: Final[frozenset[CompositeId]] = frozenset({
     REPAIR,
@@ -301,7 +274,6 @@ KNOWN: Final[frozenset[CompositeId]] = frozenset(COMPOSITES) | RETIRED
 OPENING_KIND: Final[Mapping[CompositeId, OpeningKind]] = MappingProxyType({
     PRD_TO_SPEC: "epic",
     TASK_TO_DEPLOY: "task",
-    BUG_FIX: "task",
 })
 
 

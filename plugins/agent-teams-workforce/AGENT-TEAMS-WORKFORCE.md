@@ -6,7 +6,7 @@ The doctrine behind the system is simple to state: the agent is not the unit of 
 
 ## The workflows
 
-The system is a designed thing: two pipelines, a row of gates, a 183-agent doctrine of separated authorities. But doctrine is not what runs. What runs is deterministic code: `Workflow` scripts for the build pipeline, and a Python orchestrator for elaboration that runs the steps of a step journal. Both call agents as isolated sessions and route the next step from the facts each step returns. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script reads the phase's reported facts (`greenConfirmed`, `deployedToDev`, `smokePassed`) and, in `bug-fix`, calls a separate gate agent; the script alone owns what happens next.
+The system is a designed thing: two pipelines, a row of gates, a 183-agent doctrine of separated authorities. But doctrine is not what runs. What runs is deterministic code: `Workflow` scripts for the build pipeline, and a Python orchestrator for elaboration that runs the steps of a step journal. Both call agents as isolated sessions and route the next step from the facts each step returns. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script reads the phase's reported facts (`greenConfirmed`, `deployedToDev`, `smokePassed`); the script alone owns what happens next.
 
 The two pipelines are conceptual. Their realization is composable: small single-phase **minis** stitched into **composites**, with Documentation running as a parallel track. The doctrine below describes the shape; the status section says how much of that shape is wired.
 
@@ -93,9 +93,9 @@ Each artifact in the PRD-to-Spec pipeline answers a different question and lands
 mechanism**, not an artifact in the chain and not a unit of work. It is never
 worked directly: every bug is **TRIAGED** — a judgment call requiring reason and
 common sense, made by a person — and becomes an Epic, a Task, or a closure as a
-non-defect. Bugs never have parents. Both routers SKIP a bug and name triage;
-`bug-fix` is reachable only on demand, after a person has triaged one and decided
-it is a fix. See [A Bug is never routed](workflows/ROUTING.md#a-bug-is-never-routed).
+non-defect. Bugs never have parents. Both routers SKIP a bug and name triage, and
+the driver dispatches none. A build that finds a defect fixes it in that run.
+See [A Bug is never routed](workflows/ROUTING.md#a-bug-is-never-routed).
 
 **Beads types.** `bd`'s installed type enum is `bug|feature|task|epic|chore|decision`; `story` and `whisp` are not native types; a project registers them as custom types (`types.custom` in `.beads/config.yaml`). The routers and `ROUTING.md` route `story`, and the Task steps of `prd-to-spec` write only type `task`.
 
@@ -112,8 +112,6 @@ Green is measured, not reported. `suite-run` runs the one test command the repos
 Documentation follows, the suite runs a final time, and `settle` with `commitOnly` commits the Task to the Story branch only when that run exits 0. A Task deploys nothing and opens no pull request: the run succeeds when the repository's whole suite passes and its work is committed.
 
 When a Story's last Task is done, the Story deploys. First `deploy-mechanism` asks the `polyrepo-steward` what the Story's repository publishes and deploys: a package to CodeArtifact (with the publish command the repository declares), a CDK deployment, or both. A Taskfile is a convenience and does not decide this. A repository that does neither — the control repository and the documentation vault among them — stops with stage `no-deploy-mechanism`. The remaining steps are the host's scripts, not agents: they publish the package when the repository publishes one, then, when it deploys with CDK, synthesize the Story branch, check that every SSM parameter the templates read exists in AWS dev (a missing one holds only the deploy, and the Story stays in progress), `cdk deploy` the repository's stacks to AWS dev, and verify that the deploy exited 0 and every stack reports `CREATE_COMPLETE` or `UPDATE_COMPLETE`. On a publish, synth, deploy or verification failure `story-deploy-fix` runs as the child steps of the Story's `deploy:fix` journal step — a `cdk-stack-author` diagnoses the failure and fixes it on the Story branch, the files it changed are read from git and the repository's synth assertion tests are run, and the fix is committed — and the Story tries again. A fix that changes no file stops the deploy with stage `no-change`, and a failure after three fixes stops it. Every step of the deploy is a step of the Story's step journal (`schemas/pipeline-steps.json`, pipeline `deploy`), so a restarted deploy begins at the first step that is not done. It never goes back to Green. Once the deploy verifies, `built-version` records what the Story built in the architecture's `built/<element>/` and corrects the effective version from it (see *The architecture step*). Then the Story opens ONE pull request with the project PR command, a script waits for GitHub to report it `MERGED`, and on the merge the Story is closed and its worktree removed.
-
-`bug-fix` runs the full shared tail — Red, Green, Refactor, Integration, Adversarial, Deploy — with a gate after each phase; it is described under *How the pipeline is built* below.
 
 ```mermaid
 graph LR
@@ -132,42 +130,17 @@ The Documentation team runs alongside implementation and deployment rather than 
 
 The doctrine is realized as `Workflow` scripts of two kinds. A **leaf mini** is one phase: it calls `agent()` or `parallel()` and returns an artifact. It does no nesting — a mini that calls `workflow()` throws. A **composite** stitches minis together with `workflow('name', args)`, owns the loop and escalate control flow, and runs Documentation as a parallel track. Nesting is one level deep on purpose: composites stay flat, and a full feature run sequences composites from outside (a router, `/loop`, or an on-demand call), never by nesting one composite inside another.
 
-The build-and-deploy work is a **shared tail** of minis — `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy`. `task-to-deploy` runs `tdd-red`, `tdd-green` and `tdd-refactor`, judged by `suite-run`; `bug-fix` runs all six. A composite also has a **front-end**: the mini that turns a request into the contract the tail builds against. `bug-fix` uses `bug-triage`; `task-to-deploy` builds from the build contract on the Task, with `infra-intent` in front for an infrastructure Task.
+The build-and-deploy work is a **shared tail** of minis — `tdd-red`, `tdd-green`, `tdd-refactor`, `adversarial`, `deploy`. `task-to-deploy` runs `tdd-red`, `tdd-green` and `tdd-refactor`, judged by `suite-run`. It builds from the build contract on the Task, with `infra-intent` in front for an infrastructure Task.
 
 **Deploying and landing are different things, and they happen in that order.** `deploy` puts the code in the AWS dev environment and smoke-checks the deployed endpoints; it opens no pull request and requires none. A run's deploy succeeds when `deployedToDev` and `smokePassed` are both true; a pull request is never evidence that anything was deployed. A smoke failure against the deployed environment re-enters Green, then redeploys and re-smokes, up to `maxDeployIterations` (default 3). Afterwards the composite's **Settle** step lands the work in git — commit, push, PR — on every exit path. The two facts are reported separately: `deployedToDev` for AWS, `settled` / `prUrl` / `landingStage` for git.
 
-The gate is itself a reusable mini, dispatched by `bug-fix`. `gate-enforce` takes a phase artifact, a list of pass criteria, deterministic checks, and a set of escalate targets, and returns one of three verdicts:
+The gate is itself a reusable mini. `gate-enforce` takes a phase artifact, a list of pass criteria, deterministic checks, and a set of escalate targets, and returns one of three verdicts:
 
 - **pass** — every criterion holds. Non-blocking quality concerns ride along as flags, and so does every `competitive` criterion: it is recorded as a flag and never adjudicated. Deterministic checks are measured against the artifact first, and only `constitutive` criteria go to the `phase-gate-enforcer`; a gate with none passes on its checks with no agent session.
 - **loop** — a criterion failed and the cause is inside this phase. The gate returns feedback specific enough to retry without interpretation; the composite re-runs the phase, up to `maxLoops`. With `mode: 'exhaustion'`, `gate-enforce` asks the `advantage-evaluator` to rule a gate whose loops are spent: proceed, or one directed revision.
 - **escalate** — the failure originates upstream (the phase got bad inputs). The gate names which upstream phase it goes back to.
 
 The gate is never the agent that produced the artifact under review.
-
-The composite below is `bug-fix`. Triage runs first and is **not** gated — its read-only contract flows straight into the Red gateLoop, where Gate 2a is the first gate in the composite. Each subsequent phase passes through its own gate. Documentation runs as a parallel track from Green onward and is awaited before the deploy. The run ends at READY — it does not roll out to production.
-
-```mermaid
-graph TD
-  TRI[bug-triage] --> RED[tdd-red]
-  RED --> G_RED{gate-enforce G2a}
-  G_RED --> GRN[tdd-green]
-  GRN --> G_GRN{gate-enforce G2b}
-  G_GRN --> REF[tdd-refactor]
-  REF --> G_REF{gate-enforce G2c}
-  G_REF --> INT[integration]
-  INT --> G_INT{gate-enforce G3}
-  G_INT --> ADV[adversarial]
-  ADV --> G_ADV{gate-enforce G4}
-  G_ADV --> DEP[deploy]
-  DEP --> G_DEP{gate-enforce G5}
-  G_DEP --> READY[READY — no prod rollout]
-
-  DOC[documentation — parallel track] -.- GRN
-  DOC -.- DEP
-
-  G_INT -. escalate .-> TRI
-  G_ADV -. escalate .-> TRI
-```
 
 | Script | Kind | Purpose |
 | --- | --- | --- |
@@ -178,19 +151,15 @@ graph TD
 | `tdd-red` | shared-tail mini | Test writers derived from the contract surfaces (unit always), one after another, write failing tests that encode the acceptance criteria and confirm they fail. In update mode `tdd-unit-test-generator` rules on each test the implementer named: update, delete or keep. |
 | `tdd-green` | shared-tail mini | Writes the minimum production code to pass the failing tests without changing tests; names contradicting tests in `testIssues` and missing things outside the Task in `upstreamMissing`. |
 | `tdd-refactor` | shared-tail mini | One `code-refactoring-specialist` session refactors the changed code without changing behavior, keeps the suite green, and reverts the tree when it cannot; with `restoreTo` one session restores the tree to a recorded snapshot. |
-| `integration` | shared-tail mini | Runs integration/E2E/contract suites and returns a top-level `passed`. |
 | `adversarial` | shared-tail mini | Attack lanes in test environments only; one adjudicator rules each confirmed finding, and the script returns the count of open constitutive findings as `constitutiveOpen`. |
 | `deploy` | shared-tail mini | Authors a smoke suite (or reuses the one passed in), rolls the one repository out to AWS dev, and runs the smoke tests against the deployed endpoints. Never deploys to qa or prod. |
 | `documentation` | cross-cutting mini | Parallel track: audits doc currency and updates stale docs in the worktree before the deploy, so Settle lands them with the code. |
 | `task-to-deploy` | composite | Runs the steps of the Task's step journal (`schemas/pipeline-steps.json`, pipeline `build`), from the first that is not done: Workspace (the Story's branch), Infra Intent (an infrastructure Task), Regression Scope, Baseline, the test agents and a Red check that adds another round when Red does not hold, the implementers and a Green check that adds a test ruling or another round when the suite is not green (each implementer's brief opens with the shared capabilities the Task must use, read with `atw-matrix uses --task`), Reuse Audit (`atw-matrix check-reuse` over the changed files, with `shared-capability-reviewer` ruling each definition the command cannot rule on, a duplicate being a violation; violations sent back to the implementers once, and a violation that remains stops the Task with stage `reuse-violation`), Refactor, CDS Audit (a `web-ui` Task, by the design source selected before the build from the bundles supplied then; the design-source values are `bead_metadata.CDS_DESIGN_SOURCE_BUNDLE`, `CDS_DESIGN_SOURCE_CDS` and `CDS_DESIGN_SOURCE_NONE` from `skills/beads-contract/schemas/bead-metadata.schema.json` — a design-system Task whose artifact now has a bundle builds from it, a bundle Task builds from the newest bundle of its artifact and stops blocked-upstream when none remains: a bundle Task runs the cds plugin's `tools/audit-app.py` over the Task's changes against the supplied bundle, its report verified against the digest the script prints, with `cds:audit-against-system` on what the script cannot rule on; a design-system Task runs `cds:audit-against-system` against the live design system; a Task with no design change runs no audit; violations sent back to the implementers once, the verdict returned as `cdsAudit`), Documentation, then a final green `suite-run`, the regression mapping and its verification, and the commit to the Story branch. No deploy, no pull request. |
 | `deploy-mechanism` | mini | The first agent step of a Story's deploy: one `polyrepo-steward` rules what the Story's repository publishes (a CodeArtifact package and its publish command) and deploys (CDK). Read-only. |
 | `story-deploy-fix` | mini | The fix step of a Story's deploy, run as the child steps of the Story's `deploy:fix` journal step: one `cdk-stack-author` fixes a failed publish, synth, deploy or verification on the Story branch; the changed files are read from git and the synth assertion tests run; the fix is committed. A fix that changes no file returns `no-change`. Never deploys and never re-enters Green. |
-| `bug-triage` | front-end | Read-only: turns a bug bead into a contract — reproduction, root cause, blast radius, acceptance criteria. |
-| `bug-fix` | composite | Stitches `bug-triage` onto the shared tail; owns loop/escalate; ends at readiness, not rollout. |
-
 ### Run modes
 
-A composite runs two ways. **On-demand**, a single call drives one unit of work: `Workflow({ name: 'bug-fix', args: { bead: { id, title, description, repoPath } } })`. **Unattended**, a self-paced `/loop` runs until `bd ready` is empty — each tick claims the next ready bead, routes it to the composite that matches its type, and reports. A bead with no matching composite is skipped and reported, never force-fit into the wrong pipeline.
+A composite runs two ways. **On-demand**, a single call drives one unit of work: `/agent-teams-workforce:work-bead <bead id>` routes one bead to the composite that owns it and dispatches it. **Unattended**, a self-paced `/loop` runs until `bd ready` is empty — each tick claims the next ready bead, routes it to the composite that matches its type, and reports. A bead with no matching composite is skipped and reported, never force-fit into the wrong pipeline.
 
 ### Safety
 
@@ -204,7 +173,7 @@ The names of the `ATW_*` variables below that the plugin's code reads are define
 
 | Variable | Meaning | Required | Reaches |
 |---|---|---|---|
-| `ATW_PR_COMMAND` | Absolute path of an executable that, run inside a worktree as `<cmd> --title T --body B`, pushes the current branch and opens its pull request (a PR that already exists for the branch is success). Exit 0: PR open and auto-merge armed; exit 3: PR open (URL on stdout) but auto-merge not armed, which callers report rather than treat as no PR; any other non-zero: no PR | Yes, for any composite that lands work | `prCommand` on `bug-fix`; the host opens a Story's pull request with it |
+| `ATW_PR_COMMAND` | Absolute path of an executable that, run inside a worktree as `<cmd> --title T --body B`, pushes the current branch and opens its pull request (a PR that already exists for the branch is success). Exit 0: PR open and auto-merge armed; exit 3: PR open (URL on stdout) but auto-merge not armed, which callers report rather than treat as no PR; any other non-zero: no PR | Yes, for any composite that lands work | the host opens a Story's pull request with it |
 | `ATW_ARCH_PATH` (`ARCH_PATH_ENV`) | The architecture directory: the folder holding `reference/` (the architecture documentation model), the effective version in `arc42/` (one folder per section), and the `built/` version | Yes, for elaboration, dependency assessment and scoring | the dispatch argument `archPath` of `prd-to-spec`; `archPath` on `dependency-assessment` and `wsjf-scoring`, which `/dependency-assessment` and `/wsjf-scoring` refuse to dispatch without |
 | `ATW_PRD_DIR` (`PRD_DIR_ENV`) | The directory PRDs live under | Yes, for elaborating an Epic and for the matrix's PRD rows | read by `orchestrator/flows/prd_to_spec.py`, `scripts/portfolio/matrix.py`, `scripts/portfolio/matrixcli.py` |
 | `ATW_CONTROL_REPO` (`CONTROL_REPO_ENV`) | The root repository that holds the tracker — the central beads database every pipeline bead is read and written in; its beads `issue_prefix` is the project's issue prefix | Yes: `atw-bd` and `beads-contract.py` run `bd` against it from any repository or worktree (unset, they fall back to the working directory and warn) | read by `bin/atw-bd`, `skills/beads-contract/scripts/beads_contract.py`, `scripts/portfolio/beadgraph.py`, `skills/polyrepo-beads/scripts/*.sh`, `skills/polyrepo-repo/scripts/polyrepo.py`, `skills/resource-naming/scripts/naming.py` |
@@ -218,7 +187,7 @@ The names of the `ATW_*` variables below that the plugin's code reads are define
 
 ### Status
 
-The shared tail, the `documentation` track, the `gate-enforce` gate, `workspace`, `settle`, the `bug-triage` front-end and the `bug-fix` composite exist as scripts. Elaboration, `prd-to-spec`, runs in the Python orchestrator (`orchestrator/run.py`, with its steps in `orchestrator/flows/`) as a loop over the Epic's step journal, and is not a workflow script. `prd-validation`, `built-version`, and the build composite `task-to-deploy` (with `suite-run`, and `infra-intent` for an infrastructure Task) exist as workflow scripts. `prd-to-spec` does not dispatch `prd-validation`: validation runs on its own.
+The shared tail, the `documentation` track, the `gate-enforce` gate, `workspace` and `settle` exist as scripts. Elaboration, `prd-to-spec`, runs in the Python orchestrator (`orchestrator/run.py`, with its steps in `orchestrator/flows/`) as a loop over the Epic's step journal, and is not a workflow script. `prd-validation`, `built-version`, and the build composite `task-to-deploy` (with `suite-run`, and `infra-intent` for an infrastructure Task) exist as workflow scripts. `prd-to-spec` does not dispatch `prd-validation`: validation runs on its own.
 
 ## The doctrine, principles, and rules
 
@@ -343,7 +312,7 @@ Every unit of work belongs to exactly one of five categories:
 
 **Separation of analysis and decision.** Providing analysis is one task; making a decision from that analysis is a separate task; the two are performed by different agents. No agent both analyzes options and decides among them. In the PRD-to-Spec pipeline this separation is enforced in the architecture step, where `aws-solutions-architect` designs, reviewers who produced none of it check the unapproved content, and `architecture-decider` rules only on what the team could not settle. The effective architecture is a current-state description kept by an execute-category agent (`architecture-maintainer`), never a decision artifact; the `architecture-conformance-reviewer` checks each correction from built the `architecture-maintainer` makes.
 
-**Iteration limits.** A step whose result calls for a correction adds the steps that make and confirm it, and declines to add another when its limit is reached, failing with the cause instead; the limits are stated per step kind in `schemas/pipeline-steps.json`. `task-to-deploy`: a Red check fails with `red-unsatisfied` at the fourth check that does not show Red, and a Green check with `green` at the eighth check since the implementers were selected or an audit sent violations back; either fails with `no-progress` when nothing changed and the suite fails exactly as at the check before. A Story's deploy: a failure after three fixes stops it. `bug-fix`: `maxLoops` (default 2) runs of a gated phase, `maxDeployIterations` (default 3) and `maxSecurityRepairs` (default 2) Gate 4 finding → Green-repair cycles. The architecture step: at most 3 corrections of mechanical defects before review; what a review's finding needs is the lead's routing. A spec document gets one correction for the review's findings and one revision after a ruling, and a Task plan with a gap gets one correction. `built-version`: a review fails the step when the correction does not conform after 2 corrections that answered findings. (The three gate outcomes — pass, loop, escalate — and the constitutive-versus-competitive distinction are described under *How the pipeline is built* above.)
+**Iteration limits.** A step whose result calls for a correction adds the steps that make and confirm it, and declines to add another when its limit is reached, failing with the cause instead; the limits are stated per step kind in `schemas/pipeline-steps.json`. `task-to-deploy`: a Red check fails with `red-unsatisfied` at the fourth check that does not show Red, and a Green check with `green` at the eighth check since the implementers were selected or an audit sent violations back; either fails with `no-progress` when nothing changed and the suite fails exactly as at the check before. A Story's deploy: a failure after three fixes stops it. The architecture step: at most 3 corrections of mechanical defects before review; what a review's finding needs is the lead's routing. A spec document gets one correction for the review's findings and one revision after a ruling, and a Task plan with a gap gets one correction. `built-version`: a review fails the step when the correction does not conform after 2 corrections that answered findings. (The three gate outcomes — pass, loop, escalate — and the constitutive-versus-competitive distinction are described under *How the pipeline is built* above.)
 
 ### Workforce creation rules
 
@@ -359,7 +328,7 @@ Every unit of work belongs to exactly one of five categories:
 
 **Rule 3 — a defined output.** Every worker agent produces a defined output (recommendation memo, architecture option analysis, OpenAPI fragment, documentation draft, schema proposal, implementation patch, review findings, test plan, risk register entry, handoff packet). If an agent produces no defined output, its role should be questioned.
 
-**Rule 4 — independent review only where its verdict can change what gets built.** An output gets an independent reviewer when that reviewer's verdict can change what gets built — send the artifact back, stop the run, or change what the next phase receives. It never gets a second review of a question already decided: a property a deterministic check measures is decided by the check, and no agent re-judges it; a question an earlier reviewer ruled on is not reviewed again downstream. An output no verdict could change has no reviewer, and is still not approved by its author — it is judged where it is used. So the `trd-author` writes the TRD in one pass with no checker; the spec makers author with no reviewer; the Documentation writers have no accuracy reviewer; `task-to-deploy` decides each phase from the exit code `suite-run` returns, with no gate agent; and Gate 4 in `bug-fix` counts the adjudicator's open constitutive findings rather than judging them again. The `architecture-conformance-reviewer` does review each integration of the architecture, because its findings send the integration back to the `architecture-maintainer` for correction. A review whose verdict nothing reads, or that repeats a decided question, does not exist (Rule 12).
+**Rule 4 — independent review only where its verdict can change what gets built.** An output gets an independent reviewer when that reviewer's verdict can change what gets built — send the artifact back, stop the run, or change what the next phase receives. It never gets a second review of a question already decided: a property a deterministic check measures is decided by the check, and no agent re-judges it; a question an earlier reviewer ruled on is not reviewed again downstream. An output no verdict could change has no reviewer, and is still not approved by its author — it is judged where it is used. So the `trd-author` writes the TRD in one pass with no checker; the spec makers author with no reviewer; the Documentation writers have no accuracy reviewer; `task-to-deploy` decides each phase from the exit code `suite-run` returns, with no gate agent; and `adversarial` counts the adjudicator's open constitutive findings rather than judging them again. The `architecture-conformance-reviewer` does review each integration of the architecture, because its findings send the integration back to the `architecture-maintainer` for correction. A review whose verdict nothing reads, or that repeats a decided question, does not exist (Rule 12).
 
 **Rule 5 — agents must state assumptions.** Every substantive output includes Assumptions, Open Questions, Constraints Followed, Constraints at Risk, and Scope Exceptions. This protects against silent ambiguity resolution.
 
@@ -691,7 +660,7 @@ Spec-to-Deploy pipeline, TDD Green — minimum code to pass the failing tests. 2
 
 ### Code Quality — Execution Team
 
-Spec-to-Deploy pipeline, TDD Refactor, run by `bug-fix` — refactor without breaking tests; feeds Gate 2c. 8 agents. `tdd-refactor` dispatches one `code-refactoring-specialist` session. No workflow dispatches `complexity-analyzer`, the optimizers, `code-correctness-reviewer` or `accessibility-validator`.
+Spec-to-Deploy pipeline, TDD Refactor, run by `task-to-deploy` — refactor without breaking tests. 8 agents. `tdd-refactor` dispatches one `code-refactoring-specialist` session. No workflow dispatches `complexity-analyzer`, the optimizers, `code-correctness-reviewer` or `accessibility-validator`.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -706,7 +675,7 @@ Spec-to-Deploy pipeline, TDD Refactor, run by `bug-fix` — refactor without bre
 
 ### Integration Testing — Execution Team
 
-Spec-to-Deploy pipeline, run by `bug-fix` — integration, E2E, and contract runs across the event chain; feeds Gate 3. 9 agents.
+Spec-to-Deploy pipeline — integration, E2E, and contract runs across the event chain. 9 agents. No workflow dispatches this team.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -722,7 +691,7 @@ Spec-to-Deploy pipeline, run by `bug-fix` — integration, E2E, and contract run
 
 ### Adversarial Validation — Execution Team
 
-Spec-to-Deploy pipeline, run by `bug-fix` — authorized adversarial attack on the project's own code; feeds Gate 4, which counts the open constitutive findings in code. 10 agents.
+Spec-to-Deploy pipeline, run by the `adversarial` mini — authorized adversarial attack on the project's own code; the script counts the open constitutive findings. 10 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -901,7 +870,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `data-consistency-checker` | Integration Testing | Execution Team | Worker | Validator | test | Verifies data consistency across services and stores after test runs. | subagent-contract, validation-protocol, dynamodb | Read, Glob, Grep, Bash, Write |
 | `cross-service-contract-tester` | Integration Testing | Execution Team | Worker | Validator | test | Runs contract tests across service and repository boundaries. | subagent-contract, validation-protocol, api-test-suite-builder | Read, Glob, Grep, Bash, Write |
 | `test-environment-orchestrator` | Integration Testing | Execution Team | Worker | Executor | execute | Provisions and resets the integration test environments. | subagent-contract, validation-protocol, senior-devops, aws-mcp-setup | Read, Write, Edit, Glob, Grep, Bash |
-| `root-cause-analyst` | Integration Testing | Execution Team | Worker | Advisor | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step. | subagent-contract, find-cause, test-failure-mindset | Read, Glob, Grep, Write |
+| `root-cause-analyst` | Integration Testing | Execution Team | Worker | Advisor | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. No workflow currently dispatches it. | subagent-contract, find-cause, test-failure-mindset | Read, Glob, Grep, Write |
 | `flaky-test-detector` | Integration Testing | Execution Team | Worker | Validator | test | Identifies intermittent test failures and their root causes | subagent-contract, validation-protocol, test-failure-mindset, find-cause | Read, Glob, Grep, Bash, Write |
 | `cross-repo-integration-test-coordinator` | Integration Testing | Execution Team | Worker | Orchestrator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, SendMessage |
 | `injection-attack-tester` | Adversarial Validation | Execution Team | Worker | Adversary | test | Probes the project's own endpoints for injection paths (SQL, NoSQL, command, template) | subagent-contract, validation-protocol, senior-secops | Read, Glob, Grep, Bash, Write |

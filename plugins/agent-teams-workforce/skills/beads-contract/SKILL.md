@@ -229,8 +229,7 @@ a verdict, never the verdict.
 - **A bug is a REPORTING MECHANISM, not development work.** It records that something is wrong.
 - **A bug is never parented**, so nothing walks its ancestor chain looking for criteria, a spec,
   or an Epic. It has no acceptance criteria and is not expected to.
-- **A bug is never dispatched to a build composite.** `route-build` skips it by name rather than
-  force-fitting it into `bug-fix`.
+- **A bug is never dispatched to a build composite.** `route-build` skips it by name.
 - **A bug is triaged by a PERSON** into an Epic, a Task, or a closure. That is a judgment call, not
   a routing rule, and no agent makes it. There is no triage composite to hand it to.
 

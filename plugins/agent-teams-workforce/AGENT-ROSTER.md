@@ -220,7 +220,7 @@ shown the answer is not a checker.
 | data-consistency-checker | test | Verifies data consistency across services and stores after test runs. |
 | cross-service-contract-tester | test | Runs contract tests across service and repository boundaries. |
 | test-environment-orchestrator | execute | Provisions and resets the integration test environments. |
-| root-cause-analyst | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step; integration no longer dispatches it. |
+| root-cause-analyst | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. No workflow currently dispatches it. |
 | flaky-test-detector | test | Identifies intermittent test failures and their root causes. No workflow currently dispatches it. |
 | cross-repo-integration-test-coordinator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead |
 

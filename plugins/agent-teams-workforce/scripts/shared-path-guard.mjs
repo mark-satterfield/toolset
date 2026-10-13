@@ -137,4 +137,4 @@ export function extractPathGuardBlock(source) {
 }
 
 /** The workflow scripts required to carry the block. */
-export const PATH_GUARD_REQUIRED_IN = Object.freeze(['workspace.js', 'settle.js', 'bug-fix.js'])
+export const PATH_GUARD_REQUIRED_IN = Object.freeze(['workspace.js', 'settle.js'])

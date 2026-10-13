@@ -100,7 +100,6 @@ const DOMAIN_ROUTES = [
     domain: 'Bug diagnosis',
     pattern: /\b(bug|defect|root cause|repro|reproduce|regression|triage)\b/i,
     route: [
-      'Workflow({ scriptPath: ".../workflows/bug-triage.js" })',
       'agent-teams-workforce:root-cause-analyst — reproduces a defect and diagnoses its root cause',
     ],
   },

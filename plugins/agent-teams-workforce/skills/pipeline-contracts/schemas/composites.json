@@ -46,23 +46,6 @@
         {"id": "commit", "title": "Commit"}
       ]
     },
-    "bug-fix": {
-      "runner": "workflow",
-      "openingKind": "task",
-      "sets": ["target-repo", "code-build", "bug"],
-      "phases": [
-        {"id": "workspace", "title": "Workspace"},
-        {"id": "triage", "title": "Triage"},
-        {"id": "red", "title": "Red"},
-        {"id": "green", "title": "Green"},
-        {"id": "refactor", "title": "Refactor"},
-        {"id": "integration", "title": "Integration"},
-        {"id": "adversarial", "title": "Adversarial"},
-        {"id": "deploy-to-dev", "title": "Deploy-to-dev"},
-        {"id": "settle", "title": "Settle"},
-        {"id": "run-ledger", "title": "Run Ledger"}
-      ]
-    },
     "story-deploy": {
       "runner": "driver",
       "sets": ["story"],

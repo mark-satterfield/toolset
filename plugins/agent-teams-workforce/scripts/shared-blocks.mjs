@@ -69,8 +69,6 @@ export const SHARED_BLOCKS = Object.freeze([
     filledFrom: 'skills/pipeline-contracts/schemas/driver-surface.schema.json',
     requiredIn: [
       'adversarial.js',
-      'bug-fix.js',
-      'bug-triage.js',
       'built-version.js',
       'dependency-assessment.js',
       'deploy-mechanism.js',
@@ -78,7 +76,6 @@ export const SHARED_BLOCKS = Object.freeze([
       'documentation.js',
       'gate-enforce.js',
       'infra-intent.js',
-      'integration.js',
       'prd-creation.js',
       'prd-validation.js',
       'settle.js',
@@ -98,11 +95,9 @@ export const SHARED_BLOCKS = Object.freeze([
     canonical: 'scripts/shared-blocks/relay.js',
     filledFrom: 'skills/artifact-handoff/schemas/checkpoint.schema.json',
     requiredIn: [
-      'bug-fix.js',
       'built-version.js',
       'dependency-assessment.js',
       'deploy.js',
-      'integration.js',
       'prd-validation.js',
       'settle.js',
       'story-deploy-fix.js',

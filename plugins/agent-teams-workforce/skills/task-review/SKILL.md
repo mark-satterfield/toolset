@@ -79,9 +79,8 @@ Both dimensions are **blocking** at every class: a ❌ makes the item INCOMPLETE
 
 Consumed by: `workflows/route-build.js` and `workflows/route-elaboration.js` — each renders
 `bead.description` into the routing prompt that decides which composite the item is
-dispatched to; `workflows/bug-triage.js` renders it into the reproduction and root-cause
-prompts that produce the bug's implementation contract. A description that does not state
-the problem sends those routers into a guess.
+dispatched to. A description that does not state the problem sends those routers into a
+guess.
 
 Is the problem or intent stated clearly enough that an engineer could begin design without
 asking questions?
@@ -94,7 +93,7 @@ asking questions?
 
 Consumed by: `workflows/tdd-red.js` — it reads `contract.acceptanceCriteria` and derives
 the failing tests from it. `workflows/task-to-deploy.js` carries them onto the
-contract; `workflows/bug-triage.js` authors the equivalent contract for a bug. An item with
+contract. An item with
 no verifiable pass condition gives the Red phase nothing to encode.
 
 Judge **verifiability, not notation.** Criteria are ✅ when they state an unambiguous pass

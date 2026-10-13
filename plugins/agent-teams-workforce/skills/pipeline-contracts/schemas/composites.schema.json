@@ -90,7 +90,6 @@
         "repo-required",
         "design-aware",
         "elaboration",
-        "bug",
         "story",
         "attaching",
         "former-trigger"
@@ -108,8 +107,7 @@
           "former-trigger": "FORMER_TRIGGER"
         },
         "singles": {
-          "elaboration": "ELABORATION_COMPOSITE",
-          "bug": "BUG_COMPOSITE"
+          "elaboration": "ELABORATION_COMPOSITE"
         },
         "known": "KNOWN",
         "retired": "RETIRED"
