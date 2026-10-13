@@ -13,7 +13,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-standard-event, agent-teams-workforce:artifact-handoff, agent-teams-workforce:architecture-baseline]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:architecture-baseline]
 effort: low
 epicExpertise: at-launch
 isolation: worktree
@@ -54,7 +54,7 @@ shapes are settled in these documents, so check that each detail is present, exa
 wherever the three documents and the TRD state it.
 
 - I1, I3, I4 and I5 are met by the contracts document. For an event, check the values passed to
-  the shared-events-service API against the skillspoke-standard-event skill.
+  the shared-events-service API against the skillspoke-events skill.
 - I2 is met by the data-model document, and I4 for the names it states.
 - I6: compare the producer's side and the consumer's side of each contract where both are in the
   documents you were given.

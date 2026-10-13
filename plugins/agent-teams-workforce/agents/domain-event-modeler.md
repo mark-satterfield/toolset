@@ -16,7 +16,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:architecture-baseline
-- agent-teams-workforce:skillspoke-standard-event
+- agent-teams-workforce:skillspoke-events
 effort: medium
 epicExpertise: at-launch
 isolation: worktree
@@ -25,7 +25,7 @@ color: cyan
 
 ## Specialty
 
-Read the skillspoke-standard-event skill before work. Model domain events as facts: which fact
+Read the skillspoke-events skill before work. Model domain events as facts: which fact
 each event states, the bounded context and aggregate that owns it, what triggers it, and the
 causal flow it belongs to. Name the business meaning of the data an event carries; the event type
 name is event-schema-designer's, and the values passed to the shared-events-service API and the

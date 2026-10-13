@@ -15,7 +15,7 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:artifact-handoff
-- agent-teams-workforce:skillspoke-standard-event
+- agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:architecture-baseline
 effort: medium
 epicExpertise: at-launch
@@ -37,7 +37,7 @@ Never expose secrets, edit section 2, or touch apps/marketing repositories.
 Read PRD, TRD, approved architecture and the items placed in this repository. Specify every
 placed item and only that scope: endpoints/methods, request/response fields and validation,
 authorizers, events, errors and failure behavior. Specify each event as the
-skillspoke-standard-event skill describes: its event type name, the values the publishing service
+skillspoke-events skill describes: its event type name, the values the publishing service
 passes to the shared-events-service API, its payload schema when it has a payload, and its
 publisher, consumers and delivery/failure behavior. Derive
 from the approved design; do not search code to decide which work can be omitted. Write nonempty

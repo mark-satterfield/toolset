@@ -17,7 +17,7 @@ skills:
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:eventbridge
 - agent-teams-workforce:architecture-baseline
-- agent-teams-workforce:skillspoke-standard-event
+- agent-teams-workforce:skillspoke-events
 effort: medium
 epicExpertise: at-launch
 isolation: worktree
@@ -26,7 +26,7 @@ color: cyan
 
 ## Specialty
 
-Read the skillspoke-standard-event skill before work. For each event the design needs, define its
+Read the skillspoke-events skill before work. For each event the design needs, define its
 event type name, per the event naming standard that skill points to, the fact it states, its
 publisher, its consumers and its delivery path, with what happens when delivery fails. The values
 passed to the shared-events-service API, the payload schema and its schema version are
