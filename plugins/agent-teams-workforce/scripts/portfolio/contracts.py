@@ -9,21 +9,8 @@ from typing import Literal, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-# The architecture baseline types are generated from the artifact-handoff survey schema, their one definition.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff"))
 # The architecture change values are generated from the target report schema, their one definition.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-
-# isort: split
-from survey_contract import BaselineCode, BaselineDocument, BaselineEntry, EvidenceRef
-
-__all__ = [
-    "BaselineCode",
-    "BaselineDocument",
-    "BaselineEntry",
-    "EvidenceRef",
-    "SealForm",
-]
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type JsonObject = dict[str, JsonValue]

@@ -109,7 +109,7 @@ PHASE_KEY: Final = re.compile(rf"^({TRD_PHASE}|{SPEC_PHASE_PREFIX}[a-zA-Z0-9._-]
 
 type EventName = Literal["phase", "verdict", "session", "heartbeat", "note", "fable-wall"]
 type SessionState = Literal["started", "ended"]
-type NoteKind = Literal["rounds-warning", "invalidated", "integration-outside", "warning"]
+type NoteKind = Literal["warning"]
 type PrdToSpecPhase = Literal[
     "architecture",
     "trd-authoring",
@@ -134,9 +134,6 @@ SESSION_STARTED: Final = "started"
 SESSION_ENDED: Final = "ended"
 SESSION_STATES: Final[frozenset[SessionState]] = frozenset(get_args(SessionState.__value__))
 
-ROUNDS_WARNING_NOTE: Final = "rounds-warning"
-INVALIDATED_NOTE: Final = "invalidated"
-INTEGRATION_OUTSIDE_NOTE: Final = "integration-outside"
 WARNING_NOTE: Final = "warning"
 NOTE_KINDS: Final[frozenset[NoteKind]] = frozenset(get_args(NoteKind.__value__))
 
@@ -284,33 +281,6 @@ class HeartbeatEvent(TypedDict):
     at: float
 
 
-class RoundsWarningNote(TypedDict):
-    """Architecture review rounds are running long; ``drivers`` are the open findings."""
-
-    event: Literal["note"]
-    kind: Literal["rounds-warning"]
-    phase: str
-    rounds: int
-    drivers: list[JsonValue]
-
-
-class InvalidatedNote(TypedDict):
-    """A saved step output was set aside and will be produced again."""
-
-    event: Literal["note"]
-    kind: Literal["invalidated"]
-    step: str
-    path: str
-
-
-class IntegrationOutsideNote(TypedDict):
-    """Architecture integration wrote files outside the allowed set."""
-
-    event: Literal["note"]
-    kind: Literal["integration-outside"]
-    files: list[JsonValue]
-
-
 class WarningNote(TypedDict):
     """A step finished, but a non-fatal problem in ``step`` is reported in ``detail``."""
 
@@ -328,7 +298,7 @@ class FableWallEvent(TypedDict):
     window: str | None
 
 
-type NoteEvent = RoundsWarningNote | InvalidatedNote | IntegrationOutsideNote | WarningNote
+type NoteEvent = WarningNote
 type OrchestratorEvent = PhaseEvent | VerdictEvent | SessionEvent | HeartbeatEvent | NoteEvent | FableWallEvent
 
 _EVENT_SHAPES: Final[Mapping[str, object]] = {
@@ -339,9 +309,6 @@ _EVENT_SHAPES: Final[Mapping[str, object]] = {
     FABLE_WALL_EVENT: FableWallEvent,
 }
 _NOTE_SHAPES: Final[Mapping[str, object]] = {
-    ROUNDS_WARNING_NOTE: RoundsWarningNote,
-    INVALIDATED_NOTE: InvalidatedNote,
-    INTEGRATION_OUTSIDE_NOTE: IntegrationOutsideNote,
     WARNING_NOTE: WarningNote,
 }
 
@@ -1003,48 +970,6 @@ def heartbeat_event(live: list[str], at: float) -> HeartbeatEvent:
 
     """
     event: HeartbeatEvent = {"event": HEARTBEAT_EVENT, "live": list(live), "at": at}
-    validate_event(event)
-    return event
-
-
-def rounds_warning_note(phase: str, rounds: int, drivers: list[JsonValue]) -> RoundsWarningNote:
-    """Build a validated ``rounds-warning`` note.
-
-    Returns:
-        The note. A violation raises ``HandbackValidationError``.
-
-    """
-    event: RoundsWarningNote = {
-        "event": NOTE_EVENT,
-        "kind": ROUNDS_WARNING_NOTE,
-        "phase": phase,
-        "rounds": rounds,
-        "drivers": list(drivers),
-    }
-    validate_event(event)
-    return event
-
-
-def invalidated_note(step: str, path: str) -> InvalidatedNote:
-    """Build a validated ``invalidated`` note.
-
-    Returns:
-        The note. A violation raises ``HandbackValidationError``.
-
-    """
-    event: InvalidatedNote = {"event": NOTE_EVENT, "kind": INVALIDATED_NOTE, "step": step, "path": path}
-    validate_event(event)
-    return event
-
-
-def integration_outside_note(files: list[JsonValue]) -> IntegrationOutsideNote:
-    """Build a validated ``integration-outside`` note.
-
-    Returns:
-        The note. A violation raises ``HandbackValidationError``.
-
-    """
-    event: IntegrationOutsideNote = {"event": NOTE_EVENT, "kind": INTEGRATION_OUTSIDE_NOTE, "files": list(files)}
     validate_event(event)
     return event
 

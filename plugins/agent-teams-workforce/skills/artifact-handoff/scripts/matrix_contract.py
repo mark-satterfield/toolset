@@ -49,7 +49,6 @@ type ApprovalState = Literal["unverified", "in-review", "approved", "changed-sin
 type ApprovalBasis = Literal["reviewed", "carried-from-effective-arc42", "built-correction"]
 type CodeState = Literal["none", "legacy", "built", "deployed"]
 type Status = Literal["expected", "deferred", "retired", "deprecated", "no-stack", "not-deployed", "unregistered"]
-type RepositoryRole = Literal["service", "shared-library", "layer", "infrastructure", "web", "tooling", "documentation"]
 type Coverage = Literal["not-assessed", "in-progress", "designed", "approved"]
 type FeatureType = Literal["prd", "supporting"]
 type DocumentClass = Literal["arc42", "reference", "trd", "spec", "other"]
@@ -123,13 +122,6 @@ STATUS_DEPRECATED: Final[Literal["deprecated"]] = "deprecated"
 STATUS_NO_STACK: Final[Literal["no-stack"]] = "no-stack"
 STATUS_NOT_DEPLOYED: Final[Literal["not-deployed"]] = "not-deployed"
 STATUS_UNREGISTERED: Final[Literal["unregistered"]] = "unregistered"
-REPOSITORY_ROLE_SERVICE: Final[Literal["service"]] = "service"
-REPOSITORY_ROLE_SHARED_LIBRARY: Final[Literal["shared-library"]] = "shared-library"
-REPOSITORY_ROLE_LAYER: Final[Literal["layer"]] = "layer"
-REPOSITORY_ROLE_INFRASTRUCTURE: Final[Literal["infrastructure"]] = "infrastructure"
-REPOSITORY_ROLE_WEB: Final[Literal["web"]] = "web"
-REPOSITORY_ROLE_TOOLING: Final[Literal["tooling"]] = "tooling"
-REPOSITORY_ROLE_DOCUMENTATION: Final[Literal["documentation"]] = "documentation"
 COVERAGE_NOT_ASSESSED: Final[Literal["not-assessed"]] = "not-assessed"
 COVERAGE_IN_PROGRESS: Final[Literal["in-progress"]] = "in-progress"
 COVERAGE_DESIGNED: Final[Literal["designed"]] = "designed"
@@ -233,15 +225,6 @@ STATUSES: Final[tuple[Status, ...]] = (
     STATUS_NO_STACK,
     STATUS_NOT_DEPLOYED,
     STATUS_UNREGISTERED,
-)
-REPOSITORY_ROLES: Final[tuple[RepositoryRole, ...]] = (
-    REPOSITORY_ROLE_SERVICE,
-    REPOSITORY_ROLE_SHARED_LIBRARY,
-    REPOSITORY_ROLE_LAYER,
-    REPOSITORY_ROLE_INFRASTRUCTURE,
-    REPOSITORY_ROLE_WEB,
-    REPOSITORY_ROLE_TOOLING,
-    REPOSITORY_ROLE_DOCUMENTATION,
 )
 COVERAGES: Final[tuple[Coverage, ...]] = (
     COVERAGE_NOT_ASSESSED,
@@ -509,8 +492,6 @@ class Node(TypedDict):
     shared: NotRequired[bool]
     status: NotRequired[Status]
     code: NotRequired[Code]
-    repositoryRole: NotRequired[RepositoryRole]
-    holdsCode: NotRequired[bool]
     bead: NotRequired[str]
     path: NotRequired[str]
     hash: NotRequired[str]

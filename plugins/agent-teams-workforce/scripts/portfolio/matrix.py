@@ -10,8 +10,8 @@ variable names another.
 Every sub-command prints one JSON object on stdout. The read sub-commands (``prd``, ``find``,
 ``node``, ``uses``, ``disagreements``, ``summary``) answer from the file and change nothing.
 ``check`` reports every way the file fails its contract. ``sync-prds`` and ``sync-documents``
-bring the file up to date with beads and the vault. ``carry-over`` builds the file once from the
-element matrix. ``matrixcli`` holds the sub-commands that record a design (``put``, ``link``,
+bring the file up to date with beads and the vault. ``matrixcli`` holds the sub-commands that
+record a design (``put``, ``link``,
 ``claim``, ``settle``, ``note-sendback``, ``add-resource-type``, ``expertise``), open and close
 its review (``unapproved``, ``approve``), mark what was built (``mark-built``,
 ``mark-deployed``, ``mark-merged``) and check reuse (``check-reuse``). The schema's command
@@ -38,15 +38,13 @@ from matrix_contract import (
     KIND_PRD,
     KINDS,
     Claim,
-    DocumentsSyncedAt,
     Kind,
     Matrix,
     MatrixError,
     Node,
     NodeId,
 )
-from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome, decoded_file
-from matrixcarry import CarryReport, CarrySources, carry_over, parse_inventory, parse_old_matrix, parse_type_map
+from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome
 from matrixcli import COMMANDS as DESIGN_COMMANDS
 from matrixcli import add_parsers, elements_of_task
 from matrixquery import (
@@ -62,13 +60,11 @@ from matrixquery import (
     words,
 )
 from matrixstore import (
-    CHANGED_BY_CARRY_OVER,
     CHANGED_BY_SYNC,
     CONTROL_REPO_FALLBACK_ENV,
     DEFAULT_LOCK_WAIT,
     MatrixRefusedError,
     Stamp,
-    create_matrix,
     file_problems,
     make_id,
     read_matrix,
@@ -78,20 +74,15 @@ from matrixstore import (
     update_matrix,
 )
 from matrixsync import (
-    DocumentRead,
     DocumentsSynced,
     Epic,
     PrdsSynced,
-    VaultChange,
     hold_for_review,
     parse_epics,
-    read_documents,
     read_epics,
     sync_documents,
     sync_prds,
-    vault_change,
     vault_problems,
-    vault_root,
 )
 
 KIND_SEPARATOR: Final = ","
@@ -316,35 +307,6 @@ def _run_sync_documents(call: Call) -> Outcome:
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
 
-def _run_carry_over(call: Call) -> Outcome:
-    """Run ``carry-over``.
-
-    Returns:
-        The account of what became of every part of the element matrix.
-
-    """
-    arch: Path = call.required_folder("arch", [ARCH_PATH_ENV])
-    inventory: str | None = call.text("inventory")
-    sources: CarrySources = CarrySources(
-        old=parse_old_matrix(decoded_file(Path(call.required("source")).expanduser(), "the element matrix")),
-        types=parse_type_map(decoded_file(Path(call.required("type_map")).expanduser(), "the mapping file")),
-        inventory=None
-        if inventory is None
-        else parse_inventory(decoded_file(Path(inventory).expanduser(), "the repository inventory")),
-    )
-    vault: Path = vault_root(arch)
-    stamp: Stamp = Stamp(timestamp(), CHANGED_BY_CARRY_OVER)
-    never: DocumentsSyncedAt = {"vaultCommit": "", "at": stamp.at, "dirtyPaths": []}
-    state: VaultChange = vault_change(vault, arch, never, full=True)
-    documents: list[DocumentRead] = read_documents(vault, arch)
-    synced: DocumentsSyncedAt = {"vaultCommit": state.commit, "at": stamp.at, "dirtyPaths": list(state.dirty)}
-    matrix: Matrix
-    report: CarryReport
-    matrix, report = carry_over(sources, documents, synced, stamp)
-    create_matrix(call.matrix(), matrix, replace=call.flag("replace"), wait=call.lock_wait())
-    return Outcome(report)
-
-
 COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "prd": _run_prd,
     "find": _run_find,
@@ -355,7 +317,6 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "check": _run_check,
     "sync-prds": _run_sync_prds,
     "sync-documents": _run_sync_documents,
-    "carry-over": _run_carry_over,
     **DESIGN_COMMANDS,
 }
 """Every sub-command, by the name the schema's command table gives it."""
@@ -427,15 +388,6 @@ def _parser() -> argparse.ArgumentParser:
     documents.add_argument("--bead", help="the Epic that changed the documents; its review then finds the changes")
     documents.add_argument("--step", help="the journal step id of the session that asks")
     documents.add_argument("--full", action="store_true", help="read every document whatever git reports")
-    carry: argparse.ArgumentParser = commands.add_parser(
-        "carry-over",
-        parents=[where, arch],
-        help="build the matrix once from the element matrix and the vault",
-    )
-    carry.add_argument("--source", required=True, help="the element matrix file")
-    carry.add_argument("--type-map", required=True, help="the mapping file from resource type spellings")
-    carry.add_argument("--inventory", help="a file holding what `polyrepo inventory` printed")
-    carry.add_argument("--replace", action="store_true", help="replace a matrix file that already exists")
     add_parsers(commands, where, arch, who)
     return parser
 

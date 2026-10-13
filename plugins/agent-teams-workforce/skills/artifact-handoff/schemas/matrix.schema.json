@@ -15,7 +15,7 @@
     "repository-steward": ["repository", "stack"]
   },
   "x-putFields": {
-    "repository": ["name", "aliases", "purpose", "status", "repositoryRole", "holdsCode"],
+    "repository": ["name", "aliases", "purpose", "status"],
     "stack": ["name", "aliases", "purpose", "repository", "status"],
     "service": ["name", "aliases", "purpose", "status"],
     "component": ["name", "aliases", "purpose", "repository", "stack", "resourceType", "shared", "status"],
@@ -110,8 +110,7 @@
     "mark-merged": {"writes": true, "roles": ["build-driver"]},
     "check-reuse": {"writes": false, "roles": ["build-workflow"]},
     "story-built": {"writes": false, "anyRole": true},
-    "add-resource-type": {"writes": true, "roles": ["solutions-architect"]},
-    "carry-over": {"writes": true, "roles": ["operator"]}
+    "add-resource-type": {"writes": true, "roles": ["solutions-architect"]}
   },
   "type": "object",
   "additionalProperties": false,
@@ -165,10 +164,6 @@
       "enum": ["none", "legacy", "built", "deployed"]
     },
     "status": {"enum": ["expected", "deferred", "retired", "deprecated", "no-stack", "not-deployed", "unregistered"]},
-    "repositoryRole": {
-      "description": "What a repository is for.",
-      "enum": ["service", "shared-library", "layer", "infrastructure", "web", "tooling", "documentation"]
-    },
     "coverage": {"enum": ["not-assessed", "in-progress", "designed", "approved"]},
     "featureType": {"enum": ["prd", "supporting"]},
     "documentClass": {"enum": ["arc42", "reference", "trd", "spec", "other"]},
@@ -302,8 +297,6 @@
         "shared": {"type": "boolean"},
         "status": {"$ref": "#/$defs/status"},
         "code": {"$ref": "#/$defs/Code"},
-        "repositoryRole": {"description": "What the repository is for.", "$ref": "#/$defs/repositoryRole"},
-        "holdsCode": {"description": "Whether the repository holds code, as the repository steward records it. The code-trust marker is code.", "type": "boolean"},
 
         "bead": {"type": "string"},
         "path": {"type": "string"},

@@ -6,7 +6,7 @@ the caller or the environment names another). Its shape is defined once, in
 here comes from ``matrix_contract``, the module generated from that schema.
 
 This module and the modules beside it that build on it (``matrixquery``, ``matrixsync``,
-``matrixcarry``, and the command ``matrix``) are the only readers and writers of a matrix file.
+and the command ``matrix``) are the only readers and writers of a matrix file.
 Every change is one read-modify-write under an exclusive lock (:func:`update_matrix`), written to
 a temporary file in the matrix's directory and moved into place, and every document read or
 written is validated. A read takes no lock: a write replaces the file in one move.
@@ -83,7 +83,6 @@ CONTROL_REPO_FALLBACK_ENV: Final = "SKILLSPOKE_CC"
 ID_SEPARATOR: Final = ":"
 PART_SEPARATOR: Final = "/"
 CHANGED_BY_SYNC: Final = "sync"
-CHANGED_BY_CARRY_OVER: Final = "carry-over"
 
 
 class MatrixRefusedError(MatrixError):

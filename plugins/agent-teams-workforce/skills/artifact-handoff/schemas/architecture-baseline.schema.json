@@ -1,5 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The architecture baseline is defined once, as survey.schema.json#/$defs/Baseline. Load it through survey_contract.baseline_schema().",
-  "$ref": "survey.schema.json#/$defs/Baseline"
-}

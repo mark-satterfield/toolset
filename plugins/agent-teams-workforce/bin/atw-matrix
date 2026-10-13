@@ -4,7 +4,7 @@
 # documents, design facts and disagreements relate, with the approval marker and the code-trust
 # marker.
 #   reads:   prd, find, node, uses, disagreements, summary, check, check-reuse, story-built
-#   syncs:   sync-prds, sync-documents, carry-over
+#   syncs:   sync-prds, sync-documents
 #   design:  put, link, claim, settle, note-sendback, add-resource-type, expertise
 #   review:  unapproved, approve
 #   code:    mark-built, mark-deployed, mark-merged

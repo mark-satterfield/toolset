@@ -76,16 +76,6 @@ class Call:
         """
         return getattr(self.args, name, False) is True
 
-    def choice(self, name: str) -> bool | None:
-        """Read an option stated as ``--<name>`` or ``--no-<name>``.
-
-        Returns:
-            True or False as stated, or None when neither was given.
-
-        """
-        value: object = getattr(self.args, name, None)
-        return value if isinstance(value, bool) else None
-
     def texts(self, name: str) -> list[str]:
         """Read an option that takes several strings.
 

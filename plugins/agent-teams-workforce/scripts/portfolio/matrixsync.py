@@ -35,7 +35,6 @@ from matrix_contract import (
     APPROVAL_APPROVED,
     APPROVAL_CHANGED_SINCE_APPROVAL,
     APPROVAL_UNVERIFIED,
-    BASIS_CARRIED_FROM_EFFECTIVE_ARC42,
     COVERAGE_NOT_ASSESSED,
     DISAGREEMENT_APPLIED,
     DISAGREEMENT_SETTLED,
@@ -580,20 +579,14 @@ def _merged_headings(read: DocumentRead, existing: Mapping[str, HeadingHash]) ->
     return merged
 
 
-def _new_document(read: DocumentRead, stamp: Stamp, *, carried: bool) -> Node:
+def _new_document(read: DocumentRead, stamp: Stamp) -> Node:
     """Build the row of a document the matrix does not hold yet.
 
     Returns:
-        The row. A carried effective document is approved with every heading's present hash; any
-        other new document is unverified with no approved hash.
+        The row: unverified, with no approved hash.
 
     """
-    approved: bool = carried and read.lifecycle == LIFECYCLE_EFFECTIVE
-    approval: Approval = (
-        {"state": APPROVAL_APPROVED, "basis": BASIS_CARRIED_FROM_EFFECTIVE_ARC42, "at": stamp.at}
-        if approved
-        else {"state": APPROVAL_UNVERIFIED}
-    )
+    approval: Approval = {"state": APPROVAL_UNVERIFIED}
     return {
         "id": make_id(KIND_DOCUMENT, read.path),
         "kind": KIND_DOCUMENT,
@@ -607,9 +600,7 @@ def _new_document(read: DocumentRead, stamp: Stamp, *, carried: bool) -> Node:
         "scope": read.scope,
         "subject": read.subject,
         "lifecycle": read.lifecycle,
-        "headings": {
-            key: {"hash": value, "approvedHash": value if approved else None} for key, value in read.headings.items()
-        },
+        "headings": {key: {"hash": value, "approvedHash": None} for key, value in read.headings.items()},
         "approval": approval,
     }
 
@@ -763,8 +754,6 @@ def apply_documents(
     documents: Sequence[DocumentRead],
     paths: Sequence[str],
     stamp: Stamp,
-    *,
-    carried: bool = False,
 ) -> DocumentsSynced:
     """Correct the document rows of the matrix from documents already read.
 
@@ -774,8 +763,6 @@ def apply_documents(
         paths: Every path that was looked at; a path with no document among ``documents`` no
             longer exists, and its row is retired.
         stamp: The moment and the maker to record on each changed row.
-        carried: Whether a new effective document is recorded as approved, as the carry-over
-            does. An ordinary read records a new document as unverified.
 
     Returns:
         What was added, changed and retired, and the headings that no longer match the hash
@@ -803,7 +790,7 @@ def apply_documents(
         document: DocumentRead | None = read.get(path)
         if path not in rows:
             if document is not None:
-                matrix["nodes"][make_id(KIND_DOCUMENT, path)] = _new_document(document, stamp, carried=carried)
+                matrix["nodes"][make_id(KIND_DOCUMENT, path)] = _new_document(document, stamp)
                 result["added"].append(path)
             continue
         if _apply_document(rows[path], document, stamp):
