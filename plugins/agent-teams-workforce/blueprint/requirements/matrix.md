@@ -1,8 +1,8 @@
 # The matrix: requirements
 
 The matrix is the one record of how Epics and their PRDs, features, technical requirements
-and constraints, architecture documents, services, components, infrastructure, stacks and
-repositories relate to each other. This document states what the matrix must do and why. How
+and constraints, architecture documents, services, components, infrastructure, stacks, apps,
+packages, layers and repositories relate to each other. This document states what the matrix must do and why. How
 it is stored, read and written belongs in `blueprint/design/matrix.md`.
 
 ## 1. Purpose
@@ -63,6 +63,8 @@ Each question below is answered from the matrix alone, without reading documents
 | Q12 | Which repositories are relevant to this Epic? | The set of repositories, each with the stacks that make it relevant and the features that lead to them. |
 | Q13 | What is missing for this Epic? | Requirements with no feature, features with no covering document, and described services, components and infrastructure with no stack. |
 | Q14 | Which of this is proved by a build? | For each piece of information, verified or not verified. |
+| Q15 | Which shared libraries does this stack's code use, and through which distribution (package, layer) does each reach it? | A list of libraries, each with the distribution that brings it to this stack's code. |
+| Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
@@ -80,12 +82,15 @@ This list is not complete.
 
 | Kind | What one is |
 |---|---|
-| Epic and PRD | One Epic, by its beads id, together with its PRD. |
+| Epic and PRD | One Epic, by its beads id, together with its PRD. Every Epic and its PRD is in the matrix. |
 | Feature | One capability. PRD requirements become features; a feature is what connects a PRD to architecture. |
 | Technical requirement or constraint | One obligation that architecture places on a design, including one that comes from an arc42 document other than the one that describes the feature. |
 | Architecture document | One arc42 document. |
 | Service, component, infrastructure | One thing the architecture documents describe. |
 | Stack | The home in code of services, components and infrastructure. The primary reference point for everything implemented. |
+| App | One sub-folder of the project's apps directory. The scope a stack belongs to. An attribute of a stack. |
+| Package | One Python package: a custom library published to CodeArtifact, or a third-party package. |
+| Layer | One AWS Lambda layer. It contains packages and is used by Lambdas. |
 | Repository | Where a stack's source can currently be found. An attribute of a stack. |
 
 ### 3.2 The relationships
@@ -100,6 +105,10 @@ Any kind can relate to many of any other. That is why it is a matrix.
 - A stack uses other stacks. Example: a service's Lambdas include the chassis, which uses
   the events service client, which uses the shared API client library.
 - A stack has one repository at a time. A repository can hold several stacks.
+- A stack belongs to exactly one app. An app has many stacks.
+- A layer contains several packages. A package can be in several layers, and a custom
+  library can be in none.
+- A Lambda uses several layers. A layer is used by several Lambdas.
 
 ### 3.3 What is recorded about a stack
 
@@ -110,17 +119,57 @@ Any kind can relate to many of any other. That is why it is a matrix.
   errors and retries with backoff.
 - Its type: the last token of its name, as the naming conventions document defines it
   (service, infra, lib, mobile, web and so on).
+- Its app: the one app it belongs to (section 3.4).
+- Its execution use (section 3.4).
 - Its repository.
-- What it uses.
+- What it uses, and for each shared library it uses, the distribution through which that
+  library reaches its code (section 3.4).
 
-### 3.4 Two kinds of trust
+### 3.4 Scope, execution use and distribution
+
+Three facts are separate from a stack's type and from each other.
+
+**Scope.** Which app a stack belongs to. Every stack belongs to exactly one app. The apps
+are the sub-folders of the project's apps directory:
+
+| App | What it holds |
+|---|---|
+| `employer` | A future use case. |
+| `marketing` | The marketing web site and marketing-specific stacks. |
+| `personal-agent` | The core product. An alias of the SkillSpoke app. |
+| `shared` | What is not specific to any one application and is intended for reuse by several. It is enterprise-wide in scope. |
+
+`shared` is recorded as the stack's app, the same way as the other three. "Shared" is a
+scope.
+
+**Execution use.** Whether a thing is executable or callable (a service, a Lambda) or is
+shared code that other code imports (a library). "Library" is an execution use.
+
+**Distribution.** How shared code reaches the code that uses it. A custom Python library is
+always published as a package to CodeArtifact. It may also be deployed as an AWS Lambda
+layer. "Layer" is a distribution method.
+
+Packages and layers relate as follows:
+
+- Every custom Python library is a CodeArtifact package.
+- Some custom libraries have no Lambda layer of their own.
+- One layer can contain several packages.
+- A layer can contain only third-party packages.
+
+So libraries and layers relate many-to-many. A layer is recorded as its own thing, which
+contains packages and is used by Lambdas.
+
+### 3.5 Two kinds of trust
 
 **Architecture.** An arc42 document that is effective is approved and can be trusted as of
 the moment it is read. That says nothing about whether it covers the PRD in hand: the same
 document may need additions as the next feature is designed.
 
-**Implementation.** Code is verified only when a build pipeline has proved that it exists
-and passes its tests. Until then existing code is a hint, and a difference between code and
+**Implementation.** A piece of information about implementation is verified when the code
+has been built and tested and has passed. That always includes its CI/CD and its CDK. This
+is the whole definition. Whether something is currently deployed is not recorded and has no
+bearing on verified: the environment is a development environment where stacks are deployed
+and torn down freely. Until code is verified it is a hint, and a difference between code and
 an arc42 document is not a finding.
 
 ## 4. How the matrix is kept
@@ -129,7 +178,7 @@ an arc42 document is not a finding.
 |---|---|---|
 | Seeded | The matrix starts with what is known today: every existing stack and the repository that holds it; the purpose of each stack; every Epic and its PRD; the services, components and infrastructure the architecture documents describe, mapped to the stacks and repositories that are their home in code. | The seeding work, once, from the repositories, beads and the effective arc42 documents. |
 | Filled in and corrected | As elaboration runs: the features derived from PRD requirements; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
-| Confirmed | Information is marked verified once the code is tested and passes. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
+| Confirmed | Information is marked verified once the code, including its CI/CD and its CDK, has been built and tested and has passed. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
 ## 5. Requirements
@@ -149,8 +198,11 @@ an arc42 document is not a finding.
 
 ### What is recorded
 
-- **R6.** The matrix records each Epic by its beads id together with its PRD. The beads id
-  is how every pipeline run names the Epic it is working.
+- **R6.** The matrix records every Epic by its beads id together with its PRD. The beads id
+  is how every pipeline run names the Epic it is working. An Epic closes only after a human
+  has tested it and signed off. No Epic has completed elaboration with all of its Tasks
+  built, and none is signed off, so a closed Epic in beads is one created in error and is
+  not in the matrix.
 - **R7.** The matrix records features as things in their own right, each once, linked to
   every PRD requirement it serves. PRDs overlap, and a feature recorded per PRD would be
   designed again for each.
@@ -187,10 +239,11 @@ an arc42 document is not a finding.
   chassis out of a Lambda.
 - **R18.** The matrix takes a stack's type from the last token of its name, as the naming
   conventions document defines it. The list of types is extended in that document; the
-  matrix defines no classification of its own.
-- **R19.** Each classification in the matrix has values that exclude each other. A service
-  can also be shared and a library can also be a layer, so "shared" and "layer" are separate
-  descriptions and are never values of the same classification as a type.
+  matrix defines no type of its own. Scope, execution use and distribution are not types.
+- **R19.** The matrix records scope, execution use and distribution as three facts, separate
+  from a stack's type and from each other (section 3.4). "Shared" is a scope, "library" is
+  an execution use and "layer" is a distribution method; none is a value of another fact or
+  of the type.
 
 ### Current state
 
@@ -210,9 +263,10 @@ an arc42 document is not a finding.
   PRD in hand.
 - **R24.** The matrix marks each piece of information as verified or not verified,
   separately from every other piece.
-- **R25.** The build pipeline marks information verified only when a build has proved the
-  code exists and its tests pass. Nothing else marks it. No elaboration step reads code to
-  decide whether something is built.
+- **R25.** The build pipeline marks information verified only when the code has been built
+  and tested and has passed, and that always includes its CI/CD and its CDK. Nothing else
+  marks it. No elaboration step reads code to decide whether something is built. Whether
+  something is currently deployed is not recorded and has no bearing on verified.
 - **R26.** The matrix presents existing code that no build has verified as a hint only, so
   that an architecture agent does not treat a difference between that code and arc42 as a
   finding.
@@ -233,6 +287,22 @@ an arc42 document is not a finding.
   chain in section 1.1. A status, classification or marker is recorded when a lookup in
   section 2 needs it, and for no other reason.
 
+### Scope, execution use and distribution
+
+- **R32.** The matrix records, for every stack, the one app it belongs to: `employer`,
+  `marketing`, `personal-agent` or `shared` (section 3.4). `shared` is recorded as the
+  stack's app in the same way as the other three.
+- **R33.** The matrix records the execution use of a thing: executable or callable (a
+  service, a Lambda), or shared code that other code imports (a library).
+- **R34.** The matrix records every custom Python library as a package published to
+  CodeArtifact, and records separately each Lambda layer that also carries it.
+- **R35.** The matrix records a layer as a thing in its own right, with the packages it
+  contains and the Lambdas that use it (Q16). The relation between libraries and layers is
+  many-to-many: a custom library can have no layer of its own, one layer can contain several
+  packages, and a layer can contain only third-party packages.
+- **R36.** The matrix records, for each shared library a stack's code uses, the distribution
+  (package, layer) through which that library reaches it (Q15).
+
 ## 6. Open points
 
 1. How each stack's purpose is established, given that no accurate statement of purpose
@@ -241,19 +311,16 @@ an arc42 document is not a finding.
    features and stacks.
 3. The complete list of stack types; the naming conventions document's list is probably
    incomplete.
-4. How descriptions that are not exclusive (shared, layer) are recorded beside the type.
-5. Which approval markers the lookups need beyond mirroring whether a document is effective
+4. Which approval markers the lookups need beyond mirroring whether a document is effective
    (in review, changed since approval, approval below the level of a document).
-6. Whether "verified" distinguishes built and tested from deployed.
-7. What happens to a verified mark when the verified thing is changed afterwards.
-8. How a PRD requirement is identified, so that coverage is recorded per requirement.
-9. How "the same feature or a similar one" is found.
-10. Whether "every Epic" in the seed includes closed Epics.
-11. Whether a disagreement between documents and its settlement is recorded in the matrix so
-    that it is not raised again.
-12. Whether a single design fact, with the one arc42 heading that is its home, is a kind of
-    thing the matrix records.
-13. Whether a name that an arc42 document uses and nothing else classifies is recorded.
-14. How two Epics elaborated at the same time are kept from changing the same thing.
-15. Whether the matrix states, for a Task, the shared capabilities it must use, and whether
+5. What happens to a verified mark when the verified thing is changed afterwards.
+6. How a PRD requirement is identified, so that coverage is recorded per requirement.
+7. How "the same feature or a similar one" is found.
+8. Whether a disagreement between documents and its settlement is recorded in the matrix so
+   that it is not raised again.
+9. Whether a single design fact, with the one arc42 heading that is its home, is a kind of
+   thing the matrix records.
+10. Whether a name that an arc42 document uses and nothing else classifies is recorded.
+11. How two Epics elaborated at the same time are kept from changing the same thing.
+12. Whether the matrix states, for a Task, the shared capabilities it must use, and whether
     the build checks for duplicates of them.
