@@ -79,6 +79,7 @@ class Step(TypedDict):
     purpose: str
     agent: NotRequired[str]
     script: NotRequired[str]
+    session: NotRequired[str]
     status: StepStatus
     started: NotRequired[str]
     finished: NotRequired[str]

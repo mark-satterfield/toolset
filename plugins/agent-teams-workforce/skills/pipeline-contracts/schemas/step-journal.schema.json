@@ -155,6 +155,10 @@
           "description": "The script that performs the step. Absent when an agent performs it or when the step only contains child steps.",
           "$ref": "#/definitions/text"
         },
+        "session": {
+          "description": "The agent session id of the session that performed the step, so a restart or a correction resumes that agent's own conversation. Present only on a step that has an agent.",
+          "$ref": "#/definitions/text"
+        },
         "status": {
           "description": "Where the step stands.",
           "$ref": "#/definitions/stepStatus"
@@ -192,6 +196,10 @@
         {
           "if": {"required": ["failure"]},
           "then": {"properties": {"status": {"const": "failed"}}}
+        },
+        {
+          "if": {"required": ["session"]},
+          "then": {"required": ["agent"]}
         }
       ]
     },

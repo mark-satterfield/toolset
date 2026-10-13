@@ -2,7 +2,8 @@
 
 Pure checks against temporary files; no workflow, flow, tracker or vault is touched. They cover:
 the generated contract is current with its schema; create, nested child steps, start and done
-ordering, the next step after each change, inputs and artifacts, invalidation; what validation
+ordering, the next step after each change, inputs and artifacts, invalidation; the agent session
+id of a step; a reviewer whose findings become child steps after its session ended; what validation
 rejects; two processes writing at once, each loading the module by file path as the driver does;
 and every sub-command of bin/atw-step-journal run as a subprocess from another directory.
 """
@@ -53,6 +54,7 @@ GENERATOR: Path = PLUGIN / "skills" / "pipeline-contracts" / "scripts" / "genera
 BEAD: BeadId = BeadId("ssbd-check.1")
 MOMENT: str = "2026-01-01T00:00:00Z"
 WRITES_EACH: int = 8
+ADDED_TOGETHER: int = 2
 SURVEY_ARTIFACTS: int = 2
 DESIGN_CHILDREN: int = 2
 STEPS_UNDER_DRAFT: int = 2
@@ -71,6 +73,15 @@ for index in range(int(sys.argv[4])):
     plan = {"description": f"{sys.argv[3]} {index}", "purpose": "concurrent write"}
     module.update_journal(Path(sys.argv[2]), lambda journal: module.add_step(journal, plan, module.timestamp()))
 """
+REVIEW_PLANS: list[StepPlan] = [
+    {"description": "prepare the spec", "purpose": "something to review", "script": "prepare.py"},
+    {"description": "review the spec", "purpose": "find its defects", "agent": "reviewer"},
+    {"description": "publish the spec", "purpose": "later steps read it", "script": "publish.py"},
+]
+FINDING_PLANS: list[StepPlan] = [
+    {"ref": "fix", "description": "fix finding one", "purpose": "the reviewer found it", "agent": "author"},
+    {"description": "check the fix", "purpose": "confirm the finding is gone", "agent": "reviewer", "inputs": ["fix"]},
+]
 PLANS: list[StepPlan] = [
     {"ref": "survey", "description": "survey the repository", "purpose": "know what exists", "script": "survey.py"},
     {
@@ -261,6 +272,64 @@ def _check_invalidation() -> None:
     require("finished" not in journal and not sj.is_complete(journal), "a new step reopens the journal")
 
 
+def _check_review_findings() -> None:
+    """Follow a reviewer step whose findings become child steps after its session has ended.
+
+    The reviewer stays running until the child steps are added and done, and is then closed. At
+    every point the next step is where a restart resumes, and the session id is kept for it.
+    """
+    journal: Journal = sj.new_journal(BEAD, BEAD_TYPE_TASK, PIPELINE_BUILD, REVIEW_PLANS)
+    prepare: Step = journal["steps"][0]
+    reviewer: Step = journal["steps"][1]
+    publish: Step = journal["steps"][2]
+    with expected_error(sj.StepRefusedError):
+        sj.start_step(journal, prepare["id"], MOMENT, session="s-0")
+    sj.start_step(journal, prepare["id"], MOMENT)
+    with expected_error(sj.StepRefusedError):
+        sj.set_session(journal, prepare["id"], "s-0")
+    sj.finish_step(journal, prepare["id"], MOMENT)
+    with expected_error(sj.StepRefusedError):
+        sj.set_session(journal, reviewer["id"], "s-0")
+    sj.start_step(journal, reviewer["id"], MOMENT, session="s-1")
+    require(sj.step_session(journal, reviewer["id"]) == "s-1", "start records the agent session id")
+    sj.start_step(journal, reviewer["id"], MOMENT)
+    require(sj.step_session(journal, reviewer["id"]) == "s-1", "starting again keeps the session id to resume")
+    sj.set_session(journal, reviewer["id"], "s-2")
+    require(reviewer.get("session") == "s-2", "the session id can be recorded after the step started")
+
+    require(_next_id(journal) == reviewer["id"], "before its findings are filed, a restart runs the reviewer again")
+    fixes: list[Step] = sj.add_steps(journal, FINDING_PLANS, MOMENT, parent=reviewer["id"])
+    require(
+        [step["id"] for step in reviewer["steps"]] == [step["id"] for step in fixes],
+        "both are added in one change",
+    )
+    require(fixes[1].get("inputs") == [fixes[0]["id"]], "a ref resolves between steps added together")
+    require(reviewer["status"] == STATUS_RUNNING, "the reviewer stays running while its child steps are open")
+    require(_next_id(journal) == fixes[0]["id"], "next is the first child, never the reviewer again")
+    require(not sj.unclosed_steps(journal), "the reviewer is not awaiting close while a child is open")
+    with expected_error(sj.StepRefusedError):
+        sj.start_step(journal, reviewer["id"], MOMENT)
+    with expected_error(sj.StepRefusedError):
+        sj.finish_step(journal, reviewer["id"], MOMENT)
+    sj.start_step(journal, fixes[0]["id"], MOMENT, session="s-3")
+    require(_next_id(journal) == fixes[0]["id"], "a restart resumes the child that was running")
+    sj.finish_step(journal, fixes[0]["id"], MOMENT)
+    require(_next_id(journal) == fixes[1]["id"], "then the next child")
+    _run_through(journal, fixes[1]["id"])
+    require(_next_id(journal) == publish["id"], "with its children done, next moves past the reviewer")
+    require([step["id"] for step in sj.unclosed_steps(journal)] == [reviewer["id"]], "which awaits its own close")
+    require(not sj.is_complete(journal), "the journal is not complete while the reviewer is open")
+    sj.finish_step(journal, reviewer["id"], MOMENT)
+    require(reviewer["status"] == STATUS_DONE and not sj.unclosed_steps(journal), "the reviewer is then closed")
+    require(reviewer.get("session") == "s-2", "a done step keeps its session id for a later correction")
+    with expected_error(sj.StepRefusedError):
+        sj.add_steps(journal, FINDING_PLANS, MOMENT, parent=reviewer["id"])
+    sj.checked_journal(journal)
+    sj.invalidate_from(journal, reviewer["id"], MOMENT)
+    require("session" not in reviewer and not reviewer["steps"], "invalidate removes the session id and the children")
+    sj.checked_journal(journal)
+
+
 def _document(journal: Journal) -> dict[str, JsonValue]:
     """Copy a journal as a plain JSON object a check can break.
 
@@ -310,11 +379,15 @@ def _check_rejections(work: Path) -> None:
     def duplicate(step: dict[str, JsonValue]) -> None:
         step["steps"] = [copy.deepcopy(step)]
 
+    def session_without_agent(step: dict[str, JsonValue]) -> None:
+        step["session"] = "s-1"
+
     breaks: dict[str, Callable[[dict[str, JsonValue]], None]] = {
         "a step with both agent and script": both,
         "an input that names no step": stray_input,
         "an artifact with both path and value": path_and_value,
         "a repeated step id": duplicate,
+        "a session id on a step no agent performs": session_without_agent,
     }
     journal: Journal = sj.new_journal(BEAD, BEAD_TYPE_TASK, PIPELINE_BUILD, PLANS)
     path: Path = work / "broken.json"
@@ -466,7 +539,13 @@ def _check_command(work: Path) -> None:
     _command(work, "add", *where, "--description", "x", "--purpose", "y", "--agent", "a", "--script", "s", status=1)
     inputs: JsonValue = _command(work, "inputs", *where, "--step", second).get("inputs")
     require(isinstance(inputs, list) and len(inputs) == 1, "inputs prints the input step's artifacts")
-    _command(work, "start", *where, "--step", second)
+    _command(work, "start", *where, "--step", first, "--session", "s-0", status=1)
+    started: dict[str, JsonValue] = _printed_step(_command(work, "start", *where, "--step", second, "--session", "s-1"))
+    require(started.get("session") == "s-1", "start --session records the agent session id")
+    require(_command(work, "session", *where, "--step", second).get("session") == "s-1", "session prints it")
+    _command(work, "session", *where, "--step", second, "--session", "s-2")
+    require(_command(work, "session", *where, "--step", second).get("session") == "s-2", "session records it")
+    require(_command(work, "session", *where, "--step", first).get("session") is None, "a script step holds none")
     failed: dict[str, JsonValue] = _printed_step(_command(work, "fail", *where, "--step", second, "--failure", "no"))
     require(failed.get("status") == STATUS_FAILED and failed.get("failure") == "no", "fail")
     require(_printed_id(_command(work, "next", *where)) == second, "next prints the failed step")
@@ -474,6 +553,9 @@ def _check_command(work: Path) -> None:
     require(reset == [first, second], "invalidate prints the steps it reset")
     following: dict[str, JsonValue] = _command(work, "next", *where)
     require(_printed_id(following) == first and following.get("complete") is False, "next after invalidate")
+    several: str = json.dumps([{"description": "third", "purpose": "a"}, {"description": "fourth", "purpose": "b"}])
+    added: JsonValue = _command(work, "add", *where, "--steps-json", several).get("steps")
+    require(isinstance(added, list) and len(added) == ADDED_TOGETHER, "add --steps-json adds several in one change")
     file.write_text(json.dumps({"bead": bead}), encoding="utf-8")
     require(_command(work, "validate", *where, status=1).get("valid") is False, "validate rejects a broken file")
 
@@ -483,13 +565,17 @@ def main() -> None:
     """Run every step journal check against a temporary directory."""
     _check_contract()
     _check_invalidation()
+    _check_review_findings()
     temporary: str
     with tempfile.TemporaryDirectory(prefix="atw-step-journal-check-") as temporary:
         work: Path = Path(temporary).resolve()
         _check_rejections(work)
         _check_two_writers(work)
         _check_command(work)
-    report("PASS: step journal contract, behaviour, validation, concurrent by-path writers and bin/atw-step-journal")
+    report(
+        "PASS: step journal contract, behaviour, sessions, reviewer findings, validation, "
+        "concurrent by-path writers and bin/atw-step-journal",
+    )
 
 
 if __name__ == "__main__":

@@ -69,7 +69,6 @@ from step_journal_contract import (
     schema_problems,
     validate_artifact,
     validate_journal,
-    validate_step_plan,
     validate_step_plans,
 )
 
@@ -103,9 +102,22 @@ class Invalidation(TypedDict):
 
 
 class StepResult(TypedDict):
-    """What ``add``, ``start``, ``done``, ``fail`` and ``artifact`` print."""
+    """What ``add`` (of one step), ``start``, ``done``, ``fail`` and ``artifact`` print."""
 
     step: Step
+
+
+class StepsResult(TypedDict):
+    """What ``add`` prints when it adds the steps of ``--steps-json`` or ``--steps-file``."""
+
+    steps: list[Step]
+
+
+class SessionResult(TypedDict):
+    """What ``session`` prints: the step and the agent session id it holds, or null."""
+
+    step: StepId
+    session: str | None
 
 
 class CreateResult(TypedDict):
@@ -154,7 +166,15 @@ class ValidationResult(TypedDict):
 
 
 type CommandResult = (
-    StepResult | CreateResult | NextResult | ArtifactsResult | InputsResult | Invalidation | ValidationResult
+    StepResult
+    | StepsResult
+    | SessionResult
+    | CreateResult
+    | NextResult
+    | ArtifactsResult
+    | InputsResult
+    | Invalidation
+    | ValidationResult
 )
 
 
@@ -416,36 +436,38 @@ def new_journal(bead: BeadId, bead_type: BeadType, pipeline: Pipeline, plans: Se
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def add_step(
+def add_steps(
     journal: Journal,
-    plan: StepPlan,
+    plans: Sequence[StepPlan],
     moment: str,
     *,
     parent: StepId | None = None,
     after: StepId | None = None,
-) -> Step:
-    """Add a planned step, with a new id, to the journal.
+) -> list[Step]:
+    """Add planned steps, each with a new id, to one place in the journal as one change.
 
-    The plan is validated against the schema's ``stepPlan``; a plan it does not allow raises
-    ``StepJournalError``.
+    Adding every child step a result calls for in one change means a run that stops can never
+    leave only some of them in the journal. The plans are validated against the schema's
+    ``stepPlans``; plans it does not allow raise ``StepJournalError``.
 
     Args:
         journal: The journal; changed in place.
-        plan: The step to add.
+        plans: The steps to add, in the order they run; at least one.
         moment: The present date-time, as :func:`timestamp` gives it.
-        parent: The step to add it under; None adds it among the outermost steps.
-        after: The sibling it follows immediately; None adds it after the last sibling.
+        parent: The step to add them under; None adds them among the outermost steps.
+        after: The sibling they follow immediately; None adds them after the last sibling.
 
     Returns:
-        The added step.
+        The added steps in order.
 
     Raises:
         StepRefusedError: ``parent`` or ``after`` names no step, ``after`` is not a sibling in the
             place chosen, the parent has an agent or a script and is not running (its child steps
-            come from its result), a ref is repeated, or an input names no step.
+            come from its result, and it stays running until they are added and done), a ref is
+            repeated, or an input names no step.
 
     """
-    checked: StepPlan = validate_step_plan(plan, "the step to add")
+    checked: list[StepPlan] = validate_step_plans(list(plans), "the steps to add")
     siblings: list[Step] = journal["steps"]
     message: str
     if parent is not None:
@@ -466,35 +488,69 @@ def add_step(
             raise StepRefusedError(message)
         position = found + 1
     known: set[StepId] = {step["id"] for step in _walk(journal["steps"])}
-    added: Step = _build_steps([checked], {}, known)[0]
-    siblings.insert(position, added)
+    added: list[Step] = _build_steps(checked, {}, known)
+    siblings[position:position] = added
     _settle(journal, moment)
     return added
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def start_step(journal: Journal, step_id: StepId, moment: str) -> Step:
+def add_step(
+    journal: Journal,
+    plan: StepPlan,
+    moment: str,
+    *,
+    parent: StepId | None = None,
+    after: StepId | None = None,
+) -> Step:
+    """Add one planned step, with a new id, to the journal.
+
+    This is :func:`add_steps` for a single plan, and refuses what it refuses.
+
+    Args:
+        journal: The journal; changed in place.
+        plan: The step to add.
+        moment: The present date-time, as :func:`timestamp` gives it.
+        parent: The step to add it under; None adds it among the outermost steps.
+        after: The sibling it follows immediately; None adds it after the last sibling.
+
+    Returns:
+        The added step.
+
+    """
+    return add_steps(journal, [plan], moment, parent=parent, after=after)[0]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def start_step(journal: Journal, step_id: StepId, moment: str, *, session: str | None = None) -> Step:
     """Mark a step running, from its beginning.
 
     A planned step starts; a running or failed step starts again, which drops the failure and the
-    artifacts its earlier, unfinished run recorded. Every step above it that only contains child
-    steps becomes running.
+    artifacts its earlier, unfinished run recorded and keeps its agent session id, so the restart
+    can resume that agent's conversation. Every step above it that only contains child steps
+    becomes running.
 
     Args:
         journal: The journal; changed in place.
         step_id: The step to start.
         moment: The present date-time, as :func:`timestamp` gives it.
+        session: The agent session id of the session performing the step; None leaves the one
+            the step holds, if any.
 
     Returns:
         The step, running with ``started`` set.
 
     Raises:
-        StepRefusedError: No such step; the step has child steps (they are run, not the step); or
-            the step is done (invalidate from it to run it again).
+        StepRefusedError: No such step; the step has child steps (they are run, not the step);
+            the step is done (invalidate from it to run it again); or ``session`` is given for a
+            step no agent performs.
 
     """
     step: Step = find_step(journal, step_id)
     message: str
+    if session is not None and "agent" not in step:
+        message = f"step {step_id} has no agent, so it holds no agent session id"
+        raise StepRefusedError(message)
     if step["steps"]:
         message = f"step {step_id} has child steps; its child steps are run, not the step itself"
         raise StepRefusedError(message)
@@ -506,8 +562,56 @@ def start_step(journal: Journal, step_id: StepId, moment: str) -> Step:
     step.pop("finished", None)
     step.pop("failure", None)
     step["artifacts"] = []
+    if session is not None:
+        step["session"] = session
     _settle(journal, moment)
     return step
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def set_session(journal: Journal, step_id: StepId, session: str) -> Step:
+    """Record the agent session id of the session performing a step.
+
+    Args:
+        journal: The journal; changed in place.
+        step_id: The step an agent is performing.
+        session: The agent session id; it replaces the one the step holds.
+
+    Returns:
+        The step, holding the session id.
+
+    Raises:
+        StepRefusedError: No such step; no agent performs the step; or the step is planned or
+            done, so no session is performing it.
+
+    """
+    step: Step = find_step(journal, step_id)
+    message: str
+    if "agent" not in step:
+        message = f"step {step_id} has no agent, so it holds no agent session id"
+        raise StepRefusedError(message)
+    if step["status"] not in {STATUS_RUNNING, STATUS_FAILED}:
+        message = f"step {step_id} is {step['status']}; a session id is recorded on a running or failed step"
+        raise StepRefusedError(message)
+    step["session"] = session
+    return step
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def step_session(journal: Journal, step_id: StepId) -> str | None:
+    """Read the agent session id a step holds.
+
+    A step that is not in the journal raises ``StepRefusedError`` from :func:`find_step`.
+
+    Args:
+        journal: The journal.
+        step_id: The step.
+
+    Returns:
+        The session id, or None when the step holds none.
+
+    """
+    return find_step(journal, step_id).get("session")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -722,6 +826,7 @@ def _reset(step: Step, reset: list[StepId], removed: list[StepId]) -> None:
     step.pop("started", None)
     step.pop("finished", None)
     step.pop("failure", None)
+    step.pop("session", None)
     step["artifacts"] = []
     reset.append(step["id"])
     if _performs(step):
@@ -758,7 +863,7 @@ def _invalidate(steps: Sequence[Step], target: StepId, reset: list[StepId], remo
 def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
     """Set a step and every step after it in walk order back to planned.
 
-    Each reset step loses ``started``, ``finished``, ``failure`` and its artifacts. A reset step
+    Each reset step loses ``started``, ``finished``, ``failure``, ``session`` and its artifacts. A reset step
     that has an agent or a script loses its child steps, which came from its result; a reset step
     that only contains child steps keeps them, reset the same way. A step above the named step
     comes before it in walk order and is not reset: one that only contains child steps takes its
@@ -1167,7 +1272,7 @@ def _decode(text: str, what: str) -> JsonValue:
 
 
 def _plans_argument(args: argparse.Namespace) -> list[StepPlan]:
-    """Read the step plans of ``create`` from ``--steps-json`` or ``--steps-file``.
+    """Read the step plans of ``create`` or ``add`` from ``--steps-json`` or ``--steps-file``.
 
     Returns:
         The plans in order.
@@ -1254,13 +1359,29 @@ def _run_add(args: argparse.Namespace) -> Outcome:
     """Run ``add``.
 
     Returns:
-        The added step.
+        The added step, or the added steps when they came from ``--steps-json`` or ``--steps-file``.
+
+    Raises:
+        StepJournalError: Both one step's options and a steps option were given.
 
     """
-    plan: StepPlan = _plan_argument(args)
     parent: StepId | None = _step_option(args, "parent")
     after: StepId | None = _step_option(args, "after")
     moment: str = timestamp()
+    if _option(args, "steps_json") is not None or _option(args, "steps_file") is not None:
+        if _option(args, "description") is not None or _option(args, "purpose") is not None:
+            message: str = (
+                "give one step with --description and --purpose, or several with --steps-json or --steps-file"
+            )
+            raise StepJournalError(message)
+        plans: list[StepPlan] = _plans_argument(args)
+        steps: list[Step] = update_journal(
+            _journal_argument(args),
+            lambda journal: add_steps(journal, plans, moment, parent=parent, after=after),
+            wait=_wait_argument(args),
+        )
+        return Outcome({"steps": steps})
+    plan: StepPlan = _plan_argument(args)
     step: Step = update_journal(
         _journal_argument(args),
         lambda journal: add_step(journal, plan, moment, parent=parent, after=after),
@@ -1277,13 +1398,34 @@ def _run_start(args: argparse.Namespace) -> Outcome:
 
     """
     step_id: StepId = _step_argument(args)
+    session: str | None = _option(args, "session")
     moment: str = timestamp()
     step: Step = update_journal(
         _journal_argument(args),
-        lambda journal: start_step(journal, step_id, moment),
+        lambda journal: start_step(journal, step_id, moment, session=session),
         wait=_wait_argument(args),
     )
     return Outcome({"step": step})
+
+
+def _run_session(args: argparse.Namespace) -> Outcome:
+    """Run ``session``: record the agent session id given with ``--session``, or read the one held.
+
+    Returns:
+        The step's id and the agent session id it holds, or null.
+
+    """
+    step_id: StepId = _step_argument(args)
+    session: str | None = _option(args, "session")
+    if session is None:
+        return Outcome({"step": step_id, "session": step_session(read_journal(_journal_argument(args)), step_id)})
+    given: str = session
+    step: Step = update_journal(
+        _journal_argument(args),
+        lambda journal: set_session(journal, step_id, given),
+        wait=_wait_argument(args),
+    )
+    return Outcome({"step": step_id, "session": step.get("session")})
 
 
 def _run_done(args: argparse.Namespace) -> Outcome:
@@ -1411,6 +1553,7 @@ _COMMANDS: Final[dict[str, Callable[[argparse.Namespace], Outcome]]] = {
     "create": _run_create,
     "add": _run_add,
     "start": _run_start,
+    "session": _run_session,
     "done": _run_done,
     "fail": _run_fail,
     "artifact": _run_artifact,
@@ -1451,14 +1594,23 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--steps-json", help="the outermost steps, a JSON array of step plans")
     create.add_argument("--steps-file", help=f"a file holding that JSON array; {STDIN_MARK} reads standard input")
     add: argparse.ArgumentParser = commands.add_parser("add", parents=[where], help="add a planned step")
-    add.add_argument("--description", required=True, help="what the step does, in plain words")
-    add.add_argument("--purpose", required=True, help="why the step exists")
+    add.add_argument("--description", help="what the step does, in plain words")
+    add.add_argument("--purpose", help="why the step exists")
+    add.add_argument("--steps-json", help="several steps to add in one change, a JSON array of step plans")
+    add.add_argument("--steps-file", help=f"a file holding that JSON array; {STDIN_MARK} reads standard input")
     add.add_argument("--agent", help="the agent that performs the step")
     add.add_argument("--script", help="the script that performs the step")
     add.add_argument("--parent", help="the id of the step to add it under; omit for an outermost step")
     add.add_argument("--after", help="the id of the sibling it follows; omit to add it last")
     add.add_argument("--input", action="append", help="the id of a step whose artifacts it reads; repeatable")
-    commands.add_parser("start", parents=[where, step], help="mark a step running")
+    start: argparse.ArgumentParser = commands.add_parser("start", parents=[where, step], help="mark a step running")
+    start.add_argument("--session", help="the agent session id of the session performing the step")
+    session: argparse.ArgumentParser = commands.add_parser(
+        "session",
+        parents=[where, step],
+        help="print the agent session id a step holds, or record the one given with --session",
+    )
+    session.add_argument("--session", help="the agent session id to record on a running or failed step")
     commands.add_parser("done", parents=[where, step], help="mark a running step done")
     fail: argparse.ArgumentParser = commands.add_parser("fail", parents=[where, step], help="mark a step failed")
     fail.add_argument("--failure", required=True, help="why the step failed")
