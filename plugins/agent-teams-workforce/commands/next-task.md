@@ -161,7 +161,6 @@ environment itself. The driver environment variables used below are defined in t
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
          projectRoot: "$ATW_PROJECT_ROOT",
-         artifactScript: "$ATW_ARTIFACT_SCRIPT",
          pluginRoot: "$ROOT",
          designSystem: {packagesDir: "<host-configured packages directory>"}}})
 ```

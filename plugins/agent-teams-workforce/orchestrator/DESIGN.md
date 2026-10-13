@@ -53,22 +53,15 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
 - The driver code read for this design: `dispatch.py`, `headless.py`, `headlessenv.py`,
   `ledger.py`, `failurecause.py`, `breaker.py`, `runcost.py`, `pluginversion.py`, `mcpconfig.py`,
   `fablerecovery.py`, `fablewall.py`, `handbackio.py`, `artifactio.py`, `workitems.py`,
-  `beadsio.py`; in the plugin `scripts/portfolio/beadgraph.py`, `beadwrite.py`,
-  `archbaseline.py`, `resumefacts.py`, `archclosure.py`, `archstate.py`, and
+  `beadsio.py`; in the plugin `scripts/portfolio/beadgraph.py`, `beadwrite.py`, `archstate.py`, and
   `skills/polyrepo-repo/scripts/polyrepo.py`; `<control>/ops/lib/central-beads-lock.sh`;
   `<config>/settings.json`; `<control>/.claude/settings.json`; `<control>/.polyrepo/config.yaml`
   and `manifest.yaml`.
 - Read-only checks run for this design:
-  - `archbaseline.survey_freshness(<work>/architecture/survey.json, seal=False)` for `ssbd-mb689`,
-    `ssbd-hdqid` and `ssbd-guuuz`: all three `current: true`, no errors, no warnings.
   - `bd show ssbd-zzzzzz-nonexistent --json`: exit 1; the JSON error object carries only `error`,
     `hint`, `schema_version`, no error code.
   - `bd show ssbd-mb689 ssbd-hdqid ssbd-guuuz --json`: all three carry the elaboration state
     `bead_metadata.ELABORATION_IN_PROGRESS` (beads-contract schema).
-  - `ls <arch>/target/`: only `README.md` (no saved target folder exists).
-  - The three Epics' `architecture/candidates/` folders: every complete candidate has the same
-    bytes as its final file in `plans/` or `rounds/`; the others are `.checkpoint` and
-    `.progress.json` files with no result body.
   - `<control>/.polyrepo/config.yaml` `repositories.patterns`: each application name pattern names
     its app space (`personal-agent`, `shared`, `marketing`, `employer`).
 
@@ -96,20 +89,17 @@ Layout:
 There is no brief template folder: a brief is built in code from facts only (section 2.3).
 
 **Running the checks.** One command runs every check script in `<orch>/checks/` (each Python file
-there with a `__main__` entry point, found by listing the directory), supplies `--artifact-script`
-and `--survey-dir` to the checks that declare them, prints one line per check and the full output
-of each failure, and exits non-zero unless every check passed:
+there with a `__main__` entry point, found by listing the directory), supplies `--control-repo`
+to the checks that declare it, prints one line per check and the full output of each failure,
+and exits non-zero unless every check passed:
 
 ```sh
 "$SKILLSPOKE_CC/.venv/bin/python" "$ATW_PLUGIN_ROOT/orchestrator/checks/run_all.py"
 ```
 
-The control repository comes from `ATW_CONTROL_REPO`, then `SKILLSPOKE_CC`, or `--control-repo`. A
-check that needs a saved survey is tried against the saved architecture directories under
-`<control repo>/.claude/workflow-runs/artifacts/*/architecture`, newest first, because a saved
-survey stops being reusable when the documents and repository trees it is bound to change; with
-none saved the check is reported `SKIPPED` and the command exits non-zero. No hook runs this
-command.
+The control repository comes from `ATW_CONTROL_REPO`, then `SKILLSPOKE_CC`, or `--control-repo`.
+A check whose declared argument cannot be supplied is reported `SKIPPED` and the command exits
+non-zero. No hook runs this command.
 
 The flow registry holds one flow, `prd-to-spec`. Its phases are functions called by it, not
 separate entries: the only entry into the Epic pipeline is the driver (CONTEXT 7.18).
@@ -779,43 +769,33 @@ returns a `failure.cause`; `other` records an item failure and excludes it from 
 (`elaboration-release`) on every exit after a successful claim unless the Epic was marked done
 (`prd-to-spec.md` step 16, and section 6.7).
 
-## 9. What the driver stops doing for the elaboration lane (S02 item 9)
+## 9. What the driver does for the elaboration lane
 
-S05 adds `<driver>/orchestrated.py`, which starts `run.py` in its own process group, translates its
-events (section 4.1), and reads the handback file. `headless.HeadlessClaudeDispatcher.dispatch_one`
-routes `prd-to-spec` to it.
+`<driver>/orchestrated.py` starts `run.py` in its own process group with the command line
+`dispatchargs.command` builds and the arguments file `dispatchargs.build_arguments` writes,
+translates its events (section 4.1), and reads the handback file. `lane.py` selects the Epic,
+builds its arguments with `workitems.elaboration_args`, and adds the lifecycle owner and the
+execution identity. The arguments name the Epic, its PRD and where things are; they say nothing
+about which steps are done.
 
 **The dispatch timeout is an idle timeout.** The driver kills the orchestrator's group only when it
-has written no event line (any of section 4.1, the heartbeat included) for
-`ATW_ORCH_IDLE` seconds (default 3600, above the 1800 s session idle limit and the 300 s
-heartbeat). There is no total cap: an Epic run is many sessions long, and each session is already
-bounded by `ATW_SESSION_LIMIT` (section 5.6). The 7200 s `DEFAULT_DISPATCH_TIMEOUT` keeps applying
-to the Workflow dispatches until S12.
+has written no event line (any of section 4.1, the heartbeat included) for `ATW_ORCH_IDLE` seconds
+(default 3600, above the 1800 s session idle limit and the 300 s heartbeat). There is no total
+cap: an Epic run is many sessions long, and each session is bounded by `ATW_SESSION_LIMIT`
+(section 5.6).
 
-Then, for `prd-to-spec`:
+**The step journal.** The driver loads `<orch>/core/step_journal.py` by path
+(`<driver>/stepjournal.py`) and never restates its rules.
 
-| Driver code | Fate |
+| Driver module | What it does with a journal |
 |---|---|
-| `prompts.dispatch_prompt` / `prompts.resume_prompt` for `prd-to-spec` | **delete** the `prd-to-spec` paths in S05; the functions stay for the Task pipeline until S12 |
-| `headless._dispatch_with_recovery` and `_fresh_fable_attempt` (Fable workflow recovery) | **not used** for `prd-to-spec`; stay for the Task pipeline until S12 |
-| `fablerecovery.py` | **not used** for `prd-to-spec`; **delete** in S15 |
-| `fablewall.py` | **keep** (structured fields; the driver records the orchestrator's `fable-wall` events and passes `fableUntil`) |
-| `headless._render_progress`, `_announce_phase_of`, `_render_agent_entry` (workflow progress parsing), `VERDICT_MARKER` text verdicts | **not used** for `prd-to-spec`; stay for the Task pipeline until S12 |
-| `headless._wait_while_progressing` (total deadline plus progress grace) | **not used** for `prd-to-spec`; the idle timeout above replaces it |
-| `headless._silent_after_workflow`, `_workflow_ended`, `_believe_workflow_result`, `runjournal.workflow_result`, `runjournal.persist_session` | **not used** for `prd-to-spec`; stay until S12 |
-| `handbackio.parse_handback` (`HANDBACK` line) | **not used** for `prd-to-spec` (handback file through `handback_from_result`) |
-| `handbackio._died_of_outage`, `step_defect_origin`, `breaker.pause_of` text paths, `headless._resume_unavailable` | **not used** for `prd-to-spec` (section 6.5) |
-| the relay arguments in `headless._dispatch_session` | **not sent** for `prd-to-spec` |
-| `workitems.plugin_root_args` (`pluginRoot`) | **delete** for `prd-to-spec` |
-| `workitems.with_artifact_plan`: `resume`, `_rule_saved_files`, `artifactio.set_aside_stale`, `artifactio.dispatch_resume` | **delete** for `prd-to-spec`; **keep** `_start_over` / `artifactio.retire_once` |
-| `phaserec.expected_phases` reading `prd-to-spec.js` | **change** to `dispatch.COMPOSITE_PHASES` (section 4.2) |
-| `observe.relay_steps` for elaboration | **change** to the rounds and plans files (section 4.2) |
-| `artifactio.plan` | **keep** as the dashboard's reader; skip unknown step names; drop `recon:<repo>` |
-| `runcost.record_run` / `measure_run` | **change** to sum the handback's sessions (section 4.5) |
-| `failurecause.pause_from_cause` | **change** to read `failure.resumeAt` (section 6.5) |
-| `spendguard.LIVE` registration, `sessionregistry`, `childproc` reaping | **keep**, for the orchestrator's group and each session `pgid` it reports |
-| `ledger.EVENT_TYPES` `trigger_plan`, `trigger_dispatch`, and the `trigger_dispatch` branch in `failures.py` | **delete** in S05 (QUESTIONS 25: no producer since commit `64b4adbb`; `ledger.read_all` parses old lines whatever their type, so old ledgers still read) |
-| `routing.route_elaboration` reason texts | **change** in S05 (QUESTIONS 48): a feature returns `skip`, reason "a feature needs a PRD and an Epic; the owner writes the PRD"; the Story reason says the Story is elaborated through its parent Epic; `selection.select_only`'s feature skip reason stops naming `/agent-teams-workforce:start-prd`. Reason: S05 is the step that edits the driver's elaboration path; S08 deletes the command the old texts name |
+| `journalprogress.py` (`observe.journal_progress`) | reads it for the dashboard: the outermost steps, the steps running, the next step, a failed step, the counts |
+| `journalstart.py`, run by `elabmark.py --bead <id> --start-at <step>` | sets the named step and every step after it back to planned, when the owner asks for an earlier start |
+| `elabmark.py --bead <id> --steps` | lists the steps and marks the one the next run begins at |
+| `journalport.py` | writes a journal for a bead that has saved run data and none yet, through `<orch>/port_journal.py` |
+
+The driver changes a journal in those two cases only. A run begins at the first step the journal
+does not mark done; no other file, state or argument makes it begin anywhere else.
 
 ## 10. The matrix
 

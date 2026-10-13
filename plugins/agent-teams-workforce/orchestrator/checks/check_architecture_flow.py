@@ -54,12 +54,17 @@ from orchestrator.flows.architecture_check import (
     PROMOTE_DESCRIPTION,
     SELECTED,
 )
+from orchestrator.flows.architecture_earlier import EarlierWork, carry
 from orchestrator.flows.architecture_files import (
     APPROVE,
     CHECK,
     CONFIRM_TRD,
+    EARLIER_PREFIX,
+    EARLIER_WORK,
     OPEN_RUN,
 )
+from orchestrator.flows.prd_to_spec import outermost_steps
+from step_journal_contract import BEAD_TYPE_EPIC, PIPELINE_ELABORATION
 
 if TYPE_CHECKING:
     from orchestrator.checks.journal_bench import Call
@@ -332,6 +337,72 @@ def check_unsettled_and_mechanical(root: Path) -> None:
     report("PASS: an unsettled result goes to the lead and the decider; a mechanical defect back to the architect")
 
 
+def check_earlier_work(root: Path) -> None:
+    """Check a journal created with earlier work: the architect is handed its files, and nothing else changes."""
+    bench: ArchBench = started(root, "earlier", Scenario())
+    survey: Path = bench.work / "architecture" / "survey.json"
+    drafts: Path = bench.work / "architecture" / "draft"
+    drafts.mkdir(parents=True)
+    survey.write_text("{}", encoding="utf-8")
+    work: list[EarlierWork] = [
+        EarlierWork("Earlier work: the survey", "The check.", (("survey", survey),)),
+        EarlierWork("Earlier work: the draft documents", "The check.", (("draft documents", drafts),)),
+    ]
+    created: Journal = sj.new_journal(BEAD, BEAD_TYPE_EPIC, PIPELINE_ELABORATION, outermost_steps())
+    carried: list[Step] = carry(created, work, ARCHITECT, sj.timestamp())
+    sj.create_journal(bench.path, created)
+    opened: Step = bench.step("Open the run")
+    holder, owner, check = architecture(bench)
+    labels: list[str] = [f"{EARLIER_PREFIX}survey", f"{EARLIER_PREFIX}draft documents"]
+    require(
+        [names(step) for step in holder["steps"]] == [[label] for label in labels]
+        and [step["id"] for step in holder["steps"]] == [step["id"] for step in carried]
+        and all(step["status"] == "done" and step.get("script") == EARLIER_WORK for step in holder["steps"]),
+        "each piece of earlier work is a done step that holds its file",
+    )
+    require(
+        (owner.get("agent"), owner["status"], owner.get("inputs"))
+        == (ARCHITECT, "planned", [opened["id"], holder["id"]]),
+        "the architect's step is planned after the earlier work and is handed it",
+    )
+    require(check.get("script") == CHECK and check.get("inputs") == [owner["id"]], "the check follows the architect")
+    following: Step | None = sj.next_step(bench.journal())
+    require(following is not None and following["id"] == opened["id"], "the run begins at the open-run step")
+    require(bench.step("Architecture")["status"] == "running", "the Architecture container is not done")
+    run(bench)
+    steps: list[Step] = architecture(bench)
+    require(
+        [step["id"] for step in steps[:3]] == [holder["id"], owner["id"], check["id"]]
+        and sum(step.get("agent") == ARCHITECT for step in steps) == 1,
+        "the open-run step plans no second step for the architect",
+    )
+    first: Call = bench.sessions.calls[0]
+    require(
+        list(first.inputs) == ["prd", "criteria", "context", "state", *labels, "step journal"],
+        f"the architect's brief names the earlier work: {list(first.inputs)}",
+    )
+    require(
+        (first.inputs[labels[0]], first.inputs[labels[1]]) == (survey, drafts) and first.agent == ARCHITECT,
+        "the earlier work reaches the architect by its paths",
+    )
+    require(bench.counts[ARCHITECT] == 1 and bench.step("TRD")["status"] == "done", "the architect ran once")
+    with patch.dict(os.environ, bench.environment()):
+        sj.update_journal(bench.path, lambda journal: sj.invalidate_from(journal, opened["id"], sj.timestamp()))
+        bench.sessions.calls.clear()
+        bench.run_architecture()
+    again: list[Step] = architecture(bench)
+    require(
+        [step["id"] for step in again[:2]] == [holder["id"], owner["id"]]
+        and all(step["status"] == "done" and not names(step) for step in again[0]["steps"]),
+        "after a start at the open-run step the earlier work is done again and holds nothing",
+    )
+    require(
+        list(bench.sessions.calls[0].inputs) == ["prd", "criteria", "context", "state", "step journal"],
+        "after a start at the open-run step the architect is handed no earlier work",
+    )
+    report("PASS: a journal created with earlier work hands its files to the architect, whose step runs once")
+
+
 def main() -> None:
     """Run the architecture flow checks in a temporary directory with stand-in sessions."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
@@ -372,6 +443,7 @@ def main() -> None:
                 check_restarts(root)
                 check_findings(root)
                 check_unsettled_and_mechanical(root)
+                check_earlier_work(root)
 
 
 if __name__ == "__main__":

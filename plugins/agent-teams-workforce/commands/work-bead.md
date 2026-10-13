@@ -120,7 +120,7 @@ work out a repository yourself.
 The project's configuration reaches the composite as arguments, read from the environment
 (see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script cannot read the
 environment itself. The driver environment variables used below (`ATW_PROJECT_ROOT`,
-`ATW_ARTIFACT_SCRIPT`, `ATW_PRD_DIR`) are defined in the `pipeline-contracts` skill
+`ATW_PRD_DIR`) are defined in the `pipeline-contracts` skill
 (`$ROOT/skills/pipeline-contracts/schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`).
 `ATW_PR_COMMAND` is required: if it is unset, report `ATW_PR_COMMAND is unset` and stop. Omit
 any other argument whose variable is unset, and name it in your report.
@@ -130,7 +130,6 @@ Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
          prCommand: "$ATW_PR_COMMAND",
          projectRoot: "$ATW_PROJECT_ROOT",
-         artifactScript: "$ATW_ARTIFACT_SCRIPT",
          pluginRoot: "$ROOT",
          designSystem: {packagesDir: "<host-configured packages directory>"}}})
 ```

@@ -95,7 +95,6 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
   archPath:       <expanded value of the driver environment's architecture-root variable>,
   projectRoot:    <expanded value of the driver environment's project-root variable>,
-  artifactScript: <expanded value of the driver environment's artifact-script variable>,
   designSystem:   {packagesDir: "<host-configured packages directory>",
                    mocksDir:    "$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR",
                    shellsDir:   "$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR"}
@@ -107,13 +106,13 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
 `$ROOT` is the printed plugin root. The run resolves the root it runs its own scripts
 under itself; pass none.
 
-`archPath`, `projectRoot` and `artifactScript` are read from the `ATW_*` environment and passed
+`archPath` and `projectRoot` are read from the `ATW_*` environment and passed
 as expanded values; a workflow script cannot read the environment itself. The variables, what
 each holds and when the driver sets it are defined in one place, the `DriverEnvironment` of
 `schemas/driver-surface.schema.json` in the `agent-teams-workforce:pipeline-contracts` skill;
 read them there. This run needs the architecture — the architecture phase refuses without it —
 so if the architecture variable is unset, report that it is unset, naming it, and stop. Omit
-either of the other two when its variable is unset, and name it in your report.
+`projectRoot` when its variable is unset, and name it in your report.
 
 `designSystem` is optional. `packagesDir` is the host's packages directory; `mocksDir` and
 `shellsDir` are the `CUSTOMIZABLE_DESIGN_SYSTEM_*` variables `cds:setup` defines, passed as

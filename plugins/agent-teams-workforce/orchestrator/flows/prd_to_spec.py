@@ -48,6 +48,7 @@ from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, 
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows import (
+    architecture_earlier,
     architecture_promotion,
     elaboration_steps,
     spec_review,
@@ -57,6 +58,7 @@ from orchestrator.flows import (
 )
 from orchestrator.flows.architecture import first_steps
 from orchestrator.flows.architecture_files import (
+    ARCHITECTURE,
     CONFIRM_TRD,
     LABEL_CONTEXT,
     LABEL_PRD,
@@ -100,10 +102,10 @@ from step_journal_contract import (
 )
 
 _ARGUMENT_ERROR: str = "Arguments violate the prd_to_spec input contract"
-ARCHITECTURE: Final = "Architecture"
 MATRIX_PRD_ROW: Final = "matrix prd row"
 LIFECYCLE_STAGE: Final = "epic-lifecycle"
 REGISTERED: Final = (
+    architecture_earlier,
     architecture_promotion,
     trd_authoring,
     spec_review,

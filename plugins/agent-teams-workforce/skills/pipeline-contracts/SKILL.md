@@ -23,7 +23,6 @@ The driver (`ops/sdlc-automation` under `$ATW_CONTROL_REPO`) hands every orchest
 session the environment `$defs.DriverEnvironment` lists. What an agent uses:
 
 - `ATW_CONTROL_REPO` — the control repository. Always set.
-- `ATW_ARTIFACT_SCRIPT` — the phase-artifact recorder. Always set; record artifacts with it.
 - `ATW_ARCH_PATH` — the architecture root, set only when known. Use the run's `archPath` argument
   first and this variable second.
 - `ATW_STOP_FILE` — the stop marker, optional. Its absence means no marker. Touching the file (mode

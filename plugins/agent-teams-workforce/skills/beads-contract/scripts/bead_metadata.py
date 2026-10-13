@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "eb8c778c9febc0aaa984cae862979214965d401c2e5fe2e9eaa6b6e73e701a25"
+SCHEMA_SHA256: Final[str] = "9c14c621c196fd7ac047c7cdef3163ba02f688651caadbc8416bd69b4ac46a27"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -196,27 +196,22 @@ KEY_ELAB_KEY: Final[str] = "elab_key"
 #: The Task a follow-up Task replaces, set when the original was already built.
 KEY_ELAB_FOLLOWS: Final[str] = "elab_follows"
 KEY_ARTIFACT_TRD_PATH: Final[str] = "artifact_trd_path"
-KEY_ARTIFACT_TRD_META: Final[str] = "artifact_trd_meta"
 KEY_ARTIFACT_TRD_SHA256: Final[str] = "artifact_trd_sha256"
 #: On the Epic.
 KEY_ARTIFACT_TRD_VAULT_PATH: Final[str] = "artifact_trd_vault_path"
 KEY_ARTIFACT_SPEC_PATH: Final[str] = "artifact_spec_path"
-KEY_ARTIFACT_SPEC_META: Final[str] = "artifact_spec_meta"
 KEY_ARTIFACT_SPEC_SHA256: Final[str] = "artifact_spec_sha256"
 #: On the Story.
 KEY_ARTIFACT_SPEC_VAULT_PATH: Final[str] = "artifact_spec_vault_path"
 KEY_ARTIFACT_SPEC_DATA_MODEL_PATH: Final[str] = "artifact_spec_data_model_path"
-KEY_ARTIFACT_SPEC_DATA_MODEL_META: Final[str] = "artifact_spec_data_model_meta"
 KEY_ARTIFACT_SPEC_DATA_MODEL_SHA256: Final[str] = "artifact_spec_data_model_sha256"
 #: On the Story.
 KEY_ARTIFACT_SPEC_DATA_MODEL_VAULT_PATH: Final[str] = "artifact_spec_data_model_vault_path"
 KEY_ARTIFACT_SPEC_CRITERIA_PATH: Final[str] = "artifact_spec_criteria_path"
-KEY_ARTIFACT_SPEC_CRITERIA_META: Final[str] = "artifact_spec_criteria_meta"
 KEY_ARTIFACT_SPEC_CRITERIA_SHA256: Final[str] = "artifact_spec_criteria_sha256"
 #: On the Story.
 KEY_ARTIFACT_SPEC_CRITERIA_VAULT_PATH: Final[str] = "artifact_spec_criteria_vault_path"
 KEY_ARTIFACT_STORY_PATH: Final[str] = "artifact_story_path"
-KEY_ARTIFACT_STORY_META: Final[str] = "artifact_story_meta"
 KEY_ARTIFACT_STORY_SHA256: Final[str] = "artifact_story_sha256"
 #: The Stories this Story is ordered after by a blocks edge depscore.py story-edges created.
 KEY_STORY_OWNED_BLOCKERS: Final[str] = "story_owned_blockers"
@@ -383,23 +378,18 @@ ARTIFACT_FIELDS: Final[tuple[ArtifactField, ...]] = (
 )
 _ARTIFACT_KEY_TABLE: Final[Mapping[tuple[ArtifactKind, ArtifactField], str]] = MappingProxyType({
     ("trd", "path"): KEY_ARTIFACT_TRD_PATH,
-    ("trd", "meta"): KEY_ARTIFACT_TRD_META,
     ("trd", "sha256"): KEY_ARTIFACT_TRD_SHA256,
     ("trd", "vault_path"): KEY_ARTIFACT_TRD_VAULT_PATH,
     ("spec", "path"): KEY_ARTIFACT_SPEC_PATH,
-    ("spec", "meta"): KEY_ARTIFACT_SPEC_META,
     ("spec", "sha256"): KEY_ARTIFACT_SPEC_SHA256,
     ("spec", "vault_path"): KEY_ARTIFACT_SPEC_VAULT_PATH,
     ("spec_data_model", "path"): KEY_ARTIFACT_SPEC_DATA_MODEL_PATH,
-    ("spec_data_model", "meta"): KEY_ARTIFACT_SPEC_DATA_MODEL_META,
     ("spec_data_model", "sha256"): KEY_ARTIFACT_SPEC_DATA_MODEL_SHA256,
     ("spec_data_model", "vault_path"): KEY_ARTIFACT_SPEC_DATA_MODEL_VAULT_PATH,
     ("spec_criteria", "path"): KEY_ARTIFACT_SPEC_CRITERIA_PATH,
-    ("spec_criteria", "meta"): KEY_ARTIFACT_SPEC_CRITERIA_META,
     ("spec_criteria", "sha256"): KEY_ARTIFACT_SPEC_CRITERIA_SHA256,
     ("spec_criteria", "vault_path"): KEY_ARTIFACT_SPEC_CRITERIA_VAULT_PATH,
     ("story", "path"): KEY_ARTIFACT_STORY_PATH,
-    ("story", "meta"): KEY_ARTIFACT_STORY_META,
     ("story", "sha256"): KEY_ARTIFACT_STORY_SHA256,
 })
 #: The spec-file aspect a Spec document names -> the artifact kind its keys use.
@@ -493,23 +483,18 @@ LANE_KEYS: Final[tuple[str, ...]] = (
 #: Keys recording an authored document on its bead.
 ARTIFACT_KEYS: Final[tuple[str, ...]] = (
     KEY_ARTIFACT_TRD_PATH,
-    KEY_ARTIFACT_TRD_META,
     KEY_ARTIFACT_TRD_SHA256,
     KEY_ARTIFACT_TRD_VAULT_PATH,
     KEY_ARTIFACT_SPEC_PATH,
-    KEY_ARTIFACT_SPEC_META,
     KEY_ARTIFACT_SPEC_SHA256,
     KEY_ARTIFACT_SPEC_VAULT_PATH,
     KEY_ARTIFACT_SPEC_DATA_MODEL_PATH,
-    KEY_ARTIFACT_SPEC_DATA_MODEL_META,
     KEY_ARTIFACT_SPEC_DATA_MODEL_SHA256,
     KEY_ARTIFACT_SPEC_DATA_MODEL_VAULT_PATH,
     KEY_ARTIFACT_SPEC_CRITERIA_PATH,
-    KEY_ARTIFACT_SPEC_CRITERIA_META,
     KEY_ARTIFACT_SPEC_CRITERIA_SHA256,
     KEY_ARTIFACT_SPEC_CRITERIA_VAULT_PATH,
     KEY_ARTIFACT_STORY_PATH,
-    KEY_ARTIFACT_STORY_META,
     KEY_ARTIFACT_STORY_SHA256,
 )
 #: Keys on a Story: its owned edges and the host's record of its deploy.
@@ -608,23 +593,18 @@ class BeadMetadata(TypedDict, total=False):
     elab_key: str
     elab_follows: str
     artifact_trd_path: str
-    artifact_trd_meta: str
     artifact_trd_sha256: str
     artifact_trd_vault_path: str
     artifact_spec_path: str
-    artifact_spec_meta: str
     artifact_spec_sha256: str
     artifact_spec_vault_path: str
     artifact_spec_data_model_path: str
-    artifact_spec_data_model_meta: str
     artifact_spec_data_model_sha256: str
     artifact_spec_data_model_vault_path: str
     artifact_spec_criteria_path: str
-    artifact_spec_criteria_meta: str
     artifact_spec_criteria_sha256: str
     artifact_spec_criteria_vault_path: str
     artifact_story_path: str
-    artifact_story_meta: str
     artifact_story_sha256: str
     story_owned_blockers: str
     story_owned_blockers_at: str

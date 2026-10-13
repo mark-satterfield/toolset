@@ -817,16 +817,6 @@
         "path"
       ]
     },
-    "artifact_trd_meta": {
-      "type": "string",
-      "x-groups": [
-        "ARTIFACT_KEYS"
-      ],
-      "x-artifact": [
-        "trd",
-        "meta"
-      ]
-    },
     "artifact_trd_sha256": {
       "type": "string",
       "x-groups": [
@@ -856,16 +846,6 @@
       "x-artifact": [
         "spec",
         "path"
-      ]
-    },
-    "artifact_spec_meta": {
-      "type": "string",
-      "x-groups": [
-        "ARTIFACT_KEYS"
-      ],
-      "x-artifact": [
-        "spec",
-        "meta"
       ]
     },
     "artifact_spec_sha256": {
@@ -899,16 +879,6 @@
         "path"
       ]
     },
-    "artifact_spec_data_model_meta": {
-      "type": "string",
-      "x-groups": [
-        "ARTIFACT_KEYS"
-      ],
-      "x-artifact": [
-        "spec_data_model",
-        "meta"
-      ]
-    },
     "artifact_spec_data_model_sha256": {
       "type": "string",
       "x-groups": [
@@ -940,16 +910,6 @@
         "path"
       ]
     },
-    "artifact_spec_criteria_meta": {
-      "type": "string",
-      "x-groups": [
-        "ARTIFACT_KEYS"
-      ],
-      "x-artifact": [
-        "spec_criteria",
-        "meta"
-      ]
-    },
     "artifact_spec_criteria_sha256": {
       "type": "string",
       "x-groups": [
@@ -979,16 +939,6 @@
       "x-artifact": [
         "story",
         "path"
-      ]
-    },
-    "artifact_story_meta": {
-      "type": "string",
-      "x-groups": [
-        "ARTIFACT_KEYS"
-      ],
-      "x-artifact": [
-        "story",
-        "meta"
       ]
     },
     "artifact_story_sha256": {

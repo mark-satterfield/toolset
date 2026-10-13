@@ -58,6 +58,10 @@ and the folder for the request files you write and the answer files you name in 
 (`helpersFolder`). The brief's `step` is your step in the journal, and its output path is
 where you write the result.
 
+An input whose label begins `earlier work:` is a file or folder an earlier form of the pipeline
+produced for this PRD (a survey, a round plan, a specialist's result, draft documents): a hint
+to start from, checked against the matrix and the approved documents, and not approved content.
+
 ## The request
 
 The brief's `request` is "Establish the state of the architecture for this PRD." Answer it

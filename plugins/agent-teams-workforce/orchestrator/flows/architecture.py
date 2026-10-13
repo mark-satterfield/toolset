@@ -65,6 +65,7 @@ from orchestrator.flows.architecture_files import (
     ArchitectureStepError,
     agents_with_role,
     checked_file,
+    earlier_files,
     is_finish,
     journal_file,
     output_check,
@@ -74,6 +75,8 @@ from orchestrator.flows.architecture_files import (
 from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from architecture_work_contract import (
         ArchitectureResult,
         SpecialistRequest,
@@ -94,16 +97,20 @@ WRITTEN: Final = "what was written"
 NO_SOURCE: Final = "obligations with no source"
 
 
-def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
-    """Plan the first steps of the Architecture container, for the open-run step.
+def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequence[StepId] = ()) -> StepGroup:
+    """Plan the architect's step and the check after it, under the Architecture container.
 
     Args:
         opened: The open-run step, whose artifacts the planned steps are handed.
         container: The Architecture container.
         architect: The agent that plays the solutions architect.
+        earlier: Steps that hold files an earlier form of the pipeline produced for this PRD,
+            which the architect's step is handed too.
 
     Returns:
-        The architect's step and the check that follows it, as the container's first child steps.
+        The architect's step and the check that follows it, as the container's last child steps.
+        The group is left out when the container already holds a step of the architect that is
+        not done.
 
     """
     plan: StepPlan = {
@@ -111,18 +118,24 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         "description": ARCHITECT_DESCRIPTION,
         "purpose": ARCHITECT_PURPOSE,
         "agent": architect,
-        "inputs": [opened],
+        "inputs": [opened, *earlier],
     }
-    return StepGroup((NewStep(plan), check_step([ARCHITECT_REF], corrections=0)), UNDER_CONTAINER, container)
+    return StepGroup(
+        (NewStep(plan), check_step([ARCHITECT_REF], corrections=0)),
+        UNDER_CONTAINER,
+        container,
+        unless_agent=architect,
+    )
 
 
 def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tuple[tuple[str, Path], ...]:
     """Name the files of the architect's brief: exactly the labels its definition states.
 
     Returns:
-        The PRD, the criteria file, the context file and the state path; then each review and
-        each mechanical check result the step is handed, as findings; then each specialist's
-        answer and each ruling the step is handed.
+        The PRD, the criteria file, the context file and the state path; then each file an
+        earlier form of the pipeline produced for this PRD; then each review and each mechanical
+        check result the step is handed, as findings; then each specialist's answer and each
+        ruling the step is handed.
 
     """
     findings: list[Path] = [*run.inputs.files(ARTIFACT_REVIEW), *run.inputs.files(ARTIFACT_CHECK)]
@@ -131,6 +144,7 @@ def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tupl
         (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
+        *earlier_files(run.inputs),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
         *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),

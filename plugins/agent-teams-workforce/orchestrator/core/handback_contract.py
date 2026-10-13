@@ -43,7 +43,7 @@ from typing import (
 )
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-type PhaseStatus = Literal["passed", "reused"]
+type PhaseStatus = Literal["passed"]
 type FailureClass = Literal["setup", "transient", "item", "pipeline-code-defect", "interrupted"]
 type StopStage = Literal["interrupted", "shutdown"]
 
@@ -103,14 +103,13 @@ TRANSIENT_CAUSES: Final[frozenset[str]] = frozenset({
 
 PHASE_STATUSES: Final[frozenset[PhaseStatus]] = frozenset(get_args(PhaseStatus.__value__))
 PASSED_PHASE: Final[PhaseStatus] = "passed"
-REUSED_PHASE: Final[PhaseStatus] = "reused"
 TRD_PHASE: Final = "trd"
 SPEC_PHASE_PREFIX: Final = "spec:"
 PHASE_KEY: Final = re.compile(rf"^({TRD_PHASE}|{SPEC_PHASE_PREFIX}[a-zA-Z0-9._-]+)$")
 
 type EventName = Literal["phase", "verdict", "session", "heartbeat", "note", "fable-wall"]
 type SessionState = Literal["started", "ended"]
-type NoteKind = Literal["reused", "rounds-warning", "invalidated", "integration-outside", "warning"]
+type NoteKind = Literal["rounds-warning", "invalidated", "integration-outside", "warning"]
 type PrdToSpecPhase = Literal[
     "architecture",
     "trd-authoring",
@@ -135,7 +134,6 @@ SESSION_STARTED: Final = "started"
 SESSION_ENDED: Final = "ended"
 SESSION_STATES: Final[frozenset[SessionState]] = frozenset(get_args(SessionState.__value__))
 
-REUSED_NOTE: Final = "reused"
 ROUNDS_WARNING_NOTE: Final = "rounds-warning"
 INVALIDATED_NOTE: Final = "invalidated"
 INTEGRATION_OUTSIDE_NOTE: Final = "integration-outside"
@@ -286,16 +284,6 @@ class HeartbeatEvent(TypedDict):
     at: float
 
 
-class ReusedNote(TypedDict):
-    """Saved work was reused; at least one of ``step`` and ``phase`` is present."""
-
-    event: Literal["note"]
-    kind: Literal["reused"]
-    step: NotRequired[str]
-    phase: NotRequired[str]
-    repository: NotRequired[str | None]
-
-
 class RoundsWarningNote(TypedDict):
     """Architecture review rounds are running long; ``drivers`` are the open findings."""
 
@@ -340,7 +328,7 @@ class FableWallEvent(TypedDict):
     window: str | None
 
 
-type NoteEvent = ReusedNote | RoundsWarningNote | InvalidatedNote | IntegrationOutsideNote | WarningNote
+type NoteEvent = RoundsWarningNote | InvalidatedNote | IntegrationOutsideNote | WarningNote
 type OrchestratorEvent = PhaseEvent | VerdictEvent | SessionEvent | HeartbeatEvent | NoteEvent | FableWallEvent
 
 _EVENT_SHAPES: Final[Mapping[str, object]] = {
@@ -351,7 +339,6 @@ _EVENT_SHAPES: Final[Mapping[str, object]] = {
     FABLE_WALL_EVENT: FableWallEvent,
 }
 _NOTE_SHAPES: Final[Mapping[str, object]] = {
-    REUSED_NOTE: ReusedNote,
     ROUNDS_WARNING_NOTE: RoundsWarningNote,
     INVALIDATED_NOTE: InvalidatedNote,
     INTEGRATION_OUTSIDE_NOTE: IntegrationOutsideNote,
@@ -912,9 +899,6 @@ def _check_event_rules(value: Mapping[str, object], path: str) -> None:
         if not ended and present:
             message = f"{path}: a {SESSION_STARTED!r} session event carries no {sorted(present)}"
             raise HandbackValidationError(message, value)
-    elif name == NOTE_EVENT and value.get("kind") == REUSED_NOTE and "step" not in value and "phase" not in value:
-        message = f"{path}: a {REUSED_NOTE!r} note requires step or phase"
-        raise HandbackValidationError(message, value)
 
 
 def _is_event(payload: object) -> TypeIs[OrchestratorEvent]:
@@ -1019,24 +1003,6 @@ def heartbeat_event(live: list[str], at: float) -> HeartbeatEvent:
 
     """
     event: HeartbeatEvent = {"event": HEARTBEAT_EVENT, "live": list(live), "at": at}
-    validate_event(event)
-    return event
-
-
-def reused_note(*, step: str | None = None, phase: str | None = None, repository: str | None = None) -> ReusedNote:
-    """Build a validated ``reused`` note; absent facts are omitted, and step or phase is required.
-
-    Returns:
-        The note. A note with neither step nor phase raises ``HandbackValidationError``.
-
-    """
-    event: ReusedNote = {"event": NOTE_EVENT, "kind": REUSED_NOTE}
-    if step is not None:
-        event["step"] = step
-    if phase is not None:
-        event["phase"] = phase
-    if repository is not None:
-        event["repository"] = repository
     validate_event(event)
     return event
 

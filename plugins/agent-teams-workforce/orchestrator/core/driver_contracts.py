@@ -82,9 +82,7 @@ class DispatchArguments:
     KEY_ARCH_PATH: str
     KEY_TRD_PATH: str
     KEY_DESIGN_SYSTEM: str
-    KEY_SKILLSPOKE_ROOT: str
     KEY_EXECUTION_ID: str
-    KEY_SUPERVISOR_INVOCATION_ID: str
     KEY_FABLE_UNTIL: str
     ARGUMENT_KEYS: frozenset[str]
     PRD_ID: str
@@ -273,9 +271,7 @@ def dispatch_arguments() -> DispatchArguments:
         KEY_ARCH_PATH=_text(module, "KEY_ARCH_PATH"),
         KEY_TRD_PATH=_text(module, "KEY_TRD_PATH"),
         KEY_DESIGN_SYSTEM=_text(module, "KEY_DESIGN_SYSTEM"),
-        KEY_SKILLSPOKE_ROOT=_text(module, "KEY_SKILLSPOKE_ROOT"),
         KEY_EXECUTION_ID=_text(module, "KEY_EXECUTION_ID"),
-        KEY_SUPERVISOR_INVOCATION_ID=_text(module, "KEY_SUPERVISOR_INVOCATION_ID"),
         KEY_FABLE_UNTIL=_text(module, "KEY_FABLE_UNTIL"),
         ARGUMENT_KEYS=_names(module, "ARGUMENT_KEYS"),
         PRD_ID=_text(module, "PRD_ID"),

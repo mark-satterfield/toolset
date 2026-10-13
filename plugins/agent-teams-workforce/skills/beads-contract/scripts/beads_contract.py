@@ -669,7 +669,9 @@ def metadata_of(rec: JsonObject) -> JsonObject:
         rec: One bead record.
 
     Returns:
-        The metadata mapping, or an empty dict.
+        The metadata mapping; an empty dict when the record holds no metadata, or holds JSON that
+        is not an object. Metadata stored as a string that is not JSON raises
+        ``json.JSONDecodeError`` from the decoder.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -682,14 +684,11 @@ def metadata_of(rec: JsonObject) -> JsonObject:
     if isinstance(raw, dict):
         return json_object(raw)
     if isinstance(raw, str) and raw.strip():
-        try:
-            value: JsonValue = check_type(
-                json.loads(raw),
-                JsonValue,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-        except json.JSONDecodeError:
-            return {}
+        value: JsonValue = check_type(
+            json.loads(raw),
+            JsonValue,
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
         return json_object(value) if isinstance(value, dict) else {}
     return {}
 

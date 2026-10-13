@@ -15,14 +15,12 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "063919c646170600624272f901a75e2a5cdb4e9dc7efe470b01eb05fa696a02a"
+SCHEMA_SHA256: Final[str] = "6a0c133764bb470508f0f0da86ab0f92dfb77e9e121e2e8476a25ed790f83efd"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
 #: Absolute path of the project root.
 PROJECT_ROOT_ENV: Final[str] = "ATW_PROJECT_ROOT"
-#: Absolute path of the phase-artifact recorder (artifactio.recorder_path()).
-ARTIFACT_SCRIPT_ENV: Final[str] = "ATW_ARTIFACT_SCRIPT"
 #: Path of the PRD-to-Epic sync script.
 PRD_EPIC_SYNC_ENV: Final[str] = "ATW_PRD_EPIC_SYNC"
 #: Path of the PRD-to-Epic verify script.
@@ -198,7 +196,6 @@ class DriverEnvironment(TypedDict):
     """The ATW_* and process environment the driver hands child and orchestrator processes."""
 
     ATW_PROJECT_ROOT: str
-    ATW_ARTIFACT_SCRIPT: str
     ATW_PRD_EPIC_SYNC: str
     ATW_PRD_EPIC_VERIFY: str
     ATW_FLEET_DIR: str

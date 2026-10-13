@@ -54,7 +54,6 @@
       "x-python": {"typeddict": "DriverEnvironment"},
       "properties": {
         "ATW_PROJECT_ROOT": {"type": "string", "minLength": 1, "description": "Absolute path of the project root.", "x-constant": "PROJECT_ROOT_ENV"},
-        "ATW_ARTIFACT_SCRIPT": {"type": "string", "minLength": 1, "description": "Absolute path of the phase-artifact recorder (artifactio.recorder_path()).", "x-constant": "ARTIFACT_SCRIPT_ENV"},
         "ATW_PRD_EPIC_SYNC": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic sync script.", "x-constant": "PRD_EPIC_SYNC_ENV"},
         "ATW_PRD_EPIC_VERIFY": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic verify script.", "x-constant": "PRD_EPIC_VERIFY_ENV"},
         "ATW_FLEET_DIR": {"type": "string", "minLength": 1, "description": "The fleet directory: SKILLSPOKE_APP_ROOT, else the control repository's parent.", "x-constant": "FLEET_DIR_ENV"},
@@ -73,7 +72,6 @@
       },
       "required": [
         "ATW_PROJECT_ROOT",
-        "ATW_ARTIFACT_SCRIPT",
         "ATW_PRD_EPIC_SYNC",
         "ATW_PRD_EPIC_VERIFY",
         "ATW_FLEET_DIR",

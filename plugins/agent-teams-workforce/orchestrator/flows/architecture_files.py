@@ -37,13 +37,19 @@ if TYPE_CHECKING:
     from step_journal_contract import Artifact, Journal, Step, StepId
 
     from orchestrator.core.io import JsonValue
-    from orchestrator.core.journal_steps import StepRun
+    from orchestrator.core.journal_steps import StepInputs, StepRun
 
 OPEN_RUN: Final = "prd_to_spec.open_run"
 CHECK: Final = "atw-matrix check; atw-matrix unapproved"
 APPROVE: Final = "atw-matrix approve"
 CONFIRM_TRD: Final = "trd.confirm"
+EARLIER_WORK: Final = "architecture.earlier_work"
 """The script keys of the steps of an elaboration's architecture part, as the journal shows them."""
+
+ARCHITECTURE: Final = "Architecture"
+"""The description of the outermost step that contains the architecture steps."""
+EARLIER_PREFIX: Final = "earlier work: "
+"""What the name of an artifact begins with when an earlier form of the pipeline produced the file."""
 
 ARCHITECTURE_FOLDER: Final = "architecture"
 CONSTRAINTS_FOLDER: Final = "arc42/02-architecture-constraints"
@@ -178,6 +184,17 @@ def journal_file(run: StepRun, name: str) -> Path:
             if held["name"] == name and held["kind"] != "value":
                 return Path(held["path"])
     raise ArchitectureStepError(run, f"neither its inputs nor the open-run step hold a file artifact named {name!r}")
+
+
+def earlier_files(inputs: StepInputs) -> list[tuple[str, Path]]:
+    """List the files an earlier form of the pipeline produced, among the artifacts a step is handed.
+
+    Returns:
+        Each file or directory artifact whose name begins with ``EARLIER_PREFIX``, with that name
+        as its label, in the order handed.
+
+    """
+    return [(name, path) for name, path in inputs.labelled_files() if name.startswith(EARLIER_PREFIX)]
 
 
 def read_context(run: StepRun) -> ArchitectureContext:

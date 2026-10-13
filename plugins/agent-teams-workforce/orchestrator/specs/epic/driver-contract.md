@@ -31,7 +31,7 @@ one place of each:
 | Run cost sidecar | `<driver>/costsidecar.py` |
 | Fable inventory, recovery arguments and the Fable call log (build and deploy lanes only) | `<driver>/recoverytypes.py` (`ModelInventory`, `WorkflowInventory`, `ReplayLimits`, `RecoveryEnvelope`, `BlockedRecovery`, `CallEvent`); the inventory is produced by `<plugin>/scripts/fable-inventory.py`, and the plugin's Fable shared block reads the recovery arguments with no typed definition (open item, QUESTIONS.md) |
 | Relay request, receipt and registered result (build and deploy lanes only) | not defined in one place (open item, QUESTIONS.md): `<plugin>/scripts/portfolio/relayregistry.py`, `<plugin>/scripts/portfolio/relaycapture.py`, the relay shared block of the workflows, and the argument names `<driver>/headless.py` writes |
-| Artifact provenance receipt, the accepted-step ledger and the producer API | `<driver>/artifactio.py` (`ArtifactReceipt`, `ReceiptInput`, `InputKind` / `INPUT_KINDS`, `META_SUFFIX`, `receipt_path`, `STEPS_FILE`, `ArtifactProducer`); the plugin reaches it through the driver surface's `ARTIFACT_SCRIPT_ENV` |
+| Step journal (one file per bead; the only thing that decides where a run begins) | `<orch>/core/step_journal.py`, schema `<plugin>/skills/pipeline-contracts/schemas/step-journal.schema.json`; the driver loads the module through `<driver>/stepjournal.py`, reads it for the dashboard (`journalprogress.py`), resets it only through `journalstart.py`, and writes one only through `<orch>/port_journal.py` (`journalport.py`) |
 
 `<arch>` below is the architecture directory, the one the driver surface's `ARCH_PATH_ENV` names.
 
@@ -92,7 +92,6 @@ Where each value comes from:
 | `KEY_PRD` | the resolved PRD file (`workitems.find_prd`) and the Epic title |
 | `KEY_EPIC` | the Epic bead |
 | `KEY_BEADS_REPO_PATH` | `beadsio.main_repo_path()` |
-| `KEY_SKILLSPOKE_ROOT` | `artifactio.skillspoke_root()` |
 | `KEY_ARCH_PATH` | `workitems.arch_args` |
 | `KEY_DESIGN_SYSTEM` | `workitems.design_system_args` |
 | `KEY_TRD_PATH` | `workitems.trd_path_for`, only when the PRD sits in a folder named `prds` |
@@ -204,13 +203,10 @@ Readers and what they need:
   elaboration-state, execution, repeat, human-action, build-state, run and keeper events. For an
   Epic it also reads, outside the ledger: the tracker export (elaboration state and cause, Story
   and Task counts, TRD filed) to decide "Done" (it needs `ELABORATION_DONE`, a cause in
-  `DONE_CAUSES`, a TRD, a Story and a Task); `artifactio.plan(<bead>)` over `artifacts/<bead>/`
-  (the accepted-step ledger `STEPS.md`, `artifactio.STEPS_FILE`, and the `<output>.meta.json`
-  receipts, `artifactio.ArtifactReceipt` at `artifactio.receipt_path`) for accepted/stale
-  steps and the resume phase in `STEP_ORDER`; relay step files under `artifacts/relay/<bead>/`,
-  `artifacts/<bead>/relay/` and `artifacts/<bead>/<phase>/relay/` to show architecture rounds; and
-  the live phase from the session's workflow journal (`attemptview.steps_of` over
-  `phaserec.expected_phases`).
+  `DONE_CAUSES`, a TRD, a Story and a Task); and the Epic's step journal
+  (`observe.journal_progress`, which is `journalprogress.progress`): the outermost steps with
+  their status, the steps running now, the step the next run begins at, a failed step with its
+  failure text, and how many steps are done.
 - `attemptview.py`, `runview.py`: the dispatch, phase, verdict, handback and run events, plus the
   harness workflow folders `<session>/subagents/workflows/wf_*/` (`journal.jsonl`,
   `agent-<id>.meta.json`) and the run records in `state/phases/`.
@@ -287,20 +283,16 @@ S02 places in the session runner. No flow keeps a copy of its own.
 4. A snapshot or restore that itself fails fails the step at its stage, cause `OTHER_CAUSE`.
 
 It stops wrong output nothing later catches: every agent with Write or Edit (the polyrepo-steward,
-`prd-reality-reconciler`, the architecture writers and maintainer, `trd-author`, the four spec
-makers, `task-decomposer`, `task-dependency-mapper`, `wsjf-scorer`, `epic-sequencer`) can write
+the solutions architect and the agents it starts, `architecture-maintainer`, `trd-author`, the
+spec authors, `task-decomposer`, `task-dependency-mapper`, `wsjf-scorer`, `epic-sequencer`) can write
 anywhere, and no later step re-reads section 2. How the guard spans sessions that run in parallel
 (the per-repository spec chains, the architecture reviewers) is S02's to settle.
 
-**Input record.** Every Epic flow records a saved result's inputs with `artifactio.record` as a
-provenance receipt (`artifactio.ArtifactReceipt` at `artifactio.receipt_path(<result>)`, its
-inputs `artifactio.ReceiptInput` of the kinds `artifactio.INPUT_KINDS`), and a result is reused when every recorded input hashes
-as recorded. The element status matrix rows that repo scoping and the architecture Closure read are
-recorded with `KIND_MATRIX_ROWS`. No Epic flow records `KIND_GIT_MAIN` any more: its only user was
-the removed detailing step (`prd-reconciliation`). The one exception is the architecture survey's
-existing seal (`survey.json.baseline-inputs.json`, CONTEXT 7.13). The driver's `artifactio.plan`
-already reads the receipts, so this is the format; each flow's own spec is the single source of
-its input list.
+**Step record.** A step's output is recorded in the Epic's step journal as an artifact, by file
+path or as a value, in the one journal change that marks the step done. A later step is handed
+the artifacts of the steps its `inputs` name. Nothing else records what a step produced or
+decides whether it runs again: there is no file beside an output, no input hash and no
+freshness check.
 
 ## 9. Requirements that apply
 
