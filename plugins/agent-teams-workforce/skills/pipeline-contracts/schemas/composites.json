@@ -39,6 +39,7 @@
         {"id": "baseline", "title": "Baseline"},
         {"id": "red", "title": "Red"},
         {"id": "green", "title": "Green"},
+        {"id": "reuse-audit", "title": "Reuse Audit"},
         {"id": "refactor", "title": "Refactor"},
         {"id": "cds-audit", "title": "CDS Audit"},
         {"id": "documentation", "title": "Documentation"},

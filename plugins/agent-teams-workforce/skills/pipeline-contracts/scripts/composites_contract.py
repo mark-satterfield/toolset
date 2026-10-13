@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "a5d297f1c70a974cf9f13ce809899be6493b2379ef6150400575234dd37c6a97"
+SOURCE_SHA256: Final[str] = "5afd28953a1c317e2534505f5776439442c8de1e07743eec8a12af2b40e35d22"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -65,6 +65,7 @@ type PhaseId = Literal[
     "baseline",
     "red",
     "green",
+    "reuse-audit",
     "refactor",
     "cds-audit",
     "documentation",
@@ -169,6 +170,7 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "baseline", "title": "Baseline"},
             {"id": "red", "title": "Red"},
             {"id": "green", "title": "Green"},
+            {"id": "reuse-audit", "title": "Reuse Audit"},
             {"id": "refactor", "title": "Refactor"},
             {"id": "cds-audit", "title": "CDS Audit"},
             {"id": "documentation", "title": "Documentation"},

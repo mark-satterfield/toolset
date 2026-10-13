@@ -210,6 +210,59 @@ def check_change_order(path: Path, reader: ChangeReader) -> None:
     )
 
 
+def correction_steps(kinds: tuple[str, ...]) -> list[JsonValue]:
+    """Build the steps a reuse audit adds when it finds a violation, as a workflow script reports them.
+
+    Returns:
+        One added step per kind, each with the plan the definition gives it and the audit's finding as purpose.
+
+    """
+    params: dict[str, JsonValue] = {"implementer": "python-lambda-implementer"}
+    purpose: str = "The reuse audit found 1 violation"
+    added: list[JsonValue] = []
+    position: int
+    kind: str
+    for position, kind in enumerate(kinds, start=1):
+        handed: dict[str, JsonValue] = params if kind == "build:implement" else {}
+        built: StepPlan = pipeline_steps.step_plan(PIPELINE_BUILD, kind, handed, purpose=purpose)
+        wire: dict[str, JsonValue] = {
+            "ref": f"r.{position}",
+            "description": built["description"],
+            "purpose": built["purpose"],
+            "script": kind,
+        }
+        added.append({"plan": wire, "params": handed} if handed else {"plan": wire})
+    return added
+
+
+def check_reuse_violation(root: Path) -> None:
+    """Check that a reuse audit that finds violations adds the steps that correct them, right after it."""
+    audit_kind: str = "build:reuse-audit"
+    definition: pipeline_steps.PipelineDefinition = pipeline_steps.definition(PIPELINE_BUILD)
+    plan: list[str] = list(definition.plan)
+    require(plan.index(audit_kind) == plan.index("build:select-implementers") + 1, "the audit follows the green steps")
+    correction: tuple[str, ...] = definition.kinds[audit_kind].adds[0].kinds
+    require(correction == ("build:implement", "build:green-check", audit_kind), "a violation adds its correction")
+    path: Path = pipeline_steps.open_journal(root / "reuse", TASK, BEAD_TYPE_TASK)
+    audit: StepId = next(step["id"] for step in sj.read_journal(path)["steps"] if step.get("script") == audit_kind)
+    reader: ChangeReader = ChangeReader(path, RUN)
+    reader.feed(line(1, CHANGE_OP_START, audit))
+    added: list[JsonValue] = correction_steps(correction)
+    finding: str = "src/handler.py:12 duplicate feature:event-publishing publish: a direct EventBridge PutEvents call"
+    held: JsonValue = {"clean": False, "violations": [finding], "judgment": [], "unchecked": []}
+    artifacts: list[JsonValue] = [{"name": "reuseAudit", "kind": "value", "value": held}]
+    done: Applied | None = reader.feed(line(2, CHANGE_OP_DONE, audit, artifacts=artifacts, add=added))
+    require(done is not None and len(done.added) == len(correction), "the audit's result adds the correction steps")
+    journal: Journal = sj.read_journal(path)
+    at: int = kinds_of(journal).index(audit_kind)
+    require(tuple(kinds_of(journal)[at + 1 : at + 1 + len(correction)]) == correction, "they follow the audit")
+    require(kinds_of(journal)[at + 1 + len(correction)] == plan[plan.index(audit_kind) + 1], "then the plan goes on")
+    following: Step | None = sj.next_step(journal)
+    require(following is not None and following.get("script") == plan[0], "an earlier planned step still runs first")
+    require(artifacts[0] in sj.find_step(journal, audit)["artifacts"], "the audit holds the violations it found")
+    report("PASS: a reuse violation adds the steps that correct it after the audit: implement, green-check, the audit")
+
+
 def main() -> None:
     """Run the checks in a temporary directory."""
     check_definition()
@@ -217,6 +270,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root: Path = Path(directory).resolve() / ".claude" / "workflow-runs"
         check_open(root)
+        check_reuse_violation(root)
         check_change_order(*check_changes(root))
 
 

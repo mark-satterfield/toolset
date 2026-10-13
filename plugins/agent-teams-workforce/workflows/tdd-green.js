@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-green',
   description:
-    'Shared-tail mini — TDD Green. The implementation-lead selects the implementer(s) for the change unless the caller names one; the implementers write the minimum production code in sequence to make the failing tests pass, run the suite, and report Green. An implementer does not change tests: it names a test that contradicts the contract in testIssues, and a missing thing outside the Task in upstreamMissing. With select it names the implementers and runs none; with only it runs that one of the implementers given.',
+    'Shared-tail mini — TDD Green. The implementation-lead selects the implementer(s) for the change unless the caller names one; the implementers write the minimum production code in sequence to make the failing tests pass, run the suite, and report Green. An implementer does not change tests: it names a test that contradicts the contract in testIssues, and a missing thing outside the Task in upstreamMissing. The brief of each implementer opens with the shared capabilities the contract carries (contract.sharedCapabilities): what the Task takes from a shared library, layer, chassis or service, and what each provides. With select it names the implementers and runs none; with only it runs that one of the implementers given.',
   phases: [{ title: 'Green', detail: 'minimum code to pass; confirm Green' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -377,6 +377,27 @@ ${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).jo
 Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}
 Red evidence${redEvidence.length > RED_EVIDENCE_CHARS ? ` (first ${RED_EVIDENCE_CHARS} characters)` : ''}: ${redEvidence.slice(0, RED_EVIDENCE_CHARS) || 'n/a'}${scopeBlock}`
 
+// The shared capabilities the contract carries (contract.sharedCapabilities, from atw-matrix uses --task): what the
+// Task takes from a shared library, layer, chassis or service, and what each provides.
+const sharedCapabilities = (Array.isArray(c.sharedCapabilities) ? c.sharedCapabilities : []).filter((x) => x && typeof x === 'object' && str(x.name))
+const capabilityLines = (capability) => {
+  const providers = (Array.isArray(capability.providedBy) ? capability.providedBy : [])
+    .map((row) => `${str(row && row.kind)} ${str(row && row.name)}${str(row && row.repository) ? ` in repository ${str(row.repository)}` : ''}`.trim())
+    .filter(Boolean)
+  const provides = (Array.isArray(capability.provides) ? capability.provides : []).map((entry) => {
+    const face = entry && entry.interface && typeof entry.interface === 'object' ? `${str(entry.interface.kind)} ${str(entry.interface.name)}`.trim() : ''
+    return `  - ${str(entry && entry.behaviour)}${face ? ` Interface: ${face}.` : ''}${str(entry && entry.consumersMust) ? ` You must: ${str(entry.consumersMust)}` : ''}`
+  })
+  return [`- ${str(capability.name)}${providers.length ? ` (provided by ${providers.join('; ')})` : ''}`, ...provides].join('\n')
+}
+const reuseBlock = sharedCapabilities.length
+  ? `SHARED CAPABILITIES THIS TASK MUST USE
+Each behaviour below comes from the shared capability named, through the interface named. This repository holds none of it: no copy, no local equivalent, and no direct call to the AWS service or provider the capability wraps. When a capability lacks something this Task needs, write nothing in its place and name it in \`upstreamMissing\` with the evidence. After the suite is green, \`atw-matrix check-reuse\` checks the files you changed against this list.
+${sharedCapabilities.map(capabilityLines).join('\n')}
+
+`
+  : ''
+
 const suiteCommand = str(c.suiteCommand)
 const suiteBlock = suiteCommand
   ? `\n\nThe run judges green by running exactly \`cd "${repo}" && ${suiteCommand}\` itself, and green means it exits 0: the whole suite, including any test that was already failing before this Task. Run that command before you report.`
@@ -415,7 +436,7 @@ if (a.implementer !== undefined && a.implementer !== null && a.implementer !== '
 
 ${treeBlock}
 
-${taskBlock}${a.feedback ? `\n\nKnown suite failures and prior rulings to cover in your selection:\n${a.feedback}` : ''}`,
+${taskBlock}${sharedCapabilities.length ? `\n\nShared capabilities the implementers must use rather than write: ${sharedCapabilities.map((x) => str(x.name)).join(', ')}` : ''}${a.feedback ? `\n\nKnown suite failures and prior rulings to cover in your selection:\n${a.feedback}` : ''}`,
     {
       label: 'green:select-implementers',
       effort: 'low',
@@ -490,7 +511,7 @@ const upstreamMissing = []
 const deadImplementers = []
 for (const impl of implementersRun) {
   green = await settleAgent(
-    `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed.${suiteBlock}
+    `${reuseBlock}Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed.${suiteBlock}
 
 ${treeBlock}
 
