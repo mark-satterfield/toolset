@@ -285,7 +285,6 @@ aws events put-rule \
 ### Cost Optimization
 
 - **Use specific event patterns** to reduce matches
-- **Batch events** when publishing (up to 10 per call)
 - **Archive selectively** — not all events
 
 ## Troubleshooting

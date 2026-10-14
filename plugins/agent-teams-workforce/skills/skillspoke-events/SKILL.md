@@ -155,10 +155,6 @@ sending code -> chassis event helper -> shared-apiClient-lib -> POST /v1/events
   a PRIVATE REST v1 API (`POST /v1/events`) reachable only through the platform `execute-api`
   interface endpoint and authorized by a Cognito user-pool authorizer that checks the
   event-publish scope of a client-credentials token.
-- Because a chatty service emits at least two `telemetry.handler` events per invocation, the API
-  accepts an array of one to ten entries per call, each holding one event's values and optional
-  payload, and returns a per-entry result; each entry is validated, offloaded and authorized on its
-  own.
 - By project convention, all cross-service events flow through one custom bus, `skillSpoke-events`.
 - By project convention, delivery is EventBridge rule to SQS to Lambda everywhere: a consumer
   Lambda is triggered by its queue.
@@ -203,10 +199,6 @@ sending code -> chassis event helper -> shared-apiClient-lib -> POST /v1/events
 6. **Pass the subject account id** with an event whose payload carries personal data, because the
    coat-check key is `<eventType>/<subjectAccountId>/<dedupKey>` and forget-me finds an account's
    payloads by that prefix.
-
-Because the helper sends all events of one invocation together before the handler returns, they go
-in calls of up to ten: `business` events and events whose `lifecycle.isError` is true first, then
-the rest.
 
 ### What the events service decides for the publisher
 
@@ -260,8 +252,7 @@ A payload is the domain-specific content of one event type; many events have non
 - Because API Gateway invokes the events API function synchronously, a request is limited by the
   6 MB Lambda synchronous payload limit before API Gateway's 10 MB limit; the size limits are in
   the Coat-check pattern of `event-platform-and-envelope.md`. A publisher whose `piiPresent=false`
-  payload is too large for one request stores it itself and sends a reference; a publisher whose
-  entries together are too large sends them in several requests.
+  payload is too large for one request stores it itself and sends a reference.
 - Because the coat-check key names the fact and the object is written put-if-absent, a
   republication of the same fact writes no new object.
 - Because a coat-check object must outlive every queued reference to it and no longer, current

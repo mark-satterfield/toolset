@@ -51,7 +51,6 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Read the skillspoke-events skill, the shared-events-service source files it names, and the effective views the catalog lists for the event-publishing pattern and for the service you are changing before you write. A task that seems to need another publishing path is a scope exception to report to implementation-lead, with the view or test it comes from.
 - Take the request from the approved contract and `src/event/request_schema.json` in shared-events-service, not from memory of similar systems. The service passes the values; shared-events-service builds, validates and publishes the event.
-- A service publishes each event with its own call, and may make many calls in one execution.
 - Where the Lambda pattern provides idempotency and delivery resilience, client code uses it and does not re-implement it.
 - Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
