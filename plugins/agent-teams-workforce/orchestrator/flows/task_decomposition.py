@@ -22,10 +22,12 @@ import beadgraph
 import beadwrite
 import hierarchy
 import matrixtasks
+import strictschema
 from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
 from matrixstore import Matrix, matrix_path, read_matrix
 from typeguard import CollectionCheckStrategy, check_type
 
+from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -40,17 +42,17 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
-from orchestrator.core.models import StepError
+from orchestrator.core.models import OutputValidator, StepError
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
     CRITERIA,
     DATA_MODEL,
     DECOMPOSER,
-    PLACED_ITEMS,
     REPOSITORY,
     SPEC,
     STORY,
+    STORY_BUILDS,
     STORY_DOCUMENT,
     TASK,
     TASK_CONTEXT,
@@ -81,7 +83,7 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import item_stacks, shared_capabilities
+from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks, shared_capabilities
 from orchestrator.flows.spec_authoring import design_system
 
 # isort: split
@@ -102,6 +104,8 @@ TASK_WARNINGS: Final = "task warnings"
 TASKS_WRITTEN: Final = "tasks written"
 SCHEMAS: Final = "skills/artifact-handoff/schemas"
 UNCITED_STAGE: Final = "uncited-items"
+STORY_KEY_PREFIX: Final = "S"
+"""What a Story's key starts with; the span numbers the Stories from 1 (``repo_scoping._spec_steps``)."""
 
 
 def _packages(run: StepRun) -> str | None:
@@ -147,7 +151,7 @@ def _other_epic_work(
     Args:
         run: The step that asks.
         control: The control repository, whose beads database holds the Tasks.
-        built: The items placed in the Story's repository.
+        built: The items of what the Story builds.
 
     Returns:
         The ids of the stacks that hold the items' entries; and, for each stack, what
@@ -167,6 +171,63 @@ def _other_epic_work(
     ]
 
 
+def _by_story(every: dict[str, JsonValue]) -> dict[str, list[JsonValue]]:
+    """Group what every Story of the Epic builds by the Story's key.
+
+    The span plans one Story per repository, keyed ``S<n>`` in the order its placements name
+    the repositories; the items of what the Stories build list the repositories in that order.
+
+    Returns:
+        Each storyKey with the items of what its Story builds.
+
+    """
+    slugs: list[str] = list(dict.fromkeys(str(json_object(item)["slug"]) for item in every.values()))
+    keys: dict[str, str] = {slug: f"{STORY_KEY_PREFIX}{index}" for index, slug in enumerate(slugs, 1)}
+    grouped: dict[str, list[JsonValue]] = {}
+    for item in every.values():
+        grouped.setdefault(keys[str(json_object(item)["slug"])], []).append(item)
+    return grouped
+
+
+def _write_context(
+    run: StepRun,
+    held: Repository,
+    control: Path,
+    existing: list[JsonValue],
+) -> tuple[Path, list[JsonValue]]:
+    """Write the task context file of one repository's Story.
+
+    Returns:
+        The file, and the items of what the Story builds. The file holds the Tasks that exist,
+        the stacks the Story builds in with the open work of other Epics on each, the shared
+        capabilities, and ``dependsOn`` and ``consumedBy`` (``repo_scoping.build_context``):
+        what the Tasks depend on or use, never work.
+
+    """
+    every: dict[str, JsonValue] = json_object(
+        run.tools.portfolio(TASK_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
+    )
+    built: list[JsonValue] = [item for item in every.values() if json_object(item)["slug"] == held.slug]
+    stacks, others = _other_epic_work(run, control, built)
+    matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, _by_story(every))
+    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
+    write_json(
+        facts,
+        {
+            "existingTasks": existing,
+            "stackWork": others,
+            "repoPath": held.path,
+            "slug": held.slug,
+            "stacks": stacks,
+            "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
+            "dependsOn": depended["dependsOn"],
+            "consumedBy": depended["consumedBy"],
+        },
+    )
+    return facts, built
+
+
 @script_step(TASK_CONTEXT)
 def context(run: StepRun) -> Completion:
     """Gather what one repository's Tasks are decomposed from, and plan the decomposition.
@@ -179,7 +240,7 @@ def context(run: StepRun) -> Completion:
     matrix ids into each Task. Nothing is recorded in the matrix.
 
     Returns:
-        The repository, the task context file and the placed items file as artifacts, with the
+        The repository, the task context file and the what-the-story-builds file as artifacts, with the
         decomposer's step and the plan step planned after this one.
 
     """
@@ -199,23 +260,9 @@ def context(run: StepRun) -> Completion:
         and bead.kind == "task"
         and (beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:"))
     ]
-    placed: dict[str, JsonValue] = json_object(
-        run.tools.portfolio(TASK_CONTEXT, hierarchy.placed_items, span_files(run.inputs)),
-    )
-    built: list[JsonValue] = [item for item in placed.values() if json_object(item)["slug"] == held.slug]
-    stacks, others = _other_epic_work(run, control, built)
-    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
-    write_json(
-        facts,
-        {
-            "existingTasks": existing,
-            "stackWork": others,
-            "repoPath": held.path,
-            "slug": held.slug,
-            "stacks": stacks,
-            "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
-        },
-    )
+    facts: Path
+    built: list[JsonValue]
+    facts, built = _write_context(run, held, control, existing)
     items: Path = run.context.work / f"tasks-{held.slug}.items.json"
     write_json(items, {"items": built})
     name: str = Path(held.path).name
@@ -223,7 +270,7 @@ def context(run: StepRun) -> Completion:
     decompose: StepPlan = {
         "ref": "decompose",
         "description": f"Decompose the Story of {name} into Tasks",
-        "purpose": "Every placed item has a sized Task that builds it",
+        "purpose": "Every thing the Story builds is cited by a sized Task",
         "agent": DECOMPOSER,
         "inputs": upstream,
     }
@@ -237,10 +284,39 @@ def context(run: StepRun) -> Completion:
         artifacts=(
             value_artifact(REPOSITORY, held.facts()),
             file_artifact(TASK_CONTEXT_FILE, facts),
-            file_artifact(PLACED_ITEMS, items),
+            file_artifact(STORY_BUILDS, items),
         ),
         add=(StepGroup((NewStep(decompose, {WORK: WORK_DECOMPOSE}), NewStep(planning, {}))),),
     )
+
+
+def task_grouping_check(items_file: Path, schema_file: Path) -> OutputValidator:
+    """Build the check of the decomposer's Tasks file: its schema, then how its Tasks group what the Story builds.
+
+    Args:
+        items_file: The file of what the Story builds (``tasks-<slug>.items.json``).
+        schema_file: The Tasks file's schema.
+
+    Returns:
+        A check that reads the Tasks file as strict JSON, validates it against the schema
+        (``jsonschema.ValidationError``), and raises ``ValueError`` with every problem
+        ``hierarchy.task_grouping_problems`` reports; both send the session to its one
+        correction (``agents.CONTENT_FAILURES``).
+
+    """
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        strictschema.validate(document, strict_json(schema_file), location=schema_file)
+        items: list[JsonValue] = check_type(json_object(strict_json(items_file))["items"], list[JsonValue])
+        tasks: list[JsonValue] = check_type(document["tasks"], list[JsonValue])
+        matrix: Matrix = read_matrix(matrix_path(None, os.environ))
+        problems: list[str] = hierarchy.task_grouping_problems(items, tasks, matrix)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return document
+
+    return check
 
 
 @agent_step(DECOMPOSER)
@@ -267,7 +343,7 @@ def decomposer(run: StepRun) -> AgentLaunch:
     sources: Path | None = run.inputs.optional_file(UI_SOURCES)
     if sources is not None:
         files.append((UI_SOURCES, sources))
-    files.extend((label, run.inputs.file(label)) for label in (TASK_CONTEXT_FILE, PLACED_ITEMS))
+    files.extend((label, run.inputs.file(label)) for label in (TASK_CONTEXT_FILE, STORY_BUILDS))
     if correcting:
         files.extend((label, run.inputs.file(label)) for label in (TASKS_FILE, TASK_GAPS))
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
@@ -278,11 +354,15 @@ def decomposer(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=run.context.work / (f"tasks-{held.slug}.correction.json" if correcting else f"tasks-{held.slug}.json"),
-        validate=run.tools.plugin / SCHEMAS / ("tasks-correction.schema.json" if correcting else "tasks.schema.json"),
+        validate=(
+            run.tools.plugin / SCHEMAS / "tasks-correction.schema.json"
+            if correcting
+            else task_grouping_check(run.inputs.file(STORY_BUILDS), run.tools.plugin / SCHEMAS / "tasks.schema.json")
+        ),
         outcome=(
             "Task and size corrections for the recorded coverage gaps."
             if correcting
-            else "Build activities, dependencies and sizes for this repository's placed items."
+            else "Build activities, dependencies and sizes for what this repository's Story builds."
         ),
         accept=accept,
         add_dirs=(run.context.work, Path(held.path)),
@@ -303,8 +383,8 @@ def _correction_steps(run: StepRun, name: str) -> StepGroup:
     handed: list[str] = [*run.step.get("inputs", []), run.step["id"]]
     correct: StepPlan = {
         "ref": "correction",
-        "description": f"Correct the uncited items and unsized Tasks of {name}",
-        "purpose": "Every placed item has a sized Task that builds it",
+        "description": f"Correct what {name} builds that no Task cites, and the unsized Tasks",
+        "purpose": "Every thing the Story builds is cited by a sized Task",
         "agent": DECOMPOSER,
         "inputs": handed,
     }

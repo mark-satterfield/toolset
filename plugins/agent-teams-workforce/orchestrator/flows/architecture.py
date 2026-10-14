@@ -45,7 +45,7 @@ from matrix_contract import (
     SIDE_ARCHITECTURE,
     MatrixError,
 )
-from matrixquery import epic_view, impact_view
+from matrixquery import epic_brief, epic_view
 from matrixstore import as_entry_id, make_id, name_key, read_matrix, slug, update_matrix
 from matrixsync import sync_documents
 from matrixtraverse import epic_id
@@ -72,7 +72,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_ANSWER,
     LABEL_CONTEXT,
     LABEL_CRITERIA,
-    LABEL_CURRENT,
+    LABEL_EPIC_BRIEF,
     LABEL_FINDINGS,
     LABEL_PRD,
     LABEL_QUESTION,
@@ -94,9 +94,9 @@ from orchestrator.flows.architecture_files import (
     agents_with_role,
     checked_file,
     cited_document,
-    current_architecture_path,
     document_path,
     earlier_files,
+    epic_brief_path,
     is_finish,
     journal_file,
     matrix_file,
@@ -104,6 +104,7 @@ from orchestrator.flows.architecture_files import (
     read_context,
     result_validator,
 )
+from orchestrator.flows.repo_scoping import story_build_problems
 from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
@@ -190,73 +191,43 @@ def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequ
     )
 
 
-def _view_ids(views: Sequence[Mapping[str, JsonValue]]) -> list[EntryId]:
-    """Read the ids of entries as a matrix read prints them.
-
-    Returns:
-        The id of each entry that states one, in the order given.
-
-    """
-    return [as_entry_id(stated) for view in views for stated in (view.get("id"),) if isinstance(stated, str)]
-
-
-def _reached(view: EpicView) -> list[EntryId]:
-    """List what an Epic reaches: its features, the entries reached from them and their stacks.
-
-    Returns:
-        The ids, once each, in the order the closure lists them; none for a view with no closure.
-
-    """
-    if "closure" not in view:
-        return []
-    closure = view["closure"]
-    return list(
-        dict.fromkeys([
-            *_view_ids([reach["feature"] for reach in closure["features"]]),
-            *_view_ids([reach["entry"] for reach in closure["entries"]]),
-            *_view_ids([reach["stack"] for held in closure["repositories"] for reach in held["stacks"]]),
-        ]),
-    )
-
-
-def _current_architecture(bead: str) -> dict[str, JsonValue]:
-    """Read from the matrix the current architecture that touches an Epic, with what rests on each piece.
+def _epic_brief(bead: str) -> dict[str, JsonValue]:
+    """Read from the matrix what the architect is handed for an Epic.
 
     An Epic the matrix does not hold raises ``MatrixError``.
 
     Returns:
-        ``epic``: what ``atw-matrix epic <bead> --closure --constraints --unlinked`` prints; and
-        ``impact``: what ``atw-matrix impact --id`` prints for each feature, entry and stack in it.
+        ``matrixquery.epic_brief``: the Epic's own requirements, its features with the arc42
+        headings that describe them, the entries that realize them with their stacks and
+        repositories, and the constraints that apply to those. The architect runs
+        ``atw-matrix impact --id <id>`` itself for an entry it means to change.
 
     """
-    matrix: Matrix = read_matrix(matrix_file())
-    view: EpicView = epic_view(matrix, bead, closure=True, constraints=True, unlinked=True)
-    impact: list[JsonValue] = [json_object(impact_view(matrix, reached)) for reached in _reached(view)]
-    return {"epic": json_object(view), "impact": impact}
+    return json_object(epic_brief(read_matrix(matrix_file()), bead))
 
 
 def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tuple[tuple[str, Path], ...]:
     """Name the files of the architect's brief: exactly the labels its definition states.
 
-    The file of the current architecture is written here, from the matrix as it is when the
-    session starts, so the brief names the documents and headings the Epic reaches.
+    The Epic's brief is written here, from the matrix as it is when the session starts, so the
+    architect is handed the Epic's requirements, features, realizers and constraints.
 
     Returns:
-        The PRD, the criteria file, the context file, the state path and the current
-        architecture; then each file an earlier form of the pipeline produced for this PRD; then
-        each review and each mechanical check result the step is handed, as findings; then each
-        specialist's answer and each ruling the step is handed.
+        The PRD, the criteria file, the context file, the state path and the epic brief; then
+        each file an earlier form of the pipeline produced for this PRD; then each review and
+        each mechanical check result the step is handed, as findings; then each specialist's
+        answer and each ruling the step is handed.
 
     """
-    current: Path = current_architecture_path(run.context.work)
-    write_json(current, run.tools.portfolio(run.inputs.stage, _current_architecture, str(run.bead)))
+    current: Path = epic_brief_path(run.context.work)
+    write_json(current, run.tools.portfolio(run.inputs.stage, _epic_brief, str(run.bead)))
     findings: list[Path] = [*run.inputs.files(ARTIFACT_REVIEW), *run.inputs.files(ARTIFACT_CHECK)]
     return (
         (LABEL_PRD, prd),
         (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
-        (LABEL_CURRENT, current),
+        (LABEL_EPIC_BRIEF, current),
         *earlier_files(run.inputs),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
         *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
@@ -420,6 +391,18 @@ def _record_result(bead: str, result: ArchitectureResult) -> Recorded:
     )
 
 
+def _build_problems(bead: str, added_or_changed: Sequence[str]) -> list[str]:
+    """Check what the architect's result says the Epic's Stories build, against the matrix as it is now.
+
+    Returns:
+        ``repo_scoping.story_build_problems``: one sentence per id that is not a service,
+        component, piece of infrastructure or SkillSpoke event the architecture side places in
+        a stack outside the marketing app.
+
+    """
+    return story_build_problems(read_matrix(matrix_file()), bead, added_or_changed)
+
+
 @agent_step(*agents_with_role(PLUGIN, ROLE_ARCHITECT))
 def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs.
@@ -446,11 +429,18 @@ def architect(run: StepRun) -> AgentLaunch:
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
         recorded: Recorded = accepted.tools.portfolio(accepted.inputs.stage, _record_result, str(accepted.bead), result)
-        if recorded.problems:
+        unbuildable: list[str] = accepted.tools.portfolio(
+            accepted.inputs.stage,
+            _build_problems,
+            str(accepted.bead),
+            result["addedOrChangedElements"],
+        )
+        if recorded.problems or unbuildable:
             raise ArchitectureStepError(
                 accepted,
                 f"the matrix does not hold what the architecture result {output} states",
                 *recorded.problems,
+                *unbuildable,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
         return Completion(

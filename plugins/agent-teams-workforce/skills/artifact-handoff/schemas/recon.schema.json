@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "recon.schema.json",
   "title": "Per-repository detailing",
-  "description": "The detailing of one repository against the approved architecture delta, saved as recon-<slug>.json in the Epic's working directory. Every delta item placed in the repository gets one status with file:line evidence, its surface, the design source of each ui item, and the upstream dependency changes.",
+  "description": "The detailing of one repository against the approved architecture delta, saved as recon-<slug>.json in the Epic's working directory. Every delta item of what the repository's Story builds gets one status with file:line evidence, its surface, the design source of each ui item, and the upstream dependency changes.",
   "x-fileTemplate": "recon-{slug}.json",
   "x-producerRequired": ["items", "dependencyChanges"],
   "$ref": "#/$defs/ReconDetailing",
@@ -49,7 +49,7 @@
       "required": ["items"],
       "properties": {
         "items": {
-          "description": "One entry per delta item placed in this repository.",
+          "description": "One entry per delta item of what this repository's Story builds.",
           "type": "array",
           "items": { "$ref": "#/$defs/ReconItem" }
         },
@@ -68,13 +68,13 @@
       }
     },
     "ReconItem": {
-      "description": "The detailing of one placed delta item.",
+      "description": "The detailing of one delta item the Story builds.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "element", "status", "evidence", "surface"],
       "properties": {
         "id": {
-          "description": "The placed delta item id.",
+          "description": "The id of the delta item the Story builds.",
           "type": "string",
           "minLength": 1
         },
@@ -155,7 +155,7 @@
       "required": ["item", "designSource"],
       "properties": {
         "item": {
-          "description": "The placed item id.",
+          "description": "The id of the item the Story builds.",
           "type": "string",
           "minLength": 1
         },

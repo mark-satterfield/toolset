@@ -93,7 +93,7 @@ class TaskPlan(TypedDict):
     slug: str
     warnings: list[str]
     uncited: list[str]
-    uncitedItems: list[PlacedItem]
+    uncitedItems: list[StoryBuild]
     unsized: list[str]
     tasks: list[PlannedTask]
     summary: TaskPlanSummary
@@ -261,8 +261,8 @@ class SupersededTasks(TypedDict):
     summary: SupersededSummary
 
 
-class PlacedItem(DeltaItem, TypedDict):
-    """An architecture item with its declared repository placement."""
+class StoryBuild(DeltaItem, TypedDict):
+    """One thing a Story builds, with the repository whose Story builds it."""
 
     slug: str
     repoPath: str

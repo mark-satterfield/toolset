@@ -146,7 +146,7 @@ def _normalized_item(
     tools: Tools,
     warnings: list[str],
 ) -> UiItem:
-    """Normalize one placed candidate item.
+    """Normalize one candidate item the Story builds.
 
     Returns:
         The item, validated against the recon schema's `UiItem`.
@@ -184,11 +184,11 @@ def _normalized_item(
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def normalize_ui(
     candidate: dict[str, JsonValue],
-    placed: set[str],
+    built_ids: set[str],
     bundles: dict[str, JsonValue],
     tools: Tools,
 ) -> dict[str, JsonValue]:
-    """Keep placed items and downgrade unusable bundle references to CDS.
+    """Keep what the Story builds and downgrade unusable bundle references to CDS.
 
     A candidate design source outside the contract takes the recon schema's default, and a
     missing or invalid artifact takes the default page artifact, each with a warning.
@@ -204,7 +204,7 @@ def normalize_ui(
     """
     if (
         not (isinstance(candidate, dict))
-        or not (isinstance(placed, set))
+        or not (isinstance(built_ids, set))
         or not (isinstance(bundles, dict))
         or not (isinstance(tools, Tools))
     ):
@@ -216,8 +216,8 @@ def normalize_ui(
     original: dict[str, JsonValue]
     for original in _candidate_items(candidate):
         item: str = check_type(original[KEY_ITEM], str)
-        if item not in placed:
-            warnings.append(f"{item}: not a placed item; removed")
+        if item not in built_ids:
+            warnings.append(f"{item}: not something the Story builds; removed")
             continue
         rows.append(_normalized_item(original, item, supplied, tools, warnings))
     return json_object({KEY_UI_ITEMS: rows, _WARNINGS_KEY: warnings})

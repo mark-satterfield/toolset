@@ -43,6 +43,7 @@ from matrix_contract import (
     KIND_REQUIREMENT,
     KIND_STACK,
     REL_DISPUTES,
+    REL_PUBLISHES,
     Entry,
     EntryId,
     EntryKind,
@@ -55,6 +56,7 @@ from matrix_contract import (
     relationship_json,
 )
 from matrixstore import (
+    ATTR_EXTERNAL_SOURCE,
     DEFAULT_LOCK_WAIT,
     ID_SEPARATOR,
     Matrix,
@@ -287,11 +289,12 @@ def _new_entry(matrix: Matrix, key: EntryId, side: Side, name: str | None) -> En
     return started
 
 
-def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str) -> Side:
+def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str, stated: Mapping[str, JsonValue]) -> Side:
     """Decide the side an entry carries after a put.
 
     An entry is on the architecture side once that side states it: a later put from the
-    repository side leaves it there, and may add to it but not restate what identifies it.
+    repository side leaves it there, and may add to it but not restate what identifies it: its
+    name, its purpose, or, for an event, the outside system that publishes it.
 
     Returns:
         The stated side for a new entry and for one the architecture side now states; the
@@ -299,15 +302,22 @@ def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str) -> S
 
     Raises:
         MatrixRefusedError: The put is from the repository side, the entry is on the
-            architecture side, and the put states another name or purpose for it.
+            architecture side, and the put states another name or purpose for it, or states
+            the outside source of an event.
 
     """
     if existing is None or existing.side != AUTHORITY_SIDE or side == AUTHORITY_SIDE:
         return side
+    message: str
     if name != existing.name or purpose != existing.purpose:
-        message: str = (
+        message = (
             f"{existing.id} is on the {existing.side} side: a put from the {side} side does not change its name "
             "or its purpose"
+        )
+        raise MatrixRefusedError(message)
+    if existing.kind == KIND_EVENT and ATTR_EXTERNAL_SOURCE in stated:
+        message = (
+            f"{existing.id} is on the {existing.side} side; a {side}-side put may not state its {ATTR_EXTERNAL_SOURCE}"
         )
         raise MatrixRefusedError(message)
     return existing.side
@@ -390,7 +400,7 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     entry: Entry = replace(
         base,
         name=named,
-        side=_side_kept(existing, side, named, described),
+        side=_side_kept(existing, side, named, described, stated),
         aliases=tuple(
             dict.fromkeys(alias.strip() for alias in (*base.aliases, *aliases) if alias.strip() and alias != named),
         ),
@@ -491,6 +501,10 @@ def unlink(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
         The relationship removed and True; or the relationship asked about and False when the
         matrix held none with that kind, those ends, those key attributes and that side.
 
+    Raises:
+        MatrixRefusedError: The relationship is the last architecture-side publisher of an
+            architecture-side event that states no outside source.
+
     """
     wanted: Relationship = Relationship(
         kind=kind,
@@ -502,7 +516,29 @@ def unlink(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
     kept: Relationship | None = _held(matrix, wanted)
     if kept is None:
         return {"relationship": relationship_json(wanted), "removed": False}
+    if _last_publisher(matrix, kept):
+        message: str = (
+            f"{kept.start} is the last service or component the {AUTHORITY_SIDE} side says publishes {kept.end}; "
+            f"record another publisher, state its {ATTR_EXTERNAL_SOURCE} or remove the event first"
+        )
+        raise MatrixRefusedError(message)
     return {"relationship": relationship_json(kept), "removed": matrix.unlink(kept)}
+
+
+def _last_publisher(matrix: Matrix, relationship: Relationship) -> bool:
+    """Report whether a relationship is the only authority-side publisher of an authority-side event.
+
+    Returns:
+        True when it is an authority-side publishes relationship, its end is an event on the
+        authority side with no outside source, and no other authority-side publisher remains.
+
+    """
+    if relationship.kind != REL_PUBLISHES or relationship.side != AUTHORITY_SIDE:
+        return False
+    event: Entry | None = matrix.find(relationship.end)
+    if event is None or event.side != AUTHORITY_SIDE or ATTR_EXTERNAL_SOURCE in event.attributes:
+        return False
+    return matrix.publishers(relationship.end) == [relationship.start]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

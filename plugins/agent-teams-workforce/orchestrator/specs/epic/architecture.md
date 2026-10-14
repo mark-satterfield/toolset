@@ -33,21 +33,31 @@ path of its own.
 
 Agent `aws-solutions-architect`, step "Decide what the architecture should be for this PRD".
 Its brief names exactly the files its definition names: `prd`, `criteria` (the criteria file),
-`context`, `state` (its state file), `current architecture`, each file of earlier work on the PRD
+`context`, `state` (its state file), `epic brief`, each file of earlier work on the PRD
 (below), and, in a later
 step, the `findings` (reviews and check results), `answer` and `ruling` files that step is handed.
-`current architecture` is `<arch-work>/current-architecture.json`, which the step writes from the
-matrix when the session starts: `epic`, what `atw-matrix epic <id> --closure --constraints
---unlinked` returns, and `impact`, what `atw-matrix impact --id` returns for each feature, entry
-and stack in it. The session is granted the work folder and no folder of the architecture or of
+`epic brief` is `<arch-work>/epic-brief.json` (`matrixquery.EpicBrief`), which the step writes
+from the matrix when the session starts (`matrixquery.epic_brief`): the Epic's own requirements
+(the plain `atw-matrix epic <id>` view), its features with the arc42 headings that describe them,
+the entries that realize each feature (its `realizedBy` ends, and every service, component, piece
+of infrastructure, event or layer whose `describedBy` names a document heading that `covers` one
+of the Epic's requirements by way of the feature) with their architecture-side stacks and
+repositories and, for an event, its publishers, the constraints that apply to those, and
+`noStack`. It holds no closure, no dependencies and no impact: the architect runs
+`atw-matrix impact --id <id>` itself for an entry it means to change. The session is granted the work folder and no folder of the architecture or of
 the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
 before it writes its result.
 Its output is the architecture result at the path the context file names. The step that accepts
 the result records in the matrix what the result states of the Epic's features (`servedBy`,
 `realizedBy`, `supportedBy`, and `covers` from each document heading that describes a feature) and
 fails when the result names an entry the matrix does not hold, when the matrix does not then show a
-requirement as served by the feature the result names, or when a requirement is neither served by a
-feature nor listed under the result's `noFeature`. It records the file `architecture result` and
+requirement as served by the feature the result names, when a requirement is neither served by a
+feature nor listed under the result's `noFeature`, or when `repo_scoping.story_build_problems`
+reports a problem with the result's `addedOrChangedElements` (what the Epic's Stories build): an id
+the matrix lacks, an entry not on the architecture side, a kind other than service, component,
+infrastructure or event, an event with `externalSource`, an entry the architecture side places in
+no stack (for an event, one whose publishers are homed in no stack or in more than one), or a
+stack of the `marketing` app. Each problem goes to the architect as its correction. It records the file `architecture result` and
 the values `conclusion` and `requirements with no feature`.
 
 The same launch builder serves every step the architect performs: the first, its "Finish", a
@@ -68,7 +78,7 @@ adds a last child step "Finish". When its session ends, the runner reads the jou
 
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
-| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`) |
+| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`; an event is never in it: its stack is its publisher's) |
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the request's `changes` state or a drafted TRD's answer lists under `requirements`, with `statedIn` and `appliesTo`, and one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step runs `sync-documents --paths` on the documents written |
 

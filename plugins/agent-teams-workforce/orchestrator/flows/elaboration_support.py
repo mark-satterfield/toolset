@@ -46,6 +46,8 @@ from orchestrator.core.models import RunContext
 from orchestrator.core.tools import Tools
 
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration_support input contract"
+UNCITED_REASON: str = "a thing the Story builds is cited by no Task"
+"""The gap of a repository whose Tasks leave something its Story builds uncited."""
 
 (
     ARCHITECTURE_PHASE,
@@ -257,7 +259,7 @@ def _repository_gap(row: dict[str, JsonValue]) -> dict[str, JsonValue] | None:
     if not tasks.get("ok") or not task_rows or any(not task.get("id") for task in task_rows):
         return {"repository": row["repository"], "reason": "missing Tasks", "result": tasks}
     if json_object(tasks.get("coverage", {})).get("uncitedAfter"):
-        return {"repository": row["repository"], "reason": "uncited items", "result": tasks}
+        return {"repository": row["repository"], "reason": UNCITED_REASON, "result": tasks}
     return None
 
 
@@ -267,7 +269,7 @@ def done_rule(
     edges_ok: bool,
     unscored: list[JsonValue],
 ) -> dict[str, JsonValue]:
-    """Require a Story, Tasks and complete placed-item coverage for every repository.
+    """Require a Story, Tasks and coverage of everything the Story builds for every repository.
 
     Returns:
         Completion status and the exact unmet requirements.

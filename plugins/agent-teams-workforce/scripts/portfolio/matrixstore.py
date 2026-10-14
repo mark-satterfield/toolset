@@ -41,10 +41,12 @@ from matrix_contract import (
     ENTRY_ID_PATTERN,
     ENTRY_RULES,
     HOME_RELATIONSHIP,
+    KIND_EVENT,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
     MATRIX_ENV,
     OPERATOR_ROLE,
+    REL_PUBLISHES,
     RELATIONSHIP_RULES,
     ROLE_ENV,
     ROLES,
@@ -81,6 +83,13 @@ ID_SEPARATOR: Final = ":"
 STACK_SEPARATOR: Final = "/"
 """What follows the stack name in the id of an entry whose id names the stack that holds it."""
 SLUG_SEPARATOR: Final = "-"
+ATTR_EXTERNAL_SOURCE: Final = "externalSource"
+"""The event attribute that names the system outside SkillSpoke that publishes it."""
+ATTR_EXECUTION_USE: Final = "executionUse"
+EXECUTION_IMPORTED: Final = "imported"
+"""The execution use of a stack other code imports: a library."""
+EVENT_TRIGGER_OPENING: Final = "Published when"
+"""How the purpose of an authority-side event starts: it states when the event is triggered."""
 PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
@@ -325,8 +334,10 @@ class Matrix:
 
     An entry or a relationship is of any kind the registry declares; nothing here names a kind
     except the registry's home relationship, which :meth:`home` reads and :meth:`remove` follows
-    for ``held``, and the registry's stack kind, whose name is part of the id of an entry that
-    is what a stack's repository holds today (:func:`id_stack`).
+    for ``held``, the registry's stack kind, whose name is part of the id of an entry that
+    is what a stack's repository holds today (:func:`id_stack`), and the event kind with its
+    publishes relationship: an event's stack is its publisher's (:meth:`publisher_stacks`), and
+    an authority-side event states when it is triggered (:meth:`_event_problems`).
 
     The two sides are kept apart. A relationship is stored once for each side that states it. An
     entry on the authority side never becomes a repository-side entry (:meth:`put`).
@@ -505,20 +516,115 @@ class Matrix:
             named.setdefault(RELATIONSHIP_RULES[relationship.kind].reverse, []).append(relationship)
         return named
 
-    def home(self, entry_id: EntryId) -> EntryId | None:
+    def home(self, entry_id: EntryId, side: Side | None = AUTHORITY_SIDE) -> EntryId | None:
         """Name the entry that is an entry's home in code.
 
         Args:
             entry_id: The entry's id.
+            side: The side whose home relationship is read. None reads the authority side
+                first and, when it states none, the other side: only a reader that reports
+                what the repositories hold passes None, never a step that decides what is built.
 
         Returns:
-            The end of the entry's home relationship as the authority side states it; when that
-            side states none, as the other side states it; None when the entry has none.
+            The end of the entry's home relationship as ``side`` states it (or, with None, as
+            the authority side and then the other side states it); None when it states none.
 
         """
         homes: list[Relationship] = self.outgoing(entry_id, (HOME_RELATIONSHIP,))
-        stated: list[Relationship] = [home for home in homes if home.side == AUTHORITY_SIDE] or homes
+        authority: list[Relationship] = [home for home in homes if home.side == AUTHORITY_SIDE]
+        stated: list[Relationship] = (
+            (authority or homes) if side is None else [home for home in homes if home.side == side]
+        )
         return stated[0].end if stated else None
+
+    def publishers(self, event_id: EntryId) -> list[EntryId]:
+        """Name the services and components that publish an event, as the authority side states it.
+
+        Args:
+            event_id: The event's id.
+
+        Returns:
+            The starts of the authority-side publishes relationships that end at the event, in
+            id order, each once.
+
+        """
+        found: list[Relationship] = self.incoming(event_id, (REL_PUBLISHES,))
+        return sorted({relationship.start for relationship in found if relationship.side == AUTHORITY_SIDE})
+
+    def publisher_stacks(self, event_id: EntryId) -> frozenset[EntryId]:
+        """Name the stacks an event is published from: the one place an event's stack is decided.
+
+        Args:
+            event_id: The event's id.
+
+        Returns:
+            The authority-side home of each authority-side publisher of the event; a publisher
+            with no home there is left out.
+
+        """
+        homes: list[EntryId | None] = [self.home(publisher) for publisher in self.publishers(event_id)]
+        return frozenset(home for home in homes if home is not None)
+
+    def _imported_publisher(self, event_id: EntryId) -> bool:
+        """Report whether a publisher of an event is homed in a library.
+
+        Returns:
+            True when one of the event's publisher stacks has the imported execution use.
+
+        """
+        stacks: list[Entry | None] = [self._entries.get(stack) for stack in self.publisher_stacks(event_id)]
+        return any(
+            stack is not None and stack.attributes.get(ATTR_EXECUTION_USE) == EXECUTION_IMPORTED for stack in stacks
+        )
+
+    def _one_event_problems(self, event: Entry) -> list[str]:
+        """Check one authority-side event: its trigger, its publisher and its stack.
+
+        Returns:
+            One sentence per rule the event breaks; empty when it states when it is triggered,
+            has exactly one of a publisher or an outside source, and is published from one stack
+            (or from a library and its callers, which the owner has not ruled on).
+
+        """
+        problems: list[str] = []
+        if not event.purpose.startswith(EVENT_TRIGGER_OPENING):
+            problems.append(
+                f"{event.id}: its purpose must state when it is triggered, as one sentence starting "
+                f"'{EVENT_TRIGGER_OPENING}', mirrored from arc42",
+            )
+        external: bool = ATTR_EXTERNAL_SOURCE in event.attributes
+        published: bool = bool(self.publishers(event.id))
+        if external and published:
+            problems.append(
+                f"{event.id}: it states {ATTR_EXTERNAL_SOURCE} and a SkillSpoke service or component publishes it; "
+                f"state one or the other",
+            )
+        if not external and not published:
+            problems.append(
+                f"{event.id}: no service or component publishes it; record one with put event --published-by, "
+                f"or state {ATTR_EXTERNAL_SOURCE}",
+            )
+        stacks: frozenset[EntryId] = self.publisher_stacks(event.id)
+        if len(stacks) > 1 and not self._imported_publisher(event.id):
+            problems.append(
+                f"{event.id}: published from {len(stacks)} stacks ({', '.join(sorted(stacks))}); "
+                f"an event has one publisher's stack",
+            )
+        return problems
+
+    def _event_problems(self) -> list[str]:
+        """Check every authority-side event; a repository-side event states only what its code shows.
+
+        Returns:
+            The problems of each authority-side event, in id order.
+
+        """
+        return [
+            problem
+            for event in self.entries((KIND_EVENT,))
+            if event.side == AUTHORITY_SIDE
+            for problem in self._one_event_problems(event)
+        ]
 
     def _between_problems(self, relationship: Relationship) -> list[str]:
         """Check one relationship against the entries it names.
@@ -601,6 +707,7 @@ class Matrix:
             problems.extend(relationship_problems(relationship))
             problems.extend(self._between_problems(relationship))
         problems.extend(self._single_problems())
+        problems.extend(self._event_problems())
         return problems
 
     def put(self, entry: Entry) -> None:

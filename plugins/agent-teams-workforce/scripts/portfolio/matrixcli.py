@@ -25,7 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipelin
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
 from matrix_contract import (
     ENTRY_KINDS,
+    KIND_EVENT,
+    REL_PUBLISHES,
     RELATIONSHIP_KINDS,
+    SIDE_ARCHITECTURE,
     SIDES,
     EntryId,
     EntryKind,
@@ -329,8 +332,15 @@ def _run_put(call: Call) -> Outcome:
     Returns:
         The entry's id, whether it was created, what changed and the entry.
 
+    An event the architecture side records names its publisher with ``--published-by``: the
+    entry and its architecture-side ``publishes`` relationship are written in one change, so
+    the event is never on the architecture side without the service or component that
+    publishes it.
+
     Raises:
-        MatrixRefusedError: ``--unset`` names an attribute the command line also states.
+        MatrixRefusedError: ``--unset`` names an attribute the command line also states, or
+            ``--published-by`` is given for another kind than an event or another side than
+            the architecture side.
 
     """
     kind: EntryKind = entry_kind(call.required("kind"))
@@ -338,15 +348,20 @@ def _run_put(call: Call) -> Outcome:
     stated: dict[str, JsonValue] = _stated(call, ENTRY_TABLE)
     unset: list[str] = call.texts("unset")
     both: list[str] = sorted(set(unset) & set(stated))
+    message: str
     if both:
-        message: str = f"--unset names {', '.join(both)}, which the command line also states"
+        message = f"--unset names {', '.join(both)}, which the command line also states"
+        raise MatrixRefusedError(message)
+    published_by: EntryId | None = None if call.text("published_by") is None else call.entry("published_by")
+    if published_by is not None and (kind != KIND_EVENT or side != SIDE_ARCHITECTURE):
+        message = f"--published-by is stated only for an event the {SIDE_ARCHITECTURE} side records"
         raise MatrixRefusedError(message)
     attributes: dict[str, JsonValue] = {**stated, **dict.fromkeys(unset)}
     entry_id: EntryId | None = None if call.text("id") is None else call.entry("id")
     stack: EntryId | None = None if call.text("stack") is None else call.entry("stack")
 
     def change(matrix: Matrix) -> PutResult:
-        return put(
+        result: PutResult = put(
             matrix,
             kind,
             side,
@@ -357,6 +372,9 @@ def _run_put(call: Call) -> Outcome:
             attributes=attributes,
             stack=stack,
         )
+        if published_by is not None:
+            link(matrix, REL_PUBLISHES, published_by, result["id"], SIDE_ARCHITECTURE)
+        return result
 
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
@@ -828,6 +846,11 @@ def _change_parsers(
     entry.add_argument(
         "--stack",
         help="the id of the stack that holds a repository-side component, infrastructure or layer; it builds the id",
+    )
+    entry.add_argument(
+        "--published-by",
+        help="the id of the service or component that publishes an event the architecture side records; "
+        "the publishes relationship is written with the event",
     )
     entry.add_argument("--unset", nargs="+", help="the names of the attributes to remove from the entry")
     option: AttributeOption

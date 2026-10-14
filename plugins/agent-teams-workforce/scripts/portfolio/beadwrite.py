@@ -32,10 +32,10 @@ from beadcontracts import (
     EdgeCounts,
     EdgePlan,
     ExistingTask,
-    PlacedItem,
     PlannedTask,
     ReplacedTask,
     RepointedEdge,
+    StoryBuild,
     StoryWrite,
     SupersededTasks,
     TaskCorrection,
@@ -71,11 +71,11 @@ from hierarchy import (
     derive_prerequisites,
     elab_slug,
     item_briefs,
-    placed_items,
     read_story,
     read_task_deps,
     read_tasks,
     size_metadata,
+    story_builds,
     str_list,
     take_warnings,
     uncited_work,
@@ -690,7 +690,7 @@ def plan_story_tasks(files: StoryFiles, *, root: Path | None, packages_dir: str 
 
     Returns:
         Each Task's local key, elaboration key, title and the local keys it depends on, and
-        `uncited`: the items placed in the repository that no Task cites.
+        `uncited`: the items of what the Story builds that no Task cites.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -947,7 +947,7 @@ def _cited_ids(value: JsonValue) -> list[str]:
 def _candidate_pairs(
     rest: list[Task],
     free: list[Bead],
-    items: dict[str, PlacedItem],
+    items: dict[str, StoryBuild],
 ) -> list[tuple[int, int, str, Task, Bead]]:
     """Rank unmatched Tasks by shared cited architecture items.
 
@@ -972,7 +972,7 @@ def _match_tasks(
     tasks: list[Task],
     beads: list[Bead],
     slug: str,
-    items: dict[str, PlacedItem],
+    items: dict[str, StoryBuild],
 ) -> tuple[dict[str, Bead], list[Bead]]:
     """Match each of a Story's Tasks to the Task bead it is, and return the beads left over.
 
@@ -1167,7 +1167,7 @@ class _TaskWriter:
     priority: dict[str, JsonValue]
     beads: list[Bead]
     keyed: dict[str, Bead]
-    items: dict[str, PlacedItem]
+    items: dict[str, StoryBuild]
     matched: dict[str, Bead]
     blockers: list[str]
     warnings: list[str]
@@ -1238,7 +1238,7 @@ class _TaskWriter:
         self.priority = {str(r["id"]): r.get("priority") for r in self.records}
         self.beads = sorted((bead_of(r) for r in self.records), key=lambda b: b.id)
         self.keyed = _keyed(self.beads)
-        self.items = placed_items(self.files.scope)
+        self.items = story_builds(self.files.scope)
         self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
 
         def found(t: Task) -> Bead | None:
@@ -1448,7 +1448,7 @@ def _no_code(span_file: Path) -> set[str]:
 
 @dataclass(frozen=True)
 class _ClosureContext:
-    detailed: dict[str, PlacedItem]
+    detailed: dict[str, StoryBuild]
     no_code: set[str]
     builds: dict[str, list[str]]
     task_slug: dict[str, str]
@@ -1478,7 +1478,7 @@ def _closure_context(span: SpanStories) -> _ClosureContext:
             name: str = f"S{index + 1}-{task.key}"
             task_slug[name] = files.slug
             builds[name] = task.requirement_ids
-    return _ClosureContext(placed_items(span.scope), no_code, builds, task_slug, slug_story)
+    return _ClosureContext(story_builds(span.scope), no_code, builds, task_slug, slug_story)
 
 
 def _required_builders(name: str, item: str, requirement: str, context: _ClosureContext) -> tuple[list[str], list[str]]:
@@ -1488,27 +1488,27 @@ def _required_builders(name: str, item: str, requirement: str, context: _Closure
         Matching builders and placement or coverage warnings.
 
     """
-    placed: PlacedItem | None = context.detailed.get(requirement)
-    if placed is None:
+    own_item: StoryBuild | None = context.detailed.get(requirement)
+    if own_item is None:
         warnings: list[str] = (
             []
             if requirement in context.no_code
             else [f"{name} builds {item}, which requires {requirement}; no repository's placement holds it"]
         )
         return [], warnings
-    if placed["slug"] == context.task_slug[name]:
+    if own_item["slug"] == context.task_slug[name]:
         return [], []
     found: list[str] = [
         builder
         for builder, built in context.builds.items()
-        if context.task_slug[builder] == placed["slug"] and requirement in built
+        if context.task_slug[builder] == own_item["slug"] and requirement in built
     ]
     if found:
         return found, []
     return [], [
         (
             f"{name} builds {item}, which requires {requirement}; no "
-            f"Task of {context.slug_story.get(placed['slug'], placed['slug'])} builds it"
+            f"Task of {context.slug_story.get(own_item['slug'], own_item['slug'])} builds it"
         ),
     ]
 
@@ -1541,7 +1541,7 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
         seen: set[tuple[str, str]] = set()
         for name, items in context.builds.items():
             for item in items:
-                own: PlacedItem | None = context.detailed.get(item)
+                own: StoryBuild | None = context.detailed.get(item)
                 if own is None or own["slug"] != context.task_slug[name]:
                     continue
                 for requirement in requires.get(item, []):
@@ -1915,7 +1915,7 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     beads: list[Bead] = sorted(_children(graph, story.id, "task"), key=lambda bead: bead.id)
     matched: dict[str, Bead]
     left: list[Bead]
-    matched, left = _match_tasks(tasks, beads, files.slug, placed_items(files.scope))
+    matched, left = _match_tasks(tasks, beads, files.slug, story_builds(files.scope))
     cited: dict[str, set[str]] = {
         bead.id: set(_cited_ids(bead.metadata.get(KEY_REQUIREMENT_IDS))) for bead in left if not task_started(bead)
     }

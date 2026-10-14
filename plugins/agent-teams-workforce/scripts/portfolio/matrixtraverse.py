@@ -37,6 +37,7 @@ from matrix_contract import (
     KIND_CONSTRAINT,
     KIND_DOCUMENT,
     KIND_EPIC,
+    KIND_EVENT,
     KIND_FEATURE,
     KIND_INFRASTRUCTURE,
     KIND_SERVICE,
@@ -375,10 +376,14 @@ def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
         matrix: The matrix.
         entry_id: The entry's id.
 
+    This is the reader that reports what the repositories hold. A step that decides what is
+    built reads :func:`authority_holder`.
+
     Returns:
-        The entry itself when it is a stack; otherwise its home, as the architecture side states
-        it before the repository side; otherwise the stack its id names; None when it has none of
-        these or the matrix does not hold it.
+        The entry itself when it is a stack; for an event, its :func:`authority_holder`;
+        otherwise its home, as the architecture side states it before the repository side;
+        otherwise the stack its id names; None when it has none of these or the matrix does not
+        hold it.
 
     """
     entry: Entry | None = matrix.find(entry_id)
@@ -386,7 +391,35 @@ def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
         return None
     if entry.kind == KIND_STACK:
         return entry_id
-    return matrix.home(entry_id) or id_stack(entry)
+    if entry.kind == KIND_EVENT:
+        return authority_holder(matrix, entry_id)
+    return matrix.home(entry_id, side=None) or id_stack(entry)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
+    """Name the stack the architecture side places an entry in: the holder of what is built.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry's id.
+
+    Returns:
+        The entry itself when it is a stack; for an event, the one stack its architecture-side
+        publishers are homed in (None when they are homed in none or in more than one); for
+        any other kind, its architecture-side home; None when the matrix does not hold it or
+        the architecture side states none.
+
+    """
+    entry: Entry | None = matrix.find(entry_id)
+    if entry is None:
+        return None
+    if entry.kind == KIND_STACK:
+        return entry_id
+    if entry.kind != KIND_EVENT:
+        return matrix.home(entry_id)
+    stacks: frozenset[EntryId] = matrix.publisher_stacks(entry_id)
+    return next(iter(stacks)) if len(stacks) == 1 else None
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

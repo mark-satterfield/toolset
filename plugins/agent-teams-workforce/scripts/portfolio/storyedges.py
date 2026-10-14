@@ -181,7 +181,7 @@ def _repository_of(matrix: Matrix, stated: str) -> str | None:
         return None
     stack: Entry | None = entry if entry.kind == KIND_STACK else None
     if stack is None:
-        home: EntryId | None = matrix.home(entry.id)
+        home: EntryId | None = matrix.home(entry.id, side=None)
         stack = matrix.find(home) if home is not None else None
     repository: JsonValue = stack.attributes.get(ATTR_REPOSITORY) if stack is not None else None
     return repository if isinstance(repository, str) and repository else None

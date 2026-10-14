@@ -7,10 +7,10 @@ sources and artifact kinds are the artifact-handoff skill's recon contract
 this module defines none of them. The file is validated against that contract: a file that
 does not conform is not usable (`ok` false, the violations named in `problem`).
 
-A conforming detailing is then read against the items placed in the repository, and the small
+A conforming detailing is then read against the items of what the Story builds, and the small
 facts are printed: the ids of the items that make work and of those that do not; each `ui`
 work item's design source; the mocks directory; whether the dependencies are current. What
-the contract cannot express and had to be settled (an item not placed here, a repeated or
+the contract cannot express and had to be settled (an item this Story does not build, a repeated or
 missing entry, a `ui` work item with no design source, an unusable bundle, absent dependency
 changes) is named in `warnings`.
 
@@ -95,7 +95,7 @@ class ReconError(Exception):
 
 @dataclass(frozen=True)
 class _Settled:
-    """One placed item's settled status: the detailing's entry, or `add` when it has none."""
+    """One built item's settled status: the detailing's entry, or `add` when it has none."""
 
     id: str
     status: ReconStatus
@@ -158,40 +158,40 @@ def _load(path: Path) -> object:
     return raw
 
 
-def _settle_items(items: Sequence[ReconItem], placed: Sequence[str]) -> tuple[list[_Settled], list[str]]:
-    """Settle the detailing's items on one entry per placed item.
+def _settle_items(items: Sequence[ReconItem], built: Sequence[str]) -> tuple[list[_Settled], list[str]]:
+    """Settle the detailing's items on one entry per thing the Story builds.
 
-    A placed item with no entry is `add`; a repeated entry keeps the first; an entry for an
-    item not placed here is ignored.
+    A thing the Story builds with no entry is `add`; a repeated entry keeps the first; an entry for an
+    item this Story does not build is ignored.
 
     Args:
         items: The detailing's items, validated against the recon contract.
-        placed: The ids of the delta items placed in the repository.
+        built: The ids of the delta items of what the Story builds.
 
     Returns:
-        The settled items, one per placed id in placement order, and the warnings.
+        The settled items, one per built id, in order, and the warnings.
 
     """
-    placed_set: set[str] = set(placed)
+    built_set: set[str] = set(built)
     warnings: list[str] = []
     first: dict[str, ReconItem] = {}
     for item in items:
         item_id: str = item[KEY_ID]
-        if item_id not in placed_set:
-            warnings.append(f"{item_id}: not an item placed in this repository; ignored")
+        if item_id not in built_set:
+            warnings.append(f"{item_id}: not an item this repository's Story builds; ignored")
         elif item_id in first:
             warnings.append(f"{item_id}: listed more than once; the first entry is used")
         else:
             first[item_id] = item
     settled: list[_Settled] = []
-    for placed_id in placed:
-        entry: ReconItem | None = first.get(placed_id)
+    for built_id in built:
+        entry: ReconItem | None = first.get(built_id)
         if entry is None:
-            warnings.append(f"{placed_id}: has no entry; taken as {STATUS_ADD}")
-            settled.append(_Settled(placed_id, STATUS_ADD, None, ui=False))
+            warnings.append(f"{built_id}: has no entry; taken as {STATUS_ADD}")
+            settled.append(_Settled(built_id, STATUS_ADD, None, ui=False))
             continue
         settled.append(
-            _Settled(placed_id, entry[KEY_STATUS], entry.get(KEY_PLANNED_BY), ui=entry[KEY_SURFACE] == SURFACE_UI),
+            _Settled(built_id, entry[KEY_STATUS], entry.get(KEY_PLANNED_BY), ui=entry[KEY_SURFACE] == SURFACE_UI),
         )
     return settled, warnings
 
@@ -289,14 +289,14 @@ def _ui_work(authority: UiAuthority | None, work_ui: Sequence[str]) -> tuple[lis
     return out, warnings
 
 
-def recon_facts(path: Path, placed: list[str]) -> JsonObject:
-    """Check a saved detailing against the items placed in its repository; report the facts.
+def recon_facts(path: Path, built: list[str]) -> JsonObject:
+    """Check a saved detailing against the items its repository's Story builds; report the facts.
 
     A file that is absent, cannot be read, or is not JSON raises `ReconError` (from `_load`).
 
     Args:
         path: The saved detailing, `recon-<slug>.json`.
-        placed: The ids of the delta items placed in the repository.
+        built: The ids of the delta items of what the Story builds.
 
     Returns:
         `file`, `bytes`, `ok`; when not ok, `problem` (the file does not conform to the
@@ -311,8 +311,8 @@ def recon_facts(path: Path, placed: list[str]) -> JsonObject:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not isinstance(path, Path) or not isinstance(placed, list) or not all(isinstance(i, str) for i in placed):
-        message: str = "recon_facts takes a Path and a list of placed item ids"
+    if not isinstance(path, Path) or not isinstance(built, list) or not all(isinstance(i, str) for i in built):
+        message: str = "recon_facts takes a Path and a list of the ids of what the Story builds"
         raise TypeError(message)
     raw: object = _load(path)
     head: JsonObject = {"file": str(path), "bytes": path.stat().st_size}
@@ -320,7 +320,7 @@ def recon_facts(path: Path, placed: list[str]) -> JsonObject:
         detailing: ReconDetailing = parse_detailing(raw, source=str(path))
     except ReconContractError as exc:
         return head | {"ok": False, "problem": str(exc)}
-    items, warnings = _settle_items(detailing[KEY_ITEMS], placed)
+    items, warnings = _settle_items(detailing[KEY_ITEMS], built)
     changes: DependencyChanges | None = detailing.get(KEY_DEPENDENCY_CHANGES)
     if changes is None:
         warnings.append(f"`{KEY_DEPENDENCY_CHANGES}` is absent; taken as {KEY_CURRENT}")

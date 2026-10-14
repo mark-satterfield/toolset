@@ -15,7 +15,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from operator import itemgetter
 from pathlib import Path
@@ -24,7 +24,7 @@ from typing import Final
 import beadcontracts
 import contracts
 import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract modules on the path first.
-from beadcontracts import PlacedItem, TaskEdge
+from beadcontracts import StoryBuild, TaskEdge
 from cdsbundles import artifact_kind, bundle_problem, read_bundle
 from contracts import DeltaItem, JsonObject, JsonValue, json_object
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -84,8 +84,8 @@ from bead_metadata import (
 )
 
 # isort: split
-from matrix_contract import KIND_STACK, Entry, EntryId
-from matrixstore import Matrix, matrix_path, read_matrix
+from matrix_contract import KIND_EVENT, KIND_STACK, Entry, EntryId
+from matrixstore import Matrix, kind_of, matrix_path, read_matrix
 from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
@@ -1029,7 +1029,7 @@ def stated_ids(matrix: Matrix, built: Sequence[str]) -> list[str]:
         if entry is None:
             continue
         known.append(entry.id)
-        home: EntryId | None = entry.id if entry.kind == KIND_STACK else matrix.home(entry.id)
+        home: EntryId | None = entry.id if entry.kind == KIND_STACK else matrix.home(entry.id, side=None)
         if home is not None:
             stacks.append(home)
     shared: list[str] = [reach.feature for reach in capabilities(matrix, known)]
@@ -1046,7 +1046,7 @@ class _TaskSources:
     designs: dict[str, UiDesign]
     elements: dict[str, str]
     matrix: Matrix | None
-    """The matrix, read when a Task builds an entry of it; None when no placed item names one."""
+    """The matrix, read when a Task builds an entry of it; None when nothing the Story builds names one."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1098,7 +1098,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         raise HierarchyError(message)
     elements: dict[str, str] = {
         key: item["matrixId"]
-        for key, item in placed_items(files.scope).items()
+        for key, item in story_builds(files.scope).items()
         if "matrixId" in item and item["slug"] == slug
     }
     sources: _TaskSources = _TaskSources(
@@ -1235,9 +1235,85 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
     )
 
 
+def _task_label(task: JsonObject) -> str:
+    """Name a Task of a Tasks file in a sentence.
+
+    Returns:
+        Its key, or its title when it states no key.
+
+    """
+    return str(task.get("key") or task.get("title") or "")
+
+
+def _cited(task: JsonObject, items: Mapping[str, EntryId]) -> list[str]:
+    """List the things a Story builds that one Task cites.
+
+    Returns:
+        The item ids among the Task's ``requirementIds``, in its order.
+
+    """
+    stated: JsonValue = task.get("requirementIds") or []
+    return [cited for cited in stated if isinstance(cited, str) and cited in items] if isinstance(stated, list) else []
+
+
+def _event_problems(task: JsonObject, cited: Sequence[str], items: Mapping[str, EntryId], matrix: Matrix) -> list[str]:
+    """Check that a Task builds each event it cites with a service or component that publishes it.
+
+    Returns:
+        One sentence per event the Task cites with none of its architecture-side publishers,
+        and one when it cites only events.
+
+    """
+    label: str = _task_label(task)
+    built: set[EntryId] = {items[cited_id] for cited_id in cited}
+    events: list[str] = [cited_id for cited_id in cited if kind_of(items[cited_id]) == KIND_EVENT]
+    alone: list[str] = [
+        f"Task {label} cites the event {items[event]} ({event}) and none of the services or components that "
+        "publish it: an event is built with its publisher"
+        for event in events
+        if not built.intersection(matrix.publishers(items[event]))
+    ]
+    only: list[str] = (
+        [f"Task {label} covers only events: an event is built with the service or component that publishes it"]
+        if events and len(events) == len(cited)
+        else []
+    )
+    return [*alone, *only]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue], matrix: Matrix) -> list[str]:
+    """Check that a Story's Tasks group what it builds into coherent units of build work.
+
+    Args:
+        items: The items of what the Story builds, each with its ``id`` and ``matrixId``.
+        tasks: The Tasks of the decomposer's Tasks file.
+        matrix: The matrix, read for the publishers of an event.
+
+    Returns:
+        One sentence per Task that covers one thing when the Story builds two or more; per
+        event a Task cites without a service or component that publishes it; and per Task
+        that covers only events. Empty when the Tasks group what the Story builds.
+
+    """
+    by_id: dict[str, EntryId] = {
+        str(json_object(item)["id"]): EntryId(str(json_object(item).get("matrixId", ""))) for item in items
+    }
+    shaped: list[JsonObject] = [json_object(task) for task in tasks]
+    single: list[str] = [
+        f"Task {_task_label(task)} covers one thing: group the things this Story builds into coherent Tasks"
+        for task in shaped
+        if len(by_id) > 1 and len(_cited(task, by_id)) == 1
+    ]
+    events: list[str] = [
+        problem for task in shaped for problem in _event_problems(task, _cited(task, by_id), by_id, matrix)
+    ]
+    return [*single, *events]
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def work_items(files: StoryFiles) -> list[str]:
-    """Every item placed in the repository is work; no built-state judgment.
+    """Everything the Story builds is work; no built-state judgment.
 
     Returns:
         The ids of the items the span places in the Story's repository.
@@ -1248,7 +1324,7 @@ def work_items(files: StoryFiles) -> list[str]:
     """
     if not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
-    return [key for key, item in placed_items(files.scope).items() if item["slug"] == files.slug]
+    return [key for key, item in story_builds(files.scope).items() if item["slug"] == files.slug]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1260,7 +1336,7 @@ def uncited_work(files: StoryFiles, tasks: list[Task]) -> list[str]:
         tasks: The Story's Tasks.
 
     Returns:
-        The ids placed in the repository that no Task cites, in the span's order; empty when
+        The ids of what the Story builds that no Task cites, in the span's order; empty when
         every one is cited or there is none.
 
     Raises:
@@ -1274,11 +1350,11 @@ def uncited_work(files: StoryFiles, tasks: list[Task]) -> list[str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def item_briefs(files: StoryFiles, ids: list[str]) -> list[PlacedItem]:
+def item_briefs(files: StoryFiles, ids: list[str]) -> list[StoryBuild]:
     """Return architecture facts for the precise uncited items.
 
     Returns:
-        The placed items of the Story's repository among ``ids``, in that order.
+        What the Story of the repository builds among ``ids``, in that order.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1286,13 +1362,13 @@ def item_briefs(files: StoryFiles, ids: list[str]) -> list[PlacedItem]:
     """
     if not (isinstance(files, StoryFiles)) or not (isinstance(ids, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    items: dict[str, beadcontracts.PlacedItem] = placed_items(files.scope)
+    items: dict[str, beadcontracts.StoryBuild] = story_builds(files.scope)
     return [items[key] for key in ids if key in items and items[key]["slug"] == files.slug]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def check_detailed_work(files: StoryFiles, tasks: list[Task]) -> None:
-    """Warn when a Task cites no placed item; never classify existing code.
+    """Warn when a Task cites nothing the Story builds; never classify existing code.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1304,7 +1380,7 @@ def check_detailed_work(files: StoryFiles, tasks: list[Task]) -> None:
     idle: list[str] = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
         _WARNINGS.append(
-            f"{files.tasks_file.name}: {', '.join(idle)} cite no placed item in requirementIds "
+            f"{files.tasks_file.name}: {', '.join(idle)} cite nothing the Story builds in requirementIds "
             f"({', '.join(sorted(work)) or 'none here'})",
         )
 
@@ -1353,7 +1429,7 @@ def _task_builders(tasks: list[Task]) -> dict[str, list[str]]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
-    """Derive in-Story prerequisite edges from placed architecture items.
+    """Derive in-Story prerequisite edges from what the Story builds.
 
     Missing builders remain coverage findings. Cross-repository prerequisites are
     connected by closure_task_edges after every repository's Tasks exist.
@@ -1379,17 +1455,17 @@ def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
     requires: dict[str, list[str]] | None = delta_requires(files.scope.elements)
     if requires is None:
         return tasks
-    detailed: dict[str, beadcontracts.PlacedItem] = placed_items(files.scope)
+    detailed: dict[str, beadcontracts.StoryBuild] = story_builds(files.scope)
     builders: dict[str, list[str]] = _task_builders(tasks)
     problems: list[str] = []
     saved_edges: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on]
     for t in tasks:
         for x in t.requirement_ids:
-            own: beadcontracts.PlacedItem | None = detailed.get(x)
+            own: beadcontracts.StoryBuild | None = detailed.get(x)
             if own is None or own["slug"] != slug:
                 continue
             for y in requires.get(x, []):
-                d: beadcontracts.PlacedItem | None = detailed.get(y)
+                d: beadcontracts.StoryBuild | None = detailed.get(y)
                 if d is None or y in t.requirement_ids or d["slug"] != slug:
                     continue
                 found: list[str] = [k for k in builders.get(y, []) if k != t.key]
@@ -1447,11 +1523,11 @@ def read_task_deps(path: Path) -> list[TaskEdge]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def placed_items(scope: SpanFiles) -> dict[str, PlacedItem]:
-    """Join declared placements to architecture items, without inspecting code.
+def story_builds(scope: SpanFiles) -> dict[str, StoryBuild]:
+    """List what each Story of the Epic builds: the span's items joined to the repository whose Story builds each.
 
     Returns:
-        Item id -> the item with the slug and the path of the repository it is placed in.
+        Item id -> the item with the slug and the path of the repository whose Story builds it.
 
     Raises:
         TypeError: An argument violates the declared input contract.

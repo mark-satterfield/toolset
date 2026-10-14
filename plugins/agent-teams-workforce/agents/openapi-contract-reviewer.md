@@ -44,7 +44,7 @@ of them, and you change none of them.
 The brief names six inputs: the contracts document (`spec-<slug>.md`), the data-model document
 (`spec-<slug>.data-model.md`), the acceptance criteria (`spec-<slug>.criteria.md`), the TRD
 (`trd.md`), the repository's context file (`spec-<slug>.context.json`, which lists the items
-placed in this repository) and the criteria file (`review-criteria.json` of the
+of what this repository's Story builds) and the criteria file (`review-criteria.json` of the
 architecture-baseline skill; architecture-baseline/review-standard.md states the same criteria
 as prose). Read those, and open another file only to check a statement one of them cites.
 
@@ -58,11 +58,11 @@ wherever the three documents and the TRD state it.
 - I2 is met by the data-model document, and I4 for the names it states.
 - I6: compare the producer's side and the consumer's side of each contract where both are in the
   documents you were given.
-- I7: read as `task-decomposer` will. Every placed item in the context file is specified so that
+- I7: read as `task-decomposer` will. Every item the Story builds in the context file is specified so that
   a Task can name the repository, stack, handler, table, route and event, and the acceptance
   criteria give each of them an id to cite.
 
-A criterion applies to a placed item that has the thing the criterion names: a repository with
+A criterion applies to an item the Story builds that has the thing the criterion names: a repository with
 no route has nothing for I1 to find. A document that says, with its reason, that a surface does
 not apply meets the criteria for that surface.
 

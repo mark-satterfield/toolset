@@ -292,7 +292,7 @@ class ArchitectureResult(TypedDict):
     conclusion: Conclusion
     features: list[FeatureEntry]
     noFeature: list[NoFeature]
-    newElements: list[str]
+    addedOrChangedElements: list[str]
     sharedCapabilities: list[SharedUse]
     facts: list[FactEntry]
     settledDisagreements: list[str]

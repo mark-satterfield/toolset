@@ -31,11 +31,16 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
+    AUTHORITY_SIDE,
     ENTRY_KINDS,
+    KIND_COMPONENT,
     KIND_DOCUMENT,
     KIND_EPIC,
+    KIND_EVENT,
     KIND_FEATURE,
+    KIND_INFRASTRUCTURE,
     KIND_LAYER,
+    KIND_SERVICE,
     KIND_STACK,
     REL_CONTAINS,
     REL_CORRESPONDS_TO,
@@ -73,6 +78,7 @@ from matrixtraverse import (
     Impact,
     Touch,
     Way,
+    authority_holder,
     capabilities,
     constraints_for,
     dependencies,
@@ -104,6 +110,14 @@ SEARCHED_ATTRIBUTES: Final[tuple[str, ...]] = ("statement", "subject", "group", 
 """The attributes whose text :func:`find` matches beside the name, the aliases and the purpose."""
 PROVIDES_SEARCHED: Final = "behaviour"
 """The member of each ``provides`` item whose text :func:`find` matches."""
+REALIZER_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_EVENT,
+    KIND_LAYER,
+})
+"""The kinds of entry an arc42 heading that covers an Epic's requirement names as realizing a feature."""
 DIRECTION_OF: Final = "of"
 DIRECTION_ON: Final = "on"
 
@@ -262,6 +276,37 @@ class EpicView(TypedDict):
     """The stacks reached that name no repository."""
     noCounterpart: NotRequired[list[EntryId]]
     """The architecture-side entries reached that nothing in a repository is recorded as corresponding to."""
+
+
+class RealizerView(TypedDict):
+    """One entry that realizes a feature of an Epic, with where the architecture side places it."""
+
+    entry: View
+    stack: EntryId | None
+    """The stack the architecture side places it in (for an event, its publisher's stack)."""
+    repository: str | None
+    """The repository of that stack; None while the stack names none."""
+    publishers: NotRequired[list[EntryId]]
+    """For an event: the services and components the architecture side says publish it."""
+
+
+class FeatureBrief(TypedDict):
+    """One feature of an Epic as the architect is handed it."""
+
+    feature: View
+    supporting: bool
+    describedBy: list[Described]
+    realizedBy: list[RealizerView]
+
+
+class EpicBrief(TypedDict):
+    """What the architect is handed for one Epic: its own requirements, features, realizers and constraints."""
+
+    epic: EpicView
+    features: list[FeatureBrief]
+    constraints: list[ConstraintView]
+    noStack: list[EntryId]
+    """The realizers the architecture side places in no stack."""
 
 
 class Match(TypedDict):
@@ -522,7 +567,7 @@ def _brief(matrix: Matrix, entry_id: EntryId) -> View:
     view.update({name: entry.attributes[name] for name in BRIEF_ATTRIBUTES if name in entry.attributes})
     if entry.kind == KIND_STACK:
         view["type"] = stack_type(entry.name)
-    home: EntryId | None = matrix.home(entry_id)
+    home: EntryId | None = matrix.home(entry_id, side=None)
     if home is not None:
         view["stack"] = home
     if entry.verified is not None:
@@ -752,6 +797,115 @@ def epic_view(
         view["noRepository"] = list(reach.no_repository)
         view["noCounterpart"] = list(reach.no_counterpart)
     return view
+
+
+def _heading_index(matrix: Matrix) -> dict[tuple[EntryId, str], list[EntryId]]:
+    """Index the architecture-side entries of the realizing kinds by the document heading that describes them.
+
+    Returns:
+        Each (document, heading) pair with the realizing entries whose architecture-side
+        ``describedBy`` names exactly that pair, in file order.
+
+    """
+    index: dict[tuple[EntryId, str], list[EntryId]] = {}
+    describing: Relationship
+    for describing in matrix.relationships((REL_DESCRIBED_BY,)):
+        start: Entry | None = matrix.find(describing.start)
+        if describing.side != AUTHORITY_SIDE or start is None or start.kind not in REALIZER_KINDS:
+            continue
+        pair: tuple[EntryId, str] = (describing.end, _text(describing.attributes.get(ATTR_HEADING)))
+        index.setdefault(pair, []).append(start.id)
+    return index
+
+
+def _feature_realizers(
+    matrix: Matrix,
+    reach: EpicReach,
+    feature: EntryId,
+    by_heading: dict[tuple[EntryId, str], list[EntryId]],
+) -> list[EntryId]:
+    """Find what realizes one feature of an Epic.
+
+    Returns:
+        The ends of the feature's ``realizedBy`` relationships, then every realizing entry an
+        arc42 heading describes that covers one of the Epic's requirements by way of the
+        feature; in the order found, each once.
+
+    """
+    realized: list[EntryId] = [relationship.end for relationship in matrix.outgoing(feature, (REL_REALIZED_BY,))]
+    pairs: list[tuple[EntryId, str]] = [
+        (covering.start, _text(covering.attributes.get(ATTR_HEADING)))
+        for requirement in reach.served
+        for covering in matrix.incoming(requirement, (REL_COVERS,))
+        if covering.attributes.get(ATTR_VIA) == feature
+    ]
+    described: list[EntryId] = [entry_id for pair in pairs for entry_id in by_heading.get(pair, [])]
+    return list(dict.fromkeys([*realized, *described]))
+
+
+def _realizer(matrix: Matrix, entry_id: EntryId) -> RealizerView:
+    """Render one entry that realizes a feature, with the stack and repository that hold it.
+
+    Returns:
+        The entry's brief, its architecture-side stack, that stack's repository (None when it
+        names none) and, for an event, the services and components that publish it.
+
+    """
+    stack: EntryId | None = authority_holder(matrix, entry_id)
+    repository: JsonValue = None if stack is None else matrix.entry(stack).attributes.get(ATTR_REPOSITORY)
+    view: RealizerView = {
+        "entry": _brief(matrix, entry_id),
+        "stack": stack,
+        "repository": repository if isinstance(repository, str) and repository else None,
+    }
+    if matrix.entry(entry_id).kind == KIND_EVENT:
+        view["publishers"] = list(matrix.publishers(entry_id))
+    return view
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def epic_brief(matrix: Matrix, bead: str) -> EpicBrief:
+    """Return what the architect is handed for one Epic.
+
+    The brief holds the Epic's own requirements, its features with the arc42 headings that
+    describe them, the entries that realize each feature with their stacks and repositories,
+    and the constraints that apply to those. It holds no closure, no dependencies and no
+    impact: the architect asks ``atw-matrix impact --id <id>`` itself for an entry it means to
+    change. An Epic the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+
+    Returns:
+        The plain Epic view, the features with their realizers, the constraints that apply to
+        the Epic, its features and their realizers, and the realizers the architecture side
+        places in no stack.
+
+    """
+    epic: EntryId = epic_id(bead)
+    reach: EpicReach = epic_reach(matrix, epic)
+    by_heading: dict[tuple[EntryId, str], list[EntryId]] = _heading_index(matrix)
+    realizing: dict[EntryId, list[EntryId]] = {
+        feature: _feature_realizers(matrix, reach, feature, by_heading) for feature in reach.features
+    }
+    realizers: list[EntryId] = list(dict.fromkeys(entry_id for found in realizing.values() for entry_id in found))
+    return {
+        "epic": epic_view(matrix, bead),
+        "features": [
+            {
+                "feature": _brief(matrix, feature),
+                "supporting": feature in reach.supporting,
+                "describedBy": [_described(matrix, describing) for describing in reach.documents[feature]],
+                "realizedBy": [_realizer(matrix, entry_id) for entry_id in realizing[feature]],
+            }
+            for feature in reach.features
+        ],
+        "constraints": [
+            _constraint(matrix, found) for found in constraints_for(matrix, [epic, *reach.features, *realizers])
+        ],
+        "noStack": [entry_id for entry_id in realizers if authority_holder(matrix, entry_id) is None],
+    }
 
 
 def _searched(matrix: Matrix, entry: Entry) -> list[str]:

@@ -6,7 +6,7 @@ There are three pipelines. Each works one kind of bead and hands its result to t
 
 | Pipeline | Runs once per | Takes in | Produces |
 |---|---|---|---|
-| Elaboration | Epic | A ready Epic and its PRD | The architecture the PRD needs, the TRD, a Spec and a Story for each repository, and the Tasks under each Story, scored and ordered |
+| Elaboration | Epic | A ready Epic and its PRD | The architecture the PRD needs, the TRD, a Spec and a Story for each repository the Epic's architecture adds or changes something in, and the Tasks under each Story, scored and ordered |
 | Build | Task | A Task with its build contract, on its Story's branch | The Task's code and tests committed to the Story's branch, with the repository's whole test suite passing |
 | Deploy | Story | A Story whose Tasks are all built | The Story's repository published and deployed to the development environment and verified, the record of what was built, and one merged pull request |
 

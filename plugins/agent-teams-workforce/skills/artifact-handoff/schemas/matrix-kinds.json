@@ -145,9 +145,12 @@
     },
     "event": {
       "idPattern": "^event:\\S.*$",
+      "description": "An event is a fact with a meaning: its name, the service or component that publishes it (publishes), and its purpose. Its purpose is when the event is triggered: one sentence starting 'Published when', naming the occurrence in its publisher. On the architecture side it is mirrored from the arc42 heading that describes the event. An event has no homeIn: its stack is its publisher's architecture-side stack.",
       "verifiable": true,
       "required": [],
-      "attributes": {}
+      "attributes": {
+        "externalSource": {"type": "string", "minLength": 1, "description": "The system outside SkillSpoke that publishes the event (for example Stripe); only for an event no SkillSpoke service or component publishes."}
+      }
     },
     "stack": {
       "idPattern": "^stack:[A-Za-z0-9][A-Za-z0-9._-]*$",
@@ -281,7 +284,7 @@
     },
     "homeIn": {
       "reverse": "holds",
-      "from": ["service", "component", "infrastructure", "event", "layer", "package"],
+      "from": ["service", "component", "infrastructure", "layer", "package"],
       "to": ["stack"],
       "attributes": {},
       "required": [],

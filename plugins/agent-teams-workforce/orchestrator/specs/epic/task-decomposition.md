@@ -13,20 +13,49 @@ document and the Story; the span step hands over the span and the elements.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json`, `tasks-<slug>.items.json` | value `repository`, file `task context`, file `placed items`; plans steps 2 and 3 |
-| 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `task context`, `placed items` | `tasks-<slug>.json` | file `tasks` |
+| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json`, `tasks-<slug>.items.json` | value `repository`, file `task context`, file `what the story builds`; plans steps 2 and 3 |
+| 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `task context`, `what the story builds` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
 | 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 8 planned |
-| 4 | Correct the uncited items and unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json` | file `task correction` |
+| 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json` | file `task correction` |
 | 5 | Plan the Task beads with the correction | script `beadwrite.plan_story_tasks` | as step 3, and `task correction` | the correction merged into `tasks-<slug>.json` | value `task plan`, and steps 6 to 8 planned; a plan that still has a gap fails the step |
 | 6 | Write one Task bead | script `beadwrite.write_task`, one step per Task, in build order | `tasks`, `story document`, the spec documents, `span`, `elements` | the Task bead; the Task's journal | value `task`, value `task edge counts`, value `task warnings` |
 | 7 | Retire the Task beads the plan no longer names | script `beadwrite.retire_superseded_tasks` | as step 6; the bead tracker | bead edges and deletions | value `tasks retired`, value `task warnings` |
 | 8 | Record the Tasks written | script `task_decomposition.record` | `story`, `task plan`, every `task`, `task edge counts` and `task warnings` | `tasks-<slug>.written.json` | file `tasks written`, value `tasks result` |
 
+`what the story builds` (`tasks-<slug>.items.json`) is the items of what the Story builds: the
+services, components, infrastructure and events the Epic's architecture adds or changes in this
+repository (`repo-scoping.md`).
+
 The task context lists the Tasks that already exist under the Story and that are started, or that
 elaboration did not write, so the decomposer reuses them; and the open Tasks of other Epics in the
-same repository, so a Task that needs one of them is blocked by it instead of duplicating it.
+same repository (`stackWork`), so a Task that needs one of them is blocked by it instead of
+duplicating it. It also holds `sharedCapabilities`, and `dependsOn` and `consumedBy`
+(`repo_scoping.build_context`): for each thing the Story builds, each dependency-family
+relationship that starts at it and ends at something the Story does not build, as
+`{from, kind, to, toKind, side, stack, repository, builtBy}`, where `side` is the relationship's
+side, `stack` is the far end's architecture-side stack for an architecture-side entry and the
+stack the repositories hold it in for a repository-side one, and `builtBy` is the `storyKey` of
+another Story of this Epic that builds the far end, or null; and for each event the Story builds,
+its consumers, as `{event, consumer, side, stack, repository}`. All of these are what the Tasks
+depend on or use, never work. A repository-side element is a hint read from code: it may tell a
+Task where existing code sits, never what to build.
 
-A plan has a gap when it holds no Task, an item placed in the repository is cited by no Task, or a
+## The grouping check
+
+The decomposer's Tasks file is checked by `task_decomposition.task_grouping_check`: strict JSON,
+then `tasks.schema.json`, then `hierarchy.task_grouping_problems`, which raises `ValueError` with
+every problem (a content failure, so the session gets its one correction):
+
+- when the Story builds two or more things, each Task that cites exactly one thing: "Task <key>
+  covers one thing: group the things this Story builds into coherent Tasks";
+- a Task that cites an event item and none of that event's architecture-side publishers;
+- a Task that cites only event items.
+
+A Task is a coherent unit of build work, sized on the wsjf skill's scale: one Task covers several
+of the things the Story builds, every thing the Story builds is cited by some Task, and it is
+never one Task per thing. An event is built with its publisher.
+
+A plan has a gap when it holds no Task, a thing the Story builds is cited by no Task, or a
 Task has no size. One correction is asked for. A correction that is merged a second time adds
 nothing, because its Tasks cite items the first merge covered.
 

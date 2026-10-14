@@ -125,8 +125,8 @@ DOCUMENT_OF: Final[dict[str, str]] = {
 }
 """The spec document each author writes, by artifact name."""
 SUFFIX: Final[dict[str, str]] = {SPEC: ".md", DATA_MODEL: ".data-model.md", CRITERIA: ".criteria.md"}
-CONTRACTS_OUTCOME: Final = "API, event and error contracts for this repository's placed items."
-DATA_MODEL_OUTCOME: Final = "Data model specification for this repository's placed items."
+CONTRACTS_OUTCOME: Final = "API, event and error contracts for what this repository's Story builds."
+DATA_MODEL_OUTCOME: Final = "Data model specification for what this repository's Story builds."
 CRITERIA_OUTCOME: Final = "Acceptance criteria and definition of done for the saved specifications."
 UI_SCHEMA: Final = "skills/artifact-handoff/schemas/spec-ui.schema.json"
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
@@ -416,10 +416,10 @@ def context(run: StepRun) -> Completion:
     held: Repository = repository_of(dict(run.params()), SPEC_CONTEXT)
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, SPEC_CONTEXT, held.path)
     dispatch: DispatchArguments = dispatch_arguments()
-    placed: dict[str, JsonValue] = json_object(
-        run.tools.portfolio(SPEC_CONTEXT, hierarchy.placed_items, span_files(run.inputs)),
+    every_build: dict[str, JsonValue] = json_object(
+        run.tools.portfolio(SPEC_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
     )
-    items: list[JsonValue] = [item for item in placed.values() if json_object(item)["slug"] == held.slug]
+    items: list[JsonValue] = [item for item in every_build.values() if json_object(item)["slug"] == held.slug]
     if not items:
         raise StepError(SPEC_CONTEXT, OTHER_CAUSE, (f"the span places no item in {held.path}",))
     matrix: Matrix = run.tools.portfolio(SPEC_CONTEXT, read_matrix, matrix_path(None, os.environ))
@@ -485,7 +485,7 @@ def ui_sources(run: StepRun) -> AgentLaunch:
     return AgentLaunch(
         output=run.context.work / "candidates" / f"spec-{held.slug}.ui.json",
         validate=run.tools.plugin / UI_SCHEMA,
-        outcome="UI design sources for this repository's placed items.",
+        outcome="UI design sources for what this repository's Story builds.",
         accept=accept,
         add_dirs=author_dirs(run, held),
         files=(
@@ -499,19 +499,19 @@ def ui_sources(run: StepRun) -> AgentLaunch:
 
 @script_step(UI_NORMALIZE)
 def normalize(run: StepRun) -> Completion:
-    """Keep the UI choices of placed items and replace a bundle that cannot be built from.
+    """Keep the UI choices of what the Story builds and replace a bundle that cannot be built from.
 
     Returns:
         The UI sources file, and the warnings the normalization raised.
 
     """
     held: Repository = repository(run.inputs)
-    placed: set[str] = {
+    every_build: set[str] = {
         check_type(item[KEY_ID], str) for item in objects(strict_json(run.inputs.file(CONTEXT))["items"])
     }
     normalized: dict[str, JsonValue] = normalize_ui(
         strict_json(run.inputs.file(UI_CANDIDATE)),
-        placed,
+        every_build,
         strict_json(run.inputs.file(UI_BUNDLE_LIST)),
         run.tools,
     )
@@ -627,7 +627,7 @@ def story_document(run: StepRun) -> Completion:
     lines: list[str] = [
         f"Repository: {held.path}",
         "",
-        "Placed items:",
+        "What the Story builds:",
         *(f"- {item[KEY_ID]}: {item[KEY_ELEMENT]}" for item in items),
         "",
         "Specifications:",

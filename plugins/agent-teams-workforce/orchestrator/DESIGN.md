@@ -865,8 +865,8 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 - **The verified mark.** The matrix has one code mark, `verified`, with the merge commit, on a
   stack, the entries in it and the relationships the code makes real. The driver sets it when a
   Story's pull request has merged (`verify --story --commit`); no agent and no elaboration step
-  sets it. The repository span of an Epic is every stack its closure reaches and the
-  architecture-side entries with a home that are not verified.
+  sets it. The verified mark decides nothing about what is built: the repository span of an Epic
+  is what its architecture adds or changes (`11.2`).
 - **One home per entry.** An entry has at most one `homeIn` on each side; the command refuses a
   second.
 - **Roles.** The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run.
@@ -908,19 +908,24 @@ promotion step, with the lead's step between them when a review raised something
 
 ### 11.2 Repository span
 
-The step `atw-matrix epic --closure` (`flows/repo_scoping.py`) reads the span from the matrix; no
-agent places anything. An entry with no stack, a stack that names no repository, a repository
-that may hold no product entry (the control repository, the architecture folder, a marketing
-repository), and a missing repository whose stacks have more than one type or more than one app
-each fail the step. It writes
-`span-elements.json` and `repo-scoping.json` and plans one container per repository, each with its
-first step `spec_authoring.context`. An Epic whose closure reaches nothing to build fails the
-step.
+The step `atw-matrix epic --closure` (`flows/repo_scoping.py`; the script key keeps its old name)
+reads what the Stories build from the architect's result: the services, components,
+infrastructure and events it lists under `addedOrChangedElements`, each event with its
+architecture-side publishers (an event is built as part of the service that publishes it). A
+Story is one repository's share of that. The matrix is used only for each entry's
+architecture-side stack (`authority_holder`) and that stack's repository; a stack that names no
+repository is given the one the naming rules give it. Everything else the Epic reaches is
+context for the Tasks, never work. No agent places anything. Each `story_build_problems` sentence,
+a repository that may hold no product entry (the control repository, the architecture folder, a
+marketing repository), and a missing repository whose stacks have more than one type or more than
+one app each fail the step. It writes `span-elements.json` and `repo-scoping.json` and plans one
+container per repository, each with its first step `spec_authoring.context`. An architecture
+that adds or changes nothing to build fails the step.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 
-A repository the matrix names and the inventory (`polyrepo.py inventory --name <name>`) lacks is
-created by the span step with `polyrepo.py create`, which requires `--space` and `--template`.
+A repository of a stack a Story builds in that the inventory (`polyrepo.py inventory --name
+<name>`) lacks is created by the span step with `polyrepo.py create`, which requires `--space` and `--template`.
 The tool records the stack the new repository holds in the matrix.
 
 - **The template** is the type of the repository's stacks, the last token of a stack's name
@@ -955,7 +960,7 @@ elaboration is done.
 
 - **The Story's title and description are deterministic.** `story-<slug>.json` is `{title:
   "<repository name>: <PRD title>", description: <a fixed template listing the repository, the
-  placed items (id and element) and the three spec document paths>, decisionIds}`. The Story is a
+  what the Story builds (id and element) and the three spec document paths>, decisionIds}`. The Story is a
   single-repository container and nothing reads its prose to decide anything, so no session writes
   it.
 - **One review per repository.** `openapi-contract-reviewer` checks the three documents against the
@@ -966,7 +971,7 @@ elaboration is done.
 - **Every author writes its document.** No structured field says which surface an item touches, so
   no author is skipped; an author with nothing to specify writes a short "not applicable" document.
 - **UI design sources.** For a repository whose placement has `frontend: true`, the contracts author
-  (`api-specification-author`) writes `<work>/candidates/spec-<slug>.ui.json`; which placed items
+  (`api-specification-author`) writes `<work>/candidates/spec-<slug>.ui.json`; which items the Story builds
   are UI items is its judgment; Python checks the file against the supplied bundles and the placed
   item ids. The `frontend` flag of the placement is the only structured field that says a repository
   holds UI.

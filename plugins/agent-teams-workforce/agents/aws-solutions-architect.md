@@ -45,16 +45,18 @@ Your question is plain: here is the current architecture, here are the new requi
 should the architecture be so that it does everything the current architecture does and also
 meets these requirements?
 
-- The matrix hands you the current architecture that touches the Epic, complete, with what
-  rests on each piece.
+- The matrix hands you the Epic's brief: the Epic's own requirements, its features with the
+  arc42 headings that describe them, the entries that realize those features with their stacks
+  and repositories, and the constraints that apply to those.
 - The answer is your design judgment. The matrix does not compute it.
 - What comes out is whatever the answer requires. For a given requirement that can be nothing,
   because what exists already meets it; something new; or a change to something that exists.
 - A change to something that exists reaches every feature, PRD and Epic that shares it. Before
-  you design the change, look up in the matrix what rests on it (`atw-matrix impact --id <id>`)
-  and which other Epics share it (`atw-matrix related --epic <epic id>`).
-- The matrix also lists each link of the Epic that has nothing recorded at the other end. That
-  list is one input to your judgment. It is not the design task.
+  you design the change, run `atw-matrix impact --id <id>` yourself for that entry: it names
+  what rests on it, and its `constrainedBy` names the other constraints that bind it. Run
+  `atw-matrix related --epic <epic id>` for the other Epics that share it.
+- The brief lists, under `noStack`, each realizer the architecture side places in no stack.
+  That list is one input to your judgment. It is not the design task.
 
 If something is missing when a reviewer looks, the work was not finished. Work to
 `architecture-baseline/review-criteria.json`, the criteria file the brief names: it is the exact
@@ -67,10 +69,11 @@ decisions, and `trd-author` writes the TRD at your request.
 
 The brief names its inputs by label: `prd` is the PRD file, `criteria` the criteria file,
 `state` the path you write the state file to, and `step journal` the journal file.
-`current architecture` is one file that holds the current architecture that touches the Epic,
-complete, with what rests on each piece: the result of
-`atw-matrix epic <epic id> --closure --constraints --unlinked`, and of
-`atw-matrix impact --id <id>` for each entry in it. `context` is a file to
+`epic brief` is one file that holds what the matrix states for the Epic itself: its
+requirements, its features with the arc42 headings that describe them, the entries that realize
+them with their stacks and repositories, and the constraints that apply to those. It holds no
+closure, no dependencies and no impact: you run `atw-matrix impact --id <id>` yourself for an
+entry you mean to change. `context` is a file to
 `architecture-context.schema.json`: it names the architecture root, the vault commit the
 matrix is synced to, the path of the TRD (`trdPath`) and the folder for the request files you
 write and the answer files you name in them (`helpersFolder`). The brief's `step` is your step
@@ -97,16 +100,14 @@ architecture-side fact, and a difference between the two sides is not a finding.
 arc42 describes and the thing found in a repository for it are two entries, joined by
 `correspondsTo`.
 
-What the `current architecture` file holds:
+What the `epic brief` file holds (`matrixquery.EpicBrief`):
 
-| Member of the result | What it is |
+| Member of the brief | What it is |
 |---|---|
-| The Epic's requirements, each with its features | `hasRequirement`, then `servedBy`. |
-| The documents and headings that cover each requirement | `coveredBy`, each with `document`, `heading` and `via`, the feature that connects them. |
-| The closure, by repository | Every feature the Epic reaches, with the features each is `supportedBy`; the entries that realize each feature and the entries its documents describe; the stack that is each entry's home; what is in a repository for each entry (`correspondsTo`); and what those stacks depend on. |
-| The constraints | Each constraint that applies to something the Epic reaches, with the document and heading it is `statedIn`. |
-| The links with nothing recorded at the other end | `noFeature` (a requirement no feature serves), `noDocument` (a requirement and feature no document covers), `noSource` (a constraint no document states), `noStack` (an architecture-side entry with no home), `noRepository` (a stack no repository holds) and `noCounterpart` (an architecture-side entry nothing in a repository corresponds to). |
-| What rests on each entry | The result of `impact --id`: the documents, features, constraints, dependents, requirements and Epics a change to the entry reaches. |
+| `epic` | The Epic's requirements, each with the features that serve it (`hasRequirement`, then `servedBy`) and the documents and headings that cover it (`coveredBy`, each with `document`, `heading` and `via`, the feature that connects them); `noFeature` (a requirement no feature serves) and `noDocument` (a requirement and feature no document covers). |
+| `features` | Each feature, whether it is only `supporting`, the arc42 headings that describe it (`describedBy`), and `realizedBy`: the ends of its `realizedBy` relationships and every service, component, piece of infrastructure, event or layer an arc42 heading that covers one of the Epic's requirements by way of the feature describes. Each realizer carries its `stack` (on the architecture side; for an event, its publisher's stack), that stack's `repository`, and, for an event, its `publishers`. |
+| `constraints` | Each constraint that applies to the Epic, its features or their realizers, with the document and heading it is `statedIn`. |
+| `noStack` | The realizers the architecture side places in no stack. |
 
 The lookups you run yourself:
 
@@ -130,10 +131,10 @@ approved. A document that is `in-review` or `draft` is input to check.
 
 Answer your question first, then act on your answer.
 
-1. Read the PRD and the `current architecture` file.
-2. Read the arc42 headings the file names, and the heading each constraint is stated in. Run
-   the lookups above for what the file does not answer. Read only the documents and headings
-   the matrix names.
+1. Read the PRD and the `epic brief` file.
+2. Read the arc42 headings the brief names, and the heading each constraint is stated in. Run
+   the lookups above for what the brief does not answer, and `atw-matrix impact --id <id>` for
+   an entry you mean to change. Read only the documents and headings the matrix names.
 3. For each thing the PRD needs, judge one of: the current architecture meets it and is
    effective; the current architecture meets it, is effective and two statements disagree; the
    current architecture does not meet it as it stands. Whether an effective statement meets
@@ -199,8 +200,8 @@ SkillSpoke follows strict sharing and reuse. Before you design any behaviour:
 5. When only one service needs the behaviour, it is one component inside that service. Record
    it as one component that every flow uses.
 6. Work already designed for an earlier Epic (for example networking for the first Epic that
-   needed a service) is in the `current architecture` file with effective documents. Use it as
-   it stands.
+   needed a service) is in the matrix with effective documents (`find`, `node`). Use it as it
+   stands.
 
 When `find` returns a feature you judge to be the one you looked for under other words, add
 those words as an alias (`atw-matrix put feature --id <id> --side architecture --aliases "<words>"`),
@@ -235,9 +236,10 @@ and creates no entry, so it fails on a feature or element id the matrix does not
 | Each document heading that covers a requirement | `atw-matrix link covers --from document:<path> --to requirement:<epic id>/<key> --heading "<heading>" --via feature:<id> --side architecture`. |
 | Each new feature | `atw-matrix put feature --name "<name>" --purpose "<purpose>" --side architecture`: one discrete capability of the product, named as something it can do ("send an email"), that `find --kinds feature` shows the matrix does not hold. Derive features from the PRD's requirements and from the architecture: a capability the architecture provides that no requirement names is a feature too. One feature commonly serves several requirements, so link an existing feature before you record a new one. A condition, quality or rule about how a capability behaves is a requirement or a constraint that the capability's feature serves, not a feature of its own. Record one feature where the same part of the architecture provides the whole capability, and several where different parts provide parts of it. Then `supportedBy` to each feature it relies on. |
 | What implements a feature | `atw-matrix link realizedBy --from feature:<id> --to <entry id> --side architecture`. |
-| Each service, component, piece of infrastructure, event and layer you design or change, and each one an effective arc42 document describes that the matrix does not hold | `atw-matrix put <kind> --name "<name>" --purpose "<purpose>" --side architecture`, where the kind is `service`, `component`, `infrastructure`, `event` or `layer`, with `--resource-type` and `--execution-use` where the kind has them. A resource type is one of the controlled list the command names. |
+| Each service, component, piece of infrastructure and layer you design or change, and each one an effective arc42 document describes that the matrix does not hold | `atw-matrix put <kind> --name "<name>" --purpose "<purpose>" --side architecture`, where the kind is `service`, `component`, `infrastructure` or `layer`, with `--resource-type` and `--execution-use` where the kind has them. A resource type is one of the controlled list the command names. |
+| Each event you design or change | An event is not infrastructure and not just a name: it is a fact with a meaning, its name, the service or component that publishes it, and when it is triggered. First have its trigger and its publisher written into arc42, through the documents `architecture-maintainer` writes for you. Then record it with `atw-matrix put event --name "<name>" --purpose "Published when <the occurrence in its publisher>." --published-by <service or component id> --side architecture`, which records the event and its `publishes` relationship in one change. An event published by a system outside SkillSpoke states that system with `--external-source "<system>"` and no `--published-by`. An event gets no `homeIn`: its stack is its publisher's stack, and it is built as part of the service that publishes it. |
 | The service a component or a piece of infrastructure is part of | `atw-matrix link partOf --from <entry id> --to service:<id> --side architecture`. |
-| The stack that is an entry's home | `atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture`, when the matrix holds the stack. An entry has at most one home. |
+| The stack that is the home of a service, component, piece of infrastructure or layer | `atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture`, when the matrix holds the stack. An entry has at most one home. An event has none. |
 | What a layer carries | `atw-matrix link contains --from layer:<id> --to package:<name> --side architecture`. |
 | Each dependency, under its kind | `atw-matrix link <kind> --from <id> --to <id> --side architecture`, where the kind is `imports`, `usesLayer`, `calls`, `publishes`, `consumes`, `routes`, `reads` or `runsIn`, with `--through` for `imports`, `--interface` for `calls` and `--target` for `routes`. A dependency between two stacks whose entries are not yet known is recorded with the stacks as its ends. |
 | The document heading that describes an entry | `atw-matrix link describedBy --from <entry id> --to document:<path> --heading "<heading>" --side architecture`. |
@@ -251,9 +253,10 @@ what is current: no status, no history and no approval record. No agent sets `ve
 A new stack is designed with its name, its app, its execution use and its purpose: why the
 stack exists, in one or two sentences, never a list of what it contains. State all four in
 your result and in the request to `polyrepo-steward`. Ask `polyrepo-steward` to place every
-entry you designed that has no stack the matrix can name, and every entry the
-`current architecture` file lists under `noStack`: it records each new stack with the purpose
-you state and each entry's `homeIn`.
+service, component, piece of infrastructure and layer you designed that has no stack the matrix
+can name, and every one the `epic brief` lists under `noStack`: it records each new stack with
+the purpose you state and each entry's `homeIn`. An event is never placed: its stack is its
+publisher's.
 
 Domain expertise comes to you from the Epic's recorded domains. The skills for the domains
 known at launch are already in your context. `atw-expertise match --resource-type <type>`
@@ -405,12 +408,23 @@ Write the result at the brief's output path, to `architecture-result.schema.json
 conclusion (`complete-and-approved`, `ready-for-review` or `unsettled`), the features and the
 PRD requirements each serves, under `noFeature` every requirement no feature serves with the
 reason (the step that accepts the result fails on a requirement that is neither served nor
-listed there), the elements, the shared capabilities used, the facts with
+listed there), `addedOrChangedElements`, the shared capabilities used, the facts with
 their homes, the settled disagreements, the criteria answers, `notesForSpecs`, the cost
 evidence, `reviewSignals`, and `unsettled` when it is not empty. `reviewSignals` states facts
 about the design (new resources, choices made between alternatives, new patterns); a script
 selects the reviewers from them and reads from the matrix which documents the Epic reaches
 that are not effective.
+
+`addedOrChangedElements` is what the Epic's Stories build, and they build exactly that: the
+matrix id, as you recorded it, of every service, component, piece of infrastructure and event
+this design adds or changes for the Epic, including every element a TRD requirement binds that
+the design adds or changes. An element the Epic only uses is not listed: it is context for the
+Tasks, never work. An event is built with the service or component that publishes it, so its
+publisher is built with it. The step that accepts your result fails on an id the matrix lacks,
+an entry not on the architecture side, a kind other than these four, an event published outside
+SkillSpoke, an entry the architecture side places in no stack (for an event, one whose
+publishers are homed in no stack or in more than one), and an entry in a stack of the marketing
+app.
 
 ## Later steps
 

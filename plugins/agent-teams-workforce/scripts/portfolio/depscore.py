@@ -47,7 +47,7 @@
                          --design-source, also select the design source a web-ui Task builds
                          with now; no `bd` call
     recon-facts          check a repository's saved detailing (`recon-<slug>.json`) against the
-                         delta items placed in it and print only the facts the workflows branch
+                         delta items of what its Story builds and print only the facts the workflows branch
                          on (usable or not and why, the ids that make work, each `ui` work
                          item's design source, whether dependencies are current);
                          a file that cannot be read or parsed is an error; no `bd` call
@@ -1123,7 +1123,7 @@ def _configure_command_47(sub: _Subcommands, common: argparse.ArgumentParser) ->
     rcf.add_argument(
         "--items",
         required=True,
-        help="the ids of the delta items placed in the repository, comma-separated",
+        help="the ids of the delta items of what the Story builds, comma-separated",
     )
 
 

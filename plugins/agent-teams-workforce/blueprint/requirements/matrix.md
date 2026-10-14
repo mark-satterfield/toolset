@@ -310,10 +310,12 @@ for that Epic (Q13). Nothing is invented to fill it.
   it changes, so that two runs of one Epic start from the same facts.
 - **R3.** The matrix is the one location for these relationships. No second record of them
   is kept anywhere, because two records drift apart and a run cannot tell which is right.
-- **R4.** The matrix hands the architect the current architecture that touches the Epic,
-  complete, with what rests on each piece (Q12, Q19), and states which links of the Epic
-  have nothing recorded at the other end as exactly as it states what exists (Q13). The
-  architect's question is then plain: here is the current architecture, here are the new
+- **R4.** The matrix hands the architect the Epic's own brief: its requirements, its
+  features with the arc42 headings that describe them, the entries that realize them with
+  their stacks and repositories, and the constraints that apply to those, not the impact view
+  of everything the Epic reaches. The architect runs `atw-matrix impact --id <id>` itself for
+  an entry it means to change (Q19). The brief states which realizers have no stack as exactly
+  as it states what exists (Q13). The architect's question is then plain: here is the current architecture, here are the new
   requirements; what should the architecture be so that it does everything the current
   architecture does and also meets these requirements? (R52 to R55.)
 - **R5.** The matrix finds a stack from a description of functionality (Q8), so that an
@@ -553,3 +555,15 @@ for that Epic (Q13). Nothing is invented to fill it.
   approach the problem before it has looked at it.
 - **R55.** The lookup of links with nothing recorded at the other end (Q13) stays, under
   plain wording. It is one input to the architect's judgment and is not the design task.
+
+### Events
+
+- **R56.** An event is not infrastructure and not just a name: it is a fact with a meaning.
+  An architecture-side event states when it is triggered, as its purpose, one sentence
+  starting "Published when" mirrored from the arc42 heading that describes it, and its
+  publisher: the service or component the architecture side says publishes it, or, for an
+  event published outside SkillSpoke, that outside system (`externalSource`). Its stack is its
+  publisher's architecture-side stack; it has no home of its own, and it is built as part of
+  the service that publishes it, never as a Story or a Task of its own. The repository side
+  never decides what is built: a repository-side fact reaches the Tasks only as a labelled
+  hint.

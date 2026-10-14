@@ -78,13 +78,14 @@ LABEL_QUESTION: Final = "question"
 LABEL_REQUEST: Final = "request"
 LABEL_ANSWER: Final = "answer"
 LABEL_RULING: Final = "ruling"
-LABEL_CURRENT: Final = "current architecture"
+LABEL_EPIC_BRIEF: Final = "epic brief"
 """The input labels the definitions of the architecture team name.
 
 ``request``, ``question``, ``answer`` and ``ruling`` are also the names of the artifacts that
-record those files in the journal. ``current architecture`` is the file that holds what the
-matrix returns for the Epic: everything it reaches, the constraints that bind it, the links with
-nothing recorded at the other end, and what rests on each entry.
+record those files in the journal. ``epic brief`` is the file that holds what the matrix states
+for the Epic itself (``matrixquery.epic_brief``): its requirements, its features with the arc42
+headings that describe them, the entries that realize them with their stacks and repositories,
+and the constraints that apply to those.
 """
 
 WRITE_REQUEST: Final = "write request"
@@ -146,14 +147,14 @@ def context_path(work: Path) -> Path:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def current_architecture_path(work: Path) -> Path:
-    """Name the file that holds what the matrix returns for the Epic.
+def epic_brief_path(work: Path) -> Path:
+    """Name the file that holds the Epic's brief from the matrix.
 
     Returns:
         The file inside the Epic's architecture work folder.
 
     """
-    return work / ARCHITECTURE_FOLDER / "current-architecture.json"
+    return work / ARCHITECTURE_FOLDER / "epic-brief.json"
 
 
 def matrix_file() -> Path:

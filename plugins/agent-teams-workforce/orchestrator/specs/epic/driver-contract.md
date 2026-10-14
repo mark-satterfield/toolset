@@ -66,8 +66,7 @@ loads it through `beadmeta.py`). This file names those constants and never resta
   when no live execution owns it (`itemownership.reason`), and then marked `reclaimed`;
   `ELABORATION_DONE` -> not workable; `ELABORATION_AUTHORING` with cause `CAUSE_AWAITING_HUMAN` ->
   held for a person; `ELABORATION_AUTHORING` otherwise -> "PRD still being authored", not workable.
-- A PRD file must resolve for the Epic (`workitems.find_prd`), or the Epic is skipped with
-  `no PRD`.
+- A PRD file must resolve for the Epic (`workitems.find_prd`), or the Epic is not selected.
 - The lifecycle metadata the driver reads is the schema's `LANE_KEYS` group. The driver writes
   `KEY_ELABORATION_STATE`, `KEY_ELABORATION_STATE_AT`, `KEY_ELABORATION_STATE_CAUSE` and
   `KEY_ELABORATION_STATE_OWNER` (a subset of that group) only for a person hold (`elabstate.hold_for_person`: `ELABORATION_AUTHORING`, cause

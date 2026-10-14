@@ -354,7 +354,7 @@ def _stated_stacks(matrix: Matrix, elements: Sequence[str]) -> tuple[list[EntryI
         if entry is None:
             unmatched.append(stated)
             continue
-        home: EntryId | None = entry.id if entry.kind == KIND_STACK else matrix.home(entry.id)
+        home: EntryId | None = entry.id if entry.kind == KIND_STACK else matrix.home(entry.id, side=None)
         if home is not None:
             stacks.add(home)
     return sorted(stacks), unmatched
