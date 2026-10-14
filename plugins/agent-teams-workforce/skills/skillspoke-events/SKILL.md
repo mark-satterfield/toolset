@@ -17,9 +17,10 @@ The source is the effective arc42 architecture in the `skillspoke-docs` vault, u
 
 | View | Holds |
 |---|---|
-| `08-crosscutting-concepts/event-platform-and-envelope.md` | The standard event, the central event API, the event type registry, coat-check, delivery rules |
+| `08-crosscutting-concepts/event-platform-and-envelope.md` | The standard event, the central event API and the events API function, the event type registry, coat-check, routing rules, up to the point a rule forwards an event to its target |
+| `08-crosscutting-concepts/event-consumption.md` | What happens after a rule forwards an event: the consumer's SQS queue and DLQ, duplicate suppression, reading a reference payload, applying only newer versions, DLQ reconciliation, the per-service SQS configuration |
 | `08-crosscutting-concepts/event-naming-standard.md` | Event type names and their ownership |
-| `08-crosscutting-concepts/events-as-observability.md` | The four observability categories, the event log, correlation |
+| `08-crosscutting-concepts/events-as-observability.md` | The four kinds of event every service emits, the event log, correlation |
 | `08-crosscutting-concepts/idempotency.md` | Duplicate suppression in the chassis |
 | `08-crosscutting-concepts/retry-and-backoff.md` | The one retry policy and the owner of each retry |
 | `05-building-block-view/events-platform/README.md` | What `shared-events-service` and `shared-events-infra` own |
@@ -48,13 +49,13 @@ every event, whatever its purpose, is the standard event `SkillSpokeEvent`.
 |---|---|---|
 | `eventId` | yes | ULID of this publication |
 | `eventType` | yes | The event type name (see Event type names) |
-| `eventSchemaVersion` | yes | Semantic version (`major.minor.patch`) of the event's payload schema, not of the standard event |
-| `category` | yes | `business`, `trace`, `state`, `error`, `audit`, `security` or `infrastructure` |
+| `eventSchemaVersion` | no | Semantic version (`major.minor.patch`) of the event's payload schema, not of the standard event |
+| `category` | yes | `business`, `monitoring`, `audit`, `security` or `infrastructure` |
 | `domain` | yes | Primary domain of the event; matches `^[a-z][a-z0-9-]*$` |
 | `source` | yes | `service`, `region`, `environment` required; `subsystem` optional |
 | `timestamps` | yes | `occurredAt`, `publishedAt` required; `expiresAt` optional |
-| `trace` | yes | `correlationId` required; `causationId`, `parentEventId`, `rootEventId`, `traceId`, `spanId` optional |
-| `lifecycle` | yes | `phase` (`started`, `in-progress`, `finished`, `finalized`), `outcome` (`success`, `successWithWarning`, `failed`, `canceled`, `timeout`), `severity` (`info`, `warning`, `error`, `critical`), `isError` required; `statusCode`, `statusSummary`, `statusReason`, `retry`, `details` optional |
+| `trace` | no | When present: `correlationId` required; `causationId`, `parentEventId`, `rootEventId`, `traceId`, `spanId` optional |
+| `lifecycle` | no | When present: `phase` (`started`, `in-progress`, `finished`, `finalized`), `outcome` (`success`, `successWithWarning`, `failed`, `canceled`, `timeout`), `severity` (`info`, `warning`, `error`, `critical`), `isError` required; `statusCode`, `statusSummary`, `statusReason`, `retry`, `details` optional |
 | `visibility` | yes, by the platform | `piiPresent` (boolean) and `classification` (`public`, `internal`, `restricted`, `pii`, `phi`) |
 | `payload` | no | When present: `mode` (`inline` or `reference`), `schemaUri`, `contentType` required; `sizeBytes`, `inline`, `reference` optional |
 | `actor` | no | `actorType`, `actorId`, `actorDisplay` |
@@ -73,16 +74,12 @@ its own meaning:
 
 ## Categories
 
-| Category | Meaning | Emitted by |
-|---|---|---|
-| `business` | A domain fact other contexts act on | Service code |
-| `trace` | A unit of code execution started and ended: a handler invocation or an outbound call | The chassis, automatically |
-| `state` | A business process that can span many invocations started and ended | Service code, through the chassis event helper |
-| `error` | An error, a warning, a degraded dependency or an exceeded duration budget | The chassis error handlers, and service code for warnings it detects |
-| `audit` | An employee action, or the content-free record that a seeker's export or forget-me happened | The service that owns the action |
-| `security` | A security fact about a seeker's account | The service that owns the fact |
+The `category` values are `business`, `monitoring`, `audit`, `security` and `infrastructure`
+(see The standard event); `audit` and `security` are described below. An error event is one whose
+`lifecycle.isError` is true, whatever its category. The kinds of event every service emits
+(business, telemetry, process and error events) are described in `events-as-observability.md`.
 
-- Because the end of a process must state its own outcome, `trace` and `state` events come in
+- Because the end of a process must state its own outcome, telemetry and process events come in
   pairs: one `started` and exactly one `ended`, whose `lifecycle.outcome` says how the work ended
   and whose `lifecycle.details` carries the error category, code and message.
 - Because an event may be read by anyone investigating a request, an error or warning event
@@ -108,13 +105,14 @@ its own meaning:
   no service, stack, technology, persistence-operation or deployment identifier.
 - Because producers publish facts and the notifications and messaging services decide delivery, a
   delivery channel is never a domain prefix and a name carries fact semantics, not a command.
-- Because schema evolution is carried in `eventSchemaVersion`, a name has no version identifier.
+- Because the payload schema's version is carried in `eventSchemaVersion`, a name has no version identifier.
 - Because consumers and replays depend on a name's meaning, a published event type keeps its name
   and meaning; a changed meaning is a new event type.
 - Because the outcome is carried in `lifecycle.outcome`, the lifecycle verbs are `started` and
   `ended` only, in matched pairs; a nested workflow emits one pair per step.
-- Because routing rules match on event metadata only, a lifecycle producer emits one distinctly
-  typed event per fact rather than one generic event with a kind discriminator in its body.
+- Because a generic event would force every consumer to filter on the publisher's payload, a
+  lifecycle producer emits one distinctly typed event per fact rather than one generic event with a
+  kind discriminator in its body.
 
 Examples: `identity.user.registered`, `billing.invoice.finalized`, `job-search.results.published`.
 
@@ -122,8 +120,8 @@ Examples: `identity.user.registered`, `billing.invoice.finalized`, `job-search.r
 
 | Owner | Owns |
 |---|---|
-| `shared-events-infra` | The bus `skillSpoke-events`, its resource policy, the archive, the rule that writes every event to the event log, the `category = error` rule to alert dispatch, the bus SSM parameters |
-| `shared-events-service` | The central event API, building and validating the standard event, publication to the bus, coat-check, the registry path scheme, the `visibility` vocabulary |
+| `shared-events-infra` | The bus `skillSpoke-events`, its resource policy, the archive, the rule that writes every event to the event log, the rule that sends error events (`lifecycle.isError` true) to alert dispatch, the bus SSM parameters |
+| `shared-events-service` | The central event API and the events API function (`events-gateway`) behind it, building and validating the standard event, publication to the bus, coat-check, the registry path scheme, the `visibility` vocabulary |
 | Each publishing service | Its event types, their registry entries, their payload schemas and payload models, its own OAuth2 app client |
 | Each consuming service | Its EventBridge rules, its SQS queue and DLQ, its consumer Lambda, its idempotency table, its grant on the coat-check prefixes it reads |
 | `shared-chassis-lib` | The event helper, consumer batch handling, duplicate suppression, the mapping of failures to named errors |
@@ -140,23 +138,27 @@ Examples: `identity.user.registered`, `billing.invoice.finalized`, `job-search.r
 ## The path an event takes
 
 ```text
-service handler -> chassis event helper -> shared-apiClient-lib -> POST /v1/events
-  -> shared-events-service builds, validates, publishes -> bus skillSpoke-events
+sending code -> chassis event helper -> shared-apiClient-lib -> POST /v1/events
+  -> the events API function builds, validates, publishes -> bus skillSpoke-events
   -> consuming service's rule -> that service's SQS queue (+ DLQ) -> consumer Lambda
 ```
 
-- `shared-events-service` is the only builder, validator and publisher of events; every other
-  service supplies values and an optional payload, as many times as it needs in one execution.
-- Because the bus resource policy grants `events:PutEvents` to the event API role only, the
-  central event API is the one way onto the bus for every SkillSpoke principal.
+- `shared-events-service` is the only builder, validator and publisher of events. Any code can
+  send an event; it sends the values of the event and an optional payload in the body of its API
+  request, which is not the event, as many times as it needs in one execution.
+- The event platform ends where a rule forwards an event to its target. The target queue, its DLQ
+  and the processing behind it belong to the consuming service (`event-consumption.md`).
+- Because the bus resource policy grants `events:PutEvents` to the events API function's role
+  only, the central event API is the one way onto the bus for every SkillSpoke principal.
 - Because every service-to-service call identifies its caller through its own app client, and a
   public endpoint would carry PII-bearing events off the private network, the central event API is
   a PRIVATE REST v1 API (`POST /v1/events`) reachable only through the platform `execute-api`
   interface endpoint and authorized by a Cognito user-pool authorizer that checks the
   event-publish scope of a client-credentials token.
-- Because a chatty service emits at least two trace events per invocation, the API accepts an
-  array of one to ten events per call and returns a per-entry result; each entry is validated,
-  offloaded and authorized on its own.
+- Because a chatty service emits at least two `telemetry.handler` events per invocation, the API
+  accepts an array of one to ten entries per call, each holding one event's values and optional
+  payload, and returns a per-entry result; each entry is validated, offloaded and authorized on its
+  own.
 - By project convention, all cross-service events flow through one custom bus, `skillSpoke-events`.
 - By project convention, delivery is EventBridge rule to SQS to Lambda everywhere: a consumer
   Lambda is triggered by its queue.
@@ -184,12 +186,15 @@ service handler -> chassis event helper -> shared-apiClient-lib -> POST /v1/even
    publisher's event-source mapping declares an on-failure destination, bisect-on-function-error,
    a maximum retry count and a maximum record age, and carries an iterator-age alarm, because a
    poison record otherwise blocks every later change on its shard unseen.
-4. **Pass values through the chassis event helper.** The handler passes `eventType`,
-   `eventSchemaVersion`, `category`, `domain`, `timestamps.occurredAt`, the `lifecycle` values,
-   the `visibility` block, and any `identifiers`, `businessContext`, `tags` and `payload`. Because
-   `RequestContext` already holds the identity of the current work, the helper adds the
-   correlation id and, when one exists, the causation id. Code that runs outside the chassis calls
-   `shared-apiClient-lib` itself with the same values.
+4. **Fill in the API request with the chassis event helper.** The helper provides static helpers
+   and data structures that the sending code fills in, including its OAuth2 client id and secret.
+   They build the body of the API request, which is not the event: `eventType`, `category`,
+   `domain`, `timestamps.occurredAt`, the `visibility` block, and any `eventSchemaVersion`,
+   `lifecycle`, `identifiers`, `businessContext` and `tags`; the `trace` identifiers of the
+   current work (the correlation id and, when one exists, the causation id, available from
+   `RequestContext`); the payload when the event has one; and the `dedupKey` and subject account
+   id. Code that runs outside the chassis calls `shared-apiClient-lib` itself with the same
+   request body.
 5. **Pass a dedup key.** Because delivery is at-least-once and `eventId` differs on every
    publication, the publisher derives a dedup key from the fact itself (the entity, the transition
    and the entity's version or sequence) and passes the identical key on every republication.
@@ -200,30 +205,34 @@ service handler -> chassis event helper -> shared-apiClient-lib -> POST /v1/even
    payloads by that prefix.
 
 Because the helper sends all events of one invocation together before the handler returns, they go
-in calls of up to ten: `error` and `business` events first, then `state` and `trace` events.
+in calls of up to ten: `business` events and events whose `lifecycle.isError` is true first, then
+the rest.
 
 ### What the events service decides for the publisher
 
 - Because a caller could otherwise claim another service's identity, `source.service` and `actor`
-  come from the caller's verified OAuth2 client identity: the gateway maps the token's `client_id`
+  come from the caller's verified OAuth2 client identity: the events API function maps the token's `client_id`
   to a service, requires it to equal the registry entry's `allowedProducerClient`, and sets
   `source.service` from the entry. The actor is the calling service, of type `system`; a user
   subject travels as payload data.
-- Because `eventId` and `timestamps.publishedAt` describe the publication, the gateway always
-  generates them.
-- Because classification must hold even when a payload is opaque, the gateway classifies from the
-  event's own fields and the registry entry, and never reads or redacts `payload.inline`.
-- Because a state change must not be reported before it is durable, the gateway returns 202 only
-  after `PutEvents` returns `FailedEntryCount` 0.
+- Because `eventId` and `timestamps.publishedAt` describe the publication, the events API function
+  always generates them.
+- Because classification must hold even when a payload is opaque, the events API function
+  classifies from the event's own fields and the registry entry, and never reads or redacts
+  `payload.inline`.
+- Because a state change must not be reported before it is durable, the events API function
+  returns 202 only after `PutEvents` returns `FailedEntryCount` 0.
+- Idempotency of the publish endpoint runs inside the events API function, on its own DynamoDB
+  idempotency table; when that table cannot be reached, the API returns 500 and publishes nothing.
 
 | Response | When | What the chassis event helper does |
 |---|---|---|
 | 202 (`eventId`, `status` `accepted`, `event_type`, `domain`, `event_bus`) | The event is on the bus | Continues |
 | 400 | The body is unparseable | Permanent failure |
-| 422 with `details[]` naming each failed field | The event fails validation: an unknown field, a missing required value, a missing `trace.correlationId`, an absent or inconsistent `visibility` block (`piiPresent` true with `public`), an unregistered event type, a `category` that differs from the registry entry, a `pii-required` type declared `piiPresent=false`, a caller that is not the entry's allowed producer, a malformed or identifying `dedupKey`, a publisher-supplied reference with `piiPresent=true` | Raises `EnvelopeRejected`; because the request is a contract defect that a retry cannot fix, reports a batch item failure so the message goes to the publisher's DLQ and is redriven after the contract is fixed |
+| 422 with `details[]` naming each failed field | The event fails validation: an unknown field, a missing required value, a `trace` without `trace.correlationId`, an absent or inconsistent `visibility` block (`piiPresent` true with `public`), an unregistered event type, a `category` that differs from the registry entry, a `pii-required` type declared `piiPresent=false`, a caller that is not the entry's allowed producer, a malformed or identifying `dedupKey`, a publisher-supplied reference with `piiPresent=true` | Raises `EnvelopeRejected`; because the request is a contract defect that a retry cannot fix, reports a batch item failure so the message goes to the publisher's DLQ and is redriven after the contract is fixed |
 | 403 from the API Gateway authorization layer | Infrastructure drift | Retries with bounded backoff, then dead-letters the message tagged `PublishAuthorisationFailure` |
 | 503 | `PutEvents` or a coat-check write failed, or the registry could not be read on a cold cache | Transient: bounded retry with backoff |
-| 500 | An unexpected gateway fault | Not retried; the fact stays in the producer's outbox, stream or DLQ for redrive |
+| 500 | The idempotency table cannot be reached, or an unexpected fault in the events API function | Not retried; the fact stays in the producer's outbox, stream or DLQ for redrive |
 
 Nothing is stored or published on any non-2xx response.
 
@@ -241,12 +250,18 @@ A payload is the domain-specific content of one event type; many events have non
   completion may be partial emits one completion event carrying per-item or per-field outcomes.
 - Because an announced resource must be retrievable, a publisher stores the resource durably
   before it publishes the event that announces it.
-- Because the published event must fit the EventBridge and SQS size limits, the gateway moves an
-  inline payload larger than 262,144 serialized UTF-8 bytes to the coat-check bucket and publishes
-  a reference (`payload.mode` `reference`, with `storageType`, `location`, `checksum`,
-  `encrypted`).
-- Because no personal data may transit EventBridge, SQS, a DLQ or the event log, the gateway moves
-  the payload of every `piiPresent=true` event to coat-check regardless of size.
+- Because the published event must fit the EventBridge and SQS size limits, the events API
+  function moves an inline payload larger than 262,144 serialized UTF-8 bytes to the coat-check
+  bucket and publishes a reference (`payload.mode` `reference`, with `storageType`, `location`,
+  `checksum`, `encrypted`). Only the events API function offloads, inside its own invocation; API
+  Gateway has no offload feature.
+- Because no personal data may transit EventBridge, SQS, a DLQ or the event log, the events API
+  function moves the payload of every `piiPresent=true` event to coat-check regardless of size.
+- Because API Gateway invokes the events API function synchronously, a request is limited by the
+  6 MB Lambda synchronous payload limit before API Gateway's 10 MB limit; the size limits are in
+  the Coat-check pattern of `event-platform-and-envelope.md`. A publisher whose `piiPresent=false`
+  payload is too large for one request stores it itself and sends a reference; a publisher whose
+  entries together are too large sends them in several requests.
 - Because the coat-check key names the fact and the object is written put-if-absent, a
   republication of the same fact writes no new object.
 - Because a coat-check object must outlive every queued reference to it and no longer, current
@@ -259,11 +274,13 @@ A payload is the domain-specific content of one event type; many events have non
 - An event type with a payload may have a payload schema: the one schema authored for an event. Its
   version is the event's `eventSchemaVersion`, `payload.schemaUri` refers to it, and it may be
   registered in the EventBridge schema registry `skillspoke-events`. Registration is optional.
+  Some payload schemas are standardized and shared across events (for example the description of
+  an S3 object), so every consumer parses that shape the same way.
 - Because a path or value must keep its meaning while a consumer still resolves it, a change to the
   standard event or to a payload schema is additive: no property removed, no new required
   property, no narrowed type, no removed enum value. A breaking change is a new version, and a
-  breaking change to the standard event deploys in the same `deployment/waves.yaml` wave as the
-  gateway and every publisher it affects.
+  breaking change to the standard event deploys in the same `deployment/waves.yaml` wave as
+  `shared-events-service` and every publisher it affects.
 - Because the same value must decide the same way in every service, an enumeration that decides
   whether an event fires (a threshold set, a trigger-type vocabulary) is one central constant
   shared by every emitter and subscriber, and each member binds to a registered event type.
@@ -272,8 +289,9 @@ A payload is the domain-specific content of one event type; many events have non
 
 - Because a subscription must change without touching the publisher, a consuming service declares,
   in its own stack, one EventBridge rule for each event type it wants, targeting its own queue.
-- Because matching on payload content would couple a consumer to a publisher's internals, a rule
-  matches only on `eventType`, `domain` and `category`.
+- A rule may match on any field of the event. Rules most often match the event's metadata
+  (`eventType`, `domain`, `category`) and its `lifecycle` fields; a rule that matches a payload
+  field is less common and permitted, and ties the rule to that payload's schema.
 - Because one subscriber's failure must leave every other subscriber's delivery unaffected, each
   subscriber has its own queue and DLQ and receives its own copy.
 - Because a rule that matches PII-present events could otherwise send them outside the account, its
@@ -288,6 +306,9 @@ A payload is the domain-specific content of one event type; many events have non
   event-source mapping enables `ReportBatchItemFailures`. `ChassisFunction` derives the bounds.
 
 ## What a consumer does
+
+Everything after a rule forwards an event is the consuming service's, as
+`event-consumption.md` describes; this section and the next summarize it.
 
 1. **Wait for the contract.** Because acting on an unregistered contract fabricates state, a
    consumer acts on a cross-domain event only once its publisher's registry entry exists.
@@ -334,7 +355,7 @@ A payload is the domain-specific content of one event type; many events have non
 
 ## Correlation
 
-- Because investigation starts from the correlation id, every event carries `trace.correlationId`
-  and the same id travels on every hop of the request chain.
+- Because investigation starts from the correlation id, an event that carries `trace` carries
+  `trace.correlationId`, and the same id travels on every hop of the request chain.
 - Because the X-Ray header is lost on archive replay and in a DLQ, `trace.traceId` in the event is
   the durable link from an event to its trace.

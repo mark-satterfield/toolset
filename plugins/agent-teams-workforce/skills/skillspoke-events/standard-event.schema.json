@@ -62,13 +62,10 @@
         "required": [
           "eventId",
           "eventType",
-          "eventSchemaVersion",
           "category",
           "domain",
           "source",
-          "timestamps",
-          "trace",
-          "lifecycle"
+          "timestamps"
         ],
         "properties": {
           "eventId": {
@@ -88,7 +85,8 @@
           },
           "category": {
             "type": "string",
-            "description": "High-level category indicating the purpose of the event."
+            "description": "High-level category indicating the purpose of the event.",
+            "enum": ["business", "monitoring", "audit", "security", "infrastructure"]
           },
           "domain": {
             "type": "string",
