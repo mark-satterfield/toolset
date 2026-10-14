@@ -47,8 +47,8 @@ A dependency between two Tasks follows from a dependency between what they build
 records what each stack holds and depends on, and the brief's context file carries those
 reads; you run no matrix write (`put`, `link`), and no write to a bead.
 
-- In elaboration, each edge you add between Tasks of two stacks is recorded by the script
-  step that accepts your file, as a dependency between those stacks when the matrix lacks it.
+- In elaboration, no edge you add is written into the matrix: the script step that accepts
+  your file writes it as a beads edge, and the beads edge alone carries build order.
 - In the assessment of one Task (`task-dependency-assessment`), the context file holds, for
   each stack the Task states, the open Tasks that touch it (`atw-matrix work --id <stack id>`)
   and what the stack depends on and what depends on it (`atw-matrix deps --of <stack id>`,
