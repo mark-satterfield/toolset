@@ -13,7 +13,8 @@ Every function here reads a matrix that is already loaded and changes nothing. E
 - :func:`impact_view` (``impact``): what a change to an entry reaches.
 - :func:`related_view` (``related``): the Epics that reach what an Epic reaches.
 - :func:`uses_view` (``uses``), :func:`story_scope` (``story-scope``).
-- :func:`summarize` (``summary``): the counts by kind and by side.
+- :func:`summarize` (``summary``): the counts by kind and by side, and on request the
+  repository-side entries with no architecture-side counterpart.
 
 A read follows the relationships of both sides, so a result shows what the architecture states and
 what is in a repository today. Each entry and relationship returned carries its kind, the side it
@@ -37,6 +38,7 @@ from matrix_contract import (
     KIND_LAYER,
     KIND_STACK,
     REL_CONTAINS,
+    REL_CORRESPONDS_TO,
     REL_COVERS,
     REL_DESCRIBED_BY,
     REL_HAS_REQUIREMENT,
@@ -45,6 +47,7 @@ from matrix_contract import (
     REL_USES_LAYER,
     RELATIONSHIP_RULES,
     RESOURCE_TYPES,
+    SIDE_REPOSITORY,
     Entry,
     EntryId,
     EntryKind,
@@ -452,6 +455,8 @@ class MatrixSummary(TypedDict):
     stacksByApp: dict[str, int]
     repositories: list[str]
     """The repositories the stacks name, in name order."""
+    noArchitecture: NotRequired[list[EntryId]]
+    """The repository-side entries that nothing on the architecture side is recorded as corresponding to."""
 
 
 def _text(value: JsonValue) -> str:
@@ -1184,17 +1189,36 @@ def _count(counts: dict[str, int], key: str) -> None:
     counts[key] = counts.get(key, 0) + 1
 
 
+def _no_architecture(matrix: Matrix) -> list[EntryId]:
+    """List the repository-side entries with no architecture-side counterpart.
+
+    Returns:
+        The id of every repository-side entry, of a kind ``correspondsTo`` may end at, that no
+        ``correspondsTo`` ends at, in id order.
+
+    """
+    return sorted(
+        entry.id
+        for entry in matrix.entries(RELATIONSHIP_RULES[REL_CORRESPONDS_TO].targets)
+        if entry.side == SIDE_REPOSITORY and not matrix.incoming(entry.id, (REL_CORRESPONDS_TO,))
+    )
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def summarize(matrix: Matrix) -> MatrixSummary:
+def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
     """Count what the matrix holds.
 
     Args:
         matrix: The matrix.
+        unlinked: Whether to include ``noArchitecture``: the repository-side entries, of the kinds
+            ``correspondsTo`` may end at, that nothing on the architecture side is recorded as
+            corresponding to. It is the other direction of the ``noCounterpart`` list of
+            :func:`epic_view`, over the whole matrix.
 
     Returns:
         The number of entries and relationships, of each kind, of each side and of each kind that
-        is verified; the documents by lifecycle; the stacks by app; and the repositories the
-        stacks name.
+        is verified; the documents by lifecycle; the stacks by app; the repositories the stacks
+        name; and on request ``noArchitecture``.
 
     """
     summary: MatrixSummary = {
@@ -1232,4 +1256,6 @@ def summarize(matrix: Matrix) -> MatrixSummary:
         _count(summary["relationshipsBySide"], relationship.side)
         if relationship.verified is not None:
             _count(summary["verifiedRelationshipsByKind"], relationship.kind)
+    if unlinked:
+        summary["noArchitecture"] = _no_architecture(matrix)
     return summary

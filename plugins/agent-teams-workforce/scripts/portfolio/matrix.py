@@ -238,10 +238,11 @@ def _run_summary(call: Call) -> Outcome:
     """Run ``summary``.
 
     Returns:
-        The counts of entries and relationships by kind, by side and by mark.
+        The counts of entries and relationships by kind, by side and by mark, and with
+        ``--unlinked`` the repository-side entries with no architecture-side counterpart.
 
     """
-    return Outcome(summarize(read_matrix(call.matrix())))
+    return Outcome(summarize(read_matrix(call.matrix()), unlinked=call.flag("unlinked")))
 
 
 def _run_check(call: Call) -> Outcome:
@@ -329,7 +330,16 @@ def _read_parsers(
         help="the documents an Epic reaches that are not effective",
     )
     review.add_argument("--epic", required=True, help="the Epic's beads id")
-    commands.add_parser("summary", parents=[where], help="the counts of entries and relationships")
+    summary: argparse.ArgumentParser = commands.add_parser(
+        "summary",
+        parents=[where],
+        help="the counts of entries and relationships",
+    )
+    summary.add_argument(
+        "--unlinked",
+        action="store_true",
+        help="include the repository-side entries with no architecture-side counterpart",
+    )
     commands.add_parser("check", parents=[where], help="check the matrix file against the schema and the registry")
 
 

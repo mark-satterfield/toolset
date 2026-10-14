@@ -253,6 +253,7 @@ today, each marked with its side.
 | Q22 | `stacks --resource-type <type>` | The stacks that `holds` an entry with that `resourceType`. |
 | Q23 | `expertise --epic <id>` | The epic's `expertise`. |
 | Q24 | `stacks --repository <name>` | The stacks whose `repository` equals the name. |
+| Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds `correspondsTo` may end at (component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
 capabilities the work that builds those entries must use (entries → `realizes` → features →

@@ -488,7 +488,7 @@
     "commit": {"writes": true, "roles": ["script", "repository-steward", "build-driver", "operator"]},
     "verify": {"writes": true, "roles": ["build-driver"]},
     "sync-epics": {"writes": true, "roles": ["script", "operator"]},
-    "sync-documents": {"writes": true, "roles": ["script", "solutions-architect", "operator", "build-driver"]},
+    "sync-documents": {"writes": true, "roles": ["script", "solutions-architect", "repository-steward", "operator", "build-driver"]},
     "seed": {"writes": true, "roles": ["script", "operator"]},
     "seed-stacks": {"writes": true, "roles": ["script", "operator"]},
     "seed-packages": {"writes": true, "roles": ["script", "operator"]},
