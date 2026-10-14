@@ -15,8 +15,8 @@ from jsonschema.exceptions import best_match
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type NeedState = Literal["approved", "disagreement", "missing"]
-type StateConclusion = Literal["complete-and-approved", "work-remains"]
-type Conclusion = Literal["complete-and-approved", "ready-for-review", "unsettled"]
+type StateConclusion = Literal["baseline-meets-every-need", "work-remains"]
+type Conclusion = Literal["no-change-needed", "changes-designed", "unsettled"]
 type CriterionStatus = Literal["satisfied", "not-applicable"]
 type UnsettledKind = Literal["technical-choice", "business-conflict"]
 type RequestKind = Literal["question", "task"]
@@ -29,10 +29,10 @@ type OwnerConcernKind = Literal["business-conflict", "section-2-conflict"]
 NEED_APPROVED: Final[Literal["approved"]] = "approved"
 NEED_DISAGREEMENT: Final[Literal["disagreement"]] = "disagreement"
 NEED_MISSING: Final[Literal["missing"]] = "missing"
-STATE_COMPLETE_AND_APPROVED: Final[Literal["complete-and-approved"]] = "complete-and-approved"
+STATE_BASELINE_MEETS_EVERY_NEED: Final[Literal["baseline-meets-every-need"]] = "baseline-meets-every-need"
 STATE_WORK_REMAINS: Final[Literal["work-remains"]] = "work-remains"
-CONCLUSION_COMPLETE_AND_APPROVED: Final[Literal["complete-and-approved"]] = "complete-and-approved"
-CONCLUSION_READY_FOR_REVIEW: Final[Literal["ready-for-review"]] = "ready-for-review"
+CONCLUSION_NO_CHANGE_NEEDED: Final[Literal["no-change-needed"]] = "no-change-needed"
+CONCLUSION_CHANGES_DESIGNED: Final[Literal["changes-designed"]] = "changes-designed"
 CONCLUSION_UNSETTLED: Final[Literal["unsettled"]] = "unsettled"
 CRITERION_SATISFIED: Final[Literal["satisfied"]] = "satisfied"
 CRITERION_NOT_APPLICABLE: Final[Literal["not-applicable"]] = "not-applicable"
@@ -61,12 +61,12 @@ NEED_STATES: Final[tuple[NeedState, ...]] = (
     NEED_MISSING,
 )
 STATE_CONCLUSIONS: Final[tuple[StateConclusion, ...]] = (
-    STATE_COMPLETE_AND_APPROVED,
+    STATE_BASELINE_MEETS_EVERY_NEED,
     STATE_WORK_REMAINS,
 )
 CONCLUSIONS: Final[tuple[Conclusion, ...]] = (
-    CONCLUSION_COMPLETE_AND_APPROVED,
-    CONCLUSION_READY_FOR_REVIEW,
+    CONCLUSION_NO_CHANGE_NEEDED,
+    CONCLUSION_CHANGES_DESIGNED,
     CONCLUSION_UNSETTLED,
 )
 CRITERION_STATUSES: Final[tuple[CriterionStatus, ...]] = (

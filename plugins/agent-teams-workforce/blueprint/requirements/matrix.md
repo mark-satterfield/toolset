@@ -567,3 +567,15 @@ for that Epic (Q13). Nothing is invented to fill it.
   the service that publishes it, never as a Story or a Task of its own. The repository side
   never decides what is built: a repository-side fact reaches the Tasks only as a labelled
   hint.
+
+### Architecture approval
+
+- **R57.** The matrix records, per requirement and per feature, an architecture-approved
+  mark that says the architecture for it has been through the solutions architect and the
+  architecture reviews and is complete, correct and good. Once it is set, the architecture
+  of that requirement or feature can be trusted. It is separate from verified (R24), which
+  says what was built passed its tests. It is set only by the script step that runs after
+  the architecture reviews pass for an Epic (the promotion), for the requirements of that
+  Epic and the features that serve them. When a later Epic's architecture changes a feature
+  or the documents that describe it, the mark on that feature is cleared until that Epic's
+  review passes. No session sets it by hand. Nothing is marked today.

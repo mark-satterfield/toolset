@@ -4,8 +4,10 @@ It runs the matrix check and reads from the matrix what the review of the Epic i
 documents the Epic reaches that are not effective. It then plans what follows by rule: a
 mechanical defect goes back to the architect, a matter the architect could not settle goes to the
 lead, and otherwise the reviewers the criteria file selects are planned with the promotion step
-after them. It judges nothing and records nothing in the matrix: every branch is a rule over the
-matrix, the criteria file and the architect's result.
+after them. Every conclusion of the architect reaches the reviewers: a conclusion that the Epic
+needs nothing added or changed is reviewed against the effective documents the architect cites.
+It judges nothing and records nothing in the matrix: every branch is a rule over the matrix, the
+criteria file and the architect's result.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from architecture_work_contract import CONCLUSION_UNSETTLED, CheckResult
+from architecture_work_contract import CONCLUSION_NO_CHANGE_NEEDED, CONCLUSION_UNSETTLED, CheckResult
 from matrixquery import epic_view
 from matrixreview import ReviewScope, ScopeDocument, review_scope
 from matrixstore import file_problems, read_matrix
@@ -51,6 +53,7 @@ from orchestrator.flows.architecture_files import (
     ArchitectureContext,
     ArchitectureStepError,
     agents_with_role,
+    cited_document,
     lead_resolved,
     matrix_file,
     read_context,
@@ -60,6 +63,7 @@ from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
+    from matrix_contract import Entry, EntryId
     from matrixquery import EpicView
     from matrixstore import Matrix
     from step_journal_contract import Artifact, StepPlan
@@ -86,6 +90,7 @@ SCOPE_HEADING: Final[ScopeKind] = "heading"
 SCOPE_SCENARIO: Final[ScopeKind] = "scenario-fact"
 SCOPE_TRD: Final[ScopeKind] = "trd-requirement"
 ATTR_SECTION: Final = "section"
+ATTR_LIFECYCLE: Final = "lifecycle"
 RUNTIME_VIEW_SECTION: Final = 6
 """The arc42 section that holds scenarios: a document of it in review is scenario content."""
 
@@ -227,6 +232,79 @@ def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, s
     matrix: Matrix = read_matrix(matrix_file())
     scope: ReviewScope = review_scope(matrix, bead, added_or_changed)
     return scope, _scope_kinds(matrix, scope), epic_view(matrix, bead, unlinked=True)
+
+
+def _baseline_document(document: Entry, headings: set[str]) -> ScopeDocument:
+    """Render one effective document a no-change result cites as a document of the review scope.
+
+    Returns:
+        The document with its lifecycle and the headings cited; no relationship reaches it.
+
+    """
+    lifecycle: JsonValue = document.attributes.get(ATTR_LIFECYCLE)
+    return {
+        "id": document.id,
+        "kind": document.kind,
+        "name": document.name,
+        "side": document.side,
+        "lifecycle": lifecycle if isinstance(lifecycle, str) else "",
+        "headings": sorted(heading for heading in headings if heading),
+        "reachedBy": [],
+    }
+
+
+def _cited_baseline(matrix: Matrix, arch: Path, result: ArchitectureResult, scope: ReviewScope) -> list[ScopeDocument]:
+    """List the documents the architect's criteria answers cite that the review scope lacks.
+
+    Returns:
+        Each arc42 document the matrix holds that a ``satisfiedAt`` citation names and that is
+        not already in the scope, with the headings cited, in id order.
+
+    """
+    in_scope: set[str] = {document["id"] for document in scope["documents"]}
+    cited: list[tuple[EntryId, str]] = [
+        (document, citation["heading"])
+        for answer in result["criteria"]
+        for citation in answer["satisfiedAt"]
+        if (document := cited_document(arch, citation["source"])) is not None
+        and document not in in_scope
+        and matrix.find(document) is not None
+    ]
+    headings: dict[EntryId, set[str]] = {}
+    cited_id: EntryId
+    heading: str
+    for cited_id, heading in cited:
+        headings.setdefault(cited_id, set()).add(heading)
+    return [_baseline_document(matrix.entry(document_id), held) for document_id, held in sorted(headings.items())]
+
+
+def _under_review(
+    scope: ReviewScope,
+    present: set[ScopeKind],
+    result: ArchitectureResult,
+    arch: Path,
+) -> tuple[ReviewScope, set[ScopeKind]]:
+    """Name what the reviewers are handed: the content in review, and a no-change conclusion's baseline.
+
+    A conclusion that the Epic needs nothing added or changed is a result like any other, so it
+    is reviewed: the reviewers are handed the effective documents the architect cites as meeting
+    the Epic, and the headings kind is always present so the reviewers of headings are selected.
+
+    Returns:
+        The scope and kinds unchanged for any other conclusion; for ``no-change-needed`` the scope
+        with the cited documents added and the kinds with headings added.
+
+    """
+    if result["conclusion"] != CONCLUSION_NO_CHANGE_NEEDED:
+        return scope, present
+    matrix: Matrix = read_matrix(matrix_file())
+    reviewed: ReviewScope = {
+        "epic": scope["epic"],
+        "requirements": scope["requirements"],
+        "features": scope["features"],
+        "documents": [*scope["documents"], *_cited_baseline(matrix, arch, result, scope)],
+    }
+    return reviewed, {*_scope_kinds(matrix, reviewed), *present, SCOPE_HEADING}
 
 
 def _narrowed(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - What one reviewer's scope is made from.
@@ -412,5 +490,10 @@ def check(run: StepRun) -> Completion:
         }
         again: NewStep = check_step(["lead"], corrections=checked["corrections"])
         return Completion(artifacts=tuple(recorded), add=(StepGroup((NewStep(routing), again)),))
-    reviews: Completion = _review_steps(run, scope, present, result, criteria)
+    reviews: Completion = _review_steps(
+        run,
+        *run.tools.portfolio(CHECK, _under_review, scope, present, result, Path(context["architectureRoot"])),
+        result,
+        criteria,
+    )
     return Completion(artifacts=(*recorded, *reviews.artifacts), add=reviews.add)

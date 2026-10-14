@@ -80,8 +80,8 @@ holds.
 | Kind | What one is | Id | Attributes beyond the common ones |
 |---|---|---|---|
 | `epic` | One Epic with its PRD. | `epic:<beads id>` | `prd` (`path` in the vault, `hash`), `expertise` (skill names). |
-| `requirement` | One requirement of a PRD: one `####` heading under `## Requirements`. | `requirement:<epic beads id>/<key>`; the key is the identifier that opens the heading (`CHAT-001`), else the slug of the heading. | `group` (the `###` heading above it), `hash` (of the requirement's own text). `name` is the heading text. |
-| `feature` | One discrete capability of the product, stated as something it can do ("send an email"), recorded once and unique (requirements section 3.1.1). | `feature:<slug>` | `provides`: for a shared capability, a list of `id`, `behaviour`, `consumersMust`, `interface` (`kind`, `name`), `useSignals`, `duplicateSignals`. |
+| `requirement` | One requirement of a PRD: one `####` heading under `## Requirements`. | `requirement:<epic beads id>/<key>`; the key is the identifier that opens the heading (`CHAT-001`), else the slug of the heading. | `group` (the `###` heading above it), `hash` (of the requirement's own text), `architectureApproved` (section 1.4.1). `name` is the heading text. |
+| `feature` | One discrete capability of the product, stated as something it can do ("send an email"), recorded once and unique (requirements section 3.1.1). | `feature:<slug>` | `provides`: for a shared capability, a list of `id`, `behaviour`, `consumersMust`, `interface` (`kind`, `name`), `useSignals`, `duplicateSignals`; `architectureApproved` (section 1.4.1). |
 | `constraint` | One technical requirement or constraint. | `constraint:<slug>` | `statement`; `selector` when the rule applies to every entry of a class. A selector is a set of attribute values (any of `app`, `stackType`, `resourceType`, `executionUse`) that names every entry having those values. |
 | `document` | One arc42 document. | `document:<path under the architecture root>` | `lifecycle` (`effective`, `in-review`, `draft`), `section`, `viewType`, `scope`, `subject`, `headings` (the heading texts), `hash`. |
 | `service` | One service the architecture describes. | `service:<slug>` | `executionUse`. |
@@ -187,6 +187,33 @@ One command sets it: `atw-matrix verify --story <beads id> --commit <sha>`, run 
 element or repository name. It adds, changes and removes no entry and no relationship: the
 mark is the only thing the build pipeline writes in the matrix (requirement R46).
 
+### 1.4.1 The architecture-approved mark
+
+Requirement R57. `architectureApproved` is an attribute the kinds registry declares on
+`requirement` and `feature` (`$defs/architectureApproval`), with one member, `epic`: the beads
+id of the Epic whose architecture reviews passed. Absent means not approved. It says the
+architecture is complete, correct and good and can be trusted; it is separate from
+`verified` (section 1.4), which says what was built passed its tests. Nothing is marked
+today.
+
+- **Who sets it.** Only `matrixwrite.approve(matrix, bead, role)`, which refuses every role but
+  `script` (`APPROVING_ROLE`). The promotion step (`orchestrator/flows/architecture_promotion.py`
+  `_promote`) runs it once the reviews pass, in the same matrix change that brings the
+  promoted documents' entries up to date: on the Epic's requirements (`hasRequirement`) and
+  the features that serve them (`servedBy`), as `Matrix.approval_scope` names them. `put`
+  refuses the attribute, and `atw-matrix put` has no option for it. No command sets it.
+- **When it clears.** `Matrix.put` clears it when an approved entry is replaced by one that
+  differs in anything but the mark, and keeps it when nothing else differs (so `sync-epics`
+  leaves an unchanged requirement approved). When a document's text changes (its `hash` or
+  `headings`, other than by the move of a document that was not effective to effective, which
+  is the promotion's own lifecycle change), every entry the architecture side says the
+  document describes (`describedBy`) loses the mark. An architecture-side relationship added,
+  changed or removed clears the mark of the entry it starts from. The mark returns when the
+  changing Epic's reviews pass and its promotion sets it.
+- **Where it shows.** `epic` and `node` return it on each requirement and feature that carries
+  it; `summary` counts it by kind (`approvedByKind`); `approval --epic` lists the Epic's
+  requirements and features, approved (with the Epic that approved each) and not approved.
+
 ### 1.5 Stories and Tasks
 
 The matrix holds no Story and no Task; beads is the authority for both (R40). The `repoPath`
@@ -210,9 +237,9 @@ ids against the matrix's entries and stores nothing. It runs as three `atw-matri
 ### 1.6 What the matrix leaves out
 
 - Past states: no retired, deprecated, archived or deferred entry, no status value, no
-  change stamp, no review send-back, no approval record. Git holds history; the step journal
-  holds the run.
-- An approval decision: a document's `lifecycle` mirrors its arc42 front matter.
+  change stamp, no review send-back, no approval record beyond the architecture-approved mark
+  as it stands now (section 1.4.1). Git holds history; the step journal holds the run.
+- An approval decision on a document: a document's `lifecycle` mirrors its arc42 front matter.
 - Design content: a design fact stays under its arc42 heading; the matrix holds the heading.
 - Words: no entry exists for a word that appears in a document.
 - TRD and Spec files: their paths are on the Epic and Story beads.
@@ -255,6 +282,7 @@ today, each marked with its side.
 | Q23 | `expertise --epic <id>` | The epic's `expertise`. |
 | Q24 | `stacks --repository <name>` | The stacks whose `repository` equals the name. |
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds `correspondsTo` may end at (component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
+| Approval | `approval --epic <id>` | epic → `hasRequirement` → requirements → `servedBy` → features. Each is returned under `approvedRequirements` or `approvedFeatures` (with `approvedBy`, the Epic the mark names) when it carries `architectureApproved`, otherwise under `notApprovedRequirements` or `notApprovedFeatures` (section 1.4.1). |
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
 capabilities the work that builds those entries must use (entries → `realizes` → features →

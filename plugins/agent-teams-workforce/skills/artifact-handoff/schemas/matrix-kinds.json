@@ -42,6 +42,15 @@
         "duplicateSignals": {"description": "Text patterns that show a consumer is doing this itself.", "type": "array", "items": {"type": "string"}}
       }
     },
+    "architectureApproval": {
+      "description": "The architecture-approved mark: the architecture of this requirement or feature has been through the solutions architect and the architecture reviews and is complete, correct and good, so it can be trusted. Separate from verified, which says what was built passed its tests. Only the script step that promotes an Epic's reviewed architecture sets it, on the Epic's requirements and the features that serve them; a later change to the entry, or to a document that describes it, clears it. Absent means not approved.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epic"],
+      "properties": {
+        "epic": {"description": "The beads id of the Epic whose architecture reviews passed.", "type": "string", "minLength": 1}
+      }
+    },
     "selector": {
       "description": "A set of attribute values that names every entry having those values.",
       "type": "object",
@@ -81,7 +90,8 @@
       "required": ["hash"],
       "attributes": {
         "group": {"description": "The ### heading above the requirement.", "type": "string"},
-        "hash": {"description": "The hash of the requirement's own text.", "type": "string"}
+        "hash": {"description": "The hash of the requirement's own text.", "type": "string"},
+        "architectureApproved": {"$ref": "#/$defs/architectureApproval"}
       }
     },
     "feature": {
@@ -90,7 +100,8 @@
       "verifiable": false,
       "required": [],
       "attributes": {
-        "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}}
+        "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}},
+        "architectureApproved": {"$ref": "#/$defs/architectureApproval"}
       }
     },
     "constraint": {
@@ -478,6 +489,7 @@
     "built": {"writes": false, "anyRole": true},
     "work": {"writes": false, "anyRole": true},
     "affected": {"writes": false, "anyRole": true},
+    "approval": {"writes": false, "anyRole": true},
     "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},
     "check-reuse": {"writes": false, "roles": ["build-workflow"]},
     "expertise": {"writes": true, "roles": ["script", "hooks", "operator"]},

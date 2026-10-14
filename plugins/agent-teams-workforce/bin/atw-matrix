@@ -4,7 +4,7 @@
 # events, stacks, packages, layers, disagreements) and the relationships between them, each with
 # the side it came from (architecture or repository) and, where set, the verified mark.
 #   reads:   epic, find, node, deps, stacks, layers, impact, related, uses, story-scope,
-#            review-scope, summary, check, check-reuse
+#            review-scope, summary, check, check-reuse, approval
 #   tasks:   built, work, affected
 #   changes: put, link, unlink, settle, rename, remove, move-repository, expertise, commit
 #   syncs:   sync-epics, sync-documents

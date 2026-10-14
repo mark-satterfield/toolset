@@ -3,7 +3,8 @@
 It promotes by rule: when no review returned a finding, or the lead recorded that every item is
 resolved. It sets the documents in review for the Epic effective in their front matter, brings
 their matrix entries up to date so that each mirrors its lifecycle, removes each disagreement a
-document maintainer of this run corrected the losing statement of, commits and pushes the vault
+document maintainer of this run corrected the losing statement of, sets the architecture-approved
+mark on the Epic's requirements and the features that serve them, commits and pushes the vault
 when a document changed, and commits and pushes the matrix file. Anything else is a failure with
 a structured cause.
 """
@@ -17,11 +18,11 @@ from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import validate_write_request, validate_write_result
-from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT
+from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT, ROLE_SCRIPT
 from matrixreview import review_scope
 from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
 from matrixsync import LIFECYCLE_EFFECTIVE, relative_path, set_lifecycle, sync_documents, vault_root
-from matrixwrite import commit
+from matrixwrite import approve, commit
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
@@ -56,7 +57,7 @@ if TYPE_CHECKING:
     from matrix_contract import EntryId
     from matrixreview import ReviewScope
     from matrixstore import Matrix
-    from matrixwrite import CommitResult
+    from matrixwrite import ApproveResult, CommitResult
     from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
@@ -80,6 +81,8 @@ class Promoted:
     """Those of them whose matrix entry does not show the lifecycle effective afterwards."""
     removed: tuple[EntryId, ...]
     """The disagreements removed: settled, and the losing statement corrected in this run."""
+    approved: tuple[EntryId, ...]
+    """The Epic's requirements and the features that serve them, which now carry the architecture-approved mark."""
 
 
 def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: Sequence[str]) -> Promoted:
@@ -88,8 +91,9 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
     Each document ``atw-matrix review-scope`` returns for the Epic, with the documents that
     describe what the architect's result adds or changes, is set effective in its front matter;
     then, in one matrix change, the entries of those documents are brought up to date as
-    ``atw-matrix sync-documents --paths`` does, and each disagreement named that the matrix holds
-    with a ruling is removed.
+    ``atw-matrix sync-documents --paths`` does, each disagreement named that the matrix holds
+    with a ruling is removed, and the Epic's requirements and the features that serve them get
+    the architecture-approved mark (``matrixwrite.approve``, as the script role).
 
     Args:
         bead: The Epic.
@@ -99,8 +103,8 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
         added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
-        The documents set effective, those the matrix does not show as effective afterwards, and
-        the disagreements removed.
+        The documents set effective, those the matrix does not show as effective afterwards, the
+        disagreements removed, and the requirements and features now approved.
 
     """
     path: Path = matrix_file()
@@ -111,7 +115,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
     for relative in documents:
         set_lifecycle(vault, relative_path(arch / relative, vault), LIFECYCLE_EFFECTIVE)
 
-    def change(matrix: Matrix) -> list[EntryId]:
+    def change(matrix: Matrix) -> tuple[list[EntryId], ApproveResult]:
         if documents:
             sync_documents(matrix, arch, paths=documents)
         removed: list[EntryId] = []
@@ -121,16 +125,23 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
             if entry is not None and entry.kind == KIND_DISAGREEMENT and entry.attributes.get(ATTR_STANDS):
                 matrix.remove(entry.id)
                 removed.append(entry.id)
-        return removed
+        return removed, approve(matrix, bead, ROLE_SCRIPT)
 
-    removed: list[EntryId] = update_matrix(path, change)
+    removed: list[EntryId]
+    approved: ApproveResult
+    removed, approved = update_matrix(path, change)
     after: Matrix = read_matrix(path)
     not_effective: list[str] = []
     for relative in documents:
         mirrored = after.find(make_id(KIND_DOCUMENT, relative))
         if mirrored is None or mirrored.attributes.get(ATTR_LIFECYCLE) != LIFECYCLE_EFFECTIVE:
             not_effective.append(relative)
-    return Promoted(tuple(documents), tuple(not_effective), tuple(removed))
+    return Promoted(
+        tuple(documents),
+        tuple(not_effective),
+        tuple(removed),
+        (*approved["requirements"], *approved["features"]),
+    )
 
 
 def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> str | None:
@@ -283,6 +294,7 @@ def promote(run: StepRun) -> Completion:
         "documents": [*promoted.documents],
         "notEffective": [*promoted.not_effective],
         "removedDisagreements": [*promoted.removed],
+        "architectureApproved": [*promoted.approved],
     }
     write_json(path, record)
     artifacts: list[Artifact] = [file_artifact(PROMOTED, path)]

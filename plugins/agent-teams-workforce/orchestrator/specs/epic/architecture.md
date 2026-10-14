@@ -4,8 +4,11 @@ Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`
 `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`,
 `architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
 
-One agent, `aws-solutions-architect`, establishes the architecture a PRD needs until it is ready
-for review. The script starts sessions, records steps and carries results. It decides nothing
+One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
+a PRD needs, starting from the approved baseline (the effective arc42 before this Epic runs, which
+is approved as of now and never complete), until it is ready for review. The matrix is its map and
+never shows that the architecture is complete, correct or good. Every conclusion it reaches,
+`no-change-needed` included, goes through the check and the review. The script starts sessions, records steps and carries results. It decides nothing
 about who the architect asks, in what order or how often. Every step is one step of the Epic's
 journal, and the journal alone decides where a run begins. The script names agents by the `role`
 their definitions state (`solutions-architect`, `design-specialist`, `diagram-author`,
@@ -115,7 +118,13 @@ rule over the matrix, the criteria file and the architect's result:
 |---|---|
 | a mechanical defect | a correction step for the architect, handed the check result, and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead` and a new check |
-| otherwise | one step for each reviewer the criteria file selects, and the promotion step after them |
+| otherwise, whatever the conclusion | one step for each reviewer the criteria file selects, and the promotion step after them |
+
+A result whose conclusion is `no-change-needed` is reviewed like any other: the reviewers are
+handed, besides what is in review, the effective documents and headings the result's criteria
+answers cite as meeting the Epic, and the headings kind counts as present, so the reviewers of
+headings are selected. Those documents go into each reviewer's narrowed scope only, not into
+`review-scope.json`, so the promotion does not touch them.
 
 With no defect it reads what is in review for the Epic, the documents the Epic reaches that are
 not effective with the headings reached (`atw-matrix review-scope --epic`), and

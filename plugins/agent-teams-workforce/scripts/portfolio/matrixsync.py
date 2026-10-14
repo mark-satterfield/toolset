@@ -52,7 +52,7 @@ from matrix_contract import (
     Relationship,
     relationship_json,
 )
-from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, slug
+from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, same_content, slug
 
 if TYPE_CHECKING:
     from contracts import JsonObject
@@ -1058,7 +1058,7 @@ def _sync_requirements(matrix: Matrix, epic: EntryId, bead: str, text: str, resu
             purpose="" if existing is None else existing.purpose,
             attributes=attributes,
         )
-        if entry != existing:
+        if existing is None or not same_content(existing, entry):
             matrix.put(entry)
             result["requirementsAdded" if existing is None else "requirementsChanged"].append(key)
         if all(relationship.end != key for relationship in matrix.outgoing(epic, (REL_HAS_REQUIREMENT,))):

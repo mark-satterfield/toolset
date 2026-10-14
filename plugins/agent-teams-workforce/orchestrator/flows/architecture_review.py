@@ -1,6 +1,8 @@
 """The sessions that review unapproved architecture, route findings and rule on what stays disputed.
 
-A reviewer is handed only the unapproved items its criteria apply to. A finding outside that scope
+A reviewer is handed only the unapproved items its criteria apply to, and, for a conclusion that the
+Epic needs nothing added or changed, the effective documents the architect cites as meeting it.
+A finding outside that scope
 is dropped and counted. The first review that returns a finding, or asks for alternatives, plans
 one step for the lead after the last reviewer; the lead decides what each finding needs and adds
 the steps for it under its own step. The decider rules only where the lead sends a matter to it.

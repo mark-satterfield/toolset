@@ -40,6 +40,12 @@ that an unapproved statement agrees with it. You report nothing about approved c
 one exception: when an unapproved item cannot be correct unless an approved statement is
 wrong, report that in `dependsOnApproved`, with both statements.
 
+When the architecture result's conclusion is `no-change-needed`, that conclusion is under your
+review. `documents` then also lists the effective documents and headings the architect cites as
+meeting the Epic (lifecycle `effective`). Check that they meet the PRD's requirements as the
+architect claims, and report each requirement they do not meet, and each detail the Epic needs
+that they leave undecided, as a finding on that document and heading.
+
 ## What you review it against
 
 `architecture-baseline/review-criteria.json`, the criteria file the brief names. It is the

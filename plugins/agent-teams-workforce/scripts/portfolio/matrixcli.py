@@ -50,7 +50,7 @@ from matrixexpertise import (
     refresh,
     skill_text,
 )
-from matrixquery import impact_view
+from matrixquery import approval_view, impact_view
 from matrixreuse import check_reuse
 from matrixseed import (
     MERGE_FILE,
@@ -77,6 +77,7 @@ from matrixseed import (
     stack_types,
 )
 from matrixstore import (
+    ATTR_ARCHITECTURE_APPROVED,
     CONTROL_REPO_FALLBACK_ENV,
     Matrix,
     MatrixRefusedError,
@@ -122,6 +123,9 @@ RELATIONSHIP_TABLE: Final[AttributeTable] = "relationshipKinds"
 STANDS_PARTS: Final = 2
 """How many values ``settle --stands`` takes: the document and the heading."""
 CONTROL_VARIABLES: Final[tuple[str, ...]] = (CONTROL_REPO_ENV, CONTROL_REPO_FALLBACK_ENV)
+COMMAND_APPROVAL: Final = "approval"
+SCRIPT_SET_ATTRIBUTES: Final[frozenset[str]] = frozenset({ATTR_ARCHITECTURE_APPROVED})
+"""The attributes no command line states: the step that promotes reviewed architecture sets them."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 
 
@@ -218,8 +222,9 @@ def attribute_options(table: AttributeTable) -> dict[str, AttributeOption]:
             ``link`` and ``unlink``.
 
     Returns:
-        One entry per attribute any kind of the table declares, in registry order. An attribute
-        two kinds declare is listed once, as the first of them declares it.
+        One entry per attribute any kind of the table declares, in registry order, except the
+        attributes only a script step sets. An attribute two kinds declare is listed once, as
+        the first of them declares it.
 
     Raises:
         TypeError: The registry does not hold the table, or a kind of it is not an object.
@@ -240,11 +245,11 @@ def attribute_options(table: AttributeTable) -> dict[str, AttributeOption]:
         if not isinstance(attributes, dict):
             message = f"the kinds registry declares no attributes object for {kind}"
             raise TypeError(message)
-        attribute: str
-        spec: JsonValue
-        for attribute, spec in attributes.items():
-            if attribute not in options:
-                options[attribute] = _attribute_option(attribute, spec, definitions)
+        options.update({
+            attribute: _attribute_option(attribute, spec, definitions)
+            for attribute, spec in attributes.items()
+            if attribute not in options and attribute not in SCRIPT_SET_ATTRIBUTES
+        })
     return options
 
 
@@ -726,6 +731,17 @@ def _run_affected(call: Call) -> Outcome:
     return Outcome(affected(matrix, tasks, entry_id, impact_view(matrix, entry_id)["ids"]))
 
 
+def _run_approval(call: Call) -> Outcome:
+    """Run ``approval``.
+
+    Returns:
+        The Epic's requirements and the features that serve them, split into those that carry
+        the architecture-approved mark and those that do not.
+
+    """
+    return Outcome(approval_view(read_matrix(call.matrix()), call.required("epic")))
+
+
 def _run_check_reuse(call: Call) -> Outcome:
     """Run ``check-reuse``.
 
@@ -795,6 +811,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_BUILT: _run_built,
     COMMAND_WORK: _run_work,
     COMMAND_AFFECTED: _run_affected,
+    COMMAND_APPROVAL: _run_approval,
     "check-reuse": _run_check_reuse,
     "expertise": _run_expertise,
 }
@@ -963,7 +980,7 @@ def _build_parsers(
     where: argparse.ArgumentParser,
     sources: Mapping[str, argparse.ArgumentParser],
 ) -> None:
-    """Add the verified mark, the Task script's reads, the reuse check and the expertise list."""
+    """Add the verified mark, the Task script's reads, the approval lookup, the reuse check and the expertise list."""
     control: argparse.ArgumentParser = sources["control"]
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
@@ -991,6 +1008,12 @@ def _build_parsers(
         help="the open Tasks a change to an entry affects",
     )
     touched.add_argument("--id", required=True, help="the entry's id")
+    approval: argparse.ArgumentParser = commands.add_parser(
+        COMMAND_APPROVAL,
+        parents=[where],
+        help="an Epic's requirements and features, approved and not approved by the architecture reviews",
+    )
+    approval.add_argument("--epic", required=True, help="the Epic's beads id")
     reuse: argparse.ArgumentParser = commands.add_parser(
         "check-reuse",
         parents=[where],

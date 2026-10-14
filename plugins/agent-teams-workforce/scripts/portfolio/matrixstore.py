@@ -41,12 +41,17 @@ from matrix_contract import (
     ENTRY_ID_PATTERN,
     ENTRY_RULES,
     HOME_RELATIONSHIP,
+    KIND_DOCUMENT,
+    KIND_EPIC,
     KIND_EVENT,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
     MATRIX_ENV,
     OPERATOR_ROLE,
+    REL_DESCRIBED_BY,
+    REL_HAS_REQUIREMENT,
     REL_PUBLISHES,
+    REL_SERVED_BY,
     RELATIONSHIP_RULES,
     ROLE_ENV,
     ROLES,
@@ -92,6 +97,18 @@ EVENT_TRIGGER_OPENING: Final = "Published when"
 """How the purpose of an authority-side event starts: it states when the event is triggered."""
 PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
+ATTR_ARCHITECTURE_APPROVED: Final = "architectureApproved"
+"""The architecture-approved mark: the architecture of the entry passed the Epic's architecture reviews."""
+APPROVAL_EPIC: Final = "epic"
+"""The member of the architecture-approved mark that names the Epic whose reviews passed."""
+APPROVABLE_KINDS: Final[frozenset[EntryKind]] = frozenset(
+    kind for kind, rule in ENTRY_RULES.items() if ATTR_ARCHITECTURE_APPROVED in rule.attributes
+)
+"""The entry kinds that carry the architecture-approved mark: those the registry declares it for."""
+ATTR_LIFECYCLE: Final = "lifecycle"
+LIFECYCLE_EFFECTIVE: Final = "effective"
+DOCUMENT_CONTENT: Final[tuple[str, ...]] = ("hash", "headings")
+"""The attributes of a document entry that change when the document's text changes."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
 
@@ -305,6 +322,97 @@ def relationship_id(relationship: Relationship) -> RelationshipId:
     )
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unapproved(entry: Entry) -> Entry:
+    """Take the architecture-approved mark off an entry.
+
+    Args:
+        entry: An entry of any kind.
+
+    Returns:
+        The entry without the mark; the entry itself when it carries none.
+
+    """
+    if ATTR_ARCHITECTURE_APPROVED not in entry.attributes:
+        return entry
+    kept: dict[str, JsonValue] = {
+        name: value for name, value in entry.attributes.items() if name != ATTR_ARCHITECTURE_APPROVED
+    }
+    return replace(entry, attributes=kept)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def same_content(held: Entry, entry: Entry) -> bool:
+    """Tell whether two entries differ in nothing but the architecture-approved mark.
+
+    Args:
+        held: The entry the matrix holds.
+        entry: The entry that is to replace it.
+
+    Returns:
+        True when the two are equal once the mark is taken off both.
+
+    """
+    return unapproved(held) == unapproved(entry)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def approved_by(entry: Entry) -> str | None:
+    """Read whose architecture reviews approved an entry.
+
+    Args:
+        entry: An entry of any kind.
+
+    Returns:
+        The beads id of the Epic the architecture-approved mark names; None when the entry
+        carries no mark, which means not approved.
+
+    """
+    mark: JsonValue = entry.attributes.get(ATTR_ARCHITECTURE_APPROVED)
+    epic: JsonValue = mark.get(APPROVAL_EPIC) if isinstance(mark, dict) else None
+    return epic if isinstance(epic, str) else None
+
+
+def _approval_settled(held: Entry | None, entry: Entry) -> Entry:
+    """Decide the architecture-approved mark an entry carries once it replaces the one held.
+
+    Returns:
+        The entry as given when it is new; without the mark when anything else about it
+        changed; otherwise with the mark it states, or the held entry's mark when it states none.
+
+    """
+    if held is None:
+        return entry
+    if not same_content(held, entry):
+        return unapproved(entry)
+    if ATTR_ARCHITECTURE_APPROVED in entry.attributes or ATTR_ARCHITECTURE_APPROVED not in held.attributes:
+        return entry
+    carried: JsonValue = held.attributes[ATTR_ARCHITECTURE_APPROVED]
+    return replace(entry, attributes={**entry.attributes, ATTR_ARCHITECTURE_APPROVED: carried})
+
+
+def _document_rewritten(held: Entry | None, entry: Entry) -> bool:
+    """Tell whether a document entry's change is a change to the document's text.
+
+    The step that promotes reviewed architecture changes the document's lifecycle line to
+    effective, which changes its hash; that alone is not a change to what it describes.
+
+    Returns:
+        True when the entry is a document the matrix held, its hash or headings changed, and the
+        change is not the move of a document that was not effective to effective.
+
+    """
+    if held is None or entry.kind != KIND_DOCUMENT:
+        return False
+    if all(held.attributes.get(name) == entry.attributes.get(name) for name in DOCUMENT_CONTENT):
+        return False
+    promoted: bool = (
+        held.attributes.get(ATTR_LIFECYCLE) != LIFECYCLE_EFFECTIVE
+        and entry.attributes.get(ATTR_LIFECYCLE) == LIFECYCLE_EFFECTIVE
+    )
+    return not promoted
+
+
 def _selected[T](kinds: Collection[T] | None, kind: T) -> bool:
     """Tell whether a kind is among those a read asked for.
 
@@ -337,7 +445,9 @@ class Matrix:
     for ``held``, the registry's stack kind, whose name is part of the id of an entry that
     is what a stack's repository holds today (:func:`id_stack`), and the event kind with its
     publishes relationship: an event's stack is its publisher's (:meth:`publisher_stacks`), and
-    an authority-side event states when it is triggered (:meth:`_event_problems`).
+    an authority-side event states when it is triggered (:meth:`_event_problems`); and, for the
+    architecture-approved mark, an Epic's requirements and the features that serve them
+    (:meth:`approval_scope`) and the documents that describe an entry (:meth:`put`).
 
     The two sides are kept apart. A relationship is stored once for each side that states it. An
     entry on the authority side never becomes a repository-side entry (:meth:`put`).
@@ -565,6 +675,45 @@ class Matrix:
         homes: list[EntryId | None] = [self.home(publisher) for publisher in self.publishers(event_id)]
         return frozenset(home for home in homes if home is not None)
 
+    def approval_scope(self, epic_id: EntryId) -> tuple[list[EntryId], list[EntryId]]:
+        """Name what the architecture-approved mark of one Epic covers.
+
+        Args:
+            epic_id: The Epic's entry id.
+
+        Returns:
+            The Epic's requirements and the features that serve them, each in id order, each once.
+
+        Raises:
+            MatrixError: The matrix holds no such entry, or it is not an Epic.
+
+        """
+        if self.entry(epic_id).kind != KIND_EPIC:
+            message: str = f"{epic_id} is not an Epic"
+            raise MatrixError(message)
+        requirements: list[EntryId] = sorted({stated.end for stated in self.outgoing(epic_id, (REL_HAS_REQUIREMENT,))})
+        features: list[EntryId] = sorted({
+            serving.end for requirement in requirements for serving in self.outgoing(requirement, (REL_SERVED_BY,))
+        })
+        return requirements, features
+
+    def _unapprove(self, entry_id: EntryId) -> None:
+        """Clear the architecture-approved mark of one entry; an entry without it stays as it is."""
+        held: Entry | None = self._entries.get(entry_id)
+        if held is not None:
+            self._entries[entry_id] = unapproved(held)
+
+    def _unapprove_described(self, document_id: EntryId) -> None:
+        """Clear the mark of every entry the architecture side says a document describes."""
+        described: set[EntryId] = {
+            describing.start
+            for describing in self.incoming(document_id, (REL_DESCRIBED_BY,))
+            if describing.side == AUTHORITY_SIDE
+        }
+        start: EntryId
+        for start in sorted(described):
+            self._unapprove(start)
+
     def _imported_publisher(self, event_id: EntryId) -> bool:
         """Report whether a publisher of an event is homed in a library.
 
@@ -716,6 +865,12 @@ class Matrix:
         An entry that breaks its kind, or whose id names a stack the matrix does not hold, raises
         ``MatrixError`` and changes nothing.
 
+        The architecture-approved mark: an entry that replaces another and differs from it in
+        anything but the mark loses the mark; one that differs in nothing else carries the mark it
+        states, or the held entry's when it states none. When the text of a document changes (its
+        hash or headings, other than by the move of a document that was not effective to
+        effective), every entry the architecture side says it describes loses the mark.
+
         Args:
             entry: The entry, of any registered kind, with the side it came from.
 
@@ -737,8 +892,11 @@ class Matrix:
                 f"Keep its side when changing it"
             )
             raise MatrixRefusedError(message)
-        _raise_problems([*entry_problems(entry), *self._id_stack_problems(entry)], f"the entry {entry.id}")
-        self._entries[entry.id] = entry
+        stored: Entry = _approval_settled(held, entry)
+        _raise_problems([*entry_problems(stored), *self._id_stack_problems(stored)], f"the entry {entry.id}")
+        self._entries[entry.id] = stored
+        if _document_rewritten(held, stored):
+            self._unapprove_described(stored.id)
 
     def link(self, relationship: Relationship) -> None:
         """Add a relationship, or replace the one with the same kind, ends, key attributes and side.
@@ -746,7 +904,8 @@ class Matrix:
         The relationship is stored for the side it states; the same relationship as the other
         side states it stays as it is. A relationship that breaks its kind, names an entry the
         matrix does not hold or joins kinds it may not join raises ``MatrixError`` and changes
-        nothing.
+        nothing. An architecture-side relationship that is added or changed clears the
+        architecture-approved mark of the entry it starts from.
 
         Args:
             relationship: The relationship, of any registered kind, with the side that states it.
@@ -773,9 +932,12 @@ class Matrix:
                     f"on the {identity.side} side; unlink it first"
                 )
                 raise MatrixRefusedError(message)
-        if identity in self._relationships:
+        before: Relationship | None = self._relationships.get(identity)
+        if before is not None:
             self._drop(identity)
         self._add(relationship)
+        if before != relationship and relationship.side == AUTHORITY_SIDE:
+            self._unapprove(relationship.start)
 
     def unlink(self, relationship: Relationship) -> bool:
         """Remove the relationship with the same kind, ends, key attributes and side.
@@ -786,13 +948,16 @@ class Matrix:
                 relationship as the other side states it stays.
 
         Returns:
-            True when the matrix held it and it was removed.
+            True when the matrix held it and it was removed; an architecture-side relationship
+            removed clears the architecture-approved mark of the entry it started from.
 
         """
         identity: RelationshipId = relationship_id(relationship)
         if identity not in self._relationships:
             return False
         self._drop(identity)
+        if identity.side == AUTHORITY_SIDE:
+            self._unapprove(identity.start)
         return True
 
     def _referring(self, entry_id: EntryId) -> list[tuple[RelationshipId, list[str]]]:
