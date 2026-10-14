@@ -73,8 +73,11 @@ STACK_DEPTH = 3
 SOURCE_TYPES: tuple[str, ...] = ("lib", "service")
 STACK_KINDS: tuple[tuple[NameKind, str], ...] = (("stack", "stack"), ("stack-file", "cdk-stack-file"))
 MYPY_SECTION = re.compile(r"(?m)^\[tool\.mypy\][ \t]*\r?\n")
-MYPY_KEYS: tuple[tuple[str, str], ...] = (("explicit_package_bases", "true"), ("mypy_path", '"src"'))
+MYPY_PATH_SRC = '"src"'
+MYPY_PATH_SRC_CDK = '["src", "cdk"]'
 NAMESPACES_OFF = re.compile(r"(?m)^(namespaces[ \t]*=[ \t]*)false\b")
+HATCH_WHEEL = "[tool.hatch.build.targets.wheel]"
+HATCH_PACKAGES = re.compile(r'(?m)^packages[ \t]*=[ \t]*\["(src/[^"/]+/[^"]+)"\][ \t]*$')
 
 
 class NameSweepError(Exception):
@@ -454,6 +457,10 @@ def adjust_pyproject(root: Path) -> list[str]:
         raise NameSweepError(msg) from exc
     done: list[str] = []
     text, n = NAMESPACES_OFF.subn(r"\g<1>true", text)
+    if HATCH_WHEEL in text and "only-include" not in text:
+        text, hatch = HATCH_PACKAGES.subn(r'only-include = ["\g<1>"]\nsources = ["src"]', text)
+        if hatch:
+            done.append("hatch wheel: only-include and sources, so the app folder is shipped")
     if n:
         done.append("setuptools packages.find: namespaces = true")
     section = MYPY_SECTION.search(text)
@@ -461,7 +468,11 @@ def adjust_pyproject(root: Path) -> list[str]:
         body = text[section.end() :]
         end = re.search(r"(?m)^\[", body)
         body = body[: end.start()] if end else body
-        missing = [(k, v) for k, v in MYPY_KEYS if not re.search(rf"(?m)^{k}[ \t]*=", body)]
+        keys = (
+            ("explicit_package_bases", "true"),
+            ("mypy_path", MYPY_PATH_SRC_CDK if (root / "cdk").is_dir() else MYPY_PATH_SRC),
+        )
+        missing = [(k, v) for k, v in keys if not re.search(rf"(?m)^{k}[ \t]*=", body)]
         if missing:
             lines = "".join(f"{k} = {v}\n" for k, v in missing)
             text = text[: section.end()] + lines + text[section.end() :]
@@ -532,11 +543,16 @@ def _distribution_rules(change: NameChange, holder: str) -> list[Rule]:
 def _is_generic(package: str) -> bool:
     """Tell whether a package name is a common word that real code and prose also use.
 
+    A name that starts with an app (`skillspoke_text`, `shared.text`, `employer_authn_service`)
+    is distinctive. Any other name is generic, an underscore included: `career_profile` and
+    `job_boards` are also variable names, file names and prose, so they are replaced only
+    where they are an import, a dotted path, a `src/` path and the like.
+
     Returns:
-        False when the name carries an underscore, a dot or the `skillspoke` prefix.
+        False when the name starts with an app name followed by `_` or `.`, else True.
 
     """
-    return "_" not in package and "." not in package and not package.startswith("skillspoke")
+    return package.replace(".", "_").split("_", 1)[0] not in APP_FOLDERS
 
 
 def _package_rules(change: NameChange, holder: str) -> list[Rule]:
@@ -558,6 +574,11 @@ def _package_rules(change: NameChange, holder: str) -> list[Rule]:
     where = holder if generic else None
     app = new_path.split("/", 1)[0]
     rules = [
+        Rule(
+            kind, label, old_path,
+            re.compile(rf"([└├]──[ \t]+){re.escape(old_path)}(?=/)"),
+            rf"\g<1>{new_path}", where,
+        ),
         Rule(
             kind, label, old_path,
             re.compile(rf"(?<![A-Za-z0-9_-])(cp[ \t]+-r[ \t]+)src/{re.escape(old_path)}(?=[ \t])"),

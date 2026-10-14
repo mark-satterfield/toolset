@@ -4680,7 +4680,7 @@ CHECK_TIMEOUT = 3600
 CHECK_TAIL_LINES = 15
 TITLE_NAMES = 2
 RENAME_BRANCH = "rename"
-SHARED_BRANCH_SLUG = "python-names"
+SHARED_BRANCH_SLUG = "python-layout"
 KIND_NOUNS: dict[str, str] = {
     "repository": "repository",
     "stack": "stack",
@@ -5039,7 +5039,7 @@ def _names_record(plan: _NamesPlan) -> dict[str, object]:
         "edits": {n: rows(found) for n, found in plan.edits.items()},
         "waits_on": plan.waits_on,
         "not_edited": {
-            why: [{"repo": n, "path": e.path, "replacements": e.replacements} for n, e in held]
+            why: [{"repo": n, "path": e.path, "replacements": e.replacements, "lines": list(e.lines)} for n, e in held]
             for why, held in plan.held_back.items()
         },
     }
@@ -5152,9 +5152,11 @@ def _rekey_packages(cfg: Config, plan: _NamesPlan) -> list[str]:
     """
     steps: list[str] = []
     for c in (c for s in plan.subjects for c in s.changes if c.kind == "distribution"):
-        old, new = f"package:{c.old}", f"package:{c.new}"
+        old, new = f"package:{normalize(c.old)}", f"package:{normalize(c.new)}"
         if old != new and _matrix_has(cfg, old) and not _matrix_has(cfg, new):
             result = matrix_run(cfg, ["rename", "--from", old, "--to", new])
+            side = str(_map(_map(matrix_run(cfg, ["node", new]), "node").get("entry"), "entry").get("side"))
+            matrix_run(cfg, ["put", "package", "--side", side, "--id", new, "--name", new.removeprefix("package:")])
             steps.append(f"matrix rename {old} -> {new}: {json.dumps(result, sort_keys=True)[:200]}")
     return steps
 
@@ -5255,16 +5257,34 @@ def _apply_repo(
     if error := _stage_changes(plan, name, worktree, excludes, row):
         row["error"] = error
         return row
-    if failure := _run_checks(worktree, waiting=name in plan.waits_on):
-        row.update(status="checks-failed", error=failure)
-        return row
+    failure = _run_checks(worktree, waiting=name in plan.waits_on)
+    if failure:
+        row["checks"] = failure
     title, body = _pr_text(plan, name)
+    if failure:
+        body += f"\n\nThe repository's checks failed before this pull request was opened:\n{failure}"
+    _commit_and_open(worktree, (title, body), pr_command, args, row)
+    return row
+
+
+def _commit_and_open(
+    worktree: Path,
+    text: tuple[str, str],
+    pr_command: Path,
+    args: argparse.Namespace,
+    row: dict[str, object],
+) -> None:
+    """Commit the staged changes with the text's subject and body, and open the pull request.
+
+    The row gets `status` `pr-opened` (with `pr_url`), `commit-failed` or `pr-failed`.
+    """
+    title, body = text
     message = [body, args.trailer] if args.trailer else [body]
     for argv in (["add", "-A"], ["commit", "-m", title, *[x for m in message for x in ("-m", m)]]):
         cp = git(worktree, *argv)
         if cp.returncode != 0:
             row.update(status="commit-failed", error=_last_line(cp))
-            return row
+            return
     footer = f"\n\n{args.pr_footer}" if args.pr_footer else ""
     cp = run([str(pr_command), "--title", title, "--body", body + footer], cwd=worktree, timeout=PR_TIMEOUT)
     url = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
@@ -5274,7 +5294,6 @@ def _apply_repo(
             row["error"] = f"auto-merge not armed: {_last_line(cp)}"
     else:
         row.update(status="pr-failed", error=_last_line(cp))
-    return row
 
 
 def _stage_changes(
@@ -5290,12 +5309,14 @@ def _stage_changes(
         None when the changes are staged, else why they could not be made.
 
     """
+    moved = False
     try:
         for s in (s for s in plan.subjects if s.new == name):
             apply_moves(_sweep_git, worktree, s.moves)
-            if any(m.new for m in s.moves):
-                row["settings"] = adjust_pyproject(worktree)
+            moved = moved or any(m.new for m in s.moves)
         sweep_repo(_sweep_git, SweepTarget(name, worktree), plan.rules, excludes, write=True)
+        if moved:
+            row["settings"] = adjust_pyproject(worktree)
     except NameSweepError as exc:
         return str(exc)
     cp = git(worktree, "add", "-A")
@@ -5320,8 +5341,16 @@ def _pr_text(plan: _NamesPlan, name: str) -> tuple[str, str]:
         more = f" and {len(shown) - TITLE_NAMES} more" if len(shown) > TITLE_NAMES else ""
         title = f"refactor(names): rename {', '.join(shown[:TITLE_NAMES])}{more}"
     else:
-        title = f"refactor(names): follow the new names of {', '.join(h for h in plan.holders() if h != name)}"
-    lines = [f"- {s.new}: {KIND_NOUNS[c.kind]} {c.old} -> {c.new}" for s in plan.subjects for c in s.changes]
+        followed = plan.waits_on.get(name) or [h for h in plan.holders() if h != name]
+        more = f" and {len(followed) - TITLE_NAMES} more" if len(followed) > TITLE_NAMES else ""
+        title = f"refactor(names): follow the new names of {', '.join(followed[:TITLE_NAMES])}{more}"
+    used = {label for e in plan.edits.get(name, []) for label in e.labels}
+    lines = [
+        f"- {s.new}: {KIND_NOUNS[c.kind]} {c.old} -> {c.new}"
+        for s in plan.subjects
+        for c in s.changes
+        if s.new == name or change_label(c) in used
+    ]
     if name in plan.waits_on:
         lines.append(f"\nWaits on {', '.join(plan.waits_on[name])}: a new package name is importable once released.")
     return title, "\n".join(lines)

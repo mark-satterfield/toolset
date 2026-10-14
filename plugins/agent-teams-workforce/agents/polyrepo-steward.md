@@ -156,7 +156,9 @@ request waits on which library's release. A real run puts each repository's chan
 worktree, one commit and one pull request opened with `skillspoke-pr`. The repository's own
 `lint`, `typecheck` and `test` tasks run first; for a repository waiting on a library's renamed
 package only `ruff check` runs, because that package cannot be installed until it is released.
-Nothing is merged. A repository under `apps/marketing/` is only reported. `--skip-repo R` is for
+A check that fails is written in the pull request body and the report, and the pull request is
+still opened, so a failure the change caused is fixed on its branch and one that was there before
+is reported. Nothing is merged. A repository under `apps/marketing/` is only reported. `--skip-repo R` is for
 a repository the owner has put off limits: its references are listed and not edited.
 `--keep-src R` edits a repository except its files under `src/`, which are listed.
 
