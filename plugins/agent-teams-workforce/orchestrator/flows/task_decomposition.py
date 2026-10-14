@@ -84,7 +84,7 @@ from orchestrator.flows.elaboration_files import (
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
 from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks, shared_capabilities
-from orchestrator.flows.spec_authoring import design_system
+from orchestrator.flows.spec_authoring import design_system, items_by_story
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
@@ -104,8 +104,6 @@ TASK_WARNINGS: Final = "task warnings"
 TASKS_WRITTEN: Final = "tasks written"
 SCHEMAS: Final = "skills/artifact-handoff/schemas"
 UNCITED_STAGE: Final = "uncited-items"
-STORY_KEY_PREFIX: Final = "S"
-"""What a Story's key starts with; the span numbers the Stories from 1 (``repo_scoping._spec_steps``)."""
 
 
 def _packages(run: StepRun) -> str | None:
@@ -171,24 +169,6 @@ def _other_epic_work(
     ]
 
 
-def _by_story(every: dict[str, JsonValue]) -> dict[str, list[JsonValue]]:
-    """Group what every Story of the Epic builds by the Story's key.
-
-    The span plans one Story per repository, keyed ``S<n>`` in the order its placements name
-    the repositories; the items of what the Stories build list the repositories in that order.
-
-    Returns:
-        Each storyKey with the items of what its Story builds.
-
-    """
-    slugs: list[str] = list(dict.fromkeys(str(json_object(item)["slug"]) for item in every.values()))
-    keys: dict[str, str] = {slug: f"{STORY_KEY_PREFIX}{index}" for index, slug in enumerate(slugs, 1)}
-    grouped: dict[str, list[JsonValue]] = {}
-    for item in every.values():
-        grouped.setdefault(keys[str(json_object(item)["slug"])], []).append(item)
-    return grouped
-
-
 def _write_context(
     run: StepRun,
     held: Repository,
@@ -211,7 +191,7 @@ def _write_context(
     built: list[JsonValue] = [item for item in every.values() if json_object(item)["slug"] == held.slug]
     stacks, others = _other_epic_work(run, control, built)
     matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
-    depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, _by_story(every))
+    depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, items_by_story(every))
     facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
     write_json(
         facts,

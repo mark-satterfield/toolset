@@ -54,7 +54,5 @@ reads; you run no matrix write (`put`, `link`), and no write to a bead.
   and what the stack depends on and what depends on it (`atw-matrix deps --of <stack id>`,
   `deps --on <stack id>`). Besides the edges, return `elements`: the matrix ids the Task
   builds in and builds (its stack first), exactly as the context gives them, which the
-  workflow writes into a Task that states none; and `stackDependencies`: each dependency
-  between two stacks the matrix lacks, as `{kind, from, to, through, interface, reason}`, with
-  matrix ids as `from` and `to` and a dependency kind the matrix registers. The workflow
-  prompt states the exact shape, and the workflow records them.
+  workflow writes into a Task that states none. The workflow prompt states the exact shape.
+  Nothing you return is written into the matrix: the beads edge alone carries build order.

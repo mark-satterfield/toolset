@@ -105,8 +105,8 @@ Files (under `<workDir>`):
   [{from, to, reason, withdrawnBy, withdrawnAt}]` and `summary`. No copy of a Task and no index
   is written.
 - `candidates/edges.json` (agent): the proposal, `{edges: [{from, to, reason, confidence,
-  answers?}], withdrawn: [{from, to, reason}], elements: [matrix ids], stackDependencies:
-  [{kind, from, to, through, interface, reason}]}`. No `archCheck` at Task level. Beside it the
+  answers?}], withdrawn: [{from, to, reason}], elements: [matrix ids]}`. No `archCheck` at
+  Task level. Beside it the
   agent's progress file `candidates/edges.json.progress.json` and the checkpoint
   `candidates/edges.json.checkpoint` that `artifactcontract.py` writes from it, as in the Epic
   spec.
@@ -131,7 +131,7 @@ Bead writes: `edgeset.apply_edges` (order as in the Epic spec, edge type `blocks
 `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`), then the `wsjf-scoring`
 writes. The proposal's `elements` are written into the Task's `matrix_elements` key
 (`beads-contract.py metadata set`) only when the Task states none. No matrix writes: the
-mapper's edges and `stackDependencies` are never written into the matrix, whose architecture
+mapper's edges are never written into the matrix, whose architecture
 side only arc42 (through `sync-documents`) and the architect's recorded design write; the beads
 edge alone carries build order. No vault writes, no commits, no ledger events.
 

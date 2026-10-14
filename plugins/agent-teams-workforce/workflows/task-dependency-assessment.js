@@ -1,10 +1,10 @@
 export const meta = {
   name: 'task-dependency-assessment',
   description:
-    "Assesses the build dependencies of ONE Task created outside elaboration and writes its `blocks` edges. The workflow writes the Task's context: the matrix ids the Task states, and for each stack they name the open Tasks that name it or an entry it holds (atw-matrix work --id), what it depends on and what depends on it (atw-matrix deps --of and --on), with the edges standing on the Task in the tracker. One task-dependency-mapper session reads the related Tasks, proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges, writes the stack and entry ids into a Task that states none (its matrix_elements key), and records in the matrix a dependency between stacks it lacks (atw-matrix link). When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing else is written and no scoring runs.",
+    "Assesses the build dependencies of ONE Task created outside elaboration and writes its `blocks` edges. The workflow writes the Task's context: the matrix ids the Task states, and for each stack they name the open Tasks that name it or an entry it holds (atw-matrix work --id), what it depends on and what depends on it (atw-matrix deps --of and --on), with the edges standing on the Task in the tracker. One task-dependency-mapper session reads the related Tasks, proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges, and writes the stack and entry ids into a Task that states none (its matrix_elements key); it writes nothing into the matrix, and the beads edge alone carries build order. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing else is written and no scoring runs.",
   whenToUse: 'A Task was created or changed outside elaboration and needs its build dependencies assessed.',
   phases: [
-    { title: 'Assess', detail: 'the workflow writes the context; one task-dependency-mapper session proposes and validates the edges; the workflow runs apply-edges, writes the matrix ids of a Task that states none and records a stack dependency the matrix lacks' },
+    { title: 'Assess', detail: 'the workflow writes the context; one task-dependency-mapper session proposes and validates the edges; the workflow runs apply-edges and writes the matrix ids of a Task that states none' },
     { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
@@ -721,10 +721,9 @@ async function settleAgent(prompt, opts) {
 // }
 // Returns: { ok, stage, beadId, headline, apply, settled, workDir, task, assessment, edges, matrix, scoring,
 //            stop, error?, dispatchFailed, dispatchFailures }
-// `matrix` is { elements, elementsWritten, dependencies, recorded, failures }: the matrix ids the session
-// named for a Task that states none; what became of them (none-named, already-stated, written, refused,
-// or not-written on a dry run); the number of stack dependencies it named that the matrix lacks; how many
-// atw-matrix link confirmed; and each refused call.
+// `matrix` is { elements, elementsWritten, failures }: the matrix ids the session named for a Task that
+// states none; what became of them (none-named, already-stated, written, refused, or not-written on a dry
+// run); and each refused call. Nothing is written into the matrix.
 const given = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // The driver surface constant whose environment variable supplies each path arg the caller leaves out.
@@ -885,8 +884,6 @@ const PLUGIN = String(a.pluginRoot || '').replace(/\/+$/, '')
 const MATRIX_BIN = `${PLUGIN}/bin/atw-matrix`
 const MATRIX_ENV = { [DRIVER_SURFACE.CONTROL_REPO_ENV]: repo }
 const MATRIX = `${DRIVER_SURFACE.CONTROL_REPO_ENV}=${shq(repo)} ${shq(MATRIX_BIN)}`
-// The role the workflow records under (matrix-kinds.json roles): link runs for it.
-const MATRIX_RECORD_ROLE = 'script'
 const BEADS_CONTRACT = `${PLUGIN}/skills/beads-contract/scripts/beads-contract.py`
 const BEADS = `python3 ${shq(BEADS_CONTRACT)} -C ${shq(repo)}`
 // The key of a Task's metadata that holds the matrix ids it states (bead-metadata.schema.json).
@@ -931,23 +928,6 @@ const WITHDRAWAL_SCHEMA = {
   required: ['from', 'to', 'reason'],
   properties: { from: { type: 'string' }, to: { type: 'string' }, reason: { type: 'string' } },
 }
-// One dependency between two stacks that the session found and the matrix lacks. The kinds are the
-// dependency relationships that start at a stack, and each ends at the kind of entry the registry names
-// for it (skills/artifact-handoff/schemas/matrix-kinds.json); atw-matrix link refuses any other.
-const STACK_DEPENDENCY_KINDS = ['imports', 'calls', 'reads', 'runsIn']
-const STACK_DEPENDENCY_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['kind', 'from', 'to', 'through', 'interface', 'reason'],
-  properties: {
-    kind: { type: 'string', enum: STACK_DEPENDENCY_KINDS },
-    from: { type: 'string', minLength: 1 },
-    to: { type: 'string', minLength: 1 },
-    through: { type: 'string' },
-    interface: { type: 'string' },
-    reason: { type: 'string' },
-  },
-}
 const ASSESS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -956,12 +936,11 @@ const ASSESS_SCHEMA = {
     proposal: {
       type: 'object',
       additionalProperties: false,
-      required: ['edges', 'withdrawn', 'elements', 'stackDependencies'],
+      required: ['edges', 'withdrawn', 'elements'],
       properties: {
         edges: { type: 'array', items: EDGE_SCHEMA },
         withdrawn: { type: 'array', items: WITHDRAWAL_SCHEMA },
         elements: { type: 'array', items: { type: 'string', minLength: 1 } },
-        stackDependencies: { type: 'array', items: STACK_DEPENDENCY_SCHEMA },
       },
     },
     valid: { type: 'boolean' },
@@ -991,10 +970,10 @@ Work in this order:
 3. Find the related Tasks from the matrix, not by searching: the open Tasks in each stack's \`work\`, and the open Tasks that name a stack ${target}'s stack depends on or that depends on it — \`${MATRIX} work --id <that stack's id>\` for each stack in \`dependsOn\` and \`dependents\`. Among them, the related Tasks are those that provide what ${target} consumes or consume what it provides. Read no Task these lookups did not return.
 4. Read in full every related Task, and the Task at the other end of every standing edge.
 5. Apply the test in both directions: an edge from another Task to ${target} where ${target} consumes what that Task provides, and an edge from ${target} to another Task where that Task consumes what ${target} provides.
-6. Write ${candidateFile} as {"edges": [{"from", "to", "reason", "confidence", "answers"}], "withdrawn": [{"from", "to", "reason"}], "elements": [<matrix id>], "stackDependencies": [{"kind", "from", "to", "through", "interface", "reason"}]}. \`elements\` is [] when the context's \`task.elements\` is not empty; otherwise it holds the matrix ids you named in step 2, the stack first, each the id of an entry the matrix holds, and [] only when the matrix holds no stack for what ${target} builds, which you state in ${reasoningFile}. \`stackDependencies\` holds each dependency between two stacks that an edge you set rests on and that neither \`dependsOn\` nor \`dependents\` shows: \`kind\` is \`imports\` (the stack's code imports the library the other stack holds; \`to\` is that stack, and \`through\` the id of the package or layer that brings it, or ""), \`calls\` (\`to\` is the service called, and \`interface\` the operation or API, or ""), \`reads\` (\`to\` is the infrastructure whose stored value is read) or \`runsIn\` (\`to\` is the shared infrastructure it runs in); \`from\` is the id of the depending stack; \`through\` and \`interface\` are "" where the kind has none; \`reason\` names the Tasks that show it. It is [] when the matrix already holds every one. The workflow writes \`elements\` to ${target} and records \`stackDependencies\` in the matrix; you run no \`put\`, no \`link\` and no write to a bead. \`answers\` is required only on an edge the context's \`withdrawn\` list covers: state why the recorded withdrawal reason is wrong. An edge you cannot answer that way is not set — the earlier judgment stands. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
+6. Write ${candidateFile} as {"edges": [{"from", "to", "reason", "confidence", "answers"}], "withdrawn": [{"from", "to", "reason"}], "elements": [<matrix id>]}. \`elements\` is [] when the context's \`task.elements\` is not empty; otherwise it holds the matrix ids you named in step 2, the stack first, each the id of an entry the matrix holds, and [] only when the matrix holds no stack for what ${target} builds, which you state in ${reasoningFile}. The workflow writes \`elements\` to ${target}; nothing you return is written into the matrix, and you run no \`put\`, no \`link\` and no write to a bead. \`answers\` is required only on an edge the context's \`withdrawn\` list covers: state why the recorded withdrawal reason is wrong. An edge you cannot answer that way is not set — the earlier judgment stands. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
 7. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(candidateFile)} ${scope}`)} | tee ${shq(selfCheckFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: record the failed validation, its findings and the cycle in the reasoning document.
 
-Do not run apply-edges or any other command that writes to the tracker or the matrix: the workflow validates the proposal you return, applies it and records the rest itself.
+Do not run apply-edges or any other command that writes to the tracker or the matrix: the workflow validates the proposal you return, applies it and writes \`elements\` itself.
 
 Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, ASSESS_SCHEMA.properties.proposal, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
 
@@ -1009,7 +988,7 @@ const assess = () => settleAgent(assessPrompt, {
 // The authoritative candidate is validated and published before any tracker mutation.
 const saved = !contextError && !dispatchInterruption ? await relayKit.authorArtifact(settleAgent, {
   label: 'save-edges', phase: 'Assess', runner: RUNNER, candidate: candidateFile, file: edgesFile,
-  schema: ASSESS_SCHEMA.properties.proposal, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['elements', 'stackDependencies'],
+  schema: ASSESS_SCHEMA.properties.proposal, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['elements'],
 }, assess, () => !!dispatchInterruption) : null
 const accepted = !!(saved && saved.ok)
 const validation = saved && saved.ok ? await depscore('validate', `validate --edges ${shq(edgesFile)} ${scope}`) : null
@@ -1020,13 +999,13 @@ const applied = valid
 const summary = applied && !applied.error && applied.summary && typeof applied.summary === 'object' ? applied.summary : {}
 const settled = !!applied && !applied.error && !summary.validation && summary.applied !== false
 
-// What the session named beside the edges is written by the workflow, once the edges are applied: the
-// matrix ids of a Task that states none, into its matrix_elements key, and each dependency between two
-// stacks that the matrix lacks, as a relationship of its kind with side architecture. Every call runs in
-// one checked command, which reads from the context file whether the Task states an id, and the run is
-// done only when each write was confirmed.
+// The matrix ids the session named for a Task that states none are written by the workflow into its
+// matrix_elements key, once the edges are applied. The call runs in one checked command, which reads from
+// the context file whether the Task states an id, and the run is done only when the write was confirmed.
+// Nothing is written into the matrix: its architecture side is written only by arc42 (through
+// sync-documents) and the architect's recorded design, and the beads edge alone carries build order.
 const RECORD_PY = `import json, os, subprocess
-added, context_file, element_call, calls = json.loads(ARGS[0]), ARGS[1], json.loads(ARGS[2]), json.loads(ARGS[3])
+added, context_file, element_call = json.loads(ARGS[0]), ARGS[1], json.loads(ARGS[2])
 env = dict(os.environ, **added)
 with open(context_file, encoding="utf-8") as handle:
     task = json.load(handle).get("task")
@@ -1042,33 +1021,23 @@ def confirmed(call):
 elements = "none-named"
 if element_call:
     elements = "already-stated" if stated else ("written" if confirmed(element_call) else "refused")
-recorded = sum(1 for call in calls if confirmed(call))
-emit({"elements": elements, "recorded": recorded, "failures": failures})`
+emit({"elements": elements, "failures": failures})`
 const facts = accepted && saved.facts && typeof saved.facts === 'object' ? saved.facts : {}
 const namedElements = [...new Set((Array.isArray(facts.elements) ? facts.elements : []).map((id) => String(id || '').trim()).filter(Boolean))]
 const elementsCall = namedElements.length ? ['python3', BEADS_CONTRACT, '-C', repo, 'metadata', 'set', target, `${ELEMENTS_KEY}=${JSON.stringify(namedElements)}`] : []
-const dependencyCalls = [...new Map(
-  (Array.isArray(facts.stackDependencies) ? facts.stackDependencies : [])
-    .filter((d) => d && STACK_DEPENDENCY_KINDS.includes(d.kind) && typeof d.from === 'string' && d.from.trim() && typeof d.to === 'string' && d.to.trim())
-    .map((d) => {
-      const through = d.kind === 'imports' && typeof d.through === 'string' ? d.through.trim() : ''
-      const face = d.kind === 'calls' && typeof d.interface === 'string' ? d.interface.trim() : ''
-      return [`${d.kind}|${d.from.trim()}|${d.to.trim()}`, [MATRIX_BIN, 'link', d.kind, '--from', d.from.trim(), '--to', d.to.trim(), '--side', 'architecture', ...(through ? ['--through', through] : []), ...(face ? ['--interface', face] : [])]]
-    })
-).values()]
 // elements: none-named (the session named no id), already-stated (the Task states ids, so none is written),
 // written, refused, or not-written (nothing was recorded: a dry run, or the edges were not applied).
-let matrix = { elements: namedElements.length ? 'not-written' : 'none-named', named: namedElements, dependencies: dependencyCalls.length, recorded: 0, failures: [] }
-const records = settled && applies && (namedElements.length > 0 || dependencyCalls.length > 0)
+let matrix = { elements: namedElements.length ? 'not-written' : 'none-named', named: namedElements, failures: [] }
+const records = settled && applies && namedElements.length > 0
 if (records) {
-  const wrote = await relayKit.inline(settleAgent, { label: 'record-matrix', phase: 'Assess', code: RECORD_PY, args: [JSON.stringify({ ...MATRIX_ENV, ATW_MATRIX_ROLE: MATRIX_RECORD_ROLE }), contextFile, JSON.stringify(elementsCall), JSON.stringify(dependencyCalls)] })
+  const wrote = await relayKit.inline(settleAgent, { label: 'record-elements', phase: 'Assess', code: RECORD_PY, args: [JSON.stringify(MATRIX_ENV), contextFile, JSON.stringify(elementsCall)] })
   matrix = wrote.ok
-    ? { elements: String(wrote.view.elements || 'refused'), named: namedElements, dependencies: dependencyCalls.length, recorded: Number(wrote.view.recorded) || 0, failures: Array.isArray(wrote.view.failures) ? wrote.view.failures : [] }
-    : { elements: 'refused', named: namedElements, dependencies: dependencyCalls.length, recorded: 0, failures: [{ call: 'record', exit: null, error: String(wrote.error || 'the recording command returned no result') }], noResult: !!wrote.noResult }
-  log(`Matrix (${target}): matrix ids ${matrix.elements}${matrix.elements === 'written' ? ` (${namedElements.join(', ')})` : ''}; ${matrix.recorded} of ${matrix.dependencies} stack dependency(ies) recorded${matrix.failures.length ? `; ${matrix.failures.length} refused: ${matrix.failures.slice(0, 3).map((f) => `${f.call}: ${f.error}`).join('; ')}` : ''}`)
+    ? { elements: String(wrote.view.elements || 'refused'), named: namedElements, failures: Array.isArray(wrote.view.failures) ? wrote.view.failures : [] }
+    : { elements: 'refused', named: namedElements, failures: [{ call: 'record', exit: null, error: String(wrote.error || 'the recording command returned no result') }], noResult: !!wrote.noResult }
+  log(`Matrix ids (${target}): ${matrix.elements}${matrix.elements === 'written' ? ` (${namedElements.join(', ')})` : ''}${matrix.failures.length ? `; refused: ${matrix.failures.slice(0, 3).map((f) => `${f.call}: ${f.error}`).join('; ')}` : ''}`)
 }
-const recordedOk = !records || (matrix.failures.length === 0 && matrix.elements !== 'refused' && matrix.recorded === matrix.dependencies)
-const recordError = recordedOk ? '' : `what the assessment named beside the edges was not all written (matrix ids ${matrix.elements}; ${matrix.recorded} of ${matrix.dependencies} stack dependency(ies) recorded): ${matrix.failures.slice(0, 5).map((f) => `${f.call}: ${f.error}`).join('; ') || 'fewer writes were confirmed than were named'}`
+const recordedOk = !records || (matrix.failures.length === 0 && matrix.elements !== 'refused')
+const recordError = recordedOk ? '' : `the matrix ids the assessment named were not written to ${target} (${matrix.elements}): ${matrix.failures.slice(0, 5).map((f) => `${f.call}: ${f.error}`).join('; ') || 'the write was not confirmed'}`
 const validationFile = (validation && validation.relayFile) || selfCheckFile
 const findingsOf = (v) => {
   if (!v || v.error) return null
@@ -1155,14 +1124,14 @@ return dispatchOutcome({
     ? !settled || !recordedOk ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done'
     : 'agent-dispatch-failed',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged; matrix ids ${matrix.elements}, ${matrix.recorded} of ${matrix.dependencies} stack dependency(ies) recorded${scores ? ', and rescored' : ''}${storyEdgeLine}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged; matrix ids ${matrix.elements}${scores ? ', and rescored' : ''}${storyEdgeLine}`,
   apply: applies,
   settled,
   workDir: work,
   task: target,
   assessment,
   edges,
-  matrix: { elements: matrix.named, elementsWritten: matrix.elements, dependencies: matrix.dependencies, recorded: matrix.recorded, failures: matrix.failures },
+  matrix: { elements: matrix.named, elementsWritten: matrix.elements, failures: matrix.failures },
   scoring,
   stop,
   ...(failure ? { error: failure } : {}),
