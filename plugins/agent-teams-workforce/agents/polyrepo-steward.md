@@ -119,8 +119,8 @@ hand the facts back for the caller to act on.
 | Action | Command |
 |---|---|
 | Create a repo from a template, locally and on GitHub, with its beads setup and its stack in the matrix | `create <name> --space S --template T` |
-| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python distribution and import package, and every reference to them in the other repositories (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
-| Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them | `rename <repo> [--also <repo>…]` |
+| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories, the arc42 documents and the matrix (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
+| Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `reconcile --fix` archives it `deprecation.archive_after_days` after `deprecated_on` |
@@ -132,31 +132,51 @@ hand the facts back for the caller to act on.
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Check or repair a repo's development environment | `environment <repo>` (`--fix` repairs it) |
-| Health check and every safe repair, the matrix's stacks included | `doctor --fix` |
+| Health check and every safe repair, the matrix's stacks and the Python names included | `doctor --fix` |
 
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
 
 ### A rename covers every name
 
 A repository's name is not the only name that follows from it. A rename covers the repository
-(clone and GitHub), the stack ids and stack file names inside it, and the Python names: the
-distribution (`name` in `pyproject.toml`, the name published to CodeArtifact) and the import
-package (folder moved with `git mv`). `atw-naming` decides each new name (`name stack`,
-`name cdk-stack-file`, `name python-distribution`, `name python-package`); never compose one by
-hand. Every import, dependency line and written reference to an old name in every other
-repository is rewritten in the same run, except the paths the config's `rename.sweep_exclude`
-lists (records: the matrix, changelogs, beads files). `rename --dry-run` prints all of it before
-anything changes: the name changes, the moves, the files edited in each repository, and which
-repository's pull request waits on which library's release. A real run puts each repository's
-changes in one worktree, one commit and one pull request opened with `skillspoke-pr`, runs the
-repository's own `lint` and `test` tasks first (not for a repository waiting on a library's
-renamed package), and never merges. A repository under `apps/marketing/` is only reported. Use
-`--skip-repo R` for a repository the owner has put off limits: its references are listed and not
-edited.
+(clone and GitHub), the stack ids and stack file names inside it, the Python names, every
+reference to them in the other repositories, the architecture documents and the matrix.
+
+The Python names follow the resource naming standard's "Python names" section. `src` is the source root and `tests` the unit test root. The source package is `src/{app}/{domain}` (`src/{app}/{team}/{domain}` for a team repository), in snake_case without the stack type, imported as `{app}.{domain}`: `shared-apiClient-lib` gives `src/shared/api_client`, imported as `shared.api_client`. The published package (`name` in `pyproject.toml`, the name in CodeArtifact) is hyphenated lower case with the type (`shared-api-client-lib`). The brand is `skillspoke` in Python. The app folder (`src/shared/`, `src/skillspoke/`) is a namespace package with no `__init__.py`, and each repository's `__init__.py` starts at the domain folder. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included (`skillspoke.team.support`).
+
+Every import, dependency line, Lambda handler string, `src/` path and written reference to an old
+name in every other repository is rewritten in the same run, except the paths the config's
+`rename.sweep_exclude` lists (records: the matrix, changelogs, beads files). The package folder
+is moved with `git mv`, an `__init__.py` in an app folder is removed, and the package discovery
+and type check settings of `pyproject.toml` are set for the nested layout (setuptools scans
+namespaces; mypy gets `explicit_package_bases` and `mypy_path = "src"`). `rename --dry-run` prints
+all of it before anything changes: the name changes, the moves, the files edited in each
+repository, the architecture documents and lines it will change, and which repository's pull
+request waits on which library's release. A real run puts each repository's changes in one
+worktree, one commit and one pull request opened with `skillspoke-pr`. The repository's own
+`lint`, `typecheck` and `test` tasks run first; for a repository waiting on a library's renamed
+package only `ruff check` runs, because that package cannot be installed until it is released.
+Nothing is merged. A repository under `apps/marketing/` is only reported. `--skip-repo R` is for
+a repository the owner has put off limits: its references are listed and not edited.
+`--keep-src R` edits a repository except its files under `src/`, which are listed.
+
+The architecture follows: the arc42 documents of the `skillspoke-docs` vault
+(`rename.documents` in the config) are swept for every old name, names only, no other word, one
+commit of only the files changed, pushed; a document with uncommitted changes is listed and
+left. The matrix then follows through `atw-matrix`: `rename --from package:<old> --to
+package:<new>` for each published package it holds, `sync-documents --paths` for the documents
+changed, and `commit`. A new library name is importable only once the library is released, so
+publishing is the library's own CI or declared publish command; you never publish by hand.
 
 The name must end in a stack type (`service`, `infra`, `lib`, `web`, `mobile`, `extension`,
 `assets`), so `SkillSpoke-auth-utils` is refused. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
+
+`polyrepo.py python-names` (a `doctor` check) runs the three `atw-naming check` commands against
+what each active Python repository has: the `name` in `pyproject.toml`, the package folder under
+`src`, `src` (required for a `lib` and a `service`) and `tests`, and no `__init__.py` in an app
+folder. Each failure is a finding; none is judged. The templates hold no naming rule: `create`
+passes the names `atw-naming` gives to the template as answers, so a new repository conforms.
 
 ### GitNexus
 

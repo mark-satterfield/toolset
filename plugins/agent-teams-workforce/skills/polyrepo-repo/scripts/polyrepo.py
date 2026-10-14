@@ -84,19 +84,25 @@ from driver_surface_types import CONTROL_REPO_ENV
 from name_sweep import (
     NameSweepError,
     SweepTarget,
+    adjust_pyproject,
     apply_moves,
+    build_document_rules,
     build_rules,
     change_label,
+    normalize,
+    parse_repo_name,
     plan_changes,
     planned_moves,
+    python_problems,
     read_facts,
+    stack_module,
     sweep_repo,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from name_sweep import FileEdit, FileMove, NameChange, Namer, Rule
+    from name_sweep import Checker, FileEdit, FileMove, NameChange, Namer, Rule
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
@@ -3110,6 +3116,36 @@ def _service_name(cfg: Config, name: str) -> str:
     return name
 
 
+def _template_data(cfg: Config, name: str) -> dict[str, str]:
+    """Build the answers a template is rendered with: the names, each given by `atw-naming`.
+
+    A template holds no naming rule of its own. The import package (`package_name`, dotted),
+    its folder under `src` (`package_path`), the distribution (`distribution_name`) and the
+    stack module (`stack_module_name`) are what `atw-naming name` prints for the repository.
+
+    Returns:
+        The answers; the Python names are left out for a name that is not
+        `{prefix}[-team]-{domain}-{type}`, so a template that needs them then refuses to render.
+
+    Raises:
+        PolyrepoError: when `atw-naming` refuses a name of a repository that parses.
+
+    """
+    data = {"service_name": _service_name(cfg, name), "repo_name": name}
+    parts = parse_repo_name(name)
+    if parts is None:
+        return data
+    namer = _namer(cfg)
+    try:
+        data["package_name"] = namer(["name", "python-package", "--repository", name])
+        data["package_path"] = namer(["name", "python-package-path", "--repository", name]).removeprefix("src/")
+        data["distribution_name"] = namer(["name", "python-distribution", "--repository", name])
+        data["stack_module_name"] = stack_module(parts, namer)
+    except NameSweepError as exc:
+        raise PolyrepoError(str(exc)) from exc
+    return data
+
+
 def _copier_render(
     tdir: Path,
     dest: Path,
@@ -3196,7 +3232,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     """
     name, b = args.name, cfg.default_branch
     tdir, dest = _create_checks(args, cfg)
-    data = {"service_name": _service_name(cfg, name), "repo_name": name}
+    data = _template_data(cfg, name)
     res: dict[str, object] = {
         "repo": name,
         "space": args.space,
@@ -4637,7 +4673,9 @@ NAMING_TIMEOUT = 60
 PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
 PR_TIMEOUT = 900
 PR_AUTOMERGE_NOT_ARMED = 3
-CHECK_TASKS = ("lint", "test")
+CHECK_TASKS = ("lint", "typecheck", "test")
+APPLY_WORKERS = 4
+PORCELAIN_PATH = 3
 CHECK_TIMEOUT = 3600
 CHECK_TAIL_LINES = 15
 TITLE_NAMES = 2
@@ -4665,6 +4703,17 @@ class _Subject:
 
 
 @dataclasses.dataclass
+class _Documents:
+    """The architecture documents a rename edits: the vault, the folders swept, the rules and the edits."""
+
+    root: Path
+    paths: tuple[str, ...]
+    rules: list[Rule]
+    edits: list[FileEdit]
+    dirty: list[str]
+
+
+@dataclasses.dataclass
 class _NamesPlan:
     """The names a rename changes and every repository it touches."""
 
@@ -4674,6 +4723,8 @@ class _NamesPlan:
     paths: dict[str, Path]
     held_back: dict[str, list[tuple[str, FileEdit]]]
     waits_on: dict[str, list[str]]
+    documents: _Documents | None = None
+    keep_src: set[str] = dataclasses.field(default_factory=set)
 
     def holders(self) -> list[str]:
         """Name the repositories whose names change, as they are called after the rename.
@@ -4766,7 +4817,14 @@ def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -
     return subjects, rules
 
 
-def _names_plan(st: State, pairs: list[tuple[str, str]], skip: set[str], *, dry_run: bool) -> _NamesPlan:
+def _names_plan(
+    st: State,
+    pairs: list[tuple[str, str]],
+    skip: set[str],
+    keep_src: set[str],
+    *,
+    dry_run: bool,
+) -> _NamesPlan:
     """Plan the names that change and sweep every repository for the references.
 
     The repositories that change are swept under their new names; the others under their
@@ -4797,23 +4855,119 @@ def _names_plan(st: State, pairs: list[tuple[str, str]], skip: set[str], *, dry_
             ),
         )
     plan = _NamesPlan(subjects, rules, {}, paths, {}, {})
+    plan.keep_src = keep_src
+    _sort_edits(plan, swept, spaces, skip)
+    for s in subjects:
+        if s.moves and s.new not in skip and spaces[s.new] not in MATRIX_SKIP_SPACES:
+            plan.edits.setdefault(s.new, [])
+    hit = {label for found in plan.edits.values() for e in found for label in e.labels}
+    for s in subjects:
+        s.changes = [c for c in s.changes if c.kind != "stack" or change_label(c) in hit]
+    plan.waits_on = _waits_on(plan)
+    plan.documents = _names_documents_plan(st.cfg, subjects)
+    return plan
+
+
+def _sort_edits(
+    plan: _NamesPlan,
+    swept: dict[str, list[FileEdit]],
+    spaces: dict[str, str],
+    skip: set[str],
+) -> None:
+    """Sort what the sweep found into edits to make and edits held back, with the reason for each.
+
+    A marketing repository and a `--skip-repo` repository are only reported; a `--keep-src`
+    repository is edited except for its files under `src/`.
+    """
     for name, found in swept.items():
         if not found:
             continue
         reason = "marketing" if spaces[name] in MATRIX_SKIP_SPACES else "skipped" if name in skip else None
         if reason:
             plan.held_back.setdefault(reason, []).extend((name, e) for e in found)
-        else:
-            plan.edits[name] = found
-    hit = {label for found in plan.edits.values() for e in found for label in e.labels}
-    for s in subjects:
-        s.changes = [c for c in s.changes if c.kind != "stack" or change_label(c) in hit]
-    packages = {s.new: {change_label(c) for c in s.changes if c.kind == "import-package"} for s in subjects}
+            continue
+        kept = [e for e in found if name in plan.keep_src and e.path.startswith("src/")]
+        if kept:
+            plan.held_back.setdefault("kept", []).extend((name, e) for e in kept)
+        if rest := [e for e in found if e not in kept]:
+            plan.edits[name] = rest
+
+
+def _waits_on(plan: _NamesPlan) -> dict[str, list[str]]:
+    """Find the repositories whose edits use a name another repository publishes under a new name.
+
+    Such a repository cannot install or import the new name until the other repository is
+    released, so its pull request waits on it.
+
+    Returns:
+        For each waiting repository, the repositories it waits on.
+
+    """
+    published = {
+        s.new: {
+            change_label(c)
+            for c in s.changes
+            if c.kind == "import-package" or (c.kind == "distribution" and normalize(c.old) != normalize(c.new))
+        }
+        for s in plan.subjects
+    }
+    waits: dict[str, list[str]] = {}
     for name, found in plan.edits.items():
         used = {label for e in found for label in e.labels}
-        if waits := sorted(h for h, labels in packages.items() if h != name and labels & used):
-            plan.waits_on[name] = waits
-    return plan
+        if names := sorted(h for h, labels in published.items() if h != name and labels & used):
+            waits[name] = names
+    return waits
+
+
+def _documents_settings(cfg: Config) -> tuple[Path, tuple[str, ...]] | None:
+    """Read the config's `rename.documents` section: the vault folder and the folders in it a rename sweeps.
+
+    Returns:
+        (the vault's root, the folders under it), or None when the config names no documents.
+
+    Raises:
+        NameSweepError: when the section lacks an absolute root or the folders.
+
+    """
+    section = _map(cfg.raw.get("rename") or {}, "config rename")
+    documents = section.get("documents")
+    if not documents:
+        return None
+    spec = _map(documents, "config rename.documents")
+    root = Path(expand_env(str(spec.get("root") or ""))).expanduser()
+    paths = tuple(_strs(spec.get("paths") or [], "rename.documents.paths"))
+    if not root.is_absolute() or not paths:
+        msg = "config rename.documents needs an absolute root (environment variables allowed) and paths"
+        raise NameSweepError(msg)
+    return root, paths
+
+
+def _names_documents_plan(cfg: Config, subjects: list[_Subject]) -> _Documents | None:
+    """Plan the architecture document edits: every old name the subjects change, replaced by its new one.
+
+    Names only: the rules are the ones for the repositories' own names, with the document
+    differences `build_document_rules` states. A file with uncommitted changes in the vault is
+    listed and not edited, so a commit of the file takes only the rename.
+
+    Returns:
+        The plan, or None when the config sets no documents folder or the vault is absent.
+
+    """
+    settings = _documents_settings(cfg)
+    if settings is None or not (settings[0] / ".git").exists():
+        return None
+    root, paths = settings
+    changes = [c for s in subjects for c in s.changes]
+    repository_of = {change_label(c): s.new for s in subjects for c in s.changes}
+    rules = build_document_rules(changes, repository_of)
+    excludes, _ = _rename_settings(cfg)
+    edits = sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False) if rules else []
+    cp = git(root, "status", "--porcelain", "--", *paths)
+    touched = {
+        line[PORCELAIN_PATH:].strip().strip('"') for line in cp.stdout.splitlines() if len(line) > PORCELAIN_PATH
+    }
+    dirty = sorted(e.path for e in edits if e.path in touched)
+    return _Documents(root, paths, rules, [e for e in edits if e.path not in dirty], dirty)
 
 
 def _names_lines(plan: _NamesPlan) -> list[str]:
@@ -4840,8 +4994,18 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
             line += f"; waits on {', '.join(plan.waits_on[name])}, whose new package is not importable until released"
         lines.append(line)
     for why, rows in sorted(plan.held_back.items()):
-        what = "marketing repositories are never edited" if why == "marketing" else "named by --skip-repo"
+        what = {
+            "marketing": "marketing repositories are never edited",
+            "kept": "source kept as is by --keep-src",
+        }.get(why, "named by --skip-repo")
         lines.extend(f"not edited ({what}) {name}: {e.path}" for name, e in rows)
+    docs = plan.documents
+    if docs is not None:
+        lines.extend(
+            f"edit document {e.path}: line(s) {', '.join(str(n) for n in e.lines)} ({e.replacements})"
+            for e in docs.edits
+        )
+        lines.extend(f"not edited (uncommitted changes in the vault) document {p}" for p in docs.dirty)
     return lines
 
 
@@ -4856,7 +5020,17 @@ def _names_record(plan: _NamesPlan) -> dict[str, object]:
     def rows(found: list[FileEdit]) -> list[dict[str, object]]:
         return [{"path": e.path, "replacements": e.replacements, "kinds": sorted(e.kinds)} for e in found]
 
+    docs = plan.documents
+    documents: dict[str, object] = (
+        {
+            "edits": [{"path": e.path, "lines": list(e.lines), "replacements": e.replacements} for e in docs.edits],
+            "uncommitted": docs.dirty,
+        }
+        if docs is not None
+        else {}
+    )
     return {
+        "documents": documents,
         "changes": [
             {"repo": s.new, "kind": c.kind, "old": c.old, "new": c.new} for s in plan.subjects for c in s.changes
         ],
@@ -4887,7 +5061,7 @@ def _rename_names(
 
     """
     try:
-        plan = _names_plan(st, pairs, set(args.skip_repo or []), dry_run=args.dry_run)
+        plan = _names_plan(st, pairs, set(args.skip_repo or []), set(args.keep_src or []), dry_run=args.dry_run)
     except (NameSweepError, PolyrepoError) as exc:
         res["names_error"] = str(exc)
         steps.append(f"stack and Python names NOT planned: {exc}")
@@ -4900,7 +5074,115 @@ def _rename_names(
     rows = _names_apply(st.cfg, plan, args)
     res["pull_requests"] = rows
     steps.extend(_pr_line(row) for row in rows)
+    steps.extend(_apply_documents(st.cfg, plan, args.trailer))
     return all(row["status"] == "pr-opened" for row in rows)
+
+
+def _apply_documents(cfg: Config, plan: _NamesPlan, trailer: str | None) -> list[str]:
+    """Write the new names into the architecture documents, commit the vault files changed, update the matrix.
+
+    The vault change is one commit of only the files the sweep changed, pushed to the vault's
+    default branch. The matrix then follows through `atw-matrix`: every published package the
+    matrix holds under an old distribution name is re-keyed (`rename`), the documents that
+    changed are read again (`sync-documents --paths`), and the matrix file is committed.
+
+    Returns:
+        A line for each step done, or for each step that failed.
+
+    """
+    steps: list[str] = []
+    docs = plan.documents
+    if docs is None:
+        return steps
+    excludes, _ = _rename_settings(cfg)
+    changed = [e.path for e in docs.edits]
+    if changed:
+        try:
+            target = SweepTarget("documents", docs.root, docs.paths)
+            sweep_repo(_sweep_git, target, docs.rules, [*excludes, *docs.dirty], write=True)
+            _commit_documents(cfg, docs.root, changed, trailer)
+        except (GitFailedError, NameSweepError) as exc:
+            steps.append(f"vault NOT updated: {exc}")
+            return steps
+        steps.append(f"vault: {len(changed)} document(s) changed, committed and pushed")
+    steps.extend(_update_matrix_names(cfg, plan, changed))
+    return steps
+
+
+def _commit_documents(cfg: Config, root: Path, changed: list[str], trailer: str | None) -> None:
+    """Commit only the vault files the sweep changed, and push the vault's default branch.
+
+    A failed git step propagates as the GitFailedError that `must` raises.
+    """
+    message = ["docs(arc42): follow the new names", *([trailer] if trailer else [])]
+    for argv in (["add", "--", *changed], ["commit", "-m", "\n\n".join(message), "--", *changed]):
+        must(git(root, *argv))
+    must(git(root, "push", "origin", cfg.default_branch, timeout=PR_TIMEOUT))
+
+
+def _update_matrix_names(cfg: Config, plan: _NamesPlan, documents: list[str]) -> list[str]:
+    """Update the matrix for the names a rename changed: re-key the packages, read the changed documents.
+
+    A package entry is named by the distribution, so a distribution that changes re-keys its
+    entry and both ends of every relationship it has; an entry already under the new name is
+    left. The documents are read from the vault again with `sync-documents`, and the matrix
+    file is committed with `atw-matrix commit`.
+
+    Returns:
+        A line for each matrix command run, or that failed.
+
+    """
+    steps: list[str] = []
+    try:
+        steps.extend(_rekey_packages(cfg, plan))
+        if documents and plan.documents is not None:
+            steps.append(_sync_documents(cfg, plan.documents.root, documents))
+        steps.append(f"matrix: {matrix_commit(cfg)}")
+    except PolyrepoError as exc:
+        steps.append(f"matrix NOT updated: {exc}")
+    return steps
+
+
+def _rekey_packages(cfg: Config, plan: _NamesPlan) -> list[str]:
+    """Re-key each package entry the matrix holds under an old distribution name.
+
+    Returns:
+        A line for each `atw-matrix rename` run.
+
+    """
+    steps: list[str] = []
+    for c in (c for s in plan.subjects for c in s.changes if c.kind == "distribution"):
+        old, new = f"package:{c.old}", f"package:{c.new}"
+        if old != new and _matrix_has(cfg, old) and not _matrix_has(cfg, new):
+            result = matrix_run(cfg, ["rename", "--from", old, "--to", new])
+            steps.append(f"matrix rename {old} -> {new}: {json.dumps(result, sort_keys=True)[:200]}")
+    return steps
+
+
+def _sync_documents(cfg: Config, root: Path, documents: list[str]) -> str:
+    """Read the documents the sweep changed into the matrix (`atw-matrix sync-documents --paths`).
+
+    Returns:
+        A line with the command's result.
+
+    """
+    paths = [str(root / p) for p in documents]
+    result = matrix_run(cfg, ["sync-documents", "--paths", *paths])
+    return f"matrix sync-documents ({len(paths)} document(s)): {json.dumps(result, sort_keys=True)[:200]}"
+
+
+def _matrix_has(cfg: Config, entry_id: str) -> bool:
+    """Tell whether the matrix holds an entry.
+
+    Returns:
+        True when `atw-matrix node` finds it.
+
+    """
+    try:
+        matrix_run(cfg, ["node", entry_id])
+    except PolyrepoError:
+        return False
+    return True
 
 
 def _pr_line(row: dict[str, object]) -> str:
@@ -4926,7 +5208,8 @@ def _names_apply(cfg: Config, plan: _NamesPlan, args: argparse.Namespace) -> lis
     """
     settings = _rename_settings(cfg)
     order = sorted(plan.edits, key=lambda n: (n in plan.waits_on, n not in plan.holders(), n.lower()))
-    return [_apply_repo(cfg, plan, name, settings, args) for name in order]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS) as ex:
+        return list(ex.map(lambda name: _apply_repo(cfg, plan, name, settings, args), order))
 
 
 def _apply_repo(
@@ -4946,6 +5229,8 @@ def _apply_repo(
 
     """
     excludes, pr_command = settings
+    if name in plan.keep_src:
+        excludes = [*excludes, "src/*"]
     slug = plan.slug()
     worktree = plan.paths[name] / ".worktrees" / f"{RENAME_BRANCH}-{slug}"
     row: dict[str, object] = {"repo": name, "status": "failed", "waits_on": plan.waits_on.get(name)}
@@ -4967,14 +5252,10 @@ def _apply_repo(
             row["error"] = f"git {argv[0]} failed: {_last_line(cp)}"
             return row
     row["worktree"] = str(worktree)
-    try:
-        for s in (s for s in plan.subjects if s.new == name):
-            apply_moves(_sweep_git, worktree, s.moves)
-        sweep_repo(_sweep_git, SweepTarget(name, worktree), plan.rules, excludes, write=True)
-    except NameSweepError as exc:
-        row["error"] = str(exc)
+    if error := _stage_changes(plan, name, worktree, excludes, row):
+        row["error"] = error
         return row
-    if name not in plan.waits_on and (failure := _run_checks(worktree)):
+    if failure := _run_checks(worktree, waiting=name in plan.waits_on):
         row.update(status="checks-failed", error=failure)
         return row
     title, body = _pr_text(plan, name)
@@ -4994,6 +5275,33 @@ def _apply_repo(
     else:
         row.update(status="pr-failed", error=_last_line(cp))
     return row
+
+
+def _stage_changes(
+    plan: _NamesPlan,
+    name: str,
+    worktree: Path,
+    excludes: list[str],
+    row: dict[str, object],
+) -> str | None:
+    """Make one repository's changes in its worktree: the moves, the settings, the sweep, the import order.
+
+    Returns:
+        None when the changes are staged, else why they could not be made.
+
+    """
+    try:
+        for s in (s for s in plan.subjects if s.new == name):
+            apply_moves(_sweep_git, worktree, s.moves)
+            if any(m.new for m in s.moves):
+                row["settings"] = adjust_pyproject(worktree)
+        sweep_repo(_sweep_git, SweepTarget(name, worktree), plan.rules, excludes, write=True)
+    except NameSweepError as exc:
+        return str(exc)
+    cp = git(worktree, "add", "-A")
+    if cp.returncode == 0:
+        row["ruff"] = _fix_changed_python(worktree)
+    return None
 
 
 def _pr_text(plan: _NamesPlan, name: str) -> tuple[str, str]:
@@ -5019,13 +5327,49 @@ def _pr_text(plan: _NamesPlan, name: str) -> tuple[str, str]:
     return title, "\n".join(lines)
 
 
-def _run_checks(worktree: Path) -> str | None:
-    """Run the repository's own `lint` and `test` tasks in the worktree, as its Taskfile declares them.
+def _fix_changed_python(worktree: Path) -> str:
+    """Put the import order and format of the Python files the change touched right, with the repo's ruff settings.
+
+    The new import names move a line among the groups `isort` keeps, and a longer name can
+    pass the line length, so only the files the change touched are fixed (`I` rules and
+    `ruff format`), and nothing else in the repository is reformatted.
 
     Returns:
-        None when every declared task passed (or none is declared), else what failed.
+        A short note of what ran.
 
     """
+    cp = git(worktree, "diff", "--cached", "--name-only", "--diff-filter=AMR", "-z")
+    files = [f for f in cp.stdout.split("\0") if f.endswith(".py")]
+    if cp.returncode != 0 or not files:
+        return "no Python files changed"
+    ran: list[str] = []
+    for argv in (
+        ["uvx", "ruff", "check", "--select", "I", "--fix", "--fix-only", "--quiet", *files],
+        ["uvx", "ruff", "format", "--quiet", *files],
+    ):
+        out = run(argv, cwd=worktree, timeout=CHECK_TIMEOUT)
+        ran.append(f"{argv[2]} exit {out.returncode}")
+    return ", ".join(ran)
+
+
+def _run_checks(worktree: Path, *, waiting: bool = False) -> str | None:
+    """Run the repository's own checks in the worktree, as its Taskfile declares them.
+
+    The tasks are `lint` (ruff, and mypy where the Taskfile puts it there), `typecheck` and
+    `test`. A repository that waits on a library's renamed package cannot install or import
+    it until the library is released, so for it only `ruff check` runs, which needs no
+    installed package.
+
+    Returns:
+        None when every check passed (or none is declared), else what failed.
+
+    """
+    if waiting:
+        cp = run(["uvx", "ruff", "check", "--quiet", "."], cwd=worktree, timeout=CHECK_TIMEOUT)
+        if cp.returncode != 0:
+            tail = "\n".join((cp.stdout + cp.stderr).strip().splitlines()[-CHECK_TAIL_LINES:])
+            return f"ruff check failed:\n{tail}"
+        return None
     taskfile = worktree / "Taskfile.yml"
     declared = set(re.findall(r"(?m)^  ([a-z][\w-]*):\s*$", taskfile.read_text())) if taskfile.is_file() else set()
     for task in (t for t in CHECK_TASKS if t in declared):
@@ -5927,10 +6271,8 @@ def _compare_to_template(
         The repo, its files' (state, repo commit time) by path, and the render error if any.
 
     """
-    data = {k: str(v) for k, v in answers.items() if not k.startswith("_")} or {
-        "service_name": _service_name(cfg, r.name),
-        "repo_name": r.name,
-    }
+    given = {k: str(v) for k, v in answers.items() if not k.startswith("_")}
+    data = {**_template_data(cfg, r.name), **given}
     out: dict[str, tuple[str, int | None]] = {}
     with tempfile.TemporaryDirectory(prefix="polyrepo-tc-") as tmp:
         rendered = Path(tmp) / r.name
@@ -6251,6 +6593,96 @@ def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["open"] else 0
 
 
+PYTHON_NAMES_DETAIL = 300
+PYTHON_NAMES_TEXT = 110
+
+
+def _name_checker(cfg: Config) -> Checker:
+    """Build the function that runs `atw-naming check`.
+
+    Returns:
+        A function from the check's arguments (type, name, `--repository`, repository) to
+        (whether the name passed, the check's message).
+
+    """
+    env: dict[str, str | None] = {}
+    if not os.environ.get(CONTROL_REPO_ENV):
+        env[CONTROL_REPO_ENV] = str(cfg.file.parent.parent)
+
+    def check(args: Sequence[str]) -> tuple[bool, str]:
+        cp = run([str(NAMING_COMMAND), "check", *args], timeout=NAMING_TIMEOUT, env=env)
+        text = " ".join(line.strip() for line in (cp.stdout + cp.stderr).strip().splitlines())
+        return cp.returncode == 0, text[:PYTHON_NAMES_DETAIL]
+
+    return check
+
+
+def python_names_findings(st: State, only: list[str] | None = None) -> list[Finding]:
+    """Check every active Python repo's names and layout against the naming standard.
+
+    For each repository that has a `pyproject.toml` (the control repo and `apps/marketing/` are
+    left out) the three `atw-naming check` commands run against what it has: the `name` in
+    `pyproject.toml`, the source package and its folder under `src`. `src` and `tests` must
+    exist and no `__init__.py` may sit in an app or team folder. The check is deterministic:
+    nothing is judged.
+
+    Returns:
+        One finding per failed check or missing part.
+
+    """
+    cfg = st.cfg
+    control = os.path.normpath(fleet_file(cfg).parent.parent)
+    check = _name_checker(cfg)
+    todo = [
+        r
+        for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower())
+        if (only is None or name in only)
+        and st.lifecycle(name) not in LIFECYCLES_INACTIVE
+        and r.space not in MATRIX_SKIP_SPACES
+        and os.path.normpath(r.path) != control
+        and (r.path / "pyproject.toml").is_file()
+    ]
+
+    def one(r: LocalRepo) -> list[Finding]:
+        try:
+            facts = read_facts(_sweep_git, r.path)
+        except NameSweepError as exc:
+            return [Finding("python-names", r.name, str(exc))]
+        return [
+            Finding(p.check if p.check.startswith("python-") else f"python-{p.check}", r.name, p.detail)
+            for p in python_problems(facts, r.name, check)
+        ]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        return [f for found in ex.map(one, todo) for f in found]
+
+
+def cmd_python_names(args: argparse.Namespace, cfg: Config) -> int:
+    """Report every repo whose Python names or layout differ from what `atw-naming` gives.
+
+    Returns:
+        0 when every repo conforms, else 1.
+
+    """
+    st = gather(cfg, fetch=False, use_cache=not args.no_cache)
+    only = st.resolve(args.repos) if args.repos else None
+    findings = python_names_findings(st, only)
+    data: dict[str, object] = {
+        "findings": [f.as_dict() for f in findings],
+        "repos": sorted({f.repo for f in findings}),
+        "open": len(findings),
+    }
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            [f"{len(findings)} finding(s) in {len(_seq(data['repos'], 'repos'))} repo(s)"]
+            + [f"  [{f.kind}] {f.repo}: {f.detail[:PYTHON_NAMES_TEXT]}" for f in findings],
+        ),
+    )
+    return 1 if findings else 0
+
+
 BEADS_AUDIT = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts" / "audit-fleet.sh"
 SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
@@ -6261,6 +6693,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
     "environment": [sys.executable, str(SELF), "environment", "--json"],
+    "python-names": [sys.executable, str(SELF), "python-names", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
@@ -6319,6 +6752,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "beads-setup",
         "deprecated-prs",
         "environment",
+        "python-names",
     }:
         rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
         return [
@@ -6936,6 +7370,12 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
         default=[],
         help="a repository whose references are reported and not edited (repeatable)",
     )
+    s.add_argument(
+        "--keep-src",
+        action="append",
+        default=[],
+        help="a repository whose files under src are reported and not edited; its other files are (repeatable)",
+    )
     s.add_argument("--trailer", help="a line to end each commit message body with")
     s.add_argument("--pr-footer", help="a line to end each pull request description with")
     s.set_defaults(func=cmd_rename)
@@ -7008,6 +7448,13 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         help="run the setup task of each repo with a gap",
     )
     s.set_defaults(func=cmd_environment)
+
+    s = add(
+        "python-names",
+        "check every active Python repo's names and layout against the naming standard",
+    )
+    s.add_argument("repos", nargs="*", help="only these repos (default: all active)")
+    s.set_defaults(func=cmd_python_names)
 
     s = add(
         "deprecated-prs",
