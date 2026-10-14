@@ -217,7 +217,7 @@
       "id": "I3",
       "level": "implementation",
       "home": "specs",
-      "text": "Each event has the values passed to the shared-events-service API, its payload schema and its schema version."
+      "text": "Each event names its publishing service and when it is triggered, matching the event's purpose in the matrix, and has the values passed to the shared-events-service API, its payload schema and its schema version."
     },
     {
       "id": "I4",

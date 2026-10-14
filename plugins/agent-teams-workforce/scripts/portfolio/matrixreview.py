@@ -3,8 +3,9 @@
 :func:`review_scope` (``review-scope``) is a read with no judgment in it. It walks from an Epic
 to its requirements and to the features that serve them, with the features those are supported by
 to any depth, and returns the documents a ``covers`` relationship joins to one of the
-requirements, or a ``describedBy`` relationship joins to one of the features, whose ``lifecycle``
-is not ``effective``, each with the headings those relationships name.
+requirements, or a ``describedBy`` relationship joins to one of the features or to one of the
+elements the architect's result adds or changes, whose ``lifecycle`` is not ``effective``, each
+with the headings those relationships name.
 
 The matrix holds no approval record: a document's ``lifecycle`` mirrors its arc42 front matter,
 so what is in review for an Epic is exactly this list, and nothing here changes the matrix.
@@ -12,6 +13,7 @@ so what is in review for an Epic is exactly this list, and nothing here changes 
 
 import sys
 from collections import deque
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -35,7 +37,7 @@ from matrix_contract import (
     RelationshipKind,
     Side,
 )
-from matrixstore import Matrix
+from matrixstore import Matrix, as_entry_id
 from matrixtraverse import epic_id
 
 ATTR_LIFECYCLE: Final = "lifecycle"
@@ -49,7 +51,7 @@ class ScopeReach(TypedDict):
 
     relationship: RelationshipKind
     entry: EntryId
-    """The requirement the document covers, or the feature it describes."""
+    """The requirement the document covers, or the feature or added or changed element it describes."""
     heading: str
     """The heading the relationship names; empty when it names none."""
     side: Side
@@ -120,22 +122,73 @@ def _with_supporting(matrix: Matrix, serving: list[EntryId]) -> list[EntryId]:
     return list(features)
 
 
+def _reach(relationship: Relationship, entry: EntryId) -> ScopeReach:
+    """Render one relationship through which an Epic reaches a document.
+
+    Returns:
+        The relationship's kind, the entry it reaches the document from, the heading it names
+        and its side.
+
+    """
+    return {
+        "relationship": relationship.kind,
+        "entry": entry,
+        "heading": _heading(relationship),
+        "side": relationship.side,
+    }
+
+
+def _reached(
+    matrix: Matrix,
+    requirements: Iterable[EntryId],
+    described: Iterable[EntryId],
+) -> dict[EntryId, list[ScopeReach]]:
+    """Collect the documents some requirements and described entries reach.
+
+    Returns:
+        Each document a ``covers`` relationship joins to one of the requirements, or a
+        ``describedBy`` relationship joins to one of the described entries, with the
+        relationships that reach it.
+
+    """
+    covering: list[tuple[EntryId, ScopeReach]] = [
+        (relationship.start, _reach(relationship, requirement))
+        for requirement in requirements
+        for relationship in matrix.incoming(requirement, (REL_COVERS,))
+    ]
+    describing: list[tuple[EntryId, ScopeReach]] = [
+        (relationship.end, _reach(relationship, entry_id))
+        for entry_id in described
+        for relationship in matrix.outgoing(entry_id, (REL_DESCRIBED_BY,))
+    ]
+    reached: dict[EntryId, list[ScopeReach]] = {}
+    document_id: EntryId
+    reach: ScopeReach
+    for document_id, reach in (*covering, *describing):
+        reached.setdefault(document_id, []).append(reach)
+    return reached
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def review_scope(matrix: Matrix, bead: str) -> ReviewScope:
+def review_scope(matrix: Matrix, bead: str, added_or_changed: Sequence[str] = ()) -> ReviewScope:
     """List the documents one Epic reaches that are not effective, with the headings reached.
 
-    Nothing is changed. An empty beads id raises ``ValueError`` from ``epic_id``, and an Epic the
-    matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+    Nothing is changed. An empty beads id raises ``ValueError`` from ``epic_id``, an Epic the
+    matrix does not hold raises ``MatrixError`` from ``Matrix.entry``, and an added or changed id
+    that does not have the form of an entry id raises ``MatrixError`` from ``as_entry_id``.
 
     Args:
         matrix: The matrix.
         bead: The Epic's beads id, or the id of its entry.
+        added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``;
+            the documents that describe them are reached too.
 
     Returns:
         The Epic, its requirements, the features that serve them with the features those are
         supported by, and each document a ``covers`` relationship joins to one of the
-        requirements or a ``describedBy`` relationship joins to one of the features whose
-        lifecycle is not effective, with the headings and the relationships that reach it.
+        requirements or a ``describedBy`` relationship joins to one of the features or added or
+        changed elements whose lifecycle is not effective, with the headings and the
+        relationships that reach it.
 
     Raises:
         TypeError: ``bead`` is not a string.
@@ -157,26 +210,9 @@ def review_scope(matrix: Matrix, bead: str) -> ReviewScope:
         ),
     )
     features: list[EntryId] = _with_supporting(matrix, serving)
-    reached: dict[EntryId, list[ScopeReach]] = {}
-    requirement: EntryId
-    relationship: Relationship
-    for requirement in requirements:
-        for relationship in matrix.incoming(requirement, (REL_COVERS,)):
-            reached.setdefault(relationship.start, []).append({
-                "relationship": relationship.kind,
-                "entry": requirement,
-                "heading": _heading(relationship),
-                "side": relationship.side,
-            })
-    feature: EntryId
-    for feature in features:
-        for relationship in matrix.outgoing(feature, (REL_DESCRIBED_BY,)):
-            reached.setdefault(relationship.end, []).append({
-                "relationship": relationship.kind,
-                "entry": feature,
-                "heading": _heading(relationship),
-                "side": relationship.side,
-            })
+    elements: list[EntryId] = [as_entry_id(element) for element in dict.fromkeys(added_or_changed)]
+    described: list[EntryId] = list(dict.fromkeys([*features, *elements]))
+    reached: dict[EntryId, list[ScopeReach]] = _reached(matrix, requirements, described)
     documents: list[ScopeDocument] = []
     document_id: EntryId
     for document_id in sorted(reached):

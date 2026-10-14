@@ -45,6 +45,7 @@ from orchestrator.flows.architecture_files import (
     lead_resolved,
     matrix_file,
     read_context,
+    read_result,
 )
 from orchestrator.flows.architecture_review import ALTERNATIVES, FINDINGS
 
@@ -81,11 +82,12 @@ class Promoted:
     """The disagreements removed: settled, and the losing statement corrected in this run."""
 
 
-def _promote(bead: str, arch: Path, corrected: Sequence[str]) -> Promoted:
+def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: Sequence[str]) -> Promoted:
     """Set effective what is in review for the Epic, and mirror it in the matrix.
 
-    Each document ``atw-matrix review-scope`` returns for the Epic is set effective in its front
-    matter; then, in one matrix change, the entries of those documents are brought up to date as
+    Each document ``atw-matrix review-scope`` returns for the Epic, with the documents that
+    describe what the architect's result adds or changes, is set effective in its front matter;
+    then, in one matrix change, the entries of those documents are brought up to date as
     ``atw-matrix sync-documents --paths`` does, and each disagreement named that the matrix holds
     with a ruling is removed.
 
@@ -94,6 +96,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str]) -> Promoted:
         arch: The architecture root inside the vault.
         corrected: The ids of the disagreements whose losing statement a document maintainer of
             this run corrected.
+        added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
         The documents set effective, those the matrix does not show as effective afterwards, and
@@ -101,7 +104,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str]) -> Promoted:
 
     """
     path: Path = matrix_file()
-    scope: ReviewScope = review_scope(read_matrix(path), bead)
+    scope: ReviewScope = review_scope(read_matrix(path), bead, added_or_changed)
     documents: list[str] = sorted(document_path(document["id"]) for document in scope["documents"])
     vault: Path = vault_root(arch)
     relative: str
@@ -266,7 +269,15 @@ def promote(run: StepRun) -> Completion:
     _require_resolved(run)
     context: ArchitectureContext = read_context(run)
     arch: Path = Path(context["architectureRoot"])
-    promoted: Promoted = run.tools.portfolio(PROMOTE, _promote, str(run.bead), arch, _corrected(run))
+    added_or_changed: list[str] = read_result(run, context)["addedOrChangedElements"]
+    promoted: Promoted = run.tools.portfolio(
+        PROMOTE,
+        _promote,
+        str(run.bead),
+        arch,
+        _corrected(run),
+        added_or_changed,
+    )
     path: Path = run.context.work / ARCHITECTURE_FOLDER / "promoted.json"
     record: dict[str, JsonValue] = {
         "documents": [*promoted.documents],

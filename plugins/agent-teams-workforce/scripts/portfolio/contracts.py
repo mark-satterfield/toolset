@@ -81,6 +81,8 @@ class DeltaItem(TypedDict):
     evidence: NotRequired[list[str]]
     reason: NotRequired[str]
     closure: NotRequired[str]
+    trigger: NotRequired[str]
+    publishedBy: NotRequired[list[str]]
 
 
 class GitFailureFact(TypedDict):

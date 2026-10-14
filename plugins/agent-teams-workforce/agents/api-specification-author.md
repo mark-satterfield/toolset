@@ -61,7 +61,14 @@ matrix command yourself: `stacks`, the matrix ids of the stacks the Story builds
 for each of those stacks what `atw-matrix story-scope` returns (the documents and headings
 that describe the stack and each entry the Story builds, the constraints that bind them and
 the shared capabilities they must use); `documents`, each of those documents with its id,
-its path and the headings to read; and `otherStacks`, the Epic's stacks outside this Story.
+its path and the headings to read; `dependsOn`, each relationship from something the Story
+builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
+builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null);
+and `consumedBy`, each consumer of an event the Story builds, as `{event, consumer, side, stack,
+repository}`. Both are context, never work, and hold nothing of the marketing app. Name each
+event's consumers from `consumedBy` (criterion I6), and each dependency's contract from
+`dependsOn`. Each event item in `items` carries `trigger` (when it is published) and
+`publishedBy` (its publishers); specify the event with that publisher and that trigger.
 Read the documents and headings `documents` names, and only those; cite a document by the
 path and heading given there.
 The context file's `sharedCapabilities` lists what this repository's elements obtain from

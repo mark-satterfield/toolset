@@ -84,8 +84,9 @@ see where each detail lives.
 I1. Each route has its method, path, authorizer, request and response fields and status
     codes.
 I2. Each store has its key attribute names, indexes, access patterns and expiry attribute.
-I3. Each event has the values passed to the shared-events-service API, its payload schema
-    and its schema version.
+I3. Each event names its publishing service and when it is triggered, matching the event's
+    purpose in the matrix, and has the values passed to the shared-events-service API, its
+    payload schema and its schema version.
 I4. Configuration names, SSM parameter names, and log, metric and alarm names are present
     and are generated with atw-naming.
 I5. Idempotency key fields and timeout settings are stated.

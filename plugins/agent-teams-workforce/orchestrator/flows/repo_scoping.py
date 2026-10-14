@@ -1,9 +1,10 @@
 """Read what the Epic's Stories build from the architect's result, and create a repository it needs and lacks.
 
 What a Story builds is what the Epic's architecture adds or changes: the services, components,
-infrastructure and events the architect's result lists under ``addedOrChangedElements``. An event
-is built as part of the service or component that publishes it, so its architecture-side
-publishers are built with it. The matrix is used only to find the stack each is placed in on the
+infrastructure and events the architect's result lists under ``addedOrChangedElements``, and
+nothing more. An event is built as part of the service that publishes it: it is placed in its
+publisher's stack, and its item carries when it is triggered and who publishes it as information,
+never as further work. The matrix is used only to find the stack each is placed in on the
 architecture side (``matrixtraverse.authority_holder``), that stack's repository, the documents
 that describe it and the architecture-side dependencies between them. Everything else the Epic
 reaches is context, never work. No session is started. A repository that a stack the Stories
@@ -38,12 +39,15 @@ from matrix_contract import (
     KIND_STACK,
     REL_CONSUMES,
     REL_DESCRIBED_BY,
+    REL_PUBLISHES,
+    REL_ROUTES,
     SIDE_REPOSITORY,
     Entry,
     EntryId,
     EntryKind,
     MatrixError,
     Relationship,
+    RelationshipKind,
     family_kinds,
 )
 from matrixquery import Capability, UsesResult, uses_view
@@ -118,6 +122,13 @@ BUILT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_SERVICE, KIND_COMPONE
 """The kinds of entry a Story builds: what the architecture adds or changes."""
 EVIDENCE_RESULT: Final = "architecture result"
 """The evidence of every item: the architect's result lists it under addedOrChangedElements."""
+EVENT_TRIGGER: Final = "a purpose starting 'Published when'"
+"""What an event's purpose states, as the matrix's event rule names it."""
+BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = family_kinds(FAMILY_DEPENDENCY) - {
+    REL_PUBLISHES,
+    REL_ROUTES,
+}
+"""The dependency relationships that make one build need another: publishing and routing an event are not."""
 NO_PUBLISHER_STACK: Final = ": no publisher of it is homed in a stack, or its publishers are in more than one stack"
 NAMING_REPOSITORY: Final = "repository"
 """The naming rules' resource for the repository that holds a stack."""
@@ -360,29 +371,22 @@ def _stated_id(stated: str) -> EntryId | None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def story_build_entries(matrix: Matrix, added_or_changed: Sequence[str]) -> list[EntryId]:
+def story_build_entries(added_or_changed: Sequence[str]) -> list[EntryId]:
     """List what the Epic's Stories build: what the architecture adds or changes.
 
-    An event is built as part of the service that publishes it, so each event among the ids
-    brings its architecture-side publishers with it.
+    Only what the architect's result states is built. An event's publishers are not added: the
+    event is placed in its publisher's stack (:func:`matrixtraverse.authority_holder`), and its
+    item names its publishers as information (:func:`story_builds`).
 
     Args:
-        matrix: The matrix.
         added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
-        The ids, with the publishers of each event among them, each once, in id order. A text
-        that is not an entry id is left out (:func:`story_build_problems` reports it).
+        The stated ids, each once, in id order. A text that is not an entry id is left out
+        (:func:`story_build_problems` reports it).
 
     """
-    stated: list[EntryId] = [found for text in added_or_changed if (found := _stated_id(text)) is not None]
-    publishers: list[EntryId] = [
-        publisher
-        for entry_id in stated
-        if (entry := matrix.find(entry_id)) is not None and entry.kind == KIND_EVENT
-        for publisher in matrix.publishers(entry_id)
-    ]
-    return sorted({*stated, *publishers})
+    return sorted({found for text in added_or_changed if (found := _stated_id(text)) is not None})
 
 
 def _entry_problem(entry: Entry) -> str | None:
@@ -390,7 +394,8 @@ def _entry_problem(entry: Entry) -> str | None:
 
     Returns:
         One sentence naming the first rule the entry breaks; None when it is an
-        architecture-side service, component, piece of infrastructure or SkillSpoke event.
+        architecture-side service, component, piece of infrastructure or SkillSpoke event, and,
+        when an event, one whose purpose states when it is triggered.
 
     """
     if entry.side != AUTHORITY_SIDE:
@@ -399,6 +404,8 @@ def _entry_problem(entry: Entry) -> str | None:
         return f"{entry.id} is a {entry.kind}; a Story builds services, components, infrastructure and events"
     if ATTR_EXTERNAL_SOURCE in entry.attributes:
         return f"{entry.id} is published outside SkillSpoke ({ATTR_EXTERNAL_SOURCE}); no Story builds it"
+    if entry.kind == KIND_EVENT and not entry.purpose.strip():
+        return f"{entry.id} is an event whose purpose is empty; an event states when it is triggered ({EVENT_TRIGGER})"
     return None
 
 
@@ -454,7 +461,7 @@ def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[s
         for text in added_or_changed
         if _stated_id(text) is None
     ]
-    entries: list[EntryId] = story_build_entries(matrix, added_or_changed)
+    entries: list[EntryId] = story_build_entries(added_or_changed)
     found: list[str | None] = [_build_problem(matrix, entry_id) for entry_id in entries]
     return [*unread, *(problem for problem in found if problem is not None)]
 
@@ -464,7 +471,8 @@ def _requires(matrix: Matrix, entry_id: EntryId, ids: Mapping[EntryId, str]) -> 
 
     Only the dependency relationships the architecture side states count; a repository-side
     relationship never makes a ``requires``, and a dependency on something no Story of the Epic
-    builds is context, not an item.
+    builds is context, not an item. Publishing or routing an event is not a need
+    (:data:`BUILD_DEPENDENCY_KINDS`): an event is built with its publisher, never before it.
 
     Returns:
         The item ids its architecture-side dependency relationships reach directly, in the order
@@ -473,7 +481,7 @@ def _requires(matrix: Matrix, entry_id: EntryId, ids: Mapping[EntryId, str]) -> 
     """
     reached: list[str] = [
         ids[relationship.end]
-        for relationship in matrix.outgoing(entry_id, family_kinds(FAMILY_DEPENDENCY))
+        for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
         if relationship.side == AUTHORITY_SIDE and relationship.end in ids and relationship.end != entry_id
     ]
     return list(dict.fromkeys(reached))
@@ -520,6 +528,53 @@ def _text_or_none(value: JsonValue) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _build_item(matrix: Matrix, entry_id: EntryId, ids: Mapping[EntryId, str]) -> DeltaItem:
+    """Render one thing a Story builds as its item.
+
+    Returns:
+        The item: its id, the entry's name and matrix id, the documents that describe it, its
+        repository, the items it requires, and, for an event, its trigger and publishers.
+
+    """
+    item: DeltaItem = {
+        "id": ids[entry_id],
+        "element": matrix.entry(entry_id).name,
+        "matrixId": entry_id,
+        "views": list(dict.fromkeys(stated.end for stated in matrix.outgoing(entry_id, (REL_DESCRIBED_BY,)))),
+        "kind": KIND_IMPLEMENTATION_GAP,
+        "repository": repository_name(matrix, _placed_stack(matrix, entry_id)),
+        "requires": _requires(matrix, entry_id, ids),
+        "requiredBy": [],
+        "evidence": [entry_id, EVIDENCE_RESULT],
+    }
+    if matrix.entry(entry_id).kind != KIND_EVENT:
+        return item
+    return {**item, **_event_facts(matrix, entry_id, ids)}
+
+
+class EventFacts(TypedDict):
+    """What an event's item states about the event, as information, never as work."""
+
+    trigger: str
+    """When the event is triggered: the event entry's purpose."""
+    publishedBy: list[str]
+    """Each publisher: the id of the item that builds it, else its matrix id."""
+
+
+def _event_facts(matrix: Matrix, event_id: EntryId, ids: Mapping[EntryId, str]) -> EventFacts:
+    """Read when an event is triggered and who publishes it.
+
+    Returns:
+        The event entry's purpose, and each architecture-side publisher, as the id of the item
+        in the same item set that builds it, or as its matrix id when no item builds it.
+
+    """
+    return {
+        "trigger": matrix.entry(event_id).purpose,
+        "publishedBy": [ids.get(publisher, publisher) for publisher in matrix.publishers(event_id)],
+    }
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> list[DeltaItem]:
     """List what the Epic's Stories build, in the shape the spec and Task steps read.
@@ -533,7 +588,8 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
         One item per entry of :func:`story_build_entries`: its id, the entry's name and matrix
         id, the documents that describe it, the repository of the stack the architecture side
         places it in (:func:`repository_name`), and the items it requires and is required by
-        through the architecture-side dependency relationships between them.
+        through the architecture-side dependency relationships between them. An event's item
+        also carries ``trigger`` and ``publishedBy`` (:func:`_event_facts`).
 
     Raises:
         StepError: :func:`story_build_problems` reports a problem; the evidence names each.
@@ -542,22 +598,9 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
     problems: list[str] = story_build_problems(matrix, bead, added_or_changed)
     if problems:
         raise StepError(SPAN, OTHER_CAUSE, tuple(problems))
-    entries: list[EntryId] = story_build_entries(matrix, added_or_changed)
+    entries: list[EntryId] = story_build_entries(added_or_changed)
     ids: dict[EntryId, str] = {entry_id: f"E{index}" for index, entry_id in enumerate(entries, 1)}
-    items: list[DeltaItem] = [
-        {
-            "id": ids[entry_id],
-            "element": matrix.entry(entry_id).name,
-            "matrixId": entry_id,
-            "views": list(dict.fromkeys(stated.end for stated in matrix.outgoing(entry_id, (REL_DESCRIBED_BY,)))),
-            "kind": KIND_IMPLEMENTATION_GAP,
-            "repository": repository_name(matrix, _placed_stack(matrix, entry_id)),
-            "requires": _requires(matrix, entry_id, ids),
-            "requiredBy": [],
-            "evidence": [entry_id, EVIDENCE_RESULT],
-        }
-        for entry_id in entries
-    ]
+    items: list[DeltaItem] = [_build_item(matrix, entry_id, ids) for entry_id in entries]
     by_id: dict[str, DeltaItem] = {item["id"]: item for item in items}
     for item in items:
         for needed in item.get("requires", []):
@@ -683,7 +726,8 @@ def build_context(
         all_items: The items of every Story of the Epic, by the Story's storyKey.
 
     Returns:
-        ``dependsOn``: each dependency-family relationship, on either side, that starts at an
+        ``dependsOn``: each dependency relationship of :data:`BUILD_DEPENDENCY_KINDS` (never
+        publishing or routing an event), on either side, that starts at an
         entry this Story builds and ends at one it does not build, with the side that states it,
         the far end's stack and repository, and the other Story that builds the far end.
         ``consumedBy``: each consumer of an event this Story builds, with its stack and
@@ -697,7 +741,7 @@ def build_context(
     dependencies: list[DependsOn] = [
         _depends_on(matrix, relationship, built_by)
         for entry_id in sorted(own)
-        for relationship in matrix.outgoing(entry_id, family_kinds(FAMILY_DEPENDENCY))
+        for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
         if relationship.end not in own
     ]
     consumers: list[ConsumedBy] = [
@@ -964,8 +1008,8 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
 def span(run: StepRun) -> Completion:
     """Read what the Epic's Stories build from the architect's result and plan one spec step per repository.
 
-    What the Stories build is the architect's ``addedOrChangedElements`` with each event's
-    publishers (:func:`story_builds`). Nothing is recorded in the matrix but the name of the
+    What the Stories build is the architect's ``addedOrChangedElements`` and nothing more
+    (:func:`story_builds`). Nothing is recorded in the matrix but the name of the
     repository of a stack the Stories build in that names none (from the naming rules), and the
     name of a repository that was created under another name than the one its stacks stated.
 

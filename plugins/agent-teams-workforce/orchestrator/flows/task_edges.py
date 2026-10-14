@@ -7,47 +7,22 @@ plans the rest: the dependency listing, the mapper's session when the span has m
 repository, and the edge write. Each step reads every repository's Story document and Tasks file
 from the artifacts the Specs and Stories container and the Tasks container hold.
 
-A dependency the mapper finds between two stacks that the matrix does not hold is recorded in the
-matrix when the mapper's result is accepted. The order of Tasks inside one stack is finer than
-the matrix holds and is recorded on the beads only.
+The mapper's edges are never written into the matrix: the matrix's architecture side is what
+arc42 states, and the beads edge alone carries build order.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-# The Task dependency document and the matrix contract are defined once, in the artifact-handoff skill.
+# The Task dependency document is defined once, in the artifact-handoff skill.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
 import beadgraph
 import beadwrite
-from bead_metadata import ARG_REQUIREMENT_IDS
-from matrix_contract import (
-    AUTHORITY_SIDE,
-    REL_CALLS,
-    REL_CONSUMES,
-    REL_IMPORTS,
-    REL_READS,
-    REL_RUNS_IN,
-    RELATIONSHIP_RULES,
-    EntryId,
-    RelationshipKind,
-    RelationshipRule,
-)
-from matrixstore import Matrix, as_entry_id, matrix_path, update_matrix
-from matrixtraverse import dependencies, holder
-from matrixwrite import LinkResult, link
 from task_deps_contract import (
-    KIND_CONTRACT,
-    KIND_DATA,
-    KIND_EVENT_FLOW,
-    KIND_INFRASTRUCTURE,
-    TaskDeps,
-    TaskDepsEdge,
-    TaskDepsEdgeKind,
     TaskDepsError,
     empty_task_deps,
     narrowed_task_deps_schema,
@@ -82,155 +57,16 @@ from orchestrator.flows.elaboration_files import (
     TASKS_FILE,
     objects,
     span_stories,
-    strings,
 )
 from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, enter_phase
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
     import hierarchy
     from step_journal_contract import StepPlan
 
 TASK_EDGES: Final = "task edges written"
-DEPENDENCIES_RECORDED: Final = "dependencies recorded in the matrix"
 SEVERAL: Final = 2
 """The number of repositories from which Tasks of different Stories can depend on each other."""
-DIRECT: Final = 1
-"""The depth of a dependency relationship that starts at a stack or at an entry the stack holds."""
-RELATIONSHIPS_OF: Final[dict[TaskDepsEdgeKind, tuple[RelationshipKind, ...]]] = {
-    KIND_CONTRACT: (REL_IMPORTS, REL_CALLS),
-    KIND_DATA: (REL_READS,),
-    KIND_INFRASTRUCTURE: (REL_RUNS_IN,),
-    KIND_EVENT_FLOW: (REL_CONSUMES,),
-}
-"""The matrix's dependency kinds that state what a mapper's edge kind says the dependent Task needs."""
-
-
-def built_by_task(span: hierarchy.SpanStories) -> dict[str, list[EntryId]]:
-    """Read which matrix entries each Task of the span builds, from the saved files.
-
-    An id in the elements file that does not have the form of an entry id raises ``MatrixError``
-    from ``as_entry_id``.
-
-    Args:
-        span: The Stories of the span, in span order, each with its Tasks file.
-
-    Returns:
-        Each Task by its ``S<i>-<key>`` name, with the entry of every item it cites.
-
-    """
-    entries: dict[str, EntryId] = {
-        check_type(item["id"], str): as_entry_id(check_type(item["matrixId"], str))
-        for item in objects(strict_json(span.scope.elements).get("items", []))
-        if "matrixId" in item
-    }
-    built: dict[str, list[EntryId]] = {}
-    for index, files in enumerate(span.stories, 1):
-        for task in objects(strict_json(files.tasks_file).get("tasks", [])):
-            cited: list[str] = strings(task.get(ARG_REQUIREMENT_IDS, []))
-            built[f"S{index}-{task['key']}"] = [entries[item] for item in cited if item in entries]
-    return built
-
-
-def _by_stack(matrix: Matrix, entries: Sequence[EntryId]) -> dict[EntryId, list[EntryId]]:
-    """Group entries by the stack that holds each.
-
-    Returns:
-        Each stack with the entries given that it holds, the stack first when it is among them;
-        an entry with no stack is left out.
-
-    """
-    grouped: dict[EntryId, list[EntryId]] = {}
-    entry_id: EntryId
-    for entry_id in entries:
-        home: EntryId | None = holder(matrix, entry_id)
-        if home is not None:
-            grouped.setdefault(home, [home])
-            if entry_id != home:
-                grouped[home].append(entry_id)
-    return grouped
-
-
-def _stated(
-    matrix: Matrix,
-    edge: TaskDepsEdge,
-    starts: Sequence[EntryId],
-    ends: Sequence[EntryId],
-) -> LinkResult | None:
-    """Record one mapper edge as the first dependency relationship the registry allows between its ends.
-
-    The kinds tried are those of the edge's kind, in order; the ends tried are the stack before
-    the entries the Task builds in it, so a dependency found at stack level is recorded with the
-    stacks as its ends wherever the kind may join two stacks.
-
-    Returns:
-        What ``link`` recorded, on the architecture side; None when no kind of the edge's kind
-        may join any of the starts to any of the ends.
-
-    """
-    kind: RelationshipKind
-    for kind in RELATIONSHIPS_OF[edge["kind"]]:
-        rule: RelationshipRule = RELATIONSHIP_RULES[kind]
-        if rule.required:
-            continue
-        start: EntryId
-        for start in starts:
-            if matrix.entry(start).kind not in rule.sources:
-                continue
-            end: EntryId
-            for end in ends:
-                if matrix.entry(end).kind in rule.targets:
-                    return link(matrix, kind, start, end, AUTHORITY_SIDE)
-    return None
-
-
-def record_dependencies(deps: TaskDeps, built: Mapping[str, Sequence[EntryId]]) -> dict[str, JsonValue]:
-    """Record in the matrix each dependency between two stacks that the mapper found and the matrix lacks.
-
-    An edge runs from the prerequisite Task to the dependent Task. For each pair of different
-    stacks the two Tasks build in, a dependency is lacking when no dependency relationship that
-    starts at the dependent stack, or at an entry it holds, ends at the prerequisite stack or at
-    an entry that one holds. A matrix that cannot be read or written, or that refuses a
-    relationship, raises ``MatrixError``.
-
-    Args:
-        deps: The mapper's edges.
-        built: The entries each Task builds, by Task name (:func:`built_by_task`).
-
-    Returns:
-        ``recorded``: each relationship added, with the edge it states. ``notRecorded``: each
-        lacking dependency no registered kind can state between what the two Tasks build, with
-        the edge, the two stacks and the kinds tried.
-
-    """
-
-    def change(matrix: Matrix) -> dict[str, JsonValue]:
-        recorded: list[JsonValue] = []
-        left: list[JsonValue] = []
-        edge: TaskDepsEdge
-        for edge in deps["edges"]:
-            prerequisites: dict[EntryId, list[EntryId]] = _by_stack(matrix, built.get(edge["from"], ()))
-            dependents: dict[EntryId, list[EntryId]] = _by_stack(matrix, built.get(edge["to"], ()))
-            for dependent, starts in dependents.items():
-                held: set[EntryId] = {
-                    found.stack
-                    for found in dependencies(matrix, [dependent])
-                    if found.depth == DIRECT and found.stack is not None
-                }
-                for prerequisite, ends in prerequisites.items():
-                    if prerequisite == dependent or prerequisite in held:
-                        continue
-                    stated: LinkResult | None = _stated(matrix, edge, starts, ends)
-                    facts: dict[str, JsonValue] = {"from": edge["from"], "to": edge["to"], "kind": edge["kind"]}
-                    if stated is None:
-                        tried: list[JsonValue] = list(RELATIONSHIPS_OF[edge["kind"]])
-                        left.append({**facts, "dependent": dependent, "prerequisite": prerequisite, "tried": tried})
-                    else:
-                        recorded.append({**facts, "relationship": stated["relationship"]})
-        return {"recorded": recorded, "notRecorded": left}
-
-    return update_matrix(matrix_path(None, os.environ), change)
 
 
 @script_step(EDGE_CLOSURE)
@@ -318,9 +154,8 @@ def listing(run: StepRun) -> Completion:
 def mapper(run: StepRun) -> AgentLaunch:
     """Build the session that maps the dependencies between Tasks of different Stories.
 
-    Accepting the mapper's result records in the matrix each dependency between two stacks that
-    it found and the matrix lacks, and the step is done only when the matrix has confirmed the
-    writes.
+    Accepting the mapper's result writes nothing into the matrix: the edges reach beads in the
+    edge write, and the beads edge alone carries build order.
 
     Returns:
         The launch: the dependency file as output, checked against the schema narrowed to the
@@ -332,14 +167,10 @@ def mapper(run: StepRun) -> AgentLaunch:
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         try:
-            found: TaskDeps = parse_task_deps(strict_json(output))
+            parse_task_deps(strict_json(output))
         except TaskDepsError as exc:
             raise accepted.tools.failure(MAPPER, OTHER_CAUSE, {"taskDeps": str(output), "error": str(exc)}) from exc
-        built: dict[str, list[EntryId]] = accepted.tools.portfolio(MAPPER, built_by_task, span)
-        recorded: dict[str, JsonValue] = accepted.tools.portfolio(MAPPER, record_dependencies, found, built)
-        return Completion(
-            artifacts=(file_artifact(TASK_DEPS, output), value_artifact(DEPENDENCIES_RECORDED, recorded)),
-        )
+        return Completion(artifacts=(file_artifact(TASK_DEPS, output),))
 
     return AgentLaunch(
         output=run.context.work / "task-deps.json",

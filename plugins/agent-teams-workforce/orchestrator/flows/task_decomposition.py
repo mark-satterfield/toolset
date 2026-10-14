@@ -198,7 +198,8 @@ def _write_context(
     """Write the task context file of one repository's Story.
 
     Returns:
-        The file, and the items of what the Story builds. The file holds the Tasks that exist,
+        The file, and the items of what the Story builds, unchanged from the span's items (an
+        event's item keeps its ``trigger`` and ``publishedBy``). The file holds the Tasks that exist,
         the stacks the Story builds in with the open work of other Epics on each, the shared
         capabilities, and ``dependsOn`` and ``consumedBy`` (``repo_scoping.build_context``):
         what the Tasks depend on or use, never work.

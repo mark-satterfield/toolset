@@ -114,6 +114,9 @@ SIZE_KEYS: Final[tuple[str, ...]] = (
 )
 
 
+#: The words an event's trigger opens with in the matrix, compared in lower case.
+_TRIGGER_OPENING: Final[str] = "published when "
+
 #: The slug of an artifact whose item name yields no slug characters; a slug, not an artifact kind.
 _FALLBACK_ARTIFACT_SLUG: Final[str] = "page"
 
@@ -458,10 +461,13 @@ class Task:
     cds_bundles: list[str] = field(default_factory=list)
     cds_artifacts: list[dict[str, str]] = field(default_factory=list)
     matrix_elements: list[str] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
+    """Each event the Task cites, as :func:`event_text` renders it."""
 
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
         check_type(self.matrix_elements, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.events, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.key, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.repo_path, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.title, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1036,6 +1042,83 @@ def stated_ids(matrix: Matrix, built: Sequence[str]) -> list[str]:
     return list(dict.fromkeys([*stacks, *built, *shared]))
 
 
+def _when(trigger: str) -> str:
+    """Read the condition an event's trigger states, without its opening words.
+
+    Returns:
+        The trigger with a leading "Published when" removed, so a line that supplies its own
+        "when" reads once.
+
+    """
+    stated: str = trigger.strip()
+    if stated.lower().startswith(_TRIGGER_OPENING):
+        return stated[len(_TRIGGER_OPENING) :].strip()
+    return stated
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def publisher_names(published_by: Sequence[str], names: Mapping[str, str]) -> list[str]:
+    """Name the publishers of an event as a line about it shows them.
+
+    Args:
+        published_by: The event item's ``publishedBy``: item ids of what the Epic builds, or
+            matrix ids.
+        names: The name of each item id that can be named.
+
+    Returns:
+        Each publisher as ``<name> (<item id>)`` when it is an item that can be named, otherwise
+        its id as given, in order.
+
+    """
+    return [f"{names[publisher]} ({publisher})" if publisher in names else publisher for publisher in published_by]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def event_text(item_id: str, name: str, publishers: Sequence[str], trigger: str) -> str:
+    """Render one event a Story or a Task builds: the fact, who publishes it and when.
+
+    Args:
+        item_id: The event's item id.
+        name: The event's name.
+        publishers: Its publishers, as :func:`publisher_names` names them.
+        trigger: The event's trigger, the purpose the matrix gives it.
+
+    Returns:
+        ``<item id>: <name>, published by <publishers> when <trigger>``.
+
+    Raises:
+        ValueError: The event names no publisher or its trigger is empty.
+
+    """
+    when: str = _when(trigger)
+    if not publishers or not when:
+        message: str = f"the event {item_id} ({name}) does not name its publisher and when it is triggered"
+        raise ValueError(message)
+    return f"{item_id}: {name}, published by {', '.join(publishers)} when {when}"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def event_lines(items: Mapping[str, StoryBuild]) -> dict[str, str]:
+    """Render each event among what the Epic's Stories build.
+
+    An event that names no publisher or no trigger raises ``ValueError`` from :func:`event_text`.
+
+    Args:
+        items: What every Story of the Epic builds, by item id.
+
+    Returns:
+        Each event's item id with its line (:func:`event_text`); an item that carries no
+        ``trigger`` is not an event and has none.
+
+    """
+    names: dict[str, str] = {key: item["element"] for key, item in items.items()}
+    return {
+        key: event_text(key, item["element"], publisher_names(item.get("publishedBy", []), names), item["trigger"])
+        for key, item in items.items()
+        if "trigger" in item
+    }
+
+
 @dataclass(frozen=True)
 class _TaskSources:
     options: ReadTaskOptions
@@ -1047,6 +1130,8 @@ class _TaskSources:
     elements: dict[str, str]
     matrix: Matrix | None
     """The matrix, read when a Task builds an entry of it; None when nothing the Story builds names one."""
+    events: dict[str, str]
+    """The line of each event the Epic's Stories build, by item id (:func:`event_lines`)."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1076,7 +1161,6 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         or not (isinstance(options, ReadTaskOptions))
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    slug: str = options.slug
     saved: dict[str, contracts.JsonValue] = _read_json(files.tasks_file)
     if not isinstance(saved.get("tasks"), list):
         msg: str = f"{files.tasks_file.name} holds no `tasks` list"
@@ -1091,15 +1175,16 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
     scores: dict[str, contracts.JsonObject] = _unique_scores(saved.get("scores"), copies)
     nodes: list[str] = [check_type(t["key"], str) for t in unique]
     edges, left = _acyclic(nodes, [], list(edges))
-    _WARNINGS.extend(f"tasks-{slug}.json: the edge {frm} -> {to} closes a cycle; dropped" for frm, to in left)
+    _WARNINGS.extend(f"tasks-{options.slug}.json: the edge {frm} -> {to} closes a cycle; dropped" for frm, to in left)
     order: list[str] | None = build_order(nodes, edges)
     if order is None:
         message: str = "Task edges remain cyclic after normalization"
         raise HierarchyError(message)
+    every_build: dict[str, StoryBuild] = story_builds(files.scope)
     elements: dict[str, str] = {
         key: item["matrixId"]
-        for key, item in story_builds(files.scope).items()
-        if "matrixId" in item and item["slug"] == slug
+        for key, item in every_build.items()
+        if "matrixId" in item and item["slug"] == options.slug
     }
     sources: _TaskSources = _TaskSources(
         options,
@@ -1112,6 +1197,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         else {},
         elements,
         read_matrix(matrix_path(None, os.environ)) if elements else None,
+        event_lines(every_build),
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}
     return [_read_task(key, _task_document(by_key[key]), sources) for key in order]
@@ -1217,6 +1303,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         spec_sections=list(t.spec_sections),
         requirement_ids=list(t.requirement_ids),
         matrix_elements=stated_ids(sources.matrix, built) if sources.matrix is not None else built,
+        events=list(dict.fromkeys(sources.events[item] for item in t.requirement_ids if item in sources.events)),
         decision_ids=list(t.decision_ids) or list(sources.options.story_decision_ids),
         surfaces=surfaces,
         test_strategy=sources.strategy,

@@ -11,6 +11,7 @@ writer, and a rerun repairs it, because every write is keyed.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -110,9 +111,20 @@ from bead_metadata import (
     KEY_TEST_STRATEGY,
     UNKNOWN,
 )
+from matrix_contract import (
+    AUTHORITY_SIDE,
+    FAMILY_DEPENDENCY,
+    REL_CALLS,
+    REL_CONSUMES,
+    REL_IMPORTS,
+    REL_READS,
+    REL_RUNS_IN,
+    family_kinds,
+)
+from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from placement_contract import KEY_ITEM_ID, PlacementError, PlacementRuling, parse_placement_ruling
 from recon_contract import DESIGN_SOURCES, DesignSource
-from task_deps_contract import KIND_INFRASTRUCTURE
+from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_EVENT_FLOW, KIND_INFRASTRUCTURE
 
 #: The metadata keys the build lane writes on a Task; any of them set means the Task was started.
 _BUILD_LANE_KEYS: Final[frozenset[str]] = frozenset((*BUILD_LIFECYCLE_KEYS, *CDS_AUDIT_KEYS))
@@ -122,6 +134,15 @@ _ARGUMENT_ERROR: str = "Arguments violate the beadwrite input contract"
 
 
 OPEN = "open"
+
+#: The Task edge kind each architecture-side relationship between two built items makes, first match wins.
+_EDGE_KIND: Final[dict[str, str]] = {
+    REL_CONSUMES: KIND_EVENT_FLOW,
+    REL_CALLS: KIND_CONTRACT,
+    REL_IMPORTS: KIND_CONTRACT,
+    REL_READS: KIND_DATA,
+    REL_RUNS_IN: KIND_INFRASTRUCTURE,
+}
 
 #: The priority `bd create` gives a bead when none is passed.
 DEFAULT_PRIORITY = 2
@@ -245,6 +266,10 @@ def contract_block(task: Task, root: Path | None) -> str:
         f"Spec sections:\n{listed(task.spec_sections)}",
         f"Requirement ids: {', '.join(task.requirement_ids) or '(none)'}",
         f"Matrix ids (stack, entries built, shared capabilities used):\n{listed(task.matrix_elements)}",
+    ]
+    if task.events:
+        lines.append(f"Events built (each with its publisher):\n{listed(task.events)}")
+    lines += [
         f"Surfaces: {surfaces}",
         f"Test strategy: {_strategy_line(task.test_strategy)}",
         f"Definition of Done:\n{listed(task.definition_of_done)}",
@@ -1453,6 +1478,8 @@ class _ClosureContext:
     builds: dict[str, list[str]]
     task_slug: dict[str, str]
     slug_story: dict[str, str]
+    matrix: Matrix
+    """The matrix, which states the relationship between an item and an item it requires."""
 
 
 def _closure_context(span: SpanStories) -> _ClosureContext:
@@ -1478,7 +1505,41 @@ def _closure_context(span: SpanStories) -> _ClosureContext:
             name: str = f"S{index + 1}-{task.key}"
             task_slug[name] = files.slug
             builds[name] = task.requirement_ids
-    return _ClosureContext(story_builds(span.scope), no_code, builds, task_slug, slug_story)
+    return _ClosureContext(
+        story_builds(span.scope),
+        no_code,
+        builds,
+        task_slug,
+        slug_story,
+        read_matrix(matrix_path(None, os.environ)),
+    )
+
+
+def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[str, str]:
+    """Name the kind of a closure edge from the relationship the architecture side states.
+
+    Args:
+        item: The item a Task builds.
+        requirement: The item it requires, which a Task of another Story builds.
+        context: The closure's facts, with the matrix.
+
+    Returns:
+        The Task edge kind the first relationship of :data:`_EDGE_KIND` between the two entries
+        maps to (infrastructure when none of them is stated), and the relationship kinds found,
+        joined; empty when the matrix states none.
+
+    """
+    start: str = context.detailed[item].get("matrixId", "")
+    end: str = context.detailed[requirement].get("matrixId", "")
+    if not start or not end:
+        return KIND_INFRASTRUCTURE, ""
+    stated: set[str] = {
+        relationship.kind
+        for relationship in context.matrix.outgoing(as_entry_id(start), family_kinds(FAMILY_DEPENDENCY))
+        if relationship.end == end and relationship.side == AUTHORITY_SIDE
+    }
+    kinds: list[str] = [kind for relation, kind in _EDGE_KIND.items() if relation in stated]
+    return (kinds[0] if kinds else KIND_INFRASTRUCTURE), ", ".join(sorted(stated))
 
 
 def _required_builders(name: str, item: str, requirement: str, context: _ClosureContext) -> tuple[list[str], list[str]]:
@@ -1547,13 +1608,15 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
                 for requirement in requires.get(item, []):
                     found, missing = _required_builders(name, item, requirement, context)
                     warnings.extend(missing)
+                    kind, relation = _edge_kind(item, requirement, context)
                     for source in [builder for builder in found if (builder, name) not in seen]:
                         seen.add((source, name))
                         edges.append({
                             "from": source,
                             "to": name,
-                            "kind": KIND_INFRASTRUCTURE,
-                            "reason": f"{item} requires {requirement} (the delta's prerequisite closure)",
+                            "kind": kind,
+                            "reason": f"{item} requires {requirement} "
+                            f"({relation or 'no relationship stated'}; the delta's prerequisite closure)",
                         })
     return {
         "ok": True,

@@ -68,6 +68,7 @@ KEY_NOTE: Final = "note"
 KEY_OK: Final = "ok"
 KEY_PATH: Final = "path"
 KEY_PREREQUISITES: Final = "prerequisites"
+KEY_PUBLISHED_BY: Final = "publishedBy"
 KEY_REASON: Final = "reason"
 KEY_REFUSALS: Final = "refusals"
 KEY_REPOSITORY: Final = "repository"
@@ -83,6 +84,7 @@ KEY_SUBJECT_REFUSALS: Final = "subjectRefusals"
 KEY_SUMMARY: Final = "summary"
 KEY_TARGET_DIR: Final = "targetDir"
 KEY_TARGET_HASHES: Final = "targetHashes"
+KEY_TRIGGER: Final = "trigger"
 KEY_UNNAMED: Final = "unnamed"
 KEY_VIEW_TYPE: Final = "view_type"
 KEY_VIEWS: Final = "views"
@@ -208,6 +210,8 @@ class DeltaItem(TypedDict):
     evidence: NotRequired[list[str]]
     reason: NotRequired[str]
     closure: NotRequired[str]
+    trigger: NotRequired[str]
+    publishedBy: NotRequired[list[str]]
 
 
 class DeltaSummary(TypedDict):

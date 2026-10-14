@@ -24,7 +24,10 @@ names every path of the Epic's architecture work: the PRD, the architecture root
 architect's state and result files, the TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the architect's step and the check that follows it.
+Architecture container, the architect's step and the check that follows it. Those two plans are
+also registered as what the lane plans under the container, so a check step planned under an
+earlier key is replanned to the current key when the run opens the journal, even while the
+architect's step is still pending and the open-run step plans nothing new.
 
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
@@ -47,18 +50,22 @@ repositories and, for an event, its publishers, the constraints that apply to th
 `atw-matrix impact --id <id>` itself for an entry it means to change. The session is granted the work folder and no folder of the architecture or of
 the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
 before it writes its result.
-Its output is the architecture result at the path the context file names. The step that accepts
-the result records in the matrix what the result states of the Epic's features (`servedBy`,
-`realizedBy`, `supportedBy`, and `covers` from each document heading that describes a feature) and
-fails when the result names an entry the matrix does not hold, when the matrix does not then show a
-requirement as served by the feature the result names, when a requirement is neither served by a
-feature nor listed under the result's `noFeature`, or when `repo_scoping.story_build_problems`
-reports a problem with the result's `addedOrChangedElements` (what the Epic's Stories build): an id
-the matrix lacks, an entry not on the architecture side, a kind other than service, component,
-infrastructure or event, an event with `externalSource`, an entry the architecture side places in
-no stack (for an event, one whose publishers are homed in no stack or in more than one), or a
-stack of the `marketing` app. Each problem goes to the architect as its correction. It records the file `architecture result` and
-the values `conclusion` and `requirements with no feature`.
+Its output is the architecture result at the path the context file names. The session's output
+check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
+result's `addedOrChangedElements` (what the Epic's Stories build): an id the matrix lacks, an entry
+not on the architecture side, a kind other than service, component, infrastructure or event, an
+event with `externalSource`, an entry the architecture side places in no stack (for an event, one
+whose publishers are homed in no stack or in more than one), or a stack of the `marketing` app;
+then it records the design in an in-memory copy of the matrix, which is never written, and compares
+it with what `atw-matrix epic` returns from that copy: an entry the result names that the matrix does
+not hold, a requirement the copy does not show as served by the feature the result names, a
+requirement neither served by a feature nor listed under the result's `noFeature`. Each problem is
+one sentence of the error the check raises, and goes to the architect as its correction (the
+session's one corrective resume). The step that accepts the result then makes the write: it records
+in the matrix what the result states of the Epic's features (`servedBy`, `realizedBy`,
+`supportedBy`, and `covers` from each document heading that describes a feature), and fails only
+when the matrix written does not hold it. It records the file `architecture result` and the values
+`conclusion` and `requirements with no feature`.
 
 The same launch builder serves every step the architect performs: the first, its "Finish", a
 correction after the mechanical check or after findings, and a competing design the lead plans. A
@@ -80,7 +87,7 @@ adds a last child step "Finish". When its session ends, the runner reads the jou
 |---|---|---|---|
 | a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`; an event is never in it: its stack is its publisher's) |
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the request's `changes` state or a drafted TRD's answer lists under `requirements`, with `statedIn` and `appliesTo`, and one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
-| `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step runs `sync-documents --paths` on the documents written |
+| `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check, the review and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 
 The TRD is drafted early by `trd-author` at the architect's request and updated in place.
 

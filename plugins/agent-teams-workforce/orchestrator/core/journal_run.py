@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -50,6 +51,7 @@ from .tools import Tools
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import (
     STATUS_DONE,
+    STATUS_PLANNED,
     STATUS_RUNNING,
     Artifact,
     BeadId,
@@ -156,6 +158,122 @@ def _held_session(journal: Journal, step: Step, launch: AgentLaunch) -> str | No
     return held
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unhandled_steps(journal: Journal, registry: Registry) -> list[Step]:
+    """List the steps a run would reach that the registry holds no code for.
+
+    Returns:
+        In walk order, each step without child steps that is not done and names a script key or
+        an agent the registry has no handler or launch builder for.
+
+    """
+    return [
+        step
+        for step in step_journal.steps_in_order(journal)
+        if not step["steps"]
+        and step["status"] != STATUS_DONE
+        and ("script" in step or "agent" in step)
+        and not registry.handles(step)
+    ]
+
+
+def _nested_plans(plans: Sequence[StepPlan]) -> dict[str, tuple[StepPlan, ...]]:
+    """Index the child plans a lane states up front by the description of their container.
+
+    Returns:
+        For each plan, at any depth, that states child steps: its description and those plans.
+
+    """
+    found: dict[str, tuple[StepPlan, ...]] = {
+        plan["description"]: tuple(plan["steps"]) for plan in plans if plan.get("steps")
+    }
+    children: tuple[StepPlan, ...]
+    for children in list(found.values()):
+        found = {**_nested_plans(children), **found}
+    return found
+
+
+def _plans_at(place: str | None, plans: Sequence[StepPlan], registry: Registry) -> tuple[StepPlan, ...]:
+    """Name the lane's current plans at one place of the journal.
+
+    Args:
+        place: The description of the container, or None for the outermost steps.
+        plans: The outermost plans of the lane, with the child plans it states up front.
+        registry: The registry, which holds the plans a flow makes under a container as it runs.
+
+    Returns:
+        The outermost plans; else the container's child plans the lane states up front; else
+        those a flow registered for the container; else none.
+
+    """
+    if place is None:
+        return tuple(plans)
+    return _nested_plans(plans).get(place) or registry.plans_under(place)
+
+
+def _current_plan(journal: Journal, step: Step, plans: Sequence[StepPlan], registry: Registry) -> StepPlan | None:
+    """Find the lane's current plan for the position a step holds.
+
+    A step's position is its container and its place among the siblings of its kind: the n-th
+    script step of a container is planned by the n-th script plan the lane makes there, and the
+    n-th agent step by the n-th agent plan.
+
+    Returns:
+        That plan, or None when the lane makes no plan of the step's kind at that place.
+
+    """
+    parent: Step | None = step_journal.parent_step(journal, step["id"])
+    siblings: list[Step] = journal["steps"] if parent is None else parent["steps"]
+    kind: str = "script" if "script" in step else "agent"
+    ordinal: int = [sibling["id"] for sibling in siblings if kind in sibling].index(step["id"])
+    place: str | None = None if parent is None else parent["description"]
+    candidates: list[StepPlan] = [plan for plan in _plans_at(place, plans, registry) if kind in plan]
+    return candidates[ordinal] if ordinal < len(candidates) else None
+
+
+def _take_plan(step: Step, plan: StepPlan) -> None:
+    """Give a planned step the key or agent, the description and the purpose of a plan."""
+    step["description"] = plan["description"]
+    step["purpose"] = plan["purpose"]
+    if "script" in plan:
+        step["script"] = plan["script"]
+        return
+    if "agent" in plan:
+        step["agent"] = plan["agent"]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def replan_unhandled(journal: Journal, plans: Sequence[StepPlan], registry: Registry) -> list[StepId]:
+    """Replan each planned step the registry holds no code for from the lane's current plan.
+
+    Only a step that has not started is changed: it takes the script key or agent, the
+    description and the purpose of the plan the lane makes now at its position, when the
+    registry holds the code of that plan. Its id, inputs and status stay. A step that has
+    started or is done is never changed.
+
+    Args:
+        journal: The journal; changed in place.
+        plans: The outermost plans of the lane, with the child plans it states up front.
+        registry: The code of the steps and the plans flows make under containers.
+
+    Returns:
+        The ids of the steps replanned, in walk order.
+
+    """
+    stale: list[Step] = [step for step in unhandled_steps(journal, registry) if step["status"] == STATUS_PLANNED]
+    found: list[tuple[Step, StepPlan | None]] = [
+        (step, _current_plan(journal, step, plans, registry)) for step in stale
+    ]
+    usable: list[tuple[Step, StepPlan]] = [
+        (step, plan) for step, plan in found if plan is not None and registry.handles(plan)
+    ]
+    step: Step
+    plan: StepPlan
+    for step, plan in usable:
+        _take_plan(step, plan)
+    return [step["id"] for step, _ in usable]
+
+
 class JournalRunner:
     """Runs the steps of one bead's journal, in order, from the first that is not done."""
 
@@ -181,7 +299,22 @@ class JournalRunner:
         """Run every step that is not done, in order, until none is left.
 
         A step that fails raises what it raised, after the failure is recorded in the journal.
+
+        Raises:
+            StepError: Before any step runs, when a step that is not done names a script key or
+                an agent the registry holds no code for; the evidence names every such step.
+
         """
+        unhandled: list[Step] = unhandled_steps(step_journal.read_journal(self.path), self.registry)
+        if unhandled:
+            raise StepError(
+                stage_of(unhandled[0]),
+                OTHER_CAUSE,
+                tuple(
+                    f"step {step['id']} ({step['description']}): no code is registered for {stage_of(step)!r}"
+                    for step in unhandled
+                ),
+            )
         while self.run_next():
             pass
 
@@ -410,7 +543,10 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
 ) -> JournalRunner:
     """Create a bead's journal when its file does not exist, and return the runner for it.
 
-    An existing journal is left exactly as it is: it alone says where the run begins. A journal
+    An existing journal alone says where the run begins. Of its steps, only a step that has not
+    started and names a script key or agent the registry holds no code for is changed: it is
+    replanned from the lane's current plan for its position (:func:`replan_unhandled`), so a
+    journal written before a key was renamed runs the step as the lane plans it now. A journal
     that cannot be created, read or validated raises ``StepJournalError``.
 
     Args:
@@ -430,4 +566,7 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
     path: Path = step_journal.journal_path(directory, bead)
     if not path.is_file():
         step_journal.create_journal(path, step_journal.new_journal(bead, bead_type, pipeline, plans))
+        return JournalRunner(path, agents, tools, registry)
+    if replan_unhandled(step_journal.read_journal(path), plans, registry):
+        step_journal.update_journal(path, lambda journal: replan_unhandled(journal, plans, registry))
     return JournalRunner(path, agents, tools, registry)

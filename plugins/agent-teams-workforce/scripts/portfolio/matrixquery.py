@@ -177,13 +177,18 @@ class Applied(TypedDict):
     """The side that states the constraint applies."""
 
 
-class ConstraintView(TypedDict):
-    """One constraint that binds some entries."""
+class BriefConstraint(TypedDict):
+    """One constraint that binds some entries, without the entries its selector names."""
 
     constraint: View
     statedIn: list[Described]
     appliesTo: list[Applied]
     """The entries asked about that the constraint names with a relationship."""
+
+
+class ConstraintView(BriefConstraint):
+    """One constraint that binds some entries."""
+
     selected: list[EntryId]
     """The entries asked about that the constraint's selector names."""
 
@@ -304,7 +309,8 @@ class EpicBrief(TypedDict):
 
     epic: EpicView
     features: list[FeatureBrief]
-    constraints: list[ConstraintView]
+    constraints: list[BriefConstraint]
+    """Each constraint without its ``selected`` list: every realizer already carries its stack."""
     noStack: list[EntryId]
     """The realizers the architecture side places in no stack."""
 
@@ -617,6 +623,21 @@ def _dependency(matrix: Matrix, dependency: Dependency) -> DependencyView:
     }
 
 
+def _brief_constraint(matrix: Matrix, reach: ConstraintReach) -> BriefConstraint:
+    """Render one constraint that binds some entries, without the entries its selector names.
+
+    Returns:
+        The constraint, the documents and headings it is stated in, and the entries it names
+        with a relationship.
+
+    """
+    return {
+        "constraint": _entry_view(matrix.entry(reach.constraint)),
+        "statedIn": [_described(matrix, source) for source in reach.sources],
+        "appliesTo": [{"entry": applying.end, "side": applying.side} for applying in reach.applied],
+    }
+
+
 def _constraint(matrix: Matrix, reach: ConstraintReach) -> ConstraintView:
     """Render one constraint that binds some entries.
 
@@ -624,10 +645,11 @@ def _constraint(matrix: Matrix, reach: ConstraintReach) -> ConstraintView:
         The constraint, the documents and headings it is stated in, and the entries it reached.
 
     """
+    brief: BriefConstraint = _brief_constraint(matrix, reach)
     return {
-        "constraint": _entry_view(matrix.entry(reach.constraint)),
-        "statedIn": [_described(matrix, source) for source in reach.sources],
-        "appliesTo": [{"entry": applying.end, "side": applying.side} for applying in reach.applied],
+        "constraint": brief["constraint"],
+        "statedIn": brief["statedIn"],
+        "appliesTo": brief["appliesTo"],
         "selected": list(reach.selected),
     }
 
@@ -902,7 +924,7 @@ def epic_brief(matrix: Matrix, bead: str) -> EpicBrief:
             for feature in reach.features
         ],
         "constraints": [
-            _constraint(matrix, found) for found in constraints_for(matrix, [epic, *reach.features, *realizers])
+            _brief_constraint(matrix, found) for found in constraints_for(matrix, [epic, *reach.features, *realizers])
         ],
         "noStack": [entry_id for entry_id in realizers if authority_holder(matrix, entry_id) is None],
     }

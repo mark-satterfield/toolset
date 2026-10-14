@@ -318,10 +318,6 @@ def output_check(validate: Callable[[object, str], object]) -> Callable[[Path], 
     return check
 
 
-result_validator: Final[Callable[[Path], dict[str, JsonValue]]] = output_check(validate_architecture_result)
-"""The output check of a session that writes the architecture result."""
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def agents_with_role(plugin: Path, role: str) -> tuple[str, ...]:
     """Name the agents of a plugin whose definition states one role.

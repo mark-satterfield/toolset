@@ -130,10 +130,10 @@ Bead writes: `edgeset.apply_edges` (order as in the Epic spec, edge type `blocks
 `storyedges.story_edges` (Story edges and `KEY_STORY_OWNED_BLOCKERS`,
 `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`), then the `wsjf-scoring`
 writes. The proposal's `elements` are written into the Task's `matrix_elements` key
-(`beads-contract.py metadata set`) only when the Task states none. Matrix writes: one
-`atw-matrix link` for each of the proposal's `stackDependencies` the matrix lacks, as role
-`script`; the result's `matrix` holds what was recorded and each refused call. No vault writes,
-no commits, no ledger events.
+(`beads-contract.py metadata set`) only when the Task states none. No matrix writes: the
+mapper's edges and `stackDependencies` are never written into the matrix, whose architecture
+side only arc42 (through `sync-documents`) and the architect's recorded design write; the beads
+edge alone carries build order. No vault writes, no commits, no ledger events.
 
 Result: as the Epic spec's, with `task` in place of `epic`, and the headline carrying the Story
 edge outcome.

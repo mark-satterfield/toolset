@@ -70,6 +70,10 @@ building has started; a second Task is never created, so the step is safe to run
 invalidation. A Task's edges onto the Tasks of the same Story it depends on are written with it,
 which is why the steps run in build order.
 
+A Task's description ends with its build contract. For each event the Task cites, the contract
+lists it the way the Story document does: `E<n>: <name>, published by <publishers> when
+<trigger>`, from the event item's `trigger` and `publishedBy`.
+
 The same step creates the Task's journal (pipeline `build`) with its first step done and holding
 the files `spec`, `data model`, `criteria`, `ui sources` when present, `TRD`, `story document` and
 `tasks`, and the value `task key`, the Task's key in the Tasks file.

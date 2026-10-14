@@ -17,8 +17,8 @@ first step of the outermost step "Specs and Stories"; its script key is still
   are handed the TRD file.
 - The matrix (`atw-matrix`'s file), used only to find each item's stack on the architecture side
   (`matrixtraverse.authority_holder`) and that stack's repository, the documents that describe
-  it (`describedBy`), the architecture-side publishers of an event, and the architecture-side
-  dependency relationships between the items.
+  it (`describedBy`), an event's purpose and architecture-side publishers (as information on its
+  item), and the architecture-side dependency relationships between the items.
 - The project's naming rules (`.resource-naming.yaml`, resource `repository` from
   `stackName`), for the repository of a stack that names none.
 - The repository inventory (`polyrepo inventory`; `polyrepo inventory --name <name>` for the one
@@ -28,16 +28,26 @@ first step of the outermost step "Specs and Stories"; its script key is still
 
 ## What the Story builds
 
-`story_build_entries` is the result's ids, plus, for each event among them, the services and
-components the architecture side says publish it: an event is a fact with a meaning (its name,
-its publisher and when it is triggered) and is built as part of the service that publishes it,
-never as a Story or Task of its own. Each entry becomes one item (`story_builds`): its id
-(`E<n>`), its matrix id, its name, the documents that describe it, kind `implementation-gap`, the
-repository of the stack the architecture side places it in (`authority_holder`: for an event, the
-one stack its publishers are homed in), the evidence `[<matrix id>, "architecture result"]`, and
-the items it requires and is required by. `requires` is the other items its dependency-family
-relationships on the architecture side reach directly; a repository-side relationship never makes
-a `requires`, and a dependency on something no Story builds is context, not an item.
+`story_build_entries` is the result's ids and nothing more: what a Story builds is what the
+architect names as new or changed. An event is a fact with a meaning (its name, its publisher and
+when it is triggered) and is built as part of the service that publishes it, never as a Story or
+Task of its own; its publishers are not added as work. Each entry becomes one item
+(`story_builds`): its id (`E<n>`), its matrix id, its name, the documents that describe it, kind
+`implementation-gap`, the repository of the stack the architecture side places it in
+(`authority_holder`: for an event, the one stack its publishers are homed in), the evidence
+`[<matrix id>, "architecture result"]`, and the items it requires and is required by. An event's
+item also carries, as information:
+
+- `trigger`: the event entry's purpose, which states when it is triggered ("Published when ...").
+- `publishedBy`: each architecture-side publisher, as the id of the item that builds it when one
+  in the same item set does, else as its matrix id.
+
+`requires` is the other items its dependency relationships on the architecture side reach
+directly, publishing and routing an event left out (`BUILD_DEPENDENCY_KINDS`: an event is built
+with its publisher, so neither needs the other first); a repository-side relationship never makes
+a `requires`, and a dependency on something no Story builds is context, not an item. The same
+kinds are what `build_context` follows for `dependsOn`, so an event the Story's own service
+publishes is never handed to the Tasks as a dependency.
 
 Everything else the Epic reaches in the matrix is context: the Tasks are handed it as what they
 depend on or use (`task-decomposition.md`), never as work.
@@ -47,7 +57,8 @@ depend on or use (`task-decomposition.md`), never as work.
 `story_build_problems` reports, one sentence each, a text that is not a matrix id, and an entry
 of `story_build_entries` that the matrix lacks, that is not on the architecture side, whose kind
 is not service, component, infrastructure or event, that is an event with `externalSource`
-(SkillSpoke does not build it), that the architecture side places in no stack (for an event:
+(SkillSpoke does not build it), that is an event whose purpose is empty (it does not say when it
+is triggered), that the architecture side places in no stack (for an event:
 its publishers are homed in no stack, or in more than one), or whose stack's `app` is
 `marketing`. The architect's step refuses such a result (`architecture.md`); the span raises the
 same problems again as a backstop. The step also fails when the architecture adds or changes

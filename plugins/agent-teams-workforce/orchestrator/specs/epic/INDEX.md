@@ -20,7 +20,12 @@ Path placeholders:
 
 A step of the Epic's journal is cited by its script key (for example `prd_to_spec.open_run`) or by
 its agent. The journal alone decides where a run begins: no file below is read to decide whether a
-step runs again. A step is handed each file it reads as an artifact of a step its `inputs` name;
+step runs again. When a run opens an existing journal, each step without child steps that has not
+started and whose script key or agent has no code in the registry is replanned from the lane's
+current plan for its position (`journal_run.replan_unhandled`: the key or agent, description and
+purpose; its id and inputs stay); a step that has started or is done is never changed. Before the
+first step runs, the run checks every step without child steps that is not done against the
+registry and fails with one error naming every key that still has no code. A step is handed each file it reads as an artifact of a step its `inputs` name;
 the Consumers column gives that artifact's name where the step reads it by name.
 
 The Format column names each file's contract; it never restates fields. A schema file named there
@@ -60,7 +65,7 @@ is under `<plugin>/skills/artifact-handoff/schemas/`.
 | the answer file a TRD request names | `trd-author` | `aws-solutions-architect` (the obligations with no source); the step that accepts it, which records one `constraint` for each of a drafted TRD's `requirements` and each `noSource` obligation | JSON: `trd-answer.schema.json` |
 | a write request file (under `<arch-work>/helpers/`) | `aws-solutions-architect` | `architecture-maintainer`; the script, which launches a maintainer left running from it | JSON: `write-request.schema.json` |
 | the result file a write request names | `architecture-maintainer` | `aws-solutions-architect` (entries below architecture level go to the TRD or `notesForSpecs`) | JSON: `write-result.schema.json` |
-| `<arch>/arc42/**` except section 2 (edits; `lifecycle_state: effective`, commit and push after review) | `architecture-maintainer` (edits, `in-review`); step `atw-matrix sync-documents; atw-matrix commit` (sets `effective`, commits and pushes in the vault) | every later reader of the effective documents: the architecture team, `trd-author`, the spec authors, and the next Epic's architect | arc42 Markdown; git commits in the vault |
+| `<arch>/arc42/**` except section 2 (edits; `lifecycle_state: effective`, commit and push after review) | `architecture-maintainer` (edits; the step that accepts its result sets each document it wrote `in-review` before `sync-documents --paths`); step `atw-matrix sync-documents; atw-matrix commit` (sets `effective`, commits and pushes in the vault) | every later reader of the effective documents: the architecture team, `trd-author`, the spec authors, and the next Epic's architect | arc42 Markdown; git commits in the vault |
 | `<arch-work>/check-<n>.json` | step `atw-matrix check; atw-matrix review-scope` (`<n>` is the number of corrections before it) | `aws-solutions-architect` as `findings`, in the correction step planned when the check is not valid | JSON: `check-result.schema.json` |
 | `<arch-work>/review-scope.json` | step `atw-matrix check; atw-matrix review-scope` | step `atw-matrix sync-documents; atw-matrix commit` (the documents to set effective and commit) | JSON: what `atw-matrix review-scope --epic` prints (`matrixreview.ReviewScope`: `epic`, `requirements`, `features`, `documents[{ id, kind, name, side, lifecycle, headings, reachedBy }]`) |
 | `<arch-work>/unlinked.json` | step `atw-matrix check; atw-matrix review-scope` | none: evidence of the links with nothing recorded at the other end | JSON: what `atw-matrix epic <id> --unlinked` prints (`matrixquery.EpicView`) |

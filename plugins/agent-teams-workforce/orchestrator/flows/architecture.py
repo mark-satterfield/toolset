@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import (
     TRD_CHANGE_REMOVE,
+    ArchitectureWorkError,
     validate_architecture_result,
     validate_specialist_answer,
     validate_specialist_request,
@@ -47,12 +48,13 @@ from matrix_contract import (
 )
 from matrixquery import epic_brief, epic_view
 from matrixstore import as_entry_id, make_id, name_key, read_matrix, slug, update_matrix
-from matrixsync import sync_documents
+from matrixsync import LIFECYCLE_IN_REVIEW, relative_path, set_lifecycle, sync_documents, vault_root
 from matrixtraverse import epic_id
 from matrixwrite import link, put
 
+from orchestrator.core.agents import strict_json
 from orchestrator.core.io import json_object, write_json
-from orchestrator.core.journal_registry import agent_step
+from orchestrator.core.journal_registry import agent_step, plan_under
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
     AgentLaunch,
@@ -65,6 +67,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.flows.architecture_check import check_step
 from orchestrator.flows.architecture_files import (
+    ARCHITECTURE,
     ARTIFACT_CHECK,
     ARTIFACT_CONCLUSION,
     ARTIFACT_REVIEW,
@@ -102,13 +105,12 @@ from orchestrator.flows.architecture_files import (
     matrix_file,
     output_check,
     read_context,
-    result_validator,
 )
 from orchestrator.flows.repo_scoping import story_build_problems
 from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from architecture_work_contract import (
         ArchitectureResult,
@@ -160,8 +162,30 @@ class Recorded:
     """The requirements the result file lists as having no feature."""
 
 
+def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
+    """Plan the architect's first step.
+
+    Returns:
+        The plan, handed the steps ``inputs`` names.
+
+    """
+    return {
+        "ref": ARCHITECT_REF,
+        "description": ARCHITECT_DESCRIPTION,
+        "purpose": ARCHITECT_PURPOSE,
+        "agent": architect,
+        "inputs": inputs,
+    }
+
+
 def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequence[StepId] = ()) -> StepGroup:
     """Plan the architect's step and the check after it, under the Architecture container.
+
+    The same two plans are registered as what this lane plans under the container
+    (``journal_registry.plan_under``). A journal written before the check's key was renamed
+    therefore has its planned check step replanned to the current ``CHECK`` when the run opens
+    the journal (``journal_run.replan_unhandled``), whether or not a step of the architect is
+    still pending, which is when this group is left out.
 
     Args:
         opened: The open-run step, whose artifacts the planned steps are handed.
@@ -176,19 +200,19 @@ def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequ
         not done.
 
     """
-    plan: StepPlan = {
-        "ref": ARCHITECT_REF,
-        "description": ARCHITECT_DESCRIPTION,
-        "purpose": ARCHITECT_PURPOSE,
-        "agent": architect,
-        "inputs": [opened, *earlier],
-    }
     return StepGroup(
-        (NewStep(plan), check_step([ARCHITECT_REF], corrections=0)),
+        (NewStep(_architect_plan(architect, [opened, *earlier])), check_step([ARCHITECT_REF], corrections=0)),
         UNDER_CONTAINER,
         container,
         unless_agent=architect,
     )
+
+
+plan_under(
+    ARCHITECTURE,
+    _architect_plan(agents_with_role(PLUGIN, ROLE_ARCHITECT)[0], []),
+    check_step([ARCHITECT_REF], corrections=0).plan,
+)
 
 
 def _epic_brief(bead: str) -> dict[str, JsonValue]:
@@ -356,10 +380,7 @@ def _record_result(bead: str, result: ArchitectureResult) -> Recorded:
     """Record an architecture result in the matrix and compare it with what ``epic`` then returns.
 
     Returns:
-        What was recorded, with one more problem for each requirement the result says a feature
-        serves that the matrix does not show as served by it, and one for each requirement the
-        matrix shows with no feature that the result does not list as having none; and the
-        requirements the matrix shows with no feature.
+        :func:`_compared` on the matrix as the write left it.
 
     """
 
@@ -367,7 +388,38 @@ def _record_result(bead: str, result: ArchitectureResult) -> Recorded:
         return _record_design(matrix, bead, result)
 
     recorded: Recorded = update_matrix(matrix_file(), change)
-    view: EpicView = epic_view(read_matrix(matrix_file()), bead)
+    return _compared(read_matrix(matrix_file()), bead, recorded)
+
+
+def _result_problems(bead: str, result: ArchitectureResult) -> list[str]:
+    """Find what the matrix could not hold of an architecture result, without writing the matrix.
+
+    What the Epic's Stories build is checked against the matrix as it is
+    (``repo_scoping.story_build_problems``); then the design is recorded in an in-memory copy of
+    the matrix, which is never written, and compared with what ``epic`` returns from that copy.
+
+    Returns:
+        One sentence per problem: the story-build problems, then what the recording and the
+        comparison found. Empty when the result can be accepted.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    unbuildable: list[str] = story_build_problems(matrix, bead, result["addedOrChangedElements"])
+    recorded: Recorded = _compared(matrix, bead, _record_design(matrix, bead, result))
+    return [*unbuildable, *recorded.problems]
+
+
+def _compared(matrix: Matrix, bead: str, recorded: Recorded) -> Recorded:
+    """Compare what was recorded of an architecture result with what ``epic`` returns from a matrix.
+
+    Returns:
+        What was recorded, with one more problem for each requirement the result says a feature
+        serves that the matrix does not show as served by it, and one for each requirement the
+        matrix shows with no feature that the result does not list as having none; and the
+        requirements the matrix shows with no feature.
+
+    """
+    view: EpicView = epic_view(matrix, bead)
     shown: set[tuple[JsonValue, JsonValue]] = {
         (stated["requirement"].get("id"), feature.get("id"))
         for stated in view["requirements"]
@@ -391,16 +443,25 @@ def _record_result(bead: str, result: ArchitectureResult) -> Recorded:
     )
 
 
-def _build_problems(bead: str, added_or_changed: Sequence[str]) -> list[str]:
-    """Check what the architect's result says the Epic's Stories build, against the matrix as it is now.
+def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
+    """Build the output check of a session that writes the architecture result.
 
     Returns:
-        ``repo_scoping.story_build_problems``: one sentence per id that is not a service,
-        component, piece of infrastructure or SkillSpoke event the architecture side places in
-        a stack outside the marketing app.
+        A check that reads the output as strict JSON, validates it with its contract, then runs
+        :func:`_result_problems`. Each problem is one line of the ``ArchitectureWorkError`` it
+        raises, which sends the session to its one correction.
 
     """
-    return story_build_problems(read_matrix(matrix_file()), bead, added_or_changed)
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        result: ArchitectureResult = validate_architecture_result(document, str(path))
+        problems: list[str] = run.tools.portfolio(run.inputs.stage, _result_problems, str(run.bead), result)
+        if problems:
+            raise ArchitectureWorkError("\n".join(problems))
+        return document
+
+    return check
 
 
 @agent_step(*agents_with_role(PLUGIN, ROLE_ARCHITECT))
@@ -429,18 +490,11 @@ def architect(run: StepRun) -> AgentLaunch:
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
         recorded: Recorded = accepted.tools.portfolio(accepted.inputs.stage, _record_result, str(accepted.bead), result)
-        unbuildable: list[str] = accepted.tools.portfolio(
-            accepted.inputs.stage,
-            _build_problems,
-            str(accepted.bead),
-            result["addedOrChangedElements"],
-        )
-        if recorded.problems or unbuildable:
+        if recorded.problems:
             raise ArchitectureStepError(
                 accepted,
                 f"the matrix does not hold what the architecture result {output} states",
                 *recorded.problems,
-                *unbuildable,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
         return Completion(
@@ -453,7 +507,7 @@ def architect(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=Path(context["resultPath"]),
-        validate=result_validator,
+        validate=result_check(run),
         outcome="The architecture result of this PRD.",
         accept=accept,
         add_dirs=(run.context.work,),
@@ -718,12 +772,22 @@ def _written_paths(arch: Path, request: WriteRequest, written: WriteResult) -> l
 
 
 def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
-    """Bring the entries of the named documents up to date, as ``atw-matrix sync-documents --paths`` does.
+    """Set the named documents in review, then bring their entries up to date.
+
+    Each named document that exists is set ``in-review`` in its front matter
+    (``matrixsync.set_lifecycle``), so the check, the review and the promotion of this run reach
+    it; then the entries are synced as ``atw-matrix sync-documents --paths`` does. A named
+    document that is gone is not set; the sync removes its entry.
 
     Returns:
         What the read did.
 
     """
+    vault: Path = vault_root(arch)
+    present: list[str] = [relative for relative in paths if (arch / relative).is_file()]
+    relative: str
+    for relative in present:
+        set_lifecycle(vault, relative_path(arch / relative, vault), LIFECYCLE_IN_REVIEW)
 
     def change(matrix: Matrix) -> DocumentsSynced:
         return sync_documents(matrix, arch, paths=paths)
@@ -735,8 +799,8 @@ def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
 def maintainer(run: StepRun) -> AgentLaunch:
     """Build the session of the document maintainer the architect left running.
 
-    The accepted result is mirrored in the matrix: the entry of each document written is brought
-    up to date with its headings and lifecycle, and the entry of a document that is gone is
+    The accepted result is mirrored in the matrix: each document written is set in review and its
+    entry is brought up to date with its headings and lifecycle, and the entry of a document that is gone is
     removed. The session is granted the architecture root, where it writes the arc42 documents.
 
     Returns:

@@ -208,11 +208,16 @@ def _scope_kinds(matrix: Matrix, scope: ReviewScope) -> set[ScopeKind]:
     return kinds
 
 
-def _open_review(bead: str) -> tuple[ReviewScope, set[ScopeKind], EpicView]:
+def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, set[ScopeKind], EpicView]:
     """Read from the matrix what the review of an Epic is handed.
 
     Nothing is changed: a document's lifecycle mirrors its arc42 front matter, so what is in
-    review is what ``atw-matrix review-scope`` returns.
+    review is what ``atw-matrix review-scope`` returns, with the documents that describe what
+    the architect's result adds or changes.
+
+    Args:
+        bead: The Epic.
+        added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
         The review scope, the kinds of content it holds, and what ``atw-matrix epic --unlinked``
@@ -220,7 +225,7 @@ def _open_review(bead: str) -> tuple[ReviewScope, set[ScopeKind], EpicView]:
 
     """
     matrix: Matrix = read_matrix(matrix_file())
-    scope: ReviewScope = review_scope(matrix, bead)
+    scope: ReviewScope = review_scope(matrix, bead, added_or_changed)
     return scope, _scope_kinds(matrix, scope), epic_view(matrix, bead, unlinked=True)
 
 
@@ -389,7 +394,12 @@ def check(run: StepRun) -> Completion:
     scope: ReviewScope
     present: set[ScopeKind]
     unlinked: EpicView
-    scope, present, unlinked = run.tools.portfolio(CHECK, _open_review, str(run.bead))
+    scope, present, unlinked = run.tools.portfolio(
+        CHECK,
+        _open_review,
+        str(run.bead),
+        result["addedOrChangedElements"],
+    )
     recorded.extend(_review_files(folder, scope, unlinked))
     lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
     if result["conclusion"] == CONCLUSION_UNSETTLED and lead_resolved(run, lead) is None:

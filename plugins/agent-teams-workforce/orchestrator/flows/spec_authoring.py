@@ -26,13 +26,11 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
-from matrix_contract import AUTHORITY_SIDE, REL_DESCRIBED_BY, EntryId
-from matrixquery import Described, EpicView, RepositoryReach, StoryScope, epic_view, story_scope
-from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
-from matrixtraverse import ATTR_HEADING
-from matrixwrite import link
+from matrixquery import story_scope
+from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
+from matrixtraverse import ATTR_APP
 from recon_contract import KEY_MOCKS_DIR
-from target_contract import KEY_ELEMENT, KEY_ID
+from target_contract import KEY_ELEMENT, KEY_ID, KEY_MATRIX_ID, KEY_PUBLISHED_BY, KEY_TRIGGER
 from typeguard import check_type
 
 from orchestrator.core import step_journal
@@ -95,17 +93,25 @@ from orchestrator.flows.elaboration_files import (
     strings,
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import item_stacks, shared_capabilities
+from orchestrator.flows.repo_scoping import (
+    MARKETING_APP,
+    BuildContext,
+    build_context,
+    item_stacks,
+    shared_capabilities,
+)
 from orchestrator.flows.spec_authoring_ui import normalize_ui
-from orchestrator.flows.trd_authoring import cited, document
+from orchestrator.flows.trd_authoring import document
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
 from step_journal_contract import BEAD_TYPE_STORY, BeadId
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
+    from matrix_contract import Entry, EntryId
+    from matrixquery import Described, StoryScope
     from step_journal_contract import Artifact, Step, StepPlan
 
     from orchestrator.core.models import OutputValidator
@@ -114,7 +120,6 @@ WORK_UI: Final = "ui-sources"
 WORK_DOCUMENT: Final = "document"
 """What a step of an author agent, planned by the repository context step, does."""
 DECISION_IDS: Final = "decision ids"
-CITATIONS_RECORDED: Final = "citations recorded in the matrix"
 KEY_STACKS: Final = "stacks"
 """The member of the repository context that lists the ids of the stacks the Story builds in."""
 STORY_SUMMARY: Final = "story write"
@@ -131,6 +136,10 @@ CRITERIA_OUTCOME: Final = "Acceptance criteria and definition of done for the sa
 UI_SCHEMA: Final = "skills/artifact-handoff/schemas/spec-ui.schema.json"
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 TASKS_PURPOSE: Final = "The Story has Tasks that name what to build"
+STORY_KEY_PREFIX: Final = "S"
+"""The prefix of a Story's key: the span keys its Stories ``S<n>`` in the order it names their repositories."""
+MARKETING_REPOSITORY: Final = f"{MARKETING_APP}-"
+"""The prefix of the name of a repository of the marketing app."""
 
 
 def nonempty(path: Path) -> None:
@@ -374,24 +383,57 @@ def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue
     return rows
 
 
-def _other_stacks(view: EpicView, stacks: Sequence[EntryId]) -> list[RepositoryReach]:
-    """Keep the stacks of an Epic's closure that a Story does not build in.
+def items_by_story(every_build: Mapping[str, JsonValue]) -> dict[str, list[JsonValue]]:
+    """Group what every Story of the Epic builds by the Story's key.
+
+    The span plans one Story per repository, keyed ``S<n>`` in the order its placements name the
+    repositories; the items of what the Stories build list the repositories in that order.
+
+    Args:
+        every_build: What every Story builds (``hierarchy.story_builds``), by item id.
 
     Returns:
-        The closure's repositories, each with the stacks outside the Story; a repository left
-        with none is dropped.
+        Each storyKey with the items of what its Story builds.
 
     """
-    outside: list[RepositoryReach] = []
-    reached: RepositoryReach
-    for reached in view.get("closure", {}).get("repositories", []):
-        kept: RepositoryReach = {
-            "repository": reached["repository"],
-            "stacks": [found for found in reached["stacks"] if found["stack"].get("id") not in stacks],
-        }
-        if kept["stacks"]:
-            outside.append(kept)
-    return outside
+    slugs: list[str] = list(dict.fromkeys(str(json_object(item)["slug"]) for item in every_build.values()))
+    keys: dict[str, str] = {slug: f"{STORY_KEY_PREFIX}{index}" for index, slug in enumerate(slugs, 1)}
+    grouped: dict[str, list[JsonValue]] = {key: [] for key in keys.values()}
+    for item in every_build.values():
+        grouped[keys[str(json_object(item)["slug"])]].append(item)
+    return grouped
+
+
+def _marketing(matrix: Matrix, stack: str | None, repository_name: str | None) -> bool:
+    """Report whether a stack or repository belongs to the marketing app, which no step reads or changes.
+
+    Returns:
+        True when the stack's ``app`` is the marketing app or the repository is a marketing one.
+
+    """
+    found: Entry | None = None if stack is None else matrix.find(as_entry_id(stack))
+    app: JsonValue = None if found is None else found.attributes.get(ATTR_APP)
+    return app == MARKETING_APP or (repository_name or "").startswith(MARKETING_REPOSITORY)
+
+
+def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mapping[str, JsonValue]) -> BuildContext:
+    """List what a Story depends on and who consumes its events, without the marketing app.
+
+    Args:
+        matrix: The matrix.
+        built: The items of what this Story builds.
+        every_build: What every Story of the Epic builds, by item id.
+
+    Returns:
+        ``repo_scoping.build_context`` for the Story, keeping only the rows whose stack and
+        repository are not of the marketing app.
+
+    """
+    found: BuildContext = build_context(matrix, built, items_by_story(every_build))
+    return {
+        "dependsOn": [row for row in found["dependsOn"] if not _marketing(matrix, row["stack"], row["repository"])],
+        "consumedBy": [row for row in found["consumedBy"] if not _marketing(matrix, row["stack"], row["repository"])],
+    }
 
 
 @script_step(SPEC_CONTEXT)
@@ -401,8 +443,9 @@ def context(run: StepRun) -> Completion:
     What the Story is handed about the architecture comes from the matrix: for each stack the
     Story builds in, what ``atw-matrix story-scope`` returns (the documents and headings that
     describe the stack and each entry, the constraints that bind them and the shared
-    capabilities they must use); and from ``atw-matrix epic --closure``, the Epic's stacks
-    outside the Story.
+    capabilities they must use); and from ``repo_scoping.build_context``, what the Story depends
+    on outside what it builds and the consumers of the events it builds, each with its stack and
+    repository, none of the marketing app.
 
     Returns:
         The repository, its context file and the PRD as artifacts, with the repository's other
@@ -427,7 +470,7 @@ def context(run: StepRun) -> Completion:
     scopes: list[StoryScope] = [
         run.tools.portfolio(SPEC_CONTEXT, story_scope, matrix, stack, built) for stack, built in stacks.items()
     ]
-    closure: EpicView = run.tools.portfolio(SPEC_CONTEXT, epic_view, matrix, run.bead, closure=True)
+    depended: BuildContext = run.tools.portfolio(SPEC_CONTEXT, story_context, matrix, items, every_build)
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     path: Path = run.context.work / f"spec-{held.slug}.context.json"
     write_json(
@@ -440,7 +483,8 @@ def context(run: StepRun) -> Completion:
             KEY_STACKS: list(stacks),
             "scopes": scopes,
             "documents": _scope_documents(architecture_root(run), scopes),
-            "otherStacks": _other_stacks(closure, list(stacks)),
+            "dependsOn": depended["dependsOn"],
+            "consumedBy": depended["consumedBy"],
             "sharedCapabilities": shared_capabilities(run, SPEC_CONTEXT, items),
             "notesForSpecs": read_result(run, read_context(run))["notesForSpecs"],
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
@@ -521,50 +565,11 @@ def normalize(run: StepRun) -> Completion:
     return Completion(artifacts=(file_artifact(UI_SOURCES, path), value_artifact(WARNINGS, normalized["warnings"])))
 
 
-def record_citations(output: Path, stacks: Sequence[EntryId]) -> list[JsonValue]:
-    """Record, on each stack a Story builds in, the document headings its spec document cites.
-
-    A spec document cites its headings for the Story as a whole, so each is recorded as a
-    ``describedBy`` relationship from the stack, on the architecture side, where no side states
-    it already. A citation that names no heading records nothing. A matrix that cannot be read or
-    written raises ``MatrixError``, and a document whose citations do not resolve raises
-    ``DocumentValidationError``.
-
-    Args:
-        output: The spec document, whose ``decisionIds`` are the citations.
-        stacks: The ids of the stacks the Story builds in.
-
-    Returns:
-        One row per relationship added: the stack, the document and the heading.
-
-    """
-
-    def change(matrix: Matrix) -> list[JsonValue]:
-        added: list[JsonValue] = []
-        citation: str
-        for citation in document(output, matrix)[0]:
-            found: tuple[EntryId, str] | None = cited(matrix, citation)
-            if found is None or not found[1]:
-                continue
-            stack: EntryId
-            for stack in stacks:
-                stated: bool = any(
-                    describing.end == found[0] and describing.attributes.get(ATTR_HEADING) == found[1]
-                    for describing in matrix.outgoing(stack, (REL_DESCRIBED_BY,))
-                )
-                if not stated:
-                    link(matrix, REL_DESCRIBED_BY, stack, found[0], AUTHORITY_SIDE, {ATTR_HEADING: found[1]})
-                    added.append({"stack": stack, "document": found[0], "heading": found[1]})
-        return added
-
-    return update_matrix(matrix_path(None, os.environ), change)
-
-
 def spec_document(run: StepRun) -> AgentLaunch:
     """Build the session that writes one spec document of a repository.
 
-    Accepting the contracts or the data model records in the matrix each document heading the
-    document cites, and the step is done only when the matrix has confirmed the writes.
+    The document's citations stay in the document and on the Story (``decisionIds``); nothing is
+    recorded in the matrix, whose architecture side only arc42 and the architect write.
 
     Returns:
         The launch: the document at its file in the work directory, with its own check.
@@ -574,14 +579,8 @@ def spec_document(run: StepRun) -> AgentLaunch:
     name: str = DOCUMENT_OF[run.step.get("agent", "")]
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, name, held.path)
 
-    def accept(accepted: StepRun, output: Path) -> Completion:
-        if name == CRITERIA:
-            return Completion(artifacts=(file_artifact(name, output),))
-        stacks: list[EntryId] = [
-            as_entry_id(stack) for stack in strings(strict_json(accepted.inputs.file(CONTEXT))[KEY_STACKS])
-        ]
-        recorded: list[JsonValue] = accepted.tools.portfolio(name, record_citations, output, stacks)
-        return Completion(artifacts=(file_artifact(name, output), value_artifact(CITATIONS_RECORDED, recorded)))
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(name, output),))
 
     return AgentLaunch(
         output=document_file(run, held, name),
@@ -607,6 +606,35 @@ def ui_section(run: StepRun) -> Completion:
     return Completion(artifacts=(file_artifact(SPEC, spec),))
 
 
+def built_line(item: Mapping[str, JsonValue], names: Mapping[str, str], matrix: Matrix) -> str:
+    """Render one thing a Story builds, as its Story document lists it.
+
+    An event that names no publisher or no trigger raises ``ValueError`` from
+    ``hierarchy.event_text``.
+
+    Args:
+        item: The item, as the repository context lists it.
+        names: The name of each item of the Story, by item id.
+        matrix: The matrix, which gives the purpose of an item that is not an event.
+
+    Returns:
+        For an event (an item with a ``trigger``), ``<id>: <name>, published by <publishers>
+        when <trigger>``; for any other item, ``<id>: <name>: <purpose>``, or ``<id>: <name>``
+        when the matrix gives it no purpose.
+
+    """
+    item_id: str = check_type(item[KEY_ID], str)
+    name: str = check_type(item[KEY_ELEMENT], str)
+    trigger: JsonValue = item.get(KEY_TRIGGER)
+    if isinstance(trigger, str):
+        published_by: list[str] = strings(item.get(KEY_PUBLISHED_BY) or [])
+        return hierarchy.event_text(item_id, name, hierarchy.publisher_names(published_by, names), trigger)
+    matrix_id: JsonValue = item.get(KEY_MATRIX_ID)
+    found: Entry | None = matrix.find(as_entry_id(matrix_id)) if isinstance(matrix_id, str) else None
+    purpose: str = "" if found is None else found.purpose.strip()
+    return f"{item_id}: {name}: {purpose}" if purpose else f"{item_id}: {name}"
+
+
 @script_step(STORY_DOCUMENT_STEP)
 def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
@@ -624,11 +652,12 @@ def story_document(run: StepRun) -> Completion:
     )
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
     items: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(CONTEXT))["items"])
+    names: dict[str, str] = {check_type(item[KEY_ID], str): check_type(item[KEY_ELEMENT], str) for item in items}
     lines: list[str] = [
         f"Repository: {held.path}",
         "",
         "What the Story builds:",
-        *(f"- {item[KEY_ID]}: {item[KEY_ELEMENT]}" for item in items),
+        *(f"- {built_line(item, names, matrix)}" for item in items),
         "",
         "Specifications:",
         *(f"- {path}" for path in documents),
