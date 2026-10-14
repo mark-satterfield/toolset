@@ -4725,6 +4725,7 @@ class _NamesPlan:
     waits_on: dict[str, list[str]]
     documents: _Documents | None = None
     keep_src: set[str] = dataclasses.field(default_factory=set)
+    branch_slug: str = SHARED_BRANCH_SLUG
 
     def holders(self) -> list[str]:
         """Name the repositories whose names change, as they are called after the rename.
@@ -4742,7 +4743,7 @@ class _NamesPlan:
             The slug.
 
         """
-        return self.subjects[0].new.lower() if len(self.subjects) == 1 else SHARED_BRANCH_SLUG
+        return self.subjects[0].new.lower() if len(self.subjects) == 1 else self.branch_slug
 
 
 def _sweep_git(repo: Path, args: Sequence[str]) -> tuple[int, str, str]:
@@ -5066,6 +5067,7 @@ def _rename_names(
         res["names_error"] = str(exc)
         steps.append(f"stack and Python names NOT planned: {exc}")
         return False
+    plan.branch_slug = args.branch_slug or SHARED_BRANCH_SLUG
     lines = _names_lines(plan)
     steps.extend(lines or ["stack and Python names: already what atw-naming gives, no reference to update"])
     res["names"] = _names_record(plan)
@@ -7398,6 +7400,10 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
         action="append",
         default=[],
         help="a repository whose references are reported and not edited (repeatable)",
+    )
+    s.add_argument(
+        "--branch-slug",
+        help="name of the branch and worktree a run of several repositories shares (default python-layout)",
     )
     s.add_argument(
         "--keep-src",

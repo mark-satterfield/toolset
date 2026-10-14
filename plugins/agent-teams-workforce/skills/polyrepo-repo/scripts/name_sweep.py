@@ -754,7 +754,7 @@ def _edit_file(root: Path, rel: str, rules: Sequence[Rule], excludes: Sequence[s
             total += n
             kinds.add(r.kind)
             labels.add(r.label)
-    if not total:
+    if not total or text == original:
         return None
     if write:
         path.write_bytes(text.encode("utf-8"))
@@ -788,7 +788,7 @@ def sweep_repo(
     live = [r for r in rules if r.only_in in {None, target.label}]
     if not live:
         return []
-    args = ["grep", "--null", "-l", "-I", "-F"]
+    args = ["grep", "--null", "-l", "-I", "-i", "-F"]
     for needle in sorted({r.needle for r in live}):
         args += ["-e", needle]
     if target.paths:
