@@ -921,7 +921,7 @@ def _sync_parsers(
     proposed: argparse.ArgumentParser = commands.add_parser(
         "seed-features",
         parents=[where, folder],
-        help="list the features the proposal files state",
+        help="list each proposed feature once, for the session that merges them so that one capability is one feature",
     )
     proposed.add_argument("--list", action="store_true", help="print one line's worth per proposed feature")
     proposed.add_argument("--proposals", nargs="+", help="the proposal files or folders; default: the seeding folder's")

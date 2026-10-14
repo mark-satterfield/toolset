@@ -50,8 +50,8 @@ Each question below is answered from the matrix alone, without reading documents
 | # | Question | Shape of the answer |
 |---|---|---|
 | Q1 | Which PRD belongs to this Epic, and which Epic to this PRD? | One Epic beads id with one PRD. |
-| Q2 | Which features does this PRD need? | For each requirement of the PRD, the features derived from it; and the requirements with no feature yet. |
-| Q3 | Does this feature, or one like it, already exist? | The matching features, each with the PRDs it serves. |
+| Q2 | Which features does this PRD need? | For each requirement of the PRD, the features that serve it; and the requirements with no feature yet. |
+| Q3 | Does this feature, or one like it, already exist? | The matching features, each with the Epics whose requirements it serves. |
 | Q4 | Which arc42 documents cover this requirement of this PRD, and which requirements have no covering document? | For each requirement, the documents that cover it and the feature that connects them; and the list of requirements with none. |
 | Q5 | Which requirements and constraints from other arc42 documents apply to this Epic? | A list of constraints, each with the document it comes from and what it applies to. |
 | Q6 | Which services, components and infrastructure implement this feature? | A list of them, each with the stack that is its home in code. |
@@ -91,7 +91,7 @@ This list is not complete.
 | Kind | What one is |
 |---|---|
 | Epic and PRD | One Epic, by its beads id, together with its PRD. Every Epic and its PRD is in the matrix. |
-| Feature | One capability. PRD requirements become features; a feature is what connects a PRD to architecture. |
+| Feature | One discrete capability of the product, recorded once (section 3.1.1). A feature is what connects requirements to architecture. |
 | Technical requirement or constraint | One obligation that architecture places on a design, including one that comes from an arc42 document other than the one that describes the feature. |
 | Architecture document | One arc42 document. |
 | Service, component, infrastructure | One thing the architecture documents describe. |
@@ -101,11 +101,44 @@ This list is not complete.
 | Layer | One AWS Lambda layer. It contains packages and is used by Lambdas. |
 | Repository | Where a stack's source can currently be found. An attribute of a stack. |
 
+### 3.1.1 What a feature is
+
+This section is the one full statement of what a feature is. Every other place states it
+briefly or points here.
+
+- A feature is one discrete capability of the product, stated as something the product can
+  do. Examples: "send an email", "export data to a file or files".
+- Each feature is recorded once and is unique. No two features name the same capability.
+- Features are derived from two sources: the requirements of Epics, and the architecture
+  (arc42). A capability the architecture provides that no requirement names is a feature.
+- One feature commonly serves several requirements, in one Epic or in different Epics.
+  Example: the requirement to send each customer a daily email according to their
+  preferences, and the requirement to let a customer reply by email to the person who
+  interviewed them, are both served by the one feature "send an email".
+- A feature is linked to the requirements it serves and reaches the Epic bead through them.
+  A requirement stays recorded under its Epic. A feature has no link of its own to an
+  Epic's document.
+- A feature is tied to the services, components and infrastructure that make it possible,
+  through the arc42 documents that describe it.
+
+The working test for telling features apart, applied wherever a feature is derived, named
+or merged:
+
+- A condition, quality or rule about how a capability behaves ("a sent message is kept when
+  its reply is slow") is a requirement or a constraint that a capability serves ("hold a
+  conversation with the agent"). It is not a feature of its own.
+- Two candidate features are one feature when the same part of the architecture would
+  provide both and a new requirement needing either would be answered by the same thing.
+- One candidate is several features when it bundles capabilities that different parts of the
+  architecture provide. "Manage the profile" is too coarse when the architecture has
+  distinct capabilities for entering, importing and exporting it.
+
 ### 3.2 The relationships
 
 Any kind can relate to many of any other. That is why it is a matrix.
 
-- A PRD has several features. A feature can serve several PRDs.
+- A requirement is served by one or more features. A feature commonly serves several
+  requirements, of one Epic or of different Epics.
 - A feature is implemented across several services and components in different stacks.
 - A shared service relates to many other services and to many PRDs.
 - An architecture document describes several features and several services, components and
@@ -199,8 +232,8 @@ the pipeline assumes, and it never blocks a step:
 
 | Point | What happens | Who records |
 |---|---|---|
-| Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that come from it; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
-| Filled in and corrected | As elaboration runs: the features derived from PRD requirements; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
+| Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that serve it, and every capability the effective arc42 documents provide that no requirement names, as a feature; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
+| Filled in and corrected | As elaboration runs: the features derived from the Epic's requirements and from the architecture; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
 | Confirmed | A stack and its components are marked verified, with the commit, once a Story's code has been built and tested and has passed, including its CI/CD and its CDK. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
@@ -209,9 +242,10 @@ the pipeline assumes, and it never blocks a step:
 **What seeding puts in the matrix.**
 
 1. Every open Epic in beads, each with its PRD.
-2. The features of each of those PRDs. Every requirement in a PRD is recorded, with the
-   feature or features that come from it. A feature is recorded once and linked to every PRD
-   requirement it serves, across PRDs.
+2. The features (section 3.1.1). Every requirement in a PRD is recorded, with the feature or
+   features that serve it. A capability the effective arc42 documents provide that no
+   requirement names is recorded as a feature too. A feature is recorded once and linked to
+   every requirement it serves, across Epics.
 3. Every effective arc42 document. From each one: every service, component and piece of
    infrastructure it describes, and the stack the document says each is in.
 4. Every known repository, the stacks each repository contains, and what is in each stack
@@ -221,7 +255,7 @@ the pipeline assumes, and it never blocks a step:
 now:
 
 - an Epic to its PRD;
-- a PRD requirement to the features that come from it;
+- a requirement to the features that serve it;
 - a feature to the arc42 documents that cover it;
 - an arc42 document to the services, components and infrastructure it describes;
 - each of those to its stack, and each stack to its repository;
@@ -292,12 +326,15 @@ for that Epic (Q13). Nothing is invented to fill it.
   has tested it and signed off. No Epic has completed elaboration with all of its Tasks
   built, and none is signed off, so a closed Epic in beads is one created in error and is
   not in the matrix.
-- **R7.** The matrix records features as things in their own right, each once, linked to
-  every PRD requirement it serves. PRDs overlap, and a feature recorded per PRD would be
-  designed again for each.
-- **R8.** The matrix records a feature that supports other features and is named by no PRD
-  in the same way as a feature a PRD names, because a shared capability is the one most
-  often re-invented.
+- **R7.** The matrix records features as things in their own right, as section 3.1.1 defines
+  one: each a discrete capability, each once and unique, linked to every requirement it
+  serves, in one Epic or in several. A feature reaches an Epic through the requirements it
+  serves and has no link of its own to an Epic's document. Requirements overlap, and a
+  feature recorded per requirement or per Epic would be designed again for each.
+- **R8.** The matrix records a feature derived from the architecture in the same way as a
+  feature a requirement names. That includes a capability the architecture provides that no
+  requirement names, and a feature that supports other features, because a shared
+  capability is the one most often re-invented.
 - **R9.** The matrix records coverage per requirement of a PRD: which arc42 documents cover
   that requirement. A PRD-level statement of coverage does not show which parts are missing.
 - **R10.** The matrix records the requirements and constraints that arc42 documents place on
@@ -394,11 +431,13 @@ for that Epic (Q13). Nothing is invented to fill it.
   pipeline run is long and expensive and must make real progress; and one absent link in the
   chain breaks the answer to which repositories are relevant to an Epic.
 - **R28.** The elaboration pipeline records, during the run that produces them: the features
-  it derives from PRD requirements, what the architect designs, and each new or changed
-  architecture document mapped to the feature it supports. The next Epic then finds them.
-  Seeding derives the features of the Epics that are open at seeding (R47); elaboration
-  derives the features of every Epic created after seeding, and adds to or corrects the
-  features of an Epic it runs.
+  it derives from the Epic's requirements and from the architecture (section 3.1.1), what
+  the architect designs, and each new or changed architecture document mapped to the feature
+  it supports. The next Epic then finds them. Seeding derives features from the requirements
+  of the Epics that are open at seeding and from the effective arc42 documents (R47);
+  elaboration derives the features of every Epic created after seeding, and adds to
+  or corrects the features of an Epic it runs, so that each stays one discrete capability
+  recorded once.
 - **R29.** An elaboration run that finds the matrix wrong corrects it in that run, so that
   the same error is not met again. A build or deploy run reports what it finds wrong and
   changes nothing but the verified mark (R46).
@@ -479,13 +518,14 @@ for that Epic (Q13). Nothing is invented to fill it.
 
 - **R47.** Seeding records four things, each in full as section 4.1 lists them: every open
   Epic in beads with its PRD; every requirement of each of those PRDs with the feature or
-  features that come from it, each feature recorded once and linked to every PRD requirement
-  it serves, across PRDs; every effective arc42 document with every service, component and
+  features that serve it, and every capability the effective arc42 documents provide that
+  no requirement names, each feature recorded once and linked to every requirement it
+  serves, across Epics (section 3.1.1); every effective arc42 document with every service, component and
   piece of infrastructure it describes and the stack the document says each is in; and every
   known repository with the stacks it contains and what is in each stack today, which is
   the code, packages, layers and CDK-defined infrastructure that are there now.
 - **R48.** Seeding establishes every link between those four that can be established now:
-  an Epic to its PRD; a PRD requirement to the features that come from it; a feature to the
+  an Epic to its PRD; a requirement to the features that serve it; a feature to the
   arc42 documents that cover it; an arc42 document to the services, components and
   infrastructure it describes; each of those to its stack, and each stack to its repository;
   each stack to what it depends on; and a thing arc42 describes to the thing in a repository

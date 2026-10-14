@@ -178,16 +178,26 @@ REPOSITORY_RESULT_HOLDS: Final = (
     RESULT_HOLDS + ' A component, an infrastructure entry or a layer found in a repository states "stack", the '
     "name of the stack that holds it; its id is then <kind>:<stack name>/<slug of the name>."
 )
+FEATURE_IS: Final = (
+    " A feature is one discrete capability of the product, named as something the product can do, recorded once: "
+    "no two features name the same capability, and one feature commonly serves several requirements, of one Epic "
+    "or of several. A condition, quality or rule about how a capability behaves is a requirement that capability's "
+    "feature serves, not a feature of its own."
+)
+"""What a feature is, in brief, for a seeding session: the matrix requirements define it (section 3.1.1)."""
 PROPOSAL_HOLDS: Final = (
     'One JSON object per PRD, in the file named: "epic", the beads id, and "requirements", a list of '
     '{"requirement", "features"} with one item per requirement listed here. "features" is a list of {"name", '
-    '"purpose", "documents"}, and "documents" a list of {"document", "heading"}. A requirement no feature comes '
-    'from has "features": [], and a feature no document covers has "documents": [].'
+    '"purpose", "documents"}, and "documents" a list of {"document", "heading"}. A requirement no feature serves '
+    'has "features": [], and a feature no document covers has "documents": [].' + FEATURE_IS
 )
 MERGE_HOLDS: Final = (
     'One JSON object: "features", a list of {"name", "purpose", "aliases", "proposed"}. "proposed" lists the '
     "proposed names that are this feature; the feature's own name need not be repeated in it. Every proposed "
-    "name is in exactly one feature."
+    "name is in exactly one feature. Two proposed features are one feature when they name the same capability: "
+    "the same part of the architecture would provide both. A proposed feature that bundles capabilities different "
+    "parts of the architecture provide is not merged into one of them. A proposed feature that is a feature the "
+    "matrix already holds takes that feature's name." + FEATURE_IS
 )
 _REQUIREMENT_NAME: Final[re.Pattern[str]] = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _NAME_SEPARATORS: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
@@ -247,7 +257,7 @@ class Anchor:
 
 @dataclass(frozen=True, slots=True)
 class ProposedFeature:
-    """One feature a proposal file says comes from a requirement."""
+    """One feature a proposal file says serves a requirement."""
 
     name: str
     purpose: str
