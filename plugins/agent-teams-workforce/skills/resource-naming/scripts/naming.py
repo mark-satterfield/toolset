@@ -8,6 +8,8 @@ pattern per resource type. This script only applies them, deterministically.
 Usage:
   naming.py name <resource-type> --project P [--team] [--domain X] [--<segment> VALUE ...]
   naming.py check <resource-type> <name> [--project P] [--<segment> VALUE ...]
+  naming.py name <resource-type> --repository NAME      (a resource with `from: repository`)
+  naming.py check <resource-type> <name> --repository NAME
   naming.py list
   naming.py where
 
@@ -21,12 +23,18 @@ Pattern grammar: `{segment}` is a value the caller supplies, `{segment|transform
 `lower`, `kebab`, `snake` or `upper_snake` to it, `[...]` is optional and is emitted only
 when every segment inside it is supplied, and everything else is literal. `{project}` is the
 name prefix of the project given with `--project` (required by `name` for every pattern that
-uses it), `{projectLower}` is that prefix lowercased and `{metricsNamespace}` is the project's
-metrics namespace. A segment declared with `flag: <word>` (the `team` qualifier) is a
+uses it), `{projectLower}` is that prefix lowercased, `{metricsNamespace}` is the project's
+metrics namespace and `{repoPrefix}` is the prefix of the project's repositories. A segment
+declared with `flag: <word>` (the `team` qualifier) is a
 value-less CLI flag that inserts that word. `check` accepts any project's prefix unless
 `--project` narrows it. A project may restrict `{type}` to the types of its categories.
 `check` also takes segment flags: each one given must be the value the name carries in that
-segment, after the pattern's transform (`check python-package <name> --domain dataAccess`).
+segment, after the pattern's transform (`check stack <name> --domain dataAccess`).
+
+A segment declared with a `pattern` is a compound value: the pattern splits it into a project
+and other segments. A resource declared with `from: <that segment>` takes that one flag and
+nothing else: `name` reads the project and the segments out of the value and renders the
+resource's pattern from them, and `check` requires the name to be exactly that result.
 
 Exit codes: 0 ok; 1 a name fails `check`, or `name` was given invalid input; 2 the config
 is missing or invalid, or the resource type is unknown.
@@ -80,7 +88,7 @@ TRANSFORM_REGEX: dict[str, str] = {
     "upper_snake": r"[A-Z0-9]+(?:_[A-Z0-9]+)*",
 }
 
-CONSTANTS = ("project", "projectLower", "metricsNamespace")
+CONSTANTS = ("project", "projectLower", "metricsNamespace", "repoPrefix")
 
 
 class NamingError(Exception):
@@ -256,7 +264,7 @@ def uses_constants(nodes: list[Node]) -> bool:
     """Tell whether a pattern uses a project constant anywhere.
 
     Returns:
-        True when `{project}`, `{projectLower}` or `{metricsNamespace}` appears.
+        True when `{project}`, `{projectLower}`, `{metricsNamespace}` or `{repoPrefix}` appears.
 
     """
     return any(
@@ -385,12 +393,18 @@ class Project:
 
 @dataclass(frozen=True)
 class Segment:
-    """One segment declaration: a value-less flag, an enum, or a style, in that precedence."""
+    """One segment declaration: a value-less flag, an enum, or a style, in that precedence.
+
+    A segment with a `pattern` is a compound value: `parts` is that pattern parsed, and it
+    splits a value into a project and other segments.
+    """
 
     flag: str | None
     enum: tuple[str, ...] | None
     style: str
     reject_words: frozenset[str]
+    pattern: str
+    parts: tuple[Node, ...]
 
 
 @dataclass(frozen=True)
@@ -423,6 +437,7 @@ def parse_project(source: Path, pid: str, spec: object) -> Project:
         c: as_strings(types, f"{where} category '{c}'")
         for c, types in as_mapping(entry.get("categories"), f"{where} categories").items()
     }
+    repo_prefix: str = str(entry.get("repo_prefix", prefix))
     return Project(
         constants={
             "project": prefix,
@@ -430,8 +445,9 @@ def parse_project(source: Path, pid: str, spec: object) -> Project:
             "metricsNamespace": str(
                 entry.get("metrics_namespace", prefix[:1].upper() + prefix[1:]),
             ),
+            "repoPrefix": repo_prefix,
         },
-        repo_prefix=str(entry.get("repo_prefix", prefix)),
+        repo_prefix=repo_prefix,
         categories=categories,
         types=frozenset(t for types in categories.values() for t in types),
     )
@@ -444,23 +460,38 @@ def parse_segment_specs(source: Path, seg_cfg: Mapping[str, object]) -> dict[str
         Segment name to its declaration.
 
     Raises:
-        ConfigError: If a segment is malformed or has neither an enum, a flag nor a known style.
+        ConfigError: If a segment is malformed, has neither an enum, a flag nor a known
+            style, or has a `pattern` that uses an undefined or a compound segment.
 
     """
     segments: dict[str, Segment] = {}
+    msg: str
+    where: str
     for name, spec in seg_cfg.items():
-        where: str = f"{source}: segment '{name}'"
+        where = f"{source}: segment '{name}'"
         entry: dict[str, object] = as_mapping(spec, where)
         style: str = str(entry.get("style", ""))
         if "enum" not in entry and "flag" not in entry and style not in STYLES:
-            msg: str = f"{where} needs enum, flag or a style in {sorted(STYLES)}"
+            msg = f"{where} needs enum, flag or a style in {sorted(STYLES)}"
             raise ConfigError(msg)
+        pattern: str = str(entry.get("pattern") or "")
         segments[name] = Segment(
             flag=str(entry["flag"]) if "flag" in entry else None,
             enum=tuple(as_strings(entry["enum"], f"{where} enum")) if "enum" in entry else None,
             style=style,
             reject_words=frozenset(w.lower() for w in as_strings(entry.get("reject_words"), f"{where} reject_words")),
+            pattern=pattern,
+            parts=tuple(parse_pattern(pattern)),
         )
+    for name, segment in segments.items():
+        where = f"{source}: segment '{name}'"
+        for part, _ in placeholders(list(segment.parts)):
+            if part not in segments:
+                msg = f"{where} pattern uses undefined segment '{part}'"
+                raise ConfigError(msg)
+            if segments[part].parts:
+                msg = f"{where} pattern uses '{part}', which has a pattern of its own"
+                raise ConfigError(msg)
     return segments
 
 
@@ -500,6 +531,31 @@ def parse_domains(source: Path, domain_cfg: object) -> tuple[list[Domain], dict[
     return domains, avoid
 
 
+def parse_source(segments: Mapping[str, Segment], where: str, nodes: list[Node], source: object) -> str | None:
+    """Validate the `from` of a resource: the compound segment its segments come from.
+
+    Returns:
+        The segment name, or None when the resource has no `from`.
+
+    Raises:
+        ConfigError: If `from` is not a segment with a pattern, or the resource's pattern
+            uses a segment that pattern does not supply.
+
+    """
+    if source is None:
+        return None
+    msg: str
+    if not isinstance(source, str) or source not in segments or not segments[source].parts:
+        msg = f"{where} from '{source}' is not a segment with a pattern"
+        raise ConfigError(msg)
+    supplied: set[str] = {s for s, _ in placeholders(list(segments[source].parts))}
+    missing: list[str] = sorted({s for s, _ in placeholders(nodes)} - supplied)
+    if missing:
+        msg = f"{where} uses {', '.join(missing)}, which segment '{source}' does not supply"
+        raise ConfigError(msg)
+    return source
+
+
 @dataclass
 class Resource:
     """One resource type from the config."""
@@ -512,6 +568,7 @@ class Resource:
     min_length: int
     max_length: int
     type_words: set[str] = field(default_factory=set)
+    derived_from: str | None = None
 
 
 class Rules:
@@ -569,7 +626,8 @@ class Rules:
 
         Raises:
             ConfigError: If the declaration is malformed, the pattern uses an undefined
-                segment, or an AWS resource ends in a literal that is not a permitted suffix.
+                segment, an AWS resource ends in a literal that is not a permitted suffix, or
+                `from` names a segment that cannot supply the pattern's segments.
 
         """
         msg: str
@@ -598,6 +656,7 @@ class Rules:
             as_int(entry.get("min_length"), 1, f"{where} min_length"),
             as_int(entry.get("max_length"), 0, f"{where} max_length"),
             {t.lower() for t in as_strings(entry.get("type_words"), f"{where} type_words")},
+            parse_source(self.segments, where, nodes, entry.get("from")),
         )
 
     def resource(self, key: str) -> Resource:
@@ -728,6 +787,52 @@ class Rules:
 
     # -- name ---------------------------------------------------------------------------
 
+    def derive(self, res: Resource, values: Mapping[str, str], pid: str | None) -> tuple[dict[str, str], str | None]:
+        """Resolve the segment values and the project a resource's name is built from.
+
+        A resource with no `from` is built from the values and the project as given. A
+        resource with `from` takes that one compound segment: its pattern splits the value
+        into the project and the segments the resource's pattern uses.
+
+        Returns:
+            The segment values the resource's pattern takes, and the project id.
+
+        Raises:
+            NamingError: If a `from` resource is given anything but its compound segment, or
+                the value does not match that segment's pattern.
+
+        """
+        source: str | None = res.derived_from
+        if source is None:
+            return dict(values), pid
+        msg: str
+        flag: str = kebab_flag(source)
+        if set(values) != {source}:
+            msg = f"'{res.key}' takes {flag} and no other segment: its segments come from that value"
+            raise NamingError(msg)
+        stated: str = values[source]
+        self.validate_segment(source, stated)
+        if pid:
+            self.project(pid)
+        spec: Segment = self.segments[source]
+        match: re.Match[str] | None = re.fullmatch(self.nodes_regex(list(spec.parts), pid), stated)
+        if match is None:
+            scope: str = f"project '{pid}'" if pid else "any project"
+            msg = f"{flag} '{stated}' does not match '{spec.pattern}' ({scope})"
+            raise NamingError(msg)
+        taken: set[str] = {s for s, _ in placeholders(res.nodes)}
+        derived: dict[str, str] = {}
+        owner: str | None = pid
+        for group, value in match.groupdict().items():
+            if value is None:
+                continue
+            kind, seg = group.split("_", 1)
+            if kind.startswith("c"):
+                owner = owner or next((p for p, proj in self.projects.items() if proj.constants[seg] == value), None)
+            elif seg in taken:
+                derived[seg] = value
+        return derived, owner
+
     def build_constants(self, res: Resource, pid: str | None) -> dict[str, str]:
         """Resolve the project constants a resource pattern needs.
 
@@ -810,6 +915,15 @@ class Rules:
             The regex.
 
         """
+        return self.nodes_regex(res.nodes, pid)
+
+    def nodes_regex(self, nodes: list[Node], pid: str | None = None) -> str:
+        """Compile parsed pattern nodes into an anchored regex with one group per placeholder.
+
+        Returns:
+            The regex; a segment's group is named `g<n>_<segment>`, a constant's `c<n>_<constant>`.
+
+        """
         counter: dict[str, int] = {"n": 0}
         projects: list[Project] = [self.projects[pid]] if pid else list(self.projects.values())
 
@@ -837,7 +951,7 @@ class Rules:
                     out += "(?:" + emit(n.children) + ")?"
             return out
 
-        return "^" + emit(res.nodes) + "$"
+        return "^" + emit(nodes) + "$"
 
     def pattern_violations(self, res: Resource, name: str, pid: str | None) -> list[str]:
         """Match a name against its resource pattern and check the matched segments.
@@ -1055,9 +1169,13 @@ def cmd_list(rules: Rules) -> None:
     sys.stdout.write("\n")
     width: int = max(len(k) for k in rules.resources)
     for key, res in rules.resources.items():
-        flags: str = " ".join(
-            (["--project"] if uses_constants(res.nodes) else [])
-            + [(f"[{kebab_flag(s)}]" if opt else kebab_flag(s)) for s, opt in placeholders(res.nodes)],
+        flags: str = (
+            kebab_flag(res.derived_from)
+            if res.derived_from is not None
+            else " ".join(
+                (["--project"] if uses_constants(res.nodes) else [])
+                + [(f"[{kebab_flag(s)}]" if opt else kebab_flag(s)) for s, opt in placeholders(res.nodes)],
+            )
         )
         sys.stdout.write(f"{key:<{width}}  {res.pattern:<55}  {flags}\n")
     if rules.domains:
@@ -1121,12 +1239,20 @@ def cmd_check(rules: Rules, kind: str, name: str, pid: str | None, expected: Map
         msg: str = "check needs a non-empty name"
         raise NamingError(msg)
     res: Resource = rules.resource(kind)
-    rules.check_segment_set(res, expected, partial=True)
-    seg: str
-    value: str
-    for seg, value in expected.items():
-        rules.validate_segment(seg, value)
-    reasons: list[str] = rules.violations(res, name, pid, expected)
+    reasons: list[str]
+    if res.derived_from is not None and expected:
+        want: str = rules.build(res, *rules.derive(res, expected, pid))
+        reasons = rules.violations(res, name, pid)
+        if name != want:
+            flag: str = kebab_flag(res.derived_from)
+            reasons.append(f"is not '{want}', the {kind} of {flag} '{expected[res.derived_from]}'")
+    else:
+        rules.check_segment_set(res, expected, partial=True)
+        seg: str
+        value: str
+        for seg, value in expected.items():
+            rules.validate_segment(seg, value)
+        reasons = rules.violations(res, name, pid, expected)
     if reasons:
         sys.stderr.write(f"FAIL {kind} '{name}':\n")
         for r in reasons:
@@ -1152,7 +1278,7 @@ def run_command(args: argparse.Namespace, rest: list[str]) -> int:
         sys.stdout.write(f"{rules.source}\n")
     elif command == "name":
         res: Resource = rules.resource(args.kind)
-        sys.stdout.write(f"{rules.build(res, parse_segments(rules, rest), args.project)}\n")
+        sys.stdout.write(f"{rules.build(res, *rules.derive(res, parse_segments(rules, rest), args.project))}\n")
     else:
         return cmd_check(rules, args.kind, args.name, args.project, parse_segments(rules, rest))
     return 0

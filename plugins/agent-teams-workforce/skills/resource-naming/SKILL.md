@@ -8,8 +8,8 @@ description: >-
   EventBridge bus, rule or schema, SQS queue or dead-letter queue, Secrets Manager secret,
   SSM parameter, VPC, subnet, security group, KMS alias, Cognito user pool or app client,
   Powertools service name or metrics namespace, environment variable, Python module file,
-  Python import package, Python distribution (the `name` in `pyproject.toml`), CDK stack
-  file or Lambda config file. Run `atw-naming name ...` to get the name and
+  Python import package and its folder under `src`, Python distribution (the `name` in
+  `pyproject.toml`), CDK stack file or Lambda config file. Run `atw-naming name ...` to get the name and
   `atw-naming check ...` to verify an existing one; never type a name from memory or by
   copying a neighbour.
 allowed-tools: [Bash]
@@ -57,9 +57,11 @@ atw-naming name lambda --project <project> --domain careerProfile --action score
 atw-naming name ssm --project <project> --namespace careerProfile --resource-type dynamodb --resource-name arn
 atw-naming check stack <name>                     # exit 0, or non-zero with reasons
 atw-naming check stack <name> --project <project> # also require that project's prefix
-atw-naming name python-package --domain dataAccess                   # a library's import package
-atw-naming check python-package <name> --domain dataAccess           # the name must carry that domain
+atw-naming name python-package --repository <repository-name>        # import name
+atw-naming name python-package-path --repository <repository-name>   # its folder under src
 atw-naming name python-distribution --repository <repository-name>   # pyproject.toml name
+atw-naming check python-package <name> --repository <repository-name>
+atw-naming check python-package-path <path> --repository <repository-name>
 atw-naming check python-distribution <name> --repository <repository-name>
 atw-naming where                                  # which config file is in use
 ```
@@ -70,7 +72,25 @@ value. `name` refuses a missing or unknown `--project` and missing, extra or inv
 segments; `check` accepts any project's prefix unless `--project` is given. `check` also
 takes the segment flags: each one given must be the value the name carries in that segment,
 after the pattern's transform, so a name that has the right shape but was built from another
-value fails. Pass them whenever you know what the name was built from. Exit codes: 0 ok; 1 the name or an input breaks a rule (the reasons are on
+value fails. Pass them whenever you know what the name was built from.
+
+## Python names of a repository
+
+The three Python names come from the repository name and take `--repository` and no other
+flag (no `--project`, no `--domain`): the app, the team flag, the domain and the stack type
+are read out of the repository name. `check` with `--repository` passes only the exact name
+`name` prints for that repository.
+
+| Type | What it names | `shared-apiClient-lib` | `SkillSpoke-dataAccess-lib` |
+|---|---|---|---|
+| `python-package` | The import name: the app, then the domain, snake_case, joined by a dot, without the stack type | `shared.api_client` | `skillspoke.data_access` |
+| `python-package-path` | The folder of that package under the source root `src` | `src/shared/api_client` | `src/skillspoke/data_access` |
+| `python-distribution` | The `name` in `pyproject.toml`: lower case, the domain split into hyphenated words, with the stack type | `shared-api-client-lib` | `skillspoke-data-access-lib` |
+
+The brand is one lower-case word in Python: `skillspoke`, never `skill_spoke` or
+`skill-spoke`.
+
+Exit codes: 0 ok; 1 the name or an input breaks a rule (the reasons are on
 stderr); 2 no config, an invalid config or an unknown resource type.
 
 ## Where the config comes from
@@ -97,13 +117,20 @@ type_words: [...]             # words for a kind of resource; no aws name may co
 segments:                     # style: camelCase|PascalCase|lowercase|kebab|hyphenated|region|az|accountId, enum, or flag
   team: {flag: team}          # value-less --team; patterns place it as [-{team}] after {project}
   domain: {style: camelCase}
+  repository: {style: hyphenated, pattern: "{repoPrefix}[-{team}]-{domain}-{type}"}   # a compound value
   action: {style: camelCase, reject_words: [handler]}
 domains:                      # reference table; a name containing an `avoid` term fails
   - {name: <Label>, external: <kebab>, internal: <camelCase>, avoid: [...]}
 resources:
   <type>: {description: ..., pattern: "...", category: aws|code, min_length: N, max_length: N, type_words: [...]}
+  <type>: {pattern: "...", from: <segment with a pattern>}   # named from that one compound value
 ```
 
 Pattern grammar: `{segment}` is caller-supplied; `{segment|lower|kebab|snake|upper_snake}`
-transforms it; `[...]` is optional; `{project}`, `{projectLower}` and `{metricsNamespace}` come
-from the project named by `--project`; everything else is literal.
+transforms it; `[...]` is optional; `{project}`, `{projectLower}`, `{metricsNamespace}` and
+`{repoPrefix}` come from the project named by `--project`; everything else is literal.
+
+A segment with a `pattern` is a compound value: the pattern splits it into a project (by a
+project constant such as `{repoPrefix}`) and other segments. A resource with `from: <that
+segment>` takes that one flag and nothing else; its own pattern is rendered from the project
+and the segments read out of the value, and it may use only segments that pattern supplies.
