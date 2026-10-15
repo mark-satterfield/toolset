@@ -23,9 +23,9 @@ The repository root is the environment variable the config names in `root_env`.
 Usage:
   polyrepo.py reconcile [--fix] [--dry-run] [--no-fetch]
   polyrepo.py status [repo ...] [--no-fetch]
-  polyrepo.py list [--group G] [--lifecycle L] [--space S]
-  polyrepo.py search attr=value [attr~regex ...] [--fetch]
-  polyrepo.py inventory [--all] [--no-fetch] [--name N]
+  polyrepo.py list [--group G] [--lifecycle L] [--space S] [--include-inactive]
+  polyrepo.py search attr=value [attr~regex ...] [--fetch] [--include-inactive]
+  polyrepo.py inventory [--all] [--no-fetch] [--name N] [--include-inactive]
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
   polyrepo.py create <name> --space S [--template T] [--tier product|tooling] [--dry-run]
@@ -3076,7 +3076,8 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     """Report the full record of every repo on disk, with the matrix's stacks for each.
 
     --all adds every other repo the manifest or GitHub has. --name keeps only the repo with that
-    name, compared without case; `repos` is empty when no repo has it.
+    name, compared without case; `repos` is empty when no repo has it. Deprecated and archived
+    repos are left out unless --include-inactive is given or --name names one.
 
     Returns:
         0.
@@ -3087,6 +3088,8 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     if args.name:
         names = [n for n in names if n.casefold() == args.name.casefold()]
     recs = [st.record(n) for n in names]
+    if not (args.include_inactive or args.name):
+        recs = [r for r in recs if r["lifecycle"] not in LIFECYCLES_INACTIVE]
     data = {
         "root": str(cfg.root),
         "count": len(recs),
@@ -3097,8 +3100,21 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _wants_inactive(args: argparse.Namespace) -> bool:
+    """Say whether a listing should include deprecated and archived repos.
+
+    A listing hands batch work its list of repos, so it holds active repos only unless the
+    caller asks for the inactive ones with --include-inactive or names a lifecycle.
+
+    Returns:
+        True when deprecated and archived repos belong in the listing.
+
+    """
+    return bool(getattr(args, "include_inactive", False) or getattr(args, "lifecycle", None))
+
+
 def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
-    """List repos, filtered by group, lifecycle or space.
+    """List repos, filtered by group, lifecycle or space; active repos unless asked otherwise.
 
     Returns:
         0.
@@ -3106,6 +3122,8 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
     recs = [st.record(n, deep=False) for n in st.tracked_names()]
+    if not _wants_inactive(args):
+        recs = [r for r in recs if r["lifecycle"] not in LIFECYCLES_INACTIVE]
     if args.group:
         recs = [r for r in recs if args.group in _strs(r["groups"], "groups")]
     if args.lifecycle:
@@ -3153,6 +3171,9 @@ def _matches(value: object, op: str, want: str) -> bool:
 def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     """Find repos whose record matches every attr=value (equality) or attr~regex term.
 
+    Deprecated and archived repos are left out unless --include-inactive is given or a term
+    names the lifecycle.
+
     Returns:
         0.
 
@@ -3170,6 +3191,8 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     st = gather(cfg, fetch=args.fetch, use_cache=not args.no_cache)
     deep = any(a.split(".")[0] == "stacks" for a, _, _ in terms)
     recs = [st.record(n, deep=deep) for n in st.tracked_names()]
+    if not (args.include_inactive or any(a == "lifecycle" for a, _, _ in terms)):
+        recs = [r for r in recs if r["lifecycle"] not in LIFECYCLES_INACTIVE]
     hits = [r for r in recs if all(_matches(_lookup(r, a), op, v) for a, op, v in terms)]
     emit(
         args,
@@ -7775,8 +7798,9 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
 
     s = add("list", "list repos")
     s.add_argument("--group")
-    s.add_argument("--lifecycle")
+    s.add_argument("--lifecycle", help="only this lifecycle (naming deprecated or archived includes those repos)")
     s.add_argument("--space")
+    s.add_argument("--include-inactive", action="store_true", help="also deprecated and archived repos")
     s.set_defaults(func=cmd_list)
 
     s = add(
@@ -7793,6 +7817,7 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
         action="store_true",
         help="git fetch first (for main.ahead / main.behind)",
     )
+    s.add_argument("--include-inactive", action="store_true", help="also deprecated and archived repos")
     s.set_defaults(func=cmd_search)
 
     s = add("inventory", "every repo's full record")
@@ -7803,6 +7828,7 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
         help="also every repo the manifest or GitHub has that is not on disk",
     )
     s.add_argument("--name", help="only the repo with this name, compared without case")
+    s.add_argument("--include-inactive", action="store_true", help="also deprecated and archived repos")
     s.set_defaults(func=cmd_inventory)
 
     s = add("grep", "rg across the repos on disk")

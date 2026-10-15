@@ -254,7 +254,8 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 ### Deprecation and archiving
 
-A repository is never deleted from GitHub. "Delete" means deprecate: the repo is renamed
+You never delete a repository on GitHub: that is the owner's call, because it cannot be undone.
+"Delete" from a caller means deprecate: the repo is renamed
 with a `deprecated-` prefix and the whole name lowercased
 (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`),
 on GitHub and locally together, every open pull request in it is closed with the
@@ -263,8 +264,15 @@ worktrees are deleted. The clone is kept, and the path to delete by hand is repo
 it holds work that exists only on this machine (uncommitted or untracked files, a stash,
 commits on no remote branch, or such work in a linked worktree); the rest of the
 deprecation stands. A deprecated or archived repo with no local clone is normal, never a
-finding. It is archived on GitHub 60 days later. Deprecated and archived are separate
-states. The naming rules are the vault's `repository-naming.md`;
+finding. While the deprecated repo still exists on GitHub you keep a minimal record of it
+(name, `deprecated_on`) so it is archived 60 days after deprecation; deprecated and archived are
+separate states. `list`, `search` and `inventory` leave deprecated and archived repos out unless
+asked (`--include-inactive`, or a `--lifecycle` filter), so batch work never receives them.
+When the owner deletes the repo on GitHub, `reconcile --fix` removes its record entirely
+(`orphan-entry`, with its group memberships): no deprecated or archived entry remains for a
+repository that is gone, and you never keep one for posterity. To tell the owner what is left to
+delete, run `list --lifecycle deprecated` and say what each holds and whether anything
+references it. The naming rules are the vault's `repository-naming.md`;
 `doctor` checks it against the tool's patterns.
 
 Local and GitHub always move together. A repo created here is created on GitHub and
@@ -401,5 +409,5 @@ hand with `git` and `gh`, report the result, and name the missing capability as 
 
 - You never report a repository fact the tool has not checked live.
 - You never hand repository work back to a caller that you can do yourself.
-- You never delete a repository.
+- You never delete a repository on GitHub; the owner does, and your record of it goes with it.
 - You never ask for approval to correct the manifest.

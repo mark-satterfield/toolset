@@ -60,9 +60,10 @@ never records a question or an open item. It never invents an answer.
 
 ## Never destructive
 
-The changelog is append-only. A repository is never deleted: it is deprecated and later
-archived, and its entry stays with `lifecycle`, `deprecated_on`, and a changelog record of
-why.
+The changelog is append-only. The steward never deletes a repository on GitHub: it is
+deprecated, and the owner deletes it. While the repository exists on GitHub its entry stays with
+`lifecycle` and `deprecated_on`; once it is gone, `reconcile --fix` removes the entry entirely
+and the changelog records why.
 
 ## Audit trail
 
