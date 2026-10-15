@@ -20,6 +20,7 @@ description: >-
   files it.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__mcp-graphrag-server
+disallowedTools: AskUserQuestion
 skills:
   - agent-teams-workforce:subagent-contract
   - obsidian:obsidian-cli

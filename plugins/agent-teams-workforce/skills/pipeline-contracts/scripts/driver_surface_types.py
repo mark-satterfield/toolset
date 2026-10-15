@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "6d9a972fe4d89ab4704d108f27d5f9965f5c021c131f1472dd9d03ab8501cfeb"
+SCHEMA_SHA256: Final[str] = "d52c828f19f2aea236023ddb9d215b1a757231a24aaab08f537e4420fed655c8"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -75,6 +75,47 @@ RATE_LIMIT_INFO_KEY: Final[str] = "rate_limit_info"
 #: The scratch env keys, in order.
 SCRATCH_ENV_KEYS: Final[tuple[str, ...]] = (TMPDIR_ENV, TMP_ENV, TEMP_ENV)
 
+#: A tool every headless build and deploy Workflow session the driver dispatches is denied.
+#: DENIED_TOOLS keeps this order.
+type DeniedTool = Literal[
+    "WebFetch",
+    "WebSearch",
+    "Artifact",
+    "SendMessage",
+    "EndConversation",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "mcp__claude_ai_Gmail__send_message",
+    "mcp__claude_ai_Gmail__reply",
+    "mcp__claude_ai_Gmail__forward",
+    "mcp__claude_ai_Gmail__create_draft",
+    "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__claude_ai_Google_Drive__create_file",
+    "mcp__plugin_slack_slack__slack_send_message",
+    "mcp__plugin_slack_slack__slack_send_message_draft",
+    "mcp__plugin_slack_slack__slack_schedule_message",
+]
+DENIED_TOOLS: Final[tuple[DeniedTool, ...]] = (
+    "WebFetch",
+    "WebSearch",
+    "Artifact",
+    "SendMessage",
+    "EndConversation",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "mcp__claude_ai_Gmail__send_message",
+    "mcp__claude_ai_Gmail__reply",
+    "mcp__claude_ai_Gmail__forward",
+    "mcp__claude_ai_Gmail__create_draft",
+    "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__claude_ai_Google_Drive__create_file",
+    "mcp__plugin_slack_slack__slack_send_message",
+    "mcp__plugin_slack_slack__slack_send_message_draft",
+    "mcp__plugin_slack_slack__slack_schedule_message",
+)
+
 #: RateLimitInfo.status; only rejected is acted on.
 type RateLimitStatus = Literal["allowed", "allowed_warning", "rejected"]
 REJECTED_STATUS: Final[RateLimitStatus] = "rejected"
@@ -101,7 +142,7 @@ BREAKER_MODULE: Final[DriverModule] = "breaker"
 CHILDPROC_MODULE: Final[DriverModule] = "childproc"
 #: Driver module -> the attributes the plugin reads from it.
 DRIVER_MODULES: Final[Mapping[DriverModule, tuple[str, ...]]] = MappingProxyType({
-    HEADLESSENV_MODULE: ("child_env",),
+    HEADLESSENV_MODULE: ("DENIED_TOOLS", "child_env"),
     FABLEWALL_MODULE: ("is_refusal", "reset_of"),
     BREAKER_MODULE: ("exhausted_reset",),
     CHILDPROC_MODULE: ("TERMINATE_GRACE",),
@@ -111,6 +152,9 @@ DRIVER_MODULES: Final[Mapping[DriverModule, tuple[str, ...]]] = MappingProxyType
 @runtime_checkable
 class HeadlessEnvironment(Protocol):
     """Driver headlessenv module surface consumed by session setup."""
+
+    DENIED_TOOLS: tuple[str, ...]
+    """Tools every headless build and deploy Workflow session the driver dispatches is denied, in order."""
 
     def child_env(self, scratch: Path) -> dict[str, str]:
         """Build the subprocess environment: DriverEnvironment over the inherited one."""

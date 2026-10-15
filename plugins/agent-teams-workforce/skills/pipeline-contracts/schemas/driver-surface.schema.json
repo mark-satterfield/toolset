@@ -13,6 +13,7 @@
         "protocol": "HeadlessEnvironment",
         "doc": "Driver headlessenv module surface consumed by session setup.",
         "members": [
+          {"name": "DENIED_TOOLS", "kind": "attribute", "python": "tuple[str, ...]", "doc": "Tools every headless build and deploy Workflow session the driver dispatches is denied, in order."},
           {"name": "child_env", "kind": "method", "params": [["scratch", "Path"]], "returns": "dict[str, str]", "doc": "Build the subprocess environment: DriverEnvironment over the inherited one."}
         ]
       },
@@ -86,6 +87,30 @@
       "type": "integer",
       "const": 384,
       "x-python": {"constant": "STOP_FILE_MODE", "type": "int", "render": "0o600"}
+    },
+    "DeniedTool": {
+      "description": "A tool every headless build and deploy Workflow session the driver dispatches is denied. DENIED_TOOLS keeps this order.",
+      "type": "string",
+      "enum": [
+        "WebFetch",
+        "WebSearch",
+        "Artifact",
+        "SendMessage",
+        "EndConversation",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "mcp__claude_ai_Gmail__send_message",
+        "mcp__claude_ai_Gmail__reply",
+        "mcp__claude_ai_Gmail__forward",
+        "mcp__claude_ai_Gmail__create_draft",
+        "mcp__claude_ai_Google_Drive__share_file",
+        "mcp__claude_ai_Google_Drive__create_file",
+        "mcp__plugin_slack_slack__slack_send_message",
+        "mcp__plugin_slack_slack__slack_send_message_draft",
+        "mcp__plugin_slack_slack__slack_schedule_message"
+      ],
+      "x-python": {"literal": "DeniedTool", "tuple": "DENIED_TOOLS"}
     },
     "TerminateGrace": {
       "description": "Seconds a terminated child process is given before it is killed.",

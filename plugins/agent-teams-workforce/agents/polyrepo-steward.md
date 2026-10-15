@@ -17,6 +17,8 @@ description: >-
 role: repository-steward
 model: sonnet
 effort: high
+tools: Bash, Read, Write, Edit, Glob, Grep, Skill, mcp__gitnexus__query, mcp__gitnexus__context, mcp__mcp-graphrag-server__search
+disallowedTools: AskUserQuestion
 color: yellow
 skills:
 - agent-teams-workforce:subagent-contract
