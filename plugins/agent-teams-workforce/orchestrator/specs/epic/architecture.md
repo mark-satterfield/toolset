@@ -21,8 +21,7 @@ their definitions state (`solutions-architect`, `design-specialist`, `diagram-au
 
 Script `prd_to_spec.open_run`, the first outermost step. It fails when beads does not hold the
 bead as an Epic. In one matrix change it brings the Epic's entry with its requirements
-(`sync-epics --bead`), the document entries (`sync-documents`) and the Epic's expertise list up to
-date. It writes the context file `<arch-work>/context.json`, which
+(`sync-epics --bead`) and the document entries (`sync-documents`) up to date. It writes the context file `<arch-work>/context.json`, which
 names every path of the Epic's architecture work: the PRD, the architecture root, the
 architect's state and result files, the TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It

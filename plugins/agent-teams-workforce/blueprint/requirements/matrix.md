@@ -71,7 +71,6 @@ Each question below is answered from the matrix alone, without reading documents
 | Q20 | Which other Epics share a feature, architecture document, service, component or stack with this Epic, or drive or rest on the same architecture decision? | A list of Epics, each with what is shared and how. |
 | Q21 | What does this stack publish and deploy, and which commands test, publish and deploy it? | Whether it publishes a package, deploys with CDK, or both, and the three commands. |
 | Q22 | Which stacks hold infrastructure of a given resource type? | A list of stacks, each with the matching infrastructure. |
-| Q23 | Which expertise does this Epic need? | A list of skills. |
 | Q24 | Which stacks does this repository hold? | A list of stacks. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
