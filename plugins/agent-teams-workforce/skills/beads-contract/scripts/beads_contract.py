@@ -93,7 +93,7 @@ from bead_metadata import (
     JsonObject,
     JsonValue,
 )
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, check_type
 
 # The driver environment names are defined once, in the pipeline-contracts skill, and the
 # failure causes once, in the orchestrator's handback contract; both load by plugin path.
@@ -108,7 +108,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def json_object(value: object) -> JsonObject:
     """Validate an external tracker JSON object and all nested values.
 
@@ -193,7 +192,6 @@ SERVER_FAILURE = re.compile(
 )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def failure_cause(stderr: str) -> str:
     """Return the cause of a failed `bd` command, from what `bd` printed on standard error.
 
@@ -216,7 +214,6 @@ def failure_cause(stderr: str) -> str:
     return BD_TIMEOUT_CAUSE if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def connection_retryable(args: list[str], stderr: str) -> str:
     """Return the reason a failed `bd` command may be run again, or "" when it may not.
 
@@ -261,7 +258,6 @@ DATABASE_FLAGS = frozenset({"-C", "--directory", "--db", "--database", "--global
 FLEET_QUERY = "SELECT id, source_repo FROM issues WHERE source_repo <> '' AND source_repo <> '.'"
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def central_repo(explicit: str = "") -> str:
     """Return the repository whose beads database is the central one.
 
@@ -291,7 +287,6 @@ def central_repo(explicit: str = "") -> str:
     return ""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def is_read(args: list[str]) -> bool:
     """Whether a `bd` command only reads.
 
@@ -312,7 +307,6 @@ def is_read(args: list[str]) -> bool:
     return "--readonly" in args or (bool(words) and words[0] in READ_COMMANDS)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def bead_operand(args: list[str]) -> str:
     """Return the bead a `bd` command acts on: the operand after its subcommand (or verb).
 
@@ -341,7 +335,6 @@ def bead_operand(args: list[str]) -> str:
     return args[i] if i < len(args) and BEAD_ID.match(args[i]) else ""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def fleet_homes(rows: JsonValue, central: str) -> dict[str, str]:
     """Map each bead filed in a fleet repository's database to that repository.
 
@@ -374,7 +367,6 @@ def fleet_homes(rows: JsonValue, central: str) -> dict[str, str]:
     return homes
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def content_hash(rec: JsonObject, scope: str = SCOPE_READINESS) -> str:
     """Return a bead record's content fingerprint for a scope.
 
@@ -402,7 +394,6 @@ def content_hash(rec: JsonObject, scope: str = SCOPE_READINESS) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:CONTENT_HASH_LENGTH]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def fingerprint_payload(rec: JsonObject, scope: str = SCOPE_READINESS) -> JsonObject:
     """Return the object a fingerprint is taken over.
 
@@ -449,7 +440,6 @@ _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<text>.*\S)\s*$")
 _GIVEN_WHEN_THEN = re.compile(r"\bgiven\b.*\bwhen\b.*\bthen\b", re.IGNORECASE)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def criteria_in_text(text: str) -> list[str]:
     """Pull acceptance criteria out of prose.
 
@@ -548,7 +538,6 @@ def _criteria_sentences(lines: list[str]) -> list[str]:
     return found
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def resolve_criteria(bead_id: str, reader: Reader) -> Criteria:
     """Find a Task's acceptance criteria.
 
@@ -628,7 +617,6 @@ def _read_value(kind: str, raw: str) -> JsonValue | _Unreadable:
     return [text for text in (str(item).strip() for item in parsed) if text]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_contract(bead: JsonObject) -> BuildContract:
     """Read the build contract a Task records, in the shape the composite takes.
 
@@ -661,7 +649,6 @@ def read_contract(bead: JsonObject) -> BuildContract:
     return check_type(carried, BuildContract, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def metadata_of(rec: JsonObject) -> JsonObject:
     """Return a record's custom metadata, stored as a JSON object or a JSON string.
 
@@ -796,7 +783,6 @@ class Reader:
                 self.supplied.append(bead_id)
             self.cache[bead_id] = json_object(rec)
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def home_of(self, bead_id: str) -> str:
         """Return the repository whose database a bead is written in.
 
@@ -832,7 +818,6 @@ class Reader:
             self.homes = fleet_homes(rows, self.repo)
         return self.homes.get(bead_id, self.repo)
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def route(self, args: list[str]) -> str:
         """Return the repository a `bd` command runs in.
 
@@ -861,7 +846,6 @@ class Reader:
         self.written[bead_id] = home
         return home
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def command(self, args: list[str], repo: str | None = None, stdin: str | None = None) -> str:
         """Run a routed command through the reader's transport.
 
@@ -974,7 +958,6 @@ class Reader:
             raise BeadsError(msg) from exc
         return decoded
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def get(self, bead_id: str) -> JsonObject:
         """Return one bead's record, read-only.
 
@@ -1006,7 +989,6 @@ class Reader:
         self.cache[bead_id] = json_object(rec or {})
         return self.cache[bead_id]
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def ancestors(self, bead_id: str) -> list[str]:
         """Return the ancestor ids, nearest first, stopping at any cycle.
 
@@ -1035,7 +1017,6 @@ class Reader:
             current = self.get(parent_id).get("parent")
         return chain
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def sweep(self) -> list[str]:
         """Fetch every bead, closed included, in one `bd list` call and index the records.
 
@@ -1049,7 +1030,6 @@ class Reader:
         return [bead_id for bead_id in self.supplied if bead_id not in before]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def offline_reader(records: list[JsonObject]) -> Reader:
     """Build a reader over records already in memory; it never calls `bd`.
 
@@ -1077,7 +1057,6 @@ FINGERPRINT_NOTE: str = (
 )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def fingerprint_of(
     bead_id: str,
     rec: JsonObject,
@@ -1199,7 +1178,6 @@ def _command_options(args: argparse.Namespace) -> CommandOptions:
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_fingerprint(args: CommandOptions, reader: Reader) -> Fingerprint:
     """Report the content fingerprint of one bead.
 
@@ -1228,7 +1206,6 @@ def cmd_fingerprint(args: CommandOptions, reader: Reader) -> Fingerprint:
     return result
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_fingerprint_batch(args: CommandOptions, reader: Reader) -> JsonObject:
     """Fingerprint many beads: the named ids, or every supplied or swept record.
 
@@ -1284,7 +1261,6 @@ def cmd_fingerprint_batch(args: CommandOptions, reader: Reader) -> JsonObject:
     return json_object(result)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_criteria(args: CommandOptions, reader: Reader) -> JsonObject:
     """Report a Task's acceptance criteria and where they came from.
 
@@ -1319,7 +1295,6 @@ def cmd_criteria(args: CommandOptions, reader: Reader) -> JsonObject:
     })
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
     """Report the full build contract a Task carries, with provenance.
 
@@ -1386,7 +1361,6 @@ def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_ancestors(args: CommandOptions, reader: Reader) -> JsonObject:
     """Report a bead's parent chain, nearest first.
 
@@ -1425,7 +1399,6 @@ def cmd_ancestors(args: CommandOptions, reader: Reader) -> JsonObject:
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_record(args: CommandOptions, reader: Reader) -> JsonObject:
     """Report one bead's record and which fields it actually carries.
 
@@ -1457,7 +1430,6 @@ def cmd_record(args: CommandOptions, reader: Reader) -> JsonObject:
     })
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def metadata(reader: Reader, bead_id: str, operation: Literal["get", "set"], pairs: list[str]) -> JsonObject:
     """Read selected metadata or write validated key/value pairs for one bead.
 
@@ -1525,7 +1497,6 @@ def metadata(reader: Reader, bead_id: str, operation: Literal["get", "set"], pai
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_metadata(args: CommandOptions, reader: Reader) -> JsonObject:
     """Adapt parsed CLI metadata arguments to the typed operation.
 
@@ -1547,7 +1518,6 @@ def cmd_metadata(args: CommandOptions, reader: Reader) -> JsonObject:
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def cmd_cds_audit(args: CommandOptions, reader: Reader) -> JsonObject:
     """Write a web-ui Task's cds audit verdict from task-to-deploy's `cdsAudit` result.
 
@@ -1602,7 +1572,6 @@ class _CommandParsers(Protocol):
         ...
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def build_parser() -> argparse.ArgumentParser:
     """Return the argument parser.
 
@@ -1703,7 +1672,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def passthrough(argv: list[str]) -> tuple[str, list[str]] | None:
     """Split `[-C <repo>] bd <args>` into the central repository and the `bd` arguments.
 
@@ -1733,7 +1701,6 @@ def passthrough(argv: list[str]) -> tuple[str, list[str]] | None:
     return None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run_passthrough(repo: str, args: list[str]) -> int:
     """Run one `bd` command against the database it belongs in and print its output.
 
@@ -1786,7 +1753,6 @@ COMMAND_HANDLERS: dict[str, Callable[[CommandOptions, Reader], CommandResult]] =
 }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main(argv: list[str] | None = None) -> int:
     """Run one command.
 

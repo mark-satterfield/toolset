@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, check_type
 
 # The architecture change values are generated from the target report schema, their one definition.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -17,7 +17,6 @@ type JsonObject = dict[str, JsonValue]
 type JsonInput = str | bool | int | float | Sequence[JsonInput] | Mapping[str, JsonInput] | None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def json_value(value: JsonInput) -> JsonValue:
     """Materialize a read-only JSON input without erasing its scalar or tree types.
 
@@ -53,7 +52,6 @@ schema SHA as contextSha.
 """
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def json_object(value: object) -> JsonObject:
     """Validate every nested value in a JSON object.
 

@@ -12,12 +12,9 @@ stores nothing. It answers three questions, each one ``atw-matrix`` command:
 """
 
 import sys
-from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
-
-from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -37,6 +34,8 @@ from matrix_contract import (
 from matrixstore import Matrix, MatrixRefusedError
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
+
     from bead_metadata import BuildContract
     from contracts import JsonObject
 
@@ -129,7 +128,6 @@ class TasksRead(TypedDict):
     tasks: list[TaskRow]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_tasks(control: Path | None = None) -> list[TaskBead]:
     """Read every Task from beads, with its Story, its Epic and the ids it carries.
 
@@ -199,7 +197,6 @@ def _row(entry: Entry, tasks: Sequence[str]) -> BuiltEntry:
     return row
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def built(matrix: Matrix, tasks: Sequence[TaskBead], story: str) -> BuiltRead:
     """List the stacks and entries a Story built, from the ids its Tasks carry.
 
@@ -276,7 +273,6 @@ def _open_naming(tasks: Sequence[TaskBead], wanted: Collection[EntryId], not_epi
     return rows
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def work(matrix: Matrix, tasks: Sequence[TaskBead], entry_id: EntryId, not_epic: str | None = None) -> TasksRead:
     """List the open Tasks that name an entry or, for a stack, an entry the stack holds.
 
@@ -316,7 +312,6 @@ def work(matrix: Matrix, tasks: Sequence[TaskBead], entry_id: EntryId, not_epic:
     return read
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def affected(
     matrix: Matrix,
     tasks: Sequence[TaskBead],

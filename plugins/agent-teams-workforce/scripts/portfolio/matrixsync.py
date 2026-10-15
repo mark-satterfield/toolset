@@ -25,12 +25,9 @@ import re
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resolved git executable with a separate argv and no shell.
 import sys
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypedDict
-
-from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -55,6 +52,8 @@ from matrix_contract import (
 from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, same_content, slug
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from contracts import JsonObject
     from contracts import JsonValue as BeadValue
 
@@ -265,7 +264,6 @@ def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
     return done.stdout
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def program_output(executable: str, arguments: Sequence[str], folder: Path) -> str:
     """Run git for another matrix module and return what it printed.
 
@@ -283,7 +281,6 @@ def program_output(executable: str, arguments: Sequence[str], folder: Path) -> s
     return _run(executable, arguments, folder)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def vault_root(folder: Path) -> Path:
     """Find the root of the git repository a folder of the vault is in.
 
@@ -305,7 +302,6 @@ def vault_root(folder: Path) -> Path:
     return Path(_run("git", ["rev-parse", "--show-toplevel"], folder).strip()).resolve()
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def relative_path(path: Path, root: Path) -> str:
     """Name a file by its path under a folder.
 
@@ -376,7 +372,6 @@ def _front_matter(lines: Sequence[str]) -> tuple[dict[str, str], tuple[str, ...]
     return scalars, tuple(name for name in dict.fromkeys(shows) if name), close + 1
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def heading_texts(body: Sequence[str]) -> dict[str, str]:
     """Split a document body into its headings, each with its own text.
 
@@ -425,7 +420,6 @@ def _section(relative: str) -> int | None:
     return None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parse_document(relative: str, text: str) -> DocumentRead:
     """Read what the matrix records of one arc42 document from its text.
 
@@ -482,7 +476,6 @@ def _is_document(relative: str) -> bool:
     return relative.endswith(MARKDOWN_SUFFIX) and relative.startswith(ARC42_FOLDER + "/")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_documents(arch: Path, paths: Sequence[str] | None = None) -> list[DocumentRead]:
     """Read arc42 documents from the vault.
 
@@ -677,7 +670,6 @@ def _named_paths(arch: Path, paths: Sequence[str]) -> list[str]:
     return sorted(named)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = None) -> DocumentsSynced:
     """Bring the document entries and their ``describedBy`` relationships up to date with the vault.
 
@@ -718,7 +710,6 @@ def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = 
     return _apply_documents(matrix, root, sorted({*present, *_document_paths(matrix)}))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
     """Write a document's lifecycle into its front matter, the one place that states it.
 
@@ -788,7 +779,6 @@ def _prd_stems(record: JsonObject) -> tuple[str, ...]:
     return tuple(dict.fromkeys(stems))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_epics(control: Path | None = None, bead: str | None = None) -> list[EpicBead]:
     """Ask beads for the open Epics, or for one Epic.
 
@@ -853,7 +843,6 @@ def _requirement_key(title: str) -> str:
         raise MatrixError(message) from error
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parse_requirements(text: str) -> list[RequirementRead]:
     """Read the requirements a PRD states.
 
@@ -1105,7 +1094,6 @@ def _sync_epic(matrix: Matrix, epic: EpicBead, source: PrdSource, result: EpicsS
     _sync_requirements(matrix, key, epic.bead, text, result)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def sync_epics(matrix: Matrix, epics: Sequence[EpicBead], prd_dir: Path, *, prd: str | None = None) -> EpicsSynced:
     """Give every Epic one entry with its PRD, and one requirement entry per requirement the PRD states.
 

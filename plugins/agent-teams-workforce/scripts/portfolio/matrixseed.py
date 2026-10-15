@@ -36,13 +36,11 @@ import json
 import re
 import sys
 import tomllib
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Final, Literal, TypedDict, assert_never
+from typing import TYPE_CHECKING, Final, Literal, TypedDict, assert_never
 
 import yaml
-from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -106,6 +104,9 @@ from matrixsync import (
     vault_root,
 )
 from matrixtraverse import STACK_NAME_SEPARATOR, stack_type
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 type SeedStep = Literal["architecture", "repository", "features"]
 type Outcome = Literal["created", "changed", "unchanged"]
@@ -546,7 +547,6 @@ def _refusal(file: Path | str, item: str, error: Exception | str) -> Refusal:
     return {"file": str(file), "item": item, "reason": str(error)}
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed_directory(matrix_file: Path) -> Path:
     """Name the folder the seeding files of a matrix file are in.
 
@@ -570,7 +570,6 @@ def seed_directory(matrix_file: Path) -> Path:
     return matrix_file.parent / LOCK_DIRECTORY / SEED_FOLDER
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def naming_config(control: Path, environ: Mapping[str, str]) -> Path:
     """Decide which file holds the project's naming rules.
 
@@ -592,7 +591,6 @@ def naming_config(control: Path, environ: Mapping[str, str]) -> Path:
     return Path(stated).expanduser() if stated else control / NAMING_CONFIG_FILE
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def stack_types(config: Path) -> tuple[str, ...]:
     """Read the stack types the project's naming rules list.
 
@@ -621,7 +619,6 @@ def stack_types(config: Path) -> tuple[str, ...]:
     return tuple(str(item) for item in listed)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parse_repositories(text: str) -> list[Repository]:
     """Read the repositories from what ``polyrepo inventory --json`` printed.
 
@@ -657,7 +654,6 @@ def parse_repositories(text: str) -> list[Repository]:
     return sorted(repositories, key=lambda repository: repository.name)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_repositories(control: Path) -> list[Repository]:
     """Ask the ``polyrepo`` tool for every known repository.
 
@@ -797,7 +793,6 @@ def _record_relationship(matrix: Matrix, stated: Relationship) -> Outcome:
     return OUTCOME_CHANGED
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Sequence[str]) -> StacksSeeded:
     """Record one stack per repository that is not deprecated and whose name ends in a listed type.
 
@@ -894,7 +889,6 @@ def _distribution_key(name: str) -> str:
     return _NAME_SEPARATORS.sub("-", name.strip()).lower()
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_project(repository: Path) -> Project | None:
     """Read the Python project a repository's ``pyproject.toml`` states.
 
@@ -963,7 +957,6 @@ def _stack_projects(
     return projects
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed_packages(matrix: Matrix, repositories: Sequence[Repository]) -> PackagesSeeded:
     """Record the package of each library stack and the imports between stacks.
 
@@ -1236,7 +1229,6 @@ def _stack_groups(
     return [(counted, [item]) for _, counted, item in sorted(groups, key=lambda found: (found[0], str(found[2]["id"])))]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed_inputs(  # ruff: ignore[too-many-arguments] - One place per source the batches are cut from.
     matrix: Matrix,
     *,
@@ -1391,7 +1383,6 @@ def _requirement_id(proposal: Proposal, stated: str) -> EntryId:
     return make_id(KIND_REQUIREMENT, f"{bead}{STACK_SEPARATOR}{stated}")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def list_proposed(proposals: Sequence[Path], matrix: Matrix | None = None) -> ProposedFeatures:
     """List the features the proposal files state, each once, for the session that merges them.
 
@@ -1821,7 +1812,6 @@ def _apply_results(matrix: Matrix, results: Sequence[Path], side: Side, applied:
         _link(Recorder(matrix, file, applied), relationship)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def as_step(text: str) -> SeedStep:
     """Accept a string as a seeding step whose files :func:`seed_apply` records.
 
@@ -1843,7 +1833,6 @@ def as_step(text: str) -> SeedStep:
     raise MatrixRefusedError(message)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed_apply(matrix: Matrix, step: SeedStep, results: Sequence[Path], merge: Path | None = None) -> Applied:
     """Record what the sessions of one seeding step wrote.
 
@@ -1905,7 +1894,6 @@ def seed_apply(matrix: Matrix, step: SeedStep, results: Sequence[Path], merge: P
     return applied
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seed(  # ruff: ignore[too-many-arguments] - One place per source seeding reads.
     path: Path,
     *,

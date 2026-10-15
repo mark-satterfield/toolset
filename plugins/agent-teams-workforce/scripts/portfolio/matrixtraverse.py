@@ -20,12 +20,9 @@ came from.
 import re
 import sys
 from collections import deque
-from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
-
-from typeguard import CollectionCheckStrategy, typechecked
+from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -64,6 +61,9 @@ from matrix_contract import (
     family_kinds,
 )
 from matrixstore import Matrix, RelationshipId, id_stack, make_id, relationship_id
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Mapping, Sequence
 
 MIN_WORD: Final = 2
 """The fewest characters of a word entries are matched by."""
@@ -271,7 +271,6 @@ class Impact:
         return list(found)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def words(text: str) -> list[str]:
     """Split text into the words entries are matched by.
 
@@ -293,7 +292,6 @@ def words(text: str) -> list[str]:
     return list(dict.fromkeys(word for word in _WORD.findall(spaced.lower()) if len(word) >= MIN_WORD))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def stack_type(name: str) -> str:
     """Read a stack's type from its name.
 
@@ -313,7 +311,6 @@ def stack_type(name: str) -> str:
     return name.strip().rpartition(STACK_NAME_SEPARATOR)[2]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_id(bead: str) -> EntryId:
     """Name the entry of an Epic.
 
@@ -336,7 +333,6 @@ def epic_id(bead: str) -> EntryId:
     return make_id(KIND_EPIC, bead.strip().removeprefix(prefix))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def holding(matrix: Matrix, stack: EntryId) -> list[Relationship]:
     """List the home relationships that end at a stack.
 
@@ -352,7 +348,6 @@ def holding(matrix: Matrix, stack: EntryId) -> list[Relationship]:
     return matrix.incoming(stack, (HOME_RELATIONSHIP,))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def held(matrix: Matrix, stack: EntryId) -> list[EntryId]:
     """List the entries whose home is a stack, as either side states it.
 
@@ -368,7 +363,6 @@ def held(matrix: Matrix, stack: EntryId) -> list[EntryId]:
     return list(dict.fromkeys(relationship.start for relationship in holding(matrix, stack)))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     """Name the stack an entry belongs to.
 
@@ -396,7 +390,6 @@ def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     return matrix.home(entry_id, side=None) or id_stack(entry)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     """Name the stack the architecture side places an entry in: the holder of what is built.
 
@@ -422,7 +415,6 @@ def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     return next(iter(stacks)) if len(stacks) == 1 else None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def follow(
     matrix: Matrix,
     starts: Sequence[EntryId],
@@ -457,7 +449,6 @@ def follow(
     return list(followed.values())
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def dependencies(matrix: Matrix, starts: Sequence[EntryId], *, inward: bool = False) -> list[Dependency]:
     """Follow the dependency family from some entries, to any depth.
 
@@ -573,8 +564,30 @@ def _on_authority_side(matrix: Matrix, entry_ids: Collection[EntryId], kinds: Co
     ]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def epic_reach(matrix: Matrix, epic: EntryId) -> EpicReach:
+def _dependencies_from(
+    matrix: Matrix,
+    origin: EntryId,
+    walked: dict[EntryId, tuple[Dependency, ...]] | None,
+) -> tuple[Dependency, ...]:
+    """Follow the dependency family outward from one entry, reusing an earlier walk from it.
+
+    Returns:
+        The dependencies :func:`dependencies` finds from the entry; the walk recorded in
+        ``walked`` when there is one, recorded there when there is not.
+
+    """
+    if walked is None:
+        return tuple(dependencies(matrix, [origin]))
+    if origin not in walked:
+        walked[origin] = tuple(dependencies(matrix, [origin]))
+    return walked[origin]
+
+
+def epic_reach(
+    matrix: Matrix,
+    epic: EntryId,
+    walked: dict[EntryId, tuple[Dependency, ...]] | None = None,
+) -> EpicReach:
     """Walk from an Epic to everything its requirements reach.
 
     The walk is epic → requirements → the features that serve them, with the features those are
@@ -587,6 +600,8 @@ def epic_reach(matrix: Matrix, epic: EntryId) -> EpicReach:
     Args:
         matrix: The matrix.
         epic: The Epic's entry id.
+        walked: The dependency walks already made from each entry, shared by the walks of several
+            Epics over one matrix; the walks this one makes are added to it. None walks afresh.
 
     Returns:
         What the walk reached, and the links of the Epic with nothing recorded at the other end.
@@ -624,7 +639,7 @@ def epic_reach(matrix: Matrix, epic: EntryId) -> EpicReach:
     origin: EntryId
     for origin in sorted(origins):
         dependency: Dependency
-        for dependency in dependencies(matrix, [origin]):
+        for dependency in _dependencies_from(matrix, origin, walked):
             identity: RelationshipId = relationship_id(dependency.relationship)
             if identity not in found_dependencies or dependency.depth < found_dependencies[identity].depth:
                 found_dependencies[identity] = dependency
@@ -673,8 +688,11 @@ def _heading(relationship: Relationship) -> str:
     return heading if isinstance(heading, str) else ""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def epic_touches(matrix: Matrix, epic: EntryId) -> dict[EntryId, list[Touch]]:
+def epic_touches(
+    matrix: Matrix,
+    epic: EntryId,
+    walked: dict[EntryId, tuple[Dependency, ...]] | None = None,
+) -> dict[EntryId, list[Touch]]:
     """List what an Epic reaches that another Epic could also reach, and how it reaches each.
 
     An entry that is not an Epic raises ``MatrixError`` from :func:`epic_reach`.
@@ -682,6 +700,8 @@ def epic_touches(matrix: Matrix, epic: EntryId) -> dict[EntryId, list[Touch]]:
     Args:
         matrix: The matrix.
         epic: The Epic's entry id.
+        walked: The dependency walks shared by the walks of several Epics, as :func:`epic_reach`
+            takes them. None walks afresh.
 
     Returns:
         Each feature, document, stack, service, component and infrastructure entry the Epic
@@ -690,7 +710,7 @@ def epic_touches(matrix: Matrix, epic: EntryId) -> dict[EntryId, list[Touch]]:
         relationship kinds that reach it.
 
     """
-    reach: EpicReach = epic_reach(matrix, epic)
+    reach: EpicReach = epic_reach(matrix, epic, walked)
     ways: list[tuple[EntryId | None, Touch]] = _closure_touches(matrix, reach)
     ways.extend(
         (relationship.start, Touch(REL_COVERS, _heading(relationship)))
@@ -745,7 +765,6 @@ def _closure_touches(matrix: Matrix, reach: EpicReach) -> list[tuple[EntryId | N
     return ways
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def selector_values(matrix: Matrix, entry: Entry) -> dict[str, JsonValue]:
     """Read the values of an entry a constraint's selector is compared with.
 
@@ -774,7 +793,6 @@ def selector_values(matrix: Matrix, entry: Entry) -> dict[str, JsonValue]:
     return values
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def constraints_for(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[ConstraintReach]:
     """Find the constraints that bind some entries.
 
@@ -816,7 +834,6 @@ def constraints_for(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Constr
     return found
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def capabilities(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[CapabilityReach]:
     """Find the shared capabilities the work that builds some entries must use.
 
@@ -887,7 +904,6 @@ def _served(matrix: Matrix, features: Sequence[EntryId]) -> list[Serving]:
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def impact(matrix: Matrix, entry_id: EntryId) -> Impact:
     """Walk from an entry to everything a change to it reaches.
 

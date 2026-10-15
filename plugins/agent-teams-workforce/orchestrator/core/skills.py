@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, check_type
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 from .frontmatter import split_front_matter, string_list
@@ -68,7 +68,6 @@ SKILLS_HEADING: Final = (
 )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class SkillRoots:
     """The places a skill named in front matter can live."""
@@ -84,7 +83,6 @@ class SkillRoots:
         check_type(self.control, Path | None)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class SkillExpertise:
     """What a skill declares itself expertise for."""
@@ -98,7 +96,6 @@ class SkillExpertise:
         check_type(self.terms, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class Skill:
     """One skill file, read and validated."""
@@ -118,7 +115,6 @@ class Skill:
         check_type(self.expertise, SkillExpertise)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def installed_plugin(config: Path, name: str) -> Path:
     """Find the installed copy of another plugin from the Claude configuration directory.
 
@@ -156,7 +152,6 @@ def installed_plugin(config: Path, name: str) -> Path:
     raise ValueError(message)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skill_plugin(name: str) -> str | None:
     """Name the plugin a skill reference is qualified with.
 
@@ -176,7 +171,6 @@ def skill_plugin(name: str) -> str | None:
     return prefix if separator else None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skill_location(roots: SkillRoots, name: str) -> tuple[Path, Path | None]:
     """Find the directory of a skill named in front matter.
 
@@ -251,7 +245,6 @@ def _expertise(front: Mapping[str, object], what: str) -> SkillExpertise:
     return SkillExpertise(frozenset(resource_types), tuple(terms))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_skill(roots: SkillRoots, name: str) -> Skill:
     """Read one skill named in front matter.
 
@@ -280,7 +273,6 @@ def load_skill(roots: SkillRoots, name: str) -> Skill:
     return Skill(name, directory.resolve(), plugin_root, body, _expertise(front, f"skill {name}"))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skill_block(skill: Skill) -> str:
     """Format one skill as the text a session is given in place of Claude Code's own preload.
 
@@ -303,7 +295,6 @@ def skill_block(skill: Skill) -> str:
     return f'<skill name="{skill.name}">\nBase directory for this skill: {skill.directory}\n\n{body}\n</skill>'
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_skills(roots: SkillRoots, names: Iterable[str]) -> list[Skill]:
     """Read the named skills once each, in the order first named.
 
@@ -330,7 +321,6 @@ def load_skills(roots: SkillRoots, names: Iterable[str]) -> list[Skill]:
     return loaded
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skills_text(skills: Sequence[Skill]) -> str:
     """Format skills as the section appended to a launched agent's prompt.
 
@@ -349,7 +339,6 @@ def skills_text(skills: Sequence[Skill]) -> str:
     return "\n\n".join([SKILLS_HEADING, *(skill_block(skill) for skill in skills)])
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def matching_skills(plugin: Path, resource_types: Iterable[str], text: str) -> tuple[str, ...]:
     """Name the plugin's skills that declare themselves expertise for these domains.
 
@@ -380,7 +369,6 @@ def matching_skills(plugin: Path, resource_types: Iterable[str], text: str) -> t
     return tuple(matched)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_expertise(bead: str, environ: Mapping[str, str]) -> tuple[str, ...]:
     """Read the expertise list recorded for an Epic: the skills its domains need.
 

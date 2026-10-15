@@ -7,15 +7,18 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] -- sets sys.path
 
 # isort: split
+from typing import TYPE_CHECKING
+
 from driver_surface_types import CONTROL_REPO_ENV
-from typeguard import CollectionCheckStrategy, typechecked
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 _LOG = logging.getLogger(__name__)
 
@@ -24,7 +27,6 @@ class LockTimeoutError(TimeoutError):
     """A measured lock wait expired, without interpreting a command's stderr."""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def seconds(name: str, default: float) -> float:
     """Resolve a positive timeout from the process environment.
 
@@ -42,7 +44,6 @@ def seconds(name: str, default: float) -> float:
     return value
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def control_repo() -> Path:
     """Resolve the shared control repository for all lock clients.
 
@@ -61,7 +62,6 @@ def control_repo() -> Path:
 
 
 @contextmanager
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def file_lock(path: Path, wait: float) -> Generator[None]:
     """Acquire an exclusive flock with a bounded wait.
 
@@ -90,7 +90,6 @@ def file_lock(path: Path, wait: float) -> Generator[None]:
 
 
 @contextmanager
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def central_lock(wait: float) -> Generator[None]:
     """Use the sync scripts' mkdir/pid protocol, including dead-owner recovery.
 
@@ -136,7 +135,6 @@ def central_lock(wait: float) -> Generator[None]:
 
 
 @contextmanager
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def bd_gate(*, write: bool) -> Generator[None]:
     """Take the driver gate before the central write lock, in one fixed order.
 

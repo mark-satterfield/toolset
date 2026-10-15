@@ -15,12 +15,9 @@ from this file by path; ``atw-matrix verify`` runs the same code.
 """
 
 import sys
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, TypedDict
-
-from typeguard import CollectionCheckStrategy, typechecked
+from typing import TYPE_CHECKING, Final, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -36,6 +33,9 @@ from matrix_contract import (
 )
 from matrixstore import DEFAULT_LOCK_WAIT, Matrix, MatrixRefusedError, matrix_path, require_role, update_matrix
 from matrixtasks import BuiltEntry, BuiltRead, TaskBead, built, read_tasks
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 COMMAND_VERIFY: Final = "verify"
 
@@ -56,7 +56,6 @@ class StoryVerified(TypedDict):
     """The ids the Story's Tasks carry that are the id of no entry, so nothing was marked for them."""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def verify(matrix: Matrix, read: BuiltRead, commit: str) -> StoryVerified:
     """Set the verified mark on what a Story built.
 
@@ -110,7 +109,6 @@ def verify(matrix: Matrix, read: BuiltRead, commit: str) -> StoryVerified:
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def matrix_file(environ: Mapping[str, str]) -> Path:
     """Name the matrix file the driver records in.
 
@@ -125,7 +123,6 @@ def matrix_file(environ: Mapping[str, str]) -> Path:
     return matrix_path(None, environ)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def record_verified(
     path: Path,
     story: str,

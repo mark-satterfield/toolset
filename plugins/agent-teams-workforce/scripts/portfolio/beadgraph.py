@@ -44,7 +44,7 @@ from beadcontracts import PlannedWrite
 from contracts import JsonObject, JsonValue, json_object
 from orchestrator.core import handback_contract
 from orchestrator.core import tool_locks as locks
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, check_type
 
 _ARGUMENT_ERROR: str = "Arguments violate the beadgraph input contract"
 
@@ -64,7 +64,6 @@ BLOCKS = "blocks"
 TRACKS = "tracks"
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def edge_type(kind: str) -> str:
     """Return the dependency type for an edge onto this issue type.
 
@@ -121,7 +120,6 @@ class GraphError(RuntimeError):
         self.cause: str = cause
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class Bead:
     """One tracker record, reduced to the fields sequencing reasons about."""
@@ -168,7 +166,6 @@ class Bead:
         return tuple(split_ids(self.metadata.get(KEY_SEQ_OWNED_BLOCKERS, "")))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class Graph:
     """Every bead in the tracker, indexed, plus the source it was read from."""
@@ -269,7 +266,6 @@ class Graph:
         return sorted(out, key=lambda b: b.id)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def split_ids(raw: str) -> list[str]:
     """Parse a comma-separated bead-id list.
 
@@ -285,7 +281,6 @@ def split_ids(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     """Render identifiers in the comma-separated metadata form.
 
@@ -301,7 +296,6 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     return ",".join(sorted(set(ids)))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class BdGate(Protocol):
     """Acquire the shared tracker gate using the requested access mode."""
 
@@ -360,7 +354,6 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
     return Path(home) if home else central
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     """Make one serialized, bounded bd call with a cause from structured facts.
 
@@ -435,7 +428,6 @@ def _bd_json(args: list[str], repo: Path | None) -> JsonValue:
     return checked
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def now_iso() -> str:
     """Format the current instant in UTC.
 
@@ -446,7 +438,6 @@ def now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def same_value(stored: JsonValue, wanted: str) -> bool:
     """Whether a value read back from the tracker is the value that was written.
 
@@ -528,7 +519,6 @@ def _metadata_text(value: JsonValue) -> str:
     return value if isinstance(value, str) else str(value)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
     """Write pipeline metadata through the beads-contract functions and the shared transport.
 
@@ -559,7 +549,6 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         raise GraphError(str(exc)) from exc
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class Writer:
     """The one path for tracker writes; a dry-run writer records each write instead.
@@ -645,7 +634,6 @@ SCOPE_READINESS: Final[HashScope] = bead_metadata.SCOPE_READINESS
 _SCOPE_ERROR: Final[str] = f"The fingerprint scope must be one of {', '.join(bead_metadata.SCOPES)}"
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def fingerprints(records: list[JsonObject], scope: HashScope = SCOPE_READINESS) -> dict[str, str]:
     """Compute every record fingerprint through the shared contract.
 
@@ -697,7 +685,6 @@ def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[JsonO
     return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
     """Return every record of one issue type directly under a parent, from one `bd list` call.
 
@@ -724,7 +711,6 @@ def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
     return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def bead_of(record: JsonObject) -> Bead:
     """Normalize one tracker record, allowing omitted unset fields.
 
@@ -766,7 +752,6 @@ def bead_of(record: JsonObject) -> Bead:
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
     """Read the whole tracker live through `bd` and normalize it.
 

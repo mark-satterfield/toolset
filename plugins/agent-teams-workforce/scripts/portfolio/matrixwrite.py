@@ -28,12 +28,9 @@ entry, or to a document that describes it, clears the mark (``matrixstore.Matrix
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
-from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, TypedDict
-
-from typeguard import CollectionCheckStrategy, typechecked
+from typing import TYPE_CHECKING, Final, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -81,6 +78,9 @@ from matrixstore import (
     repository_side_id,
     slug,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
@@ -347,7 +347,6 @@ def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str, stat
     return existing.side
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entry a caller may state.
     matrix: Matrix,
     kind: EntryKind,
@@ -459,7 +458,6 @@ def _held(matrix: Matrix, wanted: Relationship) -> Relationship | None:
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The parts of a relationship, as the command states them.
     matrix: Matrix,
     kind: RelationshipKind,
@@ -507,7 +505,6 @@ def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - T
     return {"relationship": relationship_json(stored), "added": kept is None, "changed": changed}
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def unlink(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The parts of a relationship, as the command states them.
     matrix: Matrix,
     kind: RelationshipKind,
@@ -573,7 +570,6 @@ def _last_publisher(matrix: Matrix, relationship: Relationship) -> bool:
     return matrix.publishers(relationship.end) == [relationship.start]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The ruling's parts, as the command states them.
     matrix: Matrix,
     entry_id: EntryId,
@@ -635,7 +631,6 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
     return {"id": entry_id, "stands": stands, "rule": rule.strip(), "entry": entry_json(settled)}
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     """Set the architecture-approved mark on an Epic's requirements and the features that serve them.
 
@@ -685,7 +680,6 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def move_repository(matrix: Matrix, old: str, new: str) -> MoveResult:
     """Give every stack of one repository another repository's name.
 
@@ -748,7 +742,6 @@ def _git(root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def commit(path: Path, bead: str = "", *, wait: float = DEFAULT_LOCK_WAIT) -> CommitResult:
     """Commit the matrix file alone in the repository that holds it, and push it.
 
