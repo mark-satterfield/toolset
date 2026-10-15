@@ -76,12 +76,6 @@ class SkillRoots:
     config: Path
     control: Path | None
 
-    def __post_init__(self) -> None:
-        """Validate every constructed field."""
-        check_type(self.plugin, Path)
-        check_type(self.config, Path)
-        check_type(self.control, Path | None)
-
 
 @dataclass(frozen=True)
 class SkillExpertise:
@@ -89,11 +83,6 @@ class SkillExpertise:
 
     resource_types: frozenset[str]
     terms: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
-        check_type(self.resource_types, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.terms, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 @dataclass(frozen=True)
@@ -105,14 +94,6 @@ class Skill:
     plugin_root: Path | None
     body: str
     expertise: SkillExpertise
-
-    def __post_init__(self) -> None:
-        """Validate every constructed field."""
-        check_type(self.name, str)
-        check_type(self.directory, Path)
-        check_type(self.plugin_root, Path | None)
-        check_type(self.body, str)
-        check_type(self.expertise, SkillExpertise)
 
 
 def installed_plugin(config: Path, name: str) -> Path:

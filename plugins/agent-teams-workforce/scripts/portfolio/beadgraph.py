@@ -40,7 +40,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-c
 import bead_metadata
 import beads_contract
 from bead_metadata import KEY_SEQ_OWNED_BLOCKERS, HashScope
-from beadcontracts import PlannedWrite
 from contracts import JsonObject, JsonValue, json_object
 from orchestrator.core import handback_contract
 from orchestrator.core import tool_locks as locks
@@ -51,6 +50,8 @@ _ARGUMENT_ERROR: str = "Arguments violate the beadgraph input contract"
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
+
+    from beadcontracts import PlannedWrite
 
 #: The `beads-contract` CLI — the one writer of this pipeline's bead metadata. Going
 #: through it is what keeps ONE statement of which keys exist and how they merge; a
@@ -134,18 +135,6 @@ class Bead:
     tracked: tuple[str, ...] = ()
     description: str = ""
 
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.id, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.title, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.kind, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.status, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.parent, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.metadata, dict[str, str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.blockers, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.tracked, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.description, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
     @property
     def closed(self) -> bool:
         """Whether the bead is finished."""
@@ -174,13 +163,6 @@ class Graph:
     source: str
     records: list[JsonObject] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.beads, dict[str, Bead], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.source, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.records, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.warnings, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def of_kind(self, *kinds: str) -> list[Bead]:
         """Select beads of the given issue types.
@@ -563,12 +545,6 @@ class Writer:
     repo: Path | None
     dry_run: bool = False
     planned: list[PlannedWrite] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.repo, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.dry_run, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.planned, list[PlannedWrite], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def bd(self, args: list[str], stdin: str | None = None) -> None:
         """Run a `bd` command that changes the tracker, or record it in a dry run.
