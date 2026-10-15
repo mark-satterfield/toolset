@@ -172,6 +172,4 @@ the revision that existed when it began, so a fix landed mid-session never takes
 effect; and the tool call records only the name, so nothing afterwards can
 establish which revision actually ran. A run that looks reproducible is not.
 
-`scriptPath` pins the artifact under execution. Name dispatch is refused by
-`pre-tool-workflow-dispatch-guard.cjs`, which detects the stale-snapshot form
-and names the path-pinned replacement.
+`scriptPath` pins the artifact under execution.

@@ -2,40 +2,44 @@
 'use strict';
 
 /**
- * PreToolUse hook — nobody writes to the default branch in the main working tree.
+ * PreToolUse hook: no edit lands in the primary working tree of a product repository.
  *
- * "All branch work in worktrees; never branch in the main working tree" was a
- * non-negotiable that existed only as prose. Nothing created a worktree, nothing
- * created a branch, no gate checked which branch a phase was on, and no guard
- * blocked the write — so a Red phase handed a repoPath pointing at the main tree
- * wrote its test files straight onto `main`. It did exactly what it was told.
+ * Tier 1 repositories (the SkillSpoke product: services, libraries, infrastructure, web)
+ * take all work in worktrees. Tier 2 repositories (the control repository, the toolset
+ * repository, the documentation vault) commit in their primary working tree, so this
+ * guard must never block them.
  *
- * Meanwhile deploy.js requires "the work is committed on a feature branch IN A
- * WORKTREE", a state nothing upstream produced. The chain only closes if the
- * constraint is checked where the write happens.
+ * Which repository is which comes from the tier record the polyrepo-steward exports:
+ * $SKILLSPOKE_CC/.polyrepo/repository-tiers.json, a JSON object mapping each
+ * repository's absolute path to "product" or "tooling". The guard blocks only a write
+ * inside a repository the record lists as "product". When the record is absent or
+ * unreadable, the guard allows the write and prints one warning line, so a missing
+ * record never blocks tier 2 work.
  *
- * THIS GUARD DOES NOT EXEMPT SUBAGENTS, and that is deliberate — it is the one
- * guard here that does not. The others govern the orchestrator's ROLE: subagents
- * are exempt because implementing is their job. This one governs WHERE anyone may
- * write, and an implementer writing to main is the exact failure observed. A rule
- * that binds only the orchestrator would have stopped nothing.
+ * The guard binds subagents as well as the session the owner talks to: an implementer
+ * writing to a product repository's primary tree is the failure it exists to stop.
  *
  * Decision order:
- *   1. unparseable input                    -> exit 2  (FAIL CLOSED, REQ-ORCH-10a)
- *   2. out of scope (source repo / mode off)-> exit 0
- *   3. non-edit tool                        -> exit 0
- *   4. path not in a git repo               -> exit 0
- *   5. linked worktree, or feature branch   -> exit 0
- *   6. default branch in the MAIN worktree  -> exit 2
+ *   1. unparseable hook input                           -> exit 2 (fail closed)
+ *   2. non-edit tool, or no target path                 -> exit 0
+ *   3. tier record absent or unreadable                 -> exit 0, one warning line
+ *   4. target outside every "product" repository        -> exit 0
+ *   5. target under the repository's .worktrees/        -> exit 0
+ *   6. target in a linked worktree                      -> exit 0
+ *   7. otherwise (primary tree of a product repository) -> exit 2
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const DEFAULT_BRANCHES = new Set(['main', 'master', 'trunk', 'develop']);
+const CONTROL_REPO_ENV = 'SKILLSPOKE_CC';
+const TIER_RECORD = path.join('.polyrepo', 'repository-tiers.json');
+const PRODUCT_TIER = 'product';
+const KNOWN_TIERS = new Set([PRODUCT_TIER, 'tooling']);
+const WORKTREE_DIR = '.worktrees';
+const MAX_ASCENT = 40;
 
 /** Reads all of stdin synchronously; returns '' when unreadable. */
 function readStdin() {
@@ -46,15 +50,12 @@ function readStdin() {
   }
 }
 
-/** Runs git in a directory, returning trimmed stdout or null. */
+/** Runs git in a directory, returning trimmed stdout or null. stderr is inherited, not hidden. */
 function git(cwd, args) {
   try {
     return execFileSync('git', args, {
       cwd,
       encoding: 'utf8',
-      // stderr is INHERITED, not discarded. Suppressing it hides why a repo
-      // lookup failed, and this fleet's rules prohibit hiding errors — a guard
-      // that fails silently is indistinguishable from one that passed.
       stdio: ['ignore', 'pipe', 'inherit'],
       timeout: 5000,
     }).trim();
@@ -63,10 +64,19 @@ function git(cwd, args) {
   }
 }
 
-/** The directory to ask git about — the file's own, since it may not exist yet. */
+/** Resolves symlinks when the path exists; returns the resolved path otherwise. */
+function realOrResolved(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** The nearest existing directory holding the target, since the file may not exist yet. */
 function containingDir(filePath) {
   let dir = path.dirname(path.resolve(filePath));
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < MAX_ASCENT; i += 1) {
     if (fs.existsSync(dir)) return dir;
     const up = path.dirname(dir);
     if (up === dir) return null;
@@ -75,96 +85,93 @@ function containingDir(filePath) {
   return null;
 }
 
+/** True when child is root itself or lies below it. */
+function isWithin(root, child) {
+  const rel = path.relative(root, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** Writes one warning line and allows the write. */
+function allowWithWarning(why) {
+  process.stderr.write(`main-worktree guard: ${why}; the write is allowed.\n`);
+  process.exit(0);
+}
+
 /** Denies with a reason and exits 2. */
-function denyUnreadable(why) {
-  process.stderr.write(
-    `${[
-      '--- Write to Main Working Tree Blocked ---',
-      '',
-      why,
-      '',
-      'This guard sits on the edit path, so it cannot fail open: a guard that cannot',
-      'establish WHERE a write is going has no basis for permitting it (REQ-ORCH-10a).',
-      '--- End ---',
-    ].join('\n')}\n`,
-  );
+function deny(lines) {
+  process.stderr.write(`${['--- Write to Main Working Tree Blocked ---', '', ...lines, '--- End ---'].join('\n')}\n`);
   process.exit(2);
+}
+
+/**
+ * The real paths of the repositories the tier record lists as "product".
+ * Exits 0 with a warning when the record is absent, unreadable or malformed.
+ */
+function productRepositories() {
+  const controlRepo = process.env[CONTROL_REPO_ENV];
+  if (!controlRepo) allowWithWarning(`$${CONTROL_REPO_ENV} is not set, so the tier record cannot be found`);
+  const recordPath = path.join(controlRepo, TIER_RECORD);
+  let record;
+  try {
+    record = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
+  } catch (error) {
+    allowWithWarning(`the tier record ${recordPath} is absent or unreadable (${error.message})`);
+  }
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+    allowWithWarning(`the tier record ${recordPath} is not a JSON object`);
+  }
+  const bad = Object.entries(record).filter(([repo, tier]) => !path.isAbsolute(repo) || !KNOWN_TIERS.has(tier));
+  if (bad.length > 0) {
+    allowWithWarning(`the tier record ${recordPath} has ${bad.length} entr(ies) that are not an absolute path mapped to product or tooling`);
+  }
+  return Object.entries(record)
+    .filter(([, tier]) => tier === PRODUCT_TIER)
+    .map(([repo]) => realOrResolved(repo));
+}
+
+/** True when the directory is inside a linked worktree, not a primary working tree. */
+function inLinkedWorktree(dir) {
+  const gitDir = git(dir, ['rev-parse', '--git-dir']);
+  const commonDir = git(dir, ['rev-parse', '--git-common-dir']);
+  return Boolean(gitDir && commonDir && path.resolve(dir, gitDir) !== path.resolve(dir, commonDir));
 }
 
 function main() {
   const raw = readStdin();
-  if (!raw.trim()) {
-    denyUnreadable('The guard received no hook input and cannot establish the write target.');
-  }
-
+  if (!raw.trim()) deny(['The guard received no hook input and cannot establish the write target.']);
   let event;
   try {
     event = JSON.parse(raw);
   } catch {
-    denyUnreadable('The guard could not parse its hook input as JSON.');
+    deny(['The guard could not parse its hook input as JSON.']);
   }
 
-  // NOTE: no agent_id check. See the header — this guard binds subagents too.
-  if (!guardsApplyHere(event)) process.exit(0);
-
   if (!EDIT_TOOLS.has(String(event.tool_name ?? ''))) process.exit(0);
-
   const toolInput = event.tool_input ?? {};
   const target = toolInput.file_path ?? toolInput.notebook_path ?? '';
   if (!target) process.exit(0);
 
+  const products = productRepositories();
   const dir = containingDir(target);
   if (!dir) process.exit(0);
+  const realDir = realOrResolved(dir);
+  const repoRoot = products.find((repo) => isWithin(repo, realDir));
+  if (!repoRoot) process.exit(0);
+  if (isWithin(path.join(repoRoot, WORKTREE_DIR), realDir)) process.exit(0);
+  if (inLinkedWorktree(realDir)) process.exit(0);
 
-  // Not a git repo at all — nothing to protect.
-  const inRepo = git(dir, ['rev-parse', '--is-inside-work-tree']);
-  if (inRepo !== 'true') process.exit(0);
-
-  // A LINKED worktree is exactly where work belongs. git reports the common dir
-  // differently there, which is the cheapest reliable way to tell them apart.
-  const gitDir = git(dir, ['rev-parse', '--git-dir']);
-  const commonDir = git(dir, ['rev-parse', '--git-common-dir']);
-  const isLinkedWorktree =
-    gitDir && commonDir && path.resolve(dir, gitDir) !== path.resolve(dir, commonDir);
-  if (isLinkedWorktree) process.exit(0);
-
-  const branch = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (!branch || branch === 'HEAD') process.exit(0); // detached: not a branch to protect
-  if (!DEFAULT_BRANCHES.has(branch)) process.exit(0); // feature branch in the main tree
-
-  const repoRoot = git(dir, ['rev-parse', '--show-toplevel']) || dir;
   const repoName = path.basename(repoRoot);
-  const worktreeDir = path.join(repoRoot, '.worktrees');
-
-  process.stderr.write(
-    `${[
-      '--- Write to Main Working Tree Blocked ---',
-      '',
-      `File:   ${target}`,
-      `Repo:   ${repoRoot}`,
-      `Branch: ${branch} (the MAIN working tree, not a linked worktree)`,
-      '',
-      'Branch work belongs in a worktree. Writing here puts uncommitted work on the',
-      'default branch, where a second run would collide with it and where deploy —',
-      'which requires the work on a feature branch in a worktree — cannot find it.',
-      '',
-      'Create one and work there instead:',
-      '',
-      `  git -C ${repoRoot} worktree list        # reuse one for this bead if it exists`,
-      `  git -C ${repoRoot} worktree add -b <type>/<bead-id> \\`,
-      `      ${worktreeDir}/<bead-id>-${repoName}`,
-      '',
-      'Then re-dispatch with repoPath pointing at the worktree. Everything downstream',
-      'inherits it.',
-      '',
-      'This guard binds subagents as well as the orchestrator: an implementer writing',
-      'to main is the failure it exists to stop.',
-      '',
-      'Rule source: agent-teams-workforce — never branch in a main working tree',
-      '--- End ---',
-    ].join('\n')}\n`,
-  );
-  process.exit(2);
+  deny([
+    `File: ${target}`,
+    `Repo: ${repoRoot} (a product repository, primary working tree)`,
+    '',
+    'Product repositories take all work in worktrees. Create or reuse one and work there:',
+    '',
+    `  git -C ${repoRoot} worktree list`,
+    `  git -C ${repoRoot} worktree add -b <type>/<bead-id> ${path.join(repoRoot, WORKTREE_DIR)}/<bead-id>-${repoName}`,
+    '',
+    `Tier record: $${CONTROL_REPO_ENV}/${TIER_RECORD}`,
+  ]);
 }
 
 main();

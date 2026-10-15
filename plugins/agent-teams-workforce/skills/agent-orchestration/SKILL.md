@@ -32,6 +32,5 @@ Read only the reference needed for the current assignment:
 
 - [Delegation prompt template](../delegate/SKILL.md) when authorized to dispatch.
 - [Preparation worksheet](../how-to-delegate/SKILL.md) when explicitly requested; it is not startup work.
-- [Orchestrator guard reference](../orchestrator-discipline/SKILL.md) for hook scope or guard troubleshooting. Top-level mode guards do not turn a selector into a dispatcher.
 - [Polyrepo router](../polyrepo-router/SKILL.md) for repository governance questions, not routine workflow selection.
 - `agent-teams-workforce:validation-protocol` for evidence standards when validation is assigned. Completion is measured against the caller's acceptance criteria; no external completion command is required.

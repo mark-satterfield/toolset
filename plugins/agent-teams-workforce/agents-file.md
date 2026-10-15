@@ -10,5 +10,3 @@ kept separate.
   `$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` (`$CLAUDE_CONFIG_DIR` defaults to
   `~/.claude`).
 - **Commands:** the plugin's slash commands, `/agent-teams-workforce:<command>`.
-
-@${CLAUDE_PLUGIN_ROOT}/AGENT-INSTRUCTIONS.md

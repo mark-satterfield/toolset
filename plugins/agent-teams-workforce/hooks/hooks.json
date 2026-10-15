@@ -1,6 +1,8 @@
 {
-  "description": "Orchestrator role enforcement. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
-  "modules": ["./register.js"],
+  "description": "Plugin hooks: the tier 1 main-worktree guard, the elaboration AWS CLI guard, the relay handoff check, the pipeline stop check, and the user-level agent sync.",
+  "modules": [
+    "./register.js"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -8,43 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-orchestrator-edit-guard.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-protect-main-worktree.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Workflow",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-workflow-dispatch-guard.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-orchestrator-read-warning.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-diagnostic-command-gate.cjs\""
           }
         ]
       },
@@ -58,24 +24,6 @@
         ]
       },
       {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-self-verification-gate.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|mcp__beads__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-beads-write-guard.cjs\""
-          }
-        ]
-      },
-      {
         "matcher": "Bash|StructuredOutput",
         "hooks": [
           {
@@ -83,35 +31,11 @@
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/portfolio/relayhandoff.py\""
           }
         ]
-      },
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-block-explore-for-analysis.cjs\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Workflow|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-workflow-payload-cap.cjs\""
-          }
-        ]
       }
     ],
     "SessionStart": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-config-conflict-check.cjs\""
-          },
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-user-agents.cjs\""

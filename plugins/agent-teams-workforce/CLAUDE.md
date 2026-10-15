@@ -7,7 +7,6 @@
 This is the primary, actively-developed plugin. Its detailed specifications are large — open them on demand rather than loading everything at once:
 
 - `AGENT-TEAMS-WORKFORCE.md` — full workforce and SDLC pipeline specification
-- `AGENT-INSTRUCTIONS.md` — how the agent roster is authored and generated
 - `agents-file.md` — the Agent Teams Workforce block that `polyrepo agents-sync` writes into each repository's `AGENTS.md`
 
 Agents live in `agents/` (auto-discovered), skills in `skills/`, commands in `commands/`.
