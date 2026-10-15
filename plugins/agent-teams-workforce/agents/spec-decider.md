@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design, agent-teams-workforce:artifact-handoff, agent-teams-workforce:architecture-baseline]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture]
 effort: high
 isolation: worktree
 color: purple
@@ -33,8 +33,8 @@ result at the exact output path, which Python validates and records. The inputs 
 (`spec-<slug>.review.json`, artifact-handoff's `schemas/spec-review.schema.json`), each author's
 correction that states a dispute (`spec-<slug>.<document>.correction.json`,
 `schemas/spec-correction.schema.json`), the three specification documents as they now stand, the
-TRD, and the criteria file (`review-criteria.json` of the architecture-baseline skill;
-architecture-baseline/review-standard.md states the same criteria as prose).
+TRD, and the criteria file (`review-criteria.json` of the effective-architecture skill;
+effective-architecture/review-standard.md states the same criteria as prose).
 
 Rule on every finding id a correction lists under `disputes`, and on no other finding. For each,
 weigh the reviewer's observation against the author's reason and evidence, measured by the

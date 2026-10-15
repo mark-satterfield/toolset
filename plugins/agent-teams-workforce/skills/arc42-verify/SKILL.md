@@ -39,7 +39,7 @@ business requirements, is for the owner.
   MODEL, the section model or the criteria file does not establish is not a finding.
 - `../arc42/references/` — the section model (which states the one home of each kind of design
   fact and the level of detail), the living-document rules and how to find documents.
-- `../architecture-baseline/review-criteria.json` — the criteria and the level of each.
+- `../effective-architecture/review-criteria.json` — the criteria and the level of each.
 - All three files in `references/` — the assertions you make.
 
 ## What you verify

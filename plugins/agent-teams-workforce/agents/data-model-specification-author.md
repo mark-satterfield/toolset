@@ -16,7 +16,7 @@ skills:
 - agent-teams-workforce:dynamodb
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:artifact-handoff
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: purple
@@ -41,7 +41,7 @@ document with decisionIds frontmatter and exact source references. A surface wit
 work gets a short reasoned not-applicable document. Do not create infrastructure or change the
 architecture. Contract makers run in parallel; acceptance criteria consume both completed files.
 
-Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
+Write to criteria I1 to I7 of the review standard, effective-architecture/review-standard.md. The
 architecture and the TRD do not hold these details; you settle them here. Start from
 `notesForSpecs` in your context file, which holds the details the solutions architect already
 knew. The context file also holds what the matrix returns for this Story, and you run no

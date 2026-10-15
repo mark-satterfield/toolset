@@ -234,7 +234,7 @@ input.
 
 ### 2.4 One set of criteria for the architecture team
 
-`<plugin>/skills/architecture-baseline/review-criteria.json` holds every criterion as data: its id,
+`<plugin>/skills/effective-architecture/review-criteria.json` holds every criterion as data: its id,
 its level (architecture, technical requirement or implementation), its home document and its text;
 the agents responsible for each level; and, for each reviewer group, its reviewer, the criteria it
 covers and the rule that selects it (`appliesWhen`: kinds of unapproved content, and the names of
@@ -256,7 +256,7 @@ reads it through a module generated from it: `scripts/architecture_work_contract
 once; each file has a wrapper schema that refers to its definition), `scripts/matrix_contract.py`
 (from `matrix.schema.json`, including the review scope a reviewer is handed), and the other
 generated contracts the `artifact-handoff` skill lists. An agent of the architecture team finds
-the schemas through the `architecture-baseline` skill; the spec and Task agents through
+the schemas through the `effective-architecture` skill; the spec and Task agents through
 `artifact-handoff`. A contract only code produces and consumes is one typed Python module, named in
 the register. No schema text is placed in a prompt.
 

@@ -5,7 +5,7 @@ Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`
 `architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
-a PRD needs, starting from the approved baseline (the effective arc42 before this Epic runs, which
+a PRD needs, starting from the effective architecture (the effective arc42 before this Epic runs, which
 is approved as of now and never complete), until it is ready for review. The matrix is its map and
 never shows that the architecture is complete, correct or good. Every conclusion it reaches,
 `no-change-needed` included, goes through the check and the review. The script starts sessions, records steps and carries results. It decides nothing

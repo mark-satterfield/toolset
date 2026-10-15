@@ -52,7 +52,7 @@ The Story document lists what the Story builds, one line per item: an event as
 ## The review
 
 One reviewer session per repository checks the three documents against the implementation-level
-criteria of `skills/architecture-baseline/review-criteria.json`. What follows is planned by the
+criteria of `skills/effective-architecture/review-criteria.json`. What follows is planned by the
 step whose result calls for it, one step at a time, after that step:
 
 | Step | Planned when | Performed by | Records |

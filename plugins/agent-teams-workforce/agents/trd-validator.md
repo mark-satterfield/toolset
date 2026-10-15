@@ -7,7 +7,7 @@ disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:architecture-baseline]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:effective-architecture]
 effort: low
 isolation: worktree
 color: teal
@@ -34,7 +34,7 @@ in `dependsOnApproved`, with both statements.
 
 ## What you review it against
 
-The technical-requirement criteria of `architecture-baseline/review-criteria.json`, the
+The technical-requirement criteria of `effective-architecture/review-criteria.json`, the
 criteria file the brief names. It is the same file the solutions architect and `trd-author`
 worked to. A criterion is satisfied when the TRD satisfies it. A route path, a field name, a
 key name, a parameter name and a schema belong to the specs, and their absence from the TRD

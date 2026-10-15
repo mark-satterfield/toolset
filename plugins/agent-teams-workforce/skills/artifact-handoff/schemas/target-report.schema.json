@@ -11,7 +11,7 @@
     "closureRoots": "closure-roots.json",
     "targetFolder": "target",
     "deltaFolder": "delta",
-    "baselineFile": "baseline.json",
+    "effectiveArchitectureFile": "effective-architecture.json",
     "closureFile": "closure.json"
   },
   "x-targetRefusalKeys": ["refusals", "subjectRefusals"],
@@ -132,7 +132,7 @@
         "kind": {"$ref": "#/$defs/DeltaItemKind"},
         "state": {"$ref": "#/$defs/ElementState"},
         "repository": {"type": ["string", "null"]},
-        "baseline": {"type": "string"},
+        "effectiveArchitecture": {"type": "string"},
         "requires": {"description": "Ids of the items needed built first.", "type": "array", "items": {"type": "string"}},
         "requiredBy": {"description": "Ids of the items that need this one.", "type": "array", "items": {"type": "string"}},
         "evidence": {"type": "array", "items": {"type": "string"}},
@@ -155,7 +155,7 @@
         "items": {"description": "Count of items.", "type": "integer", "minimum": 0},
         "architectureChange": {"$ref": "#/$defs/ArchitectureChange"},
         "deltaExists": {"type": "boolean"},
-        "baselineValidated": {"type": "boolean"},
+        "effectiveArchitectureValidated": {"type": "boolean"},
         "implementationWork": {"type": ["integer", "null"], "minimum": 0},
         "implementationComplete": {"type": "boolean"},
         "prerequisites": {"type": "integer", "minimum": 0}
@@ -178,7 +178,7 @@
         "note": {"type": "string"},
         "views": {"type": "array", "items": {"$ref": "#/$defs/DeltaView"}},
         "items": {"type": "array", "items": {"$ref": "#/$defs/DeltaItem"}},
-        "baselineValidated": {"type": "boolean"},
+        "effectiveArchitectureValidated": {"type": "boolean"},
         "implementationWork": {"type": ["integer", "null"], "minimum": 0},
         "implementationComplete": {"type": "boolean"},
         "prerequisites": {"type": "integer", "minimum": 0}

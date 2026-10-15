@@ -15,7 +15,7 @@ from jsonschema.exceptions import best_match
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type NeedState = Literal["approved", "disagreement", "missing"]
-type StateConclusion = Literal["baseline-meets-every-need", "work-remains"]
+type StateConclusion = Literal["effective-architecture-meets-every-need", "work-remains"]
 type Conclusion = Literal["no-change-needed", "changes-designed", "unsettled"]
 type CriterionStatus = Literal["satisfied", "not-applicable"]
 type UnsettledKind = Literal["technical-choice", "business-conflict"]
@@ -29,7 +29,9 @@ type OwnerConcernKind = Literal["business-conflict", "section-2-conflict"]
 NEED_APPROVED: Final[Literal["approved"]] = "approved"
 NEED_DISAGREEMENT: Final[Literal["disagreement"]] = "disagreement"
 NEED_MISSING: Final[Literal["missing"]] = "missing"
-STATE_BASELINE_MEETS_EVERY_NEED: Final[Literal["baseline-meets-every-need"]] = "baseline-meets-every-need"
+STATE_EFFECTIVE_ARCHITECTURE_MEETS_EVERY_NEED: Final[Literal["effective-architecture-meets-every-need"]] = (
+    "effective-architecture-meets-every-need"
+)
 STATE_WORK_REMAINS: Final[Literal["work-remains"]] = "work-remains"
 CONCLUSION_NO_CHANGE_NEEDED: Final[Literal["no-change-needed"]] = "no-change-needed"
 CONCLUSION_CHANGES_DESIGNED: Final[Literal["changes-designed"]] = "changes-designed"
@@ -61,7 +63,7 @@ NEED_STATES: Final[tuple[NeedState, ...]] = (
     NEED_MISSING,
 )
 STATE_CONCLUSIONS: Final[tuple[StateConclusion, ...]] = (
-    STATE_BASELINE_MEETS_EVERY_NEED,
+    STATE_EFFECTIVE_ARCHITECTURE_MEETS_EVERY_NEED,
     STATE_WORK_REMAINS,
 )
 CONCLUSIONS: Final[tuple[Conclusion, ...]] = (

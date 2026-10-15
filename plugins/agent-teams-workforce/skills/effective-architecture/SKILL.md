@@ -1,5 +1,5 @@
 ---
-name: architecture-baseline
+name: effective-architecture
 description: The one set of criteria that the solutions architect works to and the reviewers review against, with the level of each.
 ---
 

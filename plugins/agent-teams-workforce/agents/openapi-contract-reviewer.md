@@ -13,7 +13,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:architecture-baseline]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture]
 effort: low
 isolation: worktree
 color: purple
@@ -44,7 +44,7 @@ The brief names six inputs: the contracts document (`spec-<slug>.md`), the data-
 (`spec-<slug>.data-model.md`), the acceptance criteria (`spec-<slug>.criteria.md`), the TRD
 (`trd.md`), the repository's context file (`spec-<slug>.context.json`, which lists the items
 of what this repository's Story builds) and the criteria file (`review-criteria.json` of the
-architecture-baseline skill; architecture-baseline/review-standard.md states the same criteria
+effective-architecture skill; effective-architecture/review-standard.md states the same criteria
 as prose). Read those, and open another file only to check a statement one of them cites.
 
 Review the three documents against the implementation-level criteria, I1 to I7, and against

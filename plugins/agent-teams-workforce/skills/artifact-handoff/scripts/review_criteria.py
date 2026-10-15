@@ -1,8 +1,8 @@
 """Read the review criteria and write the review standard from them, or check that it is current.
 
-``skills/architecture-baseline/review-criteria.json`` is the one definition of the criteria the
+``skills/effective-architecture/review-criteria.json`` is the one definition of the criteria the
 architecture, the TRD and the specs are written to and reviewed against. This module is its typed
-reader, and it writes ``skills/architecture-baseline/review-standard.md`` from it, so the prose
+reader, and it writes ``skills/effective-architecture/review-standard.md`` from it, so the prose
 standard cannot differ from the data. With --check it writes nothing and exits 1 when the
 standard differs from what the criteria produce.
 """
@@ -44,7 +44,7 @@ LEVELS: Final[tuple[Level, ...]] = (
 HOMES: Final[tuple[Home, ...]] = ("arc42", "trd", "specs")
 SCOPE_KINDS: Final[tuple[ScopeKind, ...]] = ("heading", "scenario-fact", "trd-requirement", "spec-document")
 
-SKILL_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "architecture-baseline"
+SKILL_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "effective-architecture"
 CRITERIA_PATH: Final[Path] = SKILL_DIR / "review-criteria.json"
 STANDARD_PATH: Final[Path] = SKILL_DIR / "review-standard.md"
 STANDARD_WIDTH: Final[int] = 92

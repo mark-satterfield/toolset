@@ -9,7 +9,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 60
 skills:
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:senior-architect
@@ -50,5 +50,5 @@ Raise an owner concern only when two business requirements cannot both be met by
 or when the only workable design conflicts with section 2. A technical choice stays with the
 team.
 
-The criteria and their levels are in `architecture-baseline/review-standard.md`: a position
+The criteria and their levels are in `effective-architecture/review-standard.md`: a position
 that asks an arc42 document for detail below architecture level loses on that point.

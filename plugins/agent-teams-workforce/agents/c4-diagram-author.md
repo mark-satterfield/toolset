@@ -11,7 +11,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:architecture-diagramming
 - agent-teams-workforce:c4-diagramming
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: cyan
@@ -35,5 +35,5 @@ it renders and is readable, as the architecture-diagramming skill says.
 Write only the answer file, to `specialist-answer.schema.json`: the diagram as Mermaid source
 in `diagrams`, with the document and heading it belongs under, its view type and the elements
 it shows. `architecture-maintainer` places it in the document. Work at the architecture level
-of `architecture-baseline/review-standard.md`: a diagram holds no field, key, parameter or
+of `effective-architecture/review-standard.md`: a diagram holds no field, key, parameter or
 schema detail.

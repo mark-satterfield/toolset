@@ -7,7 +7,7 @@ validates accepted files; human-readable summaries are navigation, never evidenc
 A JSON schema must not be pasted into a brief. Input facts such as the
 repository and validation errors travel in referenced files.
 
-All architecture agents also read architecture-baseline/review-standard.md, which holds every
+All architecture agents also read effective-architecture/review-standard.md, which holds every
 criterion a document is judged by. `aws-solutions-architect` is responsible for the architecture
 an Epic needs; the files it and its team hand on are in the `architecture-work` section and the
 sections after it.
@@ -44,7 +44,7 @@ Fields and interpretation: uiItems use item (the id of an item the Story builds)
 
 ## architecture-views
 
-Fields and interpretation: The arc42 documents of the effective architecture: Markdown with the catalog front matter view_type, scope, subject, shows and lifecycle_state, and Mermaid where the document's type needs a diagram. They meet the architecture-level criteria of architecture-baseline/review-standard.md; detail the standard places in the TRD or the specs stays out of them. `architecture-maintainer` writes them from the solutions architect's write request with lifecycle_state in-review; Python sets effective and commits after review. Section 2 is the owner's.
+Fields and interpretation: The arc42 documents of the effective architecture: Markdown with the catalog front matter view_type, scope, subject, shows and lifecycle_state, and Mermaid where the document's type needs a diagram. They meet the architecture-level criteria of effective-architecture/review-standard.md; detail the standard places in the TRD or the specs stays out of them. `architecture-maintainer` writes them from the solutions architect's write request with lifecycle_state in-review; Python sets effective and commits after review. Section 2 is the owner's.
 
 ## trd-document
 
@@ -66,7 +66,7 @@ Fields and interpretation: Nonempty UTF-8 Markdown with stable acceptance criter
 
 Schema: [spec-review.schema.json](schemas/spec-review.schema.json).
 
-Fields and interpretation: findings each name id, document (spec, data-model or criteria), criterion (an implementation-level id of architecture-baseline/review-criteria.json), location, observation, correction and doneWhen; summary says what was reviewed. The one reviewer reads the three specification documents, the TRD, the repository context and the criteria file. Complete means every item the Story builds was checked against every implementation-level criterion that applies to it; an empty findings list means the documents meet them. Python drops a finding whose criterion is not at the implementation level.
+Fields and interpretation: findings each name id, document (spec, data-model or criteria), criterion (an implementation-level id of effective-architecture/review-criteria.json), location, observation, correction and doneWhen; summary says what was reviewed. The one reviewer reads the three specification documents, the TRD, the repository context and the criteria file. Complete means every item the Story builds was checked against every implementation-level criterion that applies to it; an empty findings list means the documents meet them. Python drops a finding whose criterion is not at the implementation level.
 
 ## spec-correction
 
@@ -142,13 +142,13 @@ The files of the architecture team that `aws-solutions-architect` leads. Every s
 
 Schema: [architecture-state.schema.json](schemas/architecture-state.schema.json).
 
-Fields and interpretation: needs each name what the PRD needs, its PRD requirement headings, a state (approved, disagreement or missing), the statements judged and the judgment; conclusion is `baseline-meets-every-need` or `work-remains`, a starting point and never a result. `aws-solutions-architect` writes it before anything else. Complete means every thing the PRD needs of the architecture has one entry, and the conclusion follows from the states.
+Fields and interpretation: needs each name what the PRD needs, its PRD requirement headings, a state (approved, disagreement or missing), the statements judged and the judgment; conclusion is `effective-architecture-meets-every-need` or `work-remains`, a starting point and never a result. `aws-solutions-architect` writes it before anything else. Complete means every thing the PRD needs of the architecture has one entry, and the conclusion follows from the states.
 
 ## architecture-result
 
 Schema: [architecture-result.schema.json](schemas/architecture-result.schema.json).
 
-Fields and interpretation: conclusion (`no-change-needed`, `changes-designed` or `unsettled`; every one goes through the check and the review); the features with the PRD requirements each serves; noFeature, every requirement no feature serves, with the reason; the new elements; each shared capability an element uses; the facts with their one home; the settled disagreements; one answer for every criterion whose level is architecture or technical-requirement; notesForSpecs; unsettled matters; reviewSignals; costEvidence. Complete means every such criterion is `satisfied` at a place that exists or `not-applicable` with its reason, every fact has one home, and `unsettled` is empty unless the conclusion is `unsettled`. Every feature and element the result names is an entry the architect already recorded in the matrix, and every requirement of the Epic is served by a feature or listed in noFeature: the step that accepts the result fails otherwise. A script selects the reviewers from reviewSignals by the `appliesWhen` rules of architecture-baseline/review-criteria.json, and reads from the matrix which documents are in review.
+Fields and interpretation: conclusion (`no-change-needed`, `changes-designed` or `unsettled`; every one goes through the check and the review); the features with the PRD requirements each serves; noFeature, every requirement no feature serves, with the reason; the new elements; each shared capability an element uses; the facts with their one home; the settled disagreements; one answer for every criterion whose level is architecture or technical-requirement; notesForSpecs; unsettled matters; reviewSignals; costEvidence. Complete means every such criterion is `satisfied` at a place that exists or `not-applicable` with its reason, every fact has one home, and `unsettled` is empty unless the conclusion is `unsettled`. Every feature and element the result names is an entry the architect already recorded in the matrix, and every requirement of the Epic is served by a feature or listed in noFeature: the step that accepts the result fails otherwise. A script selects the reviewers from reviewSignals by the `appliesWhen` rules of effective-architecture/review-criteria.json, and reads from the matrix which documents are in review.
 
 ## specialist-request
 

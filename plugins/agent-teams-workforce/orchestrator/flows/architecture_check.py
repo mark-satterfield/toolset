@@ -234,7 +234,7 @@ def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, s
     return scope, _scope_kinds(matrix, scope), epic_view(matrix, bead, unlinked=True)
 
 
-def _baseline_document(document: Entry, headings: set[str]) -> ScopeDocument:
+def _effective_architecture_document(document: Entry, headings: set[str]) -> ScopeDocument:
     """Render one effective document a no-change result cites as a document of the review scope.
 
     Returns:
@@ -253,7 +253,12 @@ def _baseline_document(document: Entry, headings: set[str]) -> ScopeDocument:
     }
 
 
-def _cited_baseline(matrix: Matrix, arch: Path, result: ArchitectureResult, scope: ReviewScope) -> list[ScopeDocument]:
+def _cited_effective_architecture(
+    matrix: Matrix,
+    arch: Path,
+    result: ArchitectureResult,
+    scope: ReviewScope,
+) -> list[ScopeDocument]:
     """List the documents the architect's criteria answers cite that the review scope lacks.
 
     Returns:
@@ -275,7 +280,10 @@ def _cited_baseline(matrix: Matrix, arch: Path, result: ArchitectureResult, scop
     heading: str
     for cited_id, heading in cited:
         headings.setdefault(cited_id, set()).add(heading)
-    return [_baseline_document(matrix.entry(document_id), held) for document_id, held in sorted(headings.items())]
+    return [
+        _effective_architecture_document(matrix.entry(document_id), held)
+        for document_id, held in sorted(headings.items())
+    ]
 
 
 def _under_review(
@@ -284,7 +292,7 @@ def _under_review(
     result: ArchitectureResult,
     arch: Path,
 ) -> tuple[ReviewScope, set[ScopeKind]]:
-    """Name what the reviewers are handed: the content in review, and a no-change conclusion's baseline.
+    """Name what the reviewers are handed: the content in review, and the effective documents a no-change result cites.
 
     A conclusion that the Epic needs nothing added or changed is a result like any other, so it
     is reviewed: the reviewers are handed the effective documents the architect cites as meeting
@@ -302,7 +310,7 @@ def _under_review(
         "epic": scope["epic"],
         "requirements": scope["requirements"],
         "features": scope["features"],
-        "documents": [*scope["documents"], *_cited_baseline(matrix, arch, result, scope)],
+        "documents": [*scope["documents"], *_cited_effective_architecture(matrix, arch, result, scope)],
     }
     return reviewed, {*_scope_kinds(matrix, reviewed), *present, SCOPE_HEADING}
 

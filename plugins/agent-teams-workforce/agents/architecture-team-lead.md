@@ -8,7 +8,7 @@ model: sonnet
 effort: medium
 maxTurns: 40
 skills:
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
 ---
 
@@ -22,7 +22,7 @@ not settle. A run with none of these has no lead.
 
 The brief names its inputs by label: each `findings` file is one review that raised
 something, `architecture result` is the architect's result with its `unsettled` entries,
-`criteria` is `architecture-baseline/review-criteria.json`, `specialists` lists the design
+`criteria` is `effective-architecture/review-criteria.json`, `specialists` lists the design
 specialists with their specialties (to `specialists.schema.json`), and `step journal` is
 the journal file. For each item
 decide one of the following and write your decisions, with one sentence of reason each, at

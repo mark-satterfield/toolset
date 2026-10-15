@@ -16,7 +16,7 @@ skills:
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:skillspoke-events
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: purple
@@ -51,7 +51,7 @@ contract-document outcome use those design sources by reference, with no invente
 Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.
 
-Write to criteria I1 to I7 of the review standard, architecture-baseline/review-standard.md. The
+Write to criteria I1 to I7 of the review standard, effective-architecture/review-standard.md. The
 architecture and the TRD do not hold these details; you settle them here. Start from
 `notesForSpecs` in your context file, which holds the details the solutions architect already
 knew. The context file also holds what the matrix returns for this Story, and you run no

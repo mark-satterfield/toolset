@@ -16,7 +16,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: cyan
@@ -43,7 +43,7 @@ wrong, report that in `dependsOnApproved`, with both statements.
 
 ## What you review it against
 
-`architecture-baseline/review-criteria.json`, the criteria file the brief names. It is the
+`effective-architecture/review-criteria.json`, the criteria file the brief names. It is the
 same file the solutions architect worked to. It names the criteria your reviewer group
 covers; a criterion that several groups cover is reviewed by each for its own specialty,
 which the paragraph above states. Each criterion has a level. Review each item against the

@@ -43,8 +43,6 @@ ELEMENT_STATES: Final[frozenset[ElementState]] = frozenset({STATE_UNKNOWN, STATE
 
 KEY_APPROVAL_FILES: Final = "approvalFiles"
 KEY_ARCHITECTURE_CHANGE: Final = "architectureChange"
-KEY_BASELINE: Final = "baseline"
-KEY_BASELINE_VALIDATED: Final = "baselineValidated"
 KEY_CLOSURE: Final = "closure"
 KEY_DELTA_DIR: Final = "deltaDir"
 KEY_DELTA_EXISTS: Final = "deltaExists"
@@ -53,6 +51,8 @@ KEY_DESIGN_CHANGED: Final = "designChanged"
 KEY_DOCUMENTATION_CHANGED: Final = "documentationChanged"
 KEY_DRAFT_WRITTEN: Final = "draftWritten"
 KEY_DRY_RUN: Final = "dryRun"
+KEY_EFFECTIVE_ARCHITECTURE: Final = "effectiveArchitecture"
+KEY_EFFECTIVE_ARCHITECTURE_VALIDATED: Final = "effectiveArchitectureValidated"
 KEY_ELEMENT: Final = "element"
 KEY_EVIDENCE: Final = "evidence"
 KEY_FILES: Final = "files"
@@ -97,7 +97,7 @@ DELTA_ITEMS_FILE: Final = "delta-items.json"
 CLOSURE_ROOTS_FILE: Final = "closure-roots.json"
 TARGET_FOLDER: Final = "target"
 DELTA_FOLDER: Final = "delta"
-BASELINE_FILE: Final = "baseline.json"
+EFFECTIVE_ARCHITECTURE_FILE: Final = "effective-architecture.json"
 CLOSURE_FILE: Final = "closure.json"
 TARGET_REPORT_PARTS: Final[tuple[str, str]] = (ARCHITECTURE_WORK_FOLDER, TARGET_REPORT_NAME)
 TARGET_REPORT_FILE: Final = "architecture/target.json"
@@ -204,7 +204,7 @@ class DeltaItem(TypedDict):
     kind: NotRequired[DeltaItemKind]
     state: NotRequired[ElementState]
     repository: NotRequired[str | None]
-    baseline: NotRequired[str]
+    effectiveArchitecture: NotRequired[str]
     requires: NotRequired[list[str]]
     requiredBy: NotRequired[list[str]]
     evidence: NotRequired[list[str]]
@@ -224,7 +224,7 @@ class DeltaSummary(TypedDict):
     items: NotRequired[int]
     architectureChange: NotRequired[ArchitectureChange]
     deltaExists: NotRequired[bool]
-    baselineValidated: NotRequired[bool]
+    effectiveArchitectureValidated: NotRequired[bool]
     implementationWork: NotRequired[int | None]
     implementationComplete: NotRequired[bool]
     prerequisites: NotRequired[int]
@@ -244,7 +244,7 @@ class DeltaResult(TypedDict):
     note: NotRequired[str]
     views: NotRequired[list[DeltaView]]
     items: NotRequired[list[DeltaItem]]
-    baselineValidated: NotRequired[bool]
+    effectiveArchitectureValidated: NotRequired[bool]
     implementationWork: NotRequired[int | None]
     implementationComplete: NotRequired[bool]
     prerequisites: NotRequired[int]

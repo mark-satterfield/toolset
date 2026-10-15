@@ -81,7 +81,7 @@ if TYPE_CHECKING:
 
     from orchestrator.core.io import JsonValue
 
-CRITERIA_FILE: Final = "skills/architecture-baseline/review-criteria.json"
+CRITERIA_FILE: Final = "skills/effective-architecture/review-criteria.json"
 
 type Pass = Literal["correction", "revision"]
 WORK_CORRECTION: Final[Pass] = "correction"

@@ -13,7 +13,7 @@ permissionMode: acceptEdits
 maxTurns: 100
 skills:
 - agent-teams-workforce:subagent-contract
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: teal
@@ -82,7 +82,7 @@ would need a new element is returned in `noSource`. Where the PRD, section 2 and
 documents give no value for an obligation the design needs, take the value from AWS
 documentation and the stated scale, and cite what it rests on.
 
-Write to the technical-requirement criteria of `architecture-baseline/review-standard.md`.
+Write to the technical-requirement criteria of `effective-architecture/review-standard.md`.
 Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
 cite. Write the TRD file at the request's `trdPath` and the answer, to
 `trd-answer.schema.json`, at its `answerPath`.

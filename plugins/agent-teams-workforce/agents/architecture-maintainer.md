@@ -8,7 +8,7 @@ model: sonnet
 permissionMode: acceptEdits
 maxTurns: 200
 skills:
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:arc42-maintain
 - agent-teams-workforce:c4-diagramming
@@ -49,7 +49,7 @@ For each fact:
    describes. Read the documents the matrix names; do not search the architecture root for
    them.
 3. Keep the document at architecture level, the first level of
-   `architecture-baseline/review-standard.md`: the why and the mechanism. A fact in the
+   `effective-architecture/review-standard.md`: the why and the mechanism. A fact in the
    request that is a route path, a field name, a key or index name, a parameter name, a
    metric or alarm name, or a schema is returned in `belowArchitectureLevel`, unwritten, so
    that the architect moves it to the TRD or the specs.

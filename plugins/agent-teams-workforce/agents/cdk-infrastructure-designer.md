@@ -16,7 +16,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:aws-cdk-development
 - agent-teams-workforce:resource-naming
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 effort: medium
 isolation: worktree
 color: cyan
@@ -58,6 +58,6 @@ below architecture level (names, fields, keys, schemas) go in `notesForSpecs`.
 
 Write only the answer file, to `specialist-answer.schema.json`. `architecture-maintainer`
 writes the arc42 documents from the architect's decisions, and `trd-author` writes the TRD.
-Work at the levels of `architecture-baseline/review-standard.md`. Existing code is a hint of
+Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is
 expected to match the architecture. Establish AWS behaviour from AWS documentation.

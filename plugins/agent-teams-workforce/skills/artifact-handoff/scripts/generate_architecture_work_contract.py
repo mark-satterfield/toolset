@@ -27,6 +27,8 @@ OUTPUT_PATH: Final[Path] = SCRIPTS_DIR / "architecture_work_contract.py"
 DEFINITIONS: Final[str] = "$defs"
 REF_PREFIX: Final[str] = "#/$defs/"
 DRAFT: Final[str] = "https://json-schema.org/draft/2020-12/schema"
+# The longest line the generated module may hold, as the repository's Ruff config sets it.
+LINE_LIMIT: Final[int] = 120
 # The Python type of each scalar JSON Schema type a property may have.
 SCALARS: Final[dict[str, str]] = {"string": "str", "boolean": "bool", "integer": "int"}
 
@@ -159,6 +161,21 @@ def _constant_name(prefix: str, value: str) -> str:
     return name
 
 
+def _constant_line(prefix: str, value: str) -> str:
+    """Render the constant that carries one wire value, as Ruff formats it.
+
+    Returns:
+        One assignment line, or the assignment with its value on its own line when one line
+        would exceed LINE_LIMIT.
+
+    """
+    head: str = f"{_constant_name(prefix, value)}: Final[{_literal([value])}] = "
+    line: str = head + json.dumps(value)
+    if len(line) <= LINE_LIMIT:
+        return line
+    return f"{head}(\n    {json.dumps(value)}\n)"
+
+
 def _field_type(node: Mapping[str, object], where: str, known: Sequence[str]) -> str:
     """Render the Python type of one property.
 
@@ -273,9 +290,7 @@ def _sections(definitions: Mapping[str, object]) -> Sections:
             prefix, collection = VOCABULARIES[name]
             values: list[str] = _strings(node.get("enum"), where + "/enum")
             sections.vocabularies.append(f"type {name} = {_literal(values)}")
-            sections.constants.extend(
-                f"{_constant_name(prefix, value)}: Final[{_literal([value])}] = {json.dumps(value)}" for value in values
-            )
+            sections.constants.extend(_constant_line(prefix, value) for value in values)
             members: str = "".join(f"\n    {_constant_name(prefix, value)}," for value in values)
             sections.collections.append(f"{collection}: Final[tuple[{name}, ...]] = ({members}\n)")
         elif node.get("type") == "object":

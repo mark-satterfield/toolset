@@ -9,7 +9,7 @@ effort: medium
 maxTurns: 80
 skills:
 - agent-teams-workforce:subagent-contract
-- agent-teams-workforce:architecture-baseline
+- agent-teams-workforce:effective-architecture
 ---
 
 ## Assignment
@@ -19,7 +19,7 @@ worktree and branch, the matrix elements the Story's Tasks built, and the approv
 headings that describe those elements.
 
 Compare the code on the Story's branch with those headings, for those elements only. Compare
-at architecture level, the first level of `architecture-baseline/review-standard.md`: which
+at architecture level, the first level of `effective-architecture/review-standard.md`: which
 block is responsible, which block owns the data, who calls whom, what happens in what order,
 where it runs. A name, a field or a value that arc42 does not state is outside the
 comparison.

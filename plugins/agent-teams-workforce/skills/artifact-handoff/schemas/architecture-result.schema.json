@@ -5,14 +5,14 @@
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
-      "description": "The architect's first judgment of one need against the approved baseline (the effective arc42 as it stands before this Epic). Effective means approved as of now, never complete or correct. `approved`: the architect judges that effective statements meet the need as they stand. `disagreement`: effective statements bear on the need and two of them disagree. `missing`: no effective statement meets the need.",
+      "description": "The architect's first judgment of one need against the effective architecture (the effective arc42 as it stands before this Epic). Effective means approved as of now, never complete or correct. `approved`: the architect judges that effective statements meet the need as they stand. `disagreement`: effective statements bear on the need and two of them disagree. `missing`: no effective statement meets the need.",
       "type": "string",
       "enum": ["approved", "disagreement", "missing"]
     },
     "StateConclusion": {
-      "description": "The architect's first judgment, a starting point and no result. `baseline-meets-every-need`: every need is `approved`, so the architect's work starts from the questions its expertise raises about the baseline. `work-remains`: at least one need is `disagreement` or `missing`.",
+      "description": "The architect's first judgment, a starting point and no result. `effective-architecture-meets-every-need`: every need is `approved`, so the architect's work starts from the questions its expertise raises about the effective architecture. `work-remains`: at least one need is `disagreement` or `missing`.",
       "type": "string",
-      "enum": ["baseline-meets-every-need", "work-remains"]
+      "enum": ["effective-architecture-meets-every-need", "work-remains"]
     },
     "Conclusion": {
       "description": "What the architect concluded. Every conclusion goes through the architecture check and the review. `no-change-needed`: the architect judged that the Epic needs nothing added, changed or removed in the approved architecture, and `criteria` cites the effective documents and headings that meet it; the review checks that judgment. `changes-designed`: the architect designed, changed, removed or settled something for the Epic. `unsettled`: at least one matter is listed in `unsettled`.",
@@ -196,7 +196,7 @@
       }
     },
     "CriterionAnswer": {
-      "description": "The architect's answer to one criterion of architecture-baseline/review-criteria.json whose level is architecture or technical-requirement.",
+      "description": "The architect's answer to one criterion of effective-architecture/review-criteria.json whose level is architecture or technical-requirement.",
       "type": "object",
       "additionalProperties": false,
       "required": ["criterion", "status", "satisfiedAt", "reason"],
@@ -266,7 +266,7 @@
       }
     },
     "ReviewSignals": {
-      "description": "The facts about this run's design that the reviewer groups of architecture-baseline/review-criteria.json name in `appliesWhen.result`. A script selects reviewers from them; an empty list selects none.",
+      "description": "The facts about this run's design that the reviewer groups of effective-architecture/review-criteria.json name in `appliesWhen.result`. A script selects reviewers from them; an empty list selects none.",
       "type": "object",
       "additionalProperties": false,
       "required": ["newRuntimeResources", "newBillableResources", "changedBillableLimits", "choices", "newPatterns", "failureBehaviours"],

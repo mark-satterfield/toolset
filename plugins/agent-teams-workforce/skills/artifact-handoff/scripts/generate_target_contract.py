@@ -52,7 +52,7 @@ FILE_CONSTANTS: Final[tuple[tuple[str, str], ...]] = (
     ("CLOSURE_ROOTS_FILE", "closureRoots"),
     ("TARGET_FOLDER", "targetFolder"),
     ("DELTA_FOLDER", "deltaFolder"),
-    ("BASELINE_FILE", "baselineFile"),
+    ("EFFECTIVE_ARCHITECTURE_FILE", "effectiveArchitectureFile"),
     ("CLOSURE_FILE", "closureFile"),
 )
 # (constant name, schema key, record whose properties the keys must be) for every key tuple.
