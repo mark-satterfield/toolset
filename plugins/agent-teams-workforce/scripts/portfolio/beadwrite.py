@@ -115,8 +115,9 @@ from matrix_contract import (
     AUTHORITY_SIDE,
     FAMILY_DEPENDENCY,
     REL_CALLS,
-    REL_CONSUMES,
     REL_IMPORTS,
+    REL_MATCHES,
+    REL_PUBLISHES,
     REL_READS,
     REL_RUNS_IN,
     family_kinds,
@@ -124,7 +125,7 @@ from matrix_contract import (
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from placement_contract import KEY_ITEM_ID, PlacementError, PlacementRuling, parse_placement_ruling
 from recon_contract import DESIGN_SOURCES, DesignSource
-from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_EVENT_FLOW, KIND_INFRASTRUCTURE
+from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_INFRASTRUCTURE
 
 #: The metadata keys the build lane writes on a Task; any of them set means the Task was started.
 _BUILD_LANE_KEYS: Final[frozenset[str]] = frozenset((*BUILD_LIFECYCLE_KEYS, *CDS_AUDIT_KEYS))
@@ -137,12 +138,14 @@ OPEN = "open"
 
 #: The Task edge kind each architecture-side relationship between two built items makes, first match wins.
 _EDGE_KIND: Final[dict[str, str]] = {
-    REL_CONSUMES: KIND_EVENT_FLOW,
     REL_CALLS: KIND_CONTRACT,
     REL_IMPORTS: KIND_CONTRACT,
     REL_READS: KIND_DATA,
     REL_RUNS_IN: KIND_INFRASTRUCTURE,
 }
+
+#: The relationships that never order a build: a producer and a routing rule each depend only on the bus.
+_NO_BUILD_ORDER: Final[frozenset[str]] = frozenset((REL_PUBLISHES, REL_MATCHES))
 
 #: The priority `bd create` gives a bead when none is passed.
 DEFAULT_PRIORITY = 2
@@ -1515,7 +1518,7 @@ def _closure_context(span: SpanStories) -> _ClosureContext:
     )
 
 
-def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[str, str]:
+def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[str, str] | None:
     """Name the kind of a closure edge from the relationship the architecture side states.
 
     Args:
@@ -1526,18 +1529,22 @@ def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[s
     Returns:
         The Task edge kind the first relationship of :data:`_EDGE_KIND` between the two entries
         maps to (infrastructure when none of them is stated), and the relationship kinds found,
-        joined; empty when the matrix states none.
+        joined; empty when the matrix states none. None when every relationship stated between
+        the two is one of :data:`_NO_BUILD_ORDER`, which makes no Task edge.
 
     """
     start: str = context.detailed[item].get("matrixId", "")
     end: str = context.detailed[requirement].get("matrixId", "")
     if not start or not end:
         return KIND_INFRASTRUCTURE, ""
-    stated: set[str] = {
+    found: set[str] = {
         relationship.kind
         for relationship in context.matrix.outgoing(as_entry_id(start), family_kinds(FAMILY_DEPENDENCY))
         if relationship.end == end and relationship.side == AUTHORITY_SIDE
     }
+    stated: set[str] = found - _NO_BUILD_ORDER
+    if found and not stated:
+        return None
     kinds: list[str] = [kind for relation, kind in _EDGE_KIND.items() if relation in stated]
     return (kinds[0] if kinds else KIND_INFRASTRUCTURE), ", ".join(sorted(stated))
 
@@ -1608,7 +1615,10 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
                 for requirement in requires.get(item, []):
                     found, missing = _required_builders(name, item, requirement, context)
                     warnings.extend(missing)
-                    kind, relation = _edge_kind(item, requirement, context)
+                    named: tuple[str, str] | None = _edge_kind(item, requirement, context)
+                    if named is None:
+                        continue
+                    kind, relation = named
                     for source in [builder for builder in found if (builder, name) not in seen]:
                         seen.add((source, name))
                         edges.append({

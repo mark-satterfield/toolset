@@ -38,8 +38,9 @@ A2.  Section 5 names each building block the PRD needs, what it is responsible f
      it owns. Each store has one owning block and a statement of what it holds.
 A3.  Each interface is named with the block that exposes it and who may call it. Trust
      boundaries are explicit: who may call each boundary and what each runtime may call.
-A4.  Each event type is named in the event catalog with its publisher, its consumers and its
-     delivery path.
+A4.  Each event type is named in the event catalog with its producers and description, and
+     each routing rule names the event types it matches (or all), its targets and the stack
+     that owns it.
 A5.  Section 6 shows, for each important scenario and each failure the PRD's outcomes depend
      on, which building blocks interact and in what order. Retry, dead-letter and idempotent
      behaviour are stated as behaviour.
@@ -49,8 +50,9 @@ A7.  Each rule that applies across blocks is a design fact in section 8 with its
      the form "Because of X, the address is verified by Y".
 A8.  No fact is stated in two documents. Section 6 links to a rule; it does not restate it.
 A9.  Every behaviour a shared service, component, layer or library provides is taken from
-     it. A behaviour more than one service needs has a shared home, whose section 5 document
-     states under "Provides" what consumers obtain from it and must not implement.
+     it, by the shared-home rule of arc42 section 4 (04-solution-strategy). Each shared
+     home's section 5 document states under "Provides" what consumers obtain from it and
+     must not implement.
 A10. The front matter of each document records repository, view_type, scope, subject, shows
      and lifecycle_state.
 A11. Names of blocks, stores, interfaces and event types agree across documents.
@@ -84,14 +86,15 @@ see where each detail lives.
 I1. Each route has its method, path, authorizer, request and response fields and status
     codes.
 I2. Each store has its key attribute names, indexes, access patterns and expiry attribute.
-I3. Each event names its publishing service and when it is triggered, matching the event's
-    purpose in the matrix, and has the values passed to the shared-events-service API, its
-    payload schema and its schema version.
+I3. Each event names its publishing service and has the values passed to the
+    shared-events-service API.
 I4. Configuration names, SSM parameter names, and log, metric and alarm names are present
     and are generated with atw-naming.
 I5. Idempotency key fields and timeout settings are stated.
 I6. Each contract this repository shares with another repository (a route it exposes or
-    calls, an event it publishes or consumes) names the other repository's element, and its
-    fields are exactly those of the other repository's spec where that spec exists.
+    calls, an event it publishes or a routing rule matches) names the other repository's
+    element, and its fields are exactly those of the other repository's spec where that spec
+    exists. An event contract names no consumer: a producer's spec names no routing rule or
+    target, and a routing rule's spec names the event types it matches.
 I7. A Task can name the repository, stack, handler, table, route, event and the shared
     capabilities it must use without inventing a design.

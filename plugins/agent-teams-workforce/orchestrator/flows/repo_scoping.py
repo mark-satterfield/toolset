@@ -1,15 +1,17 @@
 """Read what the Epic's Stories build from the architect's result, and create a repository it needs and lacks.
 
-What a Story builds is what the Epic's architecture adds or changes: the services, components,
-infrastructure and events the architect's result lists under ``addedOrChangedElements``, and
-nothing more. An event is built as part of the service that publishes it: it is placed in its
-publisher's stack, and its item carries when it is triggered and who publishes it as information,
-never as further work. The matrix is used only to find the stack each is placed in on the
-architecture side (``matrixtraverse.authority_holder``), that stack's repository, the documents
-that describe it and the architecture-side dependencies between them. Everything else the Epic
-reaches is context, never work. No session is started. A repository that a stack the Stories
-build in lacks is named by the project's naming rules, recorded on the stack, and created from
-the template named for the stack's type; a stack no Story builds in is never touched.
+What a Story builds is what the Epic's architecture adds or changes: every architecture-side
+element the architect's result lists under ``addedOrChangedElements``, and nothing more. An
+element is built in the stack the architecture side places it in
+(``matrixtraverse.authority_holder``). An event has no home: it is built in each stack that
+holds one of its producers, as one item per stack, and that item carries the event's
+description and the producers in that stack as information, never as further work. The matrix
+is used only to find those stacks, each stack's repository, the documents that describe each
+element and the architecture-side dependencies between them. Everything else the Epic reaches
+is context, never work. No session is started. A repository that a stack the Stories build in
+lacks is named by the project's naming rules, recorded on the stack, and created by the
+``polyrepo`` tool, which takes its template from the name; a stack no Story builds in is never
+touched.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import TYPE_CHECKING, Final, NamedTuple, TypedDict
 
 # The driver surface and the placement contract are defined once, in their skills.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -32,26 +34,21 @@ from driver_surface_types import CONTROL_REPO_ENV
 from matrix_contract import (
     AUTHORITY_SIDE,
     FAMILY_DEPENDENCY,
-    KIND_COMPONENT,
     KIND_EVENT,
-    KIND_INFRASTRUCTURE,
-    KIND_SERVICE,
     KIND_STACK,
-    REL_CONSUMES,
     REL_DESCRIBED_BY,
+    REL_MATCHES,
     REL_PUBLISHES,
-    REL_ROUTES,
     SIDE_REPOSITORY,
     Entry,
     EntryId,
-    EntryKind,
     MatrixError,
     Relationship,
     RelationshipKind,
     family_kinds,
 )
 from matrixquery import Capability, UsesResult, uses_view
-from matrixstore import ATTR_EXTERNAL_SOURCE, Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
+from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
 from matrixtraverse import (
     ATTR_APP,
     ATTR_REPOSITORY,
@@ -67,7 +64,6 @@ from placement_contract import (
     KEY_PLACEMENTS,
     KEY_PURPOSE,
     KEY_REPO_PATH,
-    KEY_TEMPLATE,
     MissingRepo,
     Placement,
     PlacementRuling,
@@ -118,18 +114,20 @@ WEB_TYPE: Final = "web"
 MARKETING_APP: Final = "marketing"
 """The app whose repositories no pipeline step creates or changes."""
 OWNER_KEY: Final = "github_owner"
-BUILT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_SERVICE, KIND_COMPONENT, KIND_INFRASTRUCTURE, KIND_EVENT})
-"""The kinds of entry a Story builds: what the architecture adds or changes."""
+POLYREPO_CONFIG: Final = Path(".polyrepo/config.yaml")
+"""The polyrepo-steward's configuration, relative to the control repository."""
 EVIDENCE_RESULT: Final = "architecture result"
 """The evidence of every item: the architect's result lists it under addedOrChangedElements."""
-EVENT_TRIGGER: Final = "a purpose starting 'Published when'"
-"""What an event's purpose states, as the matrix's event rule names it."""
-BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = family_kinds(FAMILY_DEPENDENCY) - {
-    REL_PUBLISHES,
-    REL_ROUTES,
-}
-"""The dependency relationships that make one build need another: publishing and routing an event are not."""
-NO_PUBLISHER_STACK: Final = ": no publisher of it is homed in a stack, or its publishers are in more than one stack"
+NO_BUILD_NEED: Final[frozenset[str]] = frozenset({REL_PUBLISHES, REL_MATCHES, "consumes", "routes"})
+"""The dependency relationships that make no build need another: an event's producers, its rules and its targets."""
+BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
+    kind for kind in family_kinds(FAMILY_DEPENDENCY) if kind not in NO_BUILD_NEED
+)
+"""The dependency relationships that make one build need another.
+
+Publishing an event and a rule matching an event make no build dependency; a rule's ``onBus``
+and ``routesTo`` do.
+"""
 NAMING_REPOSITORY: Final = "repository"
 """The naming rules' resource for the repository that holds a stack."""
 NAMING_STACK_SEGMENT: Final = "stackName"
@@ -156,21 +154,10 @@ code); ``builtBy`` is the storyKey of another Story of the Epic whose items incl
 """
 
 
-class ConsumedBy(TypedDict):
-    """One consumer of an event a Story builds."""
-
-    event: str
-    consumer: str
-    side: str
-    stack: str | None
-    repository: str | None
-
-
 class BuildContext(TypedDict):
-    """What a Story's Tasks depend on or use outside what the Story builds."""
+    """What a Story's Tasks depend on outside what the Story builds."""
 
     dependsOn: list[DependsOn]
-    consumedBy: list[ConsumedBy]
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,7 +169,7 @@ class RepositoryStacks:
     apps: tuple[str, ...]
     """The ``app`` of each stack, without repeats."""
     types: tuple[str, ...]
-    """The type of each stack, the last token of its name, without repeats."""
+    """The type of each stack, the last token of its name, without repeats: it marks a web front end."""
     purpose: str
     """The stacks' purposes, joined."""
 
@@ -255,8 +242,6 @@ def _create(missing: MissingRepo, tools: Tools, home: RepositoryStacks) -> str:
             name,
             "--space",
             home.apps[0],
-            "--template",
-            missing[KEY_TEMPLATE],
         ],
         stage=CREATION_STAGE,
     )
@@ -326,7 +311,6 @@ def create_repositories(
     for missing in ruling[KEY_MISSING_REPOS]:
         facts: dict[str, JsonValue] = {
             KEY_NAME: missing[KEY_NAME],
-            KEY_TEMPLATE: missing[KEY_TEMPLATE],
             KEY_ITEM_IDS: list(missing[KEY_ITEM_IDS]),
         }
         try:
@@ -374,9 +358,9 @@ def _stated_id(stated: str) -> EntryId | None:
 def story_build_entries(added_or_changed: Sequence[str]) -> list[EntryId]:
     """List what the Epic's Stories build: what the architecture adds or changes.
 
-    Only what the architect's result states is built. An event's publishers are not added: the
-    event is placed in its publisher's stack (:func:`matrixtraverse.authority_holder`), and its
-    item names its publishers as information (:func:`story_builds`).
+    Only what the architect's result states is built. An event's producers are not added: the
+    event is built in each stack that holds one of them (:func:`placements`), and its item names
+    the producers in that stack as information (:func:`story_builds`).
 
     Args:
         added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
@@ -389,40 +373,66 @@ def story_build_entries(added_or_changed: Sequence[str]) -> list[EntryId]:
     return sorted({found for text in added_or_changed if (found := _stated_id(text)) is not None})
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def placements(matrix: Matrix, entry_id: EntryId) -> list[EntryId]:
+    """Name the stacks an entry is built in.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry's id.
+
+    Returns:
+        For an event, each stack that holds one of its architecture-side producers
+        (``Matrix.publisher_stacks``), in id order; for any other entry, the stack the
+        architecture side places it in (:func:`matrixtraverse.authority_holder`). Empty when
+        there is none or the matrix does not hold the entry.
+
+    """
+    entry: Entry | None = matrix.find(entry_id)
+    if entry is None:
+        return []
+    if entry.kind == KIND_EVENT:
+        return sorted(matrix.publisher_stacks(entry_id))
+    stack: EntryId | None = authority_holder(matrix, entry_id)
+    return [] if stack is None else [stack]
+
+
 def _entry_problem(entry: Entry) -> str | None:
     """Check that an entry is something a Story builds.
 
     Returns:
         One sentence naming the first rule the entry breaks; None when it is an
-        architecture-side service, component, piece of infrastructure or SkillSpoke event, and,
-        when an event, one whose purpose states when it is triggered.
+        architecture-side element and, when an event, one with a description.
 
     """
     if entry.side != AUTHORITY_SIDE:
         return f"{entry.id} is on the {entry.side} side; what a Story builds is what the {AUTHORITY_SIDE} side states"
-    if entry.kind not in BUILT_KINDS:
-        return f"{entry.id} is a {entry.kind}; a Story builds services, components, infrastructure and events"
-    if ATTR_EXTERNAL_SOURCE in entry.attributes:
-        return f"{entry.id} is published outside SkillSpoke ({ATTR_EXTERNAL_SOURCE}); no Story builds it"
     if entry.kind == KIND_EVENT and not entry.purpose.strip():
-        return f"{entry.id} is an event whose purpose is empty; an event states when it is triggered ({EVENT_TRIGGER})"
+        return f"{entry.id} is an event with no description; an event's purpose is its description"
     return None
 
 
 def _stack_problem(matrix: Matrix, entry: Entry) -> str | None:
-    """Check the stack the architecture side places an entry in.
+    """Check the stacks an entry is built in.
 
     Returns:
-        One sentence when the architecture side places it in no stack, or in a stack of the
-        marketing app; None otherwise.
+        One sentence when it is built in no stack, or in a stack of the marketing app; None
+        otherwise.
 
     """
-    stack: EntryId | None = authority_holder(matrix, entry.id)
-    if stack is None:
-        reason: str = NO_PUBLISHER_STACK if entry.kind == KIND_EVENT else ""
-        return f"the {AUTHORITY_SIDE} side states no home for {entry.id}{reason}"
-    if matrix.entry(stack).attributes.get(ATTR_APP) == MARKETING_APP:
-        return f"{entry.id} is in {stack}, of the {MARKETING_APP} app, whose repositories no pipeline step changes"
+    stacks: list[EntryId] = placements(matrix, entry.id)
+    if not stacks and entry.kind == KIND_EVENT:
+        return f"the {AUTHORITY_SIDE} side states no producer of {entry.id} that is homed in a stack"
+    if not stacks:
+        return f"the {AUTHORITY_SIDE} side states no home for {entry.id}"
+    marketing: list[EntryId] = [
+        stack for stack in stacks if matrix.entry(stack).attributes.get(ATTR_APP) == MARKETING_APP
+    ]
+    if marketing:
+        return (
+            f"{entry.id} is in {', '.join(marketing)}, of the {MARKETING_APP} app, "
+            "whose repositories no pipeline step changes"
+        )
     return None
 
 
@@ -451,9 +461,8 @@ def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[s
     Returns:
         One sentence per text that is not an entry id, and per entry of
         :func:`story_build_entries` that the matrix lacks, that is not on the architecture
-        side, that is not a service, component, piece of infrastructure or event, that is an
-        event published outside SkillSpoke, that the architecture side places in no stack, or
-        whose stack is of the marketing app. Empty when the Stories can build every one.
+        side, that is an event with no description, that is built in no stack, or that is built
+        in a stack of the marketing app. Empty when the Stories can build every one.
 
     """
     unread: list[str] = [
@@ -466,23 +475,25 @@ def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[s
     return [*unread, *(problem for problem in found if problem is not None)]
 
 
-def _requires(matrix: Matrix, entry_id: EntryId, ids: Mapping[EntryId, str]) -> list[str]:
+def _requires(matrix: Matrix, entry_id: EntryId, own: str, ids: Mapping[EntryId, Sequence[str]]) -> list[str]:
     """List the build items one item needs built first.
 
     Only the dependency relationships the architecture side states count; a repository-side
     relationship never makes a ``requires``, and a dependency on something no Story of the Epic
-    builds is context, not an item. Publishing or routing an event is not a need
-    (:data:`BUILD_DEPENDENCY_KINDS`): an event is built with its publisher, never before it.
+    builds is context, not an item. Publishing an event and a rule matching an event make no
+    need (:data:`BUILD_DEPENDENCY_KINDS`).
 
     Returns:
-        The item ids its architecture-side dependency relationships reach directly, in the order
-        found and without repeats; never the item itself.
+        The ids of the items that build what its architecture-side dependency relationships
+        reach directly, in the order found and without repeats; never the item itself.
 
     """
     reached: list[str] = [
-        ids[relationship.end]
+        needed
         for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
-        if relationship.side == AUTHORITY_SIDE and relationship.end in ids and relationship.end != entry_id
+        if relationship.side == AUTHORITY_SIDE
+        for needed in ids.get(relationship.end, ())
+        if needed != own
     ]
     return list(dict.fromkeys(reached))
 
@@ -528,50 +539,63 @@ def _text_or_none(value: JsonValue) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _build_item(matrix: Matrix, entry_id: EntryId, ids: Mapping[EntryId, str]) -> DeltaItem:
-    """Render one thing a Story builds as its item.
+class Placed(NamedTuple):
+    """One item of what a Story builds: an entry and the stack it is built in."""
+
+    entry_id: EntryId
+    stack: EntryId
+
+
+def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[EntryId, Sequence[str]]) -> DeltaItem:
+    """Render one thing a Story builds in one stack as its item.
 
     Returns:
-        The item: its id, the entry's name and matrix id, the documents that describe it, its
-        repository, the items it requires, and, for an event, its trigger and publishers.
+        The item: its id, the entry's name and matrix id, the documents that describe it, the
+        stack's repository, the items it requires, and, for an event, its description and its
+        producers in the stack.
 
     """
     item: DeltaItem = {
-        "id": ids[entry_id],
-        "element": matrix.entry(entry_id).name,
-        "matrixId": entry_id,
-        "views": list(dict.fromkeys(stated.end for stated in matrix.outgoing(entry_id, (REL_DESCRIBED_BY,)))),
+        "id": item_id,
+        "element": matrix.entry(placed.entry_id).name,
+        "matrixId": placed.entry_id,
+        "views": list(dict.fromkeys(stated.end for stated in matrix.outgoing(placed.entry_id, (REL_DESCRIBED_BY,)))),
         "kind": KIND_IMPLEMENTATION_GAP,
-        "repository": repository_name(matrix, _placed_stack(matrix, entry_id)),
-        "requires": _requires(matrix, entry_id, ids),
+        "repository": repository_name(matrix, placed.stack),
+        "requires": _requires(matrix, placed.entry_id, item_id, ids),
         "requiredBy": [],
-        "evidence": [entry_id, EVIDENCE_RESULT],
+        "evidence": [placed.entry_id, EVIDENCE_RESULT],
     }
-    if matrix.entry(entry_id).kind != KIND_EVENT:
+    if matrix.entry(placed.entry_id).kind != KIND_EVENT:
         return item
-    return {**item, **_event_facts(matrix, entry_id, ids)}
+    return {**item, **_event_facts(matrix, placed, ids)}
 
 
 class EventFacts(TypedDict):
     """What an event's item states about the event, as information, never as work."""
 
     trigger: str
-    """When the event is triggered: the event entry's purpose."""
+    """The event's description: the event entry's purpose."""
     publishedBy: list[str]
-    """Each publisher: the id of the item that builds it, else its matrix id."""
+    """Each producer in the item's stack: the id of the item that builds it, else its matrix id."""
 
 
-def _event_facts(matrix: Matrix, event_id: EntryId, ids: Mapping[EntryId, str]) -> EventFacts:
-    """Read when an event is triggered and who publishes it.
+def _event_facts(matrix: Matrix, placed: Placed, ids: Mapping[EntryId, Sequence[str]]) -> EventFacts:
+    """Read an event's description and its producers in one stack.
 
     Returns:
-        The event entry's purpose, and each architecture-side publisher, as the id of the item
-        in the same item set that builds it, or as its matrix id when no item builds it.
+        The event entry's purpose, and each architecture-side producer homed in the stack, as
+        the id of the item in the same item set that builds it, or as its matrix id when no
+        item builds it.
 
     """
     return {
-        "trigger": matrix.entry(event_id).purpose,
-        "publishedBy": [ids.get(publisher, publisher) for publisher in matrix.publishers(event_id)],
+        "trigger": matrix.entry(placed.entry_id).purpose,
+        "publishedBy": [
+            next(iter(ids.get(producer, ())), producer)
+            for producer in matrix.publishers(placed.entry_id)
+            if matrix.home(producer) == placed.stack
+        ],
     }
 
 
@@ -585,11 +609,12 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
         added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
-        One item per entry of :func:`story_build_entries`: its id, the entry's name and matrix
-        id, the documents that describe it, the repository of the stack the architecture side
-        places it in (:func:`repository_name`), and the items it requires and is required by
-        through the architecture-side dependency relationships between them. An event's item
-        also carries ``trigger`` and ``publishedBy`` (:func:`_event_facts`).
+        One item per entry of :func:`story_build_entries` and stack it is built in
+        (:func:`placements`): its id, the entry's name and matrix id, the documents that
+        describe it, the stack's repository (:func:`repository_name`), and the items it
+        requires and is required by through the architecture-side dependency relationships
+        between them. An event's item also carries ``trigger``, the event's description, and
+        ``publishedBy``, its producers in that stack (:func:`_event_facts`).
 
     Raises:
         StepError: :func:`story_build_problems` reports a problem; the evidence names each.
@@ -598,9 +623,16 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
     problems: list[str] = story_build_problems(matrix, bead, added_or_changed)
     if problems:
         raise StepError(SPAN, OTHER_CAUSE, tuple(problems))
-    entries: list[EntryId] = story_build_entries(added_or_changed)
-    ids: dict[EntryId, str] = {entry_id: f"E{index}" for index, entry_id in enumerate(entries, 1)}
-    items: list[DeltaItem] = [_build_item(matrix, entry_id, ids) for entry_id in entries]
+    placed: list[Placed] = [
+        Placed(entry_id, stack)
+        for entry_id in story_build_entries(added_or_changed)
+        for stack in placements(matrix, entry_id)
+    ]
+    item_ids_of: dict[Placed, str] = {built: f"E{index}" for index, built in enumerate(placed, 1)}
+    ids: dict[EntryId, list[str]] = {}
+    for built, item_id in item_ids_of.items():
+        ids.setdefault(built.entry_id, []).append(item_id)
+    items: list[DeltaItem] = [_build_item(matrix, built, item_id, ids) for built, item_id in item_ids_of.items()]
     by_id: dict[str, DeltaItem] = {item["id"]: item for item in items}
     for item in items:
         for needed in item.get("requires", []):
@@ -608,21 +640,24 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
     return items
 
 
-def _placed_stack(matrix: Matrix, entry_id: EntryId) -> EntryId:
-    """Name the stack the architecture side places an entry in.
+def _item_stacks(matrix: Matrix, entry_id: EntryId, repository: str | None) -> list[EntryId]:
+    """Name the stacks one item builds its entry in.
 
     Returns:
-        The stack (:func:`matrixtraverse.authority_holder`).
+        The entry's stacks (:func:`placements`); for an event whose item names a repository,
+        only the stacks that repository holds.
 
     Raises:
-        ValueError: The architecture side places it in none.
+        ValueError: The entry is built in no stack, or in none the item's repository holds.
 
     """
-    stack: EntryId | None = authority_holder(matrix, entry_id)
-    if stack is None:
-        message: str = f"the {AUTHORITY_SIDE} side states no home for {entry_id}"
+    stacks: list[EntryId] = placements(matrix, entry_id)
+    if repository is not None and matrix.entry(entry_id).kind == KIND_EVENT:
+        stacks = [stack for stack in stacks if repository_name(matrix, stack).casefold() == repository.casefold()]
+    if not stacks:
+        message: str = f"the {AUTHORITY_SIDE} side places {entry_id} in no stack of {repository or 'any repository'}"
         raise ValueError(message)
-    return stack
+    return stacks
 
 
 def _record_repository_names(items: Sequence[DeltaItem]) -> list[EntryId]:
@@ -638,7 +673,9 @@ def _record_repository_names(items: Sequence[DeltaItem]) -> list[EntryId]:
     """
 
     def change(matrix: Matrix) -> list[EntryId]:
-        stacks: set[EntryId] = {_placed_stack(matrix, as_entry_id(item.get("matrixId", ""))) for item in items}
+        stacks: set[EntryId] = {
+            stack for item in items for stack in _item_stacks(matrix, as_entry_id(item.get("matrixId", "")), None)
+        }
         unnamed: list[EntryId] = sorted(
             stack for stack in stacks if _text_or_none(matrix.entry(stack).attributes.get(ATTR_REPOSITORY)) is None
         )
@@ -651,7 +688,7 @@ def _record_repository_names(items: Sequence[DeltaItem]) -> list[EntryId]:
 
 
 def _stack_of(matrix: Matrix, entry_id: EntryId) -> tuple[EntryId | None, str | None]:
-    """Name the stack of an entry a Story depends on or that consumes what it builds, and that stack's repository.
+    """Name the stack of an entry a Story depends on, and that stack's repository.
 
     Returns:
         The stack the architecture side places an architecture-side entry in, or the stack the
@@ -693,32 +730,13 @@ def _depends_on(matrix: Matrix, relationship: Relationship, built_by: Mapping[En
     }
 
 
-def _consumed_by(matrix: Matrix, relationship: Relationship) -> ConsumedBy:
-    """Render one consumer of an event a Story builds.
-
-    Returns:
-        The event, its consumer, the side that states it, and the consumer's stack and repository.
-
-    """
-    stack: EntryId | None
-    repository: str | None
-    stack, repository = _stack_of(matrix, relationship.start)
-    return {
-        "event": relationship.end,
-        "consumer": relationship.start,
-        "side": relationship.side,
-        "stack": stack,
-        "repository": repository,
-    }
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def build_context(
     matrix: Matrix,
     built: Sequence[JsonValue],
     all_items: Mapping[str, Sequence[JsonValue]],
 ) -> BuildContext:
-    """List what a Story's Tasks depend on or use outside what the Story builds: context, never work.
+    """List what a Story's Tasks depend on outside what the Story builds: context, never work.
 
     Args:
         matrix: The matrix.
@@ -726,12 +744,10 @@ def build_context(
         all_items: The items of every Story of the Epic, by the Story's storyKey.
 
     Returns:
-        ``dependsOn``: each dependency relationship of :data:`BUILD_DEPENDENCY_KINDS` (never
-        publishing or routing an event), on either side, that starts at an
-        entry this Story builds and ends at one it does not build, with the side that states it,
-        the far end's stack and repository, and the other Story that builds the far end.
-        ``consumedBy``: each consumer of an event this Story builds, with its stack and
-        repository.
+        ``dependsOn``: each dependency relationship of :data:`BUILD_DEPENDENCY_KINDS`, on either
+        side, that starts at an entry this Story builds and ends at one it does not build, with
+        the side that states it, the far end's stack and repository, and the other Story that
+        builds the far end.
 
     """
     own: set[EntryId] = set(item_ids(built))
@@ -744,12 +760,7 @@ def build_context(
         for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
         if relationship.end not in own
     ]
-    consumers: list[ConsumedBy] = [
-        _consumed_by(matrix, relationship)
-        for entry_id in sorted(own)
-        for relationship in matrix.incoming(entry_id, (REL_CONSUMES,))
-    ]
-    return {"dependsOn": dependencies, "consumedBy": consumers}
+    return {"dependsOn": dependencies}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -779,22 +790,29 @@ def item_stacks(matrix: Matrix, items: Sequence[JsonValue]) -> dict[EntryId, lis
     """Group the entries some items build by the stack that holds each.
 
     An id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``, and an entry
-    the architecture side places in no stack raises ``ValueError``.
+    built in no stack of its item's repository raises ``ValueError``.
 
     Args:
         matrix: The matrix.
         items: Items as the span step wrote them.
 
     Returns:
-        Each stack the architecture side places them in (for an event, its publisher's stack),
-        in id order, with the entries of the items it holds.
+        Each stack the items build in (for an event, each stack of its item's repository that
+        holds one of its producers), in id order, with the entries of the items it holds.
 
     """
     grouped: dict[EntryId, list[EntryId]] = {}
-    entry_id: EntryId
-    for entry_id in item_ids(items):
-        matrix.entry(entry_id)
-        grouped.setdefault(_placed_stack(matrix, entry_id), []).append(entry_id)
+    placed: list[tuple[EntryId, EntryId]] = [
+        (stack, entry_id)
+        for item in items
+        if KEY_MATRIX_ID in (fields := json_object(item))
+        for entry_id in (as_entry_id(check_type(fields[KEY_MATRIX_ID], str)),)
+        for stack in _item_stacks(matrix, entry_id, _text_or_none(fields.get("repository")))
+    ]
+    for stack, entry_id in placed:
+        grouped.setdefault(stack, [])
+        if entry_id not in grouped[stack]:
+            grouped[stack].append(entry_id)
     return {stack: grouped[stack] for stack in sorted(grouped)}
 
 
@@ -827,7 +845,7 @@ def shared_capabilities(run: StepRun, step: str, items: Sequence[JsonValue]) -> 
 def repository_stacks(matrix: Matrix, items: Sequence[DeltaItem]) -> dict[str, RepositoryStacks]:
     """Group the stacks of some items by the repository each names.
 
-    An entry the architecture side places in no stack raises ``ValueError``.
+    An entry built in no stack of its item's repository raises ``ValueError``.
 
     Args:
         matrix: The matrix.
@@ -841,12 +859,14 @@ def repository_stacks(matrix: Matrix, items: Sequence[DeltaItem]) -> dict[str, R
     stacks: dict[str, dict[EntryId, Entry]] = {}
     item: DeltaItem
     for item in items:
-        home: EntryId = _placed_stack(matrix, as_entry_id(item.get("matrixId", "")))
-        name: str = item.get("repository") or repository_name(matrix, home)
-        stacks.setdefault(name, {})[home] = matrix.entry(home)
+        repository: str | None = item.get("repository")
+        homes: list[EntryId] = _item_stacks(matrix, as_entry_id(item.get("matrixId", "")), repository)
+        found: dict[str, EntryId] = {repository or repository_name(matrix, home): home for home in homes}
+        for name, home in found.items():
+            stacks.setdefault(name, {})[home] = matrix.entry(home)
     grouped: dict[str, RepositoryStacks] = {}
-    for name, found in stacks.items():
-        ordered: list[Entry] = [found[stack] for stack in sorted(found)]
+    for name, held in stacks.items():
+        ordered: list[Entry] = [held[stack] for stack in sorted(held)]
         apps: list[str] = [app for stack in ordered if isinstance(app := stack.attributes.get(ATTR_APP), str)]
         grouped[name] = RepositoryStacks(
             name=name,
@@ -862,19 +882,17 @@ def _missing(home: RepositoryStacks, built: list[str]) -> MissingRepo:
     """Describe a repository to create, from the stacks that name it.
 
     Returns:
-        The repository's name, the template named for its stacks' one type, the stacks' purpose
-        and the items of what its Story builds.
+        The repository's name, the stacks' purpose and the items of what its Story builds.
 
     Raises:
-        StepError: The stacks have more than one type or more than one app, name no app, or
-            belong to the app whose repositories no pipeline step creates.
+        StepError: The stacks have more than one app or name none, or belong to the app whose
+            repositories no pipeline step creates.
 
     """
-    if len(home.types) != 1 or len(home.apps) != 1:
+    if len(home.apps) != 1:
         evidence: str = (
-            f"{home.name} does not exist, and its stacks {', '.join(home.stacks)} have the types "
-            f"{', '.join(home.types) or 'none'} and the apps {', '.join(home.apps) or 'none'}: a repository is "
-            "created from one template in one app space"
+            f"{home.name} does not exist, and its stacks {', '.join(home.stacks)} have the apps "
+            f"{', '.join(home.apps) or 'none'}: a repository is created in one app space"
         )
         raise StepError(SPAN, OTHER_CAUSE, (evidence,))
     if home.apps[0] == MARKETING_APP:
@@ -882,7 +900,6 @@ def _missing(home: RepositoryStacks, built: list[str]) -> MissingRepo:
         raise StepError(SPAN, OTHER_CAUSE, (evidence,))
     return {
         KEY_NAME: home.name,
-        KEY_TEMPLATE: home.types[0],
         KEY_PURPOSE: home.purpose,
         KEY_ITEM_IDS: built,
     }
@@ -893,7 +910,7 @@ def _ruling(
     items: list[DeltaItem],
     homes: Mapping[str, RepositoryStacks],
 ) -> PlacementRuling:
-    """Group what the Stories build by the repository of the stack the architecture side places each in.
+    """Group what the Stories build by the repository of the stack each item is built in.
 
     Returns:
         The span in the placement contract's shape: one placement per repository, with its path
@@ -901,7 +918,7 @@ def _ruling(
 
     Raises:
         StepError: A repository may hold no product entry, or a missing repository cannot be
-            created from what its stacks state.
+            created from what its stacks and the polyrepo-steward's records state.
 
     """
     live: dict[str, dict[str, JsonValue]] = {
@@ -972,17 +989,24 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
+def _polyrepo_config(control: Path) -> dict[str, JsonValue]:
+    """Read the polyrepo-steward's configuration.
+
+    Returns:
+        The configuration object.
+
+    """
+    return json_object(yaml_safe_load((control / POLYREPO_CONFIG).read_text(encoding="utf-8")))
+
+
 def _owner(control: Path) -> str:
-    """Read the GitHub organisation repositories are created in, from the project's repository rules.
+    """Read the GitHub organisation repositories are created in, from the polyrepo-steward's configuration.
 
     Returns:
         The organisation's name.
 
     """
-    config: dict[str, JsonValue] = json_object(
-        yaml_safe_load((control / ".polyrepo/config.yaml").read_text(encoding="utf-8")),
-    )
-    return check_type(config[OWNER_KEY], str)
+    return check_type(_polyrepo_config(control)[OWNER_KEY], str)
 
 
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:

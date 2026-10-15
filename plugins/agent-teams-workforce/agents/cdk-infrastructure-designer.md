@@ -25,7 +25,7 @@ color: cyan
 
 ## Specialty
 
-In architecture work, design which repository and which CDK stack hold each resource, where each building block runs, which values stacks share through the mechanism section 2 fixes, and which infrastructure must exist first. Construct names, configuration names and SSM parameter names are implementation level: they are written in the specs and generated with atw-naming. The infra-intent workflow sends its own instructions for provisioning intent.
+In architecture work, design which repository and which CDK stack hold each resource, where each building block runs, which values stacks share through the mechanism section 2 fixes, and which infrastructure must exist first. A routing rule (an event pattern matching one or more event types, or all events), its targets (up to five), and each target's retry policy and SQS DLQ with a CloudWatch alarm on the DLQ's depth belong to the stack that owns the targets; SkillSpoke uses no EventBridge archive. Construct names, configuration names and SSM parameter names are implementation level: they are written in the specs and generated with atw-naming. The infra-intent workflow sends its own instructions for provisioning intent.
 
 ## How you are used
 

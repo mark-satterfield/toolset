@@ -23,37 +23,32 @@ document and the Story; the span step hands over the span and the elements.
 | 8 | Record the Tasks written | script `task_decomposition.record` | `story`, `task plan`, every `task`, `task edge counts` and `task warnings` | `tasks-<slug>.written.json` | file `tasks written`, value `tasks result` |
 
 `what the story builds` (`tasks-<slug>.items.json`) is the items of what the Story builds: the
-services, components, infrastructure and events the Epic's architecture adds or changes in this
-repository (`repo-scoping.md`).
+elements the Epic's architecture adds or changes in this repository (`repo-scoping.md`).
 
 The task context lists the Tasks that already exist under the Story and that are started, or that
 elaboration did not write, so the decomposer reuses them; and the open Tasks of other Epics in the
 same repository (`stackWork`), so a Task that needs one of them is blocked by it instead of
-duplicating it. It also holds `sharedCapabilities`, and `dependsOn` and `consumedBy`
-(`repo_scoping.build_context`): for each thing the Story builds, each dependency-family
-relationship that starts at it and ends at something the Story does not build, as
+duplicating it. It also holds `sharedCapabilities`, and `dependsOn`
+(`repo_scoping.build_context`): for each thing the Story builds, each relationship of
+`BUILD_DEPENDENCY_KINDS` that starts at it and ends at something the Story does not build, as
 `{from, kind, to, toKind, side, stack, repository, builtBy}`, where `side` is the relationship's
 side, `stack` is the far end's architecture-side stack for an architecture-side entry and the
 stack the repositories hold it in for a repository-side one, and `builtBy` is the `storyKey` of
-another Story of this Epic that builds the far end, or null; and for each event the Story builds,
-its consumers, as `{event, consumer, side, stack, repository}`. All of these are what the Tasks
-depend on or use, never work. A repository-side element is a hint read from code: it may tell a
-Task where existing code sits, never what to build.
+another Story of this Epic that builds the far end, or null. These are what the Tasks depend on,
+never work. A repository-side element is a hint read from code: it may tell a Task where
+existing code sits, never what to build.
 
 ## The grouping check
 
 The decomposer's Tasks file is checked by `task_decomposition.task_grouping_check`: strict JSON,
 then `tasks.schema.json`, then `hierarchy.task_grouping_problems`, which raises `ValueError` with
-every problem (a content failure, so the session gets its one correction):
-
-- when the Story builds two or more things, each Task that cites exactly one thing: "Task <key>
-  covers one thing: group the things this Story builds into coherent Tasks";
-- a Task that cites an event item and none of that event's architecture-side publishers;
-- a Task that cites only event items.
+every problem (a content failure, so the session gets its one correction): when the Story builds
+two or more things, each Task that cites exactly one thing: "Task <key> covers one thing: group
+the things this Story builds into coherent Tasks".
 
 A Task is a coherent unit of build work, sized on the wsjf skill's scale: one Task covers several
 of the things the Story builds, every thing the Story builds is cited by some Task, and it is
-never one Task per thing. An event is built with its publisher.
+never one Task per thing.
 
 A plan has a gap when it holds no Task, a thing the Story builds is cited by no Task, or a
 Task has no size. One correction is asked for. A correction that is merged a second time adds
@@ -71,7 +66,7 @@ invalidation. A Task's edges onto the Tasks of the same Story it depends on are 
 which is why the steps run in build order.
 
 A Task's description ends with its build contract. For each event the Task cites, the contract
-lists it the way the Story document does: `E<n>: <name>, published by <publishers> when
+lists it the way the Story document does: `E<n>: <name>, published by <publishers>:
 <trigger>`, from the event item's `trigger` and `publishedBy`.
 
 The same step creates the Task's journal (pipeline `build`) with its first step done and holding

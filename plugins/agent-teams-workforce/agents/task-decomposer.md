@@ -44,19 +44,15 @@ how to build, not new requirements or test-only activities.
 
 A Task is a coherent unit of build work, sized on the wsjf skill's scale. One Task covers
 several of the things the Story builds; every thing the Story builds is cited by some Task,
-overlaps with another Epic included; and it is never one Task per thing. An event is built with
-its publisher: a Task that cites an event also cites a service or component that publishes it,
-and no Task covers events alone. The output check refuses a Task that covers one thing when the
-Story builds two or more, a Task that cites an event and none of its publishers, and a Task
-that covers only events.
+overlaps with another Epic included; and it is never one Task per thing. The output check
+refuses a Task that covers one thing when the Story builds two or more.
 
-The task context's `dependsOn`, `consumedBy`, `sharedCapabilities` and `stackWork` are what the
+The task context's `dependsOn`, `sharedCapabilities` and `stackWork` are what the
 Tasks depend on or use, never work. `dependsOn` lists each dependency of a thing the Story
 builds on something it does not build, with the side that states it, the far end's stack and
 repository, and `builtBy`, the other Story of this Epic that builds it, if one does. An element
 of `dependsOn` with `side: repository` is a hint read from code, not an architecture fact: it
-may tell a Task where existing code sits, never what to build. `consumedBy` lists the consumers
-of each event the Story builds. An existing started or closed Task in context is reused, not
+may tell a Task where existing code sits, never what to build. An existing started or closed Task in context is reused, not
 rewritten; another Epic's Task that plans the same work is recorded as an external blocker and
 never replaces this Epic's Task. The task context names the stacks the Story builds in as
 `stacks` (matrix stack ids) and holds two matrix reads, and you run neither

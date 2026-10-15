@@ -16,7 +16,7 @@ sections after it.
 
 Schema: [placement.schema.json](schemas/placement.schema.json).
 
-Fields and interpretation: placements each name one repository with repoPath, repoName, the itemIds of what its Story builds, frontend and rationale; missingRepos names a repository the inventory lacks with name, template, purpose and itemIds. Python writes it from the architect's result: what the Stories build is the result's addedOrChangedElements with each event's architecture-side publishers, each in the repository of the stack the architecture side places it in (for an event, its publisher's stack); a stack that names no repository is given the name the project's naming rules give it, and a repository the inventory lacks is created from the template its stacks' type names before the file is written. Complete means every thing the Stories build is in exactly one placement and every placement has a repository path. No agent writes it.
+Fields and interpretation: placements each name one repository with repoPath, repoName, the itemIds of what its Story builds, frontend and rationale; missingRepos names a repository the inventory lacks with name, purpose and itemIds. Python writes it from the architect's result: what the Stories build is the result's addedOrChangedElements with each event's architecture-side publishers, each in the repository of the stack the architecture side places it in (an event in the repository of each of its publishers' stacks); a stack that names no repository is given the name the project's naming rules give it, and a repository the inventory lacks is created by the `polyrepo` tool, which takes the template from the name, before the file is written. Complete means every thing the Stories build is in exactly one placement and every placement has a repository path. No agent writes it.
 
 ## tasks
 
@@ -96,7 +96,7 @@ Fields and interpretation: One JSON file with three members, `version`, `entries
 
 ## repo-creation
 
-Fields and interpretation: Python created records name,repoPath,template,itemIds,existed plus failures name/template/itemIds/error/ownerFact. Complete means each missing owner has a actual checkout/remote or explicit failure; not an agent permission to create repositories.
+Fields and interpretation: Python created records name,repoPath,itemIds,existed plus failures name/itemIds/error/ownerFact. Complete means each missing owner has a actual checkout/remote or explicit failure; not an agent permission to create repositories.
 
 ## bundles
 

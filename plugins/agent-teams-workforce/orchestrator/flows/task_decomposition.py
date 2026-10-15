@@ -181,8 +181,8 @@ def _write_context(
         The file, and the items of what the Story builds, unchanged from the span's items (an
         event's item keeps its ``trigger`` and ``publishedBy``). The file holds the Tasks that exist,
         the stacks the Story builds in with the open work of other Epics on each, the shared
-        capabilities, and ``dependsOn`` and ``consumedBy`` (``repo_scoping.build_context``):
-        what the Tasks depend on or use, never work.
+        capabilities, and ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend
+        on, never work.
 
     """
     every: dict[str, JsonValue] = json_object(
@@ -203,7 +203,6 @@ def _write_context(
             "stacks": stacks,
             "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
             "dependsOn": depended["dependsOn"],
-            "consumedBy": depended["consumedBy"],
         },
     )
     return facts, built
@@ -291,8 +290,7 @@ def task_grouping_check(items_file: Path, schema_file: Path) -> OutputValidator:
         strictschema.validate(document, strict_json(schema_file), location=schema_file)
         items: list[JsonValue] = check_type(json_object(strict_json(items_file))["items"], list[JsonValue])
         tasks: list[JsonValue] = check_type(document["tasks"], list[JsonValue])
-        matrix: Matrix = read_matrix(matrix_path(None, os.environ))
-        problems: list[str] = hierarchy.task_grouping_problems(items, tasks, matrix)
+        problems: list[str] = hierarchy.task_grouping_problems(items, tasks)
         if problems:
             raise ValueError("; ".join(problems))
         return document

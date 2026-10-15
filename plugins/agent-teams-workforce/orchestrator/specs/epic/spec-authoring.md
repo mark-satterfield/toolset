@@ -33,10 +33,10 @@ Steps 5 and 6 are consecutive agent steps whose inputs are done, so their sessio
 The repository context (`spec-<slug>.context.json`) holds the repository, the items of what the
 Story builds (each event item with its `trigger` and `publishedBy`), the stacks the Story builds
 in, what `atw-matrix story-scope` returns for each, the documents and headings to read, the shared
-capabilities, the architect's `notesForSpecs`, and `dependsOn` and `consumedBy` from
-`repo_scoping.build_context` (grouped by `storyKey`), as `task-decomposition.md` describes them.
-`dependsOn` and `consumedBy` are context, never work, and a row whose stack or repository belongs
-to the marketing app is left out.
+capabilities, the architect's `notesForSpecs`, and `dependsOn` from
+`repo_scoping.build_context` (grouped by `storyKey`), as `task-decomposition.md` describes it.
+`dependsOn` is context, never work, and a row whose stack or repository belongs to the marketing
+app is left out.
 
 The contracts and the data model must have YAML front matter whose `decisionIds` each resolve to a
 file under the architecture root; the criteria must be non-empty. A document that fails its check
@@ -46,9 +46,8 @@ step 10, and nothing is written to the matrix, whose architecture side only arc4
 `sync-documents`) and the architect's recorded design write.
 
 The Story document lists what the Story builds, one line per item: an event as
-`E<n>: <name>, published by <publishers> when <trigger>`, any other item as
-`E<n>: <name>: <purpose>`, the purpose being the matrix entry's. An event is built as part of the
-service that publishes it, never as work of its own.
+`E<n>: <name>, published by <publishers>: <trigger>`, any other item as
+`E<n>: <name>: <purpose>`, the purpose being the matrix entry's.
 
 ## The review
 

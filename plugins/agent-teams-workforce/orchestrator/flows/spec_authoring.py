@@ -417,7 +417,7 @@ def _marketing(matrix: Matrix, stack: str | None, repository_name: str | None) -
 
 
 def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mapping[str, JsonValue]) -> BuildContext:
-    """List what a Story depends on and who consumes its events, without the marketing app.
+    """List what a Story depends on, without the marketing app.
 
     Args:
         matrix: The matrix.
@@ -432,7 +432,6 @@ def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mappi
     found: BuildContext = build_context(matrix, built, items_by_story(every_build))
     return {
         "dependsOn": [row for row in found["dependsOn"] if not _marketing(matrix, row["stack"], row["repository"])],
-        "consumedBy": [row for row in found["consumedBy"] if not _marketing(matrix, row["stack"], row["repository"])],
     }
 
 
@@ -444,8 +443,7 @@ def context(run: StepRun) -> Completion:
     Story builds in, what ``atw-matrix story-scope`` returns (the documents and headings that
     describe the stack and each entry, the constraints that bind them and the shared
     capabilities they must use); and from ``repo_scoping.build_context``, what the Story depends
-    on outside what it builds and the consumers of the events it builds, each with its stack and
-    repository, none of the marketing app.
+    on outside what it builds, each with its stack and repository, none of the marketing app.
 
     Returns:
         The repository, its context file and the PRD as artifacts, with the repository's other
@@ -484,7 +482,6 @@ def context(run: StepRun) -> Completion:
             "scopes": scopes,
             "documents": _scope_documents(architecture_root(run), scopes),
             "dependsOn": depended["dependsOn"],
-            "consumedBy": depended["consumedBy"],
             "sharedCapabilities": shared_capabilities(run, SPEC_CONTEXT, items),
             "notesForSpecs": read_result(run, read_context(run))["notesForSpecs"],
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),

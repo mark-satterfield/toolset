@@ -57,7 +57,7 @@ Each question below is answered from the matrix alone, without reading documents
 | Q6 | Which services, components and infrastructure implement this feature? | A list of them, each with the stack that is its home in code. |
 | Q7 | What does this stack do? | Its stated purpose. |
 | Q8 | Where does this piece of functionality already live? | The stacks whose purpose matches, found by describing the functionality. |
-| Q9 | What does this stack depend on across stack boundaries, among the project's own stacks, libraries, layers, services and infrastructure, of any kind (a shared library it imports, a layer it uses, a shared service it calls, an event it publishes or consumes and the rule that routes it, a value it reads that another stack stored, shared infrastructure it runs in), and how is each related? | A list of the things it depends on, each with the stack that holds it and the kind of the relationship, followed to any depth; for a shared library, also the distribution (package, layer) that brings it to this stack's code. |
+| Q9 | What does this stack depend on across stack boundaries, among the project's own stacks, libraries, layers, services and infrastructure, of any kind (a shared library it imports, a layer it uses, a shared service it calls, an event it publishes, the EventBridge rule that matches an event and the targets it routes it to, a value it reads that another stack stored, shared infrastructure it runs in), and how is each related? | A list of the things it depends on, each with the stack that holds it and the kind of the relationship, followed to any depth; for a shared library, also the distribution (package, layer) that brings it to this stack's code. |
 | Q10 | Where is this stack's source? | One repository. |
 | Q11 | What type of stack is this? | One type, from the stack's name. |
 | Q12 | Which repositories are relevant to this Epic? | The set of repositories, each with the stacks that make it relevant and the features that lead to them. |
@@ -78,9 +78,9 @@ Illustration (invented, to show the use; it specifies nothing): a PRD asks for a
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
 That feature leads to its architecture documents, and they lead to the stacks involved: an
 email service that is called by a notifications service, which accepts an event and not a
-direct API call, and an EventBridge rule in an infra stack that routes one event type to the
-notifications service. The finding is small and exact: the rule must also route a new event
-type for recruiter emails. Nothing else is designed again.
+direct API call, and the notifications service's own EventBridge rule, which matches one event
+type and routes it to the service. The finding is small and exact: the rule must also match a
+new event type for recruiter emails. Nothing else is designed again.
 
 ## 3. What is recorded and how the things relate
 
@@ -367,8 +367,8 @@ for that Epic (Q13). Nothing is invented to fill it.
   other: its stacks, services, components, libraries, layers and infrastructure. Among
   these it records every dependency that crosses a stack boundary, of any kind: a
   shared library a stack imports, a layer it uses, a shared service it calls, an event it
-  publishes or consumes and the rule that routes it, a value it reads that another stack
-  stored, shared infrastructure it runs in. A relationship between two stacks is recorded
+  publishes, the EventBridge rule that matches an event and the targets it routes it to, a
+  value it reads that another stack stored, shared infrastructure it runs in. A relationship between two stacks is recorded
   whether the thing depended on is code or infrastructure. The matrix answers both
   directions to any depth: what a stack depends on (Q9) and what depends on a stack,
   service, component, library, layer or piece of infrastructure (Q15). This gives the
@@ -559,10 +559,11 @@ for that Epic (Q13). Nothing is invented to fill it.
 ### Events
 
 - **R56.** An event is not infrastructure and not just a name: it is a fact with a meaning.
-  An architecture-side event states when it is triggered, as its purpose, one sentence
-  starting "Published when" mirrored from the arc42 heading that describes it, and its
-  publisher: the service or component the architecture side says publishes it, or, for an
-  event published outside SkillSpoke, that outside system (`externalSource`). Its stack is its
+  An architecture-side event states its description, as its purpose, and its publishers,
+  both as the event catalog in arc42 section 6 states them: the services or components that
+  publish it, or, for an event published outside SkillSpoke, that outside system
+  (`externalSource`). A publisher calls the events API and knows nothing of the rules that
+  match the event or their targets. Its stack is its
   publisher's architecture-side stack; it has no home of its own, and it is built as part of
   the service that publishes it, never as a Story or a Task of its own. The repository side
   never decides what is built: a repository-side fact reaches the Tasks only as a labelled

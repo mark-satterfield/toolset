@@ -184,6 +184,24 @@ def _flag(value: JsonValue, where: str) -> bool:
     return value
 
 
+def _limit(value: JsonValue, where: str) -> int | None:
+    """Narrow an optional JSON value to a positive integer.
+
+    Returns:
+        The integer; None when the value is absent.
+
+    Raises:
+        SchemaShapeError: The value is present and is not a positive integer.
+
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        message: str = f"matrix contract: {where} is not a positive integer"
+        raise SchemaShapeError(message)
+    return value
+
+
 def _literal(values: Sequence[str]) -> str:
     """Render string values as a Literal type.
 
@@ -486,7 +504,7 @@ def _check_relationship_kinds(
         _subset(_strings(rule.get("required"), where + "/required"), attributes, where + "/required", "its attributes")
         _subset(_strings(rule.get("key"), where + "/key"), attributes, where + "/key", "its attributes")
         _flag(rule.get("provedByBuild"), where + "/provedByBuild")
-        _flag(rule.get("atMostOnePerStart", False), where + "/atMostOnePerStart")
+        _limit(rule.get("maxPerStart"), where + "/maxPerStart")
         if "family" in rule and _text(rule["family"], where + "/family") not in families:
             families.append(_text(rule["family"], where + "/family"))
     _subset([_text(registry.get(HOME_KEY), HOME_KEY)], list(table), HOME_KEY, "relationship kinds")
@@ -790,8 +808,8 @@ class RelationshipRule:
     """The group of kinds a lookup follows together, when the kind is in one."""
     proved_by_build: bool
     """Whether a verified build proves the relationship, so it carries the verified mark."""
-    at_most_one_per_start: bool
-    """Whether an entry may start at most one relationship of the kind."""
+    max_per_start: int | None
+    """The most relationships of the kind an entry may start on one side; None when there is no limit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1058,11 +1076,11 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
         reverse: JsonValue = rule.get("reverse")
         family: JsonValue = rule.get("family")
         proved: JsonValue = rule.get("provedByBuild")
-        single: JsonValue = rule.get("atMostOnePerStart", False)
+        limit: JsonValue = rule.get("maxPerStart")
         if (
             not isinstance(reverse, str)
             or not isinstance(proved, bool)
-            or not isinstance(single, bool)
+            or not (limit is None or (isinstance(limit, int) and not isinstance(limit, bool)))
             or not (family is None or isinstance(family, str))
         ):
             message: str = f"matrix contract: {where} is malformed"
@@ -1083,7 +1101,7 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
             ),
             family=family,
             proved_by_build=proved,
-            at_most_one_per_start=single,
+            max_per_start=limit,
         )
     return rules
 

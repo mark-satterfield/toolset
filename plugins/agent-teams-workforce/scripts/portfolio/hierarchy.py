@@ -84,8 +84,8 @@ from bead_metadata import (
 )
 
 # isort: split
-from matrix_contract import KIND_EVENT, KIND_STACK, Entry, EntryId
-from matrixstore import Matrix, kind_of, matrix_path, read_matrix
+from matrix_contract import KIND_STACK, Entry, EntryId
+from matrixstore import Matrix, matrix_path, read_matrix
 from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
@@ -113,9 +113,6 @@ SIZE_KEYS: Final[tuple[str, ...]] = (
     KEY_WSJF_SIZE_CONFIDENCE,
 )
 
-
-#: The words an event's trigger opens with in the matrix, compared in lower case.
-_TRIGGER_OPENING: Final[str] = "published when "
 
 #: The slug of an artifact whose item name yields no slug characters; a slug, not an artifact kind.
 _FALLBACK_ARTIFACT_SLUG: Final[str] = "page"
@@ -1042,20 +1039,6 @@ def stated_ids(matrix: Matrix, built: Sequence[str]) -> list[str]:
     return list(dict.fromkeys([*stacks, *built, *shared]))
 
 
-def _when(trigger: str) -> str:
-    """Read the condition an event's trigger states, without its opening words.
-
-    Returns:
-        The trigger with a leading "Published when" removed, so a line that supplies its own
-        "when" reads once.
-
-    """
-    stated: str = trigger.strip()
-    if stated.lower().startswith(_TRIGGER_OPENING):
-        return stated[len(_TRIGGER_OPENING) :].strip()
-    return stated
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def publisher_names(published_by: Sequence[str], names: Mapping[str, str]) -> list[str]:
     """Name the publishers of an event as a line about it shows them.
@@ -1074,34 +1057,37 @@ def publisher_names(published_by: Sequence[str], names: Mapping[str, str]) -> li
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def event_text(item_id: str, name: str, publishers: Sequence[str], trigger: str) -> str:
-    """Render one event a Story or a Task builds: the fact, who publishes it and when.
+def event_text(item_id: str, name: str, publishers: Sequence[str], description: str) -> str:
+    """Render one event a Story or a Task builds: the fact, who publishes it and what it is.
 
     Args:
         item_id: The event's item id.
         name: The event's name.
-        publishers: Its publishers, as :func:`publisher_names` names them.
-        trigger: The event's trigger, the purpose the matrix gives it.
+        publishers: Its publishers, as :func:`publisher_names` names them; may be empty.
+        description: The event's description, the purpose the matrix gives it.
 
     Returns:
-        ``<item id>: <name>, published by <publishers> when <trigger>``.
+        ``<item id>: <name>, published by <publishers>: <description>``, or
+        ``<item id>: <name>: <description>`` when it names no publisher.
 
     Raises:
-        ValueError: The event names no publisher or its trigger is empty.
+        ValueError: The event's description is empty.
 
     """
-    when: str = _when(trigger)
-    if not publishers or not when:
-        message: str = f"the event {item_id} ({name}) does not name its publisher and when it is triggered"
+    stated: str = description.strip()
+    if not stated:
+        message: str = f"the event {item_id} ({name}) has no description"
         raise ValueError(message)
-    return f"{item_id}: {name}, published by {', '.join(publishers)} when {when}"
+    if not publishers:
+        return f"{item_id}: {name}: {stated}"
+    return f"{item_id}: {name}, published by {', '.join(publishers)}: {stated}"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def event_lines(items: Mapping[str, StoryBuild]) -> dict[str, str]:
     """Render each event among what the Epic's Stories build.
 
-    An event that names no publisher or no trigger raises ``ValueError`` from :func:`event_text`.
+    An event that names no trigger raises ``ValueError`` from :func:`event_text`.
 
     Args:
         items: What every Story of the Epic builds, by item id.
@@ -1343,59 +1329,28 @@ def _cited(task: JsonObject, items: Mapping[str, EntryId]) -> list[str]:
     return [cited for cited in stated if isinstance(cited, str) and cited in items] if isinstance(stated, list) else []
 
 
-def _event_problems(task: JsonObject, cited: Sequence[str], items: Mapping[str, EntryId], matrix: Matrix) -> list[str]:
-    """Check that a Task builds each event it cites with a service or component that publishes it.
-
-    Returns:
-        One sentence per event the Task cites with none of its architecture-side publishers,
-        and one when it cites only events.
-
-    """
-    label: str = _task_label(task)
-    built: set[EntryId] = {items[cited_id] for cited_id in cited}
-    events: list[str] = [cited_id for cited_id in cited if kind_of(items[cited_id]) == KIND_EVENT]
-    alone: list[str] = [
-        f"Task {label} cites the event {items[event]} ({event}) and none of the services or components that "
-        "publish it: an event is built with its publisher"
-        for event in events
-        if not built.intersection(matrix.publishers(items[event]))
-    ]
-    only: list[str] = (
-        [f"Task {label} covers only events: an event is built with the service or component that publishes it"]
-        if events and len(events) == len(cited)
-        else []
-    )
-    return [*alone, *only]
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue], matrix: Matrix) -> list[str]:
+def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue]) -> list[str]:
     """Check that a Story's Tasks group what it builds into coherent units of build work.
 
     Args:
         items: The items of what the Story builds, each with its ``id`` and ``matrixId``.
         tasks: The Tasks of the decomposer's Tasks file.
-        matrix: The matrix, read for the publishers of an event.
 
     Returns:
-        One sentence per Task that covers one thing when the Story builds two or more; per
-        event a Task cites without a service or component that publishes it; and per Task
-        that covers only events. Empty when the Tasks group what the Story builds.
+        One sentence per Task that covers one thing when the Story builds two or more. Empty
+        when the Tasks group what the Story builds.
 
     """
     by_id: dict[str, EntryId] = {
         str(json_object(item)["id"]): EntryId(str(json_object(item).get("matrixId", ""))) for item in items
     }
     shaped: list[JsonObject] = [json_object(task) for task in tasks]
-    single: list[str] = [
+    return [
         f"Task {_task_label(task)} covers one thing: group the things this Story builds into coherent Tasks"
         for task in shaped
         if len(by_id) > 1 and len(_cited(task, by_id)) == 1
     ]
-    events: list[str] = [
-        problem for task in shaped for problem in _event_problems(task, _cited(task, by_id), by_id, matrix)
-    ]
-    return [*single, *events]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

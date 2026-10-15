@@ -46,8 +46,9 @@ one key, `*_KEYS` for a key group). This spec restates none of their names or sh
 
 Assess the build dependencies of ONE Task created outside elaboration (no `KEY_ELAB_KEY`) and write its
 `blocks` edges, then re-score. An edge from Task A to Task B means B cannot be built until A is
-built, because B consumes something A provides (an API, an event contract, a table, an IAM grant, a
-deployed resource); sharing a domain, a repository or an Epic is not an edge, and when in doubt an
+built, because B consumes something A provides (an API, a table, an IAM grant, a deployed resource).
+A producer of an event never depends on a routing rule or its target, and a routing rule or its
+target never depends on a producer: both depend only on the central event API and the bus. Sharing a domain, a repository or an Epic is not an edge, and when in doubt an
 edge is left out. One `task-dependency-mapper` session reads the Task, finds the Tasks that provide
 what it consumes or consume what it provides, and proposes every edge to or from it with a reason
 and a confidence, keeping or withdrawing (with a reason) every owned edge standing on it. Code

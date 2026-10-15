@@ -138,7 +138,7 @@
         "evidence": {"type": "array", "items": {"type": "string"}},
         "reason": {"type": "string"},
         "closure": {"description": "Path of the closure.json the item came from.", "type": "string"},
-        "trigger": {"description": "An event item only: when the event is triggered, the event entry's purpose in the matrix (it starts \"Published when\").", "type": "string"},
+        "trigger": {"description": "An event item only: the event's description, the event entry's purpose in the matrix.", "type": "string"},
         "publishedBy": {"description": "An event item only: its publishers, each as the id of the item that builds it when one in the same item set does, else as its matrix id.", "type": "array", "items": {"type": "string"}}
       }
     },

@@ -52,9 +52,8 @@ that describe the stack and each entry the Story builds, the constraints that bi
 the shared capabilities they must use); `documents`, each of those documents with its id,
 its path and the headings to read; `dependsOn`, each relationship from something the Story
 builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
-builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null);
-and `consumedBy`, each consumer of an event the Story builds, as `{event, consumer, side, stack,
-repository}`. Both are context, never work, and hold nothing of the marketing app.
+builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null).
+It is context, never work, and holds nothing of the marketing app.
 Read the documents and headings `documents` names, and only those; cite a document by the
 path and heading given there.
 The context file's `sharedCapabilities` lists what this repository's elements obtain from

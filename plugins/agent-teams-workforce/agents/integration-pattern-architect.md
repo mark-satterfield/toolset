@@ -25,7 +25,7 @@ color: cyan
 
 ## Specialty
 
-Design service boundaries, which interactions are synchronous calls and which are events, and the event delivery path. Reconcile publishers, consumers, interface ownership, retry/dead-letter behavior and idempotency across the affected views.
+Design service boundaries, which interactions are synchronous calls and which are events, and the event delivery path. Reconcile producers, routing rules and their targets, interface ownership, retry/dead-letter behavior and idempotency across the affected views.
 
 ## How you are used
 

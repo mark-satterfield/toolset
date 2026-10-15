@@ -56,9 +56,8 @@ before it writes its result.
 Its output is the architecture result at the path the context file names. The session's output
 check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
 result's `addedOrChangedElements` (what the Epic's Stories build): an id the matrix lacks, an entry
-not on the architecture side, a kind other than service, component, infrastructure or event, an
-event with `externalSource`, an entry the architecture side places in no stack (for an event, one
-whose publishers are homed in no stack or in more than one), or a stack of the `marketing` app;
+not on the architecture side, an event with no description, an entry built in no stack (for an
+event, one none of whose producers is homed in a stack), or a stack of the `marketing` app;
 then it records the design in an in-memory copy of the matrix, which is never written, and compares
 it with what `atw-matrix epic` returns from that copy: an entry the result names that the matrix does
 not hold, a requirement the copy does not show as served by the feature the result names, a
@@ -88,7 +87,7 @@ adds a last child step "Finish". When its session ends, the runner reads the jou
 
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
-| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`; an event is never in it: its stack is its publisher's) |
+| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`; an event has no home and is never in it) |
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the request's `changes` state or a drafted TRD's answer lists under `requirements`, with `statedIn` and `appliesTo`, and one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check, the review and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 

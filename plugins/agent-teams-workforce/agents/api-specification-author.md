@@ -37,10 +37,9 @@ Never expose secrets, edit section 2, or touch apps/marketing repositories.
 Read PRD, TRD, approved architecture and the items of what this repository's Story builds. Specify every
 item the Story builds and only that scope: endpoints/methods, request/response fields and validation,
 authorizers, events, errors and failure behavior. Specify each event as the
-skillspoke-events skill describes: its event type name, the values the publishing service
-passes to the shared-events-service API, its payload schema when it has a payload, and its
-publisher, when it is triggered (the event's purpose in the matrix, mirrored from arc42),
-consumers and delivery/failure behavior. Derive
+skillspoke-events skill describes: its event type name, the values a producer passes to the
+shared-events-service API, its payload schema when it has a payload, its description and its
+producers. A producer's spec names no routing rule or target. Derive
 from the approved design; do not search code to decide which work can be omitted. Write nonempty
 UTF-8 Markdown with decisionIds frontmatter; cite actual views read and preserve useful provenance.
 If this surface is not applicable, state why in a short document rather than inventing work.
@@ -63,12 +62,10 @@ that describe the stack and each entry the Story builds, the constraints that bi
 the shared capabilities they must use); `documents`, each of those documents with its id,
 its path and the headings to read; `dependsOn`, each relationship from something the Story
 builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
-builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null);
-and `consumedBy`, each consumer of an event the Story builds, as `{event, consumer, side, stack,
-repository}`. Both are context, never work, and hold nothing of the marketing app. Name each
-event's consumers from `consumedBy` (criterion I6), and each dependency's contract from
-`dependsOn`. Each event item in `items` carries `trigger` (when it is published) and
-`publishedBy` (its publishers); specify the event with that publisher and that trigger.
+builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null).
+It is context, never work, and holds nothing of the marketing app. Name each dependency's
+contract from `dependsOn`. Each event item in `items` carries the event's description and its
+producers; specify the event with that description and those producers.
 Read the documents and headings `documents` names, and only those; cite a document by the
 path and heading given there.
 The context file's `sharedCapabilities` lists what this repository's elements obtain from

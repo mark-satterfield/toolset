@@ -52,15 +52,11 @@
         "additionalProperties": false,
         "required": [
           "name",
-          "template",
           "purpose",
           "itemIds"
         ],
         "properties": {
           "name": {
-            "type": "string"
-          },
-          "template": {
             "type": "string"
           },
           "purpose": {

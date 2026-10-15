@@ -55,8 +55,9 @@ type RelationshipKind = Literal[
     "usesLayer",
     "calls",
     "publishes",
-    "consumes",
-    "routes",
+    "onBus",
+    "matches",
+    "routesTo",
     "reads",
     "runsIn",
     "drives",
@@ -122,8 +123,9 @@ REL_IMPORTS: Final[Literal["imports"]] = "imports"
 REL_USES_LAYER: Final[Literal["usesLayer"]] = "usesLayer"
 REL_CALLS: Final[Literal["calls"]] = "calls"
 REL_PUBLISHES: Final[Literal["publishes"]] = "publishes"
-REL_CONSUMES: Final[Literal["consumes"]] = "consumes"
-REL_ROUTES: Final[Literal["routes"]] = "routes"
+REL_ON_BUS: Final[Literal["onBus"]] = "onBus"
+REL_MATCHES: Final[Literal["matches"]] = "matches"
+REL_ROUTES_TO: Final[Literal["routesTo"]] = "routesTo"
 REL_READS: Final[Literal["reads"]] = "reads"
 REL_RUNS_IN: Final[Literal["runsIn"]] = "runsIn"
 REL_DRIVES: Final[Literal["drives"]] = "drives"
@@ -147,8 +149,9 @@ RELATIONSHIP_KINDS: Final[tuple[RelationshipKind, ...]] = (
     REL_USES_LAYER,
     REL_CALLS,
     REL_PUBLISHES,
-    REL_CONSUMES,
-    REL_ROUTES,
+    REL_ON_BUS,
+    REL_MATCHES,
+    REL_ROUTES_TO,
     REL_READS,
     REL_RUNS_IN,
     REL_DRIVES,
@@ -247,8 +250,8 @@ class RelationshipRule:
     """The group of kinds a lookup follows together, when the kind is in one."""
     proved_by_build: bool
     """Whether a verified build proves the relationship, so it carries the verified mark."""
-    at_most_one_per_start: bool
-    """Whether an entry may start at most one relationship of the kind."""
+    max_per_start: int | None
+    """The most relationships of the kind an entry may start on one side; None when there is no limit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -515,11 +518,11 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
         reverse: JsonValue = rule.get("reverse")
         family: JsonValue = rule.get("family")
         proved: JsonValue = rule.get("provedByBuild")
-        single: JsonValue = rule.get("atMostOnePerStart", False)
+        limit: JsonValue = rule.get("maxPerStart")
         if (
             not isinstance(reverse, str)
             or not isinstance(proved, bool)
-            or not isinstance(single, bool)
+            or not (limit is None or (isinstance(limit, int) and not isinstance(limit, bool)))
             or not (family is None or isinstance(family, str))
         ):
             message: str = f"matrix contract: {where} is malformed"
@@ -540,7 +543,7 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
             ),
             family=family,
             proved_by_build=proved,
-            at_most_one_per_start=single,
+            max_per_start=limit,
         )
     return rules
 

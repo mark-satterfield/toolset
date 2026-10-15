@@ -58,7 +58,7 @@
       },
       "SkillSpokeEvent": {
         "type": "object",
-        "description": "Standard event envelope for all business, monitoring, audit, security, and infrastructure events in the SkillSpoke platform.",
+        "description": "Standard event envelope for all user, domain, data, and system events in the SkillSpoke platform.",
         "required": [
           "eventId",
           "eventType",
@@ -85,8 +85,8 @@
           },
           "category": {
             "type": "string",
-            "description": "High-level category indicating the purpose of the event.",
-            "enum": ["business", "monitoring", "audit", "security", "infrastructure"]
+            "description": "One of the four categories, chosen by the producer for each event.",
+            "enum": ["user", "domain", "data", "system"]
           },
           "domain": {
             "type": "string",

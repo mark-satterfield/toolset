@@ -29,7 +29,6 @@ KEY_FRONTEND: Final = "frontend"
 KEY_RATIONALE: Final = "rationale"
 
 KEY_NAME: Final = "name"
-KEY_TEMPLATE: Final = "template"
 KEY_PURPOSE: Final = "purpose"
 
 KEY_ITEM_ID: Final = "itemId"
@@ -39,7 +38,7 @@ RULING_KEYS: Final[frozenset[str]] = frozenset((KEY_PLACEMENTS, KEY_MISSING_REPO
 PLACEMENT_KEYS: Final[frozenset[str]] = frozenset(
     (KEY_REPO_PATH, KEY_REPO_NAME, KEY_ITEM_IDS, KEY_FRONTEND, KEY_RATIONALE),
 )
-MISSING_REPO_KEYS: Final[frozenset[str]] = frozenset((KEY_NAME, KEY_TEMPLATE, KEY_PURPOSE, KEY_ITEM_IDS))
+MISSING_REPO_KEYS: Final[frozenset[str]] = frozenset((KEY_NAME, KEY_PURPOSE, KEY_ITEM_IDS))
 NO_CODE_KEYS: Final[frozenset[str]] = frozenset((KEY_ITEM_ID, KEY_REASON))
 
 
@@ -57,7 +56,6 @@ class MissingRepo(TypedDict):
     """A repository the approved target names that does not exist yet."""
 
     name: str
-    template: str
     purpose: str
     itemIds: list[str]
 
@@ -198,7 +196,6 @@ def _missing_repo(value: object, where: str) -> MissingRepo:
     entry: dict[str, object] = _closed(value, where, MISSING_REPO_KEYS)
     return {
         KEY_NAME: _text(entry[KEY_NAME], f"{where}.{KEY_NAME}"),
-        KEY_TEMPLATE: _text(entry[KEY_TEMPLATE], f"{where}.{KEY_TEMPLATE}"),
         KEY_PURPOSE: _text(entry[KEY_PURPOSE], f"{where}.{KEY_PURPOSE}"),
         KEY_ITEM_IDS: _strings(entry[KEY_ITEM_IDS], f"{where}.{KEY_ITEM_IDS}"),
     }

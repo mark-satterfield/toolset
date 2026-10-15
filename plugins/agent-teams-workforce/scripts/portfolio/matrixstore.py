@@ -44,13 +44,17 @@ from matrix_contract import (
     KIND_DOCUMENT,
     KIND_EPIC,
     KIND_EVENT,
+    KIND_INFRASTRUCTURE,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
     MATRIX_ENV,
     OPERATOR_ROLE,
     REL_DESCRIBED_BY,
     REL_HAS_REQUIREMENT,
+    REL_MATCHES,
+    REL_ON_BUS,
     REL_PUBLISHES,
+    REL_ROUTES_TO,
     REL_SERVED_BY,
     RELATIONSHIP_RULES,
     ROLE_ENV,
@@ -90,11 +94,14 @@ STACK_SEPARATOR: Final = "/"
 SLUG_SEPARATOR: Final = "-"
 ATTR_EXTERNAL_SOURCE: Final = "externalSource"
 """The event attribute that names the system outside SkillSpoke that publishes it."""
-ATTR_EXECUTION_USE: Final = "executionUse"
-EXECUTION_IMPORTED: Final = "imported"
-"""The execution use of a stack other code imports: a library."""
-EVENT_TRIGGER_OPENING: Final = "Published when"
-"""How the purpose of an authority-side event starts: it states when the event is triggered."""
+ATTR_RESOURCE_TYPE: Final = "resourceType"
+RESOURCE_EVENTBRIDGE_RULE: Final = "eventbridge-rule"
+"""The resource type of an EventBridge rule: it belongs to one bus, matches events and routes them to targets."""
+RESOURCE_EVENTBRIDGE_BUS: Final = "eventbridge-bus"
+ATTR_MATCHES_ALL_EVENTS: Final = "matchesAllEvents"
+"""The rule attribute that says its event pattern matches every event on its bus."""
+RULE_RELATIONSHIPS: Final[tuple[RelationshipKind, ...]] = (REL_ON_BUS, REL_MATCHES, REL_ROUTES_TO)
+"""The relationships only an EventBridge rule starts."""
 PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
 ATTR_ARCHITECTURE_APPROVED: Final = "architectureApproved"
@@ -714,33 +721,16 @@ class Matrix:
         for start in sorted(described):
             self._unapprove(start)
 
-    def _imported_publisher(self, event_id: EntryId) -> bool:
-        """Report whether a publisher of an event is homed in a library.
-
-        Returns:
-            True when one of the event's publisher stacks has the imported execution use.
-
-        """
-        stacks: list[Entry | None] = [self._entries.get(stack) for stack in self.publisher_stacks(event_id)]
-        return any(
-            stack is not None and stack.attributes.get(ATTR_EXECUTION_USE) == EXECUTION_IMPORTED for stack in stacks
-        )
-
     def _one_event_problems(self, event: Entry) -> list[str]:
-        """Check one authority-side event: its trigger, its publisher and its stack.
+        """Check one authority-side event's publishers.
 
         Returns:
-            One sentence per rule the event breaks; empty when it states when it is triggered,
-            has exactly one of a publisher or an outside source, and is published from one stack
-            (or from a library and its callers, which the owner has not ruled on).
+            One sentence per rule the event breaks; empty when it has publishers or an outside
+            source, but not both. Any number of publishers, in any number of stacks, may publish
+            one event type.
 
         """
         problems: list[str] = []
-        if not event.purpose.startswith(EVENT_TRIGGER_OPENING):
-            problems.append(
-                f"{event.id}: its purpose must state when it is triggered, as one sentence starting "
-                f"'{EVENT_TRIGGER_OPENING}', mirrored from arc42",
-            )
         external: bool = ATTR_EXTERNAL_SOURCE in event.attributes
         published: bool = bool(self.publishers(event.id))
         if external and published:
@@ -752,12 +742,6 @@ class Matrix:
             problems.append(
                 f"{event.id}: no service or component publishes it; record one with put event --published-by, "
                 f"or state {ATTR_EXTERNAL_SOURCE}",
-            )
-        stacks: frozenset[EntryId] = self.publisher_stacks(event.id)
-        if len(stacks) > 1 and not self._imported_publisher(event.id):
-            problems.append(
-                f"{event.id}: published from {len(stacks)} stacks ({', '.join(sorted(stacks))}); "
-                f"an event has one publisher's stack",
             )
         return problems
 
@@ -774,6 +758,69 @@ class Matrix:
             if event.side == AUTHORITY_SIDE
             for problem in self._one_event_problems(event)
         ]
+
+    def _is_resource(self, entry_id: EntryId, resource_type: str) -> bool:
+        """Report whether an entry is infrastructure of one resource type.
+
+        Returns:
+            True when the matrix holds the entry as infrastructure of that resource type.
+
+        """
+        entry: Entry | None = self._entries.get(entry_id)
+        return (
+            entry is not None
+            and entry.kind == KIND_INFRASTRUCTURE
+            and entry.attributes.get(ATTR_RESOURCE_TYPE) == resource_type
+        )
+
+    def _rule_link_problems(self, relationship: Relationship) -> list[str]:
+        """Check one relationship only an EventBridge rule starts.
+
+        Returns:
+            One sentence when it starts at something other than an EventBridge rule, and one when
+            it is an onBus relationship that ends at something other than an event bus.
+
+        """
+        label: str = relationship_label(relationship)
+        problems: list[str] = []
+        if not self._is_resource(relationship.start, RESOURCE_EVENTBRIDGE_RULE):
+            problems.append(f"{label}: only infrastructure of resourceType {RESOURCE_EVENTBRIDGE_RULE} starts it")
+        if relationship.kind == REL_ON_BUS and not self._is_resource(relationship.end, RESOURCE_EVENTBRIDGE_BUS):
+            problems.append(f"{label}: it must end at infrastructure of resourceType {RESOURCE_EVENTBRIDGE_BUS}")
+        return problems
+
+    def _one_rule_problems(self, entry: Entry) -> list[str]:
+        """Check one infrastructure entry's event pattern: matchesAllEvents only on a rule, never with matches.
+
+        Returns:
+            One sentence per breach; empty when the pattern is stated one way only, on a rule.
+
+        """
+        is_rule: bool = entry.attributes.get(ATTR_RESOURCE_TYPE) == RESOURCE_EVENTBRIDGE_RULE
+        all_events: bool = ATTR_MATCHES_ALL_EVENTS in entry.attributes
+        if all_events and not is_rule:
+            return [f"{entry.id}: only an {RESOURCE_EVENTBRIDGE_RULE} states {ATTR_MATCHES_ALL_EVENTS}"]
+        if all_events and self.outgoing(entry.id, (REL_MATCHES,)):
+            return [f"{entry.id}: it states {ATTR_MATCHES_ALL_EVENTS} and names events with matches; state one"]
+        return []
+
+    def _rule_problems(self) -> list[str]:
+        """Check the EventBridge rules: what starts their relationships and their patterns.
+
+        Returns:
+            The problems of every rule relationship and every infrastructure entry, in order.
+
+        """
+        link_problems: list[str] = [
+            problem
+            for relationship in self.relationships()
+            if relationship.kind in RULE_RELATIONSHIPS
+            for problem in self._rule_link_problems(relationship)
+        ]
+        entry_problems_found: list[str] = [
+            problem for entry in self.entries((KIND_INFRASTRUCTURE,)) for problem in self._one_rule_problems(entry)
+        ]
+        return [*link_problems, *entry_problems_found]
 
     def _between_problems(self, relationship: Relationship) -> list[str]:
         """Check one relationship against the entries it names.
@@ -818,9 +865,9 @@ class Matrix:
             for identity in self._starting[start]:
                 counts[identity.kind, identity.side] = counts.get((identity.kind, identity.side), 0) + 1
             problems.extend(
-                f"{start}: starts {count} {kind} relationships on the {side} side; at most one is allowed"
+                f"{start}: starts {count} {kind} relationships on the {side} side; at most {limit} are allowed"
                 for (kind, side), count in sorted(counts.items())
-                if count > 1 and RELATIONSHIP_RULES[kind].at_most_one_per_start
+                if (limit := RELATIONSHIP_RULES[kind].max_per_start) is not None and count > limit
             )
         return problems
 
@@ -857,6 +904,7 @@ class Matrix:
             problems.extend(self._between_problems(relationship))
         problems.extend(self._single_problems())
         problems.extend(self._event_problems())
+        problems.extend(self._rule_problems())
         return problems
 
     def put(self, entry: Entry) -> None:
@@ -898,21 +946,45 @@ class Matrix:
         if _document_rewritten(held, stored):
             self._unapprove_described(stored.id)
 
+    def _refuse_over_limit(self, relationship: Relationship, identity: RelationshipId) -> None:
+        """Refuse a new relationship that would exceed the most its kind allows from one start on one side.
+
+        Raises:
+            MatrixRefusedError: The kind declares a limit and, on the relationship's side, the start
+                already has that many others of the kind.
+
+        """
+        limit: int | None = RELATIONSHIP_RULES[relationship.kind].max_per_start
+        if limit is None:
+            return
+        others: list[Relationship] = [
+            other
+            for other in self.outgoing(relationship.start, (relationship.kind,))
+            if other.side == identity.side and relationship_id(other) != identity
+        ]
+        if len(others) < limit:
+            return
+        message: str = (
+            f"{relationship.start} already has {len(others)} {relationship.kind} relationships on the "
+            f"{identity.side} side (to {', '.join(sorted(other.end for other in others))}); at most {limit} "
+            f"are allowed, so unlink one first"
+        )
+        raise MatrixRefusedError(message)
+
     def link(self, relationship: Relationship) -> None:
         """Add a relationship, or replace the one with the same kind, ends, key attributes and side.
 
         The relationship is stored for the side it states; the same relationship as the other
         side states it stays as it is. A relationship that breaks its kind, names an entry the
         matrix does not hold or joins kinds it may not join raises ``MatrixError`` and changes
-        nothing. An architecture-side relationship that is added or changed clears the
-        architecture-approved mark of the entry it starts from.
+        nothing. A new relationship of a kind that limits the relationships from an entry on a
+        side, when on its side the start already has that many others, raises
+        ``MatrixRefusedError`` (:meth:`_refuse_over_limit`) and changes nothing. An
+        architecture-side relationship that is added or changed clears the architecture-approved
+        mark of the entry it starts from.
 
         Args:
             relationship: The relationship, of any registered kind, with the side that states it.
-
-        Raises:
-            MatrixRefusedError: The kind allows one relationship from an entry on a side, and on
-                the relationship's side the start already has another.
 
         """
         _raise_problems(
@@ -920,18 +992,7 @@ class Matrix:
             f"the relationship {relationship_label(relationship)}",
         )
         identity: RelationshipId = relationship_id(relationship)
-        if RELATIONSHIP_RULES[relationship.kind].at_most_one_per_start:
-            others: list[Relationship] = [
-                other
-                for other in self.outgoing(relationship.start, (relationship.kind,))
-                if other.side == identity.side and other.end != identity.end
-            ]
-            if others:
-                message: str = (
-                    f"{relationship.start} already has the {relationship.kind} relationship to {others[0].end} "
-                    f"on the {identity.side} side; unlink it first"
-                )
-                raise MatrixRefusedError(message)
+        self._refuse_over_limit(relationship, identity)
         before: Relationship | None = self._relationships.get(identity)
         if before is not None:
             self._drop(identity)

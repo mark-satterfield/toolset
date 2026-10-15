@@ -115,7 +115,7 @@ What the `epic brief` file holds (`matrixquery.EpicBrief`):
 | Member of the brief | What it is |
 |---|---|
 | `epic` | The Epic's requirements, each with the features that serve it (`hasRequirement`, then `servedBy`) and the documents and headings that cover it (`coveredBy`, each with `document`, `heading` and `via`, the feature that connects them); `noFeature` (a requirement no feature serves) and `noDocument` (a requirement and feature no document covers). |
-| `features` | Each feature, whether it is only `supporting`, the arc42 headings that describe it (`describedBy`), and `realizedBy`: the ends of its `realizedBy` relationships and every service, component, piece of infrastructure, event or layer an arc42 heading that covers one of the Epic's requirements by way of the feature describes. Each realizer carries its `stack` (on the architecture side; for an event, its publisher's stack), that stack's `repository`, and, for an event, its `publishers`. |
+| `features` | Each feature, whether it is only `supporting`, the arc42 headings that describe it (`describedBy`), and `realizedBy`: the ends of its `realizedBy` relationships and every service, component, piece of infrastructure, event or layer an arc42 heading that covers one of the Epic's requirements by way of the feature describes. Each realizer carries its `stack` (on the architecture side; for an event, each of its publishers' stacks), that stack's `repository`, and, for an event, its `publishers`. |
 | `constraints` | Each constraint that applies to the Epic, its features or their realizers, with the document and heading it is `statedIn`. |
 | `noStack` | The realizers the architecture side places in no stack. |
 
@@ -211,18 +211,15 @@ SkillSpoke follows strict sharing and reuse. Before you design any behaviour:
    an item joins the ones held, and an item with the `id` of a held one replaces it), and
    include it in the write request so that it is stated in the capability's own section 5
    document.
-4. When the PRD needs a behaviour that more than one service needs or will plainly need,
-   place it in a shared home: a Lambda layer or library for code a handler links against, a
-   shared service for behaviour with its own data or its own scaling, shared infrastructure
-   for a resource several stacks use. Record the new shared capability with
+4. Where a behaviour is placed in a shared home is stated in arc42 section 4, Solution Strategy
+   (`docs/tech/architecture/arc42/04-solution-strategy/README.md`, "Architectural style").
+   Record a new shared capability with
    `atw-matrix put feature --name "<name>" --purpose "<purpose>" --side architecture --provides @<file>`:
    the file holds a JSON list, and each item has `id`, `behaviour`, `consumersMust` (what a
    consumer must not implement itself) and `interface` (`kind` and `name`), and may have
    `useSignals` and `duplicateSignals`, the text patterns that show a consumer uses the
    capability or is doing the same thing itself. Include its section 5 document in the write request.
-5. When only one service needs the behaviour, it is one component inside that service. Record
-   it as one component that every flow uses.
-6. Work already designed for an earlier Epic (for example networking for the first Epic that
+5. Work already designed for an earlier Epic (for example networking for the first Epic that
    needed a service) is in the matrix with effective documents (`find`, `node`). Build on it
    rather than designing it again; a detail it lacks that this Epic needs is yours to decide.
 
@@ -260,11 +257,12 @@ and creates no entry, so it fails on a feature or element id the matrix does not
 | Each new feature | `atw-matrix put feature --name "<name>" --purpose "<purpose>" --side architecture`: one discrete capability of the product, named as something it can do ("send an email"), that `find --kinds feature` shows the matrix does not hold. Derive features from the PRD's requirements and from the architecture: a capability the architecture provides that no requirement names is a feature too. One feature commonly serves several requirements, so link an existing feature before you record a new one. A condition, quality or rule about how a capability behaves is a requirement or a constraint that the capability's feature serves, not a feature of its own. Record one feature where the same part of the architecture provides the whole capability, and several where different parts provide parts of it. Then `supportedBy` to each feature it relies on. |
 | What implements a feature | `atw-matrix link realizedBy --from feature:<id> --to <entry id> --side architecture`. |
 | Each service, component, piece of infrastructure and layer you design or change, and each one an effective arc42 document describes that the matrix does not hold | `atw-matrix put <kind> --name "<name>" --purpose "<purpose>" --side architecture`, where the kind is `service`, `component`, `infrastructure` or `layer`, with `--resource-type` and `--execution-use` where the kind has them. A resource type is one of the controlled list the command names. |
-| Each event you design or change | An event is not infrastructure and not just a name: it is a fact with a meaning, its name, the service or component that publishes it, and when it is triggered. First have its trigger and its publisher written into arc42, through the documents `architecture-maintainer` writes for you. Then record it with `atw-matrix put event --name "<name>" --purpose "Published when <the occurrence in its publisher>." --published-by <service or component id> --side architecture`, which records the event and its `publishes` relationship in one change. An event published by a system outside SkillSpoke states that system with `--external-source "<system>"` and no `--published-by`. An event gets no `homeIn`: its stack is its publisher's stack, and it is built as part of the service that publishes it. |
+| Each event you design or change | An event type has a name, a description and any number of producers. First have its description and its producers written into the event catalog in arc42, through the documents `architecture-maintainer` writes for you. Then record it with `atw-matrix put event --name "<name>" --purpose "<its description>" --published-by <service or component id> --side architecture`, which records the event and the `publishes` relationship of that producer in one change, and record each further producer with `atw-matrix link publishes --from <service or component id> --to event:<name> --side architecture`. |
+| Each routing rule you design or change | A routing rule is its own element: `atw-matrix put infrastructure --name "<name>" --purpose "<purpose>" --resource-type eventbridge-rule --side architecture`. Link it to its bus with `onBus`, to each event type its pattern matches with `matches` (or state `matchesAllEvents` when its pattern matches every event), and to each target with `routesTo`, at most five. Its `homeIn` is the stack that holds its targets; each target's retry policy and dead-letter queue are in that stack. |
 | The service a component or a piece of infrastructure is part of | `atw-matrix link partOf --from <entry id> --to service:<id> --side architecture`. |
-| The stack that is the home of a service, component, piece of infrastructure or layer | `atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture`, when the matrix holds the stack. An entry has at most one home. An event has none. |
+| The stack that is the home of a service, component, piece of infrastructure or layer | `atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture`, when the matrix holds the stack. An entry has at most one home. An event has none; a routing rule's is its targets' stack. |
 | What a layer carries | `atw-matrix link contains --from layer:<id> --to package:<name> --side architecture`. |
-| Each dependency, under its kind | `atw-matrix link <kind> --from <id> --to <id> --side architecture`, where the kind is `imports`, `usesLayer`, `calls`, `publishes`, `consumes`, `routes`, `reads` or `runsIn`, with `--through` for `imports`, `--interface` for `calls` and `--target` for `routes`. A dependency between two stacks whose entries are not yet known is recorded with the stacks as its ends. |
+| Each dependency, under its kind | `atw-matrix link <kind> --from <id> --to <id> --side architecture`, where the kind is `imports`, `usesLayer`, `calls`, `publishes`, `matches`, `routesTo`, `onBus`, `reads` or `runsIn`, with `--through` for `imports` and `--interface` for `calls`. A dependency between two stacks whose entries are not yet known is recorded with the stacks as its ends. |
 | The document heading that describes an entry | `atw-matrix link describedBy --from <entry id> --to document:<path> --heading "<heading>" --side architecture`. |
 
 An entry is recorded once. Before you record one, look it up (`find`, `node`), and when two
@@ -278,8 +276,8 @@ stack exists, in one or two sentences, never a list of what it contains. State a
 your result and in the request to `polyrepo-steward`. Ask `polyrepo-steward` to place every
 service, component, piece of infrastructure and layer you designed that has no stack the matrix
 can name, and every one the `epic brief` lists under `noStack`: it records each new stack with
-the purpose you state and each entry's `homeIn`. An event is never placed: its stack is its
-publisher's.
+the purpose you state and each entry's `homeIn`. An event has no home and is never placed; a
+routing rule is placed in its targets' stack.
 
 Domain expertise comes to you from the Epic's recorded domains. The skills for the domains
 known at launch are already in your context. `atw-expertise match --resource-type <type>`
@@ -441,15 +439,13 @@ selects the reviewers from them and reads from the matrix which documents the Ep
 that are not effective.
 
 `addedOrChangedElements` is what the Epic's Stories build, and they build exactly that: the
-matrix id, as you recorded it, of every service, component, piece of infrastructure and event
-this design adds or changes for the Epic, including every element a TRD requirement binds that
-the design adds or changes. An element the Epic only uses is not listed: it is context for the
-Tasks, never work. An event is built with the service or component that publishes it, so its
-publisher is built with it. The step that accepts your result fails on an id the matrix lacks,
-an entry not on the architecture side, a kind other than these four, an event published outside
-SkillSpoke, an entry the architecture side places in no stack (for an event, one whose
-publishers are homed in no stack or in more than one), and an entry in a stack of the marketing
-app.
+matrix id, as you recorded it, of every element this design adds or changes for the Epic,
+routing rules, layers and packages included, and every element a TRD requirement binds that the
+design adds or changes. An element the Epic only uses is not listed: it is context for the
+Tasks, never work. An event is built in each stack that holds one of its producers. The step
+that accepts your result fails on an id the matrix lacks, an entry not on the architecture side,
+an event with no description, an entry built in no stack (for an event, one none of whose
+producers is homed in a stack), and an entry in a stack of the marketing app.
 
 ## Later steps
 

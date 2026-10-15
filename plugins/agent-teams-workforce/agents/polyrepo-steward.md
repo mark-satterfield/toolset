@@ -118,7 +118,7 @@ hand the facts back for the caller to act on.
 
 | Action | Command |
 |---|---|
-| Create a repo from a template, locally and on GitHub, with its beads setup and its stack in the matrix | `create <name> --space S --template T` |
+| Create a repo from a template, locally and on GitHub, with its beads setup and its stack in the matrix | `create <name> --space S [--template T]` |
 | Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories, the arc42 documents and the matrix (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |

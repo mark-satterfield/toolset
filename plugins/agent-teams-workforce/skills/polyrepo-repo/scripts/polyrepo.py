@@ -28,7 +28,7 @@ Usage:
   polyrepo.py inventory [--all] [--no-fetch] [--name N]
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
-  polyrepo.py create <name> --space S --template T [--dry-run]
+  polyrepo.py create <name> --space S [--template T] [--dry-run]
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
                      [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
@@ -3168,6 +3168,25 @@ def _exclude_worktrees(repo: Path) -> None:
     exclude.write_text(f"{text}{sep}{WORKTREES_LINE}\n")
 
 
+def _template_of_name(cfg: Config, name: str) -> str:
+    """Name the template a repo is created from, from the template whose name_regex matches its name.
+
+    Returns:
+        The template's name.
+
+    Raises:
+        PolyrepoError: when no template's name_regex matches the name.
+
+    """
+    kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
+    for kind, spec in kinds.items():
+        rx = _map(spec or {}, "template kind").get("name_regex")
+        if isinstance(rx, str) and rx and re.search(rx, name):
+            return str(kind)
+    msg = f"no template's name_regex matches {name}"
+    raise PolyrepoError(msg)
+
+
 def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     """Validate a create request against the naming rules, the templates, disk and GitHub.
 
@@ -3231,6 +3250,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     name, b = args.name, cfg.default_branch
+    args.template = args.template or _template_of_name(cfg, name)
     tdir, dest = _create_checks(args, cfg)
     data = _template_data(cfg, name)
     res: dict[str, object] = {
@@ -7353,7 +7373,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     )
     s.add_argument("name")
     s.add_argument("--space", required=True, help="the app space it belongs in")
-    s.add_argument("--template", required=True, help="the Copier template")
+    s.add_argument("--template", help="the Copier template; omitted, the template whose name_regex matches the name")
     s.add_argument("--lifecycle", default="active")
     s.add_argument(
         "--dir",

@@ -2,7 +2,7 @@
 
 ``matrix.py`` holds the reads and the command line; this module holds everything else: ``put``,
 ``link``, ``unlink``, ``settle``, ``rename``, ``remove``, ``move-repository`` and ``commit``;
-``sync-epics`` and ``sync-documents``; ``seed`` and its steps (``seed-stacks``,
+``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-apply``); ``verify`` and the Task
 script's ``built``, ``work`` and ``affected``; ``check-reuse`` and ``expertise``. Each change is
 one locked read-modify-write of the matrix file.
@@ -41,6 +41,7 @@ from matrix_contract import (
 )
 from matrixcall import Call, Outcome
 from matrixcode import COMMAND_VERIFY, record_verified
+from matrixevents import CATALOG_PATH, CatalogEvent, EventsSynced, read_catalog, sync_events
 from matrixexpertise import (
     SUBAGENT_START,
     Expertise,
@@ -531,6 +532,25 @@ def _run_sync_documents(call: Call) -> Outcome:
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
 
+def _run_sync_events(call: Call) -> Outcome:
+    """Run ``sync-events``: read the event catalog once, then load, change and save the matrix once.
+
+    Returns:
+        What the catalog changed among the events and rules, and the producer names that map to no entry.
+
+    """
+    stated: str | None = call.text("catalog")
+    catalog_path: Path = (
+        call.required_folder("arch", [ARCH_PATH_ENV]) / CATALOG_PATH if stated is None else Path(stated).expanduser()
+    )
+    catalog: list[CatalogEvent] = read_catalog(catalog_path)
+
+    def change(matrix: Matrix) -> EventsSynced:
+        return sync_events(matrix, catalog)
+
+    return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
+
+
 def _naming(call: Call, control: Path) -> Path:
     """Decide which file holds the naming rules a seeding command reads.
 
@@ -801,6 +821,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "commit": _run_commit,
     "sync-epics": _run_sync_epics,
     "sync-documents": _run_sync_documents,
+    "sync-events": _run_sync_events,
     "seed": _run_seed,
     "seed-stacks": _run_seed_stacks,
     "seed-packages": _run_seed_packages,
@@ -942,6 +963,12 @@ def _sync_parsers(
     )
     documents.add_argument("--paths", nargs="+", help="the files to read; default: every arc42 document")
     documents.add_argument("--bead", help="the Epic the documents were changed for; nothing recorded names it")
+    events: argparse.ArgumentParser = commands.add_parser(
+        "sync-events",
+        parents=[where, arch],
+        help="event entries, their purposes and publishers, from the event catalog in arc42 section 6",
+    )
+    events.add_argument("--catalog", help=f"the event catalog file; default: {CATALOG_PATH} under --arch")
     naming: argparse.ArgumentParser = sources["naming"]
     folder: argparse.ArgumentParser = sources["folder"]
     seeded: argparse.ArgumentParser = commands.add_parser(
