@@ -6361,6 +6361,20 @@ def _sync_one(
     return {**res, **_sync_on_main(cfg, r, blocks, (cur, want), trailer)}
 
 
+def _ff_past_dirty_files(r: LocalRepo, branch: str) -> bool:
+    """Fast-forward the checked-out main to origin/main while the tree has uncommitted changes.
+
+    Git refuses the merge when an incoming change touches a file with uncommitted changes, and then
+    nothing is moved; the uncommitted files are never changed or committed by this.
+
+    Returns:
+        True when main now equals origin/main, else False.
+
+    """
+    cp = git(r.path, "merge", "--ff-only", "--quiet", f"refs/remotes/origin/{branch}")
+    return cp.returncode == 0
+
+
 def _advance_for_sync(cfg: Config, r: LocalRepo) -> dict[str, object] | None:
     """Fetch origin and bring the primary tree's main up to origin/main before a commit.
 
@@ -6373,6 +6387,8 @@ def _advance_for_sync(cfg: Config, r: LocalRepo) -> dict[str, object] | None:
         return {"status": "skipped", "detail": "no origin"}
     moved = rebase_one(cfg, r)
     if moved["status"] in AGENTS_SYNC_ADVANCED:
+        return None
+    if moved["status"] == "dirty" and moved.get("ahead") == 0 and _ff_past_dirty_files(r, cfg.default_branch):
         return None
     detail = "; ".join(s for s in (str(moved["status"]), str(moved.get("detail") or "")) if s)
     return {"status": "skipped", "detail": f"main not brought up to origin/{cfg.default_branch}: {detail}"}
