@@ -24,6 +24,7 @@ Facts that are true of the repository *as a repository*, and that have no other 
 |---|---|
 | Repo identity | `name`, `lifecycle` |
 | Ownership | `owner` |
+| Tier | `tier` (`product` or `tooling`) |
 | Repo grouping | groups |
 | Lifecycle dates | `deprecated_on` |
 | Pointers | a path or link to the canonical document for anything else |
@@ -141,6 +142,11 @@ see *Schema version history (v4)* for what replaced each of them and why.
   owner: string?
   lifecycle: enum                # active, maintenance, deprecated,
                                  # archived, planned
+  tier: enum                     # product (tier 1: services, libraries,
+                                 # infrastructure, web and mobile; work in
+                                 # worktrees, changes through pull requests) or
+                                 # tooling (tier 2: the machinery that builds the
+                                 # product; committed on main in the primary tree)
   language: string?              # primary language
   notes: string?
 ```
@@ -150,7 +156,7 @@ tool derives from the project's repo-root environment variable plus this
 `name` — recording it in the manifest is exactly the kind of hardcoded,
 machine-specific path that goes stale on every re-clone or new machine.
 
-Required: `name`, `lifecycle`. Everything else is
+Required: `name`, `lifecycle`, `tier`. Everything else is
 encouraged but optional — fill in what you can, mark the rest as
 `unknown` or omit. An entry that still carries `purpose`, `purpose_head`, `owns` or `role` loses
 them at the tool's next write of the manifest.
@@ -456,6 +462,12 @@ read `schema_version` and know exactly what changed between versions.
   that store's one job). Not backward-compatible: a v3 manifest carrying any of
   these fields must have them removed (and, where the fact is still worth keeping,
   moved to its real canonical home or to `knowledge.yaml`) to become valid v4.
+- **v5 addition (no version bump, backward-compatible)** - `repos[].tier`, `product` or `tooling`:
+  which of the two tiers of repository a repository is in. Every entry records one; `reconcile --fix`
+  records the default (`tooling` for the control repo, `product` otherwise) on an entry that has none, and
+  `set-tier` changes it. The repositories outside the repository root (the toolset repo and the
+  `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier. The
+  `repository-tiers.json` export derived from both is what the main-worktree guard hook reads.
 - **v5** - removed repo-to-repo dependencies: `relationships.dependencies`, its
   `Dependency` schema, the `group:<name>` endpoint notation and `relationships.cycles`.
   A dependency is between services, components and infrastructure, never between code

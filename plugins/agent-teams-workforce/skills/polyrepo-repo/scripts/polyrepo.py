@@ -28,11 +28,14 @@ Usage:
   polyrepo.py inventory [--all] [--no-fetch] [--name N]
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
-  polyrepo.py create <name> --space S [--template T] [--dry-run]
+  polyrepo.py create <name> --space S [--template T] [--tier product|tooling] [--dry-run]
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
                      [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
-  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
+  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--trailer TEXT] [--pr-footer TEXT]
+  polyrepo.py tier <path>
+  polyrepo.py tiers [--write]
+  polyrepo.py set-tier <repo> product|tooling
   polyrepo.py templates-check
   polyrepo.py beads-setup [repo ...] [--all] [--check] [--dry-run] [--trailer TEXT]
   polyrepo.py beads-fleet [--fix]
@@ -43,7 +46,14 @@ Usage:
 
 A command that changes the steward's own files (manifest, changelog, knowledge store) commits
 and pushes them itself, on the default branch of the repo that holds them; `commit` does the
-same after a hand edit.
+same after a hand edit. A line in the environment variable POLYREPO_COMMIT_TRAILER ends the
+message of every commit the tool makes.
+
+Every repository has a tier in the manifest: `product` (tier 1: all work happens in worktrees and
+reaches `main` through a pull request) or `tooling` (tier 2: committed on `main` in the primary
+working tree). `tier <path>` says which tier the repository containing a path is in, and the
+tier export (`.polyrepo/repository-tiers.json`, path to tier) is rewritten with every records
+commit, for the hooks that read it.
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -61,6 +71,7 @@ import fnmatch
 import functools
 import hashlib
 import json
+import operator
 import os
 import re
 import shlex
@@ -115,6 +126,11 @@ OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 FILES_SHOWN = 5
 EXIT_USAGE = 2
+TIER_PRODUCT = "product"
+TIER_TOOLING = "tooling"
+TIERS = (TIER_PRODUCT, TIER_TOOLING)
+TIER_EXPORT_FILE = "repository-tiers.json"
+COMMIT_TRAILER_ENV = "POLYREPO_COMMIT_TRAILER"
 
 
 class PolyrepoError(Exception):
@@ -1057,11 +1073,16 @@ class Manifest:
             del self.doc[key]
             self.dirty = True
 
-    def set_field(self, name: str, key: str, value: object) -> None:
-        """Set one field on an entry; None removes the field."""
+    def set_field(self, name: str, key: str, value: object, after: str | None = None) -> None:
+        """Set one field on an entry; None removes the field.
+
+        A new field is placed after the field `after` names when the entry has it.
+        """
         e = self.entries()[name]
         if value is None:
             e.pop(key, None)
+        elif key not in e and after in e:
+            e.insert(list(e).index(after) + 1, key, value)
         else:
             e[key] = value
         self.dirty = True
@@ -1436,6 +1457,7 @@ class State:
             ),
             "origin_url": r.origin_url if r else None,
             "github": g,
+            "tier": e.get("tier"),
             "groups": (self.manifest.groups_of(name) if live and lifecycle not in LIFECYCLES_INACTIVE else []),
         }
         if deep:
@@ -1561,8 +1583,8 @@ def entry_fields(
 ) -> dict[str, object]:
     """Return the fields of a new manifest entry.
 
-    The fields are the lifecycle, GitHub URL, default branch, and the deprecation date when
-    it is deprecated.
+    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, default branch, and
+    the deprecation date when it is deprecated.
 
     Returns:
         The fields, with extra merged over them.
@@ -1570,12 +1592,24 @@ def entry_fields(
     """
     fields: dict[str, object] = {
         "lifecycle": lifecycle,
+        "tier": default_tier(cfg, name),
         "remote_url": cfg.github_url(name),
         "default_branch": cfg.default_branch,
     }
     if lifecycle == "deprecated":
         fields["deprecated_on"] = today()
     return {**fields, **(extra or {})}
+
+
+def default_tier(cfg: Config, name: str) -> str:
+    """Return the tier a repository gets when the owner states none.
+
+    Returns:
+        `tooling` for the control repository (the repository that holds the steward's config),
+        `product` for every other repository.
+
+    """
+    return TIER_TOOLING if cfg.file.parent.parent.name == name else TIER_PRODUCT
 
 
 def reconcile(st: State) -> list[Finding]:
@@ -2128,7 +2162,34 @@ def _check_tracked(
                 )
         if st.lifecycle(name) == "deprecated":
             out.extend(_check_deprecation_age(st, name, e))
+    out.extend(_check_tier(st, name, e))
     return out
+
+
+def _check_tier(st: State, name: str, e: CommentedMap) -> list[Finding]:
+    """Check that an entry records a tier, product or tooling.
+
+    Returns:
+        A mechanical finding for an entry with no tier (the fix records the default), an open
+        finding for a tier that is neither.
+
+    """
+    tier = e.get("tier")
+    if tier in TIERS:
+        return []
+    if tier is not None:
+        return [Finding("tier-invalid", name, f"manifest tier {tier!r} is neither {TIER_PRODUCT} nor {TIER_TOOLING}")]
+    want = default_tier(st.cfg, name)
+    return [
+        Finding(
+            "tier-missing",
+            name,
+            "manifest entry records no tier",
+            fix=f"set tier to {want}",
+            action=functools.partial(st.manifest.set_field, name, "tier", want, "lifecycle"),
+            manifest_change=True,
+        ),
+    ]
 
 
 def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Finding]:
@@ -2264,6 +2325,9 @@ def commit_records(cfg: Config, subject: str) -> dict[str, object]:
     The files are the manifest, changelog, knowledge store and fleet list, committed on the
     default branch of the repo that holds them.
 
+    The tier export (`write_tier_export`) is rewritten first, so it follows every manifest write;
+    it is derived and machine-specific, so it is not committed.
+
     Returns:
         {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
 
@@ -2276,6 +2340,10 @@ def commit_records(cfg: Config, subject: str) -> dict[str, object]:
             "error": f"{cfg.file.parent} is not in a git repo",
         }
     root = Path(top)
+    try:
+        write_tier_export(cfg)
+    except (PolyrepoError, OSError) as exc:
+        return {"status": "failed", "files": [], "error": f"tier export not written: {exc}"}
     rels = [
         p.resolve().relative_to(root.resolve()).as_posix()
         for p in (cfg.manifest, cfg.changelog, cfg.knowledge, fleet_file(cfg))
@@ -2313,6 +2381,277 @@ def finish_records(cfg: Config, data: dict[str, object]) -> None:
     """Commit and push the steward's files when this run changed them, reporting it in data."""
     if cfg.changes:
         data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)))
+
+
+# --------------------------------------------------------------------------------------------
+# tiers: which repositories are product (tier 1) and which are tooling (tier 2). The manifest
+# records the tier of every repository it has an entry for. A repository outside the repository
+# root, which has no entry, is listed in the config's `tiers.external`. The export is the file the
+# hooks read: a JSON object from each clone's absolute path to its tier.
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TierRepo:
+    """One repository clone with its recorded tier."""
+
+    name: str
+    path: Path
+    tier: str
+    source: str
+
+    def paths(self) -> tuple[Path, ...]:
+        """Return the clone's path as recorded and, when a symbolic link makes it differ, its real path.
+
+        Returns:
+            One path, or two.
+
+        """
+        real = self.path.resolve()
+        return (self.path,) if real == self.path else (self.path, real)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TierAnswer:
+    """The tier of the repository that contains one path."""
+
+    path: Path
+    repo: TierRepo | None
+    linked_worktree: bool
+    toplevel: Path | None
+
+
+def _absolute(raw: str) -> Path:
+    """Make a path absolute and tidy without following a symbolic link.
+
+    Returns:
+        The path as written, joined to the working folder when it is relative.
+
+    """
+    return Path(os.path.normpath(Path.cwd() / Path(raw).expanduser()))
+
+
+def tier_export_path(cfg: Config) -> Path:
+    """Return the tier export file (config `tiers.export`, by default `repository-tiers.json` in `.polyrepo/`).
+
+    Returns:
+        The path.
+
+    """
+    return cfg.setting_path("tiers", "export", TIER_EXPORT_FILE)
+
+
+def _external_tiers(cfg: Config) -> tuple[list[TierRepo], list[str]]:
+    """Read the config's `tiers.external`: repositories outside the repository root, each with its tier.
+
+    Each entry has a `name`, a `path` (environment variables are expanded) and a `tier`.
+
+    Returns:
+        The repositories whose path is the root of a git clone, and a problem for each that is not.
+
+    Raises:
+        PolyrepoError: when the section is malformed or an entry names a tier that does not exist.
+
+    """
+    section = _map(cfg.raw.get("tiers") or {}, "config tiers")
+    repos: list[TierRepo] = []
+    problems: list[str] = []
+    for item in _seq(section.get("external") or [], "config tiers.external"):
+        entry = _map(item, "config tiers.external entry")
+        name = _str(entry.get("name"), "tiers.external name")
+        tier = _str(entry.get("tier"), f"tiers.external tier of {name}")
+        if tier not in TIERS:
+            msg = f"config tiers.external: {name} has tier {tier!r}, which is neither {TIER_PRODUCT} nor {TIER_TOOLING}"
+            raise PolyrepoError(msg)
+        raw = expand_env(_str(entry.get("path"), f"tiers.external path of {name}"))
+        path = _absolute(raw)
+        if not (path / ".git").exists():
+            problems.append(f"{name}: {path} is not the root of a git clone")
+            continue
+        repos.append(TierRepo(name, path, tier, "config"))
+    return repos, problems
+
+
+def tier_repos(cfg: Config, manifest: Manifest, local: dict[str, LocalRepo]) -> tuple[list[TierRepo], list[str]]:
+    """List every clone with a recorded tier: those on disk with a manifest tier, and the external ones.
+
+    Returns:
+        The repositories, sorted by path, and the problems found with the external ones.
+
+    """
+    entries = manifest.entries()
+    repos = [
+        TierRepo(name, r.path, str(entries[name]["tier"]), "manifest")
+        for name, r in local.items()
+        if name in entries and entries[name].get("tier") in TIERS
+    ]
+    external, problems = _external_tiers(cfg)
+    return sorted([*repos, *external], key=lambda t: str(t.path)), problems
+
+
+def tier_export_text(repos: list[TierRepo]) -> str:
+    """Render the tier export.
+
+    Returns:
+        A JSON object from each repository's absolute path to its tier (a clone reached through
+        a symbolic link has both paths), with a final newline.
+
+    """
+    return json.dumps(dict(sorted((str(p), r.tier) for r in repos for p in r.paths())), indent=2) + "\n"
+
+
+def write_tier_export(cfg: Config, *, check: bool = False) -> tuple[Path, bool]:
+    """Write the tier export, or with check only compare it, from the manifest, the clones on disk and the config.
+
+    The file is replaced in one step, so a hook never reads half of it.
+
+    Returns:
+        The export path, and whether the file differed from what it should hold (and so was
+        rewritten, unless check is set).
+
+    """
+    repos, _ = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    want = tier_export_text(repos)
+    out = tier_export_path(cfg)
+    have = out.read_text(encoding="utf-8") if out.is_file() else None
+    if have == want:
+        return out, False
+    if not check:
+        tmp = out.with_name(out.name + ".tmp")
+        tmp.write_text(want, encoding="utf-8")
+        tmp.replace(out)
+    return out, True
+
+
+def tier_of_path(repos: list[TierRepo], paths: tuple[Path, ...]) -> TierAnswer:
+    """Find the repository that contains a path, and its recorded tier.
+
+    `paths` is the path as given and its real path. A path inside a clone, a clone's `.worktrees/`
+    included, belongs to that clone. A path in a linked worktree anywhere else belongs to the
+    clone that git names as its common directory.
+
+    Returns:
+        The answer; `repo` is None when no recorded repository contains the path, and `toplevel`
+        then names the git clone that does, when there is one.
+
+    """
+    path = paths[-1]
+    inside = [
+        (len(c.parts), r, p.relative_to(c)) for r in repos for c in r.paths() for p in paths if p == c or c in p.parents
+    ]
+    if inside:
+        _, repo, rel = max(inside, key=operator.itemgetter(0))
+        return TierAnswer(paths[0], repo, rel.parts[:1] == (WORKTREES_LINE.rstrip("/"),), None)
+    start = next((p for p in (path, *path.parents) if p.is_dir()), None)
+    common = git_out(start, "rev-parse", "--path-format=absolute", "--git-common-dir") if start else None
+    top = git_out(start, "rev-parse", "--show-toplevel") if start else None
+    main = Path(common).parent.resolve() if common and Path(common).name == ".git" else None
+    owner = next((r for r in repos if main in r.paths()), None)
+    return TierAnswer(paths[0], owner, owner is not None, Path(top).resolve() if top else None)
+
+
+def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
+    """Say which tier the repository containing a path is in.
+
+    Returns:
+        0 when a repository that records a tier contains the path, else 1.
+
+    """
+    repos, _ = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    given = _absolute(expand_env(args.path))
+    got = tier_of_path(repos, tuple(dict.fromkeys((given, given.resolve()))))
+    where = got.repo.path if got.repo else got.toplevel
+    data: dict[str, object] = {
+        "path": str(got.path),
+        "repository": got.repo.name if got.repo else None,
+        "repository_path": str(where) if where else None,
+        "tier": got.repo.tier if got.repo else None,
+        "source": got.repo.source if got.repo else None,
+        "linked_worktree": got.linked_worktree,
+    }
+    emit(
+        args,
+        data,
+        lambda: (
+            f"{data['path']}: {data['repository'] or 'no repository that records a tier'}"
+            + (f" is {data['tier']}" if data["tier"] else "")
+        ),
+    )
+    return 0 if got.repo else 1
+
+
+def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
+    """List every recorded tier and check the tier export; with --write, rewrite the export first.
+
+    Returns:
+        0 when the export is current and every external repository resolves, else 1.
+
+    """
+    repos, problems = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    out, differs = write_tier_export(cfg, check=not args.write)
+    findings: list[dict[str, object]] = [
+        {"repo": "-", "kind": "tier-external", "detail": p, "status": "open"} for p in problems
+    ]
+    if differs and not args.write:
+        missing = not out.is_file()
+        findings.append(
+            {
+                "repo": "-",
+                "kind": "tier-export-missing" if missing else "tier-export-stale",
+                "detail": f"{out} {'does not exist' if missing else 'differs from the manifest and the config'}",
+                "status": "open",
+            },
+        )
+    data: dict[str, object] = {
+        "export": str(out),
+        "written": differs and args.write,
+        "repositories": [{"name": r.name, "path": str(r.path), "tier": r.tier, "source": r.source} for r in repos],
+        "findings": findings,
+        "open": len(findings),
+    }
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            [f"{len(repos)} repositories record a tier; export {out}{' (rewritten)' if data['written'] else ''}"]
+            + [f"  {r.tier:8} {r.name}  {r.path}" for r in repos]
+            + [f"  [{f['kind']}] {f['detail']}" for f in findings],
+        ),
+    )
+    return 1 if findings else 0
+
+
+def cmd_set_tier(args: argparse.Namespace, cfg: Config) -> int:
+    """Record a repository's tier in the manifest, log it, and commit it with the rewritten export.
+
+    Returns:
+        0.
+
+    Raises:
+        PolyrepoError: when the manifest has no entry for the repository.
+
+    """
+    man = Manifest(cfg.manifest)
+    entry = man.entries().get(args.repo)
+    if entry is None:
+        msg = f"the manifest has no entry for {args.repo!r}"
+        raise PolyrepoError(msg)
+    before = entry.get("tier")
+    data: dict[str, object] = {"repo": args.repo, "tier": args.tier, "was": before, "changed": before != args.tier}
+    if before != args.tier:
+        man.set_field(args.repo, "tier", args.tier, "lifecycle")
+        man.save()
+        append_changelog(cfg, "polyrepo set-tier", [f"{args.repo}: tier {before or '(none)'} -> {args.tier}"])
+    finish_records(cfg, data)
+    emit(
+        args,
+        data,
+        lambda: (
+            f"{args.repo}: tier {args.tier}"
+            + ("" if data["changed"] else " (unchanged)")
+            + "".join(_records_line(data))
+        ),
+    )
+    return 0
 
 
 # --------------------------------------------------------------------------------------------
@@ -2772,6 +3111,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
             "name": r["name"],
             "space": r["space"],
             "lifecycle": r["lifecycle"],
+            "tier": r["tier"],
             "path": r["path"],
         }
         for r in recs
@@ -2779,7 +3119,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
     emit(
         args,
         {"count": len(rows), "repos": rows},
-        lambda: "\n".join(f"{r['name']}  [{r['space'] or '-'}]  {r['lifecycle']}" for r in rows),
+        lambda: "\n".join(f"{r['name']}  [{r['space'] or '-'}]  {r['lifecycle']}  {r['tier'] or '-'}" for r in rows),
     )
     return 0
 
@@ -3270,7 +3610,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 "then commit"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
-            f"add the manifest entry (lifecycle {args.lifecycle})",
+            f"add the manifest entry (lifecycle {args.lifecycle}, tier {args.tier or default_tier(cfg, name)})",
             "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
             "add it to the beads fleet list (repos.additional)",
@@ -3426,7 +3766,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
     """
     name = args.name
     man = Manifest(cfg.manifest)
-    man.add_entry(name, entry_fields(cfg, name, args.lifecycle))
+    man.add_entry(name, entry_fields(cfg, name, args.lifecycle, {"tier": args.tier} if args.tier else None))
     man.save()
     log = [
         f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}",
@@ -5307,7 +5647,23 @@ def _commit_and_open(
         if cp.returncode != 0:
             row.update(status="commit-failed", error=_last_line(cp))
             return
-    footer = f"\n\n{args.pr_footer}" if args.pr_footer else ""
+    _open_pr(worktree, (title, body), (pr_command, args.pr_footer), row)
+
+
+def _open_pr(
+    worktree: Path,
+    text: tuple[str, str],
+    how: tuple[Path, str | None],
+    row: dict[str, object],
+) -> None:
+    """Push the worktree's branch and open its pull request with the project's PR command.
+
+    `text` is the title and body, `how` the PR command and a footer line for the body. The row gets
+    `status` `pr-opened` (with `pr_url`, and `error` when auto-merge could not be armed) or `pr-failed`.
+    """
+    title, body = text
+    pr_command, pr_footer = how
+    footer = f"\n\n{pr_footer}" if pr_footer else ""
     cp = run([str(pr_command), "--title", title, "--body", body + footer], cwd=worktree, timeout=PR_TIMEOUT)
     url = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
     if url and cp.returncode in {0, PR_AUTOMERGE_NOT_ARMED}:
@@ -5934,6 +6290,17 @@ def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
     return text
 
 
+def _with_trailer(message: str, trailer: str | None = None) -> str:
+    """End a commit message with a trailer line: the one given, else POLYREPO_COMMIT_TRAILER.
+
+    Returns:
+        The message, with the trailer after a blank line unless the message has it already.
+
+    """
+    line = trailer or os.environ.get(COMMIT_TRAILER_ENV) or ""
+    return message if not line or line in message else f"{message}\n\n{line}"
+
+
 def _commit_paths(
     repo: Path,
     paths: list[str],
@@ -5943,9 +6310,11 @@ def _commit_paths(
     """Commit only these paths, re-staging once when a pre-commit hook rewrote them.
 
     With force, the paths are staged even inside an ignored folder (the beads fleet list
-    is a tracked file under the gitignored `.beads/`). When the commit still fails, the
+    is a tracked file under the gitignored `.beads/`). The message ends with the trailer line
+    of POLYREPO_COMMIT_TRAILER when it is set. When the commit still fails, the
     GitFailedError that `must` raises propagates.
     """
+    message = _with_trailer(message)
     add = ["add", "-f", "--"] if force else ["add", "--"]
     must(git(repo, *add, *paths))
     cp = git(repo, "commit", "-m", message, "--", *paths, timeout=300)
@@ -5954,34 +6323,80 @@ def _commit_paths(
         must(git(repo, "commit", "-m", message, "--", *paths, timeout=300))
 
 
+AGENTS_SYNC_BRANCH = "docs/agents-sync"
+AGENTS_SYNC_WORKTREE = "agents-sync"
+AGENTS_SYNC_SUBJECT = "docs(agents): sync the shared instruction blocks"
+AGENTS_SYNC_BODY = (
+    "Brings the shared instruction blocks in AGENTS.md up to the text that `polyrepo agents-sync` writes "
+    "from the control repository and the agent-teams-workforce plugin."
+)
+AGENTS_SYNC_DONE = frozenset({"pushed", "pr-opened", "current-on-origin"})
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SyncPublish:
+    """How agents-sync records a change: the commit trailer, the pull request footer and the PR command."""
+
+    trailer: str | None
+    pr_footer: str | None
+    pr_command: Path
+
+
 def _sync_one(
     cfg: Config,
     r: LocalRepo,
     blocks: list[AgentsBlock],
     write: bool,
+    how: tuple[str, SyncPublish],
 ) -> dict[str, object]:
-    """Bring one repo's AGENTS.md blocks current, committing and pushing when write is set.
+    """Bring one repo's AGENTS.md blocks current, when write is set by the rules of the repo's tier.
+
+    `how` is the repo's recorded tier and how a change is published. A `tooling` repo is committed on
+    the default branch in its primary working tree and pushed. A `product` repo gets the change in a
+    worktree on its own branch, and a pull request opened with the project's PR command; nothing is
+    pushed to its default branch. A repo with no recorded tier is left alone.
 
     Returns:
-        {repo, state} plus, when it wrote, the status and any detail.
+        {repo, state, tier} plus, when it wrote, the status and any detail.
 
     """
+    tier, publish = how
     f = r.path / "AGENTS.md"
     cur = f.read_text() if f.is_file() else None
     want = _with_blocks(cur, blocks, r.name)
-    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
+    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks), "tier": tier or None}
     if res["state"] == "current" or not write:
         return res
+    if tier == TIER_PRODUCT:
+        return {**res, **_sync_by_pull_request(cfg, r, blocks, publish)}
+    if tier == TIER_TOOLING:
+        return {**res, **_sync_on_main(cfg, r, blocks, (cur, want), publish.trailer)}
+    return {**res, "status": "skipped", "detail": "no tier recorded; run reconcile --fix"}
+
+
+def _sync_on_main(
+    cfg: Config,
+    r: LocalRepo,
+    blocks: list[AgentsBlock],
+    texts: tuple[str | None, str],
+    trailer: str | None,
+) -> dict[str, object]:
+    """Commit the new AGENTS.md on the default branch of a tooling repo and push it.
+
+    `texts` is the file's current text (None when it has none) and the text it should have.
+
+    Returns:
+        The status (`pushed`, `committed` when the push failed, `failed`, `skipped`) and any detail.
+
+    """
+    cur, want = texts
+    f = r.path / "AGENTS.md"
     b = cfg.default_branch
     branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
     if branch != b:
-        return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
+        return {"status": "skipped", "detail": f"on {branch}, not {b}"}
     if cur is not None and _edited_outside_blocks(r.path, cur, blocks):
-        return {
-            **res,
-            "status": "skipped",
-            "detail": "AGENTS.md has uncommitted changes outside the synced blocks",
-        }
+        return {"status": "skipped", "detail": "AGENTS.md has uncommitted changes outside the synced blocks"}
     f.write_text(want)
     paths = ["AGENTS.md"]
     claude = r.path / "CLAUDE.md"
@@ -5989,7 +6404,7 @@ def _sync_one(
         claude.symlink_to("AGENTS.md")
         paths.append("CLAUDE.md")
     try:
-        _commit_paths(r.path, paths, "docs(agents): sync the shared instruction blocks")
+        _commit_paths(r.path, paths, _with_trailer(AGENTS_SYNC_SUBJECT, trailer))
     except GitFailedError as exc:
         git(r.path, "reset", "-q", "--", *paths)
         if cur is None:
@@ -5998,15 +6413,64 @@ def _sync_one(
             f.write_text(cur)
         if "CLAUDE.md" in paths:
             claude.unlink(missing_ok=True)
-        return {**res, "status": "failed", "detail": str(exc)}
+        return {"status": "failed", "detail": str(exc)}
     cp = git(r.path, "push", "origin", b, timeout=120)
+    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
     if cp.returncode != 0:
+        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
+    return {"status": "pushed", "commit": commit}
+
+
+def _sync_by_pull_request(
+    cfg: Config,
+    r: LocalRepo,
+    blocks: list[AgentsBlock],
+    publish: SyncPublish,
+) -> dict[str, object]:
+    """Put the new AGENTS.md of a product repo in a worktree on its own branch and open a pull request.
+
+    The worktree is cut from `origin/<default branch>`, so the primary working tree is not touched.
+    A branch or worktree left by an earlier run is not reused: its pull request is still open.
+
+    Returns:
+        The status (`pr-opened`, `pr-failed`, `current-on-origin`, `pending`, `failed`), the pull
+        request URL, the commit and the worktree, as far as they exist.
+
+    """
+    b = cfg.default_branch
+    worktree = r.path / ".worktrees" / AGENTS_SYNC_WORKTREE
+    if worktree.exists() or git_out(r.path, "rev-parse", "--verify", "-q", f"refs/heads/{AGENTS_SYNC_BRANCH}"):
         return {
-            **res,
-            "status": "committed",
-            "detail": f"push failed: {_last_line(cp)}",
+            "status": "pending",
+            "detail": f"{AGENTS_SYNC_BRANCH} or {worktree} exists: an earlier change is unmerged",
         }
-    return {**res, "status": "pushed"}
+    cp = git(r.path, "fetch", "--quiet", "origin", b, timeout=FETCH_TIMEOUT)
+    if cp.returncode != 0:
+        return {"status": "failed", "detail": f"git fetch failed: {_last_line(cp)}"}
+    shown = git(r.path, "show", f"origin/{b}:AGENTS.md")
+    cur = shown.stdout if shown.returncode == 0 else None
+    want = _with_blocks(cur, blocks, r.name)
+    if want == cur:
+        return {"status": "current-on-origin", "detail": f"origin/{b} already has the current blocks"}
+    _exclude_worktrees(r.path)
+    cp = git(r.path, "worktree", "add", "--no-track", "-b", AGENTS_SYNC_BRANCH, str(worktree), f"origin/{b}")
+    if cp.returncode != 0:
+        return {"status": "failed", "detail": f"git worktree add failed: {_last_line(cp)}"}
+    (worktree / "AGENTS.md").write_text(want)
+    paths = ["AGENTS.md"]
+    claude = worktree / "CLAUDE.md"
+    if cur is None and not claude.exists() and not claude.is_symlink():
+        claude.symlink_to("AGENTS.md")
+        paths.append("CLAUDE.md")
+    try:
+        _commit_paths(worktree, paths, _with_trailer(AGENTS_SYNC_SUBJECT, publish.trailer))
+    except GitFailedError as exc:
+        git(r.path, "worktree", "remove", "--force", str(worktree))
+        git(r.path, "branch", "-D", AGENTS_SYNC_BRANCH)
+        return {"status": "failed", "detail": str(exc)}
+    row: dict[str, object] = {"worktree": str(worktree), "commit": git_out(worktree, "rev-parse", "--short=8", "HEAD")}
+    _open_pr(worktree, (AGENTS_SYNC_SUBJECT, AGENTS_SYNC_BODY), (publish.pr_command, publish.pr_footer), row)
+    return row
 
 
 def _agents_state(cur: str | None, want: str, blocks: list[AgentsBlock]) -> str:
@@ -6041,8 +6505,11 @@ def _edited_outside_blocks(repo: Path, cur: str, blocks: list[AgentsBlock]) -> b
 def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
+    A tooling repo is committed on its default branch and pushed; a product repo gets a pull request
+    from a worktree (see `_sync_one`).
+
     Returns:
-        0 when every repo is current (or was brought current and pushed), else 1.
+        0 when every repo is current (or was brought current: pushed, or its pull request opened), else 1.
 
     """
     blocks = _agents_blocks(cfg)
@@ -6052,10 +6519,14 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name, r.space))
     ]
     write = not args.check and not args.dry_run
-    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        results = list(ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write), repos))
+    tiers = {n: str(e.get("tier") or "") for n, e in Manifest(cfg.manifest).entries().items()}
+    publish = SyncPublish(args.trailer, args.pr_footer, _rename_settings(cfg)[1])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
+        results = list(
+            ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write, (tiers.get(rb[0].name, ""), publish)), repos),
+        )
     if write:
-        bad = [x for x in results if x["state"] != "current" and x["status"] != "pushed"]
+        bad = [x for x in results if x["state"] != "current" and x.get("status") not in AGENTS_SYNC_DONE]
     else:
         bad = [x for x in results if x["state"] != "current"]
     counts: dict[str, int] = {}
@@ -6070,7 +6541,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
             if x["state"] == "current":
                 continue
             st_ = str(x.get("status", "would update" if args.dry_run else ""))
-            detail = str(x.get("detail", ""))
+            detail = str(x.get("pr_url") or x.get("detail", ""))
             lines.append(
                 f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}",
             )
@@ -6745,10 +7216,12 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
     "environment": [sys.executable, str(SELF), "environment", "--json"],
     "python-names": [sys.executable, str(SELF), "python-names", "--json"],
+    "tiers": [sys.executable, str(SELF), "tiers", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
+    "tiers --write": [sys.executable, str(SELF), "tiers", "--write", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
@@ -6804,6 +7277,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "deprecated-prs",
         "environment",
         "python-names",
+        "tiers",
     }:
         rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
         return [
@@ -7283,6 +7757,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_inspect_commands(add)
     _add_repo_commands(add)
     _add_upkeep_commands(add)
+    _add_tier_commands(add)
     return p
 
 
@@ -7376,6 +7851,11 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.add_argument("--template", help="the Copier template; omitted, the template whose name_regex matches the name")
     s.add_argument("--lifecycle", default="active")
     s.add_argument(
+        "--tier",
+        choices=TIERS,
+        help="the tier to record (default: tooling for the control repository, else product)",
+    )
+    s.add_argument(
         "--dir",
         help="folder inside the space (default: the config's placement)",
     )
@@ -7436,6 +7916,31 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.set_defaults(func=cmd_rename)
 
 
+def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add the tier commands: tier, tiers and set-tier."""
+    s = add(
+        "tier",
+        "say which tier (product or tooling) the repository containing a path is in",
+    )
+    s.add_argument("path", help="a file or folder; a linked worktree resolves to its clone")
+    s.set_defaults(func=cmd_tier)
+
+    s = add(
+        "tiers",
+        "list every recorded tier and check the tier export; --write rewrites the export",
+    )
+    s.add_argument("--write", action="store_true", help="rewrite the export")
+    s.set_defaults(func=cmd_tiers)
+
+    s = add(
+        "set-tier",
+        "record a repository's tier in the manifest and commit it with the rewritten export",
+    )
+    s.add_argument("repo")
+    s.add_argument("tier", choices=TIERS)
+    s.set_defaults(func=cmd_set_tier)
+
+
 def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
     """Add the upkeep commands: agents-sync to commit."""
     s = add(
@@ -7445,6 +7950,8 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--trailer", help="a line to end each commit message with")
+    s.add_argument("--pr-footer", help="a line to end each pull request description with")
     s.set_defaults(func=cmd_agents_sync)
 
     s = add(

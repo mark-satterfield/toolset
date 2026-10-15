@@ -6,7 +6,8 @@ description: >-
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
   deprecated repo has an open pull request; check that every governance entry and
   knowledge-store pointer still resolves; check the repository-naming document against the
-  naming patterns; check the matrix's stacks against the repositories. Reports findings, and with `--fix` repairs every finding it can. Use for
+  naming patterns; check the matrix's stacks against the repositories; check that every
+  repository records a tier and that the tier export is current. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
 ---
 
@@ -21,7 +22,8 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | Check | What it runs | Clean when |
 |---|---|---|
 | `reconcile` | `reconcile` | no open finding; a deprecated or archived repo with no local clone is normal (`deprecate` deletes the clone) and raises none |
-| `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated has the current shared `AGENTS.md` blocks |
+| `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated, outside `apps/marketing/`, has the current shared `AGENTS.md` blocks |
+| `tiers` | `tiers`: the tier export (`.polyrepo/repository-tiers.json`) against the manifest's tiers and the config's `tiers.external` | the export exists and holds exactly what the manifest and the config give, and every external path is the root of a git clone. Kinds: `tier-export-missing`, `tier-export-stale` (both repaired by `tiers --write`, which `doctor --fix` runs), `tier-external` (the config's path does not resolve: correct `tiers.external` in the config). A manifest entry with no tier is a `reconcile` finding (`tier-missing`), repaired by `reconcile --fix` |
 | `gitnexus-sync` | `gitnexus-sync --check` | every non-marketing repo that is not deprecated has `.gitnexusrc`, the `.gitnexus` ignore rule and the current `.claude/skills/gitnexus/` |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every non-deprecated, non-archived repo on disk, in every app space except marketing | no anomaly |
 | `beads-setup` | `beads-setup --check`: every non-deprecated, non-archived repo (whatever its lifecycle, `planned` included; `apps/marketing/` excluded) has `.beads/config.yaml`, `metadata.json` and `.beads/.gitignore` committed, an entry in the beads fleet list, and a `.gitignore` with the beads and standard ignores | no gap |
@@ -41,7 +43,7 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix` and then
+`doctor --fix` runs `reconcile --fix`, `tiers --write`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix` and then
 `deprecated-prs --fix` before the checks; each commits and pushes what it changed. It then
 repairs the matrix's stacks and commits the matrix: `stack-missing` records the stack
 (repository side, purpose not stated), `stack-repository-renamed` names the new repository,
@@ -50,7 +52,9 @@ repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
 every open pull request in a deprecated repo with the comment "Closed: this repository is
-deprecated." and keeps its branch. What stays open needs judgment:
+deprecated." and keeps its branch. `agents-sync` follows each repo's tier: a `tooling` repo is
+committed on `main`; a `product` repo gets a pull request from a worktree, so its finding stays
+(`pending`) until that pull request is merged. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.

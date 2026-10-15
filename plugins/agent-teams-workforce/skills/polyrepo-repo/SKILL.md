@@ -31,7 +31,8 @@ environment error; `grep` follows `rg` (0 match, 1 no match, 2 error).
 
 A command that changes the steward's files (manifest, changelog, knowledge store, beads fleet list) commits
 and pushes them itself, on `main` of the repo that holds them, and reports it under
-`records`.
+`records`. A line in the environment variable `POLYREPO_COMMIT_TRAILER` ends the message of every
+commit the tool makes; the tier export is rewritten with each of these commits (see *Tiers*).
 
 | Command | What it does |
 |---|---|
@@ -42,22 +43,25 @@ and pushes them itself, on `main` of the repo that holds them, and reports it un
 | `inventory [--all] [--no-fetch] [--name N]` | Every repo's full record, with the matrix's stacks that name it as their repository under `stacks` (each stack with its purpose and what it holds); `--all` adds every repo the manifest or GitHub has that is not on disk; `--name` keeps only the repo with that name. |
 | `grep <pattern> [--space S] [--repo R …] [-i] [-l] [-F] [-w] [--glob G …]` | `rg` across every in-scope repo on disk, for the steward's own upkeep. |
 | `rebase <repo …\|--all>` | Fetch and rebase `main` on `origin/main`; stops and reports on a conflict or a dirty tree. |
-| `create <name> --space S [--template T] [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template (without `--template`, the template whose `name_regex` matches the name), create and push the GitHub repo, add the manifest entry, record the repo's stack in the matrix (see *The matrix*; a failure is `matrix_error`, exit 1), then do the repo's full beads setup (see `beads-setup`) and add the repo to the beads fleet list. Every repo outside `apps/marketing/` also gets GitNexus: the files are written before the first commit, the GITNEXUS block comes with the AGENTS.md blocks, and `ops/indexing/gitnexus-reindex.sh` indexes it once after the push (a failure is `gitnexus_error`, exit 1). |
+| `create <name> --space S [--template T] [--tier product\|tooling] [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template (without `--template`, the template whose `name_regex` matches the name), create and push the GitHub repo, add the manifest entry (with its tier: `--tier`, else `tooling` for the control repo and `product` for any other), record the repo's stack in the matrix (see *The matrix*; a failure is `matrix_error`, exit 1), then do the repo's full beads setup (see `beads-setup`) and add the repo to the beads fleet list. Every repo outside `apps/marketing/` also gets GitNexus: the files are written before the first commit, the GITNEXUS block comes with the AGENTS.md blocks, and `ops/indexing/gitnexus-reindex.sh` indexes it once after the push (a failure is `gitnexus_error`, exit 1). |
 | `clone <repo>` | Clone an existing GitHub repo into the one folder its name gives it (app space, then the template placement folder for its kind). A repo already at that folder is reported, not re-cloned. It refuses, exiting 2, when the repo already exists at any other path or is on disk twice. Anything that needs a local checkout of a repo uses this command; no session or script picks a folder or runs `git clone` itself. |
 | `rename <repo> [<new-name>] [--also R …] [--skip-repo R …] [--keep-src R …] [--dry-run] [--trailer TEXT] [--pr-footer TEXT]` | Rename with every name the repository carries. On GitHub and locally together, repoint `origin`, rename the manifest entry, move the `repository` of the matrix's stacks to the new name, and replace the old path in the beads fleet list with the new one. Then bring the stack ids and stack file names and the Python names (distribution, import package and its `src/{app}/{domain}` folder, moved with `git mv`) to what `atw-naming` gives, and rewrite every import, dependency line, handler string and written reference to an old name in every other repository (paths in the config's `rename.sweep_exclude` are records and are never edited). Each repository that changes gets one worktree on branch `rename/<slug>`, its own `lint`, `typecheck` and `test` tasks run (only `ruff check` for a repository that waits on a library's renamed package; a failure is written in the pull request and the report and the pull request still opens), one commit and one pull request opened with `rename.pr_command` (`skillspoke-pr`); nothing is merged. A repository under `apps/marketing/`, any `--skip-repo` repository, and the `src/` files of a `--keep-src` repository are reported, never edited. The arc42 documents of the vault (`rename.documents`) are swept for the old names (names only) and committed and pushed, and the matrix follows (`atw-matrix rename`, `sync-documents --paths`, `commit`). With no new name only the stack and Python names are brought into line; `--also` adds further repositories to the same run so each repository still gets one pull request. `--dry-run` prints the whole plan (`names` in the JSON) before anything changes. Refuses an invalid or taken name (the last token must be a stack type), or a `main` not known to be pushed. |
 | `deprecate <repo> [--dry-run]` | Refuses, naming the stack ids, while the matrix has a stack that names the repo (move or remove each first, see *The matrix*). Then `rename` to the `deprecated-` name, which records `deprecated_on` and removes the repo from the beads fleet list, then close every open pull request in the repo with the comment "Closed: this repository is deprecated." (branches are kept), reporting each one, then delete the local clone and its linked worktrees. The clone is deleted (`shutil.rmtree`, only on a path under the repository root whose name starts with `deprecated-`) only when it holds no work that exists only on this machine: no uncommitted changes or untracked files outside ignored paths in the clone or any linked worktree, no stash, and no local branch or worktree `HEAD` with commits on no remote branch. Otherwise the clone is left, the rest of the deprecation stands, the reasons and the exact path to delete by hand are reported, and the command exits 1. `--dry-run` lists the pull requests it would close and whether it would delete the clone. |
 | `beads-setup [repo…] [--all] [--check] [--dry-run] [--trailer TEXT]` | Give a repo its complete beads setup: its database on the shared server (created through `bd bootstrap`, never `bd init`: a fresh database is bootstrapped embedded, given the fleet prefix, pushed to `refs/dolt/data`, then cloned into the shared server), identity and prefix repaired with `bd doctor --fix` and `converge-repo.sh`, the `.beads` config files (`config.yaml`, `metadata.json`, `.gitignore`) and a `.gitignore` with the beads and standard ignores for the repo's template kind committed and pushed to `main`, and the repo added to the beads fleet list. `--all` sets up every non-deprecated, non-archived repo with a gap or no database (`planned` repos included; `apps/marketing/` is never touched); `--check` reports gaps (missing or uncommitted `.beads` config, missing fleet list entry, incomplete `.gitignore`) and changes nothing. `create` runs it. |
 | `beads-fleet [--fix]` | Check the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`, config `beads.fleet_config`): every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed. `--fix` corrects the list. |
 | `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
-| `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `{{repo}}` in a block source becomes the repo's name; the GitNexus block replaces the older `<!-- gitnexus:start -->` section; `--check` reports repos out of date. |
+| `agents-sync [--check\|--dry-run] [--repo R …] [--trailer TEXT] [--pr-footer TEXT]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config; a block's `exclude_spaces` lists the app spaces that do not receive it, and every block excludes `marketing`) into every repo, by the repo's tier. A `tooling` repo is committed on `main` in the primary working tree and pushed. A `product` repo gets a worktree (`.worktrees/agents-sync`) cut from `origin/main`, the branch `docs/agents-sync`, one commit, and a pull request opened with `rename.pr_command` (`skillspoke-pr`); nothing is pushed to its `main`, its primary working tree is not touched, and a repo whose branch or worktree is left from an earlier run reports `pending` until that pull request is merged. A repo with no recorded tier is skipped (`reconcile --fix` records it). `{{repo}}` in a block source becomes the repo's name; the GitNexus block replaces the older `<!-- gitnexus:start -->` section; `--check` reports repos out of date. |
+| `tier <path>` | Say which tier the repository containing a path is in. JSON: `path`, `repository`, `repository_path`, `tier` (`product` or `tooling`), `source` (`manifest` or `config`) and `linked_worktree` (true when the path is in a linked worktree of the clone). A path inside a clone, its `.worktrees/` included, belongs to that clone; a linked worktree elsewhere belongs to the clone git names as its common directory. Exit 0 when a repository that records a tier contains the path, else 1 (`repository` and `tier` are null; `repository_path` names the git clone that contains the path, when there is one). |
+| `tiers [--write]` | List every recorded tier (the manifest's, for the repos on disk, and the config's `tiers.external`) and check the tier export; `--write` rewrites the export. Findings: `tier-export-missing`, `tier-export-stale`, `tier-external` (a configured path that is not the root of a git clone). |
+| `set-tier <repo> product\|tooling` | Record the tier on the repo's manifest entry, log it and commit it; the export is rewritten with the commit. |
 | `gitnexus-sync [--check\|--dry-run] [--repo R …]` | Give every non-marketing repo its GitNexus files: `.gitnexusrc`, the `.gitnexus` ignore rule and the six skills in `.claude/skills/gitnexus/`, copied from the control repo files the config's `gitnexus` section names; commits and pushes each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
 | `environment [repo…] [--fix]` | Check every active Python repo (a `pyproject.toml` and an `install` task in its Taskfile; `apps/marketing/` excluded): `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports where the code uses it. `--fix` runs the repo's `task install` for each gap and checks again; for an infra repo it also runs `cdk synth --profile dev`. `create` runs the same setup and checks. |
 | `python-names [repo…]` | Check every active Python repo (a `pyproject.toml`; the control repo and `apps/marketing/` excluded) against the Python names of the naming standard: `atw-naming check python-distribution`, `python-package` and `python-package-path` against its `pyproject.toml` name and its source folder, `src` present for a `lib` and a `service`, `tests` present, no `__init__.py` in an app or team folder. One finding per failure. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, the governance entries, the knowledge-store pointers, the repository-naming document against the naming patterns, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and `deprecated-prs --fix`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, `tiers`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, the governance entries, the knowledge-store pointers, the repository-naming document against the naming patterns, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `tiers --write`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix` and `deprecated-prs --fix`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
-A record carries `name`, `space`, `path`, `lifecycle`, `present` (disk, github,
+A record carries `name`, `space`, `path`, `lifecycle`, `tier`, `present` (disk, github,
 manifest), `naming`, `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
 `origin_url`, `github`, `groups` (only for a repo that exists and is active) and, in
 `inventory` and in `search` on `stacks`, `stacks`: the matrix's stacks that name the repo, each
@@ -76,7 +80,7 @@ Each finding carries `mechanical` (true when `--fix` repairs it, with the repair
 include `untracked-repo`, `untracked-github`, `orphan-entry`, `renamed`, `remote-url`,
 `local-path`, `lifecycle`, `name-mismatch`, `origin-stale`, `no-origin`, `unpushed`,
 `local-only`, `deprecated-undated`, `archive-due`, `group-member-unknown`,
-`group-member-inactive`, `group-member-renamed`, `repo-dependency-stored`, and `open-items`
+`group-member-inactive`, `group-member-renamed`, `repo-dependency-stored`, `tier-missing`, and `open-items`
 once every item in the section is settled. The rest are left open for the steward's
 judgment, and each has an obvious next step:
 
@@ -84,6 +88,7 @@ judgment, and each has an obvious next step:
 |---|---|
 | `deprecation-not-renamed` | `deprecate <repo>` if it is deprecated; otherwise set its `lifecycle` to `active` in the manifest. |
 | `naming-violation`, `space-mismatch` | Choose the correct name or space from the naming patterns, then `rename <repo> <new-name>`. |
+| `tier-invalid` | The entry's `tier` is neither `product` nor `tooling`: decide it (see *Tiers*) and `set-tier <repo> <tier>`. |
 | `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
 | `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `github-only`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. `not-cloned` is raised only for an active repo; a deprecated or archived repo is expected to have no local clone. |
 
@@ -93,6 +98,9 @@ judgment, and each has an obvious next step:
   the kinds).
   Every new repository is created private and with `allow_auto_merge=true` (the tool sets
   both); the owner is the only human, so every fleet repo allows auto-merge.
+  A new repository gets its tier when it is created (see *Tiers*): `product` unless `--tier tooling`
+  says otherwise (the control repo is `tooling` by default). A repository that is not plainly
+  product or tooling is a question for the user, answered before `create`.
   Creating a repo includes its beads setup, its entry in the control repo's beads repository
   list, and a correct `.gitignore`; `create` does all three, and fails (exit 1) when beads setup
   fails, after the repo and manifest entry exist. `beads-setup` repairs it.
@@ -134,6 +142,26 @@ judgment, and each has an obvious next step:
   DynamoDB table"), is the matrix: `atw-matrix find --kinds stack --text "<words>"`,
   `atw-matrix stacks --resource-type <type>`, then `node stack:<id>` for the repository.
   For a fact the manifest and the matrix do not hold, hand off to **polyrepo-info**.
+
+## Tiers
+
+SkillSpoke has two tiers of repository, and every manifest entry records one in `tier`:
+
+| Tier | Which repositories | Where work happens |
+|---|---|---|
+| `product` (tier 1) | the SkillSpoke services, libraries, infrastructure, web and mobile repositories (the shared, employer and marketing repositories included) | in worktrees, never in the primary working tree; changes reach `main` through a pull request opened with `skillspoke-pr` |
+| `tooling` (tier 2) | the machinery that builds SkillSpoke: the control repo `SkillSpoke`, the toolset repo and the `skillspoke-docs` vault | committed on `main` in the primary working tree and pushed |
+
+The manifest holds the tier of every repository it has an entry for. The toolset repo and the vault are
+outside the repository root and have no entry: the config's `tiers.external` lists each with its `name`,
+its `path` (built from environment variables, `${SKILLSPOKE_ATW_PLUGIN_SOURCE}/../..` and
+`${SKILLSPOKE_ROOT}/skillspoke-docs`) and its `tier`. The tier export, `.polyrepo/repository-tiers.json` (config
+`tiers.export`), is a JSON object from each clone's absolute path to `product` or `tooling`, with both
+paths for a clone reached through a symbolic link (the vault). The main-worktree guard hook of the plugin reads
+it: it blocks an edit in the primary working tree of a `product` repository only, and allows every edit
+while the file is absent. The export is derived, holds this machine's paths and is not committed; the tool
+rewrites it with every records commit (`reconcile --fix`, `set-tier`, `create` and the rest) and `tiers --write` rewrites it on
+demand. `tier <path>` answers from the same records.
 
 ## The matrix
 
@@ -198,7 +226,7 @@ sections, examples, deprecation examples and archive delay agree with the patter
 
 ## Editing the manifest by judgment
 
-For the fields the tool does not write (groups, `owner`): the manifest keeps no `purpose`,
+For the fields the tool does not write (groups, `owner`; a tier is written with `set-tier`): the manifest keeps no `purpose`,
 `owns` or `role`, and its next write by the tool drops them. There is no
 dependency field. A dependency is between services, components and infrastructure, never
 between repos.

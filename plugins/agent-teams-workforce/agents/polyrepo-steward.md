@@ -67,7 +67,8 @@ Every command takes `--json`; read the JSON, not the text form. Exit status: 0 c
 The repository folders and GitHub are the source of truth. The tool reads git and GitHub
 live on every call. The manifest (`.polyrepo/manifest.yaml` in the SkillSpoke
 command-and-control repo, `$SKILLSPOKE_CC`) is your own private cache plus the few facts
-neither holds — groups and deprecation dates. It keeps no purpose, no `owns` and no `role`.
+neither holds — groups, deprecation dates and each repository's tier (see *Tiers*). It keeps no
+purpose, no `owns` and no `role`.
 Nobody else reads or edits it; they ask you. The tool checks those facts live too: a group
 member must exist and be active. What a repository holds and why it exists is the matrix's:
 each repository's stacks, and each stack's purpose and the services, components and
@@ -109,6 +110,7 @@ checked it against the repository or GitHub in the same invocation.
 | When a repo was last updated | `status <repo>` → `last_commit.date` and `github.pushed_at` |
 | Whether a repo is up to date with GitHub `main` | `status <repo>` → `main.ahead`, `main.behind`, `main.up_to_date` |
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
+| Which tier a repository is in, or the repository that contains a path | `tier <path>` (JSON: `repository`, `repository_path`, `tier`, `source`, `linked_worktree`; exit 1 when no repository that records a tier contains the path); `list` and `status` carry each repository's `tier` |
 | What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type from the last token of its name, its app `stacks --app <app>`. |
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
 | What depends on what | `atw-matrix deps --of <id>` and `deps --on <id>`, at the level of services, components and infrastructure; each result names the stack that holds the target, and `node stack:<id>` its repository. Never answer with, or record, a repo → repo edge. |
@@ -121,7 +123,9 @@ hand the facts back for the caller to act on.
 
 | Action | Command |
 |---|---|
-| Create a repo from a template, locally and on GitHub, with its beads setup and its stack in the matrix | `create <name> --space S [--template T]` |
+| Create a repo from a template, locally and on GitHub, with its tier, its beads setup and its stack in the matrix | `create <name> --space S [--template T] [--tier product\|tooling]` |
+| Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
+| List every recorded tier, check the tier export, or rewrite it | `tiers` (`--write` rewrites the export; also run by `doctor --fix`) |
 | Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories, the arc42 documents and the matrix (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
@@ -130,7 +134,7 @@ hand the facts back for the caller to act on.
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block) | `agents-sync` (`--check` to report only) |
+| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block) by each repository's tier: a `tooling` repository is committed on `main` and pushed; a `product` repository gets a worktree, a branch and a pull request opened with `skillspoke-pr`, and nothing is pushed to its `main`; a repository with no tier is left alone | `agents-sync` (`--check` to report only; `--trailer` and `--pr-footer` end each commit message and pull request description with a line; `--repo R` limits the run) |
 | Give every non-marketing repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
@@ -138,6 +142,30 @@ hand the facts back for the caller to act on.
 | Health check and every safe repair, the matrix's stacks and the Python names included | `doctor --fix` |
 
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+
+### Tiers
+
+SkillSpoke has two tiers of repository, and the manifest records one for every entry (`tier:
+product` or `tier: tooling`):
+
+- **product** (tier 1): the SkillSpoke services, libraries, infrastructure, web and mobile
+  repositories, the marketing and employer repositories included. All work in them happens in
+  worktrees, never in the primary working tree, and reaches `main` through a pull request.
+- **tooling** (tier 2): the machinery that builds SkillSpoke: the control repo (`SkillSpoke`), the
+  toolset repo and the `skillspoke-docs` vault. They are committed on `main` in the primary working
+  tree.
+
+A repository's tier is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
+control repo and `product` for every other repository; `create --tier` states another, and `set-tier`
+changes one. `reconcile --fix` records the default for an entry that has none (`tier-missing`) and
+leaves an entry whose tier is neither value for you to judge (`tier-invalid`). A repository outside the
+repository root has no manifest entry: the config's `tiers.external` lists it with its tier (the toolset
+repo and the vault), its path built from environment variables. The tier export
+(`.polyrepo/repository-tiers.json`, each clone's absolute path to its tier, a clone reached through a
+symbolic link under both paths) is what the hooks read. It is derived, machine-specific and not
+committed; the tool rewrites it with every records commit, and `tiers --write` (also `doctor --fix`)
+rewrites it on demand. A tier you change or a repository you add is not done until the export is
+current: `tiers` must report no finding.
 
 ### A rename covers every name
 
@@ -327,6 +355,11 @@ Your judgment is for what a script cannot decide, and only that:
   no dependency field: dependencies are between services, components and infrastructure and
   are answered by `deps`, never recorded as repo → repo. Edit a group in the manifest yourself
   (see the `polyrepo-repo` skill for how).
+- **Tier.** Whether a repository is `product` or `tooling` (see *Tiers*). Decide it from the
+  definition: tooling is the machinery that builds SkillSpoke (the control repo, the toolset repo,
+  the `skillspoke-docs` vault), product is everything that ships or is part of what ships. When a
+  new repository is not plainly one or the other, ask the user and record the answer with
+  `set-tier`.
 - **Questions.** The manifest holds no question or open item. Put a question to the user
   in your reply.
 
@@ -335,7 +368,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, naming document, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, naming document, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

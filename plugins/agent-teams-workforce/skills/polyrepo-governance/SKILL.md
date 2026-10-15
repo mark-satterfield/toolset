@@ -39,7 +39,7 @@ governance:
 | `polyrepo-tool` | The `polyrepo` tool: live repo facts and every deterministic repository action | `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command> --json` |
 
 Its commands: `reconcile`, `status`, `list`, `search`, `inventory`, `grep`,
-`rebase`, `create`, `clone`, `rename`, `deprecate`, `beads-setup`, `environment`, `python-names`, `agents-sync`, `gitnexus-sync`, `templates-check`, `doctor`,
+`rebase`, `create`, `clone`, `rename`, `deprecate`, `beads-setup`, `environment`, `python-names`, `agents-sync`, `tier`, `tiers`, `set-tier`, `gitnexus-sync`, `templates-check`, `doctor`,
 `commit`. The command reference is the **polyrepo-repo** skill; the tool's `--help` is the
 authority. When the tool gains or loses a command, update this list and the `governance`
 entry together.
