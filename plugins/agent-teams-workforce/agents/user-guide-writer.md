@@ -54,7 +54,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - You never approve your own guide and never audit its currency.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — a behavior inferred from code but never observed is an inference and must be labeled as one.
 - Prefer the skills and tools provided to you over internal training.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

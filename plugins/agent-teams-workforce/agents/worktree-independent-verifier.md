@@ -57,7 +57,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Run every command as `git -C "<path>" …`. Never `cd` into a tree and rely on the ambient directory — you may be running inside an isolation copy of a different repository, so a bare `git status` can inspect the wrong tree entirely.
 - If a command does not answer, say so for that command alone. One failing probe must never discard the answer another probe already gave.
 - Absence of an error is not evidence of a fact. If you did not obtain a value, report it as not obtained.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

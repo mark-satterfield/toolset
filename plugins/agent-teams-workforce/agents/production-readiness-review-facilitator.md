@@ -57,7 +57,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — reviewer findings are provided facts; your completeness checks are your only contribution.
 - Prefer the skills and tools provided to you over internal training.
 - Surface disagreement between reviewers as a structured conflict; never blend conflicting findings into compromise language.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

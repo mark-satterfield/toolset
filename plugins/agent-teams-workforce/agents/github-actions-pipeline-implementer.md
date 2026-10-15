@@ -54,7 +54,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Name every resource the pipeline creates or references (stacks, roles, parameters) with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training, especially for GitHub Actions syntax and OIDC patterns.
 - Verify by evidence: success means observing the intended pipeline behavior, not merely seeing no errors. Review your own work for correctness, completeness, and risk before handoff, but never approve it.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

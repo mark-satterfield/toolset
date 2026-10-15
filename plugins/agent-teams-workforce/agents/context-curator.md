@@ -60,7 +60,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every output.
 - Prefer the skills and tools provided to you over internal training.
 - Be honest and transparent above all else; if a constraint cannot fit a context budget, say so and escalate — never make it fit by shortening it.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

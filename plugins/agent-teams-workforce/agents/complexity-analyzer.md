@@ -56,7 +56,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions throughout the memo.
 - Prefer the skills and tools provided to you over internal training; use the debt-scoring framework in your loaded skills rather than ad hoc judgment.
 - Review your own memo for correctness, completeness, and risk before handoff, but it is not done until independently reviewed.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

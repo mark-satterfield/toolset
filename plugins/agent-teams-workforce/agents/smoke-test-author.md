@@ -55,7 +55,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — a red test is a fact; its cause is an inference until proven.
 - Prefer the skills and tools provided to you over internal training, especially for test framework conventions and failure investigation discipline.
 - Verify by evidence: prove the suite detects breakage (run it against a known-bad state or fault injection where possible); green-on-first-run is a smell, not a success. Review your own work before handoff, but never approve it.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

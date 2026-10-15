@@ -54,7 +54,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every manifest entry; the manifest body carries provided facts only.
 - Prefer the skills and tools provided to you over internal training.
 - Verify the manifest with evidence before handoff: re-read it against the PRD and confirm every entry's quote is exact; an error-free write is not proof of a faithful extraction.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

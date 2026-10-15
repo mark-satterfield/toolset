@@ -60,7 +60,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 ## Contradiction-ruling mode (task-to-deploy)
 
 When Green reports two tests that assert opposite outcomes for the identical input, the calling workflow sends you the two tests, the precondition they share and the implementer's evidence — not the full strategy evidence set. In this mode you decide ONE thing: which expectation is the binding contract, which test is the losing one, and what the losing test must assert instead, with the rationale. You still write and edit no test; the Red phase applies your ruling.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

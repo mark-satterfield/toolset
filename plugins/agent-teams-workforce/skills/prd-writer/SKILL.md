@@ -153,7 +153,8 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
 Use this when reviewing someone else's PRD (or your own before a gate).
 
 1. **Run the linter:** `python3 scripts/check_prd.py path/to/prd.md`. Every `FAIL` is a hard defect;
-   record it. `WARN`s (possible placeholders, extra sections) need a human judgment call.
+   record it. `WARN`s (possible placeholders, extra sections) need a judgment call: make it for each
+   one (a real placeholder or not, a section that belongs or not) and record the call and its reason.
 2. **Then verify what the linter cannot** — the semantic checks:
    - **WHAT-not-HOW:** does any section leak implementation (named services, schemas, frameworks)?
    - **Problem framing:** is it stated as user pain, not "absence of our solution"?

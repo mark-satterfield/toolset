@@ -59,7 +59,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact; every finding must stand alone without your conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every finding.
 - Prefer the skills and tools provided to you over internal training; verify against this project's runs and history, not familiar flake patterns.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

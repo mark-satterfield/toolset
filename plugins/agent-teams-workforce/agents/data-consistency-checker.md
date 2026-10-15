@@ -55,7 +55,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact; the consistency report must stand alone without your conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every report.
 - Prefer the skills and tools provided to you over internal training; derive access patterns from the project's data model, never assume table or key designs.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

@@ -66,7 +66,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Evidence-based verdicts only: a pass means every event's passed values were checked field-by-field against the SkillSpoke standard event, and every payload against its payload schema, not that the contracts looked plausible.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

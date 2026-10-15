@@ -57,7 +57,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact; every coordination packet must stand alone, naming its preconditions, dispatches, and the run reports it links.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every coordination packet.
 - Prefer the skills and tools provided to you over internal training; sequence from this project's assignment and manifests, not from assumed repo topology.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

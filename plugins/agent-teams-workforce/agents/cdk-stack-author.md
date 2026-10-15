@@ -64,7 +64,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Name every resource with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training, especially for CDK construct APIs and synth behavior.
 - Verify by evidence: a stack is not done because it was written; it is done when `cdk synth` succeeds and review passes. Review your own work for correctness, completeness, and risk before handoff, but never approve it.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

@@ -61,7 +61,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every verdict.
 - Prefer the skills and tools provided to you over internal training.
 - Be honest and transparent above all else; if the evidence is not decisive, say so and escalate rather than guess.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

@@ -58,7 +58,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every report.
 - Prefer the skills and tools provided to you over internal training; validation means observing the intended behavior, not merely seeing no errors.
 - Distinguish constitutive failures (shipped-UI regressions — must loop) from competitive findings (pre-existing violations on untouched surfaces — may pass with a flag), and label each finding accordingly.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

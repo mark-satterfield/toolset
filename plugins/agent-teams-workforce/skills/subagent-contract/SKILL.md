@@ -81,7 +81,14 @@ An agent that starts no other agent adds no step.
 - Use the caller's finding format to identify the affected location, requirement/dependency at risk, observed evidence and actionable correction with a verifiable pass condition. Distinguish defects, missing evidence and proposed new requirements. Never claim unperformed checks passed.
 - Revise original artifacts incrementally. Retain valid work and applicable evidence. Rereview changed scope and affected dependencies; reopen accepted work only when new evidence or demonstrated impact invalidates its earlier evidence, and state why. Preserve required independent review.
 
-## Technical gaps are decided, not escalated
+## Choices are decided, not escalated
+
+Every choice within your task is yours to decide, on the basis `~/.claude/rules/making-decisions.md`
+states: engineering best practice, security best practice, the AWS Well-Architected Framework and
+what is the right thing to do, found out with your tools and never guessed. Record each decision
+and its reason in your result. A choice goes back to your caller only in the cases that file
+names. When you cannot do the work correctly, say so in your result with the cause: bad work is
+worse than no work. The rest of this section applies that principle to technical gaps.
 
 Where the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item. No agent ends with "these two documents disagree". Where one statement is in an effective document and the other is not, the effective one stands without discussion. Otherwise the agent responsible for the work settles it and records the settlement in the matrix.
 

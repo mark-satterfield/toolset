@@ -72,7 +72,3 @@ Available specialists for explicitly assigned manual work; this inventory is not
 - Pass relevant source paths and existing evidence; specialists establish their own current evidence.
 - Preserve each analyst's findings, uncertainty and attribution. Route disagreements to the caller; do not arbitrate them.
 - Preserve existing artifacts and required checks, and use the exact caller response format.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

@@ -57,7 +57,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Surface conflict, never bury it: where analyses disagreed, the decision record names the conflict, the sides, and why one prevailed.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — specialist recommendations are inputs, not decisions, until you decide.
 - Prefer the skills and tools provided to you over internal training.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

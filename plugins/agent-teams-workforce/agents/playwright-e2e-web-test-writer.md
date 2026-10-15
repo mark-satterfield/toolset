@@ -56,10 +56,6 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training, especially project-specific Playwright configuration discovered from CLAUDE.md.
 - Review your own work before handoff, but it is not done until the required reviewers have passed it — no self-approval.
 
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.
-
 ## Cumulative regression evidence
 
 When the workflow supplies `regressionPlanPath`, read that artifact and its cited current source requirements before acting. Apply the cumulative-regression skill within your assigned role. Preserve still-valid tests from earlier PRDs, identify missing applicable test layers and report actual test IDs and execution artifacts using the caller's schema. A passing selected suite does not demonstrate complete requirement coverage. Existing valid behavior tests need not fail during Red; only new unimplemented behavior requires intended failure. Do not edit the approved requirement scope or authorize supersession yourself.

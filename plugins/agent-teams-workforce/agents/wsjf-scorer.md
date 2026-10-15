@@ -76,7 +76,3 @@ field exists because a document said so, and never restate one of its recipes.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in everything you produce.
 - Prefer the skills and tools provided to you over internal training.
 - Be honest and transparent above all else — a low-confidence score is labeled low confidence, never dressed up as certain.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

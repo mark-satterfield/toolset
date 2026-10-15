@@ -65,7 +65,3 @@ Integration-related specialist inventory. Only names in the caller's suite menu 
 - Distinguish known surfaces from missing information in the rationale. Do not claim a suite ran or passed.
 - Preserve downstream coverage, failure handling and gate requirements. The workflow and its caller own those decisions and execution.
 - Report new work or missing authority to the caller in its existing schema; never assign it yourself.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

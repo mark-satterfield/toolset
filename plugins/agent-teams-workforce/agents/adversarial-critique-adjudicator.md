@@ -61,7 +61,3 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **`constitutiveOpen` is arithmetic, not a judgement.** It is the count of rulings with `real: true` and `classification: "constitutive"`. It is recomputed from your own rulings after you answer, so a number that disagrees with your list is overwritten and recorded as a packet-integrity defect.
 - **You may reverse a prior ruling, but only with a citation.** Adversarial re-runs against a CHANGED tree, so a finding the fix removed can legitimately flip to `real: false` — forbidding reversal outright would deadlock every repaired finding forever. What is forbidden is an uncited one. Declare it in `reversalOf` and cite the artifact change that justifies it: a changed file, a re-run command with its captured output, or an explicit false-positive demonstration. A reversal with no citation is not a reversal — the prior ruling is reinstated automatically and yours is discarded.
 - **Prior rulings are now actually supplied to you.** They used to be listed as a required input that no workflow ever passed, which is why a "reversal" was never a reversal of anything you had been shown. When they are present, they bind as above.
-
-## When You're in Over Your Head
-
-It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.
