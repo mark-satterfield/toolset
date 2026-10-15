@@ -29,7 +29,7 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
   stream-json`, `--verbose`, `--agent <agent>`, `--agents <json-or-file>` ("with --print the path
   to a file that holds one"), `--model` (aliases include `fable`, `opus`, `sonnet`),
   `--session-id <uuid>`, `-r/--resume`, `--setting-sources`, `--settings <file-or-json>`,
-  `--plugin-dir`, `--permission-mode`, `--disallowedTools`, `--add-dir`. `--bare` makes
+  `--plugin-dir`, `--permission-mode`, `--add-dir`. `--bare` makes
   Anthropic auth "strictly ANTHROPIC_API_KEY or apiKeyHelper (OAuth and keychain are never read)".
 - Context7 `/websites/code_claude`:
   - `code.claude.com/docs/en/sub-agents`: `--agent` "applies a subagent's tool restrictions,
@@ -405,8 +405,7 @@ brief (section 2.3):
 
 1. The launcher reads from `<plugin>/agents/<agent>.md` only the front matter fields it decides
    something with (`load_agent`): `model` (required; it drives the Fable fallback), `role` (the
-   matrix role, section 5.2) and `tools` with `disallowedTools` (whether the session keeps
-   `SendMessage`). It reads no body and no skill.
+   matrix role, section 5.2). It reads no tools, no body and no skill.
 2. It launches the session with `--agent <agent>`, the agent's plain front matter `name`, for
    every agent. Claude Code loads the definition: its body, tools, disallowed tools, model,
    effort, MCP servers, turn limit and front matter skills. An agent whose definition states
@@ -439,17 +438,16 @@ claude -p --output-format stream-json --verbose
   --settings <session dir>/settings.json
   --plugin-dir <plugin>
   --permission-mode bypassPermissions
-  --disallowedTools <headlessenv.DENIED_TOOLS and AskUserQuestion>
   --add-dir <each directory the launch names>
 ```
 
-For example, the launch of `aws-solutions-architect` (`--disallowedTools` list shortened):
+For example, the launch of `aws-solutions-architect`:
 
 ```
 claude -p --output-format stream-json --verbose --session-id <uuid>
   --agent aws-solutions-architect --model opus --setting-sources project
   --settings <session dir>/settings.json --plugin-dir <plugin>
-  --permission-mode bypassPermissions --disallowedTools WebFetch WebSearch ... AskUserQuestion
+  --permission-mode bypassPermissions
 ```
 
 - **Working directory.** A per-session directory outside every repository,
@@ -475,11 +473,10 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   agent loads itself with the Skill tool.
 - **MCP servers.** The launcher passes no MCP flag. The servers an agent's front matter
   `mcpServers` names load with the agent, from its user-level copy (section 5.1).
-- **Tools.** The agent's `tools` and `disallowedTools` are its front matter's alone; an agent has
-  the Agent tool only when its front matter gives it. `--disallowedTools` adds the driver's denied
-  list and `AskUserQuestion`, so no Epic session waits on a person. An agent whose front matter
-  gives it the Agent tool keeps `SendMessage` when its front matter lists it, so it can continue an
-  agent it started.
+- **Tools.** An agent's tools are the allow-list its front matter `tools` field states, which
+  Claude Code enforces: every tool it does not list is denied. The launcher passes no tool flag,
+  so nothing is added to or taken from that list. Which tools an agent gets is the owner's
+  decision, made in its definition file.
 - **What loads besides.** `<config>` holds `rules`, `skills` and `agents` entries and may hold a
   user `CLAUDE.md`. They are user-level memory and content, not settings files, and
   `--setting-sources` does not exclude them; a different `CLAUDE_CONFIG_DIR` for agent sessions

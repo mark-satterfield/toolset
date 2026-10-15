@@ -19,8 +19,7 @@ from typing import Final
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from .driver_contracts import denied_tools
-from .frontmatter import split_front_matter, string_list
+from .frontmatter import split_front_matter
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
 
@@ -31,9 +30,6 @@ SAFETY_HOOKS = frozenset({
     "aws-profile-required.sh",
 })
 
-AGENT_TOOL: Final = "Agent"
-SEND_MESSAGE_TOOL: Final = "SendMessage"
-ASK_TOOL: Final = "AskUserQuestion"
 SPAWN_DEPTH_ENV: Final = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 BACKGROUND_TASKS_ENV: Final = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
 SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({SPAWN_DEPTH_ENV: "1", BACKGROUND_TASKS_ENV: "1"})
@@ -60,25 +56,19 @@ class SessionSetupError(RuntimeError):
 class AgentDefinition:
     """The fields of one agent definition file the runner still reads (held for the owner's ruling).
 
-    ``model`` drives the Fable fallback, ``role`` the matrix role and ``tools`` with
-    ``disallowed_tools`` whether the session keeps ``SendMessage``. ``tools`` and
-    ``disallowed_tools`` are None when the file does not state them.
+    ``model`` drives the Fable fallback and ``role`` the matrix role. The agent's tools are its
+    front matter's allow-list, which Claude Code applies; the runner reads none of them.
     """
 
     name: str
     model: str
     role: str | None
-    tools: tuple[str, ...] | None
-    disallowed_tools: tuple[str, ...] | None
 
     def __post_init__(self) -> None:
-        """Validate every constructed field, including nested collection entries."""
-        strategy: CollectionCheckStrategy = CollectionCheckStrategy.ALL_ITEMS
+        """Validate every constructed field."""
         check_type(self.name, str)
         check_type(self.model, str)
         check_type(self.role, str | None)
-        check_type(self.tools, tuple[str, ...] | None, collection_check_strategy=strategy)
-        check_type(self.disallowed_tools, tuple[str, ...] | None, collection_check_strategy=strategy)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -112,19 +102,9 @@ def read_json(path: Path) -> dict[str, JsonValue]:
     return json_object(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else {}
 
 
-def _optional_list(metadata: Mapping[str, JsonValue], key: str) -> tuple[str, ...] | None:
-    """Read a list field that Claude Code treats differently when it is absent.
-
-    Returns:
-        The strings of the field, or None when the front matter does not hold the key.
-
-    """
-    return tuple(string_list(metadata[key])) if key in metadata else None
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_agent(plugin: Path, name: str) -> AgentDefinition:
-    """Read the model, role and tools of one agent definition file of the plugin.
+    """Read the model and role of one agent definition file of the plugin.
 
     Returns:
         The validated fields.
@@ -148,13 +128,7 @@ def load_agent(plugin: Path, name: str) -> AgentDefinition:
     if role is not None and (not isinstance(role, str) or not role.strip()):
         message = f"agent {name} role must be a non-empty string"
         raise TypeError(message)
-    return AgentDefinition(
-        name=name,
-        model=model.strip(),
-        role=role,
-        tools=_optional_list(metadata, "tools"),
-        disallowed_tools=_optional_list(metadata, "disallowedTools"),
-    )
+    return AgentDefinition(name=name, model=model.strip(), role=role)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -172,18 +146,6 @@ def launch_model(agent: AgentDefinition, launch: Launch) -> str:
         argument_error: str = "launch_model requires an AgentDefinition and a Launch"
         raise TypeError(argument_error)
     return launch.model_replacements.get(agent.model, agent.model)
-
-
-def may_start_agents(agent: AgentDefinition) -> bool:
-    """Tell whether an agent's front matter gives it the Agent tool.
-
-    Returns:
-        True when its ``tools`` list names the Agent tool, or it lists no tools and does not
-        disallow the Agent tool.
-
-    """
-    allowed: bool = agent.tools is None or any(tool.split("(", 1)[0] == AGENT_TOOL for tool in agent.tools)
-    return allowed and AGENT_TOOL not in (agent.disallowed_tools or ())
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -255,23 +217,6 @@ def session_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
     return settings
 
 
-def _denied(launched: AgentDefinition) -> list[str]:
-    """List the tools the command line denies one session.
-
-    Every session is denied the driver's list and questions to the user. A session whose
-    agent may start agents keeps SendMessage when its definition lists it, so it can continue an
-    agent it started.
-
-    Returns:
-        The denied tool names, in the driver's order.
-
-    """
-    denied: list[str] = list(denied_tools())
-    if may_start_agents(launched) and SEND_MESSAGE_TOOL in (launched.tools or ()):
-        denied = [tool for tool in denied if tool != SEND_MESSAGE_TOOL]
-    return [*denied, ASK_TOOL]
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch: Launch) -> list[str]:
     """Write private session settings and construct Claude CLI arguments.
@@ -306,8 +251,6 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         str(plugin),
         "--permission-mode",
         "bypassPermissions",
-        "--disallowedTools",
-        *_denied(launched),
     ]
     command.extend(arg for path in step.add_dirs for arg in ("--add-dir", str(path.resolve())))
     return command

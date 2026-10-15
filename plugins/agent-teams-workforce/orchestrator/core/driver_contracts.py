@@ -23,8 +23,6 @@ from driver_surface_types import CONTROL_REPO_ENV
 class HeadlessEnvironment(Protocol):
     """Control headlessenv module surface consumed by session setup."""
 
-    DENIED_TOOLS: tuple[str, ...]
-
     def child_env(self, scratch: Path) -> dict[str, str]:
         """Construct the subprocess environment."""
         ...
@@ -114,21 +112,6 @@ def driver_module(name: str) -> ModuleType:
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
     return importlib.import_module(name)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def denied_tools() -> tuple[str, ...]:
-    """Return the exact immutable denied-tool contract from the producer.
-
-    Returns:
-        The validated producer value.
-
-    """
-    return check_type(
-        driver_module("headlessenv").DENIED_TOOLS,
-        tuple[str, ...],
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

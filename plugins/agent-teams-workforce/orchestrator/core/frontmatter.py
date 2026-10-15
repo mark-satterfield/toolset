@@ -75,25 +75,3 @@ def split_front_matter(text: str, what: str) -> tuple[dict[str, object], str]:
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
     return fields, body.strip()
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def string_list(value: object) -> list[str]:
-    """Read a string-list field of authored front matter.
-
-    Returns:
-        The validated strings; a comma-separated string gives its trimmed, non-empty entries, and
-        an absent field (None) gives an empty list.
-
-    Raises:
-        TypeError: The field is neither text, None nor a list of strings.
-
-    """
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        message: str = f"a front matter list must be text or a list of strings, got {value!r}"
-        raise TypeError(message)
-    return check_type(value, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

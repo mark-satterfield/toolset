@@ -7,7 +7,7 @@ description: The one place for the pipeline contracts agents and code share outs
 
 Four contracts live here. Each is defined once, in this skill's `schemas/`; agents read this file
 and the schema, and code loads the generated module or reads the definition through one loader.
-Nothing outside this skill restates a variable name, a denied tool, a composite id, a phase id or
+Nothing outside this skill restates a variable name, a composite id, a phase id or
 title, a role set, a progress marker, a field of the step journal, a journal change line or a step
 kind of the build and deploy pipelines.
 
@@ -69,9 +69,8 @@ session the environment `$defs.DriverEnvironment` lists. What an agent uses:
 
 The plugin orchestrator reads the driver modules named in `x-driver` (headlessenv, fablewall,
 breaker, childproc) from `$ATW_CONTROL_REPO/<DRIVER_DIR_PARTS>`; the generated `HeadlessEnvironment`,
-`FableWall`, `Breaker` and `ChildProcess` protocols are their surface. `DENIED_TOOLS` is the exact,
-ordered list of tools no session may use; `TERMINATE_GRACE` is the seconds a terminated child gets
-before it is killed.
+`FableWall`, `Breaker` and `ChildProcess` protocols are their surface. `TERMINATE_GRACE` is the
+seconds a terminated child gets before it is killed.
 
 `$defs.RateLimitEvent` is the Claude CLI stream-json `rate_limit_event`. Only status `rejected` is
 acted on. The account windows are `ACCOUNT_WINDOWS`; any other window is model-specific; a window is
