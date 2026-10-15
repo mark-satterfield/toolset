@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: fable
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:tech-debt-tracker]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:tech-debt-tracker, agent-teams-workforce:python-coding]
 effort: medium
 isolation: worktree
 color: purple

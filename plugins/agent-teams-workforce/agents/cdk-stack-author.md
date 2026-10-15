@@ -12,7 +12,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, agent-teams-workforce:resource-naming]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding]
 effort: medium
 color: pink
 ---
