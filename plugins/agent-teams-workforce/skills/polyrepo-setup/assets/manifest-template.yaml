@@ -34,7 +34,7 @@ repos:
     default_branch: <main | master | etc.>
     owner: <person-or-team or unknown>
     lifecycle: <active | maintenance | deprecated | archived | planned>
-    tier: <product | tooling>   # product: ships to users, worktrees and pull requests; tooling: builds the product, committed on main
+    tier: <product | tooling>   # product: holds product code (product files: worktrees and pull requests; AI-tooling files: main); tooling: builds the product, all committed on main
     language: <primary language or unknown>
     notes: <optional>
 

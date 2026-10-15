@@ -32,7 +32,7 @@ Usage:
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
                      [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
-  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--trailer TEXT] [--pr-footer TEXT]
+  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--trailer TEXT]
   polyrepo.py tier <path>
   polyrepo.py tiers [--write]
   polyrepo.py set-tier <repo> product|tooling
@@ -49,11 +49,16 @@ and pushes them itself, on the default branch of the repo that holds them; `comm
 same after a hand edit. A line in the environment variable POLYREPO_COMMIT_TRAILER ends the
 message of every commit the tool makes.
 
-Every repository has a tier in the manifest: `product` (tier 1: all work happens in worktrees and
-reaches `main` through a pull request) or `tooling` (tier 2: committed on `main` in the primary
-working tree). `tier <path>` says which tier the repository containing a path is in, and the
-tier export (`.polyrepo/repository-tiers.json`, path to tier) is rewritten with every records
-commit, for the hooks that read it.
+Tier is decided by content, not by repository: tier 1 is the SkillSpoke product (the code,
+infrastructure, scripts and CI/CD that would exist if AI did not), and everything that exists
+because of AI (AGENTS.md, CLAUDE.md, `.claude/`, agents, skills, plugins, the pipeline) is tier 2,
+wherever it sits; tier 2 is committed on `main` with no pull request. The manifest records, for
+every repository, whether it holds product code: `product` (its product files are tier 1: worktrees
+and a pull request) or `tooling` (the repository is tier 2 throughout). `tier <path>` says which
+the repository containing a path is, and the tier export (`.polyrepo/repository-tiers.json`, path
+to `product` or `tooling`) is rewritten with every records commit, for the hooks that read it.
+`agents-sync` writes AI-tooling files, so it commits on `main` in every repository, whatever its
+recorded tier.
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -6323,23 +6328,9 @@ def _commit_paths(
         must(git(repo, "commit", "-m", message, "--", *paths, timeout=300))
 
 
-AGENTS_SYNC_BRANCH = "docs/agents-sync"
-AGENTS_SYNC_WORKTREE = "agents-sync"
 AGENTS_SYNC_SUBJECT = "docs(agents): sync the shared instruction blocks"
-AGENTS_SYNC_BODY = (
-    "Brings the shared instruction blocks in AGENTS.md up to the text that `polyrepo agents-sync` writes "
-    "from the control repository and the agent-teams-workforce plugin."
-)
-AGENTS_SYNC_DONE = frozenset({"pushed", "pr-opened", "current-on-origin"})
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SyncPublish:
-    """How agents-sync records a change: the commit trailer, the pull request footer and the PR command."""
-
-    trailer: str | None
-    pr_footer: str | None
-    pr_command: Path
+AGENTS_SYNC_DONE = frozenset({"pushed", "current-on-origin"})
+AGENTS_SYNC_ADVANCED = frozenset({"up-to-date", "rebased", "fast-forwarded"})
 
 
 def _sync_one(
@@ -6347,31 +6338,44 @@ def _sync_one(
     r: LocalRepo,
     blocks: list[AgentsBlock],
     write: bool,
-    how: tuple[str, SyncPublish],
+    trailer: str | None,
 ) -> dict[str, object]:
-    """Bring one repo's AGENTS.md blocks current, when write is set by the rules of the repo's tier.
+    """Bring one repo's AGENTS.md blocks current: committed on main in its primary working tree and pushed.
 
-    `how` is the repo's recorded tier and how a change is published. A `tooling` repo is committed on
-    the default branch in its primary working tree and pushed. A `product` repo gets the change in a
-    worktree on its own branch, and a pull request opened with the project's PR command; nothing is
-    pushed to its default branch. A repo with no recorded tier is left alone.
+    The shared blocks are AI tooling, so tier 2 applies whatever the repo's tier: no worktree, no
+    branch and no pull request. When writing, the primary tree's main is first brought up to
+    `origin/main` (a fast-forward, or a rebase of local commits), so the commit is a fast-forward push.
 
     Returns:
-        {repo, state, tier} plus, when it wrote, the status and any detail.
+        {repo, state} plus, when it wrote, the status and any detail.
 
     """
-    tier, publish = how
+    if write and (stopped := _advance_for_sync(cfg, r)) is not None:
+        return {"repo": r.name, "state": "stale-main", **stopped}
     f = r.path / "AGENTS.md"
     cur = f.read_text() if f.is_file() else None
     want = _with_blocks(cur, blocks, r.name)
-    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks), "tier": tier or None}
+    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
     if res["state"] == "current" or not write:
         return res
-    if tier == TIER_PRODUCT:
-        return {**res, **_sync_by_pull_request(cfg, r, blocks, publish)}
-    if tier == TIER_TOOLING:
-        return {**res, **_sync_on_main(cfg, r, blocks, (cur, want), publish.trailer)}
-    return {**res, "status": "skipped", "detail": "no tier recorded; run reconcile --fix"}
+    return {**res, **_sync_on_main(cfg, r, blocks, (cur, want), trailer)}
+
+
+def _advance_for_sync(cfg: Config, r: LocalRepo) -> dict[str, object] | None:
+    """Fetch origin and bring the primary tree's main up to origin/main before a commit.
+
+    Returns:
+        None when main is at or past origin/main, else {status, detail} saying why it was not
+        brought up (fetch failed, no origin, dirty tree, conflict).
+
+    """
+    if not git_out(r.path, "remote", "get-url", "origin"):
+        return {"status": "skipped", "detail": "no origin"}
+    moved = rebase_one(cfg, r)
+    if moved["status"] in AGENTS_SYNC_ADVANCED:
+        return None
+    detail = "; ".join(s for s in (str(moved["status"]), str(moved.get("detail") or "")) if s)
+    return {"status": "skipped", "detail": f"main not brought up to origin/{cfg.default_branch}: {detail}"}
 
 
 def _sync_on_main(
@@ -6381,7 +6385,9 @@ def _sync_on_main(
     texts: tuple[str | None, str],
     trailer: str | None,
 ) -> dict[str, object]:
-    """Commit the new AGENTS.md on the default branch of a tooling repo and push it.
+    """Commit the new AGENTS.md on the default branch in the primary working tree and push it.
+
+    A rejected push (for example branch protection) leaves the commit local, status `committed`.
 
     `texts` is the file's current text (None when it has none) and the text it should have.
 
@@ -6421,58 +6427,6 @@ def _sync_on_main(
     return {"status": "pushed", "commit": commit}
 
 
-def _sync_by_pull_request(
-    cfg: Config,
-    r: LocalRepo,
-    blocks: list[AgentsBlock],
-    publish: SyncPublish,
-) -> dict[str, object]:
-    """Put the new AGENTS.md of a product repo in a worktree on its own branch and open a pull request.
-
-    The worktree is cut from `origin/<default branch>`, so the primary working tree is not touched.
-    A branch or worktree left by an earlier run is not reused: its pull request is still open.
-
-    Returns:
-        The status (`pr-opened`, `pr-failed`, `current-on-origin`, `pending`, `failed`), the pull
-        request URL, the commit and the worktree, as far as they exist.
-
-    """
-    b = cfg.default_branch
-    worktree = r.path / ".worktrees" / AGENTS_SYNC_WORKTREE
-    if worktree.exists() or git_out(r.path, "rev-parse", "--verify", "-q", f"refs/heads/{AGENTS_SYNC_BRANCH}"):
-        return {
-            "status": "pending",
-            "detail": f"{AGENTS_SYNC_BRANCH} or {worktree} exists: an earlier change is unmerged",
-        }
-    cp = git(r.path, "fetch", "--quiet", "origin", b, timeout=FETCH_TIMEOUT)
-    if cp.returncode != 0:
-        return {"status": "failed", "detail": f"git fetch failed: {_last_line(cp)}"}
-    shown = git(r.path, "show", f"origin/{b}:AGENTS.md")
-    cur = shown.stdout if shown.returncode == 0 else None
-    want = _with_blocks(cur, blocks, r.name)
-    if want == cur:
-        return {"status": "current-on-origin", "detail": f"origin/{b} already has the current blocks"}
-    _exclude_worktrees(r.path)
-    cp = git(r.path, "worktree", "add", "--no-track", "-b", AGENTS_SYNC_BRANCH, str(worktree), f"origin/{b}")
-    if cp.returncode != 0:
-        return {"status": "failed", "detail": f"git worktree add failed: {_last_line(cp)}"}
-    (worktree / "AGENTS.md").write_text(want)
-    paths = ["AGENTS.md"]
-    claude = worktree / "CLAUDE.md"
-    if cur is None and not claude.exists() and not claude.is_symlink():
-        claude.symlink_to("AGENTS.md")
-        paths.append("CLAUDE.md")
-    try:
-        _commit_paths(worktree, paths, _with_trailer(AGENTS_SYNC_SUBJECT, publish.trailer))
-    except GitFailedError as exc:
-        git(r.path, "worktree", "remove", "--force", str(worktree))
-        git(r.path, "branch", "-D", AGENTS_SYNC_BRANCH)
-        return {"status": "failed", "detail": str(exc)}
-    row: dict[str, object] = {"worktree": str(worktree), "commit": git_out(worktree, "rev-parse", "--short=8", "HEAD")}
-    _open_pr(worktree, (AGENTS_SYNC_SUBJECT, AGENTS_SYNC_BODY), (publish.pr_command, publish.pr_footer), row)
-    return row
-
-
 def _agents_state(cur: str | None, want: str, blocks: list[AgentsBlock]) -> str:
     """Classify a repo's AGENTS.md against the text it should have.
 
@@ -6505,11 +6459,11 @@ def _edited_outside_blocks(repo: Path, cur: str, blocks: list[AgentsBlock]) -> b
 def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
-    A tooling repo is committed on its default branch and pushed; a product repo gets a pull request
-    from a worktree (see `_sync_one`).
+    Every repo is committed on its default branch in its primary working tree and pushed, whatever its
+    tier: the shared blocks are AI tooling (see `_sync_one`).
 
     Returns:
-        0 when every repo is current (or was brought current: pushed, or its pull request opened), else 1.
+        0 when every repo is current (or was brought current and pushed), else 1.
 
     """
     blocks = _agents_blocks(cfg)
@@ -6519,11 +6473,9 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name, r.space))
     ]
     write = not args.check and not args.dry_run
-    tiers = {n: str(e.get("tier") or "") for n, e in Manifest(cfg.manifest).entries().items()}
-    publish = SyncPublish(args.trailer, args.pr_footer, _rename_settings(cfg)[1])
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
         results = list(
-            ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write, (tiers.get(rb[0].name, ""), publish)), repos),
+            ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write, args.trailer), repos),
         )
     if write:
         bad = [x for x in results if x["state"] != "current" and x.get("status") not in AGENTS_SYNC_DONE]
@@ -6541,7 +6493,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
             if x["state"] == "current":
                 continue
             st_ = str(x.get("status", "would update" if args.dry_run else ""))
-            detail = str(x.get("pr_url") or x.get("detail", ""))
+            detail = str(x.get("detail", ""))
             lines.append(
                 f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}",
             )
@@ -7951,7 +7903,6 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--trailer", help="a line to end each commit message with")
-    s.add_argument("--pr-footer", help="a line to end each pull request description with")
     s.set_defaults(func=cmd_agents_sync)
 
     s = add(

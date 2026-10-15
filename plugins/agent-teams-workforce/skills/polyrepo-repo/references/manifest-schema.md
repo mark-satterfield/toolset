@@ -142,11 +142,14 @@ see *Schema version history (v4)* for what replaced each of them and why.
   owner: string?
   lifecycle: enum                # active, maintenance, deprecated,
                                  # archived, planned
-  tier: enum                     # product (tier 1: services, libraries,
-                                 # infrastructure, web and mobile; work in
-                                 # worktrees, changes through pull requests) or
-                                 # tooling (tier 2: the machinery that builds the
-                                 # product; committed on main in the primary tree)
+  tier: enum                     # whether the repository holds product code.
+                                 # product: services, libraries, infrastructure,
+                                 # web and mobile; its product files are tier 1
+                                 # (worktrees, pull requests), its AI-tooling
+                                 # files (AGENTS.md, CLAUDE.md, .claude/) tier 2.
+                                 # tooling: the machinery that builds the product;
+                                 # all tier 2, committed on main in the primary tree.
+                                 # Tier is decided by content, not by repository.
   language: string?              # primary language
   notes: string?
 ```
@@ -463,7 +466,8 @@ read `schema_version` and know exactly what changed between versions.
   these fields must have them removed (and, where the fact is still worth keeping,
   moved to its real canonical home or to `knowledge.yaml`) to become valid v4.
 - **v5 addition (no version bump, backward-compatible)** - `repos[].tier`, `product` or `tooling`:
-  which of the two tiers of repository a repository is in. Every entry records one; `reconcile --fix`
+  whether a repository holds product code (`product`) or is the machinery that builds the product (`tooling`);
+  the tier of a change is decided by what the file is, not by the repository (AI-tooling files are tier 2 in every repository). Every entry records one; `reconcile --fix`
   records the default (`tooling` for the control repo, `product` otherwise) on an entry that has none, and
   `set-tier` changes it. The repositories outside the repository root (the toolset repo and the
   `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier. The

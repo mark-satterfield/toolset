@@ -77,10 +77,11 @@ is the full set of things you must end up knowing — order is flexible.
   - Who owns it?
   - What is its current lifecycle stage? (active, maintenance,
     deprecated, archived, planned)
-  - Which tier is it in? (`product`: part of what ships, all work in
-    worktrees and changes through pull requests; `tooling`: the machinery
-    that builds the product, committed on `main` in the primary working
-    tree). Record the answer in `tier`; a repository outside the
+  - Does it hold product code? (`product`: part of what ships; its product
+    files are built in worktrees and change through pull requests, its
+    AI-tooling files are committed on `main`; `tooling`: the machinery
+    that builds the product, all of it committed on `main` in the primary
+    working tree). Record the answer in `tier`; a repository outside the
     repository root goes in the config's `tiers.external` instead.
 - Are there repos that are not strictly part of this project but are
   closely related? (e.g., shared design system, shared CI templates,

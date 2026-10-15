@@ -1,5 +1,5 @@
 {
-  "description": "Plugin hooks: the tier 1 main-worktree guard, the elaboration AWS CLI guard, the relay handoff check, the pipeline stop check, and the user-level agent sync.",
+  "description": "Plugin hooks: the main-worktree guard for the product files of product repositories, the elaboration AWS CLI guard, the relay handoff check, the pipeline stop check, and the user-level agent sync.",
   "modules": [
     "./register.js"
   ],

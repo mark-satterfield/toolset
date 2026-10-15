@@ -134,7 +134,7 @@ hand the facts back for the caller to act on.
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block) by each repository's tier: a `tooling` repository is committed on `main` and pushed; a `product` repository gets a worktree, a branch and a pull request opened with `skillspoke-pr`, and nothing is pushed to its `main`; a repository with no tier is left alone | `agents-sync` (`--check` to report only; `--trailer` and `--pr-footer` end each commit message and pull request description with a line; `--repo R` limits the run) |
+| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): AI tooling is tier 2 wherever it sits, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every non-marketing repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
@@ -145,17 +145,24 @@ Every repo that exists gets its beads setup when it is created, whatever its lif
 
 ### Tiers
 
-SkillSpoke has two tiers of repository, and the manifest records one for every entry (`tier:
-product` or `tier: tooling`):
+Tier is decided by content, not by repository. Tier 1 is the SkillSpoke product: the code,
+infrastructure, scripts and CI/CD that would exist if AI did not. Everything that exists because of
+AI is tier 2, wherever it sits: `AGENTS.md`, `CLAUDE.md`, `.claude/`, the agents, skills, plugins and
+the pipeline. Tier 2 is committed on `main` with no pull request; tier 1 is built in worktrees and
+reaches `main` through a pull request opened with `skillspoke-pr`. So `AGENTS.md` and `CLAUDE.md`
+are tier 2 even inside a product repository.
 
-- **product** (tier 1): the SkillSpoke services, libraries, infrastructure, web and mobile
-  repositories, the marketing and employer repositories included. All work in them happens in
-  worktrees, never in the primary working tree, and reaches `main` through a pull request.
-- **tooling** (tier 2): the machinery that builds SkillSpoke: the control repo (`SkillSpoke`), the
-  toolset repo and the `skillspoke-docs` vault. They are committed on `main` in the primary working
-  tree.
+The manifest records for every entry which kind of repository it is, whether it holds product code
+(`tier: product` or `tier: tooling`):
 
-A repository's tier is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
+- **product**: the SkillSpoke services, libraries, infrastructure, web and mobile repositories, the
+  marketing and employer repositories included. Their product files are tier 1; their AI-tooling files
+  are tier 2.
+- **tooling**: the machinery that builds SkillSpoke: the control repo (`SkillSpoke`), the toolset repo
+  and the `skillspoke-docs` vault. They hold no product code, so all of them is tier 2 and is committed
+  on `main` in the primary working tree.
+
+A repository's recorded `tier` is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
 control repo and `product` for every other repository; `create --tier` states another, and `set-tier`
 changes one. `reconcile --fix` records the default for an entry that has none (`tier-missing`) and
 leaves an entry whose tier is neither value for you to judge (`tier-invalid`). A repository outside the
@@ -355,9 +362,11 @@ Your judgment is for what a script cannot decide, and only that:
   no dependency field: dependencies are between services, components and infrastructure and
   are answered by `deps`, never recorded as repo → repo. Edit a group in the manifest yourself
   (see the `polyrepo-repo` skill for how).
-- **Tier.** Whether a repository is `product` or `tooling` (see *Tiers*). Decide it from the
-  definition: tooling is the machinery that builds SkillSpoke (the control repo, the toolset repo,
-  the `skillspoke-docs` vault), product is everything that ships or is part of what ships. When a
+- **Tier.** Whether a repository is `product` or `tooling` (see *Tiers*): whether it holds product
+  code. Decide it from the definition: tooling holds no product code and is the machinery that builds
+  SkillSpoke (the control repo, the toolset repo, the `skillspoke-docs` vault); product holds the code
+  that ships or is part of what ships. What a file is, not which repository holds it, decides which
+  workflow its change follows: AI-tooling files are tier 2 in every repository. When a
   new repository is not plainly one or the other, ask the user and record the answer with
   `set-tier`.
 - **Questions.** The manifest holds no question or open item. Put a question to the user

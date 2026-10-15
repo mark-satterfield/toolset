@@ -52,9 +52,9 @@ repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
 every open pull request in a deprecated repo with the comment "Closed: this repository is
-deprecated." and keeps its branch. `agents-sync` follows each repo's tier: a `tooling` repo is
-committed on `main`; a `product` repo gets a pull request from a worktree, so its finding stays
-(`pending`) until that pull request is merged. What stays open needs judgment:
+deprecated." and keeps its branch. `agents-sync` commits every repo on `main` in its primary working tree and pushes it, whatever its tier (the blocks
+are AI tooling, which is tier 2); a repo whose `main` cannot be brought up to `origin/main`
+(`stale-main`) or whose push the remote rejects (`committed`) keeps its finding until that is settled. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.

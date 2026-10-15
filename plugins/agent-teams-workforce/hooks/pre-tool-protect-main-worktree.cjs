@@ -2,12 +2,18 @@
 'use strict';
 
 /**
- * PreToolUse hook: no edit lands in the primary working tree of a product repository.
+ * PreToolUse hook: no product file is edited in the primary working tree of a product repository.
  *
- * Tier 1 repositories (the SkillSpoke product: services, libraries, infrastructure, web)
- * take all work in worktrees. Tier 2 repositories (the control repository, the toolset
- * repository, the documentation vault) commit in their primary working tree, so this
- * guard must never block them.
+ * Tier is decided by what a file is, not by the repository it sits in. Tier 1 is the
+ * SkillSpoke product: the code, infrastructure, scripts and CI/CD that would exist if AI
+ * did not. Everything that exists because of AI is tier 2 wherever it sits: AGENTS.md,
+ * CLAUDE.md, anything under .claude/, the agents, skills, plugins and pipeline.
+ *
+ * Product files in a product repository (services, libraries, infrastructure, web) take
+ * all work in worktrees. Tier 2 repositories (the control repository, the toolset
+ * repository, the documentation vault) commit in their primary working tree, and so do
+ * the AI-tooling files of a product repository (AGENTS.md or CLAUDE.md at any depth, and
+ * anything under the repository's .claude/), so this guard must never block them.
  *
  * Which repository is which comes from the tier record the polyrepo-steward exports:
  * $SKILLSPOKE_CC/.polyrepo/repository-tiers.json, a JSON object mapping each
@@ -26,7 +32,8 @@
  *   4. target outside every "product" repository        -> exit 0
  *   5. target under the repository's .worktrees/        -> exit 0
  *   6. target in a linked worktree                      -> exit 0
- *   7. otherwise (primary tree of a product repository) -> exit 2
+ *   7. target is an AI-tooling file (tier 2 by content) -> exit 0
+ *   8. otherwise (a product file in the primary tree)   -> exit 2
  */
 
 const fs = require('node:fs');
@@ -39,6 +46,8 @@ const TIER_RECORD = path.join('.polyrepo', 'repository-tiers.json');
 const PRODUCT_TIER = 'product';
 const KNOWN_TIERS = new Set([PRODUCT_TIER, 'tooling']);
 const WORKTREE_DIR = '.worktrees';
+const AI_TOOLING_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
+const AI_TOOLING_DIR = '.claude';
 const MAX_ASCENT = 40;
 
 /** Reads all of stdin synchronously; returns '' when unreadable. */
@@ -136,6 +145,16 @@ function inLinkedWorktree(dir) {
   return Boolean(gitDir && commonDir && path.resolve(dir, gitDir) !== path.resolve(dir, commonDir));
 }
 
+/**
+ * True when the target is a file that exists because of AI, so it is tier 2 whatever repository
+ * holds it: an AGENTS.md or CLAUDE.md at any depth, or anything under the repository's .claude/.
+ */
+function isAiToolingFile(repoRoot, realDir, target) {
+  const relative = path.relative(repoRoot, path.join(realDir, path.basename(target)));
+  if (AI_TOOLING_FILES.has(path.basename(relative))) return true;
+  return relative.split(path.sep)[0] === AI_TOOLING_DIR;
+}
+
 function main() {
   const raw = readStdin();
   if (!raw.trim()) deny(['The guard received no hook input and cannot establish the write target.']);
@@ -159,13 +178,14 @@ function main() {
   if (!repoRoot) process.exit(0);
   if (isWithin(path.join(repoRoot, WORKTREE_DIR), realDir)) process.exit(0);
   if (inLinkedWorktree(realDir)) process.exit(0);
+  if (isAiToolingFile(repoRoot, realDir, target)) process.exit(0);
 
   const repoName = path.basename(repoRoot);
   deny([
     `File: ${target}`,
     `Repo: ${repoRoot} (a product repository, primary working tree)`,
     '',
-    'Product repositories take all work in worktrees. Create or reuse one and work there:',
+    'Product files in a product repository take all work in worktrees (AGENTS.md, CLAUDE.md and .claude/ are tier 2 and are not blocked). Create or reuse one and work there:',
     '',
     `  git -C ${repoRoot} worktree list`,
     `  git -C ${repoRoot} worktree add -b <type>/<bead-id> ${path.join(repoRoot, WORKTREE_DIR)}/<bead-id>-${repoName}`,
