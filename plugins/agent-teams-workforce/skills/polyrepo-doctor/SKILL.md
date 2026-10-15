@@ -5,8 +5,8 @@ description: >-
   disk, GitHub and the manifest; check that every repo carries the current shared
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
   deprecated repo has an open pull request; check that every governance entry and
-  knowledge-store pointer still resolves; check the repository-naming document against the
-  naming patterns; check the matrix's stacks against the repositories; check that every
+  knowledge-store pointer still resolves; check the naming patterns, the steward's derived
+  copy, against the vault's naming standard; check the matrix's stacks against the repositories; check that every
   repository records a tier and that the tier export is current. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
 ---
@@ -33,7 +33,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `deprecated-prs` | `deprecated-prs`: every open pull request on GitHub in a repo of the owner whose name starts with `deprecated-` | no deprecated repo has an open pull request |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
-| `naming-doc` | the config's `naming.document` (the vault's `repository-naming.md`) against `naming.patterns` | every pattern has a section, every example matches its section's pattern, deprecation examples and the archive delay agree with the tool |
+| `naming-doc` | `naming.patterns`, the steward's derived copy, against the config's `naming.document`: the vault's canonical resource naming standard, `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` | every pattern has a section, every example matches its section's pattern, deprecation examples and the archive delay agree with the tool |
 | `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name ending in a stack type) is the `repository` of a stack, every stack's `repository` is an active repository, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-renamed`, `stack-repository-inactive`, `stack-repository-missing`, `matrix-invalid`, and `error` when the matrix cannot be read |
 
 The output is one findings list: each finding with its `check`, `subject` (repo or entry),
@@ -68,8 +68,13 @@ are AI tooling, which is tier 2); a repo whose `main` cannot be brought up to `o
 - A governance entry or knowledge pointer that no longer resolves: find where the thing now
   lives and update the entry (**polyrepo-governance** or **polyrepo-info**), or retire it
   with the reason when the thing is gone.
-- A naming-document finding: the document and the config's patterns disagree. Correct the
-  one that is wrong; when that is a naming rule itself, ask the user.
+- A naming-document finding: the config's patterns disagree with the vault's naming standard.
+  The standard is canonical and the patterns are your derived copy of it, so refresh the
+  patterns from the standard. You never edit the standard: when the finding shows the standard
+  itself is incomplete or wrong (for example, a pattern the tool needs has no section in it),
+  hand that to the `filing-clerk`, which files the change or brings the conflict to the owner.
+  A `missing` or `not-configured` finding means `naming.document` does not name the vault
+  standard; set it to the standard's path, never to a copy of your own.
 
 Report exactly what changed and what is still open.
 
@@ -77,3 +82,4 @@ Report exactly what changed and what is still open.
 
 Every write goes through the tool or the owning skill (**polyrepo-repo**,
 **polyrepo-info**, **polyrepo-governance**, **polyrepo-beads**) and its learning protocol.
+Every change to a vault document goes to the `filing-clerk`.

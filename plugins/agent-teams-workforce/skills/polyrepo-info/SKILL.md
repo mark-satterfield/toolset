@@ -39,21 +39,39 @@ reach for ripgrep just because a recipe lists it.
 
 ## The knowledge store
 
-You own `.polyrepo/knowledge.yaml` — durable, non-structural facts about procedures and
-non-architecture documents, heavily *where to find them*. It holds no pointer to where
+You own `.polyrepo/knowledge.yaml` — an index of common questions about procedures and
+non-architecture documents and *where their answers are*. It holds no pointer to where
 functionality lives. Entry shape:
 
 ```yaml
 schema_version: 1
 knowledge:
   - id: <slug>
-    topic: <subject, e.g. "repository naming convention">
+    topic: <the question or subject, e.g. "repository naming convention">
     kind: location | fact | pointer
-    value: <the fact, or where/how to find it, e.g. "vault: docs/.../repository-naming.md">
+    value: <where/how to find the answer, e.g. "vault: docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md">
     resolves: <for a location or pointer: the path it points at; environment variables allowed>
     source: <how it was learned>
 # No date field — git history is the audit trail for when an entry changed.
 ```
+
+What the store may hold follows the owner's storage rule (the steward's instructions, *What
+you store*, carry it in the owner's words): pointers to the canonical source are the default
+storage, and indexes of common questions with where their answers are, caches, relationships
+and information that exists nowhere else are welcome.
+
+- **`location` and `pointer`** — the default. The entry names where the answer is (a path or
+  a vault note) and carries no copy of the answer.
+- **`fact`** — only for information that exists nowhere else, or that is extremely costly to
+  collect: it would take a really long time, or a ton of tokens, to fetch, read, collect and
+  keep updated. For such an entry the store is the official source, and `source` says how it was
+  collected. Any information that has a canonical home elsewhere is a `pointer` to that home,
+  never a `fact` holding a copy of its value, and no entry calls a copy canonical.
+- A value copied into an entry for speed must have a way to stay updated, in sync and fresh:
+  it names its canonical source in `resolves`, and it is checked against that source each time
+  it is used (below). A value with no such way is stored as a pointer instead.
+- When you do not know where something is documented, ask the `filing-clerk` and store the
+  pointer it gives you.
 
 ## Operations (CUDLS)
 
@@ -93,4 +111,5 @@ Structural questions (repos, groups, repo state) belong to **polyrepo-repo** and
 `polyrepo` tool, and questions of what a repository holds or which one owns a piece of
 functionality to the matrix, not here. Deployment order lives in
 `$SKILLSPOKE_CC/deployment/waves*.yaml`. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
-The project's own scripts/tools/procedures registry is **polyrepo-governance**.
+The project's own scripts/tools/procedures registry is **polyrepo-governance**. Every change
+to a vault document goes to the `filing-clerk`.

@@ -18,8 +18,10 @@ caller's request to it, and relay its reply.
 
 ## What the steward does
 
-The polyrepo-steward is the one place for anything about a repository, other than work
-inside a repository's contents:
+The polyrepo-steward is the one place to ask about anything concerning a repository, other
+than work inside a repository's contents. It answers by pointing to the canonical source of
+each answer and is not that source's owner; it is the official source only for what exists
+nowhere else, such as its record of the organizational structure:
 
 - **Answers** from live facts it checks against the repositories and GitHub, and from the
   matrix's stacks: which repos exist, which stack and repo own a function, what a repo holds

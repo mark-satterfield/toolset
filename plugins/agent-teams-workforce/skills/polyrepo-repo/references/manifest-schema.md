@@ -79,7 +79,7 @@ is right. When the manifest disagrees with the architecture documentation, a PRD
 **decision** — not against whichever file looks more canonical.
 
 - If the canonical document reflects the decision, the manifest is the defect. Correct the manifest.
-- If the canonical document contradicts a decision that was actually made, **the canonical document is the defect** and is corrected, in the same turn, everywhere it states the claim. A document never outranks a decision, and a self-authored MUST never outranks industry best practice or AWS Well-Architected.
+- If the canonical document contradicts a decision that was actually made, **the canonical document is the defect** and is corrected, in the same turn, everywhere it states the claim. The steward does not make that correction: a vault document goes to the `filing-clerk`, which corrects it or brings the conflict to the owner. A document never outranks a decision, and a self-authored MUST never outranks industry best practice or AWS Well-Architected.
 
 Either way the fact ends up in exactly one place: the canonical document.
 
