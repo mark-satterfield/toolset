@@ -4835,6 +4835,22 @@ def _rename_plan(
     return _RenamePlan(r, rec, new_path, url, fields, active, steps)
 
 
+def _renamed_path(cfg: Config, path: Path, new: str) -> Path:
+    """Return the folder a clone belongs in once renamed: where the new name places it.
+
+    A name whose pattern implies an app space goes in that space's placement folder for its
+    kind, as a clone of it would, so a rename that changes the space also moves the clone
+    there. A deprecated name, or one that implies no space, keeps the clone's parent folder.
+
+    Returns:
+        The clone's path after the rename.
+
+    """
+    if new.startswith("deprecated-") or cfg.expected_space(new) is None:
+        return path.with_name(new)
+    return _clone_dest(cfg, new)
+
+
 def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: list[str]) -> Path:
     """Check the local clone can move to its new name, appending its steps.
 
@@ -4851,7 +4867,7 @@ def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: li
     if r.ahead:
         msg = f"{r.name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
         raise PolyrepoError(msg)
-    new_path = r.path.with_name(new)
+    new_path = _renamed_path(cfg, r.path, new)
     if new_path != r.path:
         if new_path.exists():
             msg = f"{new_path} already exists"
@@ -4905,6 +4921,7 @@ def _rename_moves(cfg: Config, new: str, plan: _RenamePlan, done: list[str]) -> 
         done.append(f"GitHub {rec['name']} renamed to {new}")
     if r and new_path:
         if new_path != r.path:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
             r.path.rename(new_path)
             done.append(f"moved {r.path} to {new_path}")
         point_origin(new_path, plan.url)
@@ -5183,7 +5200,7 @@ def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -
         if held is None:
             msg = f"{old} has no local clone"
             raise NameSweepError(msg)
-        path = held.path if dry_run or old == new else held.path.with_name(new)
+        path = held.path if dry_run or old == new else _renamed_path(cfg, held.path, new)
         facts = read_facts(_sweep_git, path)
         changes, notes = plan_changes(old, new, facts, cfg.stack_type_names(), namer)
         subjects.append(_Subject(old, new, path, changes, planned_moves(changes, facts), notes))
