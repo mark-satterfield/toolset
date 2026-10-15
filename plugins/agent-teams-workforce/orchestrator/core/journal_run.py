@@ -177,6 +177,47 @@ def unhandled_steps(journal: Journal, registry: Registry) -> list[Step]:
     ]
 
 
+class UnregisteredStepError(LookupError):
+    """Steps a run would reach name a script key or an agent the registry holds no code for."""
+
+    def __init__(self, steps: Sequence[Step]) -> None:
+        """Name every such step, its description and the key or agent it names.
+
+        Args:
+            steps: The steps without code, in walk order; at least one.
+
+        Raises:
+            ValueError: ``steps`` is empty.
+
+        """
+        if not steps:
+            message: str = "UnregisteredStepError needs at least one step"
+            raise ValueError(message)
+        self.stage: str = stage_of(steps[0])
+        self.evidence: tuple[str, ...] = tuple(
+            f"step {step['id']} ({step['description']}): no code is registered for {stage_of(step)!r}" for step in steps
+        )
+        super().__init__("; ".join(self.evidence))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def require_handled(journal: Journal, registry: Registry) -> None:
+    """Check that the registry holds code for every step a run would reach.
+
+    Args:
+        journal: The journal.
+        registry: The code of the steps.
+
+    Raises:
+        UnregisteredStepError: A step that is not done names a script key or an agent the
+            registry holds no code for; it names every such step.
+
+    """
+    unhandled: list[Step] = unhandled_steps(journal, registry)
+    if unhandled:
+        raise UnregisteredStepError(unhandled)
+
+
 def _nested_plans(plans: Sequence[StepPlan]) -> dict[str, tuple[StepPlan, ...]]:
     """Index the child plans a lane states up front by the description of their container.
 
@@ -302,19 +343,14 @@ class JournalRunner:
 
         Raises:
             StepError: Before any step runs, when a step that is not done names a script key or
-                an agent the registry holds no code for; the evidence names every such step.
+                an agent the registry holds no code for; raised from the
+                ``UnregisteredStepError`` that names every such step, whose text it carries.
 
         """
-        unhandled: list[Step] = unhandled_steps(step_journal.read_journal(self.path), self.registry)
-        if unhandled:
-            raise StepError(
-                stage_of(unhandled[0]),
-                OTHER_CAUSE,
-                tuple(
-                    f"step {step['id']} ({step['description']}): no code is registered for {stage_of(step)!r}"
-                    for step in unhandled
-                ),
-            )
+        try:
+            require_handled(step_journal.read_journal(self.path), self.registry)
+        except UnregisteredStepError as error:
+            raise StepError(error.stage, OTHER_CAUSE, error.evidence) from error
         while self.run_next():
             pass
 

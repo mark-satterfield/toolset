@@ -34,12 +34,31 @@ class StepError(Exception):
         *,
         resume_at: float | None = None,
     ) -> None:
-        """Attach the step stage, classified cause and recorded evidence."""
-        super().__init__(f"{stage}: {cause}")
+        """Attach the step stage, classified cause and recorded evidence.
+
+        The message is ``<stage>: <cause>`` followed by the evidence, so the category never
+        stands in for what was found.
+        """
+        detail: str = "; ".join(evidence)
+        super().__init__(f"{stage}: {cause}: {detail}" if detail else f"{stage}: {cause}")
         self.stage = stage
         self.cause = cause
         self.evidence = evidence
         self.resume_at = resume_at
+
+    def __str__(self) -> str:
+        """Return the message, with the chained original error when the message lacks it.
+
+        Returns:
+            The message; when the error was raised from another whose text it does not already
+            contain, followed by ``caused by <Type>: <message>`` of that error.
+
+        """
+        message: str = super().__str__()
+        origin: BaseException | None = self.__cause__
+        if origin is None or (str(origin) and str(origin) in message):
+            return message
+        return f"{message}: caused by {type(origin).__name__}: {origin}"
 
 
 class RetryExhaustedError(StepError):
