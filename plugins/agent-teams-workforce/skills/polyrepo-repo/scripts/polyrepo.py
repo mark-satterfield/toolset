@@ -5523,7 +5523,7 @@ def _update_matrix_names(cfg: Config, plan: _NamesPlan, documents: list[str]) ->
     try:
         steps.extend(_rekey_packages(cfg, plan))
         if documents and plan.documents is not None:
-            steps.append(_sync_documents(cfg, plan.documents.root, documents))
+            steps.append(_sync_documents(cfg, plan.documents, documents))
         steps.append(f"matrix: {matrix_commit(cfg)}")
     except PolyrepoError as exc:
         steps.append(f"matrix NOT updated: {exc}")
@@ -5548,15 +5548,19 @@ def _rekey_packages(cfg: Config, plan: _NamesPlan) -> list[str]:
     return steps
 
 
-def _sync_documents(cfg: Config, root: Path, documents: list[str]) -> str:
+def _sync_documents(cfg: Config, docs: _Documents, documents: list[str]) -> str:
     """Read the documents the sweep changed into the matrix (`atw-matrix sync-documents --paths`).
+
+    The architecture root is the first documents folder the config names, passed as `--arch`,
+    so the command does not depend on ATW_ARCH_PATH being set in the caller's environment.
 
     Returns:
         A line with the command's result.
 
     """
-    paths = [str(root / p) for p in documents]
-    result = matrix_run(cfg, ["sync-documents", "--paths", *paths])
+    paths = [str(docs.root / p) for p in documents]
+    arch = ["--arch", str(docs.root / docs.paths[0])] if docs.paths else []
+    result = matrix_run(cfg, ["sync-documents", *arch, "--paths", *paths])
     return f"matrix sync-documents ({len(paths)} document(s)): {json.dumps(result, sort_keys=True)[:200]}"
 
 
