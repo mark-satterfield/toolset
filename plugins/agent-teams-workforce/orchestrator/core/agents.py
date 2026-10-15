@@ -78,7 +78,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from matrix_contract import ROLE_ENV, ROLES
 
 PLUGIN_COMMANDS: Final = "bin"
-"""The plugin folder whose commands (``atw-matrix``, ``atw-step-journal``, ``atw-expertise``) a session runs by name."""
+"""The plugin folder whose commands (``atw-matrix``, ``atw-step-journal``) a session runs by name."""
 FABLE: Final = "fable"
 FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
 """The model every agent whose definition states Fable runs on while the Fable allowance is spent."""
@@ -427,7 +427,6 @@ class AgentRunner:
             "step": step.stage,
             "agent": step.agent,
             "model": launch_model(agent, launch),
-            "effort": agent.effort,
         }
         record_session(self.context, row)
         step.output.parent.mkdir(parents=True, exist_ok=True)

@@ -15,7 +15,6 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:architecture-baseline
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: teal
 ---

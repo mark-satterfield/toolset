@@ -1,29 +1,21 @@
 """The launcher: a session run as a predefined agent, its settings, and fact-only briefs.
 
-A session is launched as the predefined agent under the name Claude Code knows it by
-(``launch_name``): ``agent-teams-workforce:<name>`` for a plugin agent, and the plain ``<name>``
-for an agent that states ``mcpServers``, which runs from the user-level copy the plugin's
-``sync-user-agents`` hook keeps of it. An agent it starts is named the same way. One agent
-definition file is the single statement of an agent's model, effort, tools,
-skills and MCP servers, of the role it plays (``role``) and of the roles it may start
-(``startsRoles``). The launcher reads those, holds no table of its own and adds no tool or skill.
-
-Claude Code preloads the front matter skills of an agent another agent starts, but not of the
-agent a session is launched as (``--agent``). So the launcher appends the text of the launched
-agent's own front matter skills to its system prompt, and nothing else.
+A session is launched as the predefined agent by its plain front-matter name. Claude Code loads
+the agent's definition (the user-level copy of an agent with ``mcpServers`` wins by precedence),
+preloads the skills its front matter lists, and applies its tools, effort and MCP servers. The
+launcher passes no agent or skill text and computes no flag from them.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final, Literal, TypeIs, get_args
+from typing import Final
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -31,11 +23,6 @@ from .driver_contracts import denied_tools
 from .frontmatter import split_front_matter, string_list
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
-from .skills import PLUGIN_NAME, SkillRoots, installed_plugin, load_skills, skill_plugin, skills_text
-
-# isort: split
-# driver_contracts puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
-from driver_surface_types import CONTROL_REPO_ENV
 
 SAFETY_HOOKS = frozenset({
     "no-verify-blocker.sh",
@@ -44,27 +31,16 @@ SAFETY_HOOKS = frozenset({
     "aws-profile-required.sh",
 })
 
-type Effort = Literal["low", "medium", "high", "xhigh", "max"]
-EFFORTS: Final[tuple[Effort, ...]] = get_args(Effort.__value__)
-type ExpertiseDelivery = Literal["at-launch", "live"]
-"""How an agent is given the Epic's expertise skills.
-
-``at-launch``: the text of the skills known when its session is launched is in its context.
-``live``: the same, and the session also accepts a skill a command prints while it works.
-"""
-EXPERTISE_DELIVERIES: Final[tuple[ExpertiseDelivery, ...]] = get_args(ExpertiseDelivery.__value__)
-LIVE_EXPERTISE: Final[ExpertiseDelivery] = "live"
-
 AGENT_TOOL: Final = "Agent"
 SEND_MESSAGE_TOOL: Final = "SendMessage"
 ASK_TOOL: Final = "AskUserQuestion"
 SPAWN_DEPTH_ENV: Final = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 BACKGROUND_TASKS_ENV: Final = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
-STARTER_ENV: Final[Mapping[str, str]] = MappingProxyType({SPAWN_DEPTH_ENV: "1", BACKGROUND_TASKS_ENV: "1"})
-"""Settings of a session that may start agents: a started agent starts none, and every start blocks."""
+SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({SPAWN_DEPTH_ENV: "1", BACKGROUND_TASKS_ENV: "1"})
+"""Every session's settings: an agent it starts starts none, and every start blocks."""
 BASH_OUTPUT_KEY: Final = "bashOutputMaxChars"
 BASH_OUTPUT_LIMIT: Final = 128_000
-"""Claude Code's largest inline command output, so a skill a command prints is not cut to a preview."""
+"""Claude Code's largest inline command output, so a command's output is not cut to a preview."""
 
 
 class PipelineStoppedError(RuntimeError):
@@ -82,42 +58,27 @@ class SessionSetupError(RuntimeError):
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class AgentDefinition:
-    """One agent definition file, read and validated.
+    """The fields of one agent definition file the runner still reads (held for the owner's ruling).
 
-    ``tools`` and ``disallowed_tools`` are None when the file does not state them, which Claude
-    Code reads differently from an empty list.
+    ``model`` drives the Fable fallback, ``role`` the matrix role and ``tools`` with
+    ``disallowed_tools`` whether the session keeps ``SendMessage``. ``tools`` and
+    ``disallowed_tools`` are None when the file does not state them.
     """
 
     name: str
-    description: str
-    body: str
     model: str
-    effort: Effort
-    max_turns: int | None
+    role: str | None
     tools: tuple[str, ...] | None
     disallowed_tools: tuple[str, ...] | None
-    skills: tuple[str, ...]
-    mcp_servers: tuple[str, ...] | None
-    role: str | None
-    starts_roles: tuple[str, ...]
-    epic_expertise: ExpertiseDelivery | None
 
     def __post_init__(self) -> None:
         """Validate every constructed field, including nested collection entries."""
         strategy: CollectionCheckStrategy = CollectionCheckStrategy.ALL_ITEMS
         check_type(self.name, str)
-        check_type(self.description, str)
-        check_type(self.body, str)
         check_type(self.model, str)
-        check_type(self.effort, Effort)
-        check_type(self.max_turns, int | None)
+        check_type(self.role, str | None)
         check_type(self.tools, tuple[str, ...] | None, collection_check_strategy=strategy)
         check_type(self.disallowed_tools, tuple[str, ...] | None, collection_check_strategy=strategy)
-        check_type(self.skills, tuple[str, ...], collection_check_strategy=strategy)
-        check_type(self.mcp_servers, tuple[str, ...] | None, collection_check_strategy=strategy)
-        check_type(self.role, str | None)
-        check_type(self.starts_roles, tuple[str, ...], collection_check_strategy=strategy)
-        check_type(self.epic_expertise, ExpertiseDelivery | None)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -151,26 +112,6 @@ def read_json(path: Path) -> dict[str, JsonValue]:
     return json_object(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else {}
 
 
-def _is_effort(value: object) -> TypeIs[Effort]:
-    """Narrow a front matter value to a reasoning effort Claude Code accepts.
-
-    Returns:
-        True when the value is one of ``EFFORTS``.
-
-    """
-    return isinstance(value, str) and value in EFFORTS
-
-
-def _is_delivery(value: object) -> TypeIs[ExpertiseDelivery]:
-    """Narrow a front matter value to a way of delivering the Epic's expertise.
-
-    Returns:
-        True when the value is one of ``EXPERTISE_DELIVERIES``.
-
-    """
-    return isinstance(value, str) and value in EXPERTISE_DELIVERIES
-
-
 def _optional_list(metadata: Mapping[str, JsonValue], key: str) -> tuple[str, ...] | None:
     """Read a list field that Claude Code treats differently when it is absent.
 
@@ -181,121 +122,39 @@ def _optional_list(metadata: Mapping[str, JsonValue], key: str) -> tuple[str, ..
     return tuple(string_list(metadata[key])) if key in metadata else None
 
 
-def _max_turns(metadata: Mapping[str, JsonValue], name: str) -> int | None:
-    """Read an agent's turn limit.
-
-    Returns:
-        The limit, or None when the front matter states none.
-
-    Raises:
-        TypeError: The limit is not an integer.
-        ValueError: The limit is not positive.
-
-    """
-    if "maxTurns" not in metadata:
-        return None
-    turns: JsonValue = metadata["maxTurns"]
-    if not isinstance(turns, int) or isinstance(turns, bool):
-        message: str = f"agent {name} maxTurns must be an integer"
-        raise TypeError(message)
-    if turns <= 0:
-        message = f"agent {name} maxTurns must be positive"
-        raise ValueError(message)
-    return turns
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_agent(plugin: Path, name: str) -> AgentDefinition:
-    """Read one agent definition file of the plugin.
+    """Read the model, role and tools of one agent definition file of the plugin.
 
     Returns:
-        The validated definition.
+        The validated fields.
 
     Raises:
         TypeError: An argument or a front matter field has the wrong type.
-        ValueError: The front matter is missing, or states no model, no valid effort, a turn limit
-            that is not positive, or an unknown way of delivering expertise.
+        ValueError: The front matter is missing or states no model.
 
     """
     if not isinstance(plugin, Path) or not isinstance(name, str):
         argument_error: str = "load_agent requires the plugin Path and an agent name"
         raise TypeError(argument_error)
     fields: dict[str, object]
-    body: str
-    fields, body = split_front_matter(
-        (plugin / "agents" / f"{name}.md").read_text(encoding="utf-8"),
-        f"agent {name}",
-    )
+    fields, _ = split_front_matter((plugin / "agents" / f"{name}.md").read_text(encoding="utf-8"), f"agent {name}")
     metadata: dict[str, JsonValue] = json_object(fields)
-    description: JsonValue = metadata.get("description")
-    if not isinstance(description, str):
-        message: str = f"agent {name} description must be a string"
-        raise TypeError(message)
-    turns: int | None = _max_turns(metadata, name)
     model: JsonValue = metadata.get("model")
     if not isinstance(model, str) or not model.strip():
-        message = f"agent {name} must state its model in front matter"
-        raise ValueError(message)
-    effort: JsonValue = metadata.get("effort")
-    if not _is_effort(effort):
-        message = f"agent {name} must state its effort in front matter as one of {list(EFFORTS)}, got {effort!r}"
+        message: str = f"agent {name} must state its model in front matter"
         raise ValueError(message)
     role: JsonValue = metadata.get("role")
     if role is not None and (not isinstance(role, str) or not role.strip()):
         message = f"agent {name} role must be a non-empty string"
         raise TypeError(message)
-    delivery: JsonValue = metadata.get("epicExpertise")
-    if delivery is not None and not _is_delivery(delivery):
-        message = f"agent {name} epicExpertise must be one of {list(EXPERTISE_DELIVERIES)}, got {delivery!r}"
-        raise ValueError(message)
     return AgentDefinition(
         name=name,
-        description=description,
-        body=body,
         model=model.strip(),
-        effort=effort,
-        max_turns=turns,
+        role=role,
         tools=_optional_list(metadata, "tools"),
         disallowed_tools=_optional_list(metadata, "disallowedTools"),
-        skills=tuple(string_list(metadata.get("skills"))),
-        mcp_servers=_optional_list(metadata, "mcpServers"),
-        role=role,
-        starts_roles=tuple(string_list(metadata.get("startsRoles"))),
-        epic_expertise=delivery,
     )
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def started_agents(plugin: Path, launched: AgentDefinition) -> tuple[AgentDefinition, ...]:
-    """Collect the agents a launched agent may start: those whose ``role`` is in its ``startsRoles``.
-
-    Returns:
-        The definitions, sorted by name; empty for an agent that starts none.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-        ValueError: A role the agent may start is played by no other agent.
-
-    """
-    if not isinstance(plugin, Path) or not isinstance(launched, AgentDefinition):
-        argument_error: str = "started_agents requires the plugin Path and an AgentDefinition"
-        raise TypeError(argument_error)
-    if not launched.starts_roles:
-        return ()
-    wanted: frozenset[str] = frozenset(launched.starts_roles)
-    found: list[AgentDefinition] = []
-    path: Path
-    for path in sorted((plugin / "agents").glob("*.md")):
-        fields: dict[str, object]
-        fields, _ = split_front_matter(path.read_text(encoding="utf-8"), f"agent {path.stem}")
-        role: object = fields.get("role")
-        if isinstance(role, str) and role in wanted and path.stem != launched.name:
-            found.append(load_agent(plugin, path.stem))
-    unplayed: list[str] = sorted(wanted - {agent.role for agent in found if agent.role is not None})
-    if unplayed:
-        message: str = f"agent {launched.name} may start roles no agent plays: {unplayed}"
-        raise ValueError(message)
-    return tuple(found)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -374,18 +233,11 @@ def safety_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def session_settings(
-    config: Path,
-    plugin: Path,
-    launched: AgentDefinition,
-    *,
-    starts_agents: bool,
-) -> dict[str, JsonValue]:
+def session_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
     """Build the settings file of one session.
 
-    Every session has the safety hooks. A session that may start agents is limited to one layer
-    of started agents, each started in the foreground. A session that is given expertise while
-    it works takes a whole skill as the output of one command.
+    Every session has the safety hooks, is limited to one layer of started agents, each started
+    in the foreground, and takes a command's output whole.
 
     Returns:
         The session's settings.
@@ -394,97 +246,39 @@ def session_settings(
         TypeError: An argument violates the declared input contract.
 
     """
-    if (
-        not isinstance(config, Path)
-        or not isinstance(plugin, Path)
-        or not isinstance(launched, AgentDefinition)
-        or not isinstance(starts_agents, bool)
-    ):
-        argument_error: str = "session_settings requires two Paths, an AgentDefinition and a flag"
+    if not isinstance(config, Path) or not isinstance(plugin, Path):
+        argument_error: str = "session_settings requires two Paths"
         raise TypeError(argument_error)
     settings: dict[str, JsonValue] = safety_settings(config, plugin)
-    if starts_agents:
-        settings["env"] = dict(STARTER_ENV)
-    if launched.epic_expertise == LIVE_EXPERTISE:
-        settings[BASH_OUTPUT_KEY] = BASH_OUTPUT_LIMIT
+    settings["env"] = dict(SESSION_ENV)
+    settings[BASH_OUTPUT_KEY] = BASH_OUTPUT_LIMIT
     return settings
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def plugin_paths(config: Path, plugin: Path, skills: list[str]) -> list[Path]:
-    """Resolve the installed plugins required by a session's skills.
-
-    Returns:
-        The current plugin followed by the other plugins the skills are qualified with.
-
-    """
-    wanted: set[str] = {owner for skill in skills if (owner := skill_plugin(skill)) is not None} - {PLUGIN_NAME}
-    return [plugin, *(installed_plugin(config, name) for name in sorted(wanted))]
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def mcp_servers(control: Path, config: Path, names: list[str]) -> dict[str, JsonValue]:
-    """Select configured MCP servers required by the agent.
-
-    Returns:
-        Server definitions keyed by requested name.
-
-    Raises:
-        ValueError: Required servers are absent.
-
-    """
-    global_file = config / ".claude.json" if os.environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude.json"
-    found: dict[str, JsonValue] = {}
-    for source in (control / ".mcp.json", global_file):
-        for name, value in json_object(read_json(source).get("mcpServers", {})).items():
-            if name in names and name not in found:
-                found[name] = value
-    missing = set(names) - found.keys()
-    if missing:
-        message = f"required MCP servers are not configured: {sorted(missing)}"
-        raise ValueError(message)
-    return found
-
-
-def _denied(launched: AgentDefinition, *, starts_agents: bool) -> list[str]:
+def _denied(launched: AgentDefinition) -> list[str]:
     """List the tools the command line denies one session.
 
     Every session is denied the driver's list and questions to the user. A session whose
     agent may start agents keeps SendMessage when its definition lists it, so it can continue an
-    agent it started. Whether a session has the Agent tool is its definition's alone.
+    agent it started.
 
     Returns:
         The denied tool names, in the driver's order.
 
     """
     denied: list[str] = list(denied_tools())
-    if starts_agents and SEND_MESSAGE_TOOL in (launched.tools or ()):
+    if may_start_agents(launched) and SEND_MESSAGE_TOOL in (launched.tools or ()):
         denied = [tool for tool in denied if tool != SEND_MESSAGE_TOOL]
     return [*denied, ASK_TOOL]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def launch_name(agent: AgentDefinition) -> str:
-    """Name an agent the way Claude Code knows it, which is the name a session is launched as.
-
-    Claude Code ignores the ``mcpServers`` of an agent a plugin defines, so an agent whose
-    definition states ``mcpServers`` runs from the copy the plugin's ``sync-user-agents`` hook
-    keeps in the user-level agents directory, under its plain name. Every other agent is the
-    plugin's, under the plugin's namespace.
-
-    Returns:
-        ``<name>`` for an agent that states ``mcpServers``, else ``agent-teams-workforce:<name>``.
-
-    """
-    return agent.name if agent.mcp_servers is not None else f"{PLUGIN_NAME}:{agent.name}"
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch: Launch) -> list[str]:
-    """Write private session configuration and construct Claude CLI arguments.
+    """Write private session settings and construct Claude CLI arguments.
 
     Returns:
-        Explicit arguments selecting the agent, settings and MCP configuration.
+        Explicit arguments selecting the agent by its plain name, the model, the settings and
+        the plugin.
 
     Raises:
         TypeError: Session inputs do not satisfy the preparation contract.
@@ -496,52 +290,26 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     if not isinstance(step, AgentStep) or not isinstance(launch, Launch):
         message = "Session preparation requires an AgentStep and a Launch"
         raise TypeError(message)
-    named: str = os.environ.get(CONTROL_REPO_ENV, "").strip()
-    roots: SkillRoots = SkillRoots(plugin, config, Path(named) if named else None)
     launched: AgentDefinition = load_agent(plugin, step.agent)
-    started: tuple[AgentDefinition, ...] = started_agents(plugin, launched)
-    starts_agents: bool = may_start_agents(launched)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    write_json(directory / "settings.json", session_settings(config, plugin, launched, starts_agents=starts_agents))
-    command = [
+    write_json(directory / "settings.json", session_settings(config, plugin))
+    command: list[str] = [
         "--agent",
-        launch_name(launched),
+        step.agent,
         "--model",
         launch_model(launched, launch),
-        "--effort",
-        launched.effort,
         "--setting-sources",
         "project",
         "--settings",
         str(directory / "settings.json"),
-        "--strict-mcp-config",
-    ]
-    everyone: tuple[AgentDefinition, ...] = (launched, *started)
-    names: list[str] = list(dict.fromkeys(name for agent in everyone for name in (agent.mcp_servers or ())))
-    if names:
-        path = directory / "mcp.json"
-        write_json(
-            path,
-            {"mcpServers": mcp_servers(Path(os.environ[CONTROL_REPO_ENV]), config, names)},
-        )
-        path.chmod(0o600)
-        command.extend(["--mcp-config", str(path)])
-    own_skills: str = skills_text(load_skills(roots, launched.skills))
-    if own_skills:
-        prompt: Path = directory / "skills.md"
-        prompt.write_text(own_skills, encoding="utf-8")
-        command.extend(["--append-system-prompt-file", str(prompt)])
-    skills: list[str] = [skill for agent in everyone for skill in agent.skills]
-    for path in plugin_paths(config, plugin, skills):
-        command.extend(["--plugin-dir", str(path)])
-    command.extend([
+        "--plugin-dir",
+        str(plugin),
         "--permission-mode",
         "bypassPermissions",
         "--disallowedTools",
-        *_denied(launched, starts_agents=starts_agents),
-    ])
-    for path in step.add_dirs:
-        command.extend(["--add-dir", str(path.resolve())])
+        *_denied(launched),
+    ]
+    command.extend(arg for path in step.add_dirs for arg in ("--add-dir", str(path.resolve())))
     return command
 
 

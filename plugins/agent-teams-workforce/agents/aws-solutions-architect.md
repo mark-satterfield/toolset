@@ -21,7 +21,6 @@ mcpServers:
 - awslabs-dynamodb-mcp-server
 model: opus
 effort: high
-epicExpertise: live
 maxTurns: 300
 skills:
 - agent-teams-workforce:architecture-baseline
@@ -279,11 +278,6 @@ can name, and every one the `epic brief` lists under `noStack`: it records each 
 the purpose you state and each entry's `homeIn`. An event has no home and is never placed; a
 routing rule is placed in its targets' stack.
 
-Domain expertise comes to you from the Epic's recorded domains. The skills for the domains
-known at launch are already in your context. `atw-expertise match --resource-type <type>`
-names the skills for a resource type you design with and `atw-expertise text <skill>` prints
-one: read it and apply it.
-
 ## Bringing in a specialist
 
 Bring in a specialist only for a gap or a question this PRD actually raises. A PRD with no API
@@ -292,9 +286,9 @@ that your judgment shows needs nothing stays with no one; being approved alone d
 that.
 
 Prefer a question. Most gaps need one question and one answer. Write a request file to
-`specialist-request.schema.json` and start the specialist with the `Agent` tool by the name
-Claude Code knows it by, as the `subagent-contract` skill says (`trd-author`,
-`agent-teams-workforce:uml-diagram-author`), naming that file. The request holds:
+`specialist-request.schema.json` and start the specialist with the `Agent` tool by its plain
+name, as the `subagent-contract` skill says (`trd-author`, `uml-diagram-author`), naming that
+file. The request holds:
 
 - `kind`: `question`, or `task` when a bounded piece of design or a diagram is truly needed;
 - the question, or the task with its exact bounds: what is to be decided and what is not;

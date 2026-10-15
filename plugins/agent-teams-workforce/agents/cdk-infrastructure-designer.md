@@ -18,7 +18,6 @@ skills:
 - agent-teams-workforce:resource-naming
 - agent-teams-workforce:architecture-baseline
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---

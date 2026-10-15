@@ -20,7 +20,6 @@ skills:
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:architecture-baseline
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---

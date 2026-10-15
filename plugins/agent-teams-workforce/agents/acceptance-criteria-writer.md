@@ -16,7 +16,6 @@ skills:
 - agent-teams-workforce:senior-qa
 - agent-teams-workforce:artifact-handoff
 effort: low
-epicExpertise: at-launch
 isolation: worktree
 color: purple
 ---

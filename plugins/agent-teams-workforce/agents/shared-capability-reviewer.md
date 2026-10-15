@@ -7,6 +7,7 @@ disallowedTools: AskUserQuestion, Edit, Write, Bash, Agent, Skill
 model: sonnet
 effort: low
 maxTurns: 20
+skills: [agent-teams-workforce:subagent-contract]
 ---
 
 ## Assignment

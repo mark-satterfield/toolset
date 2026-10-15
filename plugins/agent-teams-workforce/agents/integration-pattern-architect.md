@@ -18,7 +18,6 @@ skills:
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:architecture-baseline
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: cyan
 ---

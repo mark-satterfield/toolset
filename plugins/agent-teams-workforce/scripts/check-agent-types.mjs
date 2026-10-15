@@ -14,8 +14,8 @@
 // discovered after the run.
 //
 // The check is mechanical and total: read the raw bytes of every workflows/*.js, collect every
-// quoted agentType literal, and require a matching agents/<name>.md for each one carrying this
-// plugin's prefix.
+// quoted agentType literal, and fail each one that carries this plugin's prefix; a plain name with
+// no agents/<name>.md is reported.
 //
 // NAMES FROM OUTSIDE THIS PLUGIN are reported, never failed. `filing-clerk` is a project-level
 // agent living in the consuming repo's .claude/agents/, which this plugin cannot see and has no
@@ -36,14 +36,11 @@
 // class this file already guards for `agentType`, so it is checked the identical way, with the
 // identical exemption: a name outside this plugin's prefix is REPORTED, never failed.
 //
-// USER-LEVEL AGENTS. Claude Code ignores `mcpServers` on a plugin agent, so every agents/*.md whose
-// frontmatter has an `mcpServers:` entry runs from its copy in ~/.claude/agents/ and is dispatched by
-// its plain name. A plain name of one of them resolves; the same name under this plugin's prefix
-// FAILS, because it runs the plugin copy without its MCP servers. A script that builds the prefix at
-// runtime (`agent-teams-workforce:${x}`) must list, in its USER_LEVEL_AGENTS set, every user-level
-// agent it names other than by a literal agentType, and nothing else. A user-level agent may use
-// ${CLAUDE_PLUGIN_ROOT}, which the sync hook replaces with the install path in the copy, and FAILS
-// on any other plugin-only variable, which nothing resolves in the copy.
+// PLAIN NAMES. Every agent is dispatched by its plain front-matter name; Claude Code picks the
+// definition (the user-level copy of an agent with `mcpServers` wins by precedence). A literal
+// agentType under this plugin's prefix FAILS. A user-level agent may use ${CLAUDE_PLUGIN_ROOT},
+// which the sync hook replaces with the install path in the copy, and FAILS on any other
+// plugin-only variable, which nothing resolves in the copy.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -62,9 +59,6 @@ const userLevel = new Set(userLevelAgentNames(root))
 const PREFIX = 'agent-teams-workforce:'
 const LITERAL = /agentType:\s*(['"])([^'"]+)\1/g
 const COMPUTED = /agentType:\s*(?!['"])[A-Za-z_$][\w$.[\]']*/g
-const PREFIXED_AT_RUNTIME = '`' + PREFIX + '${'
-const USER_LEVEL_SET = /USER_LEVEL_AGENTS\s*=\s*new Set\(\[([^\]]*)\]\)/
-const QUOTED = /(['"])([a-z0-9-]+)\1/g
 
 const files = readdirSync(workflowsDir)
   .filter((f) => f.endsWith('.js'))
@@ -103,8 +97,7 @@ function declaredSkills(raw) {
 }
 
 const missing = []
-const prefixedUserLevel = []
-const rosterGaps = []
+const prefixed = []
 const unresolvable = [...userLevel].filter((name) =>
   UNRESOLVABLE_IN_COPY.test(readFileSync(path.join(agentsDir, `${name}.md`), 'utf8'))
 )
@@ -122,29 +115,13 @@ for (const file of files) {
     references++
     const name = m[2]
     const where = { file, line: lineOf(m.index), name }
-    if (!name.startsWith(PREFIX)) {
-      if (!userLevel.has(name)) external.push(where)
+    if (name.startsWith(PREFIX)) {
+      prefixed.push(where)
       continue
     }
-    const bare = name.slice(PREFIX.length)
-    if (userLevel.has(bare)) prefixedUserLevel.push(where)
-    else if (!defined.has(bare) || !existsSync(path.join(agentsDir, `${bare}.md`))) missing.push(where)
+    if (!defined.has(name) || !existsSync(path.join(agentsDir, `${name}.md`))) external.push(where)
   }
   computed += [...raw.matchAll(COMPUTED)].length
-  // The shared identity block contains every owned name as registry data, not
-  // as a workflow's dynamic routing roster. Its generated copy is checked by
-  // shared-blocks; inspect the actual workflow routing code for roster gaps.
-  const routing = raw.replace(/\/\/ ===== SHARED BLOCK fable [\s\S]*?\/\/ ===== SHARED BLOCK fable — END =====/g, '')
-  if (routing.includes(PREFIXED_AT_RUNTIME)) {
-    const setMatch = routing.match(USER_LEVEL_SET)
-    const listed = new Set(setMatch ? [...setMatch[1].matchAll(QUOTED)].map((q) => q[2]) : [])
-    const literal = new Set([...routing.matchAll(LITERAL)].map((m) => m[2]))
-    const named = new Set(
-      [...routing.matchAll(QUOTED)].map((q) => q[2]).filter((n) => userLevel.has(n) && !literal.has(n))
-    )
-    for (const n of named) if (!listed.has(n)) rosterGaps.push({ file, name: n, why: 'is missing from USER_LEVEL_AGENTS' })
-    for (const n of listed) if (!userLevel.has(n)) rosterGaps.push({ file, name: n, why: 'is in USER_LEVEL_AGENTS but declares no mcpServers' })
-  }
 }
 
 for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
@@ -160,23 +137,11 @@ for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort(
   }
 }
 
-for (const { file, line, name } of missing) {
+for (const { file, line, name } of prefixed) {
   console.log(
-    `FAIL  workflows/${file}:${line}  —  agentType '${name}' has no definition. ` +
-      `Expected agents/${name.slice(PREFIX.length)}.md. A dispatch that cannot resolve produces nothing, ` +
-      `and the run only finds out afterwards.`
+    `FAIL  workflows/${file}:${line}  —  agentType '${name}' carries the plugin prefix. ` +
+      `Dispatch it by its plain name '${name.slice(PREFIX.length)}'.`
   )
-}
-
-for (const { file, line, name } of prefixedUserLevel) {
-  console.log(
-    `FAIL  workflows/${file}:${line}  —  agentType '${name}' names a user-level agent under the plugin prefix. ` +
-      `Dispatch it as '${name.slice(PREFIX.length)}': the plugin copy runs without its MCP servers.`
-  )
-}
-
-for (const { file, name, why } of rosterGaps) {
-  console.log(`FAIL  workflows/${file}  —  '${name}' ${why}; the runtime-prefixed dispatch would name it wrongly.`)
 }
 
 for (const name of unresolvable) {
@@ -188,7 +153,7 @@ for (const name of unresolvable) {
 
 for (const { file, line, name } of external) {
   console.log(
-    `NOTE  workflows/${file}:${line}  —  agentType '${name}' is not a ${PREFIX} agent. ` +
+    `NOTE  workflows/${file}:${line}  —  agentType '${name}' is not an agent of this plugin. ` +
       `It must be provided by the consuming project (.claude/agents/${name}.md); this plugin cannot verify it.`
   )
 }
@@ -209,8 +174,8 @@ for (const { file, name } of externalSkills) {
 }
 
 console.log(
-  missing.length
-    ? `\n${missing.length} of ${references} dispatched agentType(s) resolve to NO agent definition`
+  prefixed.length
+    ? `\n${prefixed.length} of ${references} dispatched agentType(s) carry the plugin prefix`
     : `all ${references - external.length} plugin agentType(s) across ${files.length} workflow scripts resolve to an agents/*.md definition` +
         `${external.length ? ` (plus ${external.length} project-level name(s) listed above)` : ''}` +
         `${computed ? `; ${computed} computed reference(s) were not text-visible` : ''}`
@@ -223,10 +188,4 @@ console.log(
         `${externalSkills.length ? ` (plus ${externalSkills.length} out-of-plugin name(s) listed above)` : ''}`
 )
 
-if (prefixedUserLevel.length || rosterGaps.length) {
-  console.log(`${prefixedUserLevel.length + rosterGaps.length} dispatch(es) name a user-level agent wrongly`)
-}
-
-process.exit(
-  missing.length || missingSkills.length || prefixedUserLevel.length || rosterGaps.length || unresolvable.length ? 1 : 0
-)
+process.exit(prefixed.length || missingSkills.length || unresolvable.length ? 1 : 0)

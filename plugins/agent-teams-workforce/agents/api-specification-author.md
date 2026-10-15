@@ -18,7 +18,6 @@ skills:
 - agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:architecture-baseline
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: purple
 ---

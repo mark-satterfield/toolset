@@ -84,12 +84,6 @@ JOURNALS_DIRECTORY: Final = "step-journals"
 """The one directory, inside the workflow runs directory, that holds every bead's step journal."""
 EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
-AGENTS_DIRECTORY: Final = Path(__file__).resolve().parents[2] / "agents"
-"""The plugin's agent definition files: the registry of the agent names a step may carry."""
-AGENT_NAMESPACE: Final = "agent-teams-workforce:"
-"""Claude Code's namespace for the plugin's agents, the one qualification a step's agent may carry."""
-FRONT_MATTER_FENCE: Final = "---"
-NAME_KEY: Final = "name:"
 
 
 class InputArtifacts(TypedDict):
@@ -210,57 +204,6 @@ class StepRefusedError(StepJournalError):
 
 class JournalLockTimeoutError(StepJournalError):
     """Another process held the journal's lock for the whole wait."""
-
-
-def _definition_name(path: Path) -> str | None:
-    """Read the ``name`` an agent definition file's front matter states.
-
-    Returns:
-        The name, or None when the file has no front matter or states no name.
-
-    """
-    lines: list[str] = path.read_text(encoding="utf-8").splitlines()
-    if not lines or lines[0].strip() != FRONT_MATTER_FENCE:
-        return None
-    end: int = next((index for index, line in enumerate(lines[1:], 1) if line.strip() == FRONT_MATTER_FENCE), 0)
-    names: list[str] = [line.split(":", 1)[1].strip() for line in lines[1:end] if line.startswith(NAME_KEY)]
-    return names[0] if names else None
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def registered_agents(directory: Path = AGENTS_DIRECTORY) -> frozenset[str]:
-    """Name every agent the plugin defines: the front matter ``name`` of each definition file.
-
-    Returns:
-        The names.
-
-    """
-    found: set[str | None] = {_definition_name(path) for path in directory.glob("*.md")}
-    return frozenset(name for name in found if name)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def registered_agent(name: str, directory: Path = AGENTS_DIRECTORY) -> str:
-    """Check an agent name a step is written with, and give the one name the journal records.
-
-    A name may carry Claude Code's namespace for the plugin (``agent-teams-workforce:``); the
-    journal records the agent's front matter ``name`` without it.
-
-    Returns:
-        The agent's front matter name.
-
-    Raises:
-        StepRefusedError: No agent definition of the plugin has that name.
-
-    """
-    own: str = name.removeprefix(AGENT_NAMESPACE)
-    if own not in registered_agents(directory):
-        message: str = (
-            f"no agent named {name!r} is defined in {directory}; name a step's agent by its "
-            "definition's front matter name"
-        )
-        raise StepRefusedError(message)
-    return own
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -461,7 +404,7 @@ def _build_steps(plans: Sequence[StepPlan], refs: dict[str, StepId], known: set[
             "steps": [],
         }
         if "agent" in plan:
-            step["agent"] = registered_agent(plan["agent"])
+            step["agent"] = plan["agent"]
         if "script" in plan:
             step["script"] = plan["script"]
         if inputs:

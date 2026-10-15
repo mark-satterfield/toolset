@@ -21,7 +21,7 @@ export function artifactCapabilityProblems(root) {
       const literal = owner[2]
       const dynamic = owner[3]
       const authorNames = [...source.matchAll(/\bauthor\([^,]+,\s*[A-Z_]+,\s*['"]([^'"]+)['"]/g)].map(m => m[1])
-      const names = (literal ? [literal] : dynamic ? rosterNames : authorNames).map(name => name.replace(/^agent-teams-workforce:/, ''))
+      const names = literal ? [literal] : dynamic ? rosterNames : authorNames
       if (!names.length) problems.push(`${file}: unresolved artifact producer capability`)
       for (const name of names) if (!contracts[name]?.artifactCapable) problems.push(`${file}: artifact producer ${name} requires effective Write and Bash tools`)
     }

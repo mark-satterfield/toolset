@@ -19,7 +19,6 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:wsjf
 effort: medium
-epicExpertise: at-launch
 isolation: worktree
 color: yellow
 ---

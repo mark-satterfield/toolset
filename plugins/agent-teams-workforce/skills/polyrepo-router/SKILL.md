@@ -69,7 +69,7 @@ followed by the actual ask. Or it may be empty.
 2. **If the request is empty:** spawn the steward and ask it to **introduce itself in its
    own voice and ask how it may be of service.**
 
-Spawn it with the Agent tool, `subagent_type: agent-teams-workforce:polyrepo-steward`
+Spawn it with the Agent tool, `subagent_type: polyrepo-steward`
 (fall back to the bare name `polyrepo-steward` if the scoped name does not resolve). Run it
 in the foreground so you can relay its reply.
 

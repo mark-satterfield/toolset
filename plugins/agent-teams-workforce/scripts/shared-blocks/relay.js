@@ -236,7 +236,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
       const callLabel = attempt ? `${label}:machine-recovery${attempt}` : label
       const before = new Set(typeof dispatchFailures === 'undefined' ? [] : dispatchFailures)
       const binding = canonicalJson({ executionId, request, directory: fableInput.relayRequestDir, operation })
-      const out = await dispatch(`WORKFORCE_RELAY_BINDING_V1 ${binding}\nWORKFORCE_RELAY_REQUEST_V1 ${document}`, { label: callLabel, phase, agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low', schema: REGISTERED_SCHEMA, outputMode: 'machine' })
+      const out = await dispatch(`WORKFORCE_RELAY_BINDING_V1 ${binding}\nWORKFORCE_RELAY_REQUEST_V1 ${document}`, { label: callLabel, phase, agentType: 'workflow-command-runner', model: 'sonnet', effort: 'low', schema: REGISTERED_SCHEMA, outputMode: 'machine' })
       if (typeof dispatchFailures !== 'undefined') for (const entry of dispatchFailures) if (!before.has(entry) && entry.label === callLabel && entry.phase === phase) recovered.add(entry)
       if (!out) {
         if (typeof dispatchInterruption !== 'undefined' && dispatchInterruption) return null
@@ -277,7 +277,7 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
    */
   async function exec(dispatch, { label, phase, command, file = null, readRunner = null }, typedAgain = false) {
     const ordinal = captureOrdinal++
-    const runner = { agentType: 'agent-teams-workforce:workflow-command-runner', model: 'sonnet', effort: 'low' }
+    const runner = { agentType: 'workflow-command-runner', model: 'sonnet', effort: 'low' }
     const registered = fableInput.relayExecutionId && fableInput.relayRequestDir && fableInput.relayCaptureScript
     const out = registered
       ? await registeredCommand(dispatch, { label, phase, command }, ordinal)

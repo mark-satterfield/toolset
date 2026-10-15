@@ -5,7 +5,7 @@ tools: Read, Write, Bash, Glob, Grep, Skill
 disallowedTools: Agent, SendMessage, AskUserQuestion, Edit, NotebookEdit
 model: sonnet
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:artifact-handoff]
 ---
 
 # prd-validation-analyst

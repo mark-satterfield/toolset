@@ -18,7 +18,6 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { agentContracts } from './agent-contracts.mjs'
 import { artifactCapabilityProblems } from './artifact-capabilities.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -220,16 +219,8 @@ export const canonicalBlock = (name) => {
     ]
     return fillPlaceholders(name, text, fills)
   }
-  // Registry data is generated from owned definitions; no manually maintained allowlist.
   if (name !== 'fable') return text
-  const core = ['subagent-contract'].map(skill => pluginText(join('skills', skill, 'SKILL.md'))).join('\n\n')
-  return fillPlaceholders(name, text, [
-    ['/* OWNED_AGENT_CONTRACTS */ {}', JSON.stringify(agentContracts(PLUGIN_ROOT))],
-    ["/* OWNED_CORE_CONTRACTS */ ''", JSON.stringify(core)],
-    ["/* OWNED_BASELINE_CONTRACT */ ''", JSON.stringify(pluginText(join('skills', 'architecture-baseline', 'SKILL.md')))],
-    ["/* OWNED_ARTIFACT_CONTRACT */ ''", JSON.stringify(pluginText(join('skills', 'artifact-handoff', 'SKILL.md')))],
-    ['/* DRIVER_SURFACE_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)],
-  ])
+  return fillPlaceholders(name, text, [['/* DRIVER_SURFACE_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)]])
 }
 
 /**

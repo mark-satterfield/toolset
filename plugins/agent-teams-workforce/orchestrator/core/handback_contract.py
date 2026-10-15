@@ -203,7 +203,6 @@ class SessionIdentity(TypedDict):
     step: str
     agent: str
     model: str
-    effort: str
 
 
 class Session(SessionIdentity):
@@ -950,7 +949,6 @@ def session_event(row: Session, state: SessionState) -> SessionEvent:
         "sessionId": row["sessionId"],
         "agent": row["agent"],
         "step": row["step"],
-        "effort": row["effort"],
         "cwd": row["cwd"],
         "phase": row["phase"],
         "model": row["model"],

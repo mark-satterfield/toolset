@@ -67,7 +67,7 @@ const DOMAIN_ROUTES = [
     route: [
       'Workflow({ scriptPath: ".../workflows/prd-creation.js" })',
       'Workflow({ scriptPath: ".../workflows/prd-validation.js" })',
-      'agent-teams-workforce:requirements-clarifier — ambiguity and conflict findings',
+      'requirements-clarifier — ambiguity and conflict findings',
     ],
   },
   {
@@ -93,14 +93,14 @@ const DOMAIN_ROUTES = [
     pattern: /\b(decompos|task breakdown|backlog|wsjf|story|stories|dependency dag|beads?)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/task-decomposition.js" })',
-      'task-decomposer / agent-teams-workforce:wsjf-scorer',
+      'task-decomposer / wsjf-scorer',
     ],
   },
   {
     domain: 'Bug diagnosis',
     pattern: /\b(bug|defect|root cause|repro|reproduce|regression|triage)\b/i,
     route: [
-      'agent-teams-workforce:root-cause-analyst — reproduces a defect and diagnoses its root cause',
+      'root-cause-analyst — reproduces a defect and diagnoses its root cause',
     ],
   },
   {
@@ -108,8 +108,8 @@ const DOMAIN_ROUTES = [
     pattern: /\b(test plan|test strateg|test design|coverage|tdd|failing test|red phase)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/tdd-red.js" })',
-      'agent-teams-workforce:tdd-unit-test-generator — failing tests from acceptance criteria',
-      'agent-teams-workforce:test-coverage-gap-reviewer — which acceptance criteria lack a covering test',
+      'tdd-unit-test-generator — failing tests from acceptance criteria',
+      'test-coverage-gap-reviewer — which acceptance criteria lack a covering test',
     ],
   },
   {
@@ -117,7 +117,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(refactor|complexity|duplication|optimi[sz]|performance|cold start|bundle size)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/tdd-refactor.js" })',
-      'agent-teams-workforce:complexity-analyzer — advises, read-only',
+      'complexity-analyzer — advises, read-only',
     ],
   },
   {
@@ -127,7 +127,7 @@ const DOMAIN_ROUTES = [
     route: [
       'Workflow({ scriptPath: ".../workflows/adversarial.js" })',
       'infrastructure-security-scanner',
-      'agent-teams-workforce:dependency-cve-auditor',
+      'dependency-cve-auditor',
     ],
   },
   {
@@ -136,7 +136,7 @@ const DOMAIN_ROUTES = [
     route: [
       'Workflow({ scriptPath: ".../workflows/deploy.js" })',
       'cdk-stack-author — the CDK stacks a deploy rolls out',
-      'agent-teams-workforce:cdk-infrastructure-drift-detector — drift between deployed and CDK state',
+      'cdk-infrastructure-drift-detector — drift between deployed and CDK state',
     ],
   },
   {
@@ -144,7 +144,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(integration test|e2e|end-to-end|contract test|event flow|smoke test)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/integration.js" })',
-      'agent-teams-workforce:integration-testing-lead',
+      'integration-testing-lead',
     ],
   },
   {
@@ -152,7 +152,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(readme|changelog|user guide|api doc|documentation)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/documentation.js" })',
-      'agent-teams-workforce:documentation-currency-auditor — which docs a change left stale, and whose they are',
+      'documentation-currency-auditor — which docs a change left stale, and whose they are',
     ],
   },
 ];

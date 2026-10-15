@@ -27,9 +27,8 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
 - `claude --version`: `2.1.296 (Claude Code)`.
 - `claude --help` (same version). The flags this design relies on: `-p`, `--output-format
   stream-json`, `--verbose`, `--agent <agent>`, `--agents <json-or-file>` ("with --print the path
-  to a file that holds one"), `--model` (aliases include `fable`, `opus`, `sonnet`), `--effort`
-  (`low`, `medium`, `high`, `xhigh`, `max`), `--session-id <uuid>`, `-r/--resume`,
-  `--setting-sources`, `--settings <file-or-json>`, `--strict-mcp-config`, `--mcp-config`,
+  to a file that holds one"), `--model` (aliases include `fable`, `opus`, `sonnet`),
+  `--session-id <uuid>`, `-r/--resume`, `--setting-sources`, `--settings <file-or-json>`,
   `--plugin-dir`, `--permission-mode`, `--disallowedTools`, `--add-dir`. `--bare` makes
   Anthropic auth "strictly ANTHROPIC_API_KEY or apiKeyHelper (OAuth and keychain are never read)".
 - Context7 `/websites/code_claude`:
@@ -80,7 +79,7 @@ Layout:
 | Path | Holds |
 |---|---|
 | `<orch>/run.py` | argument parsing, the flow registry, handback writing, signal handling, the top-level handler of section 6.7 |
-| `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `skills.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
+| `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
 | `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
 | `<orch>/port_journal.py` | builds the step journal of a bead that has saved run data and no journal; the driver's `journalport.py` calls it |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
@@ -183,7 +182,7 @@ The dispatch result (the handback, section 4.4) is assembled from the journal's 
 ### 2.2 How `scripts/portfolio/` and the other tools are called
 
 **Decision.** In-process import for every `scripts/portfolio/` module the flow uses (`matrixstore`,
-`matrixsync`, `matrixreview`, `matrixquery`, `matrixexpertise`, `beadgraph`, `beadwrite`,
+`matrixsync`, `matrixreview`, `matrixquery`, `beadgraph`, `beadwrite`,
 `hierarchy`, `elaboration`, `storyedges`, `cdsbundles`, `specui`, `archstate`).
 Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through
 `beadgraph.run_bd`), `git`, `gh`, `uv run <plugin>/skills/polyrepo-repo/scripts/polyrepo.py <cmd>
@@ -228,7 +227,8 @@ exactly:
 
 It carries no instructions, no rules, no procedures, no schemas and no file content. Everything
 else an agent needs is in its definition (`<plugin>/agents/<name>.md`) and in the skills its
-front matter names, whose text the launcher puts in the agent's context (section 5.1). The
+front matter names, which Claude Code loads when the session starts as that agent, or the skills
+it loads itself with the Skill tool (section 5.1). The
 validation errors of a corrective retry are written by Python to a file and listed as one more
 input.
 
@@ -391,7 +391,7 @@ no phase is inferred. No counter is shown that the records cannot compute.
 
 ## 5. Agent runner (S02 item 5)
 
-### 5.1 The headless CLI, with the agent and its skills loaded by `--agent`
+### 5.1 The headless CLI, with the agent started by name
 
 **Decision.** Each agent step runs the Claude Code CLI as a subprocess (`claude -p`), not the Agent
 SDK. Reasons: the driver already starts, supervises, kills and costs `claude` processes
@@ -399,28 +399,30 @@ SDK. Reasons: the driver already starts, supervises, kills and costs `claude` pr
 installed (section 0) and its own documentation says it passes its options to "the CLI subprocess",
 so it would add a dependency and run the same binary.
 
-The launcher (`core/agent_context.py`) loads the agent's definition and its skills; the prompt is
-only the brief (section 2.3):
+An agent is defined in one place, its own definition file. The launcher (`core/agent_context.py`)
+starts the session as that agent by name; Claude Code loads the agent, and the prompt is only the
+brief (section 2.3):
 
-1. It reads `<plugin>/agents/<agent>.md`: its front matter and its body (`load_agent`). A
-   definition must state `model` and `effort`.
-2. It launches the session as the predefined agent under the name Claude Code knows it by
-   (`agent_context.launch_name`): `--agent <agent>` for an agent whose definition states
-   `mcpServers`, which Claude Code ignores for a plugin agent, so it runs from the user-level copy
-   (`~/.claude/agents/`) the plugin's `hooks/sync-user-agents.cjs` keeps at SessionStart and when
-   `installed_plugins.json` changes; `--agent agent-teams-workforce:<agent>` for every other. The agent's tools, disallowed tools, skills, model,
-   effort and turn limit are its front matter's; the launcher writes no agent definition and adds
-   no tool or skill. `--model` is the definition's model, or `opus` in its place on a Fable
-   fallback (section 5.5).
-3. Claude Code preloads the front matter skills of an agent another agent starts, but not of the
-   agent a session is launched as. The launcher writes the full text of the launched agent's own
-   front matter skills to `<session dir>/skills.md` and passes it with
-   `--append-system-prompt-file`.
-4. An agent the launched agent starts is named the same way and runs with its own front matter. The step journal records every
-   agent by its front matter `name`.
+1. The launcher reads from `<plugin>/agents/<agent>.md` only the front matter fields it decides
+   something with (`load_agent`): `model` (required; it drives the Fable fallback), `role` (the
+   matrix role, section 5.2) and `tools` with `disallowedTools` (whether the session keeps
+   `SendMessage`). It reads no body and no skill.
+2. It launches the session with `--agent <agent>`, the agent's plain front matter `name`, for
+   every agent. Claude Code loads the definition: its body, tools, disallowed tools, model,
+   effort, MCP servers, turn limit and front matter skills. An agent whose definition states
+   `mcpServers` (which Claude Code ignores for a plugin agent) runs from the user-level copy in
+   `~/.claude/agents/` that the plugin's `hooks/sync-user-agents.cjs` keeps; by Claude Code's name
+   precedence the user-level copy wins over the plugin agent of the same plain name. The launcher
+   writes no agent definition, no skill text and no MCP configuration, and adds no tool or skill.
+   `--model` is the definition's model, or `opus` in its place on a Fable fallback (section 5.5).
+3. Any agent loads any other skill on demand with the Skill tool, with that skill's scripts and
+   relative paths intact. No code reads a skill's text and feeds it to an agent.
+4. An agent the launched agent starts is named the same way, by its plain name, and runs with its
+   own front matter. `scripts/check-agent-types.mjs` fails a prefixed agent name in the plugin.
+   The step journal records the agent name a step is planned with.
 5. The brief is written on stdin.
 
-No schema text, rule text or file content is placed in the brief.
+No schema text, rule text, agent text, skill text or file content is placed in the brief.
 
 **Minimum CLI version.** The runner requires 2.1.281 or later (section 0). Before its
 first session the runner reads `claude --version` once; a version below 2.1.281, or one it cannot
@@ -431,22 +433,29 @@ parse, is a session setup failure (classification `setup`) before any session st
 ```
 claude -p --output-format stream-json --verbose
   --session-id <uuid>            (or --resume <uuid> to continue a session)
-  --agent <agent | agent-teams-workforce:agent>   (launch_name)
-  --model <model> --effort <effort>
+  --agent <agent>                (the plain front matter name)
+  --model <model>
   --setting-sources project
   --settings <session dir>/settings.json
-  --strict-mcp-config [--mcp-config <session dir>/mcp.json]
-  --plugin-dir <plugin> [--plugin-dir <other plugin installPath> ...]
+  --plugin-dir <plugin>
   --permission-mode bypassPermissions
-  [--append-system-prompt-file <session dir>/skills.md]
   --disallowedTools <headlessenv.DENIED_TOOLS and AskUserQuestion>
   --add-dir <each directory the launch names>
+```
+
+For example, the launch of `aws-solutions-architect` (`--disallowedTools` list shortened):
+
+```
+claude -p --output-format stream-json --verbose --session-id <uuid>
+  --agent aws-solutions-architect --model opus --setting-sources project
+  --settings <session dir>/settings.json --plugin-dir <plugin>
+  --permission-mode bypassPermissions --disallowedTools WebFetch WebSearch ... AskUserQuestion
 ```
 
 - **Working directory.** A per-session directory outside every repository,
   `<temporary directory>/atw-session-<session id>/`, made before the session and removed after it.
   It is named for the session id, so a later dispatch that resumes the id runs in a directory of
-  the same name. It holds `settings.json`, `skills.md` and `mcp.json`. Reason: with the working
+  the same name. It holds `settings.json`. Reason: with the working
   directory inside `<control>`, Claude Code auto-discovers the control repository's
   `AGENTS.md`/`CLAUDE.md` and the ones above it; an Epic agent needs none of them, because its
   brief names every path it reads and its definition and skills hold its rules.
@@ -457,20 +466,15 @@ claude -p --output-format stream-json --verbose
   `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
   `aws-profile-required.sh` (a constant list, matched by script file name, so the hook commands
   themselves are read from the owner's file); one `PostToolUse` hook on `Write|Edit` that runs
-  `<orch>/hooks/python-quality.py`; for a session that may start agents,
-  `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so a
-  started agent starts none and every start blocks; and, for an agent whose `epicExpertise` is
-  `live`, `bashOutputMaxChars` at Claude Code's largest value, so a skill a command prints reaches
-  the session whole.
-- **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce`. For every skill
-  that the launched agent, or an agent it may start, names with another plugin's prefix (for
-  example `cds:`), the launcher adds that plugin's install path from
-  `<config>/plugins/installed_plugins.json`. No other plugin loads.
-- **MCP servers.** The launcher writes `<session dir>/mcp.json` with only the servers the
-  `mcpServers` of the launched agent, and of the agents it may start, name, taking each definition
-  from `<control>/.mcp.json`, then the global config (`agent_context.mcp_servers`), and passes it
-  with `--strict-mcp-config`. A named server that neither file defines is a session setup failure.
-  With none named, `--mcp-config` is omitted and no server loads.
+  `<orch>/hooks/python-quality.py`; `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` and
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so a started agent starts none and every start
+  blocks; and `bashOutputMaxChars` at Claude Code's largest value, so a command's output reaches
+  the session whole. The settings are the same for every session; none depends on the agent.
+- **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce` and no other
+  plugin. The agent's front matter skills load with the agent (section 5.1); any other skill the
+  agent loads itself with the Skill tool.
+- **MCP servers.** The launcher passes no MCP flag. The servers an agent's front matter
+  `mcpServers` names load with the agent, from its user-level copy (section 5.1).
 - **Tools.** The agent's `tools` and `disallowedTools` are its front matter's alone; an agent has
   the Agent tool only when its front matter gives it. `--disallowedTools` adds the driver's denied
   list and `AskUserQuestion`, so no Epic session waits on a person. An agent whose front matter
@@ -486,8 +490,7 @@ claude -p --output-format stream-json --verbose
   subscription: `breaker.exhausted_reset` reads the subscription windows); `--json-schema` (results
   are files, section 5.6); `--no-session-persistence` (the transcript is the cost record).
 - **Environment.** `headlessenv.child_env(<work>/scratch/<run id>)`, with the plugin's `bin`
-  folder first on `PATH` (so a session runs `atw-matrix`, `atw-step-journal` and `atw-expertise` by
-  name) and `ATW_MATRIX_ROLE` set to the launched agent's `role` when the matrix contract knows it.
+  folder first on `PATH` (so a session runs `atw-matrix` and `atw-step-journal` by name) and `ATW_MATRIX_ROLE` set to the launched agent's `role` when the matrix contract knows it.
 
 ### 5.3 `isolation: worktree` (QUESTIONS 2)
 
@@ -499,8 +502,9 @@ so there is no repository to cut a worktree of.
 
 ### 5.4 The agents the Epic pipeline launches
 
-Model and effort are the definition's front matter (`model`, `effort`); the launcher passes them as
-`--model` and `--effort` and records them in `run.json`. The flow names agents by the `role` their
+Model and effort are the definition's front matter (`model`, `effort`), which Claude Code applies
+when it loads the agent. The launcher passes `--model` (for the Fable fallback, section 5.5) and
+records the model in `run.json`; it passes no effort. The flow names agents by the `role` their
 definitions state, never by name, so the roster of a role is the set of definitions that state it.
 
 | Agent | Role | Launched |
@@ -534,7 +538,7 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   `rate_limit_info` `fablewall.is_refusal` accepts, the runner ends that session, emits a
   `fable-wall` event (the driver records it with `fablewall.record`), and runs **that one step
   again on `opus`**, resuming the same session so its work so far is kept. On the resume the
-  launcher passes `--resume <sessionId> --agent <launch name> --model opus`,
+  launcher passes `--resume <sessionId> --agent <agent> --model opus`,
   together with every other flag of section 5.2. An agent the session starts runs on its own front
   matter model. The model changed, so the retry is reasonable (CONTEXT 7.4). A second refusal, on `opus`,
   fails the step with cause `other`.
@@ -866,7 +870,7 @@ specification is `<plugin>/blueprint/design/matrix.md`.
   second.
 - **Roles.** The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run.
 - **Opening a run.** The open-run step brings the Epic's entry with its requirements, the document
-  entries and the Epic's expertise list up to date in one change.
+  entries up to date in one change.
 
 ## 11. Flow-level decisions
 
