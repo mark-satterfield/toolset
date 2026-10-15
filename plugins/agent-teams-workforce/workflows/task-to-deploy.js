@@ -1591,17 +1591,8 @@ async function auditCdsLive(tree, label) {
   let out = null
   try {
     out = await guardedAgent(
-      `Use the Skill tool to load cds:audit-against-system, then audit the UI files this Task changed against the live Configurable Design System (cds) — the project's design system config and the stylesheets, tokens and components it defines. No mockup was supplied for this Task: its UI was designed with cds, so the live design system is the only standard it is held to.
-
-The files: those the work tree at ${tree} changed against HEAD, untracked included (\`git -C ${shq(tree)} status --porcelain\`), restricted to markup, component, script and stylesheet files. Change no file.
-
-Report every finding as { file (relative to the tree), line, rule (the compliance rule the skill names), value (the offending class, property or literal), ruling, reason (one sentence) }, ruling each:
-- violation: the code styles the UI outside cds (a raw color or length, an inline style, a stylesheet or token of its own, a class cds does not define that carries styling) and must use the cds classes and tokens instead;
-- allowed: it carries no styling (a behaviour or test hook, a third-party library's own class);
-- cds-gap: the UI needs something the configured design system does not supply; name the missing configuration or capability and the evidence.
-
-Return \`audited\` true with the files you audited and the findings (an empty list when there are none), or \`audited\` false with \`error\` naming what stopped the audit.`,
-      { label, phase: currentPhase || phaseTitle('cds-audit'), schema: LIVE_AUDIT_SCHEMA }
+      `Audit the UI files this Task changed in the work tree at ${tree} against the live Configurable Design System (cds). No mockup or cds bundle was supplied for this Task. The changed files: \`git -C ${shq(tree)} status --porcelain\`.`,
+      { agentType: 'cds-live-auditor', label, phase: currentPhase || phaseTitle('cds-audit'), schema: LIVE_AUDIT_SCHEMA }
     )
   } catch (err) {
     return { error: String((err && err.message) || err).slice(0, 300), scriptVersion: 'audit-against-system' }

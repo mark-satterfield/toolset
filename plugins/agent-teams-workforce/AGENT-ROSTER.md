@@ -277,6 +277,7 @@ shown the answer is not a checker.
 - **test-failure-parser** — Extracts concrete failing test identifiers and errors from a saved test log without rerunning tests.
 - **prd-validation-analyst** — Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.
 - **cds-finding-reviewer** — Independently classifies findings from the CDS audit against the configured design system.
+- **cds-live-auditor** — Audits the UI files a Task changed against the live Configurable Design System when no mockup or cds bundle was supplied, and rules each finding.
 - **shared-capability-reviewer** — In the Reuse Audit of `task-to-deploy`, rules whether a definition the Task added duplicates a behaviour a shared capability provides.
 - **cds-ui-implementer** — Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.
 

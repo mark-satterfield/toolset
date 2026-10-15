@@ -4,7 +4,7 @@ description: Executes one workflow-supplied checksum-guarded deterministic comma
 model: sonnet
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
-skills: [artifact-handoff]
+skills: [agent-teams-workforce:artifact-handoff]
 maxTurns: 16
 effort: low
 ---
