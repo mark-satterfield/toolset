@@ -11,7 +11,8 @@ input paths and an output path. It names only the inputs this step needs. The sk
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
 Start another agent only when your definition has a `startsRoles` list, and only agents with
-those roles. An agent that was started by another agent starts no one. Never invoke a Workflow
+those roles, each by its plugin name (`agent-teams-workforce:<name>`, for example
+`agent-teams-workforce:trd-author`). An agent that was started by another agent starts no one. Never invoke a Workflow
 or a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
@@ -47,7 +48,8 @@ with `atw-step-journal` and the journal file its brief names:
 1. Write your own output first: the file your definition names as your first output.
 2. When you start your first agent, add it as a child step of your own step
    (`atw-step-journal add --parent <your step> --agent <agent> --description "<what it does>"
-   --purpose "<why>"`), and add one last child step whose description is "Finish", with yourself
+   --purpose "<why>"`, where `<agent>` is the agent's own name, the `name` its definition states,
+   such as `trd-author`; the command refuses a name no agent definition has), and add one last child step whose description is "Finish", with yourself
    as the agent and your own step in its `inputs`. `--steps-json` adds several child steps in one
    write.
 3. Add each further agent as a child before "Finish" (`--after <sibling id>`). Mark each child

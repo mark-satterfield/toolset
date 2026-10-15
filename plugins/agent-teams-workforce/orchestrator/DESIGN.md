@@ -404,29 +404,23 @@ only the brief (section 2.3):
 
 1. It reads `<plugin>/agents/<agent>.md`: its front matter and its body (`load_agent`). A
    definition must state `model` and `effort`.
-2. It writes `<session dir>/agents.json` (`definitions`). The entry of the launched agent,
-   `atw-<agent>`, holds `description`, `model`, `effort`, `maxTurns` and `mcpServers` where the
-   definition states them, `tools`, `disallowedTools`, and `prompt`: the definition's body followed
-   by the full text of its skills. It has no `skills` list, because Claude Code preloads none for
-   the agent a session is launched as. `model` is the definition's, or `opus` in its place on a
-   Fable fallback (section 5.5). `isolation` is left out (section 5.3).
-3. For an agent whose definition has `startsRoles`, the same file holds one entry for every agent
-   whose `role` is among them: its body as `prompt`, its `skills` list (which Claude Code preloads
-   for an agent started with the Agent tool), its tools, and the Agent tool denied. The launched
-   agent's `tools` then name exactly those agents: `Agent(atw-<a>, atw-<b>, ...)`.
-4. An agent whose definition states `epicExpertise` is also given the skills of the Epic's
-   expertise list (`core/skills.py` `epic_expertise`, from the matrix).
-5. It passes `--agents <session dir>/agents.json --agent atw-<agent>`, and the brief is written on
-   stdin.
+2. It launches the session as the plugin's own agent under its real name:
+   `--agent agent-teams-workforce:<agent>`. The agent's tools, disallowed tools, skills, model,
+   effort and turn limit are its front matter's; the launcher writes no agent definition and adds
+   no tool or skill. `--model` is the definition's model, or `opus` in its place on a Fable
+   fallback (section 5.5).
+3. Claude Code preloads the front matter skills of an agent another agent starts, but not of the
+   agent a session is launched as. The launcher writes the full text of the launched agent's own
+   front matter skills to `<session dir>/skills.md` and passes it with
+   `--append-system-prompt-file`.
+4. An agent the launched agent starts is the plugin's agent of that name
+   (`agent-teams-workforce:<name>`), with its own front matter. The step journal records every
+   agent by its front matter `name`.
+5. The brief is written on stdin.
 
 No schema text, rule text or file content is placed in the brief.
 
-Why a session-local definition and not `--agent agent-teams-workforce:<agent>`: the launcher must
-leave out `isolation`, put the skill text in the launched agent's prompt, limit the agents it may
-start, and set the model on a Fable fallback without editing agent files. The `atw-` prefix keeps
-the name apart from the plugin's own agent.
-
-**Minimum CLI version.** The `--agents` file form needs 2.1.281 or later (section 0). Before its
+**Minimum CLI version.** The runner requires 2.1.281 or later (section 0). Before its
 first session the runner reads `claude --version` once; a version below 2.1.281, or one it cannot
 parse, is a session setup failure (classification `setup`) before any session starts.
 
@@ -435,21 +429,22 @@ parse, is a session setup failure (classification `setup`) before any session st
 ```
 claude -p --output-format stream-json --verbose
   --session-id <uuid>            (or --resume <uuid> to continue a session)
-  --agents <session dir>/agents.json --agent atw-<agent>
+  --agent agent-teams-workforce:<agent>
   --model <model> --effort <effort>
   --setting-sources project
   --settings <session dir>/settings.json
   --strict-mcp-config [--mcp-config <session dir>/mcp.json]
   --plugin-dir <plugin> [--plugin-dir <other plugin installPath> ...]
   --permission-mode bypassPermissions
-  --disallowedTools <headlessenv.DENIED_TOOLS, AskUserQuestion, and Agent unless the agent may start agents>
+  [--append-system-prompt-file <session dir>/skills.md]
+  --disallowedTools <headlessenv.DENIED_TOOLS and AskUserQuestion>
   --add-dir <each directory the launch names>
 ```
 
 - **Working directory.** A per-session directory outside every repository,
   `<temporary directory>/atw-session-<session id>/`, made before the session and removed after it.
   It is named for the session id, so a later dispatch that resumes the id runs in a directory of
-  the same name. It holds `agents.json`, `settings.json` and `mcp.json`. Reason: with the working
+  the same name. It holds `settings.json`, `skills.md` and `mcp.json`. Reason: with the working
   directory inside `<control>`, Claude Code auto-discovers the control repository's
   `AGENTS.md`/`CLAUDE.md` and the ones above it; an Epic agent needs none of them, because its
   brief names every path it reads and its definition and skills hold its rules.
@@ -474,11 +469,11 @@ claude -p --output-format stream-json --verbose
   from `<control>/.mcp.json`, then the global config (`agent_context.mcp_servers`), and passes it
   with `--strict-mcp-config`. A named server that neither file defines is a session setup failure.
   With none named, `--mcp-config` is omitted and no server loads.
-- **Tools.** The agent's `tools` and `disallowedTools` come from its front matter through
-  `agents.json`. `--disallowedTools` adds the driver's denied list and `AskUserQuestion`, so no Epic
-  session waits on a person, and `Agent`, so a session starts no agent. An agent whose definition
-  has `startsRoles` keeps `Agent`, limited as section 5.1 says, and keeps `SendMessage` when its
-  definition lists it, so it can continue an agent it started.
+- **Tools.** The agent's `tools` and `disallowedTools` are its front matter's alone; an agent has
+  the Agent tool only when its front matter gives it. `--disallowedTools` adds the driver's denied
+  list and `AskUserQuestion`, so no Epic session waits on a person. An agent whose front matter
+  gives it the Agent tool keeps `SendMessage` when its front matter lists it, so it can continue an
+  agent it started.
 - **What loads besides.** `<config>` holds `rules`, `skills` and `agents` entries and may hold a
   user `CLAUDE.md`. They are user-level memory and content, not settings files, and
   `--setting-sources` does not exclude them; a different `CLAUDE_CONFIG_DIR` for agent sessions
@@ -494,8 +489,8 @@ claude -p --output-format stream-json --verbose
 
 ### 5.3 `isolation: worktree` (QUESTIONS 2)
 
-**Decision.** Ignored: the launcher leaves `isolation` out of `agents.json` and passes no
-`--worktree`. Every Epic agent writes only under `<work>` (outside every repository) or, for
+**Decision.** The launcher passes no `--worktree` for the launched agent. An agent the launched
+agent starts is the plugin's agent, so its front matter `isolation` applies to it. Every Epic agent writes only under `<work>` (outside every repository) or, for
 `architecture-maintainer`, under `<arch>`, and reads repositories by absolute path; a worktree
 would isolate nothing it writes. The working directory is outside every repository (section 5.2),
 so there is no repository to cut a worktree of.
@@ -523,8 +518,8 @@ definitions state, never by name, so the roster of a role is the set of definiti
 | `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
 | `task-dependency-mapper` | | by the script, under Task edges, when the span has two or more repositories |
 
-An agent whose definition has `startsRoles` is given an `Agent` tool limited to agents with those
-roles, at depth one; an agent started by another agent starts no one. `ATW_MATRIX_ROLE` is the
+An agent whose front matter gives it the Agent tool starts, by its instructions, only agents with
+the roles its `startsRoles` lists, at depth one; an agent started by another agent starts no one. `ATW_MATRIX_ROLE` is the
 launched agent's role, which decides the `atw-matrix` commands it may run.
 
 ### 5.5 Agents declaring `model: fable` (QUESTIONS 1)
@@ -537,13 +532,11 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   `rate_limit_info` `fablewall.is_refusal` accepts, the runner ends that session, emits a
   `fable-wall` event (the driver records it with `fablewall.record`), and runs **that one step
   again on `opus`**, resuming the same session so its work so far is kept. On the resume the
-  launcher rewrites `agents.json` with `model: "opus"` for every definition that states `fable` and
-  passes `--resume <sessionId> --agents <session dir>/agents.json --agent atw-<agent> --model opus`,
-  together with every other flag of section 5.2, so the agent definition and the session model
-  agree. The model changed, so the retry is reasonable (CONTEXT 7.4). A second refusal, on `opus`,
+  launcher passes `--resume <sessionId> --agent agent-teams-workforce:<agent> --model opus`,
+  together with every other flag of section 5.2. An agent the session starts runs on its own front
+  matter model. The model changed, so the retry is reasonable (CONTEXT 7.4). A second refusal, on `opus`,
   fails the step with cause `other`.
-- While the Fable wall stands, every `fable` step starts on `opus` (written the same way into
-  `agents.json` and `--model`). The driver passes `fableUntil` (the epoch from
+- While the Fable wall stands, every `fable` step starts on `opus` (`--model`). The driver passes `fableUntil` (the epoch from
   `fablewall.resets_at()`, or absent) in the dispatch arguments; the orchestrator also honours a
   wall it saw itself during the run.
 - The driver's `fablerecovery.py` serves the build and deploy lanes' Workflow sessions and has no

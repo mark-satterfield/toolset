@@ -70,7 +70,6 @@ from .handback_contract import (
 from .io import JsonValue, json_object, safe_key, write_json
 from .manifest import record_session
 from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError
-from .skills import epic_expertise
 from .tools import Tools
 
 # isort: split
@@ -420,10 +419,7 @@ class AgentRunner:
         fable_spent: bool = (
             self.context.model_policy["fable_blocked"] or self.context.model_policy["fable_until"] > time.time()
         )
-        launch: Launch = Launch(
-            model_replacements=FABLE_REPLACEMENT if fable_spent else MappingProxyType({}),
-            expertise=epic_expertise(self.context.bead, os.environ),
-        )
+        launch: Launch = Launch(model_replacements=FABLE_REPLACEMENT if fable_spent else MappingProxyType({}))
         row: Session = {
             "sessionId": session_id,
             "cwd": str(directory),

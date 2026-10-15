@@ -413,7 +413,6 @@ arc42 documents, the next run's E1 mirrors them, and the architect records what 
 | E12 Story and Spec | `spec_authoring.py` `context()`, `story_bead()`, `spec_document()` accept, `story_document()`; `agents/user-story-writer.md`; `depscore.py` `write-story` | `story-scope` for the stack and the entries the Story builds: documents and headings, constraints, shared capabilities. The stacks outside the Story come from `epic <id> --closure`. | One `describedBy` per document heading the Spec cites for an entry the Story builds, where absent. Nothing for the Story itself: beads holds it (R40). |
 | E13 Tasks | `task_decomposition.py` `context()`, `write_task()`, `retire()`; `agents/task-decomposer.md`; `depscore.py` `write-task` | `work --id <stack id> --not-epic <epic id>` for other Epics' open Tasks that touch the stack (R42); `uses --ids` for the shared capabilities of the entries each Task builds. | Nothing in the matrix. `write-task` writes into each Task the ids of its stack, its components and its shared capabilities, in its text and its `matrix_elements` key (R41). |
 | E14 Task edges | `task_edges.py` `closure()`, `mapper()` accept, `write()` | The dependency relationships between what the Tasks build (Q9). | A dependency the mapper finds between two stacks that the matrix lacks: `link` of its kind between the stacks. |
-| E15 Session setup | `orchestrator/core/skills.py` `epic_expertise()` | `expertise --epic` (Q23) through `atw-matrix`. | Nothing. |
 
 ### PRD work and assessment
 

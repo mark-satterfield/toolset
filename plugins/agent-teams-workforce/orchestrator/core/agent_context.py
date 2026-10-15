@@ -1,14 +1,14 @@
-"""The launcher: session-local definitions, explicitly selected context, and fact-only briefs.
+"""The launcher: a session run as the plugin's own agent, its settings, and fact-only briefs.
 
-One agent definition file is the single statement of an agent's model, effort, tools, skills and
-MCP servers, of the role it plays (``role``), of the roles it may start (``startsRoles``) and of
-whether it is given the Epic's expertise (``epicExpertise``). The launcher reads those and holds
-no table of its own.
+A session is launched as the plugin's predefined agent under its real name
+(``--agent agent-teams-workforce:<name>``), and an agent it starts is the plugin's agent of that
+name too. One agent definition file is the single statement of an agent's model, effort, tools,
+skills and MCP servers, of the role it plays (``role``) and of the roles it may start
+(``startsRoles``). The launcher reads those, holds no table of its own and adds no tool or skill.
 
-Claude Code does not put the text of an agent's front matter skills in a session started with
-``--agent``; it does for an agent that session starts with the Agent tool. So the launcher appends
-the skill text to the launched agent's prompt, and gives every agent that may be started its
-``skills`` list.
+Claude Code preloads the front matter skills of an agent another agent starts, but not of the
+agent a session is launched as (``--agent``). So the launcher appends the text of the launched
+agent's own front matter skills to its system prompt, and nothing else.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .driver_contracts import denied_tools
 from .frontmatter import split_front_matter, string_list
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
-from .skills import PLUGIN_NAME, Skill, SkillRoots, installed_plugin, load_skills, skill_plugin, skills_text
+from .skills import PLUGIN_NAME, SkillRoots, installed_plugin, load_skills, skill_plugin, skills_text
 
 # isort: split
 # driver_contracts puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
@@ -53,7 +53,6 @@ type ExpertiseDelivery = Literal["at-launch", "live"]
 EXPERTISE_DELIVERIES: Final[tuple[ExpertiseDelivery, ...]] = get_args(ExpertiseDelivery.__value__)
 LIVE_EXPERTISE: Final[ExpertiseDelivery] = "live"
 
-AGENT_PREFIX: Final = "atw-"
 AGENT_TOOL: Final = "Agent"
 SEND_MESSAGE_TOOL: Final = "SendMessage"
 ASK_TOOL: Final = "AskUserQuestion"
@@ -125,12 +124,10 @@ class Launch:
     """What one launch decides beyond the agent definitions.
 
     ``model_replacements`` maps a model a definition states to the model used in its place (the
-    runner's fallback when a model's allowance is spent). ``expertise`` is the Epic's expertise
-    list: the skills its domains need.
+    runner's fallback when a model's allowance is spent).
     """
 
     model_replacements: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
-    expertise: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate every constructed field, including nested collection entries."""
@@ -139,7 +136,6 @@ class Launch:
             Mapping[str, str],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         )
-        check_type(self.expertise, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -317,103 +313,16 @@ def launch_model(agent: AgentDefinition, launch: Launch) -> str:
     return launch.model_replacements.get(agent.model, agent.model)
 
 
-def _skill_names(agent: AgentDefinition, launch: Launch) -> tuple[str, ...]:
-    """List the skills an agent is given: its own, then the Epic's expertise when it takes it.
+def may_start_agents(agent: AgentDefinition) -> bool:
+    """Tell whether an agent's front matter gives it the Agent tool.
 
     Returns:
-        The skill names in order, each once.
+        True when its ``tools`` list names the Agent tool, or it lists no tools and does not
+        disallow the Agent tool.
 
     """
-    extra: tuple[str, ...] = launch.expertise if agent.epic_expertise is not None else ()
-    return tuple(dict.fromkeys((*agent.skills, *extra)))
-
-
-def _entry(agent: AgentDefinition, launch: Launch) -> dict[str, JsonValue]:
-    """Build the fields of an ``agents.json`` entry that every agent's entry carries.
-
-    Returns:
-        The description, model, effort and, where its definition states them, the turn limit and
-        the MCP server names.
-
-    """
-    entry: dict[str, JsonValue] = {"description": agent.description}
-    if agent.max_turns is not None:
-        entry["maxTurns"] = agent.max_turns
-    if agent.mcp_servers is not None:
-        entry["mcpServers"] = list(agent.mcp_servers)
-    entry["model"] = launch_model(agent, launch)
-    entry["effort"] = agent.effort
-    return entry
-
-
-def _qualified(name: str) -> str:
-    """Name a skill the way a started agent's ``skills`` list must: with its plugin.
-
-    Returns:
-        The name unchanged when qualified, else qualified with this plugin.
-
-    """
-    return name if skill_plugin(name) is not None else f"{PLUGIN_NAME}:{name}"
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def definitions(
-    roots: SkillRoots,
-    launched: AgentDefinition,
-    started: tuple[AgentDefinition, ...],
-    launch: Launch,
-) -> dict[str, JsonValue]:
-    """Build the ``agents.json`` of one session: the launched agent and every agent it may start.
-
-    The launched agent's prompt ends with the full text of its skills and it has no ``skills``
-    list, because Claude Code preloads none for the agent a session is launched as. An agent it
-    may start keeps its ``skills`` list, which Claude Code does preload, and is denied the Agent
-    tool. Both are given the Epic's expertise skills when their definition takes it.
-
-    Returns:
-        The definitions keyed by the name the session knows each agent by.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-        ValueError: The launched agent may start agents but does not list its own tools.
-
-    """
-    if (
-        not isinstance(roots, SkillRoots)
-        or not isinstance(launched, AgentDefinition)
-        or not isinstance(launch, Launch)
-        or not all(isinstance(agent, AgentDefinition) for agent in started)
-    ):
-        argument_error: str = "definitions requires SkillRoots, AgentDefinitions and a Launch"
-        raise TypeError(argument_error)
-    skills: list[Skill] = load_skills(roots, _skill_names(launched, launch))
-    main: dict[str, JsonValue] = _entry(launched, launch)
-    tools: list[str] | None = list(launched.tools) if launched.tools is not None else None
-    if started:
-        if tools is None:
-            message: str = f"agent {launched.name} may start agents, so it must list its tools"
-            raise ValueError(message)
-        names: str = ", ".join(f"{AGENT_PREFIX}{agent.name}" for agent in started)
-        tools = [tool for tool in tools if tool.split("(", 1)[0] != AGENT_TOOL]
-        tools.append(f"{AGENT_TOOL}({names})")
-    if tools is not None:
-        main["tools"] = list(tools)
-    if launched.disallowed_tools is not None:
-        main["disallowedTools"] = list(launched.disallowed_tools)
-    main["prompt"] = "\n\n".join(part for part in (launched.body, skills_text(skills)) if part)
-    result: dict[str, JsonValue] = {f"{AGENT_PREFIX}{launched.name}": main}
-    agent: AgentDefinition
-    for agent in started:
-        entry: dict[str, JsonValue] = _entry(agent, launch)
-        if agent.tools is not None:
-            entry["tools"] = list(agent.tools)
-        entry["disallowedTools"] = list(dict.fromkeys((*(agent.disallowed_tools or ()), AGENT_TOOL)))
-        helper_skills: list[str] = [_qualified(skill.name) for skill in load_skills(roots, _skill_names(agent, launch))]
-        if helper_skills:
-            entry["skills"] = list(helper_skills)
-        entry["prompt"] = agent.body
-        result[f"{AGENT_PREFIX}{agent.name}"] = entry
-    return result
+    allowed: bool = agent.tools is None or any(tool.split("(", 1)[0] == AGENT_TOOL for tool in agent.tools)
+    return allowed and AGENT_TOOL not in (agent.disallowed_tools or ())
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -538,20 +447,29 @@ def mcp_servers(control: Path, config: Path, names: list[str]) -> dict[str, Json
 def _denied(launched: AgentDefinition, *, starts_agents: bool) -> list[str]:
     """List the tools the command line denies one session.
 
-    Every session is denied the driver's list, the Agent tool and questions to the user. A
-    session that may start agents keeps the Agent tool, and keeps SendMessage when its
-    definition lists it, so it can continue an agent it started.
+    Every session is denied the driver's list and questions to the user. A session whose
+    agent may start agents keeps SendMessage when its definition lists it, so it can continue an
+    agent it started. Whether a session has the Agent tool is its definition's alone.
 
     Returns:
         The denied tool names, in the driver's order.
 
     """
     denied: list[str] = list(denied_tools())
-    if not starts_agents:
-        return [*denied, AGENT_TOOL, ASK_TOOL]
-    if SEND_MESSAGE_TOOL in (launched.tools or ()):
+    if starts_agents and SEND_MESSAGE_TOOL in (launched.tools or ()):
         denied = [tool for tool in denied if tool != SEND_MESSAGE_TOOL]
     return [*denied, ASK_TOOL]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def launch_name(agent: str) -> str:
+    """Name a plugin agent the way a session is launched as it: with the plugin's namespace.
+
+    Returns:
+        ``agent-teams-workforce:<agent>``.
+
+    """
+    return f"{PLUGIN_NAME}:{agent}"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -575,16 +493,12 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     roots: SkillRoots = SkillRoots(plugin, config, Path(named) if named else None)
     launched: AgentDefinition = load_agent(plugin, step.agent)
     started: tuple[AgentDefinition, ...] = started_agents(plugin, launched)
-    starts_agents: bool = bool(started)
-    agents: dict[str, JsonValue] = definitions(roots, launched, started, launch)
+    starts_agents: bool = may_start_agents(launched)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    write_json(directory / "agents.json", agents)
     write_json(directory / "settings.json", session_settings(config, plugin, launched, starts_agents=starts_agents))
     command = [
-        "--agents",
-        str(directory / "agents.json"),
         "--agent",
-        f"{AGENT_PREFIX}{step.agent}",
+        launch_name(step.agent),
         "--model",
         launch_model(launched, launch),
         "--effort",
@@ -605,7 +519,12 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         )
         path.chmod(0o600)
         command.extend(["--mcp-config", str(path)])
-    skills: list[str] = [skill for agent in everyone for skill in _skill_names(agent, launch)]
+    own_skills: str = skills_text(load_skills(roots, launched.skills))
+    if own_skills:
+        prompt: Path = directory / "skills.md"
+        prompt.write_text(own_skills, encoding="utf-8")
+        command.extend(["--append-system-prompt-file", str(prompt)])
+    skills: list[str] = [skill for agent in everyone for skill in agent.skills]
     for path in plugin_paths(config, plugin, skills):
         command.extend(["--plugin-dir", str(path)])
     command.extend([
