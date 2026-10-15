@@ -56,7 +56,7 @@ Its output is the architecture result at the path the context file names. The se
 check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
 result's `addedOrChangedElements` (what the Epic's Stories build): an id the matrix lacks, an entry
 not on the architecture side, an event with no description, an entry built in no stack (for an
-event, one none of whose producers is homed in a stack), or a stack of the `marketing` app;
+event, one none of whose producers is homed in a stack);
 then it records the design in an in-memory copy of the matrix, which is never written, and compares
 it with what `atw-matrix epic` returns from that copy: an entry the result names that the matrix does
 not hold, a requirement the copy does not show as served by the feature the result names, a

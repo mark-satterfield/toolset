@@ -111,8 +111,6 @@ CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that sp
 CREATION_STAGE: Final = "repo-creation"
 WEB_TYPE: Final = "web"
 """The stack type of a web front-end build, as the project's naming standard lists it."""
-MARKETING_APP: Final = "marketing"
-"""The app whose repositories no pipeline step creates or changes."""
 OWNER_KEY: Final = "github_owner"
 POLYREPO_CONFIG: Final = Path(".polyrepo/config.yaml")
 """The polyrepo-steward's configuration, relative to the control repository."""
@@ -416,8 +414,7 @@ def _stack_problem(matrix: Matrix, entry: Entry) -> str | None:
     """Check the stacks an entry is built in.
 
     Returns:
-        One sentence when it is built in no stack, or in a stack of the marketing app; None
-        otherwise.
+        One sentence when it is built in no stack; None otherwise.
 
     """
     stacks: list[EntryId] = placements(matrix, entry.id)
@@ -425,14 +422,6 @@ def _stack_problem(matrix: Matrix, entry: Entry) -> str | None:
         return f"the {AUTHORITY_SIDE} side states no producer of {entry.id} that is homed in a stack"
     if not stacks:
         return f"the {AUTHORITY_SIDE} side states no home for {entry.id}"
-    marketing: list[EntryId] = [
-        stack for stack in stacks if matrix.entry(stack).attributes.get(ATTR_APP) == MARKETING_APP
-    ]
-    if marketing:
-        return (
-            f"{entry.id} is in {', '.join(marketing)}, of the {MARKETING_APP} app, "
-            "whose repositories no pipeline step changes"
-        )
     return None
 
 
@@ -461,8 +450,8 @@ def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[s
     Returns:
         One sentence per text that is not an entry id, and per entry of
         :func:`story_build_entries` that the matrix lacks, that is not on the architecture
-        side, that is an event with no description, that is built in no stack, or that is built
-        in a stack of the marketing app. Empty when the Stories can build every one.
+        side, that is an event with no description, or that is built in no stack. Empty when the
+        Stories can build every one.
 
     """
     unread: list[str] = [
@@ -885,8 +874,7 @@ def _missing(home: RepositoryStacks, built: list[str]) -> MissingRepo:
         The repository's name, the stacks' purpose and the items of what its Story builds.
 
     Raises:
-        StepError: The stacks have more than one app or name none, or belong to the app whose
-            repositories no pipeline step creates.
+        StepError: The stacks have more than one app or name none.
 
     """
     if len(home.apps) != 1:
@@ -894,9 +882,6 @@ def _missing(home: RepositoryStacks, built: list[str]) -> MissingRepo:
             f"{home.name} does not exist, and its stacks {', '.join(home.stacks)} have the apps "
             f"{', '.join(home.apps) or 'none'}: a repository is created in one app space"
         )
-        raise StepError(SPAN, OTHER_CAUSE, (evidence,))
-    if home.apps[0] == MARKETING_APP:
-        evidence = f"{home.name} does not exist, and no {MARKETING_APP} repository is created"
         raise StepError(SPAN, OTHER_CAUSE, (evidence,))
     return {
         KEY_NAME: home.name,
@@ -938,7 +923,7 @@ def _ruling(
     for name, built in grouped.items():
         known: JsonValue = live.get(name.casefold(), {}).get("path")
         path: str | None = str(Path(known).resolve()) if isinstance(known, str) and known else None
-        if path is not None and forbidden(Path(path), control, arch, env_path("SKILLSPOKE_ROOT") / "apps/marketing"):
+        if path is not None and forbidden(Path(path), control, arch):
             raise StepError(SPAN, OTHER_CAUSE, (f"{name} at {path} may hold no product entry",))
         placement: Placement = {
             KEY_REPO_PATH: path,

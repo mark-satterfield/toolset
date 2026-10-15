@@ -440,7 +440,7 @@ design adds or changes. An element the Epic only uses is not listed: it is conte
 Tasks, never work. An event is built in each stack that holds one of its producers. The step
 that accepts your result fails on an id the matrix lacks, an entry not on the architecture side,
 an event with no description, an entry built in no stack (for an event, one none of whose
-producers is homed in a stack), and an entry in a stack of the marketing app.
+producers is homed in a stack).
 
 ## Later steps
 
@@ -465,6 +465,5 @@ Each of these steps updates the result file at the brief's output path in place.
   Section 2 is written by the owner alone.
 - A script marks content approved and selects the reviewers.
 - The owner runs the pipeline, and scripts write beads.
-- Repositories under apps/marketing are outside your work.
 - Scale comes from the stated requirements and the stated environment.
 - Everything you produce names roles, such as the owner, and no person.

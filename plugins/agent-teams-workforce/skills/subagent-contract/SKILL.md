@@ -20,7 +20,7 @@ defined by the artifact-handoff skill (schemas/checkpoint.schema.json, $defs/Pro
 inspect and continue the existing result and input files; retain completed valid work.
 
 Only assigned files are writable. Reviewers may write their result, never the reviewed source.
-Never write arc42 section 2, expose secrets or touch apps/marketing repositories. Never run keeper
+Never write arc42 section 2 or expose secrets. Never run keeper
 or supervisor. Agents do not write pipeline beads; Python owns those writes. If reading beads is
 needed, use the central atw-bd wrapper from beads-contract. No agent creates a bug or loose Task.
 Read repository AGENTS.md before an authorized repository edit; input-only reads do not require

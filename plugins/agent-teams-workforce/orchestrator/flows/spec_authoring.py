@@ -28,7 +28,6 @@ import hierarchy
 import specui
 from matrixquery import story_scope
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
-from matrixtraverse import ATTR_APP
 from recon_contract import KEY_MOCKS_DIR
 from target_contract import KEY_ELEMENT, KEY_ID, KEY_MATRIX_ID, KEY_PUBLISHED_BY, KEY_TRIGGER
 from typeguard import check_type
@@ -94,7 +93,6 @@ from orchestrator.flows.elaboration_files import (
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
 from orchestrator.flows.repo_scoping import (
-    MARKETING_APP,
     BuildContext,
     build_context,
     item_stacks,
@@ -138,8 +136,6 @@ CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that sp
 TASKS_PURPOSE: Final = "The Story has Tasks that name what to build"
 STORY_KEY_PREFIX: Final = "S"
 """The prefix of a Story's key: the span keys its Stories ``S<n>`` in the order it names their repositories."""
-MARKETING_REPOSITORY: Final = f"{MARKETING_APP}-"
-"""The prefix of the name of a repository of the marketing app."""
 
 
 def nonempty(path: Path) -> None:
@@ -404,20 +400,8 @@ def items_by_story(every_build: Mapping[str, JsonValue]) -> dict[str, list[JsonV
     return grouped
 
 
-def _marketing(matrix: Matrix, stack: str | None, repository_name: str | None) -> bool:
-    """Report whether a stack or repository belongs to the marketing app, which no step reads or changes.
-
-    Returns:
-        True when the stack's ``app`` is the marketing app or the repository is a marketing one.
-
-    """
-    found: Entry | None = None if stack is None else matrix.find(as_entry_id(stack))
-    app: JsonValue = None if found is None else found.attributes.get(ATTR_APP)
-    return app == MARKETING_APP or (repository_name or "").startswith(MARKETING_REPOSITORY)
-
-
 def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mapping[str, JsonValue]) -> BuildContext:
-    """List what a Story depends on, without the marketing app.
+    """List what a Story depends on.
 
     Args:
         matrix: The matrix.
@@ -425,14 +409,10 @@ def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mappi
         every_build: What every Story of the Epic builds, by item id.
 
     Returns:
-        ``repo_scoping.build_context`` for the Story, keeping only the rows whose stack and
-        repository are not of the marketing app.
+        ``repo_scoping.build_context`` for the Story.
 
     """
-    found: BuildContext = build_context(matrix, built, items_by_story(every_build))
-    return {
-        "dependsOn": [row for row in found["dependsOn"] if not _marketing(matrix, row["stack"], row["repository"])],
-    }
+    return build_context(matrix, built, items_by_story(every_build))
 
 
 @script_step(SPEC_CONTEXT)
@@ -443,7 +423,7 @@ def context(run: StepRun) -> Completion:
     Story builds in, what ``atw-matrix story-scope`` returns (the documents and headings that
     describe the stack and each entry, the constraints that bind them and the shared
     capabilities they must use); and from ``repo_scoping.build_context``, what the Story depends
-    on outside what it builds, each with its stack and repository, none of the marketing app.
+    on outside what it builds, each with its stack and repository.
 
     Returns:
         The repository, its context file and the PRD as artifacts, with the repository's other

@@ -35,8 +35,7 @@ Story builds (each event item with its `trigger` and `publishedBy`), the stacks 
 in, what `atw-matrix story-scope` returns for each, the documents and headings to read, the shared
 capabilities, the architect's `notesForSpecs`, and `dependsOn` from
 `repo_scoping.build_context` (grouped by `storyKey`), as `task-decomposition.md` describes it.
-`dependsOn` is context, never work, and a row whose stack or repository belongs to the marketing
-app is left out.
+`dependsOn` is context, never work.
 
 The contracts and the data model must have YAML front matter whose `decisionIds` each resolve to a
 file under the architecture root; the criteria must be non-empty. A document that fails its check

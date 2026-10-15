@@ -912,8 +912,7 @@ Story is one repository's share of that. The matrix is used only for each entry'
 architecture-side stack (`authority_holder`) and that stack's repository; a stack that names no
 repository is given the one the naming rules give it. Everything else the Epic reaches is
 context for the Tasks, never work. No agent places anything. Each `story_build_problems` sentence,
-a repository that may hold no product entry (the control repository, the architecture folder, a
-marketing repository), and a missing repository whose stacks have more than one type or more than
+a repository that may hold no product entry (the control repository, the architecture folder), and a missing repository whose stacks have more than one type or more than
 one app each fail the step. It writes `span-elements.json` and `repo-scoping.json` and plans one
 container per repository, each with its first step `spec_authoring.context`. An architecture
 that adds or changes nothing to build fails the step.
@@ -928,7 +927,7 @@ The tool records the stack the new repository holds in the matrix.
   (`service`, `infra`, `lib`, `web` and so on). A repository is a frontend repository when that
   type is `web`.
 - **The app space** is the `app` of the repository's stacks. Stacks of more than one type or more
-  than one app, stacks that name no app, and the `marketing` app fail the step. The folder inside
+  than one app and stacks that name no app fail the step. The folder inside
   the space comes from the config's `templates.placement`, which `polyrepo.py create` applies.
 
 **Owner facts.** Recognised before the first `polyrepo.py create` runs, by a preflight whose

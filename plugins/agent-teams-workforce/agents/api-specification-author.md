@@ -29,7 +29,7 @@ facts and paths. Read the relevant input files and produce the result at the exa
 Python validates, publishes and records it. Never run submission/checkpoint helpers.
  Validation errors, when present, are another input file; repair those specific
 findings and retain valid content. No pipeline run, bead write, agent dispatch or self-approval.
-Never expose secrets, edit section 2, or touch apps/marketing repositories.
+Never expose secrets or edit section 2.
 
 ## Assignment
 
@@ -62,7 +62,7 @@ the shared capabilities they must use); `documents`, each of those documents wit
 its path and the headings to read; `dependsOn`, each relationship from something the Story
 builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
 builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null).
-It is context, never work, and holds nothing of the marketing app. Name each dependency's
+It is context, never work. Name each dependency's
 contract from `dependsOn`. Each event item in `items` carries the event's description and its
 producers; specify the event with that description and those producers.
 Read the documents and headings `documents` names, and only those; cite a document by the

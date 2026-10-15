@@ -135,13 +135,15 @@ hand the facts back for the caller to act on.
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): AI tooling is tier 2 wherever it sits, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
-| Give every non-marketing repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
+| Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Check or repair a repo's development environment | `environment <repo>` (`--fix` repairs it) |
 | Health check and every safe repair, the matrix's stacks and the Python names included | `doctor --fix` |
 
-Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos and `apps/marketing/` are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+Every command that works across repositories covers every app space, the marketing space included. A task that needs a narrower set says so when it runs the command: `--space S` for one app space, `--repo R` (or the repository names a command takes) for named repositories, `--skip-repo R` for `rename`. No repository or space is left out unless the run names the scope.
+
+Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
 
 ### Tiers
 
@@ -196,7 +198,7 @@ worktree, one commit and one pull request opened with `skillspoke-pr`. The repos
 package only `ruff check` runs, because that package cannot be installed until it is released.
 A check that fails is written in the pull request body and the report, and the pull request is
 still opened, so a failure the change caused is fixed on its branch and one that was there before
-is reported. Nothing is merged. A repository under `apps/marketing/` is only reported. `--skip-repo R` is for
+is reported. Nothing is merged. `--skip-repo R` is for
 a repository the owner has put off limits: its references are listed and not edited.
 `--keep-src R` edits a repository except its files under `src/`, which are listed.
 
@@ -220,7 +222,7 @@ passes the names `atw-naming` gives to the template as answers, so a new reposit
 
 ### GitNexus
 
-Every repo except those under `apps/marketing/` has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
+Every repo has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
 
 ### Development environment
 
@@ -319,15 +321,14 @@ stack:<name> --repository <other repo>`) or remove it (`remove stack:<name> --he
 report `"valid": true`. `doctor` reports an active code repository that no stack names, and a
 stack whose repository was renamed, is deprecated or archived, or exists nowhere; `doctor
 --fix` corrects the first three. A stack whose repository exists nowhere may belong to a
-repository elaboration has yet to create, so it is reported and left. The stacks of
-marketing repositories stay as they are.
+repository elaboration has yet to create, so it is reported and left. Marketing repositories
+hold stacks of the `marketing` app like any other repository holds its stacks.
 
 `aws-solutions-architect` starts you when a new element has no repository or stack the
 matrix can name. Answer which existing stack, and so which repository, owns it
 (`find --kinds stack --text "<what it does>"`, then `node stack:<id>`), preferring a suitable
 existing owner, or name the repository that is missing. Repositories do not depend on
-repositories, and control, documentation and marketing repositories hold no product
-element. You record the placement yourself, before you write the answer; no script step
+repositories, and control and documentation repositories hold no product element. You record the placement yourself, before you write the answer; no script step
 records it for you, and the step that accepts your answer only reads back which entries of
 the Epic still have no stack. `atw-matrix epic <epic id> --unlinked` lists them under
 `noStack`: place every one of them and every entry the request names. Placement is a

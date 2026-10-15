@@ -5,8 +5,11 @@
 # JSON object ({"checked", "versions", "anomalies": [{"repo", "detail"}]}) instead, which is
 # what `polyrepo doctor` reads. See references/canonical-repo-state.md.
 #
-# The repos are every non-deprecated, non-archived repo on disk (marketing excluded), in every app space, as the polyrepo tool
-# (`polyrepo.py list`) reports them; deprecated and archived repos are not audited.
+# Usage: audit-fleet.sh [--json] [--space S]
+#
+# The repos are every non-deprecated, non-archived repo on disk, in every app space, as the polyrepo tool
+# (`polyrepo.py list`) reports them; deprecated and archived repos are not audited. `--space S`
+# narrows the audit to the repos of one app space for that run.
 #
 # Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
 #   control repository   required  the variable CONTROL_REPO_ENV names in the pipeline-contracts
@@ -20,7 +23,7 @@
 set -u -o pipefail
 
 JSON=0
-[ "${1:-}" = "--json" ] && JSON=1
+SPACE=""
 fatal() {
   if [ "$JSON" = 1 ]; then
     printf '{"error": "%s"}\n' "$1"
@@ -29,6 +32,15 @@ fatal() {
   fi
   exit 2
 }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON=1 ;;
+    --space) SPACE="${2:-}"; [ -n "$SPACE" ] || fatal "--space needs an app space"; shift ;;
+    *) fatal "unknown argument: $1" ;;
+  esac
+  shift
+done
 
 CONTRACTS_DIR="$(cd "$(dirname "$0")/../../pipeline-contracts/scripts" && pwd)" || fatal "the pipeline-contracts skill scripts directory is missing"
 CONTROL_REPO_VAR="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); from driver_surface_types import CONTROL_REPO_ENV; print(CONTROL_REPO_ENV)' "$CONTRACTS_DIR")" || fatal "could not read CONTROL_REPO_ENV from the pipeline-contracts driver surface"
@@ -39,7 +51,9 @@ POLYREPO="$(cd "$(dirname "$0")/../../polyrepo-repo/scripts" && pwd)/polyrepo.py
 command -v uv >/dev/null 2>&1 || fatal "uv not on PATH (needed to reach the server)"
 PREFIX="$(cd "$CONTROL_REPO" && bd config get issue_prefix)" || fatal "could not read issue_prefix from the beads config in $CONTROL_REPO"
 [ -n "$PREFIX" ] || fatal "the beads config in $CONTROL_REPO sets no issue_prefix"
-REPOS_JSON="$(uv run --quiet "$POLYREPO" list --json)" || fatal "polyrepo list failed: $REPOS_JSON"
+LIST_ARGS=(list --json)
+[ -n "$SPACE" ] && LIST_ARGS+=(--space "$SPACE")
+REPOS_JSON="$(uv run --quiet "$POLYREPO" "${LIST_ARGS[@]}")" || fatal "polyrepo list failed: $REPOS_JSON"
 
 BEADS_REPOS="$REPOS_JSON" BEADS_CONTROL="$CONTROL_REPO" BEADS_SHARED_PORT="$PORT" \
 BEADS_PREFIX="$PREFIX" BEADS_JSON="$JSON" \
@@ -53,8 +67,7 @@ prefix  = os.environ["BEADS_PREFIX"]
 control = os.path.realpath(os.environ["BEADS_CONTROL"])
 paths   = {r["name"]: r["path"] for r in json.loads(os.environ["BEADS_REPOS"])["repos"]
            if r.get("path") and os.path.realpath(r["path"]) != control
-           and r.get("lifecycle") not in ("deprecated", "archived")
-           and r.get("space") != "marketing"}
+           and r.get("lifecycle") not in ("deprecated", "archived")}
 if as_json:
     sys.stdout = io.StringIO()
 

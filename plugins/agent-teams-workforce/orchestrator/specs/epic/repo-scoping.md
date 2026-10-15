@@ -55,13 +55,11 @@ depend on (`task-decomposition.md`), never as work.
 
 `story_build_problems` reports, one sentence each, a text that is not a matrix id, and an entry
 of `story_build_entries` that the matrix lacks, that is not on the architecture side, that is an
-event whose purpose (its description) is empty, that is built in no stack (for an event: none of
-its architecture-side producers is homed in a stack), or that is built in a stack whose `app` is
-`marketing`. The architect's step refuses such a result (`architecture.md`); the span raises the
+event whose purpose (its description) is empty, or that is built in no stack (for an event: none of
+its architecture-side producers is homed in a stack). The architect's step refuses such a result (`architecture.md`); the span raises the
 same problems again as a backstop. The step also fails when the architecture adds or changes
 nothing to build ("the architecture adds or changes nothing to build for <bead>"), and when a
-repository may hold no product entry (the control repository, the architecture folder, a
-marketing repository).
+repository may hold no product entry (the control repository, the architecture folder).
 
 ## The span and a missing repository
 
@@ -77,7 +75,7 @@ The order is fixed, and only the stacks of what the Stories build are reached:
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in
    the inventory. A repository is a frontend repository when the type of its stacks is `web`.
 4. Each name the inventory lacks becomes a missing repository (`_missing`): its stacks must have
-   one app, never `marketing`.
+   one app.
 5. `create_repositories` checks once that the GitHub CLI is signed in as an active member of the
    organisation, then runs `polyrepo create <name> --space <app>`; the `polyrepo` tool takes the
    template from the name. When the

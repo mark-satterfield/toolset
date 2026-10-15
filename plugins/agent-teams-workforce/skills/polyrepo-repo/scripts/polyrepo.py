@@ -32,14 +32,16 @@ Usage:
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
                      [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
-  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--trailer TEXT]
+  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
+  polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
   polyrepo.py tier <path>
   polyrepo.py tiers [--write]
   polyrepo.py set-tier <repo> product|tooling
   polyrepo.py templates-check
-  polyrepo.py beads-setup [repo ...] [--all] [--check] [--dry-run] [--trailer TEXT]
+  polyrepo.py beads-setup [repo ...] [--space S] [--all] [--check] [--dry-run] [--trailer TEXT]
   polyrepo.py beads-fleet [--fix]
-  polyrepo.py environment [repo ...] [--fix]
+  polyrepo.py environment [repo ...] [--space S] [--fix]
+  polyrepo.py python-names [repo ...] [--space S]
   polyrepo.py deprecated-prs [--fix]
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
@@ -1149,7 +1151,6 @@ LIBRARY_STACK_TYPE = "lib"
 EXECUTION_IMPORTED = "imported"
 EXECUTION_EXECUTABLE = "executable"
 PURPOSE_NOT_STATED = "The purpose is not stated."
-MATRIX_SKIP_SPACES = ("marketing",)
 CHECK_PROBLEMS_SHOWN = 5
 HELD_KEYS = ("id", "kind", "name", "side")
 
@@ -3721,8 +3722,7 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         res["environment"] = env_res
         if env_res["problems"]:
             res["environment_error"] = "; ".join(env_res["problems"])
-    if args.space not in GITNEXUS_SKIP_SPACES:
-        res["gitnexus_files"] = gitnexus_install(cfg, dest)
+    res["gitnexus_files"] = gitnexus_install(cfg, dest)
     must(git(dest, "add", "-A"))
     must(
         git(
@@ -3734,25 +3734,21 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         ),
     )
     create_on_github(cfg, name, dest)
-    if args.space not in GITNEXUS_SKIP_SPACES:
-        failure = gitnexus_index(cfg, dest)
-        if failure:
-            res["gitnexus_error"] = failure
+    failure = gitnexus_index(cfg, dest)
+    if failure:
+        res["gitnexus_error"] = failure
 
 
 def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     """Record in the matrix the stack the new repo holds, when it holds one (S1).
 
-    A repo holds a stack when its name ends in a stack type the naming rules list and it is not
-    in a space the matrix leaves alone. A repo that some stack already names as its repository
-    is left as it is. The matrix file is committed after a change.
+    A repo holds a stack when its name ends in a stack type the naming rules list. A repo that
+    some stack already names as its repository is left as it is. The matrix file is committed after a change.
 
     Returns:
         One sentence for each thing done or left.
 
     """
-    if space in MATRIX_SKIP_SPACES:
-        return [f"matrix: left alone; {space} repositories keep their rows as they are"]
     known = read_matrix_stacks(cfg)
     held = [s.id for s in known if s.repository == name]
     if held:
@@ -3795,7 +3791,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         code = 1
     elif res.get("gitnexus_files") is not None:
         log.append("GitNexus installed and indexed once with the pinned version")
-    if args.lifecycle not in LIFECYCLES_INACTIVE and args.space not in BEADS_SKIP_SPACES:
+    if args.lifecycle not in LIFECYCLES_INACTIVE:
         try:
             done = beads_setup(
                 cfg,
@@ -3819,7 +3815,6 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
 # `.venv/bin/python` runs, every declared dependency is installed and importable, and for an
 # infra template `cdk synth --profile dev` succeeds. `doctor` reports a repo that lost any of it.
 
-ENV_SKIP_SPACES = ("marketing",)
 ENV_SYNTH_KINDS = ("infra",)
 ENV_SETUP_TIMEOUT = 1800
 ENV_SYNTH_TIMEOUT = 900
@@ -4022,6 +4017,21 @@ def _env_synth(cfg: Config, r: LocalRepo) -> bool:
     return bool(spec.get("synth", kind in ENV_SYNTH_KINDS))
 
 
+def scope_names(st: State, repos: list[str], space: str | None) -> list[str] | None:
+    """Narrow a command to the named repos and one app space.
+
+    Returns:
+        The repo names in scope, or None when neither names nor a space narrow the command.
+
+    """
+    if not repos and not space:
+        return None
+    names: list[str] = st.resolve(repos) if repos else list(st.local)
+    if not space:
+        return names
+    return [n for n in names if n in st.local and st.local[n].space == space]
+
+
 def environment_findings(st: State, only: list[str] | None = None) -> list[Finding]:
     """Check that every active Python repo has a working environment.
 
@@ -4036,7 +4046,6 @@ def environment_findings(st: State, only: list[str] | None = None) -> list[Findi
         for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower())
         if (only is None or name in only)
         and st.lifecycle(name) not in LIFECYCLES_INACTIVE
-        and r.space not in ENV_SKIP_SPACES
         and os.path.normpath(r.path) != control
         and env_applicable(r.path)
     ]
@@ -4059,7 +4068,7 @@ def cmd_environment(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
-    only = st.resolve(args.repos) if args.repos else None
+    only = scope_names(st, args.repos, args.space)
     findings = environment_findings(st, only)
     if args.fix:
         for f in findings:
@@ -4108,7 +4117,6 @@ BEADS_TRACKED = (
     ".beads/README.md",
 )
 BEADS_REQUIRED = BEADS_TRACKED[:3]
-BEADS_SKIP_SPACES = ("marketing",)
 BEADS_SCRIPTS = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts"
 
 
@@ -4417,8 +4425,8 @@ def _beads_commit(
     return res
 
 
-def beads_setup_findings(st: State) -> list[Finding]:
-    """Check that every active repo carries its beads setup.
+def beads_setup_findings(st: State, space: str | None = None) -> list[Finding]:
+    """Check that every active repo (or every active repo of one app space) carries its beads setup.
 
     The setup is its config files committed, its entry in the fleet list, and a complete
     `.gitignore`.
@@ -4434,8 +4442,8 @@ def beads_setup_findings(st: State) -> list[Finding]:
     for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
         if (
             st.lifecycle(name) in LIFECYCLES_INACTIVE
-            or r.space in BEADS_SKIP_SPACES
             or os.path.normpath(r.path) == control
+            or (space and r.space != space)
         ):
             continue
         missing = [p for p in BEADS_REQUIRED if not (r.path / p).is_file()]
@@ -4485,7 +4493,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
-    findings = beads_setup_findings(st)
+    findings = beads_setup_findings(st, args.space)
     if args.check:
         data: dict[str, object] = {
             "findings": [f.as_dict() for f in findings],
@@ -4549,8 +4557,8 @@ def _beads_setup_names(
     for n, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
         if (
             st.lifecycle(n) in LIFECYCLES_INACTIVE
-            or r.space in BEADS_SKIP_SPACES
             or os.path.normpath(r.path) == control
+            or (args.space and r.space != args.space)
         ):
             continue
         try:
@@ -4813,7 +4821,7 @@ def _rename_plan(
         f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items()),
     )
     active = lc not in LIFECYCLES_INACTIVE
-    if not deprecating and not (r and r.space in MATRIX_SKIP_SPACES):
+    if not deprecating:
         steps.append(f"matrix: move-repository, so every stack that names {old} names {new}")
     if r and new_path:
         steps.append(
@@ -4914,7 +4922,7 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
         man.set_field(new, k, v)
     man.set_field(new, "local_path", None)
     man.save()
-    if not new.startswith("deprecated-") and not (plan.r and plan.r.space in MATRIX_SKIP_SPACES):
+    if not new.startswith("deprecated-"):
         try:
             moved = _seq(matrix_run(cfg, ["move-repository", "--from", old, "--to", new]).get("stacks"), "moved stacks")
             if moved:
@@ -5194,11 +5202,10 @@ def _names_plan(
     """Plan the names that change and sweep every repository for the references.
 
     The repositories that change are swept under their new names; the others under their
-    own. Archived and deprecated repositories are not swept. A repository in a skipped space
-    (marketing) or named in `skip` is swept but never edited, so the plan can report what in
-    it uses a renamed name. A repository whose edits use another repository's renamed
-    package waits on it. A name that cannot be planned or a sweep that fails raises the
-    NameSweepError of `name_sweep`.
+    own. Archived and deprecated repositories are not swept. A repository named in `skip` is
+    swept but never edited, so the plan can report what in it uses a renamed name. A repository
+    whose edits use another repository's renamed package waits on it. A name that cannot be
+    planned or a sweep that fails raises the NameSweepError of `name_sweep`.
 
     Returns:
         The plan.
@@ -5208,10 +5215,9 @@ def _names_plan(
     excludes, _ = _rename_settings(st.cfg)
     given = {n for pair in pairs for n in pair}
     paths: dict[str, Path] = {s.new: s.path for s in subjects}
-    spaces: dict[str, str] = {s.new: (st.local.get(s.old) or st.local[s.new]).space for s in subjects}
     for name, r in st.local.items():
         if name not in given and st.lifecycle(name) not in LIFECYCLES_INACTIVE:
-            paths[name], spaces[name] = r.path, r.space
+            paths[name] = r.path
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         swept = dict(
             zip(
@@ -5222,9 +5228,9 @@ def _names_plan(
         )
     plan = _NamesPlan(subjects, rules, {}, paths, {}, {})
     plan.keep_src = keep_src
-    _sort_edits(plan, swept, spaces, skip)
+    _sort_edits(plan, swept, skip)
     for s in subjects:
-        if s.moves and s.new not in skip and spaces[s.new] not in MATRIX_SKIP_SPACES:
+        if s.moves and s.new not in skip:
             plan.edits.setdefault(s.new, [])
     hit = {label for found in plan.edits.values() for e in found for label in e.labels}
     for s in subjects:
@@ -5237,20 +5243,18 @@ def _names_plan(
 def _sort_edits(
     plan: _NamesPlan,
     swept: dict[str, list[FileEdit]],
-    spaces: dict[str, str],
     skip: set[str],
 ) -> None:
     """Sort what the sweep found into edits to make and edits held back, with the reason for each.
 
-    A marketing repository and a `--skip-repo` repository are only reported; a `--keep-src`
-    repository is edited except for its files under `src/`.
+    A `--skip-repo` repository is only reported; a `--keep-src` repository is edited except for
+    its files under `src/`.
     """
     for name, found in swept.items():
         if not found:
             continue
-        reason = "marketing" if spaces[name] in MATRIX_SKIP_SPACES else "skipped" if name in skip else None
-        if reason:
-            plan.held_back.setdefault(reason, []).extend((name, e) for e in found)
+        if name in skip:
+            plan.held_back.setdefault("skipped", []).extend((name, e) for e in found)
             continue
         kept = [e for e in found if name in plan.keep_src and e.path.startswith("src/")]
         if kept:
@@ -5361,7 +5365,6 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
         lines.append(line)
     for why, rows in sorted(plan.held_back.items()):
         what = {
-            "marketing": "marketing repositories are never edited",
             "kept": "source kept as is by --keep-src",
         }.get(why, "named by --skip-repo")
         lines.extend(f"not edited ({what}) {name}: {e.path}" for name, e in rows)
@@ -6485,7 +6488,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     blocks = _agents_blocks(cfg)
     repos = [
         (r, own)
-        for r in _local_repos(cfg, args.repo)
+        for r in _local_repos(cfg, args.repo, args.space)
         if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name, r.space))
     ]
     write = not args.check and not args.dry_run
@@ -6520,7 +6523,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
 
 
 # GitNexus ---------------------------------------------------------------------------------
-# Every non-marketing repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
+# Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
 # skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in AGENTS.md (an agents-sync
 # block). The sources are files of the control repo named by the config's `gitnexus` section.
 # Re-indexing is `gitnexus-reindex.sh`, which runs the one pinned GitNexus version.
@@ -6528,7 +6531,6 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
 GITNEXUS_RC = ".gitnexusrc"
 GITNEXUS_SKILLS = ".claude/skills/gitnexus"
 GITNEXUS_IGNORE = ".gitnexus"
-GITNEXUS_SKIP_SPACES = ("marketing",)
 GITNEXUS_INDEX_TIMEOUT = 3600
 
 
@@ -6652,18 +6654,14 @@ def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: b
 
 
 def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
-    """Give every non-marketing repo its GitNexus configuration and skills, committing and pushing each.
+    """Give every repo its GitNexus configuration and skills, committing and pushing each.
 
     Returns:
         0 when every repo is current (or was brought current and pushed), else 1.
 
     """
     src = _gitnexus_sources(cfg)
-    repos = [
-        r
-        for r in _local_repos(cfg, args.repo)
-        if not r.name.startswith("deprecated-") and r.space not in GITNEXUS_SKIP_SPACES
-    ]
+    repos = [r for r in _local_repos(cfg, args.repo, args.space) if not r.name.startswith("deprecated-")]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))
@@ -7110,11 +7108,10 @@ def _name_checker(cfg: Config) -> Checker:
 def python_names_findings(st: State, only: list[str] | None = None) -> list[Finding]:
     """Check every active Python repo's names and layout against the naming standard.
 
-    For each repository that has a `pyproject.toml` (the control repo and `apps/marketing/` are
-    left out) the three `atw-naming check` commands run against what it has: the `name` in
-    `pyproject.toml`, the source package and its folder under `src`. `src` and `tests` must
-    exist and no `__init__.py` may sit in an app or team folder. The check is deterministic:
-    nothing is judged.
+    For each repository that has a `pyproject.toml` (the control repo is left out) the three
+    `atw-naming check` commands run against what it has: the `name` in `pyproject.toml`, the
+    source package and its folder under `src`. `src` and `tests` must exist and no `__init__.py`
+    may sit in an app or team folder. The check is deterministic: nothing is judged.
 
     Returns:
         One finding per failed check or missing part.
@@ -7128,7 +7125,6 @@ def python_names_findings(st: State, only: list[str] | None = None) -> list[Find
         for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower())
         if (only is None or name in only)
         and st.lifecycle(name) not in LIFECYCLES_INACTIVE
-        and r.space not in MATRIX_SKIP_SPACES
         and os.path.normpath(r.path) != control
         and (r.path / "pyproject.toml").is_file()
     ]
@@ -7155,7 +7151,7 @@ def cmd_python_names(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
-    only = st.resolve(args.repos) if args.repos else None
+    only = scope_names(st, args.repos, args.space)
     findings = python_names_findings(st, only)
     data: dict[str, object] = {
         "findings": [f.as_dict() for f in findings],
@@ -7492,7 +7488,7 @@ def _matrix_findings(st: State) -> list[Finding]:
         if name in named or st.lifecycle(name) in LIFECYCLES_INACTIVE or (r is None and st.gh.get(name) is None):
             continue
         space = r.space if r else cfg.expected_space(name)
-        if space is None or space in MATRIX_SKIP_SPACES or not holds_stack(name, types):
+        if space is None or not holds_stack(name, types):
             continue
         out.append(
             Finding(
@@ -7918,16 +7914,18 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
     s.set_defaults(func=cmd_agents_sync)
 
     s = add(
         "gitnexus-sync",
-        "give every non-marketing repo its GitNexus configuration and skills",
+        "give every repo its GitNexus configuration and skills",
     )
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.set_defaults(func=cmd_gitnexus_sync)
 
     s = add(
@@ -7948,6 +7946,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         "check every active repo's beads setup; set up the named repos or --all",
     )
     s.add_argument("repos", nargs="*", help="repos to set up")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument(
         "--all",
         action="store_true",
@@ -7971,6 +7970,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         "check every active repo's development environment; --fix runs its setup task",
     )
     s.add_argument("repos", nargs="*", help="only these repos (default: all active)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument(
         "--fix",
         action="store_true",
@@ -7983,6 +7983,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         "check every active Python repo's names and layout against the naming standard",
     )
     s.add_argument("repos", nargs="*", help="only these repos (default: all active)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.set_defaults(func=cmd_python_names)
 
     s = add(
