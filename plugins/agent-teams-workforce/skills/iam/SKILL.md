@@ -3,9 +3,6 @@ name: iam
 description: AWS Identity and Access Management for users, roles, policies, and permissions. Use when creating IAM policies, configuring cross-account access, setting up service roles, troubleshooting permission errors, or managing access control.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/IAM/latest/UserGuide/
-expertiseFor:
-  resourceTypes: [iam-role]
-  terms: ["IAM", "least privilege", "access control", "authorization", "sign-in", "sign in"]
 ---
 
 # AWS IAM

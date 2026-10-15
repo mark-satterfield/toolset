@@ -1,9 +1,6 @@
 ---
 name: "api-design-reviewer"
 description: "API Design Reviewer"
-expertiseFor:
-  resourceTypes: [rest-api, graphql-api]
-  terms: ["REST API", "GraphQL"]
 ---
 
 # API Design Reviewer

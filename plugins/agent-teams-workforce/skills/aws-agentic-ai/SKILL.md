@@ -25,9 +25,6 @@ hooks:
     - matcher: Bash(aws bedrock-agentcore-control create-*)
       command: aws sts get-caller-identity --query Account --output text
       once: true
-expertiseFor:
-  resourceTypes: [agent-runtime]
-  terms: ["AgentCore", "AI agent", "agent runtime"]
 ---
 
 # AWS Bedrock AgentCore

@@ -23,7 +23,6 @@ import elaboration
 import elaborationcontracts
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
 from elaborationcontracts import Finished, Refused, Released, Started
-from matrixexpertise import refresh
 from matrixstore import Matrix, matrix_path, update_matrix
 from matrixsync import EpicBead, program_output, read_epics, sync_documents, sync_epics, vault_root
 from matrixtraverse import epic_id
@@ -151,8 +150,8 @@ def outermost_steps() -> list[StepPlan]:
             "ref": "open",
             "description": "Open the run",
             "purpose": (
-                "Bring the Epic's entry, its requirements, the document entries and the expertise list in the "
-                "matrix up to date, and plan the architecture steps"
+                "Bring the Epic's entry, its requirements and the document entries in the matrix up to date, "
+                "and plan the architecture steps"
             ),
             "script": OPEN_RUN,
         },
@@ -219,12 +218,12 @@ def outermost_steps() -> list[StepPlan]:
     ]
 
 
-def _sync_matrix(bead: str, epics: list[EpicBead], prd: Path, arch: Path) -> str:
-    """Bring the Epic's entry, its requirements, the document entries and its expertise list up to date.
+def _sync_matrix(epics: list[EpicBead], prd: Path, arch: Path) -> str:
+    """Bring the Epic's entry, its requirements and the document entries up to date.
 
-    One matrix change does what ``atw-matrix sync-epics --bead``, ``sync-documents`` and
-    ``expertise --epic`` do: the Epic with its PRD path and hash and one requirement per heading;
-    every arc42 document with its lifecycle and headings; the skills the Epic's domains need.
+    One matrix change does what ``atw-matrix sync-epics --bead`` and ``sync-documents`` do: the
+    Epic with its PRD path and hash and one requirement per heading; every arc42 document with its
+    lifecycle and headings.
 
     Returns:
         The vault commit the documents were read at.
@@ -235,7 +234,6 @@ def _sync_matrix(bead: str, epics: list[EpicBead], prd: Path, arch: Path) -> str
     def change(matrix: Matrix) -> None:
         sync_epics(matrix, epics, env_path(PRD_DIR_ENV), prd=str(prd))
         sync_documents(matrix, arch)
-        refresh(matrix, bead, prd.read_text(encoding="utf-8"))
 
     update_matrix(matrix_path(None, os.environ), change)
     return commit
@@ -263,7 +261,7 @@ def open_run(run: StepRun) -> Completion:
         return run.tools.portfolio(OPEN_RUN, read_epics, control, run.bead)
 
     epics: list[EpicBead] = run.tools.operation(OPEN_RUN, read)
-    commit: str = run.tools.portfolio(OPEN_RUN, _sync_matrix, run.bead, epics, prd, arch)
+    commit: str = run.tools.portfolio(OPEN_RUN, _sync_matrix, epics, prd, arch)
     path: Path = context_path(run.context.work)
     write_json(path, new_context(run.bead, prd, arch, run.context.work, commit))
     architect: str = agents_with_role(run.tools.plugin, ROLE_ARCHITECT)[0]

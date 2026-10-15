@@ -3,9 +3,6 @@ name: eventbridge
 description: AWS EventBridge serverless event bus for event-driven architectures. Use when creating rules, configuring event patterns, setting up scheduled events, integrating with SaaS, or building cross-account event routing.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/eventbridge/latest/userguide/
-expertiseFor:
-  resourceTypes: [event-bus, event-rule, schedule]
-  terms: ["EventBridge", "event bus", "scheduled"]
 ---
 
 # AWS EventBridge

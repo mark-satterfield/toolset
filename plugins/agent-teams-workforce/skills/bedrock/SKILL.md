@@ -3,9 +3,6 @@ name: bedrock
 description: AWS Bedrock foundation models for generative AI. Use when invoking foundation models, building AI applications, creating embeddings, configuring model access, or implementing RAG patterns.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/bedrock/latest/userguide/
-expertiseFor:
-  resourceTypes: [foundation-model]
-  terms: ["Bedrock", "foundation model", "LLM", "generative AI", "embedding"]
 ---
 
 # AWS Bedrock

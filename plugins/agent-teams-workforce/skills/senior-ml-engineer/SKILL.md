@@ -12,9 +12,6 @@ triggers:
   - model serving
   - A/B testing ML
   - automated retraining
-expertiseFor:
-  resourceTypes: [ml-model]
-  terms: ["machine learning", "ML model", "recommendation", "matching"]
 ---
 
 # Senior ML Engineer

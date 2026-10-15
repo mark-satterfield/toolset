@@ -1,9 +1,6 @@
 ---
 name: "database-schema-designer"
 description: "Database Schema Designer"
-expertiseFor:
-  resourceTypes: [dynamodb-table, relational-database]
-  terms: ["data model", "database schema"]
 ---
 
 # Database Schema Designer

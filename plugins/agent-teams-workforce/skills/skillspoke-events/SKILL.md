@@ -6,9 +6,6 @@ description: >-
   from its producer through the central event API to the bus and from routing rules to their
   targets, and what a producer and a target owner must do.
 user-invocable: false
-expertiseFor:
-  resourceTypes: [event, event-bus, event-rule]
-  terms: ["domain event", "event-driven", "publishes an event"]
 ---
 
 # SkillSpoke events

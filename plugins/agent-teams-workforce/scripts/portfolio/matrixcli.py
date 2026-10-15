@@ -4,7 +4,7 @@
 ``link``, ``unlink``, ``settle``, ``rename``, ``remove``, ``move-repository`` and ``commit``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-apply``); ``verify`` and the Task
-script's ``built``, ``work`` and ``affected``; ``check-reuse`` and ``expertise``. Each change is
+script's ``built``, ``work`` and ``affected``; ``check-reuse``. Each change is
 one locked read-modify-write of the matrix file.
 
 The attribute options of ``put``, ``link`` and ``unlink`` are not listed here: one option exists
@@ -42,15 +42,6 @@ from matrix_contract import (
 from matrixcall import Call, Outcome
 from matrixcode import COMMAND_VERIFY, record_verified
 from matrixevents import CATALOG_PATH, CatalogEvent, EventsSynced, read_catalog, sync_events
-from matrixexpertise import (
-    SUBAGENT_START,
-    Expertise,
-    agent_skills,
-    hook_output,
-    prd_text,
-    refresh,
-    skill_text,
-)
 from matrixquery import approval_view, impact_view
 from matrixreuse import check_reuse
 from matrixseed import (
@@ -780,36 +771,6 @@ def _run_check_reuse(call: Call) -> Outcome:
     return Outcome(check_reuse(read_matrix(call.matrix()), ids, worktree, call.texts("files") or None))
 
 
-def _run_expertise(call: Call) -> Outcome:
-    """Run ``expertise``.
-
-    Returns:
-        The Epic's expertise list and the skills to hand the session asked about; with
-        ``--emit-context``, the hook output that puts those skills' text in a started session.
-
-    """
-    bead: str = call.required("epic")
-
-    def change(matrix: Matrix) -> Expertise:
-        text: str = (
-            prd_text(matrix, bead, vault_root(call.required_folder("prd_dir", [PRD_DIR_ENV])))
-            if call.flag("scan_prd")
-            else ""
-        )
-        return refresh(matrix, bead, text)
-
-    result: Expertise = update_matrix(call.matrix(), change, wait=call.lock_wait())
-    agent: str | None = call.text("for_agent")
-    listed: set[str] = set() if agent is None else set(agent_skills(agent))
-    result["skills"] = [name for name in result["expertise"] if name not in listed]
-    if call.flag("emit_context"):
-        text: str = skill_text(result["skills"], call.environ)
-        return Outcome(hook_output(text, call.text("hook_event") or SUBAGENT_START))
-    if call.flag("with_text"):
-        result["text"] = skill_text(result["skills"], call.environ)
-    return Outcome(result)
-
-
 COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "put": _run_put,
     "link": _run_link,
@@ -834,7 +795,6 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_AFFECTED: _run_affected,
     COMMAND_APPROVAL: _run_approval,
     "check-reuse": _run_check_reuse,
-    "expertise": _run_expertise,
 }
 """The sub-commands this module holds, by the name the registry's command table gives each."""
 
@@ -1007,7 +967,7 @@ def _build_parsers(
     where: argparse.ArgumentParser,
     sources: Mapping[str, argparse.ArgumentParser],
 ) -> None:
-    """Add the verified mark, the Task script's reads, the approval lookup, the reuse check and the expertise list."""
+    """Add the verified mark, the Task script's reads, the approval lookup and the reuse check."""
     control: argparse.ArgumentParser = sources["control"]
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
@@ -1049,17 +1009,6 @@ def _build_parsers(
     reuse.add_argument("--ids", nargs="+", required=True, help="the shared capability ids the Task states")
     reuse.add_argument("--worktree", required=True, help="the worktree the Task changed")
     reuse.add_argument("--files", nargs="+", help="the changed files; default: what git reports changed")
-    skills: argparse.ArgumentParser = commands.add_parser(
-        "expertise",
-        parents=[where, sources["prds"]],
-        help="the skills an Epic's domains need",
-    )
-    skills.add_argument("--epic", required=True, help="the Epic's beads id")
-    skills.add_argument("--scan-prd", action="store_true", help="also match the PRD's text against the skills' terms")
-    skills.add_argument("--for-agent", help="leave out the skills this agent's own definition lists")
-    skills.add_argument("--with-text", action="store_true", help="include the text of the skills")
-    skills.add_argument("--emit-context", action="store_true", help="print the hook output that adds the text")
-    skills.add_argument("--hook-event", help=f"the hook event the output answers; default: {SUBAGENT_START}")
 
 
 def add_parsers(

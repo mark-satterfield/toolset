@@ -6,7 +6,7 @@
 #   reads:   epic, find, node, deps, stacks, layers, impact, related, uses, story-scope,
 #            review-scope, summary, check, check-reuse, approval
 #   tasks:   built, work, affected
-#   changes: put, link, unlink, settle, rename, remove, move-repository, expertise, commit
+#   changes: put, link, unlink, settle, rename, remove, move-repository, commit
 #   syncs:   sync-epics, sync-documents, sync-events
 #   seeding: seed, seed-stacks, seed-packages, seed-inputs, seed-features, seed-apply
 #   code:    verify

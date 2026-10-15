@@ -3,9 +3,6 @@ name: cognito
 description: AWS Cognito user authentication and authorization service. Use when setting up user pools, configuring identity pools, implementing OAuth flows, managing user attributes, or integrating with social identity providers.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/cognito/latest/developerguide/
-expertiseFor:
-  resourceTypes: [user-pool]
-  terms: ["Cognito", "sign-up", "sign up", "sign-in", "sign in", "log in", "login", "password", "passkey"]
 ---
 
 # AWS Cognito

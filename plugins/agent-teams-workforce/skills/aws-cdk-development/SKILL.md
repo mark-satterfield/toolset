@@ -18,9 +18,6 @@ hooks:
     - matcher: Bash(cdk deploy*)
       command: aws sts get-caller-identity --query Account --output text
       once: true
-expertiseFor:
-  resourceTypes: [stack]
-  terms: ["CDK"]
 ---
 
 # AWS CDK Development

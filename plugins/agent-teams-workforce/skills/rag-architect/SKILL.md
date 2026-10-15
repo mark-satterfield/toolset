@@ -1,9 +1,6 @@
 ---
 name: "rag-architect"
 description: "RAG Architect - POWERFUL"
-expertiseFor:
-  resourceTypes: [vector-index, knowledge-base]
-  terms: ["RAG", "retrieval", "vector search", "semantic search"]
 ---
 
 # RAG Architect - POWERFUL

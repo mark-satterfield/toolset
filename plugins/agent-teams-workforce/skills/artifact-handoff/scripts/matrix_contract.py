@@ -67,7 +67,6 @@ type RelationshipKind = Literal[
 type Role = Literal[
     "operator",
     "script",
-    "hooks",
     "solutions-architect",
     "repository-steward",
     "decider",
@@ -160,7 +159,6 @@ RELATIONSHIP_KINDS: Final[tuple[RelationshipKind, ...]] = (
 )
 ROLE_OPERATOR: Final[Literal["operator"]] = "operator"
 ROLE_SCRIPT: Final[Literal["script"]] = "script"
-ROLE_HOOKS: Final[Literal["hooks"]] = "hooks"
 ROLE_SOLUTIONS_ARCHITECT: Final[Literal["solutions-architect"]] = "solutions-architect"
 ROLE_REPOSITORY_STEWARD: Final[Literal["repository-steward"]] = "repository-steward"
 ROLE_DECIDER: Final[Literal["decider"]] = "decider"
@@ -169,7 +167,6 @@ ROLE_BUILD_WORKFLOW: Final[Literal["build-workflow"]] = "build-workflow"
 ROLES: Final[tuple[Role, ...]] = (
     ROLE_OPERATOR,
     ROLE_SCRIPT,
-    ROLE_HOOKS,
     ROLE_SOLUTIONS_ARCHITECT,
     ROLE_REPOSITORY_STEWARD,
     ROLE_DECIDER,

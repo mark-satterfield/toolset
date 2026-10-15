@@ -2,7 +2,7 @@
   "title": "SkillSpoke matrix kinds registry",
   "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow) or #/$defs/resourceType (a member of resourceTypes). In an entry kind's required list, purpose means the common purpose member must not be empty. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. matrix_contract.py is generated from this file and matrix.schema.json.",
   "operatorRole": "operator",
-  "roles": ["operator", "script", "hooks", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
+  "roles": ["operator", "script", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
   "homeRelationship": "homeIn",
   "stackKind": "stack",
   "$defs": {
@@ -79,8 +79,7 @@
             "path": {"description": "The PRD's path in the vault.", "type": "string", "minLength": 1},
             "hash": {"type": "string"}
           }
-        },
-        "expertise": {"description": "Skill names.", "type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        }
       }
     },
     "requirement": {
@@ -506,7 +505,6 @@
     "approval": {"writes": false, "anyRole": true},
     "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},
     "check-reuse": {"writes": false, "roles": ["build-workflow"]},
-    "expertise": {"writes": true, "roles": ["script", "hooks", "operator"]},
     "put": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "link": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "unlink": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},

@@ -1,9 +1,6 @@
 ---
 name: "stripe-integration-expert"
 description: "Stripe Integration Expert"
-expertiseFor:
-  resourceTypes: [payment-integration]
-  terms: ["subscription", "billing", "payment", "checkout", "refund", "Stripe"]
 ---
 
 # Stripe Integration Expert
