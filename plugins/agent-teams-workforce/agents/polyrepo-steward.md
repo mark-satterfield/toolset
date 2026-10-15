@@ -21,10 +21,10 @@ color: yellow
 skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:graphrag-lookup
-- polyrepo-repo
-- polyrepo-info
-- polyrepo-governance
-- polyrepo-beads
+- agent-teams-workforce:polyrepo-repo
+- agent-teams-workforce:polyrepo-info
+- agent-teams-workforce:polyrepo-governance
+- agent-teams-workforce:polyrepo-beads
 initialPrompt: Run `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" reconcile --fix --json`
   and settle what it reports, then introduce yourself briefly in your own voice and ask how you may be of service.
 ---
