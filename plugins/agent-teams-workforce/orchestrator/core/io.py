@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Final
 
-from typeguard import CollectionCheckStrategy, check_type
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
@@ -18,6 +18,7 @@ WORK_DIRECTORY_PARTS: Final[tuple[str, ...]] = (".claude", "workflow-runs", "art
 SAFE_KEY_LENGTH: Final = 120
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def safe_key(identifier: str) -> str:
     """Turn an identifier into a name that is safe as one path segment.
 
@@ -29,6 +30,7 @@ def safe_key(identifier: str) -> str:
     return re.sub(r"^_+|_+$", "", re.sub(r"[^A-Za-z0-9._-]+", "_", identifier))[:SAFE_KEY_LENGTH]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def work_directory(control: Path, bead: str) -> Path:
     """Name the work directory of one Epic.
 
@@ -50,6 +52,7 @@ def work_directory(control: Path, bead: str) -> Path:
     return control.joinpath(*WORK_DIRECTORY_PARTS, name)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def json_object(value: object) -> dict[str, JsonValue]:
     """Validate every JSON value in an object.
 
@@ -60,6 +63,7 @@ def json_object(value: object) -> dict[str, JsonValue]:
     return check_type(value, dict[str, JsonValue], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_json(path: Path, payload: object) -> None:
     """Atomically write a JSON value after validating its entire value tree."""
     checked = check_type(payload, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -15,20 +15,19 @@ use (``matrixtraverse.capabilities``).
 
 import re
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import KIND_FEATURE, Entry, EntryId, EntryKind, JsonValue, MatrixError, Side
+from matrixstore import Matrix
 from matrixsync import program_output
 from matrixtraverse import CapabilityReach, capabilities, words
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from matrixstore import Matrix
 
 type ReuseFinding = Literal["unused", "duplicate", "judgment"]
 
@@ -205,6 +204,7 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
     return guarded
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def changed_files(worktree: Path) -> list[str]:
     """List the files of a worktree that differ from its commit.
 
@@ -378,6 +378,7 @@ def _judgment(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]) 
     return items
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def check_reuse(
     matrix: Matrix,
     entry_ids: Sequence[EntryId],

@@ -22,8 +22,11 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import Final, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -59,9 +62,6 @@ from matrixstore import (
     require_role,
     role_of,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
 
 KIND_SEPARATOR: Final = ","
 
@@ -388,6 +388,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
     """Run one matrix sub-command.
 

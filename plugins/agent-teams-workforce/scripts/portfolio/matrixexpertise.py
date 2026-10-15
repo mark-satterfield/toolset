@@ -16,9 +16,12 @@ attribute of the Epic's entry:
 """
 
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
+from typing import Final, NotRequired, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -30,9 +33,6 @@ from matrixstore import Matrix, MatrixRefusedError
 from matrixtraverse import epic_id, epic_reach
 from orchestrator.core.frontmatter import split_front_matter, string_list
 from orchestrator.core.skills import SkillRoots, load_skills, matching_skills, skills_text
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
 
 PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
 AGENTS_DIRECTORY: Final = "agents"
@@ -106,6 +106,7 @@ def _recorded(entry: Entry) -> list[str]:
     return [name for name in held if isinstance(name, str)] if isinstance(held, list) else []
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def expertise_of(matrix: Matrix, bead: str) -> Expertise:
     """Read the skills recorded for an Epic, and change nothing.
 
@@ -130,6 +131,7 @@ def expertise_of(matrix: Matrix, bead: str) -> Expertise:
     return {"epic": entry.id, "expertise": recorded, "added": [], "skills": list(recorded)}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_resource_types(matrix: Matrix, bead: str) -> list[str]:
     """List the resource types of every entry an Epic reaches.
 
@@ -159,6 +161,7 @@ def epic_resource_types(matrix: Matrix, bead: str) -> list[str]:
     return sorted(types)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prd_text(matrix: Matrix, bead: str, vault: Path) -> str:
     """Read the text of the PRD an Epic's entry names.
 
@@ -193,6 +196,7 @@ def prd_text(matrix: Matrix, bead: str, vault: Path) -> str:
         raise MatrixError(message) from error
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skills_for(resource_types: Sequence[str], text: str = "") -> list[str]:
     """Name the skills that declare themselves expertise for some resource types or a text.
 
@@ -216,6 +220,7 @@ def skills_for(resource_types: Sequence[str], text: str = "") -> list[str]:
         raise MatrixError(message) from error
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def add_skills(matrix: Matrix, bead: str, names: Sequence[str]) -> list[str]:
     """Record skills an Epic's domains need on its entry.
 
@@ -246,6 +251,7 @@ def add_skills(matrix: Matrix, bead: str, names: Sequence[str]) -> list[str]:
     return added
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def add_for_types(matrix: Matrix, bead: str, resource_types: Sequence[str]) -> list[str]:
     """Record the skills for resource types an Epic's architect has just recorded.
 
@@ -263,6 +269,7 @@ def add_for_types(matrix: Matrix, bead: str, resource_types: Sequence[str]) -> l
     return add_skills(matrix, bead, skills_for(resource_types))
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def refresh(matrix: Matrix, bead: str, text: str = "") -> Expertise:
     """Bring an Epic's expertise list up to date and return it.
 
@@ -285,6 +292,7 @@ def refresh(matrix: Matrix, bead: str, text: str = "") -> Expertise:
     return {"epic": entry.id, "expertise": recorded, "added": added, "skills": list(recorded)}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def agent_skills(agent: str) -> list[str]:
     """List the skills an agent's own definition already gives it.
 
@@ -310,6 +318,7 @@ def agent_skills(agent: str) -> list[str]:
         raise MatrixError(message) from error
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def skill_text(names: Sequence[str], environ: Mapping[str, str]) -> str:
     """Give the text of skills in the form a session is handed.
 
@@ -341,6 +350,7 @@ def skill_text(names: Sequence[str], environ: Mapping[str, str]) -> str:
         raise MatrixError(message) from error
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def hook_output(text: str, event: str = SUBAGENT_START) -> HookOutput:
     """Wrap text as what a Claude Code hook prints to add it to a session's context.
 

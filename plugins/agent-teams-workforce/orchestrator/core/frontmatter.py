@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import Final
 
-from typeguard import CollectionCheckStrategy, check_type
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 OPENING: Final = "---\n"
 CLOSING: Final = "\n---"
@@ -33,6 +33,7 @@ def yaml_safe_load(stream: str) -> object:
     return parsed
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def split_front_matter(text: str, what: str) -> tuple[dict[str, object], str]:
     """Separate the front matter of an authored file from its body.
 
@@ -76,6 +77,7 @@ def split_front_matter(text: str, what: str) -> tuple[dict[str, object], str]:
     return fields, body.strip()
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def string_list(value: object) -> list[str]:
     """Read a string-list field of authored front matter.
 

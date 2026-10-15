@@ -13,8 +13,11 @@ so what is in review for an Epic is exactly this list, and nothing here changes 
 
 import sys
 from collections import deque
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import Final, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -36,9 +39,6 @@ from matrix_contract import (
 )
 from matrixstore import Matrix, as_entry_id
 from matrixtraverse import epic_id
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
 
 ATTR_LIFECYCLE: Final = "lifecycle"
 ATTR_HEADING: Final = "heading"
@@ -169,6 +169,7 @@ def _reached(
     return reached
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def review_scope(matrix: Matrix, bead: str, added_or_changed: Sequence[str] = ()) -> ReviewScope:
     """List the documents one Epic reaches that are not effective, with the headings reached.
 

@@ -25,8 +25,11 @@ came from and, where set, its verified mark and its architecture-approved mark. 
 """
 
 import sys
+from collections.abc import Collection, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
+from typing import Final, NotRequired, TypedDict
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -91,9 +94,6 @@ from matrixtraverse import (
     stack_type,
     words,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
 
 DEFAULT_LIMIT: Final = 50
 """The most entries :func:`find` returns unless the caller asks for another number; 0 asks for all."""
@@ -787,6 +787,7 @@ def _closure(matrix: Matrix, reach: EpicReach) -> ClosureView:
     }
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_view(
     matrix: Matrix,
     bead: str,
@@ -911,6 +912,7 @@ def _realizer(matrix: Matrix, entry_id: EntryId) -> RealizerView:
     return view
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_brief(matrix: Matrix, bead: str) -> EpicBrief:
     """Return what the architect is handed for one Epic.
 
@@ -1027,6 +1029,7 @@ def _match(matrix: Matrix, entry: Entry, query: Sequence[str], whole: str, prd: 
     return match
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def find(
     matrix: Matrix,
     text: str = "",
@@ -1077,6 +1080,7 @@ def find(
     return {"query": query, "total": len(matches), "matches": matches[:limit] if limit else matches}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def node_view(matrix: Matrix, entry_id: EntryId) -> NodeView:
     """Return one entry with its relationships from both ends.
 
@@ -1105,6 +1109,7 @@ def node_view(matrix: Matrix, entry_id: EntryId) -> NodeView:
     return {"entry": _entry_view(entry), "relationships": relationships}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def deps_view(matrix: Matrix, entry_id: EntryId, *, inward: bool = False) -> DepsView:
     """Return what an entry depends on, or what depends on it, to any depth.
 
@@ -1133,6 +1138,7 @@ def deps_view(matrix: Matrix, entry_id: EntryId, *, inward: bool = False) -> Dep
     }
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def stacks_view(
     matrix: Matrix,
     *,
@@ -1184,6 +1190,7 @@ def stacks_view(
     return {"stacks": stacks}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def layers_view(matrix: Matrix) -> LayersView:
     """List every layer with the packages it carries and the components that attach it.
 
@@ -1210,6 +1217,7 @@ def layers_view(matrix: Matrix) -> LayersView:
     }
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def impact_view(matrix: Matrix, entry_id: EntryId) -> ImpactView:
     """Return what a change to an entry reaches.
 
@@ -1268,6 +1276,7 @@ def _touches(ways: Sequence[Touch]) -> list[TouchView]:
     return [{"through": way.through, "heading": way.heading} for way in ways]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def related_view(matrix: Matrix, bead: str) -> RelatedView:
     """Return the Epics that reach what one Epic reaches.
 
@@ -1304,6 +1313,7 @@ def related_view(matrix: Matrix, bead: str) -> RelatedView:
     return {"epic": epic, "related": related}
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def uses_view(matrix: Matrix, entry_ids: Sequence[EntryId]) -> UsesResult:
     """Return the shared capabilities the work that builds some entries must use.
 
@@ -1333,6 +1343,7 @@ def uses_view(matrix: Matrix, entry_ids: Sequence[EntryId]) -> UsesResult:
     }
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def story_scope(matrix: Matrix, stack: EntryId, entry_ids: Sequence[EntryId]) -> StoryScope:
     """Return in one object what a Story that builds some entries of a stack must be handed.
 
@@ -1397,6 +1408,7 @@ def _no_architecture(matrix: Matrix) -> list[EntryId]:
     )
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
     """Count what the matrix holds.
 
@@ -1472,6 +1484,7 @@ def _approvals(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Approval]:
     ]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
     """List which of an Epic's requirements and features carry the architecture-approved mark.
 

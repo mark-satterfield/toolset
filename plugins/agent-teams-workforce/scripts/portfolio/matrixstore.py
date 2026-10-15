@@ -23,10 +23,13 @@ import re
 import sys
 import tempfile
 import time
+from collections.abc import Callable, Collection, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NamedTuple
+from typing import Final, NamedTuple
+
+from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
@@ -77,9 +80,6 @@ from matrix_contract import (
     relationship_label,
     relationship_problems,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Generator, Mapping
 
 DEFAULT_LOCK_WAIT: Final = 60.0
 """Seconds a change waits for another process's change to the same matrix to finish."""
@@ -139,6 +139,7 @@ class RelationshipId(NamedTuple):
     """The side that states the relationship; each side that states one stores its own."""
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def name_key(name: str) -> str:
     """Reduce a name to the form names are compared in.
 
@@ -158,6 +159,7 @@ def name_key(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def slug(name: str) -> str:
     """Reduce a name to the slug an id is built from.
 
@@ -183,6 +185,7 @@ def slug(name: str) -> str:
     return reduced
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def as_entry_id(text: str) -> EntryId:
     """Accept a string as an entry id when it has the form of one.
 
@@ -215,6 +218,7 @@ def as_entry_id(text: str) -> EntryId:
     return EntryId(text)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def make_id(kind: EntryKind, rest: str) -> EntryId:
     """Build an entry id from the entry's kind and the rest of the id.
 
@@ -239,6 +243,7 @@ def make_id(kind: EntryKind, rest: str) -> EntryId:
     return as_entry_id(f"{kind}{ID_SEPARATOR}{rest}")
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def kind_of(entry_id: EntryId) -> EntryKind:
     """Read the kind an entry id states.
 
@@ -254,6 +259,7 @@ def kind_of(entry_id: EntryId) -> EntryKind:
     return entry_kind(entry_id.partition(ID_SEPARATOR)[0])
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def repository_side_id(kind: EntryKind, stack: EntryId, name: str) -> EntryId:
     """Build the id of an entry that is not on the authority side, for a kind with two id forms.
 
@@ -284,6 +290,7 @@ def repository_side_id(kind: EntryKind, stack: EntryId, name: str) -> EntryId:
     return make_id(kind, f"{stack.partition(ID_SEPARATOR)[2]}{STACK_SEPARATOR}{slug(name)}")
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def id_stack(entry: Entry) -> EntryId | None:
     """Name the stack an entry's id names.
 
@@ -302,6 +309,7 @@ def id_stack(entry: Entry) -> EntryId | None:
     return EntryId(f"{STACK_KIND}{ID_SEPARATOR}{rest.rpartition(STACK_SEPARATOR)[0]}")
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def relationship_id(relationship: Relationship) -> RelationshipId:
     """Name what tells a relationship from every other.
 
@@ -321,6 +329,7 @@ def relationship_id(relationship: Relationship) -> RelationshipId:
     )
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def unapproved(entry: Entry) -> Entry:
     """Take the architecture-approved mark off an entry.
 
@@ -339,6 +348,7 @@ def unapproved(entry: Entry) -> Entry:
     return replace(entry, attributes=kept)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def same_content(held: Entry, entry: Entry) -> bool:
     """Tell whether two entries differ in nothing but the architecture-approved mark.
 
@@ -353,6 +363,7 @@ def same_content(held: Entry, entry: Entry) -> bool:
     return unapproved(held) == unapproved(entry)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approved_by(entry: Entry) -> str | None:
     """Read whose architecture reviews approved an entry.
 
@@ -432,6 +443,7 @@ def _raise_problems(problems: list[str], where: str) -> None:
         raise MatrixError(message)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class Matrix:
     """The matrix in memory: entries by id, relationships once for each side, and an index of both ends.
 
@@ -1164,6 +1176,7 @@ class Matrix:
         return sorted(removed)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def role_of(environ: Mapping[str, str]) -> Role:
     """Read who is running the command from the environment.
 
@@ -1188,6 +1201,7 @@ def role_of(environ: Mapping[str, str]) -> Role:
     raise MatrixRefusedError(message)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def require_role(command: str, role: Role) -> None:
     """Refuse a sub-command the role may not run.
 
@@ -1209,6 +1223,7 @@ def require_role(command: str, role: Role) -> None:
         raise MatrixRefusedError(message)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def matrix_path(explicit: str | None, environ: Mapping[str, str]) -> Path:
     """Decide which matrix file a command works on.
 
@@ -1237,6 +1252,7 @@ def matrix_path(explicit: str | None, environ: Mapping[str, str]) -> Path:
     return Path(control).expanduser().joinpath(*DEFAULT_MATRIX_PARTS)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def lock_path(path: Path) -> Path:
     """Name the lock file of a matrix file.
 
@@ -1275,6 +1291,7 @@ def _decode(path: Path) -> object:
     return decoded
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_matrix(path: Path) -> Matrix:
     """Read a matrix file, validate its shape and index it.
 
@@ -1294,6 +1311,7 @@ def read_matrix(path: Path) -> Matrix:
     return Matrix(parse_document(_decode(path), str(path)))
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def serialize(matrix: Matrix) -> str:
     """Render a matrix as the text of its file.
 
@@ -1308,6 +1326,7 @@ def serialize(matrix: Matrix) -> str:
     return json.dumps(document_json(matrix.document()), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_text(path: Path, text: str) -> None:
     """Put text in place of a file the matrix command writes, in one move.
 
@@ -1352,6 +1371,7 @@ def _write_text(path: Path, text: str) -> None:
 
 
 @contextmanager
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def matrix_lock(path: Path, wait: float = DEFAULT_LOCK_WAIT) -> Generator[None]:
     """Hold the exclusive lock of a matrix file.
 
@@ -1401,6 +1421,7 @@ def matrix_lock(path: Path, wait: float = DEFAULT_LOCK_WAIT) -> Generator[None]:
         os.close(descriptor)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def create_matrix(
     path: Path,
     matrix: Matrix | None = None,
@@ -1439,6 +1460,7 @@ def create_matrix(
         _write_text(path, serialize(content))
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def update_matrix[T](path: Path, change: Callable[[Matrix], T], *, wait: float = DEFAULT_LOCK_WAIT) -> T:
     """Apply one change to a matrix file as a single locked read-modify-write.
 
@@ -1473,6 +1495,7 @@ def update_matrix[T](path: Path, change: Callable[[Matrix], T], *, wait: float =
     return result
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def rename_entry(path: Path, old: EntryId, new: EntryId, *, wait: float = DEFAULT_LOCK_WAIT) -> None:
     """Re-key an entry of a matrix file and both ends of its relationships in one write.
 
@@ -1493,6 +1516,7 @@ def rename_entry(path: Path, old: EntryId, new: EntryId, *, wait: float = DEFAUL
     update_matrix(path, change, wait=wait)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def remove_entry(
     path: Path,
     entry_id: EntryId,
@@ -1523,6 +1547,7 @@ def remove_entry(
     return update_matrix(path, change, wait=wait)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def file_problems(path: Path) -> list[str]:
     """Describe every way a matrix file fails the schema, the kinds registry and the rules between entries.
 
