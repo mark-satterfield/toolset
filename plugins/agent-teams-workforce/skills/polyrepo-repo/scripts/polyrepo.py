@@ -5033,9 +5033,11 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     one commit and one pull request opened with the project's PR command; the plan lists all
     of it first (`--dry-run` stops there). With no new name only the stack and Python names
     are brought into line, and `--also` brings those of further repositories into line in the
-    same pull requests, so a repository that several names change still gets one. Anything
-    outside git, GitHub, the repositories and the steward's records that names the repo by its
-    old name (the vault, workflow artifacts) is the caller's to update.
+    same pull requests, so a repository that several names change still gets one. The vault
+    documents that still carry an old name (in the folders the config's `rename.documents`
+    names) are reported under `names.documents`, never edited: the filing-clerk changes them.
+    Anything else outside git, GitHub, the repositories and the steward's records that names the
+    repo by its old name (workflow artifacts) is the caller's to update.
 
     Returns:
         0 on success, 1 when a step failed part way.
@@ -5088,7 +5090,6 @@ PR_TIMEOUT = 900
 PR_AUTOMERGE_NOT_ARMED = 3
 CHECK_TASKS = ("lint", "typecheck", "test")
 APPLY_WORKERS = 4
-PORCELAIN_PATH = 3
 CHECK_TIMEOUT = 3600
 CHECK_TAIL_LINES = 15
 TITLE_NAMES = 2
@@ -5117,13 +5118,14 @@ class _Subject:
 
 @dataclasses.dataclass
 class _Documents:
-    """The architecture documents a rename edits: the vault, the folders swept, the rules and the edits."""
+    """The vault documents that still carry an old name: the vault, the folders searched, what each carries.
+
+    A rename reports them and edits none: the filing-clerk changes the vault.
+    """
 
     root: Path
     paths: tuple[str, ...]
-    rules: list[Rule]
-    edits: list[FileEdit]
-    dirty: list[str]
+    found: list[FileEdit]
 
 
 @dataclasses.dataclass
@@ -5330,7 +5332,7 @@ def _waits_on(plan: _NamesPlan) -> dict[str, list[str]]:
 
 
 def _documents_settings(cfg: Config) -> tuple[Path, tuple[str, ...]] | None:
-    """Read the config's `rename.documents` section: the vault folder and the folders in it a rename sweeps.
+    """Read the config's `rename.documents` section: the vault folder and the folders in it a rename searches.
 
     Returns:
         (the vault's root, the folders under it), or None when the config names no documents.
@@ -5353,14 +5355,13 @@ def _documents_settings(cfg: Config) -> tuple[Path, tuple[str, ...]] | None:
 
 
 def _names_documents_plan(cfg: Config, subjects: list[_Subject]) -> _Documents | None:
-    """Plan the architecture document edits: every old name the subjects change, replaced by its new one.
+    """Find the vault documents that still carry an old name the subjects change, for the filing-clerk.
 
     Names only: the rules are the ones for the repositories' own names, with the document
-    differences `build_document_rules` states. A file with uncommitted changes in the vault is
-    listed and not edited, so a commit of the file takes only the rename.
+    differences `build_document_rules` states. The search reads the vault and never writes it.
 
     Returns:
-        The plan, or None when the config sets no documents folder or the vault is absent.
+        The documents found, or None when the config names no vault folders or the vault is absent.
 
     """
     settings = _documents_settings(cfg)
@@ -5371,13 +5372,8 @@ def _names_documents_plan(cfg: Config, subjects: list[_Subject]) -> _Documents |
     repository_of = {change_label(c): s.new for s in subjects for c in s.changes}
     rules = build_document_rules(changes, repository_of)
     excludes, _ = _rename_settings(cfg)
-    edits = sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False) if rules else []
-    cp = git(root, "status", "--porcelain", "--", *paths)
-    touched = {
-        line[PORCELAIN_PATH:].strip().strip('"') for line in cp.stdout.splitlines() if len(line) > PORCELAIN_PATH
-    }
-    dirty = sorted(e.path for e in edits if e.path in touched)
-    return _Documents(root, paths, rules, [e for e in edits if e.path not in dirty], dirty)
+    found = sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False) if rules else []
+    return _Documents(root, paths, found)
 
 
 def _names_lines(plan: _NamesPlan) -> list[str]:
@@ -5411,10 +5407,10 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
     docs = plan.documents
     if docs is not None:
         lines.extend(
-            f"edit document {e.path}: line(s) {', '.join(str(n) for n in e.lines)} ({e.replacements})"
-            for e in docs.edits
+            f"vault document for the filing-clerk {e.path}: line(s) {', '.join(str(n) for n in e.lines)} "
+            f"carry {', '.join(sorted(e.labels))}"
+            for e in docs.found
         )
-        lines.extend(f"not edited (uncommitted changes in the vault) document {p}" for p in docs.dirty)
     return lines
 
 
@@ -5432,8 +5428,11 @@ def _names_record(plan: _NamesPlan) -> dict[str, object]:
     docs = plan.documents
     documents: dict[str, object] = (
         {
-            "edits": [{"path": e.path, "lines": list(e.lines), "replacements": e.replacements} for e in docs.edits],
-            "uncommitted": docs.dirty,
+            "root": str(docs.root),
+            "carry_old_names": [
+                {"path": e.path, "lines": list(e.lines), "names": sorted(e.labels), "occurrences": e.replacements}
+                for e in docs.found
+            ],
         }
         if docs is not None
         else {}
@@ -5484,59 +5483,17 @@ def _rename_names(
     rows = _names_apply(st.cfg, plan, args)
     res["pull_requests"] = rows
     steps.extend(_pr_line(row) for row in rows)
-    steps.extend(_apply_documents(st.cfg, plan, args.trailer))
+    steps.extend(_update_matrix_names(st.cfg, plan))
     return all(row["status"] == "pr-opened" for row in rows)
 
 
-def _apply_documents(cfg: Config, plan: _NamesPlan, trailer: str | None) -> list[str]:
-    """Write the new names into the architecture documents, commit the vault files changed, update the matrix.
-
-    The vault change is one commit of only the files the sweep changed, pushed to the vault's
-    default branch. The matrix then follows through `atw-matrix`: every published package the
-    matrix holds under an old distribution name is re-keyed (`rename`), the documents that
-    changed are read again (`sync-documents --paths`), and the matrix file is committed.
-
-    Returns:
-        A line for each step done, or for each step that failed.
-
-    """
-    steps: list[str] = []
-    docs = plan.documents
-    if docs is None:
-        return steps
-    excludes, _ = _rename_settings(cfg)
-    changed = [e.path for e in docs.edits]
-    if changed:
-        try:
-            target = SweepTarget("documents", docs.root, docs.paths)
-            sweep_repo(_sweep_git, target, docs.rules, [*excludes, *docs.dirty], write=True)
-            _commit_documents(cfg, docs.root, changed, trailer)
-        except (GitFailedError, NameSweepError) as exc:
-            steps.append(f"vault NOT updated: {exc}")
-            return steps
-        steps.append(f"vault: {len(changed)} document(s) changed, committed and pushed")
-    steps.extend(_update_matrix_names(cfg, plan, changed))
-    return steps
-
-
-def _commit_documents(cfg: Config, root: Path, changed: list[str], trailer: str | None) -> None:
-    """Commit only the vault files the sweep changed, and push the vault's default branch.
-
-    A failed git step propagates as the GitFailedError that `must` raises.
-    """
-    message = ["docs(arc42): follow the new names", *([trailer] if trailer else [])]
-    for argv in (["add", "--", *changed], ["commit", "-m", "\n\n".join(message), "--", *changed]):
-        must(git(root, *argv))
-    must(git(root, "push", "origin", cfg.default_branch, timeout=PR_TIMEOUT))
-
-
-def _update_matrix_names(cfg: Config, plan: _NamesPlan, documents: list[str]) -> list[str]:
-    """Update the matrix for the names a rename changed: re-key the packages, read the changed documents.
+def _update_matrix_names(cfg: Config, plan: _NamesPlan) -> list[str]:
+    """Re-key in the matrix every package a rename changed, and commit the matrix when one was re-keyed.
 
     A package entry is named by the distribution, so a distribution that changes re-keys its
     entry and both ends of every relationship it has; an entry already under the new name is
-    left. The documents are read from the vault again with `sync-documents`, and the matrix
-    file is committed with `atw-matrix commit`.
+    left. The vault documents are not read here: the filing-clerk changes them, and the steward
+    then reads the changed ones into the matrix (`atw-matrix sync-documents --paths`).
 
     Returns:
         A line for each matrix command run, or that failed.
@@ -5545,9 +5502,8 @@ def _update_matrix_names(cfg: Config, plan: _NamesPlan, documents: list[str]) ->
     steps: list[str] = []
     try:
         steps.extend(_rekey_packages(cfg, plan))
-        if documents and plan.documents is not None:
-            steps.append(_sync_documents(cfg, plan.documents, documents))
-        steps.append(f"matrix: {matrix_commit(cfg)}")
+        if steps:
+            steps.append(f"matrix: {matrix_commit(cfg)}")
     except PolyrepoError as exc:
         steps.append(f"matrix NOT updated: {exc}")
     return steps
@@ -5569,22 +5525,6 @@ def _rekey_packages(cfg: Config, plan: _NamesPlan) -> list[str]:
             matrix_run(cfg, ["put", "package", "--side", side, "--id", new, "--name", new.removeprefix("package:")])
             steps.append(f"matrix rename {old} -> {new}: {json.dumps(result, sort_keys=True)[:200]}")
     return steps
-
-
-def _sync_documents(cfg: Config, docs: _Documents, documents: list[str]) -> str:
-    """Read the documents the sweep changed into the matrix (`atw-matrix sync-documents --paths`).
-
-    The architecture root is the first documents folder the config names, passed as `--arch`,
-    so the command does not depend on ATW_ARCH_PATH being set in the caller's environment.
-
-    Returns:
-        A line with the command's result.
-
-    """
-    paths = [str(docs.root / p) for p in documents]
-    arch = ["--arch", str(docs.root / docs.paths[0])] if docs.paths else []
-    result = matrix_run(cfg, ["sync-documents", *arch, "--paths", *paths])
-    return f"matrix sync-documents ({len(paths)} document(s)): {json.dumps(result, sort_keys=True)[:200]}"
 
 
 def _matrix_has(cfg: Config, entry_id: str) -> bool:
@@ -7420,13 +7360,80 @@ def _knowledge_findings(cfg: Config) -> list[DoctorFinding]:
     return out
 
 
-def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
-    """Check the repository-naming document against the config's naming patterns.
+NAMING_STALE = "the steward's derived copy is stale; refresh it from the standard"
+NAMING_SAMPLE_DOMAIN = "example"
 
-    Every naming pattern has a section in the document (its heading's first word is the
-    pattern's name); every example in a section matches that section's pattern; every
-    "`A` becomes `B`" is the tool's deprecated name of A; and "N days after deprecation"
-    is the configured archive delay.
+
+def _markdown_tables(text: str) -> list[tuple[list[str], list[list[str]]]]:
+    """Read every Markdown table in a note: its header cells and its body rows.
+
+    Returns:
+        (header cells, body rows) per table, cells stripped, the separator row left out.
+
+    """
+    tables: list[list[list[str]]] = []
+    run_open = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            run_open = False
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if not run_open:
+            tables.append([])
+            run_open = True
+        if not all(re.fullmatch(r":?-+:?", c) for c in cells):
+            tables[-1].append(cells)
+    return [(t[0], t[1:]) for t in tables if t]
+
+
+def _first_code(cell: str) -> str | None:
+    """Return the first `code` span of a table cell.
+
+    Returns:
+        The span's text, or None when the cell has none.
+
+    """
+    m = re.search(r"`([^`]+)`", cell)
+    return m.group(1) if m else None
+
+
+def _standard_repository_prefixes(text: str) -> dict[str, str] | None:
+    """Read each project's repository prefix from the naming standard's table that lists them.
+
+    The table is the one whose header has a column that begins with "Project" and a column
+    that names the "Repository prefix", wherever it sits in the note. A row's project is the
+    first code span of its project cell, and its prefix the first code span of its prefix cell.
+
+    Returns:
+        Each project's repository prefix, or None when the note has no such table.
+
+    """
+    for header, rows in _markdown_tables(text):
+        cols = [h.lower() for h in header]
+        project = next((i for i, h in enumerate(cols) if h.startswith("project")), None)
+        prefix = next((i for i, h in enumerate(cols) if "repository prefix" in h), None)
+        if project is None or prefix is None:
+            continue
+        out: dict[str, str] = {}
+        for row in rows:
+            if len(row) <= max(project, prefix):
+                continue
+            p, x = _first_code(row[project]), _first_code(row[prefix])
+            if p and x:
+                out[p] = x
+        return out
+    return None
+
+
+def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
+    """Check the config's naming patterns, the steward's derived copy, against the naming standard as it is written.
+
+    `naming.document` points at the canonical resource naming standard in the vault. The check
+    reads the note as it is structured: the table that lists each project's repository prefix,
+    the repository names the note writes as code spans, every "`A` becomes `B`" deprecation
+    example and every "N days after deprecation". A disagreement is a stale derived copy (or,
+    for a deprecation example, a tool rule that disagrees); the standard is never changed here.
 
     Returns:
         One finding per disagreement.
@@ -7434,32 +7441,13 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
     """
     loc = _map(cfg.raw.get("naming") or {}, "config naming").get("document") or ""
     if not loc:
-        return [
-            _finding(
-                "naming-doc",
-                "-",
-                "not-configured",
-                "config naming.document is not set",
-            ),
-        ]
+        return [_finding("naming-doc", "-", "not-configured", "config naming.document does not point at the standard")]
     path = _resolve_location(cfg, str(loc))
     if not path.is_file():
         return [_finding("naming-doc", "-", "missing", f"{loc} ({path}) not found")]
-    text = path.read_text()
-    sections = {
-        m.group(1).split()[0].lower(): m.group(2) for m in re.finditer(r"(?m)^### (.+)\n((?:(?!^##).*\n?)*)", text)
-    }
-    out = [
-        _finding(
-            "naming-doc",
-            p["name"],
-            "pattern-undocumented",
-            f"naming pattern {p['name']} has no section in {path.name}",
-        )
-        for p in cfg.patterns
-        if p["name"] not in sections
-    ]
-    out.extend(_naming_example_findings(cfg, sections, path.name))
+    text = path.read_text(encoding="utf-8")
+    out = _naming_prefix_findings(cfg, text, path.name)
+    out.extend(_naming_kind_findings(cfg, text, path.name))
     for a, b in re.findall(r"`([^`]+)` becomes `([^`]+)`", text):
         if b.startswith("deprecated-") and deprecated_name(a) != b:
             out.append(
@@ -7467,7 +7455,7 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
                     "naming-doc",
                     a,
                     "deprecation-mismatch",
-                    f"{path.name} says {a} becomes {b}; the tool makes it {deprecated_name(a)}",
+                    f"{path.name} says {a} becomes {b}; the tool's deprecation rule makes it {deprecated_name(a)}",
                 ),
             )
     days = cfg.archive_after_days()
@@ -7476,7 +7464,7 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
             "naming-doc",
             "-",
             "archive-delay-mismatch",
-            f"{path.name} says {n} days; the config archives after {days}",
+            f"{path.name} says {n} days; the config's deprecation.archive_after_days is {days}: {NAMING_STALE}",
         )
         for n in re.findall(r"(\d+) days after deprecation", text)
         if int(n) != days
@@ -7484,29 +7472,78 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
     return out
 
 
-def _naming_example_findings(cfg: Config, sections: dict[str, str], doc_name: str) -> list[DoctorFinding]:
-    """Check that every example in a naming document section matches that section's pattern.
+def _naming_prefix_findings(cfg: Config, text: str, doc_name: str) -> list[DoctorFinding]:
+    """Check every application pattern against the standard's table of repository prefixes.
+
+    Each project the table lists must have an application pattern whose space is that project
+    and that classifies a name with the project's prefix (`{prefix}example-{type}`) into it;
+    each application pattern's space must be a project the table lists.
 
     Returns:
-        One finding per example the config's patterns classify otherwise.
+        One finding per disagreement, or one when the note has no such table.
 
     """
-    out = []
-    for sec, body in sections.items():
-        ex = re.search(r"\*\*Examples:\*\*(.*)", body)
-        for name in re.findall(r"`([^`]+)`", ex.group(1) if ex else ""):
-            got = cfg.classify(name)
-            if got is None or got["name"] != sec:
-                out.append(
-                    _finding(
-                        "naming-doc",
-                        name,
-                        "example-mismatch",
-                        f"{doc_name} gives {name} as a {sec} example; the config's patterns "
-                        f"classify it as {got['name'] if got else 'no pattern'}",
-                    ),
-                )
+    prefixes = _standard_repository_prefixes(text)
+    if prefixes is None:
+        return [
+            _finding(
+                "naming-doc",
+                "-",
+                "prefixes-unreadable",
+                f"{doc_name} has no table with a Project column and a Repository prefix column, "
+                "so the application patterns cannot be compared with it",
+            ),
+        ]
+    stack_type = next(iter(cfg.stack_type_names()), "")
+    out: list[DoctorFinding] = []
+    for project, prefix in prefixes.items():
+        sample = f"{prefix}{NAMING_SAMPLE_DOMAIN}-{stack_type}"
+        got = cfg.classify(sample)
+        if got is None or got["kind"] != "application" or got.get("space") != project:
+            out.append(
+                _finding(
+                    "naming-doc",
+                    project,
+                    "prefix-mismatch",
+                    f"{doc_name} gives project {project} the repository prefix {prefix}; the config's "
+                    f"patterns classify {sample} as {got['name'] if got else 'no pattern'}: {NAMING_STALE}",
+                ),
+            )
+    out.extend(
+        _finding(
+            "naming-doc",
+            p["name"],
+            "pattern-not-in-standard",
+            f"application pattern {p['name']} (space {p.get('space')}) is a project {doc_name} does not list: "
+            f"{NAMING_STALE}",
+        )
+        for p in cfg.patterns
+        if p["kind"] == "application" and p.get("space") not in prefixes
+    )
     return out
+
+
+def _naming_kind_findings(cfg: Config, text: str, doc_name: str) -> list[DoctorFinding]:
+    """Check that the standard names a repository of each non-application and deprecated pattern.
+
+    The standard states these rules in prose, so the check keys on the repository names it
+    writes as code spans: at least one must classify as each such pattern.
+
+    Returns:
+        One finding per pattern the standard names no repository of.
+
+    """
+    named = {got["name"] for span in set(re.findall(r"`([^`]+)`", text)) if (got := cfg.classify(span))}
+    return [
+        _finding(
+            "naming-doc",
+            p["name"],
+            "pattern-not-in-standard",
+            f"{doc_name} names no repository that {p['kind']} pattern {p['name']} classifies: {NAMING_STALE}",
+        )
+        for p in cfg.patterns
+        if p["kind"] != "application" and p["name"] not in named
+    ]
 
 
 def _matrix_findings(st: State) -> list[Finding]:

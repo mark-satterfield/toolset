@@ -669,13 +669,14 @@ def build_rules(changes: Sequence[NameChange], holder: str) -> list[Rule]:
 
 
 def build_document_rules(changes: Sequence[NameChange], repository_of: dict[str, str]) -> list[Rule]:
-    """Build the rewrites for the architecture documents: the same names, written only where they are names.
+    """Build the rules that find the old names in the architecture documents, matched only where they are names.
 
-    A document says a published package, an import package or a source folder in prose and in
-    code blocks. The `src/` path and a distinctive import name are replaced as in code. A
-    generic import name is replaced only as an `import` or `from` line or in a quoted dotted
-    path. A distribution is replaced as the whole word, unless it is spelled like the repository
-    that publishes it, because then the document's reference to the repository would change too.
+    A rename reports the documents these rules match and edits none of them: every vault edit
+    is the filing-clerk's. A document says a published package, an import package or a source
+    folder in prose and in code blocks. The `src/` path and a distinctive import name are matched
+    as in code. A generic import name is matched only as an `import` or `from` line or in a
+    quoted dotted path. A distribution is matched as the whole word, unless it is spelled like
+    the repository that publishes it, because that is the document's reference to the repository.
     `repository_of` maps each change's old name to the repository it belongs to, by its label.
 
     Returns:

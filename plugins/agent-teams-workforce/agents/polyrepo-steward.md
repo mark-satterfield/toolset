@@ -278,14 +278,15 @@ is reported. Nothing is merged. `--skip-repo R` is for
 a repository the owner has put off limits: its references are listed and not edited.
 `--keep-src R` edits a repository except its files under `src/`, which are listed.
 
-The architecture follows through the `filing-clerk`: hand it every old name with its new name;
-it finds every vault document that carries an old name and changes the names only, no other
-word, and reports the documents it changed. The tool's own vault sweep (the config's
-`rename.documents`) stays off: your config sets no `rename.documents`, and when `rename
---dry-run` lists documents, remove that section from your config and hand those documents to
-the filing-clerk. The matrix then follows through `atw-matrix`: `rename --from package:<old>
---to package:<new>` for each published package it holds, `sync-documents --paths` for the
-documents the filing-clerk changed, and `commit`. A new library name is importable only once the library is released, so
+The architecture follows through the `filing-clerk`. The tool never edits the vault: `rename`
+reports, under `names.documents.carry_old_names` and as `vault document for the filing-clerk`
+lines, every vault document that still carries an old name, with its lines and the names, from
+the vault folders the config's `rename.documents` points at (`root`, `paths`). Hand the
+filing-clerk every old name with its new name and those documents; it changes the names only,
+no other word, and reports the documents it changed. The tool re-keys in the matrix each
+published package it holds (`atw-matrix rename --from package:<old> --to package:<new>`) and
+commits the matrix; once the filing-clerk has changed the documents, you run
+`atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
 publishing is the library's own CI or declared publish command; you never publish by hand.
 
 The name must end in a stack type (`service`, `infra`, `lib`, `web`, `mobile`, `extension`,

@@ -33,7 +33,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `deprecated-prs` | `deprecated-prs`: every open pull request on GitHub in a repo of the owner whose name starts with `deprecated-` | no deprecated repo has an open pull request |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
-| `naming-doc` | `naming.patterns`, the steward's derived copy, against the config's `naming.document`: the vault's canonical resource naming standard, `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` | every pattern has a section, every example matches its section's pattern, deprecation examples and the archive delay agree with the tool |
+| `naming-doc` | `naming.patterns`, the steward's derived copy, against the config's `naming.document`: the vault's canonical resource naming standard, `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` | the standard read as it is written: each project in the table whose header has a `Project…` column and a `Repository prefix` column has an application pattern of that space that classifies `{prefix}example-{type}`, and every application pattern's space is a listed project (`prefix-mismatch`, `pattern-not-in-standard`, `prefixes-unreadable` when no such table exists); each non-application and deprecated pattern classifies at least one repository name the standard writes as code (`pattern-not-in-standard`); every "`A` becomes `B`" agrees with the tool's deprecation rule and every "N days after deprecation" with `deprecation.archive_after_days` |
 | `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name ending in a stack type) is the `repository` of a stack, every stack's `repository` is an active repository, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-renamed`, `stack-repository-inactive`, `stack-repository-missing`, `matrix-invalid`, and `error` when the matrix cannot be read |
 
 The output is one findings list: each finding with its `check`, `subject` (repo or entry),
@@ -71,7 +71,7 @@ are AI tooling, which is tier 2); a repo whose `main` cannot be brought up to `o
 - A naming-document finding: the config's patterns disagree with the vault's naming standard.
   The standard is canonical and the patterns are your derived copy of it, so refresh the
   patterns from the standard. You never edit the standard: when the finding shows the standard
-  itself is incomplete or wrong (for example, a pattern the tool needs has no section in it),
+  itself is incomplete or wrong (for example, a `pattern-not-in-standard` for a rule the tool needs that the standard does not state),
   hand that to the `filing-clerk`, which files the change or brings the conflict to the owner.
   A `missing` or `not-configured` finding means `naming.document` does not name the vault
   standard; set it to the standard's path, never to a copy of your own.
