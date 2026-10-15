@@ -1,8 +1,10 @@
-"""The launcher: a session run as the plugin's own agent, its settings, and fact-only briefs.
+"""The launcher: a session run as a predefined agent, its settings, and fact-only briefs.
 
-A session is launched as the plugin's predefined agent under its real name
-(``--agent agent-teams-workforce:<name>``), and an agent it starts is the plugin's agent of that
-name too. One agent definition file is the single statement of an agent's model, effort, tools,
+A session is launched as the predefined agent under the name Claude Code knows it by
+(``launch_name``): ``agent-teams-workforce:<name>`` for a plugin agent, and the plain ``<name>``
+for an agent that states ``mcpServers``, which runs from the user-level copy the plugin's
+``sync-user-agents`` hook keeps of it. An agent it starts is named the same way. One agent
+definition file is the single statement of an agent's model, effort, tools,
 skills and MCP servers, of the role it plays (``role``) and of the roles it may start
 (``startsRoles``). The launcher reads those, holds no table of its own and adds no tool or skill.
 
@@ -462,14 +464,19 @@ def _denied(launched: AgentDefinition, *, starts_agents: bool) -> list[str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def launch_name(agent: str) -> str:
-    """Name a plugin agent the way a session is launched as it: with the plugin's namespace.
+def launch_name(agent: AgentDefinition) -> str:
+    """Name an agent the way Claude Code knows it, which is the name a session is launched as.
+
+    Claude Code ignores the ``mcpServers`` of an agent a plugin defines, so an agent whose
+    definition states ``mcpServers`` runs from the copy the plugin's ``sync-user-agents`` hook
+    keeps in the user-level agents directory, under its plain name. Every other agent is the
+    plugin's, under the plugin's namespace.
 
     Returns:
-        ``agent-teams-workforce:<agent>``.
+        ``<name>`` for an agent that states ``mcpServers``, else ``agent-teams-workforce:<name>``.
 
     """
-    return f"{PLUGIN_NAME}:{agent}"
+    return agent.name if agent.mcp_servers is not None else f"{PLUGIN_NAME}:{agent.name}"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -498,7 +505,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     write_json(directory / "settings.json", session_settings(config, plugin, launched, starts_agents=starts_agents))
     command = [
         "--agent",
-        launch_name(step.agent),
+        launch_name(launched),
         "--model",
         launch_model(launched, launch),
         "--effort",

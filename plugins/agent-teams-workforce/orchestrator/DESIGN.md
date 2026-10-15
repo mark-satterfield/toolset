@@ -404,8 +404,11 @@ only the brief (section 2.3):
 
 1. It reads `<plugin>/agents/<agent>.md`: its front matter and its body (`load_agent`). A
    definition must state `model` and `effort`.
-2. It launches the session as the plugin's own agent under its real name:
-   `--agent agent-teams-workforce:<agent>`. The agent's tools, disallowed tools, skills, model,
+2. It launches the session as the predefined agent under the name Claude Code knows it by
+   (`agent_context.launch_name`): `--agent <agent>` for an agent whose definition states
+   `mcpServers`, which Claude Code ignores for a plugin agent, so it runs from the user-level copy
+   (`~/.claude/agents/`) the plugin's `hooks/sync-user-agents.cjs` keeps at SessionStart and when
+   `installed_plugins.json` changes; `--agent agent-teams-workforce:<agent>` for every other. The agent's tools, disallowed tools, skills, model,
    effort and turn limit are its front matter's; the launcher writes no agent definition and adds
    no tool or skill. `--model` is the definition's model, or `opus` in its place on a Fable
    fallback (section 5.5).
@@ -413,8 +416,7 @@ only the brief (section 2.3):
    agent a session is launched as. The launcher writes the full text of the launched agent's own
    front matter skills to `<session dir>/skills.md` and passes it with
    `--append-system-prompt-file`.
-4. An agent the launched agent starts is the plugin's agent of that name
-   (`agent-teams-workforce:<name>`), with its own front matter. The step journal records every
+4. An agent the launched agent starts is named the same way and runs with its own front matter. The step journal records every
    agent by its front matter `name`.
 5. The brief is written on stdin.
 
@@ -429,7 +431,7 @@ parse, is a session setup failure (classification `setup`) before any session st
 ```
 claude -p --output-format stream-json --verbose
   --session-id <uuid>            (or --resume <uuid> to continue a session)
-  --agent agent-teams-workforce:<agent>
+  --agent <agent | agent-teams-workforce:agent>   (launch_name)
   --model <model> --effort <effort>
   --setting-sources project
   --settings <session dir>/settings.json
@@ -532,7 +534,7 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   `rate_limit_info` `fablewall.is_refusal` accepts, the runner ends that session, emits a
   `fable-wall` event (the driver records it with `fablewall.record`), and runs **that one step
   again on `opus`**, resuming the same session so its work so far is kept. On the resume the
-  launcher passes `--resume <sessionId> --agent agent-teams-workforce:<agent> --model opus`,
+  launcher passes `--resume <sessionId> --agent <launch name> --model opus`,
   together with every other flag of section 5.2. An agent the session starts runs on its own front
   matter model. The model changed, so the retry is reasonable (CONTEXT 7.4). A second refusal, on `opus`,
   fails the step with cause `other`.

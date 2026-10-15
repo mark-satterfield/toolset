@@ -292,9 +292,9 @@ that your judgment shows needs nothing stays with no one; being approved alone d
 that.
 
 Prefer a question. Most gaps need one question and one answer. Write a request file to
-`specialist-request.schema.json` and start the specialist with the `Agent` tool by its plugin
-name (`agent-teams-workforce:<name>`, for example `agent-teams-workforce:trd-author`), naming that
-file. The request holds:
+`specialist-request.schema.json` and start the specialist with the `Agent` tool by the name
+Claude Code knows it by, as the `subagent-contract` skill says (`trd-author`,
+`agent-teams-workforce:uml-diagram-author`), naming that file. The request holds:
 
 - `kind`: `question`, or `task` when a bounded piece of design or a diagram is truly needed;
 - the question, or the task with its exact bounds: what is to be decided and what is not;
