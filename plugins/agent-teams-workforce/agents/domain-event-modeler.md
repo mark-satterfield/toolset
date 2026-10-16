@@ -61,7 +61,7 @@ below architecture level (names, fields, keys, schemas) go in `notesForSpecs`.
 
 ### In both cases
 
-Write only the answer file, to `specialist-answer.schema.json`. `architecture-maintainer`
+Write only the answer file, to `specialist-answer.schema.json`. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. `architecture-maintainer`
 writes the arc42 documents from the architect's decisions, and `trd-author` writes the TRD.
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is

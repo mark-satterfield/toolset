@@ -27,13 +27,12 @@ Check tradeoff claims, hidden assumptions and optimistic estimates against retai
 
 ## What you review
 
-You review only content that is not yet approved. The review scope the brief names lists it
-under `documents`: each arc42 document the Epic reaches that is not effective, with its `id`,
-`name` and `lifecycle`, the `headings` reached, and under `reachedBy` what leads the Epic to
-it. `trd` is the TRD's path when your group covers its requirements, and null otherwise.
-`signals` holds the lists of the architect's result that selected you, and `criteria` the
-ids of the criteria you review against. A script worked the scope out from the matrix
-(`atw-matrix review-scope`). Nothing outside it is yours to review.
+You review only content that is not yet approved. The review scope the brief names is written
+to `reviewer-scope.schema.json`, which states what each of its members holds; a script worked it
+out from the matrix (`atw-matrix review-scope`). Nothing outside it is yours to review. Read the
+headings it names, under the architecture root, and only those. The brief hands the PRD as `prd`
+only when your scope names it; then read only the headings of the requirements the scope lists
+that a check needs, never the whole PRD.
 
 Approved content is reference. You may open an approved document to follow a link or check
 that an unapproved statement agrees with it. You report nothing about approved content, with
@@ -42,10 +41,10 @@ wrong, report that in `dependsOnApproved`, with both statements.
 
 ## What you review it against
 
-`effective-architecture/review-criteria.json`, the criteria file the brief names. It is the
-same file the solutions architect worked to. It names the criteria your reviewer group
-covers; a criterion that several groups cover is reviewed by each for its own specialty,
-which the paragraph above states. Each criterion has a level. Review each item against the
+The criteria your scope lists under `criteria`, as `effective-architecture/review-standard.md`
+states them. It is the same standard the solutions architect worked to. A criterion that
+several groups cover is reviewed by each for its own specialty, which the paragraph above
+states. Each criterion has a level. Review each item against the
 criteria at its own level and in its own home:
 
 - an arc42 heading against architecture-level criteria;

@@ -2,6 +2,12 @@
 name: api-contract-designer
 description: Answer a question or do a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible.
 role: design-specialist
+resourceTypes:
+- api
+- api-and-handlers
+- rest-api
+- rest-api-route
+- gateway
 tools: Read, Write, Glob, Grep, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   mcp__mcp-graphrag-server
@@ -55,7 +61,7 @@ below architecture level (names, fields, keys, schemas) go in `notesForSpecs`.
 
 ### In both cases
 
-Write only the answer file, to `specialist-answer.schema.json`. `architecture-maintainer`
+Write only the answer file, to `specialist-answer.schema.json`. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. `architecture-maintainer`
 writes the arc42 documents from the architect's decisions, and `trd-author` writes the TRD.
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is

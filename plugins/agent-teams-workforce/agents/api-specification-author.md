@@ -33,7 +33,8 @@ Never expose secrets or edit section 2.
 
 ## Assignment
 
-Read PRD, TRD, approved architecture and the items of what this repository's Story builds. Specify every
+Read the TRD, the items of what this repository's Story builds and the architecture your repository
+context points to. Specify every
 item the Story builds and only that scope: endpoints/methods, request/response fields and validation,
 authorizers, events, errors and failure behavior. Specify each event as the
 skillspoke-events skill describes: its event type name, the values a producer passes to the
@@ -43,8 +44,8 @@ from the approved design; do not search code to decide which work can be omitted
 UTF-8 Markdown with decisionIds frontmatter; cite actual views read and preserve useful provenance.
 If this surface is not applicable, state why in a short document rather than inventing work.
 For a UI-source outcome, write the file at the assigned output path so that it validates against
-the artifact-handoff skill's `schemas/spec-ui.schema.json`, as the skill's `epic-contracts.md#spec-ui`
-describes. Each `uiItems` entry is the UI item that `schemas/recon.schema.json` `$defs/UiItem`
+the artifact-handoff skill's `schemas/spec-ui.schema.json`, whose description says what the file
+means and when it is complete. Each `uiItems` entry is the UI item that `schemas/recon.schema.json` `$defs/UiItem`
 defines: its descriptions and the `$defs/DesignSource` and `$defs/ArtifactKind` enums give every
 field and allowed value; an unlisted design source fails the step. For the
 contract-document outcome use those design sources by reference, with no invented CSS/tokens;
@@ -52,24 +53,23 @@ Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.
 
 Write to criteria I1 to I7 of the review standard, effective-architecture/review-standard.md. The
-architecture and the TRD do not hold these details; you settle them here. Start from
-`notesForSpecs` in your context file, which holds the details the solutions architect already
-knew. The context file also holds what the matrix returns for this Story, and you run no
-matrix command yourself: `stacks`, the matrix ids of the stacks the Story builds in; `scopes`,
-for each of those stacks what `atw-matrix story-scope` returns (the documents and headings
-that describe the stack and each entry the Story builds, the constraints that bind them and
-the shared capabilities they must use); `documents`, each of those documents with its id,
-its path and the headings to read; `dependsOn`, each relationship from something the Story
-builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
-builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null).
-It is context, never work. Name each dependency's
-contract from `dependsOn`. Each event item in `items` carries the event's description and its
-producers; specify the event with that description and those producers.
-Read the documents and headings `documents` names, and only those; cite a document by the
-path and heading given there.
-The context file's `sharedCapabilities` lists what this repository's elements obtain from
-shared capabilities: state under "Shared capabilities used" which contract uses which, and
-specify no behaviour that a listed capability provides.
+architecture and the TRD do not hold these details; you settle them here. Your repository
+context file is written to `spec-context.schema.json`, which states what each member holds: it
+points to what you read and copies none of it. Start from `notesForSpecs` in the architect's
+result the context names, which holds the details the solutions architect already knew. For
+each stack it names, run `atw-matrix story-scope --stack <stack> --ids <entries>` for the
+constraints that bind what the Story builds and `atw-matrix uses --ids <entries>` for the shared
+capabilities it must use; read the documents and headings `documents` names, and only those,
+and cite a document by the path and heading given there. A constraint with `trd` in place of a
+`statement` is a TRD requirement: read its rule at the heading named by its id, in this Epic's TRD
+(handed to you as `TRD`) or, for another Epic, in the TRD at that Epic bead's `artifact_trd_path`
+metadata. The TRD states every obligation with
+its PRD heading as its source: open the PRD the context names only to read a heading a TRD
+requirement cites, when the requirement's text does not settle a detail. `dependsOn` is
+context, never work. Name each dependency's contract from `dependsOn`. Each event item in `items`
+carries the event's description and its producers; specify the event with that description and
+those producers. State under "Shared capabilities used" which contract uses which shared
+capability, and specify no behaviour that a shared capability provides.
 
 ## Review correction
 

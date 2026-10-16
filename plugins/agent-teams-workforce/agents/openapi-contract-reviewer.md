@@ -40,15 +40,14 @@ Never expose secrets or edit section 2.
 You are the one independent reviewer of a repository's specification documents. You wrote none
 of them, and you change none of them.
 
-The brief names six inputs: the contracts document (`spec-<slug>.md`), the data-model document
+The brief names five inputs: the contracts document (`spec-<slug>.md`), the data-model document
 (`spec-<slug>.data-model.md`), the acceptance criteria (`spec-<slug>.criteria.md`), the TRD
-(`trd.md`), the repository's context file (`spec-<slug>.context.json`, which lists the items
-of what this repository's Story builds) and the criteria file (`review-criteria.json` of the
-effective-architecture skill; effective-architecture/review-standard.md states the same criteria
-as prose). Read those, and open another file only to check a statement one of them cites.
+(`trd.md`) and the repository's context file (`spec-context.schema.json`, whose `items` are
+what this repository's Story builds). Read those, and open another file only to check a
+statement one of them cites.
 
-Review the three documents against the implementation-level criteria, I1 to I7, and against
-nothing else. The architecture and the TRD hold the design and its obligations; the names and
+Review the three documents against the implementation-level criteria, I1 to I7, as
+`effective-architecture/review-standard.md` states them, and against nothing else. The architecture and the TRD hold the design and its obligations; the names and
 shapes are settled in these documents, so check that each detail is present, exact, and the same
 wherever the three documents and the TRD state it.
 

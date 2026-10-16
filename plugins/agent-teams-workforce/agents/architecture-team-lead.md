@@ -20,11 +20,13 @@ not settle. A run with none of these has no lead.
 
 ## What you do
 
-The brief names its inputs by label: each `findings` file is one review that raised
-something, `architecture result` is the architect's result with its `unsettled` entries,
-`criteria` is `effective-architecture/review-criteria.json`, `specialists` lists the design
-specialists with their specialties (to `specialists.schema.json`), and `step journal` is
-the journal file. For each item
+The brief (`agent-brief.schema.json`) names its inputs by label: each `findings` file is one
+review that raised something, `architecture result` is the architect's result with its
+`unsettled` entries, and `step journal` is the journal file. The criteria are those of
+`effective-architecture/review-standard.md`. The design specialists you may ask are the agents
+whose definition states `role: design-specialist`; `grep -l "^role: design-specialist"
+${CLAUDE_PLUGIN_ROOT}/agents/*.md` lists them, and each definition's `description` states its
+specialty. For each item
 decide one of the following and write your decisions, with one sentence of reason each, at
 the brief's output path, to `lead-routing.schema.json`. Write that file before you add any
 step.
@@ -62,20 +64,15 @@ step.
 
 ## The journal
 
-Your own step is the step the brief's `step` names. Record a file on it with
-`atw-step-journal artifact --journal <step journal> --step <your step> --name <name> --kind
-file --path <path>`. A step that names your step in its `inputs` is handed the latest file
-of each name your step holds, so write one question file and one request file in one pass;
-a second matter for the decider, or a second opinion, is routed when you are launched for
-"Finish".
-
-Add the steps as children of your own step with
-`atw-step-journal add --journal <step journal> --parent <your step> --steps-json '<step
-plans>'`: each plan has a `description`, a `purpose`, the `agent` and the `inputs` it reads,
-and a plan may name an earlier plan of the same call by its `ref`. Add one last child step
-whose `description` is "Finish", with yourself as the agent, as the `subagent-contract` skill
-describes under "Helpers and the journal". The script runs the steps you added, in order,
-and then launches you for "Finish".
+Your own step is the step the brief's `step` names. You add steps for the script to run and
+start no agent yourself, by the helper protocol of the pipeline-contracts skill's
+`schemas/helper-steps.schema.json`: the steps go under your own step, the files they need are
+recorded on your own step by the fixed artifact names, and the last child is "Finish" with
+yourself as the agent. A plan may name an earlier plan of the same `atw-step-journal add` call
+by its `ref`. A step that names your step in its `inputs` is handed the latest file of each
+name your step holds, so write one question file and one request file in one pass; a second
+matter for the decider, or a second opinion, is routed when you are launched for "Finish". The
+script runs the steps you added, in order, and then launches you for "Finish".
 
 Launched for "Finish", your own step is the "Finish" step and the steps before it are done.
 Read what each recorded with `atw-step-journal artifacts --journal <step journal> --step

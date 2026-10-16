@@ -35,6 +35,6 @@ it renders and is readable, as the architecture-diagramming skill says.
 
 Write only the answer file, to `specialist-answer.schema.json`: the diagram as Mermaid source
 in `diagrams`, with the document and heading it belongs under, its view type and the elements
-it shows. `architecture-maintainer` places it in the document. Work at the architecture level
+it shows. `architecture-maintainer` places it in the document. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. Work at the architecture level
 of `effective-architecture/review-standard.md`: a diagram holds no field, key, parameter or
 schema detail.

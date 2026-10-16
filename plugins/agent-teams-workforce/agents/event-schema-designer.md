@@ -2,6 +2,15 @@
 name: event-schema-designer
 description: Answer a question or do a bounded piece of design for the solutions architect on event types, their producers, and the routing rules (event pattern, targets, owning stack) with per-target retry and DLQ.
 role: design-specialist
+resourceTypes:
+- eventbridge-bus
+- eventbridge-rule
+- eventbridge-schedule
+- sns-topic
+- sns-subscription
+- sqs-queue
+- sqs-queue-and-dlq
+- sqs-queue-and-alarm
 tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server
@@ -62,7 +71,7 @@ below architecture level (names, fields, keys, schemas) go in `notesForSpecs`.
 
 ### In both cases
 
-Write only the answer file, to `specialist-answer.schema.json`. `architecture-maintainer`
+Write only the answer file, to `specialist-answer.schema.json`. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. `architecture-maintainer`
 writes the arc42 documents from the architect's decisions, and `trd-author` writes the TRD.
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is

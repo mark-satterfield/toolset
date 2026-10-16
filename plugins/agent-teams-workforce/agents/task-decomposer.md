@@ -34,10 +34,10 @@ Never expose secrets or edit section 2.
 
 ## Assignment
 
-Read the Story, PRD/TRD, all three spec documents, what the story builds, task context and
-UI-source input. The `what the story builds` file lists what the Story builds: the services,
-components, infrastructure and events the Epic's architecture adds or changes in this
-repository. In one pass: decompose into coherent single-repository build Tasks, sequence
+Read the Story, the TRD, all three spec documents, the repository context, the task context and
+the UI-source input. The repository context's `items` (`spec-context.schema.json`) are what the
+Story builds: the services, components, infrastructure and events the Epic's architecture adds
+or changes in this repository. In one pass: decompose into coherent single-repository build Tasks, sequence
 dependencies, then size them using the wsjf skill's agent-pipeline reference jobs. Tasks are
 how to build, not new requirements or test-only activities.
 
@@ -46,25 +46,20 @@ several of the things the Story builds; every thing the Story builds is cited by
 overlaps with another Epic included; and it is never one Task per thing. The output check
 refuses a Task that covers one thing when the Story builds two or more.
 
-The task context's `dependsOn`, `sharedCapabilities` and `stackWork` are what the
-Tasks depend on or use, never work. `dependsOn` lists each dependency of a thing the Story
-builds on something it does not build, with the side that states it, the far end's stack and
-repository, and `builtBy`, the other Story of this Epic that builds it, if one does. An element
-of `dependsOn` with `side: repository` is a hint read from code, not an architecture fact: it
-may tell a Task where existing code sits, never what to build. An existing started or closed Task in context is reused, not
-rewritten; another Epic's Task that plans the same work is recorded as an external blocker and
-never replaces this Epic's Task. The task context names the stacks the Story builds in as
-`stacks` (matrix stack ids) and holds two matrix reads, and you run neither
-and search for neither: as `stackWork`, one result for each stack, the open Tasks of other
-Epics that touch this Story's stack
-(`atw-matrix work --id <stack id> --not-epic <epic id>`), which are the only source of an
-overlap with another Epic, and the shared capabilities of the entries each Task builds
-(`atw-matrix uses --ids <entry ids>`), as `sharedCapabilities`: a Task consumes a listed
-behaviour from the capability that provides it, and no Task builds that behaviour in this
-stack. A Task states in full what it builds with the matrix's ids, exactly as the task context
-gives them: its stack, the components it builds and the shared capabilities it uses. Python
+The task context is written to `task-context.schema.json`, which states what each member holds;
+it points to what you read and copies none of it. Its `dependsOn` is what the Tasks depend on,
+never work; an element with `side: repository` is a hint read from code, not an architecture
+fact: it may tell a Task where existing code sits, never what to build. An existing started or
+closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
+another Epic's Task that plans the same work is recorded as an external blocker and never
+replaces this Epic's Task. For each stack in `stacks`, run `atw-matrix work --id <stack id>
+--not-epic <epic id>` once: the open Tasks of other Epics that touch the stack, which are the
+only source of an overlap with another Epic. Run `atw-matrix uses --ids <entry ids>` once for
+the stack's entries: a Task consumes a listed behaviour from the capability that provides it,
+and no Task builds that behaviour in this stack. A Task states in full what it builds with the
+matrix's ids, exactly as the task context and those commands give them: its stack, the components it builds and the shared capabilities it uses. Python
 writes those ids into the Task's text and its `matrix_elements` key. A Task names no id the
-context does not give, and every Task carries its stack id: the build fails at its first step
+context and those commands do not give, and every Task carries its stack id: the build fails at its first step
 on a Task that states no stack. Nothing is written in the matrix for a Task.
 Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
 `tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
@@ -76,8 +71,9 @@ volume, complexity and uncertainty, not calendar or human time. Split work the w
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
 value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve
 first-artifact normalization and record a warning, not a refusal. For an exact uncited or
-unsized-items correction, read the saved tasks and the error input and write per artifact-handoff's
+unsized-items correction, read the saved tasks and the task gaps (`task-gaps.schema.json`, whose
+uncited ids are items of the repository context) and write per artifact-handoff's
 tasks-correction.schema.json as the `tasks-correction` section of the Epic contracts defines it
 (its own new-key series, N1...), adding only the new Tasks, the edges into them and the sizes
-the errors name. A correction never carries noWork. No status-based omission, no
+the task gaps name. A correction never carries noWork. No status-based omission, no
 code-comparison pass, no empty-success escape. Python performs all Task and edge writes.

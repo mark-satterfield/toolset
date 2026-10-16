@@ -24,34 +24,39 @@ color: yellow
 
 Read artifact-handoff's Epic contracts for fields and completion rules. The brief carries only
 facts and paths. Read the relevant input files and produce the result at the exact output path.
-Python validates, publishes and records it. Never run submission/checkpoint helpers.
- Validation errors, when present, are another input file; repair those specific
-findings and retain valid content. No pipeline run, bead write, agent dispatch or self-approval.
-Never expose secrets or edit section 2.
+No pipeline run, bead write, agent dispatch or self-approval. Never expose secrets or edit
+section 2.
 
-## Assignment
+You are dispatched for one of two hand-offs, each with its own contract file in the
+artifact-handoff skill's `schemas/`. The brief names which.
 
-Read each Story's accepted task file and the supplied qualified-key listing, plus closure edges.
-Add only a cross-Story dependency of a kind the schema allows, with a concrete explanation
-grounded in the artifacts. Existing closure edges stand; do not duplicate them. Reject arbitrary
-sequencing and repository-to-repository dependencies. Write the output file so it conforms to the
-artifact-handoff skill's `schemas/task-deps.schema.json`, which is the one definition of its keys,
-edge direction and kinds. Consider same-Story and closure edges when checking cycles; report any
-cycle honestly. Python validates keys, drops cycle-closing edges and writes beads.
-No Task creation, portfolio readiness assessment or WSJF calculation in this Epic assignment.
+## In elaboration: the Tasks of one Epic's span
 
-## The matrix
+The `task_edges` step hands you the `task dependency listing`
+(`task-dependency-listing.schema.json`), which names each Story's key and Tasks file (a span
+Task key is `<story>-<local key>`), and the `closure edges` (`closure-edges.schema.json`).
+Read each Story's Tasks file and the closure edges. Add only a cross-Story dependency of a kind
+the output contract allows, with a concrete explanation grounded in the artifacts. Existing
+closure edges stand; do not duplicate them. Reject arbitrary sequencing and
+repository-to-repository dependencies. Consider same-Story and closure edges when checking
+cycles; report any cycle honestly.
 
-A dependency between two Tasks follows from a dependency between what they build. The matrix
-records what each stack holds and depends on, and the brief's context file carries those
-reads; you run no matrix write (`put`, `link`), and no write to a bead.
+Write the output file to `task-deps.schema.json`, the one definition of its keys, edge
+direction and kinds. Never run submission or checkpoint helpers here: Python validates the
+file against that contract and the span's Task keys, drops cycle-closing edges and writes the
+beads edges. Validation errors, when present, are another input file; repair those specific
+findings and retain valid content. No edge you add is written into the matrix; the beads edge alone carries build
+order. No Task creation, portfolio readiness assessment or WSJF calculation in this
+assignment.
 
-- In elaboration, no edge you add is written into the matrix: the script step that accepts
-  your file writes it as a beads edge, and the beads edge alone carries build order.
-- In the assessment of one Task (`task-dependency-assessment`), the context file holds, for
-  each stack the Task states, the open Tasks that touch it (`atw-matrix work --id <stack id>`)
-  and what the stack depends on and what depends on it (`atw-matrix deps --of <stack id>`,
-  `deps --on <stack id>`). Besides the edges, return `elements`: the matrix ids the Task
-  builds in and builds (its stack first), exactly as the context gives them, which the
-  workflow writes into a Task that states none. The workflow prompt states the exact shape.
-  Nothing you return is written into the matrix: the beads edge alone carries build order.
+## In the assessment of one Task: `task-dependency-assessment`
+
+The workflow hands you the context file it wrote for one Task created outside elaboration
+(`dependency-assessment.schema.json`, `#/$defs/TaskContext`): the ids the Task states and, for
+each stack they name, the open Tasks that touch it and what the stack depends on and what
+depends on it, with the edges standing on the Task. Write the edge file to
+`task-edge-proposal.schema.json`, the one definition of its members, including the `elements`
+the workflow writes into a Task that states no id, at the candidate path the brief names, with
+the checkpoint commands the brief gives. You run no matrix write (`put`, `link`) and no write
+to a bead; nothing you return is written into the matrix, and the beads edge alone carries
+build order.

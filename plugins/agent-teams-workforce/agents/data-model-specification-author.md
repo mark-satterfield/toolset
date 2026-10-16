@@ -33,7 +33,7 @@ Never expose secrets or edit section 2.
 
 ## Assignment
 
-Read PRD, TRD, approved views and what the Story builds. Derive access patterns when none are separately
+Read the TRD, what the Story builds and the architecture your repository context points to. Derive access patterns when none are separately
 provided; specify owned tables, keys, indexes, consistency, retention, relationships and capacity
 assumptions at the stated scale, using the appropriate data-model skills. Specify every
 data item the Story builds without judging existing code satisfied. Write the assigned nonempty UTF-8 data-model
@@ -42,22 +42,21 @@ work gets a short reasoned not-applicable document. Do not create infrastructure
 architecture. Contract makers run in parallel; acceptance criteria consume both completed files.
 
 Write to criteria I1 to I7 of the review standard, effective-architecture/review-standard.md. The
-architecture and the TRD do not hold these details; you settle them here. Start from
-`notesForSpecs` in your context file, which holds the details the solutions architect already
-knew. The context file also holds what the matrix returns for this Story, and you run no
-matrix command yourself: `stacks`, the matrix ids of the stacks the Story builds in; `scopes`,
-for each of those stacks what `atw-matrix story-scope` returns (the documents and headings
-that describe the stack and each entry the Story builds, the constraints that bind them and
-the shared capabilities they must use); `documents`, each of those documents with its id,
-its path and the headings to read; `dependsOn`, each relationship from something the Story
-builds to something it does not build, as `{from, kind, to, toKind, side, stack, repository,
-builtBy}` (`builtBy` is the `storyKey` of another Story of this Epic that builds `to`, or null).
-It is context, never work.
-Read the documents and headings `documents` names, and only those; cite a document by the
-path and heading given there.
-The context file's `sharedCapabilities` lists what this repository's elements obtain from
-shared capabilities: state under "Shared capabilities used" which contract uses which, and
-specify no behaviour that a listed capability provides.
+architecture and the TRD do not hold these details; you settle them here. Your repository
+context file is written to `spec-context.schema.json`, which states what each member holds: it
+points to what you read and copies none of it. Start from `notesForSpecs` in the architect's
+result the context names, which holds the details the solutions architect already knew. For
+each stack it names, run `atw-matrix story-scope --stack <stack> --ids <entries>` for the
+constraints that bind what the Story builds and `atw-matrix uses --ids <entries>` for the shared
+capabilities it must use; read the documents and headings `documents` names, and only those,
+and cite a document by the path and heading given there. A constraint with `trd` in place of a
+`statement` is a TRD requirement: read its rule at the heading named by its id, in this Epic's TRD
+(handed to you as `TRD`) or, for another Epic, in the TRD at that Epic bead's `artifact_trd_path`
+metadata. The TRD states every obligation with
+its PRD heading as its source: open the PRD the context names only to read a heading a TRD
+requirement cites, when the requirement's text does not settle a detail. `dependsOn` is
+context, never work. State under "Shared capabilities used" which contract uses which shared
+capability, and specify no behaviour that a shared capability provides.
 
 ## Review correction
 

@@ -31,9 +31,11 @@ Never expose secrets or edit section 2.
 
 ## Assignment
 
-Read PRD, TRD, contracts and data-model documents for the repository. Derive testable acceptance
+Read the TRD, contracts and data-model documents for the repository. Derive testable acceptance
 criteria and Definition of Done, with stable criterion/DoD ids and source requirement/section
-references. Cover required behavior and failure/boundary cases without inventing scope or
+references: a requirement is cited by the PRD heading the TRD gives as its source, and the PRD
+your repository context (`spec-context.schema.json`) names is opened only to read such a heading
+when the TRD's text does not settle a criterion. Cover required behavior and failure/boundary cases without inventing scope or
 architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
 do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
