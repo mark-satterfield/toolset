@@ -250,7 +250,7 @@ Conditionally preserve:
 
 ### A/B Testing Framework
 
-1. **Baseline Setup**: Establish current chunking strategy performance
+1. **Reference Setup**: Establish current chunking strategy performance
 2. **Metric Selection**: Choose relevant metrics (precision@k, user satisfaction)
 3. **Sample Size**: Ensure statistical significance (typically 1000+ queries)
 4. **Duration**: Run for sufficient time to capture usage patterns

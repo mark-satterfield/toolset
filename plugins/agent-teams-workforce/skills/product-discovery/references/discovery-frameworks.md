@@ -31,7 +31,7 @@ JTBD interview focus:
 ## Kano Model
 
 Classify features by impact on satisfaction:
-- Must-be: expected baseline features
+- Must-be: expected basic features
 - Performance: more is better
 - Delighters: unexpected value multipliers
 - Indifferent: low impact

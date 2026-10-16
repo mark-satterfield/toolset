@@ -37,7 +37,7 @@ A well-designed dashboard is like a good story - it guides you through the data 
 - **Yellow/Orange**: Warnings, caution, degraded state
 - **Green**: Healthy, normal operation, success
 - **Blue**: Information, neutral metrics, capacity
-- **Gray**: Disabled, unknown, or baseline states
+- **Gray**: Disabled, unknown, or neutral states
 
 #### Chart Selection Guide
 - **Line charts**: Time series, trends, comparisons over time
@@ -532,20 +532,20 @@ standards:
 # Generate dashboards from service definitions
 def generate_service_dashboard(service_config):
     panels = []
-    
+
     # Always include golden signals
     panels.extend(generate_golden_signals_panels(service_config))
-    
+
     # Add service-specific panels
-    if service_config.type == 'database':
+    if service_config.type == "database":
         panels.extend(generate_database_panels(service_config))
-    elif service_config.type == 'queue':
+    elif service_config.type == "queue":
         panels.extend(generate_queue_panels(service_config))
-        
+
     return {
-        'title': f"{service_config.name} - Operational Dashboard",
-        'panels': panels,
-        'variables': generate_variables(service_config)
+        "title": f"{service_config.name} - Operational Dashboard",
+        "panels": panels,
+        "variables": generate_variables(service_config),
     }
 ```
 

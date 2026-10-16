@@ -1,9 +1,9 @@
-"""S00 baseline: read-only analysis of prd-to-spec run cost sidecars for one day.
+"""S00 starting figures: read-only analysis of prd-to-spec run cost sidecars for one day.
 
 Each sidecar is read and validated by the control repository's ``costsidecar.read_sidecar``,
 which owns the ``costsidecar.CostSidecar`` contract; this script only sums the validated records.
 
-Usage: python3 s00_baseline.py [YYYYMMDD]
+Usage: python3 s00_starting_figures.py [YYYYMMDD]
 """
 
 from __future__ import annotations
@@ -245,7 +245,7 @@ def report_startup(records: Sequence[CostRecord]) -> None:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main() -> None:
-    """Print the baseline figures for the day named on the command line."""
+    """Print the starting figures for the day named on the command line."""
     day: str = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DAY
     records: list[CostRecord] = load_records(day)
     weights: list[int] = [weighted for r in records if (weighted := _count(r, "weighted")) is not None]

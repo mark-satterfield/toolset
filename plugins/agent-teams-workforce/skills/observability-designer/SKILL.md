@@ -56,7 +56,7 @@ Observability Designer enables you to create production-ready observability stra
 #### Visualization Best Practices
 - **Chart Selection:** Time series for trends, heatmaps for distributions, gauges for status
 - **Color Theory:** Red for critical, amber for warning, green for healthy states
-- **Reference Lines:** SLO targets, capacity thresholds, and historical baselines
+- **Reference Lines:** SLO targets, capacity thresholds, and historical reference values
 - **Time Ranges:** Default to meaningful windows (4h for incidents, 7d for trends)
 
 #### Panel Design

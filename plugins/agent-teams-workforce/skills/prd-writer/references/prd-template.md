@@ -215,12 +215,12 @@ Names should sort and group naturally when listed alphabetically.
 
 <!--
   How will you know this feature is working?
-  Define what you'd measure, the current baseline (if known), and the target.
+  Define what you'd measure, the current starting value (if known), and the target.
   Acceptable measures: adoption rate, error rate reduction, task completion time,
   user satisfaction signal, operational metric, etc.
 -->
 
-| Metric             | Baseline                     | Target | Method         |
+| Metric             | Starting value               | Target | Method         |
 | ------------------ | ---------------------------- | ------ | -------------- |
 | [What you measure] | [Current value or "unknown"] | [Goal] | [How measured] |
 

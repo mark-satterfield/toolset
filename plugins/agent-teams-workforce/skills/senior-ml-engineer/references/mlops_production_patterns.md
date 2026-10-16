@@ -142,7 +142,7 @@ user_features = FeatureView(
 | Dimension | Metrics | Alert Threshold |
 |-----------|---------|-----------------|
 | Latency | p50, p95, p99 | p95 > 100ms |
-| Throughput | requests/sec | < 80% baseline |
+| Throughput | requests/sec | < 80% of reference |
 | Errors | error rate, 5xx count | > 0.1% |
 | Data Drift | PSI, KS statistic | PSI > 0.2 |
 | Model Drift | accuracy, AUC decay | > 5% drop |
@@ -153,18 +153,14 @@ user_features = FeatureView(
 from scipy.stats import ks_2samp
 import numpy as np
 
+
 def detect_drift(reference: np.array, current: np.array, threshold: float = 0.05):
     """Detect distribution drift using Kolmogorov-Smirnov test."""
     statistic, p_value = ks_2samp(reference, current)
 
     drift_detected = p_value < threshold
 
-    return {
-        "drift_detected": drift_detected,
-        "ks_statistic": statistic,
-        "p_value": p_value,
-        "threshold": threshold
-    }
+    return {"drift_detected": drift_detected, "ks_statistic": statistic, "p_value": p_value, "threshold": threshold}
 ```
 
 ### Monitoring Dashboard Metrics
@@ -201,6 +197,7 @@ def detect_drift(reference: np.array, current: np.array, threshold: float = 0.05
 
 ```python
 import hashlib
+
 
 def get_variant(user_id: str, experiment: str, control_pct: float = 0.5) -> str:
     """Deterministic traffic splitting based on user ID."""
@@ -242,12 +239,13 @@ def get_variant(user_id: str, experiment: str, control_pct: float = 0.5) -> str:
 6. If improved: register new model version
 7. Deploy to staging for validation
 8. Promote to production via canary
-9. **Validation:** New model outperforms baseline on key metrics
+9. **Validation:** New model outperforms the reference on key metrics
 
 ### MLflow Model Registry Integration
 
 ```python
 import mlflow
+
 
 def register_model(model, metrics: dict, model_name: str):
     """Register trained model with MLflow."""

@@ -86,7 +86,7 @@ def soft_nms(boxes, scores, sigma=0.5, score_threshold=0.001):
         ious = compute_iou(boxes[i], boxes[order[1:]])
 
         # Gaussian penalty
-        weights = np.exp(-ious**2 / sigma)
+        weights = np.exp(-(ious**2) / sigma)
         scores[order[1:]] *= weights
 
         # Re-sort by updated scores
@@ -172,6 +172,7 @@ Optimize anchors for your dataset.
 import numpy as np
 from sklearn.cluster import KMeans
 
+
 def optimize_anchors(annotations, num_anchors=9, image_size=640):
     """
     annotations: list of (width, height) for each bounding box
@@ -198,14 +199,14 @@ def optimize_anchors(annotations, num_anchors=9, image_size=640):
 
     return anchors
 
+
 def calculate_anchor_fit(boxes, anchors):
     """Calculate how well anchors fit the boxes"""
     ious = []
     for box in boxes:
         box_area = box[0] * box[1]
         anchor_areas = anchors[:, 0] * anchors[:, 1]
-        intersections = np.minimum(box[0], anchors[:, 0]) * \
-                       np.minimum(box[1], anchors[:, 1])
+        intersections = np.minimum(box[0], anchors[:, 0]) * np.minimum(box[1], anchors[:, 1])
         unions = box_area + anchor_areas - intersections
         max_iou = (intersections / unions).max()
         ious.append(max_iou)
@@ -269,7 +270,7 @@ def focal_loss(pred, target, gamma=2.0, alpha=0.25):
     pred: (N, num_classes) predicted probabilities
     target: (N,) ground truth class indices
     """
-    ce_loss = F.cross_entropy(pred, target, reduction='none')
+    ce_loss = F.cross_entropy(pred, target, reduction="none")
     pt = torch.exp(-ce_loss)  # probability of correct class
 
     # Focal term: (1 - pt)^gamma
@@ -295,7 +296,7 @@ def quality_focal_loss(pred, target, beta=2.0):
     """
     target: IoU values (0-1) instead of binary
     """
-    ce = F.binary_cross_entropy(pred, target, reduction='none')
+    ce = F.binary_cross_entropy(pred, target, reduction="none")
     focal_weight = torch.abs(pred - target) ** beta
     loss = focal_weight * ce
     return loss.mean()
@@ -308,11 +309,7 @@ def quality_focal_loss(pred, target, beta=2.0):
 ```python
 def smooth_l1_loss(pred, target, beta=1.0):
     diff = torch.abs(pred - target)
-    loss = torch.where(
-        diff < beta,
-        0.5 * diff ** 2 / beta,
-        diff - 0.5 * beta
-    )
+    loss = torch.where(diff < beta, 0.5 * diff**2 / beta, diff - 0.5 * beta)
     return loss.mean()
 ```
 
@@ -372,14 +369,14 @@ def ciou_loss(pred_boxes, target_boxes):
     enclose_y1 = torch.min(pred_boxes[:, 1], target_boxes[:, 1])
     enclose_x2 = torch.max(pred_boxes[:, 2], target_boxes[:, 2])
     enclose_y2 = torch.max(pred_boxes[:, 3], target_boxes[:, 3])
-    c_sq = (enclose_x2 - enclose_x1)**2 + (enclose_y2 - enclose_y1)**2
+    c_sq = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2
 
     # Center distance
     pred_cx = (pred_boxes[:, 0] + pred_boxes[:, 2]) / 2
     pred_cy = (pred_boxes[:, 1] + pred_boxes[:, 3]) / 2
     target_cx = (target_boxes[:, 0] + target_boxes[:, 2]) / 2
     target_cy = (target_boxes[:, 1] + target_boxes[:, 3]) / 2
-    d_sq = (pred_cx - target_cx)**2 + (pred_cy - target_cy)**2
+    d_sq = (pred_cx - target_cx) ** 2 + (pred_cy - target_cy) ** 2
 
     # Aspect ratio term
     pred_w = pred_boxes[:, 2] - pred_boxes[:, 0]
@@ -387,9 +384,7 @@ def ciou_loss(pred_boxes, target_boxes):
     target_w = target_boxes[:, 2] - target_boxes[:, 0]
     target_h = target_boxes[:, 3] - target_boxes[:, 1]
 
-    v = (4 / math.pi**2) * (
-        torch.atan(target_w / target_h) - torch.atan(pred_w / pred_h)
-    )**2
+    v = (4 / math.pi**2) * (torch.atan(target_w / target_h) - torch.atan(pred_w / pred_h)) ** 2
     alpha_term = v / (1 - iou + v + 1e-7)
 
     ciou = iou - d_sq / (c_sq + 1e-7) - alpha_term * v
@@ -418,9 +413,8 @@ def dfl_loss(pred_dist, target, reg_max=16):
     weight_left = 1 - weight_right
 
     # Cross-entropy with soft targets
-    loss_left = F.cross_entropy(pred_dist, target_left, reduction='none')
-    loss_right = F.cross_entropy(pred_dist, target_right.clamp(max=reg_max-1),
-                                  reduction='none')
+    loss_left = F.cross_entropy(pred_dist, target_left, reduction="none")
+    loss_right = F.cross_entropy(pred_dist, target_right.clamp(max=reg_max - 1), reduction="none")
 
     loss = weight_left * loss_left + weight_right * loss_right
     return loss.mean()
@@ -454,23 +448,13 @@ lr = base_lr * (0.1 ** (milestones_passed))
 ```python
 optimizer = SGD(model.parameters(), lr=0.01, momentum=0.937, weight_decay=0.0005)
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    optimizer,
-    T_max=total_epochs,
-    eta_min=0.0001
-)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_epochs, eta_min=0.0001)
 
 # With warmup
-warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-    optimizer,
-    start_factor=0.1,
-    total_iters=warmup_epochs
-)
+warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_epochs)
 
 scheduler = torch.optim.lr_scheduler.SequentialLR(
-    optimizer,
-    schedulers=[warmup_scheduler, scheduler],
-    milestones=[warmup_epochs]
+    optimizer, schedulers=[warmup_scheduler, scheduler], milestones=[warmup_epochs]
 )
 ```
 
@@ -491,10 +475,7 @@ class EMA:
     def update(self):
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                self.shadow[name] = (
-                    self.decay * self.shadow[name] +
-                    (1 - self.decay) * param.data
-                )
+                self.shadow[name] = self.decay * self.shadow[name] + (1 - self.decay) * param.data
 
     def apply_shadow(self):
         for name, param in self.model.named_parameters():
@@ -517,7 +498,7 @@ sizes = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768]
 input_size = random.choice(sizes)
 
 # Resize batch to selected size
-images = F.interpolate(images, size=input_size, mode='bilinear')
+images = F.interpolate(images, size=input_size, mode="bilinear")
 ```
 
 **Benefits:**
@@ -576,12 +557,15 @@ for images, targets in dataloader:
 ```python
 import albumentations as A
 
-geometric = A.Compose([
-    A.HorizontalFlip(p=0.5),
-    A.Rotate(limit=15, p=0.3),
-    A.RandomScale(scale_limit=0.2, p=0.5),
-    A.Affine(translate_percent={'x': (-0.1, 0.1), 'y': (-0.1, 0.1)}, p=0.3),
-], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
+geometric = A.Compose(
+    [
+        A.HorizontalFlip(p=0.5),
+        A.Rotate(limit=15, p=0.3),
+        A.RandomScale(scale_limit=0.2, p=0.5),
+        A.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)}, p=0.3),
+    ],
+    bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"]),
+)
 ```
 
 ### Color Augmentations
@@ -614,7 +598,7 @@ def mosaic_augmentation(images, labels, input_size=640):
     cy = int(random.uniform(input_size * 0.25, input_size * 0.75))
 
     positions = [
-        (0, 0, cx, cy),           # top-left
+        (0, 0, cx, cy),  # top-left
         (cx, 0, input_size, cy),  # top-right
         (0, cy, cx, input_size),  # bottom-left
         (cx, cy, input_size, input_size),  # bottom-right
@@ -651,7 +635,7 @@ def mixup(image1, labels1, image2, labels2, alpha=0.5):
 
     # Blend labels with soft weights
     labels1_weighted = [(box, cls, alpha) for box, cls in labels1]
-    labels2_weighted = [(box, cls, 1-alpha) for box, cls in labels2]
+    labels2_weighted = [(box, cls, 1 - alpha) for box, cls in labels2]
 
     mixed_labels = labels1_weighted + labels2_weighted
     return mixed_image, mixed_labels
@@ -674,8 +658,7 @@ def copy_paste(background, bg_labels, source, src_labels, src_masks):
         y_offset = random.randint(0, background.shape[0] - mask.shape[0])
 
         # Paste with mask
-        region = result[y_offset:y_offset+mask.shape[0],
-                       x_offset:x_offset+mask.shape[1]]
+        region = result[y_offset : y_offset + mask.shape[0], x_offset : x_offset + mask.shape[1]]
         region[mask > 0] = source[mask > 0]
 
         # Add new label
@@ -723,13 +706,13 @@ import torch.nn.utils.prune as prune
 # Prune 30% of weights with smallest magnitude
 for name, module in model.named_modules():
     if isinstance(module, nn.Conv2d):
-        prune.l1_unstructured(module, name='weight', amount=0.3)
+        prune.l1_unstructured(module, name="weight", amount=0.3)
 ```
 
 **Structured Pruning (channels):**
 ```python
 # Prune entire channels
-prune.ln_structured(module, name='weight', amount=0.3, n=2, dim=0)
+prune.ln_structured(module, name="weight", amount=0.3, n=2, dim=0)
 ```
 
 ### Knowledge Distillation
@@ -737,16 +720,15 @@ prune.ln_structured(module, name='weight', amount=0.3, n=2, dim=0)
 Train smaller model with larger teacher.
 
 ```python
-def distillation_loss(student_logits, teacher_logits, labels,
-                      temperature=4.0, alpha=0.7):
+def distillation_loss(student_logits, teacher_logits, labels, temperature=4.0, alpha=0.7):
     """
     Combine soft targets from teacher with hard labels
     """
     # Soft targets
     soft_student = F.log_softmax(student_logits / temperature, dim=1)
     soft_teacher = F.softmax(teacher_logits / temperature, dim=1)
-    soft_loss = F.kl_div(soft_student, soft_teacher, reduction='batchmean')
-    soft_loss *= temperature ** 2  # Scale by T^2
+    soft_loss = F.kl_div(soft_student, soft_teacher, reduction="batchmean")
+    soft_loss *= temperature**2  # Scale by T^2
 
     # Hard targets
     hard_loss = F.cross_entropy(student_logits, labels)
@@ -764,8 +746,8 @@ Reduce precision for faster inference.
 import torch.quantization
 
 # Prepare model
-model.set_mode('inference')
-model.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+model.set_mode("inference")
+model.qconfig = torch.quantization.get_default_qconfig("fbgemm")
 torch.quantization.prepare(model, inplace=True)
 
 # Calibrate with representative data
@@ -781,7 +763,7 @@ torch.quantization.convert(model, inplace=True)
 ```python
 # Insert fake quantization during training
 model.train()
-model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+model.qconfig = torch.quantization.get_default_qat_qconfig("fbgemm")
 model_prepared = torch.quantization.prepare_qat(model)
 
 # Train with fake quantization
@@ -811,7 +793,7 @@ model_quantized = torch.quantization.convert(model_prepared)
 
 ### Tuning Strategy
 
-1. **Baseline**: Use default hyperparameters
+1. **Starting point**: Use default hyperparameters
 2. **Learning rate**: Grid search [1e-3, 5e-3, 1e-2, 5e-2]
 3. **Batch size**: Maximum that fits in memory
 4. **Augmentation**: Start minimal, add progressively
@@ -823,10 +805,11 @@ model_quantized = torch.quantization.convert(model_prepared)
 ```python
 import optuna
 
+
 def objective(trial):
-    lr = trial.suggest_loguniform('lr', 1e-4, 1e-1)
-    weight_decay = trial.suggest_loguniform('weight_decay', 1e-5, 1e-3)
-    mosaic_prob = trial.suggest_uniform('mosaic_prob', 0.0, 1.0)
+    lr = trial.suggest_loguniform("lr", 1e-4, 1e-1)
+    weight_decay = trial.suggest_loguniform("weight_decay", 1e-5, 1e-3)
+    mosaic_prob = trial.suggest_uniform("mosaic_prob", 0.0, 1.0)
 
     model = create_model()
     train_model(model, lr=lr, weight_decay=weight_decay, mosaic_prob=mosaic_prob)
@@ -834,7 +817,8 @@ def objective(trial):
 
     return mAP
 
-study = optuna.create_study(direction='maximize')
+
+study = optuna.create_study(direction="maximize")
 study.optimize(objective, n_trials=100)
 
 print(f"Best params: {study.best_params}")

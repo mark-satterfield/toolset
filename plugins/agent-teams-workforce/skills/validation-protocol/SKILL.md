@@ -14,7 +14,7 @@ Success means observing the intended outcome. "No errors" is not enough.
 
 ## Protocol
 
-### 1. Establish Baseline
+### 1. Establish Starting State
 
 Before changing or accepting anything, identify the current state:
 
@@ -37,7 +37,7 @@ Perform the implementation, review, or artifact generation inside the assigned s
 
 ### 4. Verify Against Criteria
 
-Re-run the baseline check or inspect the resulting artifact against the success criteria:
+Re-run the starting-state check or inspect the resulting artifact against the success criteria:
 
 - Compare expected vs. observed behavior.
 - Cite file paths, commands, reports, or artifacts used as evidence.
@@ -51,7 +51,7 @@ The result states whether every criterion is satisfied, or names each gap: a req
 
 ## Anti-Patterns
 
-- Claiming completion without reproducing or observing the baseline.
+- Claiming completion without reproducing or observing the starting state.
 - Treating a successful command exit as proof of intended behavior.
 - Skipping edge cases listed in the acceptance criteria.
 - Saying "should work" instead of reporting observed evidence.

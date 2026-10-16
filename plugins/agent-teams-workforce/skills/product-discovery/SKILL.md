@@ -20,7 +20,7 @@ Use this skill for:
 
 1. Define desired outcome
 - Set one measurable outcome to improve.
-- Establish baseline and target horizon.
+- Establish starting values and target horizon.
 
 2. Build Opportunity Solution Tree (OST)
 - Outcome -> opportunities -> solution ideas -> experiments

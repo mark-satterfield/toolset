@@ -33,7 +33,7 @@ Together, these tools enable engineering teams to make data-driven decisions abo
 ### Phase 1: Foundation (Weeks 1-2)
 1. Set up debt scanning infrastructure
 2. Establish debt taxonomy and scoring criteria
-3. Scan initial codebase and create baseline inventory
+3. Scan initial codebase and create initial inventory
 4. Train team on debt identification and reporting
 
 ### Phase 2: Process Integration (Weeks 3-4)

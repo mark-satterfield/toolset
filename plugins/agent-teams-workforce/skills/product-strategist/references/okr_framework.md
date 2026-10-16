@@ -163,7 +163,7 @@ Each level contributes a percentage to the level above:
 ### Key Result Anatomy
 
 ```
-[Verb] [metric] from [current baseline] to [target] by [deadline]
+[Verb] [metric] from [current starting value] to [target] by [deadline]
 ```
 
 ### Key Result Types
@@ -305,7 +305,7 @@ Q4: Scale and optimize (ARR: $65M → $100M)
 **Before finalizing OKRs:**
 - [ ] 3-5 objectives per level (not more)
 - [ ] 3-5 key results per objective
-- [ ] Each KR has a current baseline and target
+- [ ] Each KR has a current starting value and target
 - [ ] Vertical alignment validated (parent links)
 - [ ] No conflicting objectives across teams
 - [ ] Owners assigned to every objective

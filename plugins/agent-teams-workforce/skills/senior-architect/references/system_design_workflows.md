@@ -402,7 +402,7 @@ Resource utilization:
 
 **Test scenarios:**
 ```
-1. Baseline: Current production load
+1. Starting point: Current production load
 2. 2x load: Expected growth in 6 months
 3. 5x load: Stress test
 4. Spike: Sudden 10x for 5 minutes
@@ -455,7 +455,7 @@ Use when migrating to new infrastructure, database, or architecture.
 - Data volumes
 - Dependencies
 - Integration points
-- Performance baselines
+- Reference performance measurements
 
 ### Step 2: Define Target State
 

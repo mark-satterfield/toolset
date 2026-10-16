@@ -106,7 +106,7 @@ TRIGGER: Sub-agent claims refactoring complete
 VERIFICATION_CHECKLIST:
 
 1. Require proof tests passed before refactoring
-   - "Show baseline test results before changes"
+   - "Show starting test results before changes"
    - Pre-refactor test suite output
 2. Require proof tests still pass after refactoring
    - "Show same tests passing after changes"
@@ -128,7 +128,7 @@ REJECTION_CRITERIA:
 
 REQUIRED_EVIDENCE:
 
-- Baseline test results before refactoring
+- Starting test results before refactoring
 - Same test results after refactoring
 - Proof all tests still pass
 - Performance metrics if applicable
@@ -243,9 +243,9 @@ TRIGGER: Sub-agent claims performance optimization complete
 
 VERIFICATION_CHECKLIST:
 
-1. Require proof baseline performance measured
+1. Require proof reference performance measured
    - "Show before-optimization metrics"
-   - Baseline benchmark results
+   - Reference benchmark results
 2. Require proof after-optimization metrics
    - "Show after-optimization metrics"
    - Post-optimization benchmark results
@@ -265,7 +265,7 @@ REJECTION_CRITERIA:
 
 REQUIRED_EVIDENCE:
 
-- Baseline performance metrics
+- Reference performance metrics
 - Post-optimization performance metrics
 - Quantified improvement (percentage, time saved, etc.)
 - Test suite results proving functionality intact

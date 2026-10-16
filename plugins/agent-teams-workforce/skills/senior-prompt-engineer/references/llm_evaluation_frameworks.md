@@ -168,10 +168,7 @@ BERTScore: High score (semantic meaning preserved)
 
 **Method 1: Embedding similarity**
 ```python
-relevance = cosine_similarity(
-    embed(query),
-    embed(context)
-)
+relevance = cosine_similarity(embed(query), embed(context))
 ```
 
 **Method 2: LLM-as-judge**
@@ -320,7 +317,7 @@ Overall score (0-10):
 **Calibration techniques:**
 - Include reference responses with known scores
 - Use chain-of-thought for reasoning
-- Compare against human baseline periodically
+- Compare against human reference periodically
 
 **Known biases:**
 | Bias | Mitigation |
@@ -354,7 +351,7 @@ Where:
 ```
 
 **Quick reference:**
-| MDE | Baseline Rate | Required n/variant |
+| MDE | Starting Rate | Required n/variant |
 |-----|---------------|-------------------|
 | 5% relative | 50% | 3,200 |
 | 10% relative | 50% | 800 |
@@ -492,7 +489,7 @@ Decision: Ship if p < 0.05 AND effect size meets threshold AND guardrails pass
   □ Version control for prompts
   □ Results tracking and comparison
 
-□ Establish baseline
+□ Establish starting values
   □ Run current prompt against benchmark
   □ Document scores for all metrics
   □ Set improvement targets

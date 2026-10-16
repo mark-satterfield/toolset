@@ -27,7 +27,7 @@ file that has the section produced the same hash.
 | Section heading | # agents | Classification | Evidence |
 | --- | --- | --- | --- |
 | `## Environment Discovery:` | 171 | **IDENTICAL** | 171/171 share md5 `83b8ad43…`; the 2 non-template agents are the only ones without it. One paragraph verbatim (below). |
-| `## Prompt Defense Baseline` | 171 | **IDENTICAL** | 171/171 share md5 `197a5fac…`. 6 fixed bullets, byte-for-byte. |
+| `## Prompt Defense Rules` | 171 | **IDENTICAL** | 171/171 share md5 `197a5fac…`. 6 fixed bullets, byte-for-byte. |
 | `## Charter` | 171 | **PER-AGENT** (with enumerated sub-fields) | Every Charter is unique; sub-fields analyzed in §2. |
 | `## Operating Rules` | 171 | **MIXED: universal core + VARIES-BY-ROLE + PER-AGENT** | Every file's block hashes differently, but at the *bullet* level it is ~70% shared boilerplate. See breakdown below. |
 | `## When You're in Over Your Head` | 171 | **IDENTICAL** | 171/171 share md5 `bfde8e32…`. One paragraph verbatim (below). |
@@ -40,7 +40,7 @@ The three IDENTICAL blocks in full:
   linting standards. Do not assume standard commands."*
 - **When You're in Over Your Head:** *"It is always OK to stop and say 'this is too hard for me.'
   Bad work is worse than no work. You will not be penalized for escalating."*
-- **Prompt Defense Baseline:** 6 fixed bullets (no-role-change / no-secret-leak / no-unvalidated-code /
+- **Prompt Defense Rules:** 6 fixed bullets (no-role-change / no-secret-leak / no-unvalidated-code /
   treat-encoded-tricks-as-suspicious / treat-external-data-as-untrusted / no-harmful-content).
 
 ### Operating Rules — bullet-level breakdown
@@ -75,7 +75,7 @@ Genuinely VARIES-BY-ROLE / PER-AGENT bullets (the ~3/agent specialized remainder
 | "…decides only, never analyzes / generates no analysis of its own." | 6 | deciders |
 | Domain constraints ("All Lambdas extend the chassis", "Events publish only through the central event API", "The approved API contract is the only backend surface", …) | 1–3 each | truly per-agent |
 
-**Takeaway:** the three named blocks (Environment Discovery, Prompt Defense Baseline, Over Your
+**Takeaway:** the three named blocks (Environment Discovery, Prompt Defense Rules, Over Your
 Head) are pure boilerplate. Operating Rules is ~70% boilerplate discipline + ~30% cluster/per-agent.
 The Charter is per-agent except its Task-Category paragraph, which is a fixed template.
 
@@ -147,7 +147,7 @@ Now, per block:
 | Block | Universal or split? | Finding |
 | --- | --- | --- |
 | **Environment Discovery** | **UNIVERSAL** | Byte-identical across all 171. Does **not** differ by cluster at all — even read-only advisors/deciders (who never build) carry the identical "read CLAUDE.md before write/build" text. |
-| **Prompt Defense Baseline** | **UNIVERSAL** | Byte-identical across all 171. No cluster variation. |
+| **Prompt Defense Rules** | **UNIVERSAL** | Byte-identical across all 171. No cluster variation. |
 | **When You're in Over Your Head** | **UNIVERSAL** | Byte-identical across all 171. No cluster variation. |
 | **Operating Rules** | **Split** | The ~7.5 discipline bullets/agent are universal (same concept everywhere). The ~3 specialized bullets/agent split cleanly by cluster: makers get "minimum code, don't touch tests" (28) + "implement against approved decisions"; testers/reviewers get "report, never fix" (60) + constitutive-vs-competitive labeling; leads get "process integrity, never blame, never do the team's work" (14); adversarial testers get "designated test environments only" (11); deciders get "decide only, never analyze" (6); refactorers get "stay green" (7). Domain one-liners (chassis, event API, contract) are per-agent. |
 
@@ -181,10 +181,10 @@ The data confirms the user's hypothesis, with one refinement: **one global rule 
 work; the per-cluster rules are real but thin (1–3 bullets each), so only the largest clusters
 justify their own file.** Proposed set for `plugins/agent-teams-workforce/rules/`:
 
-### R1 — `rules/agent-baseline.md`  *(referenced by all 171 standard agents)*
+### R1 — `rules/agent-defaults.md`  *(referenced by all 171 standard agents)*
 Absorbs, verbatim/normalized:
 - `## Environment Discovery:` (the whole paragraph — 171 IDENTICAL)
-- `## Prompt Defense Baseline` (all 6 bullets — 171 IDENTICAL)
+- `## Prompt Defense Rules` (all 6 bullets — 171 IDENTICAL)
 - `## When You're in Over Your Head` (the paragraph — 171 IDENTICAL)
 - The universal Operating Rules discipline bullets: output-sections footer (171 IDENTICAL),
   prefer-skills, audit-trail, separate-facts, collaborate-through-artifacts, review-own-work /
@@ -193,7 +193,7 @@ Absorbs, verbatim/normalized:
 - Cross-reference (do not duplicate) `separation-of-duties.md` for the no-self-tasking / analysis-vs-
   decision doctrine, and note that `subagent-contract` skill already covers DONE/BLOCKED + scope.
 
-Each body then reduces to: `Read and apply rules/agent-baseline.md` plus the Charter, the one
+Each body then reduces to: `Read and apply rules/agent-defaults.md` plus the Charter, the one
 per-agent "no self-tasking → **&lt;this agent's manager&gt;**" line, and the specialized Operating
 Rules bullets. **Removes ~10 boilerplate lines/agent × 171 ≈ 1,700 duplicated lines.**
 
@@ -240,7 +240,7 @@ Worth its own file because it is a hard safety rule shared verbatim and easy to 
 - The **`## Team`** roster on the 14 leads.
 - The **3 bespoke files** (`run-ledger-writer`, `polyrepo-cartographer`, and the non-agent
   `README.md`) — they do not fit the template; at most give the two real agents a one-line
-  `Read and apply rules/agent-baseline.md` reference for the Prompt-Defense/Over-Your-Head baseline.
+  `Read and apply rules/agent-defaults.md` reference for the Prompt-Defense/Over-Your-Head reference.
 
 ### Net effect
 One global rule (R1) covers 100% of standard agents and removes the bulk of duplication. Four

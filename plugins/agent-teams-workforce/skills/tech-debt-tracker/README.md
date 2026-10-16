@@ -196,7 +196,7 @@ Add debt scanning to your CI pipeline:
 ```bash
 # In your CI script
 python scripts/debt_scanner.py . --output ci_scan.json
-# Compare with baseline, fail build if critical issues found
+# Compare with reference, fail build if critical issues found
 ```
 
 ### Sprint Planning
@@ -214,7 +214,7 @@ Use scanner output to focus code reviews:
 # Scan PR branch
 python scripts/debt_scanner.py . --output pr_scan.json
 
-# Compare with main branch baseline
+# Compare with main branch reference
 # Focus review on areas with new debt
 ```
 

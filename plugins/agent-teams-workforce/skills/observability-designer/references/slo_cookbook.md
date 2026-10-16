@@ -318,7 +318,7 @@ sum(rate(records_valid_total[5m])) / sum(rate(records_processed_total[5m])) >= 0
 
 - [ ] Identify your service's critical user journeys
 - [ ] Choose 1-2 SLIs that best reflect user experience
-- [ ] Collect 4-6 weeks of baseline data
+- [ ] Collect 4-6 weeks of reference data
 - [ ] Set initial SLO targets based on historical performance
 - [ ] Implement basic SLO monitoring and alerting
 - [ ] Create an SLO dashboard

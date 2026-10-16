@@ -173,7 +173,7 @@ fail_under = 80
 
 | Metric | Purpose | Alert Threshold |
 |--------|---------|-----------------|
-| Overall line coverage | Baseline health | < 80% |
+| Overall line coverage | Reference health | < 80% |
 | Branch coverage | Logic completeness | < 70% |
 | Coverage delta | Regression detection | < -2% per PR |
 | Test execution time | Performance | > 5 min |

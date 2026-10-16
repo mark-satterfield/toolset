@@ -180,7 +180,7 @@ The model decorates outputs with quantitative artifacts from training corpus WIT
 ❌ **Hallucinated**:
 
 ```markdown
-Code Quality: 8.5/10 Performance: 70% improvement over baseline Test Coverage: Excellent (9/10)
+Code Quality: 8.5/10 Performance: 70% improvement over the reference Test Coverage: Excellent (9/10)
 ```
 
 ✅ **Verified**:
@@ -194,7 +194,7 @@ Code Quality Assessment:
 - ❌ Missing property-based tests
 - ❌ No benchmarks for performance claims
 
-Test Coverage: 67% (pytest-cov report, lines 234-890 covered) Performance: Unverified - no baseline measurements found in codebase
+Test Coverage: 67% (pytest-cov report, lines 234-890 covered) Performance: Unverified - no reference measurements found in codebase
 ```
 
 ### Category 4: Incomplete Verification
@@ -282,7 +282,7 @@ Consensus Assessment:
 
 - Assumption language (Category 1)
 - Incomplete verification (Category 4)
-- Fabricated metrics that get cited as "established baseline" later
+- Fabricated metrics that get cited as "established reference" later
 
 **Detection**: Track assumption language in output. Any unverified claim pollutes context for all subsequent reasoning.
 
@@ -455,7 +455,7 @@ Priority 2 (Depends on P1):
 
 SYNC CHECKPOINT: Review P1+P2 outputs for consistency before proceeding
 
-Efficiency impact: Unverified - no baseline task completion measurements exist in current data
+Efficiency impact: Unverified - no reference task completion measurements exist in current data
 ```
 
 ### Example 2: Implementation Plan

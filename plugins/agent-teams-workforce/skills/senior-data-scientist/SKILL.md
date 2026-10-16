@@ -15,19 +15,21 @@ World-class senior data scientist skill for production-grade AI/ML/Data systems.
 import numpy as np
 from scipy import stats
 
-def calculate_sample_size(baseline_rate, mde, alpha=0.05, power=0.8):
+
+def calculate_sample_size(base_rate, mde, alpha=0.05, power=0.8):
     """
     Calculate required sample size per variant.
-    baseline_rate: current conversion rate (e.g. 0.10)
+    base_rate: current conversion rate (e.g. 0.10)
     mde: minimum detectable effect (relative, e.g. 0.05 = 5% lift)
     """
-    p1 = baseline_rate
-    p2 = baseline_rate * (1 + mde)
+    p1 = base_rate
+    p2 = base_rate * (1 + mde)
     effect_size = abs(p2 - p1) / np.sqrt((p1 * (1 - p1) + p2 * (1 - p2)) / 2)
     z_alpha = stats.norm.ppf(1 - alpha / 2)
     z_beta = stats.norm.ppf(power)
     n = ((z_alpha + z_beta) / effect_size) ** 2
     return int(np.ceil(n))
+
 
 def analyze_experiment(control, treatment, alpha=0.05):
     """
@@ -49,6 +51,7 @@ def analyze_experiment(control, treatment, alpha=0.05):
         "ci_95": (ci_low, ci_high),
     }
 
+
 # --- Experiment checklist ---
 # 1. Define ONE primary metric and pre-register secondary metrics.
 # 2. Calculate sample size BEFORE starting: calculate_sample_size(0.10, 0.05)
@@ -69,13 +72,14 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 
+
 def build_feature_pipeline(numeric_cols, categorical_cols, date_cols=None):
     """
     Returns a fitted-ready ColumnTransformer for structured tabular data.
     """
     numeric_pipeline = Pipeline([
         ("impute", SimpleImputer(strategy="median")),
-        ("scale",  StandardScaler()),
+        ("scale", StandardScaler()),
     ])
     categorical_pipeline = Pipeline([
         ("impute", SimpleImputer(strategy="most_frequent")),
@@ -87,6 +91,7 @@ def build_feature_pipeline(numeric_cols, categorical_cols, date_cols=None):
     ]
     return ColumnTransformer(transformers, remainder="drop")
 
+
 def add_time_features(df, date_col):
     """Extract cyclical and lag features from a datetime column."""
     df = df.copy()
@@ -97,6 +102,7 @@ def add_time_features(df, date_col):
     df["month_cos"] = np.cos(2 * np.pi * df[date_col].dt.month / 12)
     df["is_weekend"] = (df[date_col].dt.dayofweek >= 5).astype(int)
     return df
+
 
 # --- Feature engineering checklist ---
 # 1. Never fit transformers on the full dataset — fit on train, transform test.
@@ -115,9 +121,10 @@ import xgboost as xgb
 import mlflow
 
 SCORERS = {
-    "roc_auc":  make_scorer(roc_auc_score, needs_proba=True),
+    "roc_auc": make_scorer(roc_auc_score, needs_proba=True),
     "avg_prec": make_scorer(average_precision_score, needs_proba=True),
 }
+
 
 def evaluate_model(model, X, y, cv=5):
     """
@@ -125,7 +132,9 @@ def evaluate_model(model, X, y, cv=5):
     Use StratifiedKFold for classification to preserve class balance.
     """
     cv_results = cross_validate(
-        model, X, y,
+        model,
+        X,
+        y,
         cv=StratifiedKFold(n_splits=cv, shuffle=True, random_state=42),
         scoring=SCORERS,
         return_train_score=True,
@@ -139,13 +148,14 @@ def evaluate_model(model, X, y, cv=5):
         summary[metric]["overfit_gap"] = train_mean - test_scores.mean()
     return summary
 
+
 def train_and_log(model, X_train, y_train, X_test, y_test, run_name):
     """Train model and log all artefacts to MLflow."""
     with mlflow.start_run(run_name=run_name):
         model.fit(X_train, y_train)
         proba = model.predict_proba(X_test)[:, 1]
         metrics = {
-            "roc_auc":  roc_auc_score(y_test, proba),
+            "roc_auc": roc_auc_score(y_test, proba),
             "avg_prec": average_precision_score(y_test, proba),
         }
         mlflow.log_params(model.get_params())
@@ -153,12 +163,13 @@ def train_and_log(model, X_train, y_train, X_test, y_test, run_name):
         mlflow.sklearn.log_model(model, "model")
         return metrics
 
+
 # --- Model evaluation checklist ---
 # 1. Always report AUC-PR alongside AUC-ROC for imbalanced datasets.
 # 2. Check overfit_gap > 0.05 as a warning sign of overfitting.
 # 3. Calibrate probabilities (Platt scaling / isotonic) before production use.
 # 4. Compute SHAP values to validate feature importance makes business sense.
-# 5. Run a baseline (e.g. DummyClassifier) and verify the model beats it.
+# 5. Run a naive reference model (e.g. DummyClassifier) and verify the model beats it.
 # 6. Log every run to MLflow — never rely on notebook output for comparison.
 ```
 
@@ -167,6 +178,7 @@ def train_and_log(model, X_train, y_train, X_test, y_test, run_name):
 ```python
 import statsmodels.formula.api as smf
 
+
 def diff_in_diff(df, outcome, treatment_col, post_col, controls=None):
     """
     Estimate ATT via OLS DiD with optional covariates.
@@ -174,24 +186,22 @@ def diff_in_diff(df, outcome, treatment_col, post_col, controls=None):
     Returns the interaction coefficient (treatment × post) and its p-value.
     """
     covariates = " + ".join(controls) if controls else ""
-    formula = (
-        f"{outcome} ~ {treatment_col} * {post_col}"
-        + (f" + {covariates}" if covariates else "")
-    )
+    formula = f"{outcome} ~ {treatment_col} * {post_col}" + (f" + {covariates}" if covariates else "")
     result = smf.ols(formula, data=df).fit(cov_type="HC3")
     interaction = f"{treatment_col}:{post_col}"
     return {
-        "att":     result.params[interaction],
+        "att": result.params[interaction],
         "p_value": result.pvalues[interaction],
-        "ci_95":   result.conf_int().loc[interaction].tolist(),
+        "ci_95": result.conf_int().loc[interaction].tolist(),
         "summary": result.summary(),
     }
+
 
 # --- Causal inference checklist ---
 # 1. Validate parallel trends in pre-period before trusting DiD estimates.
 # 2. Use HC3 robust standard errors to handle heteroskedasticity.
 # 3. For panel data, cluster SEs at the unit level (add groups= param to fit).
-# 4. Consider propensity score matching if groups differ at baseline.
+# 4. Consider propensity score matching if groups differ before treatment.
 # 5. Report the ATT with confidence interval, not just statistical significance.
 ```
 

@@ -104,7 +104,7 @@ Guidelines for effective test-driven development workflows.
 ### Thresholds by Type
 | Type | Target | Rationale |
 |------|--------|-----------|
-| Line coverage | 80%+ | Baseline for most projects |
+| Line coverage | 80%+ | Reference level for most projects |
 | Branch coverage | 70%+ | More meaningful than line |
 | Function coverage | 90%+ | Public APIs should be tested |
 

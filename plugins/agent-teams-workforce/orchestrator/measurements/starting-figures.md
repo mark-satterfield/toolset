@@ -1,4 +1,4 @@
-# Token baseline before the Python rewrite (step S00)
+# Token figures before the Python rewrite (step S00)
 
 Recorded 2026-10-09 from existing records only. No pipeline run was started.
 
@@ -76,14 +76,14 @@ git -C /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke status
 grep -A8 "agent-teams-workforce@mark-satterfield" ~/.claude-skillspoke/plugins/installed_plugins.json
 python3 <driver>/runcost.py summary
 python3 <driver>/runcost.py profile 2026-10-09
-python3 /Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-workforce/orchestrator/measurements/s00_baseline.py 20261009
+python3 /Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-workforce/orchestrator/measurements/s00_starting_figures.py 20261009
 ```
 
 - `runcost.py summary` gives `byDay` for 2026-10-09: 29 runs, 438 sessions, 68,973,529 weighted.
 - `runcost.py profile 2026-10-09` lists the 29 runs but returns null weights and an empty `byRole`, so it is not the source of the role numbers.
 - The role numbers come from the `roles` object of each run cost sidecar
   (`<driver>/state/runs/*-prd-to-spec-20261009T*.cost.json`; `costsidecar.CostSidecar` defines the sidecar shape),
-  summed by `s00_baseline.py` (a read-only script: it sums each role's weighted tokens and session count over those files,
+  summed by `s00_starting_figures.py` (a read-only script: it sums each role's weighted tokens and session count over those files,
   takes the median of the per-run weighted tokens, and reads the first assistant turn's usage from the agent transcripts under
   `~/.claude-skillspoke/projects/<project>/<session id>/` for the startup tokens). The script is committed beside this file.
 - The survey-redo split compares each Epic's first run of the day (ordered by `startedAt`) with its later runs.

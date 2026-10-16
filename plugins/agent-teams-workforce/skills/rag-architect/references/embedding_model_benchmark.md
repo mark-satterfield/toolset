@@ -288,10 +288,10 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 
 ### A/B Testing Strategy
 
-1. **Baseline Establishment**
+1. **Reference Establishment**
    - Current model performance metrics
-   - User satisfaction baselines
-   - System performance baselines
+   - User satisfaction reference values
+   - System reference performance measurements
 
 2. **Gradual Rollout**
    - 5% traffic to new model initially

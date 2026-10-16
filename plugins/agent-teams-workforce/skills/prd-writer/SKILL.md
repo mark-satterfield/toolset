@@ -136,7 +136,7 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    `Given`; do not reword it into vagueness, and do not delete the criterion that exposed the
    conflict. **In an existing PRD, make the repair.** No workflow or pipeline ever edits a PRD.
 8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
-   Measurable Outcomes (table + baseline/target/method), Visual References, Definition of Done.
+   Measurable Outcomes (table + starting value/target/method), Visual References, Definition of Done.
    A PRD names no other PRD: ordering between Epics is carried by Epic dependency edges in beads.
 9. **Settle every input gap within the feature's purpose by best-in-class practice and write it
    in; leave out anything outside the feature's purpose.** The owner gives high-level requirements
@@ -160,7 +160,7 @@ Use this when reviewing someone else's PRD (or your own before a gate).
    - **Problem framing:** is it stated as user pain, not "absence of our solution"?
    - **Acceptance criteria testability:** is each P0 criterion actually pass/fail, not aspirational?
    - **Traceability:** does every requirement trace to an upstream source (brief, persona, OKR)?
-   - **Measurable Outcomes:** does each metric have a baseline, a target, and a measurement method?
+   - **Measurable Outcomes:** does each metric have a starting value, a target, and a measurement method?
    - **Scope:** do the smell tests pass, or should this be decomposed?
 3. **Report findings as structured defects** (location + what's wrong + why) — do not fix them if
    your role is review-only; route them back to the author.
@@ -184,7 +184,7 @@ The linter covers the structural items (✓-able by `check_prd.py`); the rest re
 
 - Inventing requirements to make the document look complete
 - Leaking HOW (named services, schemas, frameworks) into a WHAT document
-- Aspirational metrics with no baseline or measurement method
+- Aspirational metrics with no starting value or measurement method
 - Shipping the template's guidance comments or placeholder brackets in the final file
 - Marking a PRD conformant on the linter alone — structural pass ≠ semantic pass
 - Writing one giant PRD when the scope smell tests demand decomposition

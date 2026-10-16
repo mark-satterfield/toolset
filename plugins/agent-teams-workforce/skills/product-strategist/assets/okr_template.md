@@ -26,7 +26,7 @@ _[Qualitative, inspirational statement. What does success look like?]_
 
 ### Key Results
 
-| # | Key Result | Baseline | Target | Current | Status |
+| # | Key Result | Starting value | Target | Current | Status |
 |---|-----------|----------|--------|---------|--------|
 | 1.1 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |
 | 1.2 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |
@@ -47,7 +47,7 @@ _[Qualitative, inspirational statement]_
 
 ### Key Results
 
-| # | Key Result | Baseline | Target | Current | Status |
+| # | Key Result | Starting value | Target | Current | Status |
 |---|-----------|----------|--------|---------|--------|
 | 2.1 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |
 | 2.2 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |
@@ -69,7 +69,7 @@ _[Qualitative, inspirational statement]_
 
 ### Key Results
 
-| # | Key Result | Baseline | Target | Current | Status |
+| # | Key Result | Starting value | Target | Current | Status |
 |---|-----------|----------|--------|---------|--------|
 | 3.1 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |
 | 3.2 | [Measurable outcome] | [Current value] | [Target value] | [Progress] | On Track / At Risk / Off Track |

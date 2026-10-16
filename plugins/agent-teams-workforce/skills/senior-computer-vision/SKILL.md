@@ -153,7 +153,7 @@ Key metrics to analyze:
 
 Use this workflow when preparing a trained model for production deployment.
 
-### Step 1: Benchmark Baseline Performance
+### Step 1: Benchmark Reference Performance
 
 ```bash
 # Measure current model performance
@@ -168,7 +168,7 @@ python scripts/inference_optimizer.py model.pt \
 Expected output:
 
 ```
-Baseline Performance (PyTorch FP32):
+Reference Performance (PyTorch FP32):
 - Batch 1: 45.2ms (22.1 FPS)
 - Batch 4: 89.4ms (44.7 FPS)
 - Batch 8: 165.3ms (48.4 FPS)

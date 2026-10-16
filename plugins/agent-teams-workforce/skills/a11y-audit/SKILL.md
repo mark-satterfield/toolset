@@ -179,8 +179,8 @@ Re-run the scanner to confirm all fixes are applied and no regressions were intr
 # Re-scan after fixes
 python scripts/a11y_scanner.py /path/to/project --format table
 
-# Compare against baseline
-python scripts/a11y_scanner.py /path/to/project --baseline audit-baseline.json
+# Compare against reference
+python scripts/a11y_scanner.py /path/to/project --reference audit-reference.json
 ```
 
 **Verification output:**
@@ -1207,7 +1207,7 @@ Options:
                           Filter by minimum severity
   --framework {react,vue,angular,svelte,html,auto}
                           Force framework (default: auto-detect)
-  --baseline FILE         Compare against previous scan results
+  --reference FILE        Compare against previous scan results
   --report                Generate stakeholder report
   --output FILE           Write results to file
   --quiet                 Suppress output, exit code only

@@ -361,5 +361,5 @@ python scripts/database_migration_tool.py --connection $DATABASE_URL --migrate f
 
 # Performance Testing
 python scripts/api_load_tester.py https://api.example.com/endpoint --concurrency 50
-python scripts/api_load_tester.py https://api.example.com/endpoint --compare baseline.json
+python scripts/api_load_tester.py https://api.example.com/endpoint --compare reference.json
 ```

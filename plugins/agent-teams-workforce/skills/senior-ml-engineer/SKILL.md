@@ -85,7 +85,7 @@ Establish automated training and deployment:
 5. Configure staging deployment triggered by registry events
 6. Set up A/B testing infrastructure for model comparison
 7. Enable drift monitoring with alerting
-8. **Validation:** New models automatically evaluated against baseline
+8. **Validation:** New models automatically evaluated against the reference
 
 ### Feature Store Pattern
 

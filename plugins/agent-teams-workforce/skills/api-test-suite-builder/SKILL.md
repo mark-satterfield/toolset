@@ -35,7 +35,7 @@ uploads, and rate limiting. Outputs ready-to-run test files for Vitest+Supertest
 ## When to Use
 
 - New API added — generate test scaffold before writing implementation (TDD)
-- Legacy API with no tests — scan and generate baseline coverage
+- Legacy API with no tests — scan and generate initial coverage
 - API contract review — verify existing tests match current route definitions
 - Pre-release regression check — ensure all routes have at least smoke tests
 - Security audit prep — generate adversarial input tests

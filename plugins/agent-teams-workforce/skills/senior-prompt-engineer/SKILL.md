@@ -200,9 +200,9 @@ python scripts/agent_orchestrator.py agent.yaml --visualize --format mermaid
 
 Use when improving an existing prompt's performance or reducing token costs.
 
-**Step 1: Baseline current prompt**
+**Step 1: Measure the current prompt**
 ```bash
-python scripts/prompt_optimizer.py current_prompt.txt --analyze --output baseline.json
+python scripts/prompt_optimizer.py current_prompt.txt --analyze --output reference.json
 ```
 
 **Step 2: Identify issues**
@@ -226,7 +226,7 @@ python scripts/prompt_optimizer.py current_prompt.txt --optimize --output optimi
 
 **Step 5: Compare results**
 ```bash
-python scripts/prompt_optimizer.py optimized.txt --analyze --compare baseline.json
+python scripts/prompt_optimizer.py optimized.txt --analyze --compare reference.json
 # Shows: token reduction, clarity improvement, issues resolved
 ```
 
@@ -346,7 +346,7 @@ python scripts/prompt_optimizer.py prompt.txt --optimize         # Generate opti
 
 # RAG Evaluation
 python scripts/rag_evaluator.py --contexts ctx.json --questions q.json  # Evaluate
-python scripts/rag_evaluator.py --contexts ctx.json --compare baseline  # Compare to baseline
+python scripts/rag_evaluator.py --contexts ctx.json --compare reference  # Compare to reference
 
 # Agent Development
 python scripts/agent_orchestrator.py agent.yaml --validate       # Validate config
