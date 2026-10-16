@@ -219,11 +219,10 @@ and never a finding.
 
 ## Naming patterns
 
-The rule is the vault's resource naming standard,
-`docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root
-`$SKILLSPOKE_ROOT/skillspoke-docs`); the vault note `repository-naming.md` is a stub and is not
-canonical. The config's `naming.patterns` are the tool's derived copy of the standard's
-repository rules, kept so the tool can check a name fast, and kept in sync with the standard
+The rule is the vault's repository naming note,
+`docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md` (vault root
+`$SKILLSPOKE_ROOT/skillspoke-docs`); resource names follow `resource-naming-standard.md` beside
+it. The config's `naming.patterns` are the tool's derived copy of the note's repository rules, kept so the tool can check a name fast, and kept in sync with the standard
 (the owner's storage rule is in the steward's instructions, *What you store*). In summary: `SkillSpoke` and
 `SkillSpoke-{name}` are the personal-agent app; `shared-{name}` is shared or sharable across
 the whole company; `marketing-{name}` is marketing; `employer-{name}` is the employer app;
@@ -232,8 +231,8 @@ above. An application name must also end in a stack type (`service`, `infra`, `l
 `mobile`, `extension`, `assets`: `segments.type.enum` of `.resource-naming.yaml`), which the
 tool checks after the regex matches; a name with no hyphen (`SkillSpoke`, the control
 repository) is exempt. Each app space is a subfolder of the repository root. The config's
-`naming.document` names the vault standard; `doctor` checks that the patterns agree with it.
-When they disagree, refresh the patterns from the standard; a change to the standard itself
+`naming.document` names the vault note under `naming.document_root`; `doctor` checks that the
+patterns agree with it. When they disagree, refresh the patterns from the note; a change to the note itself
 goes to the `filing-clerk`, never into the config.
 
 ## Editing the manifest by judgment

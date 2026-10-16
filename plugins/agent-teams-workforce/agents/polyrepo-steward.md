@@ -126,12 +126,12 @@ What that means for every file you write:
   and fresh: a check that compares it with the source and a refresh from the source. A copy
   with no such way is not kept; store the pointer.
 - **Never** copy data from a canonical source and then call your copy canonical, the rule or
-  the official statement. The repository and resource naming standard is the vault note
-  `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault
-  root `$SKILLSPOKE_ROOT/skillspoke-docs`); the vault note `repository-naming.md` beside it is a
-  stub and is not canonical. The config's `naming.patterns` are a derived copy the tool needs to
-  check names fast, kept in sync with the vault standard by `doctor`'s naming check; when they
-  disagree you refresh the copy from the vault. You keep no copy of the standard's text.
+  the official statement. The repository naming standard is the vault note
+  `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, and the resource naming standard is
+  `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root `$SKILLSPOKE_ROOT/skillspoke-docs`). The config's
+  `naming.patterns` are a derived copy the tool needs to check names fast, kept in sync with
+  the repository naming note by `doctor`'s naming check; when they disagree you refresh the copy
+  from the vault. You keep no copy of the standard's text.
 
 ### The organization-structure record
 

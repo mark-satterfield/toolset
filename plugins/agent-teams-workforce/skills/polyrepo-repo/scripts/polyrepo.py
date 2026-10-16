@@ -7648,11 +7648,12 @@ def _first_code(cell: str) -> str | None:
 
 
 def _standard_repository_prefixes(text: str) -> dict[str, str] | None:
-    """Read each project's repository prefix from the naming standard's table that lists them.
+    """Read each project's repository prefix from the naming note's table that lists them.
 
     The table is the one whose header has a column that begins with "Project" and a column
-    that names the "Repository prefix", wherever it sits in the note. A row's project is the
-    first code span of its project cell, and its prefix the first code span of its prefix cell.
+    that begins with "Prefix", wherever it sits in the note. A row's project is the first code
+    span of its project cell (the whole cell when it has none), and its prefix the first code span
+    of its prefix cell.
 
     Returns:
         Each project's repository prefix, or None when the note has no such table.
@@ -7661,14 +7662,14 @@ def _standard_repository_prefixes(text: str) -> dict[str, str] | None:
     for header, rows in _markdown_tables(text):
         cols = [h.lower() for h in header]
         project = next((i for i, h in enumerate(cols) if h.startswith("project")), None)
-        prefix = next((i for i, h in enumerate(cols) if "repository prefix" in h), None)
+        prefix = next((i for i, h in enumerate(cols) if h.startswith("prefix")), None)
         if project is None or prefix is None:
             continue
         out: dict[str, str] = {}
         for row in rows:
             if len(row) <= max(project, prefix):
                 continue
-            p, x = _first_code(row[project]), _first_code(row[prefix])
+            p, x = _first_code(row[project]) or row[project].strip(), _first_code(row[prefix])
             if p and x:
                 out[p] = x
         return out
@@ -7676,9 +7677,9 @@ def _standard_repository_prefixes(text: str) -> dict[str, str] | None:
 
 
 def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
-    """Check the config's naming patterns, the steward's derived copy, against the naming standard as it is written.
+    """Check the config's naming patterns, the steward's derived copy, against the vault's repository naming note.
 
-    `naming.document` points at the canonical resource naming standard in the vault. The check
+    `naming.document` is the path of that note under `naming.document_root`, the vault. The check
     reads the note as it is structured: the table that lists each project's repository prefix,
     the repository names the note writes as code spans, every "`A` becomes `B`" deprecation
     example and every "N days after deprecation". A disagreement is a stale derived copy (or,
@@ -7691,7 +7692,8 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
     loc = _map(cfg.raw.get("naming") or {}, "config naming").get("document") or ""
     if not loc:
         return [_finding("naming-doc", "-", "not-configured", "config naming.document does not point at the standard")]
-    path = _resolve_location(cfg, str(loc))
+    root = _map(cfg.raw.get("naming") or {}, "config naming").get("document_root") or ""
+    path = _resolve_location(cfg, str(loc)) if not root else Path(expand_env(str(root))).expanduser() / str(loc)
     if not path.is_file():
         return [_finding("naming-doc", "-", "missing", f"{loc} ({path}) not found")]
     text = path.read_text(encoding="utf-8")
@@ -7715,7 +7717,7 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
             "archive-delay-mismatch",
             f"{path.name} says {n} days; the config's deprecation.archive_after_days is {days}: {NAMING_STALE}",
         )
-        for n in re.findall(r"(\d+) days after deprecation", text)
+        for n in re.findall(r"(\d+) days after (?:its )?deprecation", text)
         if int(n) != days
     )
     return out
