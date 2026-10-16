@@ -5195,6 +5195,7 @@ def _run_names_only(
 
 NAMING_COMMAND = PLUGIN_ROOT / "bin" / "atw-naming"
 NAMING_TIMEOUT = 60
+PR_COMMAND_ENV = "ATW_PR_COMMAND"
 PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
 PR_TIMEOUT = 900
 PR_AUTOMERGE_NOT_ARMED = 3
@@ -5305,7 +5306,7 @@ def _namer(cfg: Config) -> Namer:
 
 
 def _rename_settings(cfg: Config) -> tuple[list[str], Path]:
-    """Read the config's `rename` section: the paths a sweep never edits, and the PR command.
+    """Read the paths a sweep never edits from the config's `rename` section, and the PR command from `$ATW_PR_COMMAND`.
 
     Returns:
         (fnmatch patterns of repository paths, the PR command).
@@ -5313,7 +5314,7 @@ def _rename_settings(cfg: Config) -> tuple[list[str], Path]:
     """
     section = _map(cfg.raw.get("rename") or {}, "config rename")
     excludes = _strs(section.get("sweep_exclude") or [], "rename.sweep_exclude")
-    return excludes, Path(str(section.get("pr_command") or PR_COMMAND_DEFAULT)).expanduser()
+    return excludes, Path(os.environ.get(PR_COMMAND_ENV) or PR_COMMAND_DEFAULT).expanduser()
 
 
 def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -> tuple[list[_Subject], list[Rule]]:
