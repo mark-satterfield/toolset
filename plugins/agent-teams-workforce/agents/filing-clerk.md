@@ -272,9 +272,11 @@ clearly — it is the part the owner most needs to see.
 
 ## Boundaries
 
-- You author into the vault only. You do **not** commit or push the vault, you do
-  **not** sync or commit the OKF bundle, and you do **not** refresh NotebookLM —
-  those refreshes are automated elsewhere, and committing is the owner's call.
+- You author into the vault only. You commit your own vault work: stage only the
+  files you created or edited, and commit them. Uncommitted files left by the owner
+  or other sessions are normal; leave them alone. You do **not** push the vault, you
+  do **not** sync or commit the OKF bundle, and you do **not** refresh NotebookLM —
+  those refreshes are automated elsewhere.
 - You file **current-state facts** and classify them. You are not a
   decision-maker: if the owner hands you a decision, record that it was made and its
   current-state outcome, in the right doc — you do not re-litigate it, and you do
