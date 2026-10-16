@@ -22,15 +22,16 @@ Facts that are true of the repository *as a repository*, and that have no other 
 
 | Belongs | Example |
 |---|---|
-| Repo identity | `name`, `lifecycle` |
-| Ownership | `owner` |
+| Repo identity | `name`, `lifecycle` of a planned repo |
 | Tier | `tier` (`product` or `tooling`) |
 | Repo grouping | groups |
 | Lifecycle dates | `deprecated_on` |
 | Pointers | a path or link to the canonical document for anything else |
 
 Local paths are derived live by the `polyrepo` tool from the repository folders and are not
-stored. `remote_url` is kept in step with GitHub by `polyrepo reconcile --fix`.
+stored. `remote_url` and the lifecycle of a deprecated or archived repo are copies kept so a lookup
+need not call GitHub; `polyrepo reconcile` compares each with disk and GitHub and `reconcile --fix`
+rewrites it. A copy with no such check is not kept.
 
 ### What does not belong
 
@@ -94,32 +95,15 @@ Either way the fact ends up in exactly one place: the canonical document.
 schema_version: 5
 project:
   name: string                   # short kebab-case identifier
-  purpose: string                # one sentence, what the project does
-  owners: [string]               # human or team names
+  # No purpose and no owners: what the project is, and who owns it, is the root AGENTS.md.
   # No created_at / last_updated — git history is the audit trail
   # (see "Dates and the audit trail" below).
 
 repos: [Repo]                    # see Repo schema below
+deprecations: [Repo]?            # repositories deprecated on GitHub with no local folder
 adjacent_repos: [Repo]?          # related but not part of the project
 
-groups: [Group]?                 # named sets of repos; see Group schema
-
-relationships:
-  shared_contracts: [Contract]?  # proto, openapi, schemas
-  deploy_waves: [DeployWave]?    # tiered deploy stages; supersedes the
-                                 # v1 flat deployment_order — see
-                                 # DeployWave schema
-
-conventions:
-  branching_model: string?
-  commit_format: string?
-  pr_rules: string?
-  versioning: string?
-  code_style: { tools: [string], shared: bool }?
-
-ownership:
-  contacts: { topic: owner }?    # e.g., { build: alice, infra: bob }
-  codeowners_files: [string]?    # paths to CODEOWNERS in each repo
+groups: [Group]?                 # named sets of repos chosen by judgment; see Group schema
 
 governance: [GovernanceEntry]?   # v3 — registry of the project's own
                                  # scripts/tools/procedures/knowledge-base
@@ -127,61 +111,53 @@ governance: [GovernanceEntry]?   # v3 — registry of the project's own
 ```
 
 The manifest holds no questions and no open items: there is no `drift_log` and no
-`open_questions`. `reconcile` reports either section as an `open-items` finding.
+`open_questions`. `reconcile` reports either section as an `open-items` finding. It holds no
+`relationships`, `conventions` or `ownership` section either: the shared contracts are the matrix's
+and the arc42 documents', the conventions are the control repository's root `AGENTS.md` and
+`.claude/rules/`, and the owners are the root `AGENTS.md`. `reconcile` reports each as a
+`retired-section` finding, and removes it under `--fix`. Deployment order is `deployment/waves*.yaml`
+in the control repository.
 
 There is no `topology` section, no top-level `rules`, no `documentation`,
-no `search_recipes`, and `conventions` carries no `naming` subsection —
-see *Schema version history (v4)* for what replaced each of them and why.
+no `search_recipes`, and no `conventions` — see *Schema version history* for what replaced each of
+them and why.
 
 ## Repo schema
 
 ```yaml
 - name: string                   # the project-internal name
-  remote_url: string?            # primary remote
-  default_branch: string?        # main, master, develop, etc.
-  owner: string?
+  remote_url: string?            # primary remote; a copy of GitHub's, checked by reconcile
   lifecycle: enum                # active, maintenance, deprecated,
                                  # archived, planned
-  tier: enum                     # whether the repository holds product code.
-                                 # product: services, libraries, infrastructure,
-                                 # web and mobile; its product files are tier 1
-                                 # (worktrees, pull requests), its AI-tooling
-                                 # files (AGENTS.md, CLAUDE.md, .claude/) tier 2.
-                                 # tooling: the machinery that builds the product;
-                                 # all tier 2, committed on main in the primary tree.
-                                 # Tier is decided by content, not by repository.
-  language: string?              # primary language
-  notes: string?
+  tier: enum                     # whether the repository holds product code: product or
+                                 # tooling. The definition of the tiers and what each does
+                                 # with a change are the control repository's root AGENTS.md
+                                 # and .claude/rules/git-conventions.md.
+  deprecated_on: date?           # the day the repo was deprecated; starts the clock to archiving
 ```
 
 No `local_path`. A repo's location on disk is a live fact the steward's
 tool derives from the project's repo-root environment variable plus this
 `name` — recording it in the manifest is exactly the kind of hardcoded,
 machine-specific path that goes stale on every re-clone or new machine.
+No `default_branch`, `language`, `owner` or `notes` either: the repository and GitHub hold the
+first two, the root `AGENTS.md` holds ownership, and what a repository is for is the matrix's.
 
-Required: `name`, `lifecycle`, `tier`. Everything else is
-encouraged but optional — fill in what you can, mark the rest as
-`unknown` or omit. An entry that still carries `purpose`, `purpose_head`, `owns` or `role` loses
-them at the tool's next write of the manifest.
+Required: `name`, `lifecycle`, `tier`. An entry that still carries `purpose`, `purpose_head`, `owns`,
+`role`, `owner`, `language`, `notes` or `default_branch` loses them at the tool's next write of the manifest.
 
 ## Group schema
 
 ```yaml
 - name: string                   # kebab-case, unique across groups
-  description: string            # one sentence — what unites these repos
   members: [string]              # repo names; every entry must resolve
                                  # to a real repo
 ```
 
-A **group** is a named set of repos that share a role or constraint — a
-*class* like "backend services", "mobile clients", or "infra repos".
-Groups name a class of repos so it need not be hand-listed.
-
-Groups are a *different partition* of the repo set than `deploy_waves`:
-group membership is about **kind** (what a repo is), wave membership is
-about **deploy timing** (when it ships). A repo typically belongs to one
-group and one wave, and the two need not align — keep the sections
-separate.
+A **group** is a named set of repos the steward chose by judgment. A set that a repository's
+type (the last token of its name) gives is not stored: `search name~-service$` answers it
+live. A set that its imports or dependencies would give is not stored either: a dependency is
+between services, components and infrastructure, and the matrix answers it.
 
 ## Dependencies are not stored
 
@@ -189,50 +165,6 @@ A dependency is between services, components and infrastructure, never between r
 manifest has no dependency field and no `group:<name>` endpoint notation. `polyrepo
 reconcile --fix` removes a stored `relationships.dependencies` (finding
 `repo-dependency-stored`).
-
-## Contract schema
-
-```yaml
-- name: string                   # human-readable, e.g., "user-events"
-  kind: enum                     # protobuf, openapi, jsonschema,
-                                 # graphql, typescript-types, other
-  source_repo: string            # where the contract is authored
-  consumer_repos: [string]       # who consumes it
-  path: string?                  # path within source_repo
-```
-
-## Deploy wave schema
-
-`relationships.deploy_waves` replaces the v1 flat `deployment_order`. It
-is an **ordered list of stages**. Stage order *is* list order: the first
-element deploys first, the last deploys last — there is no separate
-ordering field. Within a stage, the listed repos deploy in parallel; the
-wave model exists precisely to record "these ship together" without
-implying an order among them.
-
-```yaml
-- name: string                   # stage name, e.g., "foundation"
-  description: string            # one sentence — what this stage lands
-  repos:
-    - name: string               # repo name; must resolve to a real repo
-      gate: string?              # a deploy condition that must hold
-                                 # before this repo ships, e.g.
-                                 # "vpc_enabled=true"; omit for no gate
-      deploy_task: string?       # override for how this repo deploys in
-                                 # this wave; omit to use the repo's default
-```
-
-The model preserves three things the flat list could not:
-
-- **Stage order** — across stages, list order is deploy order.
-- **Within-stage parallelism** — repos in one stage have no ordering
-  between them; they deploy together.
-- **Per-repo gates** — a repo carries a precondition that must hold
-  before it ships, independent of stage order.
-
-A repo with no gate and no task override is still listed by name; an
-empty wave entry is just `- name: <repo>` with `gate` and `deploy_task`
-omitted.
 
 ## Dates and the audit trail
 
@@ -245,117 +177,20 @@ those are content, not metadata the steward must keep current.
 
 ## Validation rules
 
-When writing or updating the manifest, ensure (all v1 invariants still
-hold; the group and wave rules are new in v2):
+When writing or updating the manifest, ensure:
 
 - `schema_version` is present and is `5`.
 - Every `repos[].name` is unique.
 - Every `groups[].name` is unique, and every `groups[].members[]` entry
   resolves to a real repo (in `repos`, or an adjacent repo).
-- No `relationships.dependencies` field: dependencies are not stored between repos.
-- Every `relationships.deploy_waves[].repos[].name` resolves to a real
-  repo (or adjacent repo).
-- `relationships.deploy_waves` stage order **is the list order** — the
-  first stage deploys first. No separate ordering field exists or is
-  implied; do not add one.
+- No `relationships`, `conventions` or `ownership` section, and no `project.purpose` or
+  `project.owners`.
 - No `repos[].local_path`, `topology`, top-level `rules`,
   `documentation`, or `search_recipes` field — see *Schema version
   history (v4)*.
 
 If a write would violate any of these, fix the violation before
 saving — do not write a partially valid manifest.
-
-## Migration from v1 to v2
-
-v2 is additive in spirit — a v1 manifest becomes a valid v2 manifest
-with two changes:
-
-1. **`relationships.deployment_order` is superseded by
-   `relationships.deploy_waves`.** For a literal translation, make each
-   repo its own one-repo stage to preserve the total order:
-
-   ```yaml
-   # v1
-   deployment_order: [infra, shared-types, auth-svc]
-
-   # v2 — literal translation (preserves total order)
-   deploy_waves:
-     - name: sequential
-       description: Direct translation of the v1 deployment_order list.
-       repos:
-         - name: infra
-         - name: shared-types
-         - name: auth-svc
-   ```
-
-   In practice you collapse repos that actually deploy together into
-   shared stages and add gates — that is the whole point of the new
-   model. Drop the old `deployment_order` field once `deploy_waves` is
-   in place.
-
-2. **`groups` is new and optional.** Introduce a group only when a class
-   of repos genuinely needs a name.
-
-Bump `schema_version` to `2`, record the migration in the project's
-`.polyrepo/changelog.md`, and add a line to *Schema version history*
-below, per *Evolving the schema*.
-
-## Worked example (v2)
-
-A small project — a shared types library, two backend services, a web
-app, and an infra repo — exercising every v2 addition: one group and a
-two-stage `deploy_waves` block with a gated repo.
-
-```yaml
-schema_version: 2
-
-# ... project, topology omitted for brevity ...
-
-repos:
-  - { name: infra,        purpose: "AWS CDK stacks",      role: infra,   lifecycle: active }
-  - { name: shared-types, purpose: "Published TS types",  role: library, lifecycle: active }
-  - { name: auth-svc,     purpose: "Authentication API",  role: service, lifecycle: active }
-  - { name: billing-svc,  purpose: "Billing API",         role: service, lifecycle: active }
-  - { name: web-app,      purpose: "Customer web client",  role: app,     lifecycle: active }
-
-groups:
-  - name: backend-services
-    description: Services that run server-side and share the chassis.
-    members: [auth-svc, billing-svc]
-
-relationships:
-  deploy_waves:
-    - name: foundation
-      description: Shared infrastructure and contracts land first.
-      repos:
-        - name: infra
-        - name: shared-types
-    - name: services
-      description: Backend services and the web client ship together.
-      repos:
-        - name: auth-svc
-          gate: vpc_enabled=true        # waits for the VPC from wave 1
-        - name: billing-svc
-        - name: web-app
-
-rules:
-  - id: backend-types-via-package
-    category: architectural
-    statement: >-
-      Backend services consume shared-types only via its published
-      package, never by relative path or git submodule.
-    reason: >-
-      Path imports couple deploy timing and break the published-contract
-      boundary the package version guarantees.
-    applies_to: [group:backend-services]   # scoped to the class, not project-wide
-```
-
-This validates against the rules above: every `backend-services` member
-resolves to a real repo; the `group:backend-services` used in the
-rule resolves to the defined group; every
-`deploy_waves` repo name resolves to a real repo; and the two stages
-deploy in list order (`foundation`, then `services`) with `auth-svc`
-gated on `vpc_enabled=true`.
 
 ## The `.polyrepo/` directory (v3)
 
@@ -381,9 +216,11 @@ governance:
     type: enum                   # script | tool | procedure | knowledge-base
     name: string
     location: string             # path or URL
-    invoke: string?              # how to run/use it (scripts/tools)
-    notes: string?
+    invoke: string?              # how to run/use it (scripts/tools); the script's own --help says the rest
 ```
+
+An entry is a pointer: it holds no copy of what the script does or how to operate it. That is the
+script's own header and `--help`, or the vault document the `filing-clerk` files it in.
 
 ### Knowledge store (v3, separate file)
 
@@ -397,8 +234,9 @@ schema_version: 1
 knowledge:
   - id: string
     topic: string                # e.g. "repository naming convention"
-    kind: enum                   # location | fact | pointer
-    value: string                # the fact, or where/how to find it
+    kind: enum                   # location | pointer | fact
+    value: string                # where/how to find the answer; for a fact, only what exists nowhere else
+    resolves: string|[string]?   # location, pointer: the path the entry points at (environment variables allowed)
     source: string               # how it was learned
 ```
 
@@ -438,7 +276,7 @@ read `schema_version` and know exactly what changed between versions.
   overrides); made dependency endpoints (`from`/`to`) and
   `rules[].applies_to` polymorphic — each entry may be a repo name or a
   `group:<name>`. Backward-compatible: repo-only endpoints remain valid
-  and groups are additive. See *Migration from v1 to v2*.
+  and groups are additive.
 - **v3** — added the top-level `governance` section (registry of the
   project's own scripts/tools/procedures/knowledge-base locations);
   introduced a separate `.polyrepo/knowledge.yaml` knowledge store
@@ -479,3 +317,12 @@ read `schema_version` and know exactly what changed between versions.
   `purpose_head` and `role` have since left the manifest: the matrix's stacks hold what a repo
   holds and why it exists, and the tool drops the four fields at its next write.) Not backward-compatible: a v4 manifest
   carrying `relationships.dependencies` must drop it to become valid v5.
+- **v5 removal (no version bump)** - every field and section of the manifest that restated a canonical
+  source: `project.purpose` and `project.owners` (the root `AGENTS.md`), `repos[].owner` and `ownership`
+  (the root `AGENTS.md`; also a person's name in a record), `repos[].language` (GitHub), `repos[].notes`
+  (what a repo is for is the matrix's), `repos[].default_branch` (the repository's own; the config keeps the
+  tool's), `conventions` (the control repository's `AGENTS.md` and `.claude/rules/`), `relationships`
+  (`shared_contracts`, `cycles`, `deploy_waves`: the matrix, the arc42 documents and `deployment/waves*.yaml`),
+  `governance[].notes` (the script's own header and the vault runbook), and the groups that restated
+  a repository's type or its imports. The tool drops the entry fields at its next write and reports a
+  retired section as `retired-section`.

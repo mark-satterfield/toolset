@@ -29,8 +29,8 @@ Only when there is no manifest — the `polyrepo` tool finds no `.polyrepo/confi
 
 ## How
 
-Follow `references/setup-workflow.md` for the discovery interview (identity, topology,
-relationships, conventions, rules, documentation, search, ownership). Use
+Follow `references/setup-workflow.md` for the discovery interview (identity, topology, and what the
+manifest does not record). Use
 `references/topology-recommendations.md` to **infer** the topology kind and recommend where
 `.polyrepo/` should live — the kind is inferred by you and confirmed by the human in their own
 words, never picked from a flat list. Scaffold from `assets/manifest-template.yaml`.

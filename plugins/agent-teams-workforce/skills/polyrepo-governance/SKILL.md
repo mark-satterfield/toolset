@@ -28,9 +28,12 @@ governance:
     name: <name>
     location: <path or URL>
     invoke: <how to run or use it — for scripts/tools>
-    notes: <optional>
 # No date field — git history is the audit trail for when an entry changed.
 ```
+
+An entry is a pointer. It holds no copy of what the resource does or how to operate it: that is the
+resource's own header and `--help`, or the vault document the `filing-clerk` files it in. A procedure
+that exists nowhere else goes to the `filing-clerk` for its one home.
 
 ## Registered tools
 
@@ -38,11 +41,8 @@ governance:
 |---|---|---|
 | `polyrepo-tool` | The `polyrepo` tool: live repo facts and every deterministic repository action | `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command> --json` |
 
-Its commands: `reconcile`, `status`, `list`, `search`, `inventory`, `grep`,
-`rebase`, `create`, `clone`, `rename`, `deprecate`, `beads-setup`, `environment`, `python-names`, `agents-sync`, `tier`, `tiers`, `set-tier`, `gitnexus-sync`, `templates-check`, `doctor`,
-`commit`. The command reference is the **polyrepo-repo** skill; the tool's `--help` is the
-authority. When the tool gains or loses a command, update this list and the `governance`
-entry together.
+The tool's commands are listed by its `--help`, which is the authority; the command reference is
+the **polyrepo-repo** skill. This registry keeps no list of them.
 
 `polyrepo doctor` checks every entry: its `location` exists, and for a script or tool, its
 `invoke` (up to the first `<placeholder>`) runs with `--help`.

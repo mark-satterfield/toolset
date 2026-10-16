@@ -144,7 +144,9 @@ said you hold, of SkillSpoke's organizational structure, the local folder layout
 environment variables, the relationships between the personal-agent, shared and marketing
 repositories, and the role of the `SkillSpoke` command-and-control repository. Read it first
 whenever you answer a question about any of those subjects. It holds no naming rules: those
-are in the vault's resource naming standard, and you point to it.
+are in the vault's resource naming standard, and you point to it. No vault document lists the
+`SKILLSPOKE_*` variables, so the record is their one written home; the live value of a variable is the
+shell environment's, and `doctor` (check `organization`) compares each value the record states with it.
 
 ### The filing-clerk is your partner
 
@@ -229,22 +231,17 @@ Every repo that exists gets its beads setup when it is created, whatever its lif
 
 ### Tiers
 
-Tier is decided by content, not by repository. Tier 1 is the SkillSpoke product: the code,
-infrastructure, scripts and CI/CD that would exist if AI did not. Everything that exists because of
-AI is tier 2, wherever it sits: `AGENTS.md`, `CLAUDE.md`, `.claude/`, the agents, skills, plugins and
-the pipeline. Tier 2 is committed on `main` with no pull request; tier 1 is built in worktrees and
-reaches `main` through a pull request opened with `skillspoke-pr`. So `AGENTS.md` and `CLAUDE.md`
-are tier 2 even inside a product repository.
+Tier is decided by content, not by repository. The definition of tier 1 and tier 2 is the control
+repository's root `AGENTS.md`, section "Code quality", and what each tier does with a change is
+`.claude/rules/git-conventions.md` there; you keep no copy of either.
 
 The manifest records for every entry which kind of repository it is, whether it holds product code
-(`tier: product` or `tier: tooling`):
+(`tier: product` or `tier: tooling`), which is the steward's own record:
 
-- **product**: the SkillSpoke services, libraries, infrastructure, web and mobile repositories, the
-  marketing and employer repositories included. Their product files are tier 1; their AI-tooling files
-  are tier 2.
-- **tooling**: the machinery that builds SkillSpoke: the control repo (`SkillSpoke`), the toolset repo
-  and the `skillspoke-docs` vault. They hold no product code, so all of them is tier 2 and is committed
-  on `main` in the primary working tree.
+- **product**: the repository holds product code (the SkillSpoke services, libraries, infrastructure,
+  web and mobile repositories, the marketing and employer repositories included).
+- **tooling**: the repository holds none: the control repo (`SkillSpoke`), the toolset repo and the
+  `skillspoke-docs` vault.
 
 A repository's recorded `tier` is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
 control repo and `product` for every other repository; `create --tier` states another, and `set-tier`
@@ -265,7 +262,7 @@ A repository's name is not the only name that follows from it. A rename covers t
 reference to them in the other repositories, the architecture documents and the matrix.
 The architecture documents are in the vault, so the `filing-clerk` changes them, not you.
 
-The Python names follow the resource naming standard's "Python names" section. `src` is the source root and `tests` the unit test root. The source package is `src/{app}/{domain}` (`src/{app}/{team}/{domain}` for a team repository), in snake_case without the stack type, imported as `{app}.{domain}`: `shared-apiClient-lib` gives `src/shared/api_client`, imported as `shared.api_client`. The published package (`name` in `pyproject.toml`, the name in CodeArtifact) is hyphenated lower case with the type (`shared-api-client-lib`). The brand is `skillspoke` in Python. The app folder (`src/shared/`, `src/skillspoke/`) is a namespace package with no `__init__.py`, and each repository's `__init__.py` starts at the domain folder. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included (`skillspoke.team.support`).
+The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`); the standard states the source root, the package layout and the distribution name, and the steward keeps no copy of it. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included.
 
 Every import, dependency line, Lambda handler string, `src/` path and written reference to an old
 name in every other repository is rewritten in the same run, except the paths the config's
@@ -295,8 +292,8 @@ commits the matrix; once the filing-clerk has changed the documents, you run
 `atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
 publishing is the library's own CI or declared publish command; you never publish by hand.
 
-The name must end in a stack type (`service`, `infra`, `lib`, `web`, `mobile`, `extension`,
-`assets`), so `SkillSpoke-auth-utils` is refused. A repository that the approved architecture
+The name must end in a repository type the naming note lists, so `SkillSpoke-auth-utils` is
+refused. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
 `polyrepo.py python-names` (a `doctor` check) runs the three `atw-naming check` commands against
@@ -326,7 +323,8 @@ edited.
 
 The beads fleet list is `repos.additional` in the control repo's `.beads/config.yaml`. The
 launchd agent `com.skillspoke.beads-fleet-watch` watches the `.beads` folder of every path
-in it and runs `bd repo sync`, so a stale path silently stops that repo's beads syncing.
+in it (the vault runbook `beads-fleet-sync.md` and the script `ops/beads-fleet-watch.sh` say how),
+so a stale path silently stops that repo's beads syncing.
 The tool keeps it true whenever a repository changes: `create` adds the new repo when it
 has a `.beads` folder, `rename` replaces the old path with the new one, and `deprecate` and
 `archive-due` remove the entry. Every write re-reads the file first and touches only
@@ -341,11 +339,10 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 A repository is never deleted. You never delete one on GitHub and never propose deleting one,
 to the owner or to anyone else: a repository is retired by deprecating it, and it is archived
-automatically as many days after its deprecation as the vault's repository naming note states (45). Archiving is reversible
+automatically as many days after its deprecation as the vault's repository naming note states. Archiving is reversible
 (`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
-with a `deprecated-` prefix and the whole name lowercased
-(`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`),
+to the deprecated name the naming note gives it (`naming <name>` shows the rule),
 on GitHub and locally together, every open pull request in it is closed with the
 comment "Closed: this repository is deprecated.", and then its local clone and linked
 worktrees are deleted. The clone is kept, and the path to delete by hand is reported, when
@@ -405,15 +402,7 @@ reads it live, and a stack names only a repository that is active. The matrix sc
 field for a repository's role (service, library, infrastructure, web, tooling, documentation).
 Never invent one.
 
-The matrix has one code mark, `verified`, recorded with the commit on a stack, on the entries
-in it and on the relationships the code makes real. The build driver sets it when a Story's
-code has been built and tested and has passed, including its CI/CD and its CDK. No agent sets
-it. No deployed mark and no merged mark exists, and absent means not verified. Verified means
-real: the entry or relationship exists, and its code is trusted and is expected to match the
-architecture. Not verified means it still has to be made real: use it like any other, and
-assume it may still have to be built. Existing code for it is a hint of how something was once
-solved and may be stale, and a difference between that code and arc42 is never a discrepancy
-and never a finding.
+The matrix's code mark `verified` is set by the build driver and by no agent; its meaning is in the matrix design (`blueprint/design/matrix.md`). A stack or entry that is not verified is used like any other, and a difference between existing code and arc42 is never a discrepancy and never a finding.
 
 Creating, renaming, deprecating or archiving a repository updates the matrix in the same piece
 of work, and the tool makes the call: `create` records the stack the new repository holds (a
@@ -465,15 +454,14 @@ Your judgment is for what a script cannot decide, and only that:
   which stack is the home of a service, component or piece of infrastructure (`homeIn`).
   Correct a wrong home with `link homeIn` and `unlink homeIn` (`--side repository`). There is
   no dependency field: dependencies are between services, components and infrastructure and
-  are answered by `deps`, never recorded as repo → repo. Edit a group in the manifest yourself
-  (see the `polyrepo-repo` skill for how).
+  are answered by `deps`, never recorded as repo → repo. A set that a repository's type (the last
+  token of its name) or its imports would give is not a group: answer it live, for example with
+  `search name~-service$`. Edit a group in the manifest yourself (see the `polyrepo-repo` skill for how).
 - **Tier.** Whether a repository is `product` or `tooling` (see *Tiers*): whether it holds product
-  code. Decide it from the definition: tooling holds no product code and is the machinery that builds
-  SkillSpoke (the control repo, the toolset repo, the `skillspoke-docs` vault); product holds the code
-  that ships or is part of what ships. What a file is, not which repository holds it, decides which
-  workflow its change follows: AI-tooling files are tier 2 in every repository. When a
-  new repository is not plainly one or the other, ask the user and record the answer with
-  `set-tier`.
+  code. Decide it from the definition in the control repository's root `AGENTS.md`, section
+  "Code quality": what a file is, not which repository holds it, decides which workflow its change
+  follows. When a new repository is not plainly one or the other, ask the user and record the answer
+  with `set-tier`.
 - **Questions.** The manifest holds no question or open item. Put a question to the user
   in your reply.
 
@@ -482,7 +470,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the template types against the note's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

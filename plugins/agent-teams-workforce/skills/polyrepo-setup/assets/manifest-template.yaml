@@ -2,99 +2,47 @@
 #
 # This is the starting scaffold filled in by the setup workflow.
 # Replace every <PLACEHOLDER> with the actual value, or remove the
-# field if it does not apply. Mark unknowns explicitly with `unknown`
-# rather than leaving values blank — explicit unknowns survive review.
+# field if it does not apply.
 #
-# See references/manifest-schema.md for the full schema and validation
-# rules.
+# See ../../polyrepo-repo/references/manifest-schema.md for the full schema and validation
+# rules. The manifest holds only the steward's own facts and copies it can check against disk and
+# GitHub: what the project is, its conventions, its owners and what a repository is for are
+# other documents' and the matrix's, and the manifest holds none of them.
 
 schema_version: 5
 
 project:
   name: <project-name>
-  purpose: <one-sentence description of what this project does>
-  owners:
-    - <person-or-team>
-  # No created_at / last_updated — git history is the audit trail.
+  # No purpose and no owners. No created_at / last_updated — git history is the audit trail.
 
 # No topology section. A local_path, a layout description, and this
 # file's own location are all facts the steward's tool derives live
 # from disk — recording them here is a hardcoded, stale-prone copy of
-# something the filesystem already answers. If the project's shape
-# genuinely needs a one-line description for a human reader, it belongs
-# in this project's own docs, not the manifest.
+# something the filesystem already answers.
 
 repos:
   - name: <repo-name>
-    purpose: <one-sentence purpose>
-    role: <service | library | infra | docs | orchestrator | meta | app | mobile-app | sdk | scripts | fork | other>
     # No local_path — the tool derives it live from the repo root env
     # var plus this name; a stored path goes stale on every clone.
-    remote_url: <url or null>
-    default_branch: <main | master | etc.>
-    owner: <person-or-team or unknown>
+    # No purpose, role, owner, language, notes or default_branch: what a repo is for is the
+    # matrix's, and the repository and GitHub hold the rest.
+    remote_url: <url>           # a copy of GitHub's; `reconcile` checks it and `--fix` rewrites it
     lifecycle: <active | maintenance | deprecated | archived | planned>
-    tier: <product | tooling>   # product: holds product code (product files: worktrees and pull requests; AI-tooling files: main); tooling: builds the product, all committed on main
-    language: <primary language or unknown>
-    notes: <optional>
+    tier: <product | tooling>   # product: holds product code; tooling: builds the product and holds none
 
 # Repos closely related but not strictly part of this project.
 # Optional. Remove this section if not needed.
 adjacent_repos: []
 
-# Named sets of repos — a class like "backend-services" or
-# "mobile-clients". Optional: add a group only when a whole class of
-# repos needs a name. Every member must be a real repo name listed above.
-groups:
-  # - name: backend-services
-  #   description: <one sentence — what unites these repos>
-  #   members: [<repo-name>, <repo-name>]
+# Named sets of repos chosen by judgment. Optional: add a group only when a set needs a name that the
+# repository type (the last token of the name) does not give. Every member must be a real repo name above.
+groups: []
 
-relationships:
-  shared_contracts:
-    # - name: user-events
-    #   kind: protobuf | openapi | jsonschema | graphql | typescript-types | other
-    #   source_repo: <repo-name>
-    #   consumer_repos: [<repo-name>, <repo-name>]
-    #   path: <path inside source_repo>
-  # Tiered deploy stages (replaces the v1 flat deployment_order). Stages
-  # deploy in list order; repos within a stage deploy in parallel. Each
-  # repo may carry a gate (a precondition) and a deploy_task override.
-  deploy_waves:
-    # - name: foundation
-    #   description: <one sentence — what this stage lands>
-    #   repos:
-    #     - name: <repo-name>
-    #       gate: <condition, e.g. "vpc_enabled=true"; omit for no gate>
-    #       deploy_task: <override, or omit for the repo's default>
-    #     - name: <repo-name>          # no gate, no override
-  cycles: []
-
-# Repo naming, branching, commit format, PR rules and similar conventions
-# belong in this project's own naming-standard / contributing doc, not
-# here — that doc is the canonical source and the manifest would only
-# duplicate and drift from it. `conventions` keeps facts about *this*
-# project's tooling that have no other home.
-conventions:
-  branching_model: <trunk-based | gitflow | custom — describe>
-  commit_format: <conventional-commits | freeform | issue-prefixed | etc.>
-  pr_rules: <description>
-  versioning: <per-repo-semver | lockstep | calver | etc.>
-  code_style:
-    tools: []
-    shared: <true | false>
-
-# No top-level `rules`, `documentation`, or `search_recipes` sections.
-# Architectural/security/deployment rules live in the project's architecture documentation,
-# AGENTS.md, or crosscutting-concerns doc; doc locations and search
-# recipes are "where to find it" facts that belong in the knowledge
-# store (.polyrepo/knowledge.yaml, owned by polyrepo-info), not in the
-# structural manifest — restating them here duplicates their one
-# canonical home and lets the copy drift.
-
-ownership:
-  contacts: {}
-  codeowners_files: []
+# No `relationships`, `conventions`, `ownership`, `rules`, `documentation` or `search_recipes`
+# sections. A shared contract, a dependency, a rule or a convention lives in the architecture
+# documentation, the matrix or the control repository's AGENTS.md and .claude/rules/; where to
+# find an answer is a pointer in .polyrepo/knowledge.yaml (owned by polyrepo-info). Restating
+# any of them here duplicates their one canonical home and lets the copy drift.
 
 # Optional: tuning notes for the steward itself, e.g., things the
 # human has asked you to stop doing or always do for this project.

@@ -60,21 +60,14 @@ is the full set of things you must end up knowing — order is flexible.
 
 - What does the user call this project? (one short name, kebab-case
   preferred)
-- What does the project do, in one sentence? (this becomes the
-  manifest's `purpose` field — it anchors every later decision)
-- Is there a single human or team that owns the whole project? If so,
-  who?
 
 ### Phase 2: topology
 
 - What repos make up this project? Get a list — names only at first.
 - For each repo, in turn:
-  - What is its purpose, in one sentence?
-  - What role does it play? (service, library, infra, docs,
-    orchestrator, meta, app, mobile-app, sdk, scripts, other)
-  - Where does it live locally? (absolute path, or "no local clone yet")
+  - Where does it live locally? (absolute path, or "no local clone yet"; the tool derives it, the
+    answer only helps you find the repository)
   - What is its remote URL? (or "no remote", "private mirror", etc.)
-  - Who owns it?
   - What is its current lifecycle stage? (active, maintenance,
     deprecated, archived, planned)
   - Does it hold product code? (`product`: part of what ships; its product
@@ -89,10 +82,9 @@ is the full set of things you must end up knowing — order is flexible.
 - Do the repos fall into natural *groups* or classes — sets you would
   refer to collectively, like "the backend services", "the mobile
   clients", "the infra repos"? Capture each as a named group with its
-  members. Groups matter because dependencies and rules often apply to a
-  whole class rather than to named individuals (see Phase 3 and Phase 5).
-  A repo can belong to a group and still deploy in its own wave — group
-  membership is about *kind*, not deploy timing.
+  members. Do not record a class that a repository's type (the last token of its
+  name) already gives, or one that its imports or dependencies would give: those are
+  answered live.
 - How are the repos arranged on the human's filesystem?
   - All siblings under one parent directory?
   - Scattered across multiple parents?
@@ -125,78 +117,20 @@ reasoning. They confirm in their own words or redirect. See
 `references/topology-recommendations.md` for the inference decision
 tree and the optional scan commands.
 
-### Phase 3: relationships
+### Phase 3: what is not recorded
 
-- Dependencies are between services, components and infrastructure, never between repos.
-  Record none in the manifest; they are answered from the effective arc42 architecture.
-- Are there shared contracts (proto files, OpenAPI specs, JSON schemas,
-  shared types) that multiple repos consume? Where do they live?
-- Is there a deploy order that must be honored? Capture it as *waves*
-  (stages), not a flat list: which repos deploy first, which deploy
-  together in parallel within a stage, and the order across stages. For
-  each repo in a wave, is there a *gate* — a precondition that must hold
-  before it ships (e.g., "the VPC must exist", "shared-types must be
-  released")? Capture gates explicitly; they are exactly what a flat
-  ordering silently loses.
-- Are there infrastructure dependencies (databases, message brokers,
-  third-party APIs) that span multiple repos? Where are they declared?
+The interview ends with the repositories. Everything else a project says about itself has a canonical
+home, and the manifest records none of it:
 
-### Phase 4: conventions
-
-- Naming: how are repos named? Branches? Commits? Tags? Releases?
-- Branching model: trunk-based, gitflow, something custom?
-- Commit format: conventional commits? Free-form? Issue-prefixed?
-- PR rules: who reviews, how many approvals, required checks?
-- Versioning: per-repo semver? Lockstep? Calver?
-- Code style: language-specific tools, formatters, linters? Are these
-  shared across repos or per-repo?
-
-### Phase 5: rules and constraints
-
-- Architectural rules (e.g., "frontend never talks to the database
-  directly", "no circular deps between services X, Y, Z")
-- Security or compliance rules (e.g., "PII never leaves repo X",
-  "license-restricted code lives only in repo Y")
-- Deployment rules (e.g., "shared-types must be released before the
-  consumers", "infra changes require a 24h soak")
-- Soft rules and conventions the human relies on but has not written
-  down anywhere
-
-For each rule, ask **who it applies to**: a single repo, a whole group
-(a class captured in Phase 2, e.g. "all backend services"), or the
-project as a whole. A rule that governs a class is scoped to that group
-(`applies_to: [group:backend-services]`), which stays correct as repos
-join or leave the class — far better than a hand-listed wall of repos or
-a rule wrongly widened to the whole project.
-
-These are gold. They are the things agents most often violate because
-they are tribal knowledge. Capture them carefully and include the
-*reason* for each rule, not just the rule itself.
-
-### Phase 6: documentation
-
-- Where does each repo's documentation live? (`README.md`, `/docs`,
-  external wiki, Confluence, Notion, etc.)
-- Is there project-level (cross-repo) documentation? Where?
-- Are there RFCs or design docs? Where?
-- Are there onboarding docs, runbooks, postmortems?
-
-### Phase 7: search
-
-- How does the human typically search across repos when they need to
-  find something? (`grep -r`, `rg` across a parent dir, `gh search code`,
-  Sourcegraph, IDE search?)
-- Are there things that are *hard* to find that they wish were easier?
-
-These answers turn into entries in `references/search-recipes.md` and
-the manifest's `search_recipes` section.
-
-### Phase 8: ownership and contact
-
-- Who do you go to for X? (build issues, infra, security questions,
-  release questions, on-call rotations)
-- Are there teams or owners encoded in `CODEOWNERS` files? If so,
-  reference them rather than copying.
+- Dependencies are between services, components and infrastructure, never between repos; they are
+  answered from the effective architecture and the matrix.
+- Shared contracts, rules, constraints and conventions belong in the architecture documentation and in
+  the control repository's `AGENTS.md` and `.claude/rules/`. When the human states one, hand it to the
+  `filing-clerk`, with the reason, to file it in its one home.
+- The deploy order is the control repository's `deployment/waves*.yaml`.
+- Where documentation lives, and how the human searches, are pointers in `.polyrepo/knowledge.yaml`
+  (`polyrepo-info`).
+- Owners and contacts are the root `AGENTS.md`, and `CODEOWNERS` files in the repositories.
 
 ## Choosing where the manifest lives
 

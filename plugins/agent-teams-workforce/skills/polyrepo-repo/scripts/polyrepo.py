@@ -129,7 +129,9 @@ GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
 WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
-RETIRED_FIELDS = ("owns", "purpose", "purpose_head", "role")
+RETIRED_FIELDS = ("owns", "purpose", "purpose_head", "role", "owner", "language", "notes", "default_branch")
+RETIRED_SECTIONS = ("conventions", "ownership", "relationships")
+RETIRED_PROJECT_FIELDS = ("purpose", "owners")
 ENTRY_LISTS = ("repos", "deprecations")
 WORKTREES_LINE = ".worktrees/"
 OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
@@ -1083,6 +1085,16 @@ class Manifest:
             del self.doc[key]
             self.dirty = True
 
+    def drop_retired_project_fields(self) -> None:
+        """Remove the `project` fields the manifest no longer keeps (`RETIRED_PROJECT_FIELDS`)."""
+        project = self.doc.get("project")
+        if project is None:
+            return
+        for key in RETIRED_PROJECT_FIELDS:
+            if key in project:
+                del project[key]
+                self.dirty = True
+
     def set_field(self, name: str, key: str, value: object, after: str | None = None) -> None:
         """Set one field on an entry; None removes the field.
 
@@ -1168,6 +1180,7 @@ class MatrixStack:
     repository: str | None
     holds: int
     view: dict[str, object]
+    commands: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def parse_matrix_stacks(data: dict[str, object]) -> list[MatrixStack]:
@@ -1199,8 +1212,11 @@ def parse_matrix_stacks(data: dict[str, object]) -> list[MatrixStack]:
             "repository": repository,
             "holds": held,
         }
+        commands = {
+            k: v for k, v in _map(stack.get("commands") or {}, "a stack's commands").items() if isinstance(v, str)
+        }
         out.append(
-            MatrixStack(str(view["id"]), str(view["name"]), str(view["side"]), repository, len(held), view),
+            MatrixStack(str(view["id"]), str(view["name"]), str(view["side"]), repository, len(held), view, commands),
         )
     return out
 
@@ -1592,7 +1608,7 @@ def entry_fields(
 ) -> dict[str, object]:
     """Return the fields of a new manifest entry.
 
-    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, default branch, and,
+    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, and,
     for a deprecated repo, the deprecation date the changelog records (none when it records
     none: `reconcile` then reports the entry undated, never dated today).
 
@@ -1604,7 +1620,6 @@ def entry_fields(
         "lifecycle": lifecycle,
         "tier": default_tier(cfg, name),
         "remote_url": cfg.github_url(name),
-        "default_branch": cfg.default_branch,
     }
     if lifecycle == "deprecated" and (since := recorded_deprecation_date(cfg, name)):
         fields["deprecated_on"] = since
@@ -1681,6 +1696,7 @@ def reconcile(st: State) -> list[Finding]:
     out.extend(_check_github_only(st, entries, renamed_to))
     out.extend(_check_relationships(st))
     out.extend(_check_open_items(st))
+    out.extend(_check_retired_sections(st))
     return out
 
 
@@ -1872,6 +1888,45 @@ def _check_group_members(st: State) -> list[Finding]:
                     manifest_change=True,
                 ),
             )
+    return out
+
+
+def _check_retired_sections(st: State) -> list[Finding]:
+    """Find manifest sections and entry fields that restate a canonical source, which it may not keep.
+
+    The retired sections are the project conventions, owners and the stored relationships: the
+    root AGENTS.md and the matrix are their sources. Entry fields are dropped on every save.
+
+    Returns:
+        One finding per retired section or `project` field present; removing it is mechanical.
+
+    """
+    man = st.manifest
+    out: list[Finding] = [
+        Finding(
+            "retired-section",
+            key,
+            f"the manifest carries a {key} section, which restates a canonical source",
+            fix=f"remove the {key} section; git history keeps it",
+            action=functools.partial(man.remove_section, key),
+            manifest_change=True,
+        )
+        for key in RETIRED_SECTIONS
+        if key in man.doc
+    ]
+    project = man.doc.get("project") or {}
+    out.extend(
+        Finding(
+            "retired-section",
+            f"project.{key}",
+            f"the manifest's project.{key} restates a canonical source",
+            fix=f"remove project.{key}; git history keeps it",
+            action=man.drop_retired_project_fields,
+            manifest_change=True,
+        )
+        for key in RETIRED_PROJECT_FIELDS
+        if key in project
+    )
     return out
 
 
@@ -3612,22 +3667,31 @@ def _exclude_worktrees(repo: Path) -> None:
     exclude.write_text(f"{text}{sep}{WORKTREES_LINE}\n")
 
 
+def _kind_types(spec: object) -> list[str]:
+    """Return the repository types (the last token of a name) a template kind builds.
+
+    Returns:
+        The `types` of the kind in the config; none when the kind lists none.
+
+    """
+    return _strs(_map(spec or {}, "template kind").get("types") or [], "template kind types")
+
+
 def _template_of_name(cfg: Config, name: str) -> str:
-    """Name the template a repo is created from, from the template whose name_regex matches its name.
+    """Name the template a repo is created from, from the template whose types include the type of its name.
 
     Returns:
         The template's name.
 
     Raises:
-        PolyrepoError: when no template's name_regex matches the name.
+        PolyrepoError: when no template builds the type of the name.
 
     """
     kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
     for kind, spec in kinds.items():
-        rx = _map(spec or {}, "template kind").get("name_regex")
-        if isinstance(rx, str) and rx and re.search(rx, name):
+        if type_of(name) in _kind_types(spec):
             return str(kind)
-    msg = f"no template's name_regex matches {name}"
+    msg = f"no template builds the type {type_of(name)} of {name}"
     raise PolyrepoError(msg)
 
 
@@ -3655,9 +3719,9 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     if not (tdir / "copier.yml").is_file():
         msg = f"no template {template!r} in {troot}"
         raise PolyrepoError(msg)
-    rx = _map(_map(tset.get("kinds") or {}, "templates kinds").get(template) or {}, "template kind").get("name_regex")
-    if isinstance(rx, str) and rx and not re.search(rx, name):
-        msg = f"a {template} repo name must match {rx}"
+    types = _kind_types(_map(tset.get("kinds") or {}, "templates kinds").get(template))
+    if types and type_of(name) not in types:
+        msg = f"a {template} repo name must end in one of {', '.join(types)}"
         raise PolyrepoError(msg)
     sub = args.dir
     if sub is None:
@@ -6746,8 +6810,7 @@ def _template_for(
         if stype and stype in _seq(_map(k or {}, "template kind").get("status_types") or [], "status_types"):
             return t, "repo.status.yaml", answers
     for t, k in kinds.items():
-        rx = _map(k or {}, "template kind").get("name_regex")
-        if isinstance(rx, str) and rx and re.search(rx, r.name):
+        if type_of(r.name) in _kind_types(k):
             return t, "name", answers
     return None, None, answers
 
@@ -7649,6 +7712,82 @@ def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
     return []
 
 
+def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
+    """Check that every repository type the config maps to a template is a type the naming note lists.
+
+    The config's `templates.kinds[].types` is the steward's own map from repository types to the
+    template that builds them; the types themselves are the naming note's. A listed type the note
+    no longer has is a stale copy.
+
+    Returns:
+        One finding per kind and type the naming note does not list.
+
+    """
+    try:
+        known = set(cfg.rules.types)
+    except PolyrepoError:
+        return []
+    kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
+    return [
+        _finding(
+            "templates",
+            kind,
+            "type-unknown",
+            f"template kind {kind} lists the type {t}, which the naming note does not",
+        )
+        for kind, spec in kinds.items()
+        for t in _kind_types(spec)
+        if t not in known
+    ]
+
+
+ORGANIZATION_RECORD = "organization-structure.md"
+ORGANIZATION_VARIABLE = re.compile(r"^- (SKILLSPOKE_[A-Z_]+):.*?set as \"?([^\"\s]+)\"?")
+
+
+def _organization_findings(cfg: Config) -> list[DoctorFinding]:
+    """Check each environment variable value the steward's organization record states against the environment.
+
+    The record `organization-structure.md` is the owner's text and the steward's own record. The
+    values it states for the `SKILLSPOKE_*` variables are a copy of the shell environment, whose
+    values are the live ones; each stated value, with its variables expanded, must equal the
+    variable's value.
+
+    Returns:
+        One finding per variable the record states that is unset or has another value.
+
+    """
+    record = cfg.file.parent / ORGANIZATION_RECORD
+    if not record.is_file():
+        return [_finding("organization", ORGANIZATION_RECORD, "missing", f"{record} does not exist")]
+    out: list[DoctorFinding] = []
+    for line in record.read_text(encoding="utf-8").splitlines():
+        m = ORGANIZATION_VARIABLE.match(line)
+        if m is None:
+            continue
+        name, stated = m.group(1), os.path.expandvars(m.group(2))
+        live = os.environ.get(name)
+        if live is None:
+            out.append(
+                _finding(
+                    "organization",
+                    name,
+                    "unset",
+                    f"{ORGANIZATION_RECORD} states {name}, which the environment does not set",
+                ),
+            )
+        elif Path(live) != Path(stated):
+            out.append(
+                _finding(
+                    "organization",
+                    name,
+                    "differs",
+                    f"{ORGANIZATION_RECORD} states {stated}, the environment has {live}",
+                ),
+            )
+    return out
+
+
 def _matrix_findings(st: State) -> list[Finding]:
     """Check the matrix's stacks against the repositories (S6), with the repair for each.
 
@@ -7687,6 +7826,7 @@ def _matrix_findings(st: State) -> list[Finding]:
         if s.repository is None:
             continue
         out.extend(_stack_repository_findings(st, s))
+        out.extend(_stack_command_findings(st, s))
     checked = matrix_run(cfg, ["check"])
     if checked.get("valid") is not True:
         problems = _strs(checked.get("problems") or [], "the matrix's problems")
@@ -7694,6 +7834,76 @@ def _matrix_findings(st: State) -> list[Finding]:
         out.append(
             Finding("matrix-invalid", "matrix", f"atw-matrix check reports {len(problems)} problem(s): {shown}"),
         )
+    return out
+
+
+TASK_COMMAND = re.compile(r"^task (\S+)")
+NPM_COMMAND = re.compile(r"^npm (?:run )?(\S+)")
+
+
+def _declared_tasks(path: Path) -> set[str] | None:
+    """List the tasks a repository's Taskfile declares.
+
+    Returns:
+        The task names, or None when `task` is not installed or the repository has no readable Taskfile.
+
+    """
+    if shutil.which("task") is None:
+        return None
+    cp = run(["task", "--list-all", "--json"], cwd=path, timeout=60)
+    if cp.returncode != 0:
+        return None
+    tasks = _seq(_map(json.loads(cp.stdout), "the task list").get("tasks") or [], "the task list's tasks")
+    return {_str(_map(t, "a task").get("name"), "a task's name") for t in tasks}
+
+
+def _declared_scripts(path: Path) -> set[str]:
+    """List the scripts a repository's package.json declares.
+
+    Returns:
+        The script names; none when there is no package.json.
+
+    """
+    package = path / "package.json"
+    if not package.is_file():
+        return set()
+    return set(
+        _map(_map(json.loads(package.read_text(encoding="utf-8")), "package.json").get("scripts") or {}, "scripts"),
+    )
+
+
+def _stack_command_findings(st: State, s: MatrixStack) -> list[Finding]:
+    """Check that each command a stack records is still declared by the repository it names.
+
+    A stack's `commands` are a copy of what the repository declares (its Taskfile tasks or its
+    package.json scripts), kept in the matrix so that nobody has to open the repository. The
+    copy stays true only if each command resolves, so a `task X` command needs the task X and an
+    `npm test` or `npm run X` command needs the script.
+
+    Returns:
+        One finding per command the repository no longer declares; the refresh is `put stack
+        --commands-<test|publish|deploy>` with what the repository declares now.
+
+    """
+    r = st.local.get(str(s.repository))
+    if r is None or not s.commands:
+        return []
+    tasks = _declared_tasks(r.path)
+    scripts = _declared_scripts(r.path)
+    out: list[Finding] = []
+    for key, command in s.commands.items():
+        task, script = TASK_COMMAND.match(command), NPM_COMMAND.match(command)
+        stale = (task is not None and tasks is not None and task.group(1) not in tasks) or (
+            script is not None and script.group(1) not in scripts
+        )
+        if stale:
+            out.append(
+                Finding(
+                    "stack-command-stale",
+                    str(s.repository),
+                    f"{s.id} records {key} as `{command}`, which {s.repository} no longer declares",
+                ),
+            )
     return out
 
 
@@ -7791,8 +8001,10 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     due. The checks are reconcile, agents-sync --check, the beads fleet audit, the beads fleet
     list, open pull requests in deprecated repos and `archive-due --dry-run` (in
     parallel, each its own process), the governance
-    entries, the knowledge-store pointers, the repository-naming document and the matrix's
-    stacks against the repositories (repaired under --fix, and the matrix committed).
+    entries, the knowledge-store pointers, the repository-naming document, the template types
+    against the naming note's types, the organization record's environment variables against
+    the environment, and the matrix's stacks against the repositories (repaired under --fix,
+    and the matrix committed).
 
     Returns:
         0 when no check reports a finding, else 1.
@@ -7825,11 +8037,16 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     findings.extend(_governance_findings(cfg))
     findings.extend(_knowledge_findings(cfg))
     findings.extend(_naming_doc_findings(cfg))
+    findings.extend(_template_type_findings(cfg))
+    findings.extend(_organization_findings(cfg))
     matrix_fixed, matrix_open = _matrix_doctor(cfg, args.fix, args.no_cache)
     findings.extend(matrix_open)
     if args.fix:
         repairs["matrix"] = {"exit": 0, "fixed": matrix_fixed, "records": None, "error": None}
-    counts: dict[str, int] = dict.fromkeys([*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc", "matrix"], 0)
+    counts: dict[str, int] = dict.fromkeys(
+        [*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc", "templates", "organization", "matrix"],
+        0,
+    )
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     report: dict[str, object] = {
@@ -8001,7 +8218,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     )
     s.add_argument("name")
     s.add_argument("--space", required=True, help="the app space it belongs in")
-    s.add_argument("--template", help="the Copier template; omitted, the template whose name_regex matches the name")
+    s.add_argument("--template", help="the Copier template; omitted, the template that builds the type of the name")
     s.add_argument("--lifecycle", default="active")
     s.add_argument(
         "--tier",
